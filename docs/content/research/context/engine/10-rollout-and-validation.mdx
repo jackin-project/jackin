@@ -1,0 +1,92 @@
+---
+title: "10 — Validation and controls"
+description: "Validation layers, kill switches, configuration boundaries, acceptance gates, and stop conditions for the context engine."
+---
+
+## Summary
+
+Each context-engine mechanism needs representative workload evidence, reversible controls, and a role-specific acceptance gate. Measurement establishes the baseline; mutating layers remain disabled for a role until their own validation arms clear that bar.
+
+## Question and scope
+
+What evidence and controls prove each context-engine mechanism safe for a role's workload?
+
+## Method
+
+### Validation program
+
+1. **Per-mechanism A/Bs** use the [techniques 16 — Validation Harness: the No-Quality-Loss Proof Protocol](/research/context/techniques/16-validation-harness/) protocol, batch-lane execution, and canaries in every arm.
+2. **The cross-tool harness** compares Native / engine-observation / engine-retrieval / engine-full / RTK / headroom-MCP / lean-ctx(faithful) / caveman+RTK / pxpipe. The pxpipe arm is limited to gist-tolerant workloads and allowlisted models, and is never stacked with headroom on the history region ([current rising-tools comparison](/research/context/tools/06-combining/)).
+3. **Continuous**: online canaries, bust alerts, bounce-rate regression tripwires, `ctx doctor --gate` in CI, monthly platform-drift re-audit (prefix mass, schema mass — the ±70k/5-days lesson).
+4. **Docs gates per PR**: roadmap item freshness, current design decisions reflected here, and behavioral invariants maintained under developer-reference/specs.
+
+## Findings
+
+### Validation layers
+
+**Measurement (no mutation).** The measurement layer comprises the ledger, JSONL ingestion (`message.id` dedup), observation attribution, cache-bust detector, thinking estimator, `ctx doctor`, CI token-budget linter, and TUI panel. `JACKIN_CTX_MEASURE_ONLY` limits the engine to observation. Each role needs baseline windows for its Bash-vs-native-read split, cache health, and thinking share.
+
+**Protection controls.** Guard lines, subagent model/effort pins, report-register contracts, `excludeDynamicSections`, spawn stagger/pre-warm, the INV-8 conflict probe, and cache-bust alerts form the negative-cost protection set. Screening still verifies their assumptions. Model pins are load-bearing because Claude Code 2.1.198 makes Explore inherit the session model rather than default to Haiku.
+
+**Observation pipeline.** Shims, classifier, TOML filter corpus, crushers, never-worse guard, CCR archive, and recovery footers are compared against measure-only and RTK-binary arms. Acceptance requires at least a 20% tool-result-token cut on shell-visible traffic at success/bounce parity.
+
+**Retrieval.** Embedded fff, sem, and mq; registered `ctx_*` verbs; read-stub cache and delta-fills; and role doctrine are compared with the observation-only baseline and the headroom-MCP and lean-ctx faithful external arms. Acceptance requires at least a 20% net-of-injection reduction in tokens per solved read-heavy task, with improving native-read share and bounce rate.
+
+**Output controls.** Register levels, opt-in codebooks, canary gates, an online judge, and a holdout require a register-versus-agentic-quality benchmark before activation.
+
+**Routing and lanes.** Effort tiering per task class depends on a measured per-level curve. Advisor wiring, batch lanes, quota probing, tasks-per-cap display, and budget governors each require confirmation-grade (n=30) validation per role.
+
+**Memory.** Knowledge notes, handoff files, and net accounting require observation and retrieval ledgers as their comparison baseline.
+
+### Role manifest surface (sketch)
+
+New versioned `[context]` table in `jackin.role.toml` (one schema bump, 5 artifacts per PRERELEASE):
+
+```toml
+[context]
+mode = "standard"        # off | measure | standard | aggressive (register+routing active)
+languages = ["rust", "toml", "markdown"]   # grammar/features linked into indexes
+
+[context.output]
+register = "terse"       # off | terse | compact | register
+codebook = false
+
+[context.routing]
+effort_default = "high"
+subagent_model = "haiku"  # exploration-class agents
+advisor = true
+batch_lane = true
+
+[context.filters]
+extra = ["filters/role.toml"]   # role-repo TOML filters, content-hash trusted
+```
+
+Environment kill switches override per launch; `jackin load --ctx=off` provides instant bisection. The the-architect role supplies external comparison arms through RTK, headroom MCP, fff/codedb MCP servers, and caveman guidance. The pxpipe proxy arm remains separate and limited to gist-tolerant task slices; it never shares a lane with headroom because both mutate message history ([current rising-tools comparison](/research/context/tools/06-combining/)).
+
+## Implications for jackin❯
+
+Each mechanism must remain independently disableable and must clear its role-specific acceptance gate. Shared baselines establish comparison data; they do not authorize unvalidated mutating layers.
+
+## Limitations and unknowns
+
+### Risks
+
+| Risk | Mitigation |
+|---|---|
+| Upstream churn (all deps pre-1.0) | Exact pins + Renovate reviewed bumps; vendored corpora are snapshots; port-not-depend for unstable kernels |
+| Engine's own overhead exceeds savings on small workloads | Measure-only default; net-of-injection ledger; per-role activation; size gates on retrieval |
+| Filtered output drops a needed line | never-worse guard, verbatim-class policy, CCR recovery on all exit codes, bounce auto-upgrade, re-run-rate metric |
+| Steering fails (agent ignores verbs) | Honest doctrine + transparent shims/dedup work without steering; adherence metered, not assumed |
+| Conflict with operator-installed tools (RTK hook, headroom proxy, pxpipe proxy, caveman plugin) | Setup-time conflict probe (INV-8); role docs name the one-of-each rule; prompt-mutating middlemen (headroom, pxpipe) additionally exclusive on the history region |
+| Schema change risk (`[context]` table) | Versioned manifest migration per PRERELEASE; `deny_unknown_fields` honored |
+| Quality regression from registers/effort | Canary veto, holdout, online judge auto-demotion, confirmation-grade n=30 for routing |
+
+## Sources
+
+Evidence and repository references are cited inline beside the claims they support.
+
+## Related work
+
+- [Context engine dossier](/research/context/engine/)
+- [Token-optimization techniques](/research/context/techniques/)
+- [Token-optimization tools](/research/context/tools/)

@@ -1,0 +1,68 @@
+---
+title: "07 — Memory and state (L5)"
+description: "Design for durable memory, session state, provenance, retention, and evidence-gated retrieval without uncontrolled context injection."
+---
+
+## Summary
+
+Memory should remain a small, provenance-rich view over the reversible observation archive because current memory products do not prove net savings over re-exploration.
+Memory is the layer with the worst evidence-to-marketing ratio in the entire research corpus: no memory tool anywhere publishes injection-cost-vs-re-exploration-saved net accounting, files-only baselines beat flagship memory products (Letta 74.0% > Mem0 68.5%; full-context beats both), and lossy stores create the confidently-wrong-recall failure mode. The engine's memory layer is therefore deliberately small, reversible, and net-accounted.
+
+## Question and scope
+
+What state should persist across turns and sessions, and how should retrieval keep durable memory bounded and inspectable?
+
+## Method
+
+The design inventories current session, workspace, and repository state, then assigns ownership, retention, provenance, retrieval triggers, and operator inspection requirements to each durable item.
+
+## Findings
+
+### Exactly one store (INV-8)
+
+The CCR archive (L2) doubles as the memory substrate — one turso database, three views:
+
+1. **Verbatim archive** — every compressed observation's original, blake3-addressed, FTS-searchable, TTL'd (≥30 min hot, archived cold). Recovery without knowing the id: search the archive, expand the match (lean-ctx's FTS-searchable archive semantics).
+2. **Read-stub / attention ledger** — what each session/subagent has already seen, fingerprinted (structural hash for code via sem, content hash otherwise), powering `[unchanged]` stubs and delta-fills (L2). Bookkeeping only, never content.
+3. **Knowledge notes** — operator- or agent-curated durable facts (decisions, gotchas, environment quirks), stored as *files* under the workspace/role (compaction-survival placement below), indexed for retrieval, **never auto-written into always-loaded instruction files without a human gate** (headroom-`learn`'s risk: one wrong auto-rule is a bad commit that outlives months of savings; the engine surfaces *candidate* corrections for review instead).
+
+Running the engine's store alongside cavemem/headroom-memory/lean-ctx-CCP is refused at setup (one memory layer per capsule — the combining page's rule).
+
+### Handoff state, not transcript replay
+
+Session continuity uses the file-based handoff pattern (a ~387-token progress/decisions file beats 10–40k of transcript replay/re-exploration): on session end or task boundary the engine writes a structured handoff file (task state, decisions with handles, files touched, next steps) into the workspace state dir; the next session boots from it. jackin❯'s existing COORDINATION.md convention for parallel agents is the production sibling; the engine formalizes and meters it.
+
+### Compaction-survival placement
+
+The engine places must-survive state only in locations that survive Claude Code compaction (root instruction file, auto-memory, disk files) and treats conversation-resident state as ephemeral — with a PreCompact-event hook purging the read-stub index so post-compaction re-reads are never falsely stubbed (the correctness rule lean-ctx learned).
+
+### Net accounting (the missing number, shipped)
+
+Every injection from memory is metered as cost; every avoided re-exploration is measured through a paired current task path. Memory features report **net** per role and are auto-demoted when negative. Stub size, reachable reread share, and tasks-per-cap effect are local benchmark outputs—not inherited vendor constants.
+
+### Memory requirements
+
+1. **Store and index canonical originals.** Compression is a recoverable view, never the durable source.
+2. **Scope retrieval per workspace by default.** Cross-workspace recall is explicit and policy-gated.
+3. **Budget and measure every injection.** Standing memory is a cost until a current task A/B proves net benefit.
+4. **Preserve exact technical spans and modality words.** Code, URLs, paths, versions, identifiers, uncertainty, and negation remain byte- or meaning-exact.
+
+## Implications for jackin❯
+
+These findings define the memory and state (l5) contract for jackin❯; any implementation must preserve the acceptance gates and boundaries above.
+
+## Limitations and unknowns
+
+### What stays out
+
+No vector memory by default; the bounded docs/decision hybrid index remains an opt-in role experiment under the current ≥20% acceptance bar ([current retrieval-tools comparison](/research/context/tools/06-combining/)). No cross-capsule shared memory or adaptive cognition in v1 without current fleet-ledger evidence.
+
+## Sources
+
+Evidence and repository references are cited inline beside the claims they support.
+
+## Related work
+
+- [Context engine dossier](/research/context/engine/)
+- [Token-optimization techniques](/research/context/techniques/)
+- [Token-optimization tools](/research/context/tools/)

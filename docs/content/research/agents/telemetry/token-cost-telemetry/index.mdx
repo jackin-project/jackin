@@ -1,0 +1,52 @@
+---
+title: "Usage-limit telemetry and attribution"
+description: "Designs provider-authoritative account-limit telemetry with explicit freshness, provenance, and internal session attribution."
+---
+
+**Research state:** Incomplete
+
+**Verification cutoff:** 2026-08-12. Provider endpoints, authentication, and limit semantics require revalidation after this date.
+
+## Research question
+
+How should jackin❯ collect and normalize provider account limits so operators can see remaining allowance, reset windows, plan state, and source health without exposing token prices or historical spend surfaces?
+
+## Headline findings
+
+- Account limits and local session attribution are different truth channels. Provider sources answer whether an account can continue working; runtime events and logs can attribute activity to a workspace or session but cannot reconstruct provider quota accounting reliably.
+- Every displayed limit needs provenance, confidence, freshness, status, and reset metadata. A stale provider value and a fresh local estimate are different states and must not collapse into one percentage.
+- Provider APIs or runtime-owned account endpoints are preferred. Local logs are fallback or attribution evidence. Browser-cookie collection is explicit fallback only, never a hidden happy path.
+- One daemon-owned cache should serve Desktop, console, Capsule, and CLI. Containers receive narrow read-only state and do not run independent provider polling loops.
+- User-facing usage surfaces show limits only: remaining or used percentage, reset countdown, plan/status, and provider-supplied cap windows. Token unit prices, session-cost estimates, spend histories, trend charts, and cost rankings are outside the product contract.
+- Internal token-class or session identifiers may support debugging and attribution, but they do not authorize user-facing token-history or spend UI.
+
+## Method and evidence
+
+The dossier compares provider/account collectors, local runtime evidence, and established menu-bar tools. [Account-limit model](/research/agents/telemetry/token-cost-telemetry/01-account-limit-model/) defines the normalized snapshot, cache, status, and rendering constraints. [Sources and attribution](/research/agents/telemetry/token-cost-telemetry/02-sources-and-attribution/) records source priority, confidence, privacy, and the narrow role of local session evidence.
+
+The source landscape is provider-specific and partly undocumented. Endpoint behavior, authentication requirements, and payload fields require current adapter-level validation before implementation.
+
+## Limitations and open questions
+
+- Which providers expose authoritative account-limit endpoints under credentials jackin❯ already manages?
+- How should account identity be represented without persisting secrets or unnecessary personal data?
+- What provider-specific TTL and backoff policy preserves useful state without aggressive polling?
+- Which quota windows can be compared, and which must remain separate because their units or reset semantics differ?
+- How should the operator repair missing or expired auth without a background process writing host configuration?
+- Which internal attribution evidence is reliable when multiple same-provider sessions run concurrently?
+
+## How to read
+
+| Page | Purpose |
+|---|---|
+| [01 — Account-limit model](/research/agents/telemetry/token-cost-telemetry/01-account-limit-model/) | Snapshot types, provenance, freshness, cache ownership, reset windows, and limits-only rendering. |
+| [02 — Sources and attribution](/research/agents/telemetry/token-cost-telemetry/02-sources-and-attribution/) | Runtime source priority, attribution limits, privacy, host effects, and external evidence. |
+
+## Related work
+
+- [Provider usage APIs](/research/product/desktop/usage-provider-apis/)
+- [Capsule usage overlay](/reference/capsule/)
+- [Persistent storage and workspace memory](/research/agents/orchestration/memory/)
+- [Agent runtime status authority](/roadmap/agent-runtime-status/)
+- [Console resource panel](/roadmap/console-resource-panel/)
+- [jackin❯ desktop Agent Hub](/research/product/desktop/agent-hub/)

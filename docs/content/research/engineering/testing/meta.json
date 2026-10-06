@@ -1,0 +1,9 @@
+{
+  "title": "Testing",
+  "defaultOpen": false,
+  "pages": [
+    "index",
+    "visual-snapshots",
+    "test-infrastructure-consolidation"
+  ]
+}

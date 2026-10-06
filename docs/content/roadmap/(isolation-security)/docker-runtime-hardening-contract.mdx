@@ -1,0 +1,84 @@
+---
+title: "Docker Runtime Hardening Contract"
+---
+
+**Status**: Partially implemented
+
+**Current state**: Docker profile enforcement is wired, `standard` is the compiled default, and rootless DinD is a recommended explicit grant; credential env-only posture remains
+
+## Shipped baseline
+
+The hardening contract is no longer just a model. The launch path applies the profile decisions and the core decisions are unit-tested through pure launch-plan helpers.
+
+Shipped pieces:
+
+- Four profiles exist (`compat`, `standard`, `hardened`, `locked`) with profile/grant defaults and runtime env names reserved against role-manifest override.
+- The Docker-level `no-new-privileges` flag is enabled when the resolved `sudo` grant is false and disabled when that grant is true; the Capsule PTY wrapper independently enables no-new-privileges for every agent and shell session before applying Landlock. A provisioned sudoers entry therefore does not enable interactive sudo in the wrapped session.
+- cgroup/AppArmor probes run before launch; cgroup v1 fails closed for `hardened`/`locked` where the promised resource enforcement cannot be delivered.
+- Egress allowlist enforcement is wired through `firewall-apply` and fails closed under `hardened`/`locked` if the firewall cannot install the policy.
+- `locked` uses a Docker-internal role network.
+- DinD is tier-aware: `none`, `rootless`, and `privileged` are selectable; rootless uses `docker:dind-rootless`, fails closed where cgroup v2 is required, and is the recommended explicit grant for Docker workflows on cgroup v2. When DinD and allowlist networking are both active, the launch contract reports partial enforcement because inner containers bypass the role-container firewall.
+- The session contract and compact/debug telemetry report the effective profile decisions before launch.
+- `cargo xtask profile-matrix standard` checks Docker-level profile posture. Its Tier 2 real-workload cases, including DinD workflows, remain TODO; it does not exercise sudo or package installation through the production Capsule session wrapper.
+- `standard` is the compiled-in default. `compat` remains available through CLI/config/workspace selection for privileged DinD and resource-unlimited Docker workflows. Role `min_profile` only rejects a weaker resolved profile; it does not select `compat`. Its root setup may provision sudoers, but wrapped agent and shell sessions remain nonroot.
+- Host Docker socket exclusion has a regression test.
+- Schema, guide, and runtime reference docs for the shipped fields exist in [Docker Security Profiles](/guides/docker-profiles/), [Role manifest](/developing/role-manifest/), [Configuration](/reference/runtime/configuration/), and [Schema Versions](/reference/runtime/schema-versions/).
+
+## Plan 043 sequencing
+
+Plan 043 was written before WP-SUDO and WP4 landed. The keystone audit result is now complete:
+
+| Audit question | Current answer | Evidence |
+|---|---|---|
+| Is `NOPASSWD:ALL` baked into the construct image? | No. The construct installs the `sudo` package, but no sudoers entry is baked into the image. | <RepoFile path="docker/construct/Dockerfile" /> |
+| Does jackin❯ runtime code call `sudo` for its own privileged setup? | No. Runtime setup that needs root uses Docker `exec --user root`, including sudo provisioning. | <RepoFile path="crates/jackin-runtime/src/runtime/docker_profile.rs" />, <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_runtime.rs" /> |
+| What does the sudo grant do? | The root setup helper writes `/etc/sudoers.d/agent` when `JACKIN_SUDO=1` and removes a stray entry if invoked without that grant. Normal launch schedules this helper only for a granted sudo setting. The PTY wrapper still drops to the admitted nonzero UID/GID, sets per-session no-new-privileges, and applies Landlock before executing the agent or shell. | <RepoFile path="crates/jackin-capsule/src/sudo_provision.rs" />, <RepoFile path="crates/jackin-capsule/src/process_isolation.rs" />, <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_runtime.rs" /> |
+| Does the Docker-level no-new-privileges flag control agent sudo? | No. That flag is derived from the container grant, but the session wrapper sets no-new-privileges on each child before Landlock. The provisioned sudoers file does not enable interactive elevation. | <RepoFile path="crates/jackin-runtime/src/runtime/docker_profile.rs" />, <RepoFile path="crates/jackin-capsule/src/process_isolation.rs" /> |
+| Does built-in runtime behavior require in-session sudo? | No. Trusted setup that needs root uses Docker `exec --user root`. System package installation from an agent session is unsupported under the current wrapper; bake system tools into the role image. | <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_runtime.rs" /> |
+
+The grant schema still accepts `user`, `sudo`, and `system_writes`; these fields
+must not be read as promises that a PTY session runs as root or can write
+system paths. `system_writes` changes the Docker container rootfs mount, while
+the child Landlock policy remains in force. The `user` schema description and
+the allowlist enforcement label have stale runtime semantics and need a
+separate source/schema correction.
+
+The remaining dependency order is:
+
+1. Keep the `standard` matrix green as new built-in roles and agent workflows are added.
+2. Continue the independent credential env-only posture work for `hardened`/`locked`.
+
+Parallel hardening tracks remain independent: host.sock auth is already implemented for Linux peer credentials, DinD-inner egress residual risk is documented and tested as partial enforcement, signed releases still need end-to-end local verification, and credential env-only posture remains coordinated with the credential-exposure research.
+
+## Remaining work
+
+1. **Credential env-only posture.** Under `hardened`/`locked`, prefer env-only or otherwise reduced credential exposure and emit a `credential_posture` decision per agent auth type. Coordinate with [Container credential exposure](/research/platform/security/credential-exposure/container-credential-exposure/).
+
+Rootless DinD default research is closed for this track: keep `standard` default DinD as `none`, recommend `dind = "rootless"` as the explicit Docker-workflow grant on cgroup v2, and reserve `compat`/privileged DinD for workflows that cannot run rootless.
+
+## Constraints that stay true
+
+- Agent bypass flags remain enabled; Docker is the enforceable boundary, not the agent's own permission model.
+- Host Docker socket exclusion is a hard rule.
+- Hardened Docker is still a shared-kernel boundary; do not describe it as hostile multi-tenant isolation.
+- OTLP Capsule egress is jackin❯-owned infrastructure only in `allowlist` or `open` mode: every normalized per-signal endpoint host is derived and admitted without exposing host exporter headers to the container. `network=none` always wins, leaves Capsule telemetry unavailable, and is reflected in typed Capsule health; observability never weakens an isolation grant.
+
+## Related files
+
+- <RepoFile path="crates/jackin-runtime/src/runtime/docker_profile.rs" /> — profile/grant model, flag emission, session contract.
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_runtime.rs" /> — role container, DinD, network, launch orchestration.
+- <RepoFile path="crates/jackin-capsule/src/sudo_provision.rs" /> — runtime sudoers provisioning and revocation helper.
+- <RepoFile path="crates/jackin-capsule/src/firewall.rs" /> — in-container firewall apply primitive.
+- <RepoFile path="crates/jackin-docker/src/docker_client.rs" /> — typed Docker API boundary.
+- <RepoFile path="docker/runtime/entrypoint.sh" /> — runtime startup and agent bypass flags.
+- <RepoFile path="docker/construct/Dockerfile" /> — base runtime image and sudo package posture.
+
+## Related roadmap items
+
+| Item | Relationship |
+|---|---|
+| [Apple Container backend](/roadmap/apple-container-backend/) | macOS 26 VM backend; rootless DinD validation informs Apple Container viability. |
+| [Network egress policy](/roadmap/network-egress-policy/) | Future proxy-sidecar egress and connection logs beyond Docker firewall rules. |
+| [Declarative resource limits](/roadmap/declarative-resource-limits/) | Resource-budget schema and parser. |
+| [Process-level sandboxing](/research/platform/security/process-sandboxing/) | Per-command isolation inside any Docker profile. |
+| [Session contract and explain mode](/roadmap/session-contract-explain-mode/) | Active profile inspection before launch. |

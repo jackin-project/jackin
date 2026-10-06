@@ -1,0 +1,220 @@
+---
+title: "03 — Daemon and integration architecture"
+description: Defines the daemon protocol, state ownership, account monitoring, GitHub integration, and native macOS boundaries for Agent Hub.
+---
+
+## Summary
+
+Agent Hub is a native client of the jackin❯ daemon. The daemon owns reactive workspace, session, account, usage, attention, and GitHub state; the app owns presentation and native system integration.
+
+## Question and scope
+
+Which component owns each piece of Agent Hub state, and what protocol and trust boundaries keep the UI reactive without duplicating runtime logic?
+
+
+## Method
+
+The architecture maps current repository ownership, daemon protocol needs, account monitoring, GitHub integration, and native macOS boundaries at the dossier cutoff.
+
+## Findings
+
+### Components
+
+1. `jackin` CLI/library: source of truth for config, workspace CRUD, runtime
+   launch/eject/hardline, GitHub URL resolution, auth-source resolution.
+2. `jackin daemon`: per-user host process and control socket. It owns reactive
+   state, event streams, notifications, live auth sync, account monitors, and
+   host-bridge approvals.
+3. `jackin❯.app`: native macOS app. It owns UI, launch-at-login preference,
+   menu bar status item, settings window, and system integrations that require
+   app identity. It reads reactive state from the daemon first and uses CLI
+   calls only for narrow fallback or one-shot flows.
+4. Optional helpers: small Swift helpers for LocalAuthentication approval and
+   login/account diagnostics, invoked by the daemon or app.
+
+### Daemon protocol
+
+The daemon contract needs explicit capability discovery and query/action
+endpoints for Desktop consumers.
+
+Add request/response shapes:
+
+- `daemon/hello`: protocol version, daemon version, capabilities, socket paths.
+- `workspace/list`: saved workspaces from `AppConfig`.
+- `session/list`: running Capsule-backed instances with labels, workspace, role, agent,
+  branch, PR candidate URLs, state, started time, last activity.
+- `workspace/launch`: launch an existing saved workspace/role/agent through the daemon/app action path.
+- `session/action`: hardline/open-in-ghostty/stop/eject/mute.
+- `event/subscribe`: JSON Lines stream of session, attention, auth, PR, and
+  daemon health events.
+- `account/list`: configured Claude/Codex/Amp/Kimi/OpenCode accounts and latest quota snapshots, including freshness and confidence.
+- `account/refresh`: explicit account status refresh with provider-specific backoff.
+- `usage/accounts`: limits-only account snapshots with used or remaining percentage, reset, plan, status, provenance, freshness, and provider-supplied caps.
+- `usage/focused`: the active account current limit snapshot for the focused Capsule pane.
+- `github/project_inbox`: open PRs for recently active jackin❯ projects, with org/project filters.
+- `github/my_open_prs`: open PRs authored by the operator, sorted by created date descending.
+- `github/repository_prs`: PRs for a workspace/repo/branch, cache-first.
+- `desktop/open`: daemon-assisted actions for browser open, Ghostty launch/focus, and native notification click handling.
+
+Keep `Notify` as a low-level primitive, but do not make Desktop infer all state
+from notification messages.
+
+### Daemon state model
+
+The daemon should maintain an in-memory state cache and append a small event log:
+
+```text
+~/.jackin/run/jackin-daemon.sock
+~/.jackin/run/jackin-daemon.log
+~/.jackin/events/events.jsonl
+~/.jackin/cache/github/
+~/.jackin/cache/accounts/
+~/.jackin/cache/usage/
+```
+
+Session discovery can start from Docker labels already present in
+<RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile>:
+
+- `jackin.managed=true`
+- `jackin.kind=role`
+- `jackin.class=<role>`
+- `jackin.display_name=<display>`
+- plus new labels for workspace name, agent, branch, and primary repo.
+
+The Desktop app should not shell out to `docker` directly. It asks the daemon,
+and the daemon reuses jackin❯ runtime discovery code.
+
+### Account monitoring
+
+Support only the current jackin❯ agents:
+
+- Claude:
+  - support at least two operator accounts: Enterprise/company and personal.
+  - prefer Claude OAuth/API/file/Keychain state already used by jackin❯ live auth
+    sync; CLI PTY only as diagnostic fallback.
+- Codex:
+  - support personal account from `~/.codex/auth.json` / `CODEX_HOME`.
+  - prefer API/app-server style status where possible.
+- Amp:
+  - treat CodexBar's browser-cookie scraping as a last resort.
+  - first research whether Amp CLI has a local auth/config/session file or a
+    noninteractive status endpoint that jackin❯ can read.
+  - if Amp only exposes web state, surface that as "web-cookie source" so the
+    operator understands why relogin is needed.
+
+Account status should be daemon-owned because it is useful to CLI, TUI, and
+Desktop. Desktop displays it; it does not own the provider collection logic.
+
+The daemon should cache account and usage data once on the host and fan it out to the Desktop app, `jackin console`, CLI commands, and Capsule. Running role containers should not each poll providers independently. If an agent needs to read the latest state from inside a container, Capsule should expose a read-only control-channel response or a daemon-materialized file under `/jackin/run/usage/` with freshness metadata. The host cache is the write authority; container files are views.
+
+### Host-side effects
+
+Desktop may display, refresh, and request repairs for daemon-owned account and usage state, but the daemon remains the only writer for the telemetry cache described in the [Token & Cost Telemetry](/research/agents/telemetry/token-cost-telemetry/02-sources-and-attribution/#privacy-and-host-effects) roadmap item. Desktop repair controls must surface any host-side write before it happens; background refresh must not silently alter provider config, Keychain entries, browser profiles, dotfiles, Git config, or user repositories.
+
+### GitHub / PR integration
+
+The highest-value Desktop feature is direct PR access.
+
+There are three related but distinct surfaces:
+
+1. **Workspace PRs.** PRs connected to the current workspace/session/branch.
+   These appear inside the workspace drill-down and should answer: "What can I
+   review for this running agent?"
+2. **My open PRs.** Every open PR authored by the operator across repositories
+   jackin❯ knows about, sorted by creation date descending. These appear near the
+   top of the status menu so the operator can immediately jump to the newest
+   PR Jack created.
+3. **Project inbox.** A GitHub pull-request inbox scoped to recently active jackin❯ projects. This is the main desktop-window view and should support filters by organization, repository/project, workspace-linked status, draft/open status, and eventually "ready for my review" vs "authored by me".
+
+Data sources in order:
+
+1. Agent-reported PR URL through an attention/progress event.
+2. Current branch in the mounted repo/worktree plus GitHub remote:
+   `gh pr view --json url,state,title,headRefName,baseRefName,isDraft` or a
+   daemon GitHub client.
+3. Cache of recently opened PRs for that workspace/branch.
+4. GitHub REST/GraphQL fallback if `gh` is unavailable.
+
+The menu should promote PRs as soon as a PR URL is known. It should not wait for
+full RepoBar-style repository hydration.
+
+For **My open PRs**, the daemon should query cache-first and refresh in the
+background:
+
+- Preferred first implementation: `gh search prs --author @me --state open
+  --json repository,title,url,number,createdAt,updatedAt,headRefName,isDraft`
+  if the installed `gh` supports it, or equivalent `gh api` calls.
+- Fallback: GitHub GraphQL search:
+  `type:pr is:open author:@me archived:false`, sorted by `created-desc`.
+- Scope: start with repositories present in jackin❯ saved/running workspaces and repositories with recent jackin❯-observed activity. Add an optional "all accessible repositories" mode later only if the current-focus model proves too narrow.
+- Sorting: newest `createdAt` first, oldest at the bottom. Do not sort by
+  updated time for the default view because the user's mental model is "what
+  did Jack just create?"
+- Row content: repository name, PR number, title, draft/open marker, created
+  relative time, and optional workspace badge if a jackin❯ workspace matches.
+- Empty state: "No open PRs authored by you in jackin❯ workspaces."
+
+The daemon should expose this as a specific endpoint rather than asking the app
+to run `gh`:
+
+- `github/my_open_prs`: returns authored open PRs sorted newest first.
+- `github/project_inbox`: returns open PRs for recently active jackin❯ projects with org/project filters.
+- `github/repository_prs`: returns open PRs for a workspace repository.
+- `github/open`: opens a repository, repository PR page, or PR URL through the
+  host browser action path.
+
+### Native macOS design
+
+Use a native SwiftUI/AppKit app, targeting macOS Tahoe 26 where available while
+remaining usable on the minimum supported macOS.
+
+Design rules:
+
+- Use `MenuBarExtra` / `NSStatusItem` for the menu bar item.
+- Prefer `MenuBarExtra` with a menu-style surface for the first MVP if the
+  content stays shallow. Use a window-style popover only when workspace
+  drill-downs need richer SwiftUI rows than native menus can comfortably hold.
+- Use SwiftUI `NavigationSplitView`, `List`, `Table`, `Form`, `Toolbar`, and
+  standard controls for the main window.
+- Use Liquid Glass only where system components provide it naturally: toolbars,
+  sidebars, popovers, controls, and navigation. Do not build a custom frosted
+  dashboard everywhere.
+- Keep content dense and developer-oriented: status rows, tables, badges, and
+  actions. Avoid marketing-card layout.
+- Respect Reduce Transparency, Increase Contrast, and keyboard navigation.
+- Prefer SF Symbols for menu/status indicators.
+
+Apple references:
+
+- Liquid Glass overview:
+  https://developer.apple.com/documentation/TechnologyOverviews/liquid-glass
+- macOS menu bar guidance:
+  https://developer.apple.com/design/human-interface-guidelines/the-menu-bar
+- SwiftUI menu bar extra guidance:
+  https://developer.apple.com/documentation/SwiftUI/Building-and-customizing-the-menu-bar-with-SwiftUI
+- WWDC25 "Build a SwiftUI app with the new design":
+  https://developer.apple.com/videos/play/wwdc2025/323
+
+
+
+## Implications for jackin❯
+
+Treat Agent Hub as a native daemon client: the daemon owns reactive state and writes, while the app owns presentation, accessibility, and macOS integration.
+
+## Limitations and unknowns
+
+- Decide whether `jackin❯.app` embeds the CLI or negotiates with an installed binary.
+- Verify Amp’s local account-status surface before relying on browser cookies.
+- Choose `gh` or a daemon-native GitHub client using measured latency, auth behavior, and cache requirements.
+- Validate protocol versioning and reconnect behavior against daemon restarts.
+
+## Sources
+
+Apple and prototype sources are linked beside the relevant findings. Repository touchpoints use `<RepoFile>` references.
+
+## Related work
+
+- [Agent Hub overview](/research/product/desktop/agent-hub/)
+- [Product surfaces](/research/product/desktop/agent-hub/02-product-surfaces/)
+- [jackin❯ daemon](/roadmap/jackin-daemon/)
+- [Account-limit telemetry](/research/agents/telemetry/token-cost-telemetry/)

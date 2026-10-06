@@ -1,0 +1,9 @@
+{
+  "title": "smolvm backend",
+  "defaultOpen": false,
+  "pages": [
+    "index",
+    "01-architecture-and-compatibility",
+    "02-alternatives-and-decision"
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "title": "Build performance",
+  "defaultOpen": false,
+  "pages": [
+    "index",
+    "rust-build-cache-hygiene",
+    "shared-ci-compiler-cache"
+  ]
+}

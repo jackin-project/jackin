@@ -1,0 +1,180 @@
+name: JackinDesktop
+
+# Platform lanes (recorded contract — see native/README.md "Platform lanes"):
+#   minimum deployment target: macOS 26.0 (no compatibility branch)
+#   shipping lane: Xcode 26.6, macOS 26.5 SDK, Swift 6 + complete strict concurrency
+#   forward-validation lane: Xcode 27 beta / macOS 27 SDK — nonblocking, scheduled;
+#     dated exception in native/README.md until the runner image exists
+#   post-26.0 API: #available(macOS 27, *) guard + decided native fallback +
+#     recorded minimum-target bump that removes the guard;
+#     UIDesignRequiresCompatibility is never a strategy
+
+options:
+  minimumXcodeGenVersion: 2.46.0
+  deploymentTarget:
+    macOS: "26.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+  projectFormat: xcode16_0
+
+settings:
+  base:
+    ARCHS: arm64
+    DEAD_CODE_STRIPPING: YES
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    GCC_TREAT_WARNINGS_AS_ERRORS: YES
+    # Xcode 26 otherwise reports the intentional no-AppIntents path as a warning.
+    LM_FILTER_WARNINGS: YES
+    LM_FORCE_LINK_GENERATION: YES
+    MACOSX_DEPLOYMENT_TARGET: "26.0"
+    ONLY_ACTIVE_ARCH: YES
+    SWIFT_STRICT_CONCURRENCY: complete
+    SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
+    SWIFT_VERSION: "6"
+
+targets:
+  JackinUsageBindings:
+    type: library.static
+    platform: macOS
+    sources:
+      - path: Sources/JackinUsageBindings
+        type: syncedFolder
+    settings:
+      base:
+        DEFINES_MODULE: YES
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_MODULE_NAME: JackinUsageBindings
+        SKIP_INSTALL: YES
+    dependencies:
+      - framework: ../target/xcframework/JackinUsage.xcframework
+        embed: false
+
+  JackinUsageBridge:
+    type: library.static
+    platform: macOS
+    sources:
+      - path: Sources/JackinUsageBridge
+        type: syncedFolder
+    settings:
+      base:
+        DEFINES_MODULE: YES
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_MODULE_NAME: JackinUsageBridge
+        SKIP_INSTALL: YES
+    dependencies:
+      - target: JackinUsageBindings
+
+  JackinDesktopUI:
+    type: library.static
+    platform: macOS
+    sources:
+      - path: Sources/JackinDesktop
+        type: syncedFolder
+        excludes:
+          - Resources
+    settings:
+      base:
+        DEFINES_MODULE: YES
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_MODULE_NAME: JackinDesktopUI
+        SKIP_INSTALL: YES
+    dependencies:
+      - target: JackinUsageBindings
+      - target: JackinUsageBridge
+
+  JackinDesktop:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources/JackinDesktopApp
+        type: syncedFolder
+      - path: Sources/JackinDesktop/Resources/Brand
+        type: folder
+        buildPhase: resources
+      - path: Sources/JackinDesktop/Resources/ProviderMarks
+        type: folder
+        buildPhase: resources
+    info:
+      path: Support/JackinDesktop-Info.plist
+      properties:
+        CFBundleDisplayName: jackin❯ desktop
+        CFBundleExecutable: JackinDesktop
+        CFBundleName: jackin❯ desktop
+        CFBundlePackageType: APPL
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        LSMinimumSystemVersion: "26.0"
+        LSUIElement: true
+        NSHighResolutionCapable: true
+        NSHumanReadableCopyright: Copyright © 2026 Alexey Zhokhov
+        NSPrincipalClass: NSApplication
+    settings:
+      base:
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGNING_REQUIRED: NO
+        CURRENT_PROJECT_VERSION: "1"
+        ENABLE_HARDENED_RUNTIME: NO
+        GENERATE_INFOPLIST_FILE: NO
+        MARKETING_VERSION: "0.6.0"
+        PRODUCT_BUNDLE_IDENTIFIER: com.jackin-project.desktop
+        PRODUCT_NAME: JackinDesktop
+    dependencies:
+      - target: JackinDesktopUI
+      - target: JackinUsageBindings
+      - target: JackinUsageBridge
+      - framework: ../target/xcframework/JackinUsage.xcframework
+        embed: false
+
+  JackinDesktopTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests/JackinUsageBridgeTests
+        type: syncedFolder
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+    dependencies:
+      - target: JackinDesktopUI
+      - target: JackinUsageBindings
+      - target: JackinUsageBridge
+      - framework: ../target/xcframework/JackinUsage.xcframework
+        embed: false
+
+  JackinDesktopUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    sources:
+      - path: UITests
+        type: syncedFolder
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+    dependencies:
+      - target: JackinDesktop
+
+schemes:
+  JackinDesktop-Unit:
+    build:
+      targets:
+        JackinDesktop: all
+        JackinDesktopTests: [test]
+    test:
+      config: Debug
+      gatherCoverageData: true
+      targets:
+        - JackinDesktopTests
+  JackinDesktop:
+    build:
+      targets:
+        JackinDesktop: all
+        JackinDesktopTests: [test]
+        JackinDesktopUITests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      gatherCoverageData: true
+      targets:
+        - JackinDesktopTests
+        - JackinDesktopUITests

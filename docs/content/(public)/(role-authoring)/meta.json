@@ -1,0 +1,5 @@
+{
+  "title": "Role Authoring",
+  "defaultOpen": false,
+  "pages": ["guides/role-repos", "developing/creating-roles", "developing/role-manifest", "developing/construct-image", "developing/publishing-role-images"]
+}

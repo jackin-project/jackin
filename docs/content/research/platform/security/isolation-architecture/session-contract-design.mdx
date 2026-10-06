@@ -1,0 +1,90 @@
+---
+title: "Session Contract and Explain Mode: Design"
+description: Defines a resolved launch contract and explain surface for inspecting effective mounts, credentials, limits, and isolation.
+---
+
+**Research state:** Incomplete
+
+## Summary
+
+A resolved launch contract should expose effective mounts, credentials, limits, and isolation before execution begins.
+
+The contract shape is proposed; the [session contract and explain mode](/roadmap/session-contract-explain-mode/) roadmap item owns delivery.
+
+This record defines the resolved launch contract and `explain` preview surface. [Session contract and explain mode](/roadmap/session-contract-explain-mode/) owns delivery.
+
+## Research question
+
+`jackin load` resolves a lot of behavior before an agent starts: role image, workspace mounts, isolated worktrees, credential forwarding, Docker/DinD wiring, agent runtime, persisted state, and cleanup policy. Today the operator can inspect pieces of that model, but there is no single command that answers what exactly the agent will be able to read and write, which credentials will be present and in what form, which Docker daemon it will talk to, which host-side effects happen before the agent receives control, and which recovery path applies if the session exits dirty or destructive. That gap matters most for the engineers jackin❯ targets: people who run agents from terminals on local machines, over SSH, on servers, and eventually inside Kubernetes workflows. They need a fast way to audit the boundary without launching the agent or mutating the host.
+
+## Inspiration
+
+Hazmat and Docker Sandboxes are the two products that treat the launch boundary as a first-class product surface; the full competitive read (what each gets right, where jackin❯ should differ, and the containment/recovery comparison table) lives in [Agent Orchestration Program research](/research/agents/orchestration/program-research/). The short version for this design: Hazmat treats the session contract as the product surface (mode, project access, integrations, read-only paths, service access, snapshot state) and previews it with `hazmat explain` before launch; Docker Sandboxes documents the trust boundary in terms of what crosses into the VM (workspace files, proxied network requests, credential injection). jackin❯ already has the raw inputs to build an equivalent — the missing piece is a resolved contract object that makes those inputs inspectable before side effects.
+
+## Proposal
+
+Add a launch contract that can be printed in two modes:
+
+```sh
+jackin explain agent-smith my-workspace
+jackin load agent-smith my-workspace --explain
+jackin explain agent-smith my-workspace --json
+```
+
+The human contract should be compact enough to read in a terminal and complete enough to use as an audit artifact.
+
+### Contract sections
+
+| Section | Contents |
+|---|---|
+| Identity | workspace, role, agent runtime, instance name, role source, image tag/digest when known |
+| Routing / tier decision | selected backend, configured alternatives, recommendation reason, and why stronger or weaker tiers were not selected |
+| Sandbox | backend (`dind`, `microvm`, future remote/Kubernetes), Docker daemon shape, privileged sidecar status, TLS/rootless status |
+| Filesystem | read-write mounts, read-only mounts, isolated worktree/clone mounts, generated override files, workdir, sensitive path warnings |
+| Credentials | per-runtime auth mode, GitHub CLI mode, `1Password` references, env/file/bridge delivery, granted/denied/unavailable credentials, known exposure warnings |
+| Integrations | active stack integrations, recommendation source, approval state, and any diff from the previously approved recommendation hash |
+| Network | current network mode, egress policy if configured, enforcement quality, connection logging posture, host localhost exposure caveats |
+| Service ports | requested and active host-to-container mappings, sandbox-to-host aliases, protocol, persistence, and host-side effects |
+| Runtime homes | provider home directories and state roots for Claude, Codex, GitHub CLI, plugins, and skills, including whether each path is persisted |
+| Host-side effects | image build, container creation, DinD sidecar creation, worktree/config writes, generated files, port publications, auth sync, state directory writes, firewall/proxy helper setup, future snapshots |
+| Recovery | cleanup policy, preserved worktree path, snapshot availability, `hardline`/`purge` recovery path |
+
+The `--json` shape should be stable enough for docs, tests, CI checks, and future `jackin daemon` consumers. The JSON schema should be versioned and stable: additive fields are allowed, but existing field names and enum values must not change without a schema-version bump. It should not expose secret values.
+
+## Design capabilities
+
+### Side-effect-free launch preview
+
+- Factor the existing workspace/role/agent resolution into a side-effect-free contract builder.
+- Print filesystem, runtime, auth mode, and Docker/DinD sections.
+- Print planned host mutations even in explain mode, including worktree/config writes, generated files, port publications, auth sync, image builds, state-directory creation, and firewall/proxy helper setup. The command reports them as planned effects and performs none of them.
+- Include a routing explanation such as: `selected dind because no microVM backend is configured; network policy is guest-enforced only`.
+- Add `jackin explain <role> <workspace>` and `jackin load --explain`.
+- Include a JSON form that redacts values but preserves delivery type.
+
+### Host-side effects and recovery
+
+- Add worktree creation, generated mount overrides, data directory writes, and cleanup/finalization policy to the contract.
+- Surface the same summary at the start of `load`, `hardline`, and console launch flows.
+- Make non-interactive output copy-pasteable for bug reports.
+
+### Backend-specific risk text
+
+- Include explicit risk language for `dind`, rootless DinD, microVM backends, SSH/remote hosts, and Kubernetes whenever the selected backend requires it.
+- Include network and credential-proxy posture from the selected backend.
+- Keep Docker Sandboxes parity claims out of the output unless network and credential proxy gaps are actually closed.
+
+## Host-side effects invariant
+
+The explain command must not mutate host state. It may read config, role metadata, cached role manifests, and workspace state. Any value that would normally require mutation must appear as a planned effect rather than being executed. `jackin load --explain` remains side-effect-free and exits after printing; a normal `load` invocation performs the launch.
+
+## Existing partial building blocks
+
+Two backend-specific text renderers inform this design: <RepoFile path="crates/jackin-runtime/src/runtime/docker_profile.rs">crates/jackin-runtime/src/runtime/docker_profile.rs</RepoFile> `format_session_contract` covers Docker profile, network, resources, credentials, and residual risk behind `--debug`; <RepoFile path="crates/jackin-runtime/src/runtime/apple_container.rs">crates/jackin-runtime/src/runtime/apple_container.rs</RepoFile> `print_session_contract` covers Apple Container isolation, mounts, network, and residual risk at attach. Neither is backend-neutral, has a JSON form, or is reachable through a stand-alone `explain` command.
+
+## Sources
+
+- [Hazmat README](https://github.com/dredozubov/hazmat) — session contract and `hazmat explain` positioning
+- [Hazmat overview](https://github.com/dredozubov/hazmat/blob/master/docs/overview.md) — tier decision model and Docker boundary notes
+- [Docker Sandboxes security model](https://docs.docker.com/ai/sandboxes/security/) — trust-boundary and isolation-layer framing
+- [Agent Orchestration Program research](/research/agents/orchestration/program-research/) — full competitive comparison

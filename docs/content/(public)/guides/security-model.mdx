@@ -1,0 +1,252 @@
+---
+title: Security Model
+description: How jackin❯ isolates agents and where that isolation stops
+---
+
+
+## Honest boundary statement
+
+jackin❯ is research software, unsafe and not production-ready. Its current isolation boundary depends on the selected backend and configured mounts; the Docker backend also has explicit security grants.
+
+jackin❯ began with Docker because the team building it has years of operational experience with `Docker`, the mental model is widely understood, and it was the shortest path to a useful local product — workspaces, mounts, isolated worktrees, and parallel agents. The Docker backend remains the most established and contains most of this page's implementation detail. Apple Container is also available as a VM-backed backend on macOS 26 ARM when the `apple/container` CLI v0.11.0 or later is installed; it has a different runtime boundary, described below.
+
+Additional isolation approaches — including microVMs, hypervisor-backed sandboxes, and more selectable backends — remain explicit research items on the roadmap:
+
+- [Docker runtime hardening contract](/roadmap/docker-runtime-hardening-contract/) — keep the Docker-first model while making profiles, DinD hardening, resource budgets, network posture, and launch-contract reporting explicit.
+- [OrbStack isolated machine backend](/research/platform/isolation/orbstack-isolated-machines/) — research a macOS backend that preserves Docker workflows inside an OrbStack isolated machine with explicit shares.
+- [smolvm backend research](/research/platform/isolation/smolvm-backend/) — research an open Rust/libkrun VM backend for true VM-per-workload isolation, OCI-image execution, and network-off-by-default operation.
+- [Selectable sandbox backends](/research/platform/security/sandbox-backends/) — keep Docker, OrbStack, Kubernetes, and later true microVM providers under one backend-selection umbrella without forcing one boundary on every workload.
+- [Reproducibility & provenance pinning](/roadmap/reproducibility-pinning/) — tighten what gets into the image to begin with.
+
+The plan is to keep iterating on UX, ergonomics, and operator workflows until jackin❯ is no longer in the *experimenting and figuring it out* phase, and then research and add stronger isolation boundaries as a configurable option. We constantly look at adjacent projects (microVM-based agent sandboxes, devcontainer setups, remote sandbox products) and borrow good ideas — see [Comparison with Alternatives](/guides/comparison/) for a current snapshot.
+
+So the honest framing today is:
+
+- jackin❯ is useful when you trust the agent runtime itself but want to limit what it can touch on your machine.
+- The Docker backend does not provide hypervisor-level isolation. Apple Container runs workloads inside VMs, but jackin❯ is not validated to contain a fully hostile workload.
+- If you need a stronger local isolation boundary, a microVM-based tool such as `Docker Sandboxes` is designed for that purpose; we use such tools as references for future isolation research.
+
+For unfinished implementation intent, read the [Roadmap](/roadmap/). For isolation evidence and design rationale, read [Research](/research/platform/isolation/).
+
+## Isolation layers
+
+The Docker-specific details below describe the Docker backend. Apple Container runs its workloads inside VMs and has a different runtime boundary.
+
+jackin❯ security model is built on several layers that stack together:
+
+### 1. Container isolation
+
+On the Docker backend, each loaded role runs in one Docker container. Agent runtimes or tabs within that role share the container's namespaces and filesystem. Different role launches use separate containers and separate container root filesystems by default. Configured host mounts may expose the same files to multiple launches.
+
+Each Docker role container has its own:
+
+- filesystem
+- process namespace
+
+When networking is enabled, each role launch gets a separate Docker network. Runtimes or tabs within that launch share it. With effective `none` networking and DinD disabled, Docker starts the container with `--network none` and creates no launch network.
+
+The role container can directly access only mounted host paths by default. A host Docker daemon API or container escape can bypass this boundary.
+
+### 2. Mount-based access control
+
+The role container directly exposes only host paths you explicitly mount. A host Docker daemon API or container escape can bypass this mount boundary.
+
+```bash
+# Agent can read/write ~/Projects/my-app
+# Agent can read but not write ~/reference
+# Agent cannot see ~/.ssh, ~/.aws, ~/Documents, or other host paths
+jackin load agent-smith ~/Projects/my-app --mount ~/reference:/reference:ro
+```
+
+This is the core blast-radius control in jackin❯.
+
+### 3. Read-only enforcement
+
+On the Docker backend, mounts marked `:ro` are enforced by Docker and the kernel. The agent cannot write to those paths, regardless of any per-runtime permission flag.
+
+### 4. Agent source trust
+
+jackin❯ uses a trust-on-first-use model for third-party agent sources.
+
+Built-in agents (`agent-smith`, `the-architect`) are always trusted. When you load a third-party agent (a namespaced selector like `org/agent-name`) for the first time, jackin❯ prompts you to review and confirm the source before building:
+
+```
+!! Untrusted agent source !!
+
+  agent:  org/agent-name
+  source: https://github.com/org/jackin-agent-name.git
+
+  jackin❯ has never loaded this agent before. Trusting it means:
+    - Its Dockerfile will be executed during the image build
+    - Arbitrary commands in that Dockerfile will run on your machine
+    - The agent will have access to your mounted workspace files
+```
+
+Once you confirm, jackin❯ remembers the decision and subsequent loads of the same role proceed without prompting.
+
+You can also manage trust from the command line:
+
+```bash
+# Pre-trust an agent without loading it
+jackin config trust grant chainargos/the-architect
+
+# Revoke trust (next load will prompt again)
+jackin config trust revoke chainargos/the-architect
+
+# List all trusted agents
+jackin config trust list
+```
+
+For non-interactive environments (CI, automation), use `jackin config trust grant <selector>` ahead of the first load — that records the trust decision the same way the interactive prompt would.
+
+<Aside type="note">
+Trust is tied to the agent selector (e.g., `org/agent-name`), not the git URL. If an agent's cached repo URL no longer matches the configured source, jackin❯ rejects it with a separate remote-mismatch error regardless of trust status.
+</Aside>
+### Branch trust gate
+
+Loading a role from an unmerged branch (`--role-branch`) triggers a separate, always-on rich confirmation dialog — even if the role is already trusted.
+
+The reason: trusting a role records that you reviewed the role's **default branch**. An external contributor can open a pull request on that same role repository with a modified Dockerfile that runs arbitrary commands during the image build. If you loaded the branch without a prompt, you could unknowingly execute code you never reviewed, in a context where you expected the behaviour of the trusted default branch.
+
+The branch trust gate shows the role, source repository, and branch name inside the launch cockpit, then asks you to confirm that you reviewed the diff before jackin❯ builds it.
+
+This gate cannot be bypassed: there is no `--force-branch` flag, no config option to skip it, and non-interactive terminals bail with an error rather than defaulting to yes.
+
+The threat model entry for this is listed in the table below.
+
+### 5. Per-role network separation
+
+When Docker networking is enabled, each role launch gets its own Docker network. If DinD is enabled, the role container and its sidecar share that network; agent runtimes or tabs within one launch share it too. Different role launches use separate networks.
+
+This reduces accidental cross-role interference.
+
+## What agents CAN do
+
+Inside their boundary, agents have broad autonomy:
+
+- execute arbitrary shell commands
+- install or update dependencies in writable workspace or session paths when the package manager can do so without system-level writes. System package installation that needs root, such as `apt install`, is unsupported in the wrapped session; put those system tools in the role image.
+- build and run containers through a per-role DinD sidecar when an effective DinD grant enables it
+- modify files inside writable mounts
+- reach network endpoints exposed by the selected backend and effective grants; Docker egress and DinD behavior are described below
+- use `gh` if authenticated inside the runtime
+
+## What agents CANNOT do
+
+- directly read host files outside configured mounts. A host Docker daemon API or container escape can bypass that limit, as described below.
+- modify files on read-only mounts
+- use the host Docker daemon by default; a socket mount or reachable Docker API endpoint can expose it
+- directly inspect another role launch's container by default. Agent runtimes or tabs within one role share its container resources.
+
+These guarantees are useful, but they are not absolute in the face of a kernel escape or Docker escape vulnerability.
+
+## Container supervisor and agent sessions
+
+The Docker container starts the trusted Capsule supervisor as root so it can
+prepare per-session identities and install the process boundary. Agent and
+interactive shell PTY commands pass through the Capsule wrapper, which admits
+the identity configured for that instance or shell, drops to its nonzero UID
+and GID, retains only `CAP_DAC_OVERRIDE`, then sets no-new-privileges and
+Landlock before executing the command. The container's root startup identity
+is not the agent's identity.
+
+This describes the wrapped PTY path. It is not a claim that Capsule protects
+against a compromised root supervisor, arbitrary root commands run outside the
+wrapper, a container escape, or a kernel exploit. Host-mounted files written
+through the paths granted to a session still change immediately.
+
+## What persists and what does not
+
+Each agent keeps its own session state — conversation history, OAuth credentials forwarded from your host, account metadata, and any tool logins (such as `gh`) you performed inside the container. That state survives stop/restart, so reconnecting to the same role picks up where it left off.
+
+Several important things do **not** persist:
+
+- the mutable root filesystem of the runtime container
+- containers and images the agent built inside its own private `Docker` daemon during the session
+
+System package installation through an agent or shell session is unsupported. Install those tools in the role image. Package-manager operations confined to paths granted to the session are not blocked by this system-write restriction.
+
+This is a deliberate trade-off. jackin❯ is biased toward reproducible agent images and explicit workspace mounts, not long-lived mutable sandboxes. Use `jackin purge <role>` to wipe all of an agent's persisted state and start fresh.
+
+## Current implementation constraints
+
+These are the Docker backend details that should be stated bluntly.
+
+### Docker-in-Docker
+
+Docker-in-Docker (DinD) is a grant, not an always-on part of each role. Standard, Hardened, and Locked default to no DinD; Compat defaults to privileged DinD. A role's effective grant may enable rootless or privileged DinD. When enabled, jackin❯ launches a per-role sidecar, generates TLS certificates, shares the client certs with the role container through a Docker volume, and points its Docker client at the TLS endpoint (`DOCKER_HOST=tcp://...:2376`, `DOCKER_TLS_VERIFY=1`).
+
+The sidecar is launched by the host Docker engine. A privileged DinD grant uses `docker:29-dind` with `--privileged` and can bypass some role-container capability drops. Rootless DinD uses `docker:29-dind-rootless` without `--privileged`; both modes share the Linux kernel used by the Docker daemon. Docker Desktop and OrbStack run that daemon inside a Linux VM on macOS, so this is the backend VM's kernel rather than the macOS kernel. The separate TLS endpoint does not create a VM boundary. Its generated certificates are session-scoped, not pinned to an external CA.
+
+### Docker egress controls
+
+Docker profiles provide `none`, `allowlist`, and `open` egress modes. Hardened and Locked default to allowlist; Standard and Compat default to open. `none` disables Docker networking only when DinD is off. DinD requires a non-internal per-role network, and the firewall is installed only for `allowlist`, so `none` with DinD does not isolate role egress. Wrapped agent and shell sessions do not receive root or `CAP_NET_ADMIN`, so the `sudo` and `user = "root"` grant metadata does not let them flush the firewall. Inner containers started through any DinD grant bypass the role container's host-iptables rules, including rootless DinD.
+
+The current launch summary can still label allowlist enforcement `partial` when
+`sudo = true` or `user = "root"` is configured. That label is based on grant
+metadata and does not reflect the wrapped PTY capability set; its explanation
+is a separate reporting defect.
+
+If an agent can read a mounted secret and its network policy permits an outbound path, jackin❯ cannot stop exfiltration over that path.
+
+### Direct bind mounts, not snapshots
+
+Mounted files are live host files. If the agent edits a mounted path, the host file changes immediately. There is no snapshot or rollback layer between the runtime and the mount.
+
+### Authentication forwarding
+
+Coding-agent credentials are forwarded only from accounts assigned to the workspace. Profile accounts copy the selected login into agent state, where the runtime can read it. API-key and OAuth-token accounts provide the selected credential at launch. GitHub CLI forwarding remains a separate policy.
+
+`--debug` output never prints resolved token values. Command-level diagnostic lines show the command name and arguments; env-var values and command stdout that carry credentials are redacted or suppressed at the source before they reach the terminal.
+
+Use the workspace account allowlist and agent/role selections to control access — see [Authentication](/guides/authentication/). Unassigning an account clears related bindings for subsequent launches; it does not revoke the upstream token or erase credentials already available to a running process.
+
+### Credentials obtained inside the runtime remain inside the runtime
+
+Whether credentials were forwarded from the host or obtained via in-container login, they persist in jackin❯ state until you purge it.
+
+If you authenticate a tool like `gh` inside the runtime, that credential becomes readable by that runtime as well.
+
+### Host clipboard writes are opt-in
+
+Agent output can contain OSC 52 terminal sequences that ask the outer terminal to write the host clipboard. jackin❯ Capsule denies agent-initiated OSC 52 passthrough by default so a compromised role cannot silently replace your clipboard with a command, token, or URL.
+
+Set `JACKIN_OSC52=allow` before `jackin load` only for roles where agent-to-host clipboard writes are expected. Lower-risk OSC title, notification, and hyperlink passthrough remain enabled by default and can be disabled with `JACKIN_OSC_TITLE=deny`, `JACKIN_OSC_NOTIFY=deny`, and `JACKIN_OSC_HYPERLINK=deny`.
+
+## Threat model
+
+jackin❯ is designed to reduce the most common operator risks:
+
+| Threat | Mitigation | Residual risk |
+|---|---|---|
+| Agent reads unrelated host files | The role container directly sees only mounted paths by default | A host Docker daemon API or container escape can bypass the mount boundary; sensitive data inside mounted paths remains readable |
+| Agent edits system files | Per-session Landlock grants only enumerated writable paths | Writable host mounts granted to a session still change immediately |
+| Agent reaches host Docker daemon | jackin❯ does not mount the host Docker socket by default; an explicit mount or reachable API endpoint can expose a daemon. With a DinD grant, the role uses a separate per-role endpoint over TLS | Host Docker starts the sidecar; privileged DinD can bypass some role-container capability drops. Rootless DinD skips `--privileged`; any DinD tier lets inner containers bypass host-iptables rules |
+| Agent writes host clipboard | OSC 52 passthrough is denied by default | Operators can opt in with `JACKIN_OSC52=allow`; terminal-native clipboard actions outside jackin❯ policy still depend on the terminal |
+| Agent interferes with another agent | Different role launches use separate containers; when networking is enabled, their Docker networks are separate. Runtimes or tabs within one launch share those resources | On Docker, role containers share the daemon host's Linux kernel; Apple Container runs workloads inside VMs |
+| Agent writes system paths | Per-session Landlock grants only enumerated writable paths | Writable host mounts granted to a session still change immediately |
+| Typosquatted or malicious role repo | Trust-on-first-use prompt before building | User must review the source; trusted flag persists |
+| Malicious code in an unmerged PR branch | Branch trust gate always fires for `--role-branch` | User must confirm they reviewed the branch diff; cannot be skipped |
+
+## What jackin❯ does NOT protect against
+
+<Aside type="caution">
+Docker containers share the Linux kernel used by their Docker daemon; Docker isolation is not a hypervisor boundary. On macOS with Docker Desktop or OrbStack, the daemon runs in a Linux VM, so containers share that VM's kernel rather than macOS's. Apple Container runs workloads inside VMs.
+</Aside>
+- **Docker container escapes and kernel exploits** — Docker containers share the daemon host's Linux kernel. Apple Container runs workloads inside VMs.
+- **Network exfiltration** — depends on the selected network mode; DinD lets inner containers bypass the role's host-iptables allowlist. Wrapped PTY `sudo` does not change that process's identity or capabilities.
+- **Credentials stored inside the runtime** — if you log in inside the container, the agent can potentially read what that tool stores
+- **Host-file mistakes inside writable mounts** — if you give an agent write access to a project, it can delete or rewrite that project
+
+## Best practices
+
+1. **Mount the minimum necessary.** Smaller visibility is the biggest win.
+2. **Prefer read-only mounts.** If the agent only needs to inspect something, mount it as `:ro`.
+3. **Do not mount credential directories.** Avoid `~/.ssh`, `~/.aws`, `~/.gnupg`, and similar paths. jackin❯ warns and asks for confirmation when it detects these, but avoiding them entirely is the safest approach.
+4. **Treat runtime login as sensitive.** If you authenticate inside the runtime, assume the agent can read that state.
+5. **Review role repos before loading.** The Dockerfile defines what the runtime contains. jackin❯ prompts for trust confirmation on first use of third-party agents, but you should inspect the repository yourself before confirming.
+6. **Always review the branch diff before loading a role branch.** `--role-branch` always prompts for confirmation, but the prompt is only as useful as your review. Open the pull request, check the Dockerfile and any scripts, and confirm only after you understand what changed.
+7. **Split roles by scope.** Keep frontend, backend, infra, and review workflows in separate environments when appropriate.
+8. **Keep OSC 52 denied unless you need it.** `JACKIN_OSC52=allow` lets agents write the host clipboard through the terminal.
+9. **Use `jackin purge` when a runtime no longer needs its persisted state.**
+10. **Keep Docker updated when using the Docker backend.** Container isolation is only as strong as the Docker runtime underneath it.

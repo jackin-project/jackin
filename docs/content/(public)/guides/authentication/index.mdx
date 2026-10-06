@@ -1,0 +1,51 @@
+---
+title: Authentication
+description: Discover named accounts and authorize credentials per workspace
+---
+
+jackin❯ keeps coding-agent credentials in a named account registry. First start discovers existing default host logins and provider API-key environment references. Workspaces explicitly authorize the accounts they may use.
+
+## Coding-agent and provider accounts
+
+An account contains one credential source:
+
+- A profile directory for Claude Code, Codex, Amp, Kimi, OpenCode, or Grok.
+- An API key for an AI provider, entered privately or referenced through an environment variable or 1Password.
+- A Claude OAuth token.
+
+```bash
+jackin account scan
+jackin account list
+jackin account add work --agent claude --directory ~/.claude-work
+jackin workspace account assign my-app work
+jackin workspace account select my-app work --agent claude
+```
+
+Registration and authorization are separate. A workspace with no assigned accounts receives no coding-agent credentials. Select an account explicitly when several assigned accounts support an agent; role bindings can narrow the choice without expanding workspace access.
+
+See [Agent accounts](/guides/authentication/agents/) and [account commands](/commands/account/). Provider examples cover [Z.AI](/guides/authentication/zai/), [MiniMax](/guides/authentication/minimax/), and [Kimi](/guides/authentication/kimi/).
+
+## GitHub CLI authentication
+
+[GitHub CLI authentication](/guides/authentication/github-cli/) remains separate from coding-agent accounts. Its `sync`, `token`, and `ignore` settings control the `gh` login used by Git and GitHub tools across the container.
+
+## Managing auth — always through the operator console
+
+Open `jackin console` to manage named accounts in Settings and authorize accounts for each workspace. The CLI offers the same registry and workspace assignment operations through `jackin account` and `jackin workspace account`.
+
+GitHub CLI policy stays in its dedicated authentication controls; changing a coding-agent account does not change GitHub access.
+
+## What jackin❯ deliberately does not forward
+
+jackin❯ does **not** forward your host SSH keys into agent containers. SSH-key sync is the surface where things get genuinely dangerous — once an agent container holds a copy of your host's SSH key, it can act as you against any system that key reaches, far beyond `github.com`. Even with the container's own boundary, that's a wider blast radius than the auth-forwarding axes this group covers.
+
+For pushing to GitHub from inside the container, jackin❯ uses HTTPS plus the forwarded `gh` login (see [GitHub CLI Authentication](/guides/authentication/github-cli/)) — that gives you the same `git push` workflow without the SSH-key surface.
+
+## Host machine is never modified
+
+Authentication forwarding is one of the places where jackin❯ repo-wide *[never mutate the host](/getting-started/design-principles/#never-mutate-the-host-machine-silently)* rule matters most. Forwarded credentials are read from your host but never written back; in-container token rotations stay inside the container; HTTPS rewrites and credential-helper wiring happen inside the container's own git config, never in your `~/.gitconfig`. See the design-principles page for the full rule and audit; this group's per-axis pages call out the rule again only where it shapes a specific feature.
+
+## See also
+
+- [Environment Variables](/guides/environment-variables/) — host environment and 1Password references used by account credentials.
+- [Security Model](/guides/security-model/) — the broader container boundary and what authentication forwarding does (and does not) imply.

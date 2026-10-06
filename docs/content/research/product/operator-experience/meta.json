@@ -1,0 +1,12 @@
+{
+  "title": "Operator experience",
+  "defaultOpen": false,
+  "pages": [
+    "index",
+    "host-affordances",
+    "agent-tag-protocol-design",
+    "console-agent-session-control-design",
+    "github-link-tracking-design",
+    "settings-editor-surface-unification-design"
+  ]
+}

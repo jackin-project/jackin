@@ -1,0 +1,79 @@
+---
+title: "18 — Coverage and gap map"
+description: "Coverage map for quota, multimodal input, latency, fleets, portability, literature, governance, and online quality."
+---
+
+## Summary
+
+The core techniques chapters cover text-token economics, caching, retrieval, output discipline, routing, provider features, infrastructure, composition, and validation. This map identifies the decision axes that need separate treatment: subscription quota, multimodal input, latency and human time, fleet behavior, portability, current literature, and runtime governance.
+
+The strongest correction is conceptual: a subscriber constrained by a usage cap should optimize **tasks per cap**, not API dollars per task. Multimodal input is another distinct token class rather than a footnote to text context. Latency and quality also need explicit accounting because a cheaper token path can still be slower or less reliable.
+
+## Question and scope
+
+Which independent cost and quality axes are already covered, and where do material evidence gaps remain?
+
+## Method
+
+Coverage was assessed against six independent axes rather than the dossier table of contents:
+
+| Axis | Decision dimension |
+|---|---|
+| Cost metric | dollars, subscription quota, wall-clock time, human attention |
+| Token class | fresh input, cache write, cache read, visible output, thinking, image, document |
+| Emission surface | system prefix, tools, message history, model output, media tool results |
+| Lever | style, tokenizer, context architecture, caching, retrieval, routing, infrastructure, governance |
+| Scope | turn, session, cross-session, capsule, fleet, organization |
+| Delivery | instruction, configuration, hook, orchestrator, provider feature |
+
+The existing chapters were checked for absent, incidental, partial, or decision-complete treatment. A topic remains a gap when the corpus mentions it but does not supply the measurement or decision rule required to choose an action.
+
+## Findings
+
+### Current coverage map
+
+| Topic | Current assessment | Decision stake | Detailed chapter |
+|---|---|---|---|
+| Subscription and quota economics | Dollar economics are mature; cap accounting remains partly provider-opaque | Cache-heavy levers can rank differently under quota than under API prices | [19 — Subscription and quota economics](/research/context/techniques/19-subscription-and-quota-economics/) |
+| Multimodal input | Separate measurement required for images, screenshots, and PDFs | A screenshot can be cheaper or much more expensive than structured text | [20 — Multimodal token economics](/research/context/techniques/20-multimodal-token-economics/) |
+| Latency and human time | Token and dollar models do not decide the time tradeoff | Fan-out, fast modes, and compression hops can exchange tokens for elapsed time | [21 — Latency and time economics](/research/context/techniques/21-latency-and-time-economics/) |
+| Fleet and multi-tenant caching | Self-host mechanisms are covered; hosted cache scope is not fully observable | Spawn timing, dynamic prefixes, and quota attribution change fleet efficiency | [22 — Fleet and multi-tenant cache](/research/context/techniques/22-fleet-and-multitenant-cache/) |
+| Cross-agent portability | Individual mechanisms are documented, but support differs by runtime | A stack tied to one hook or provider is fragile | [23 — Portability matrix](/research/context/techniques/23-cross-agent-portability/) |
+| Literature and product surface | Provider features and research continue to change | New mechanisms can strengthen, qualify, or leave existing decisions unchanged | [24 — Literature and market scan](/research/context/techniques/24-fresh-literature-and-market-delta/) |
+| Governance and online quality | Offline validation exists; runtime budget and drift controls are thinner | Savings are invalid if measurement overhead or quality regressions erase them | [25 — Governance and online quality](/research/context/techniques/25-meta-cost-governance-and-online-quality/) |
+| Unresolved mechanisms | Several ideas remain conditional or provider-blocked | Frontier ideas need feasibility gates before entering a stack | [26 — Frontier mechanisms](/research/context/techniques/26-extension-frontier/) |
+| Combined verdict | Layer interactions and metric choice need one synthesis | Composition must count overlap, cache effects, recovery, and quality | [27 — Stack verdict](/research/context/techniques/27-extension-stacks-and-verdict/) |
+| Volatile claims | Provider-sensitive claims require an explicit verification contract | A current decision must expose its cutoff and uncertainty | [28 — Provider-sensitive claim verification](/research/context/techniques/28-drift-delta/) |
+
+### Headline findings
+
+- **Quota is a separate objective.** Provider caps are not transparently convertible to API dollars, so quota-sensitive conclusions are explicitly bounded where the denominator is unpublished.
+- **Media must be measured in its native representation.** Image and PDF cost depends on dimensions, preprocessing, page handling, and provider rules; text-token intuition is insufficient.
+- **Latency is not a token subclass.** It belongs beside token and quality metrics in the acceptance function.
+- **Fleet behavior is cache behavior plus orchestration.** Prefix identity, dynamic sections, start timing, and provider cache scope determine whether nominally identical agents share work.
+- **Portability follows the interception boundary.** Instruction-only techniques travel widely; provider betas, proprietary hooks, and runtime-specific storage do not.
+- **Governance is part of net savings.** Measurement, recovery, retries, and quality monitoring consume resources and must be charged to the technique.
+
+## Implications for jackin❯
+
+For jackin❯, the coverage and gap map evidence identifies which mechanisms are safe to adopt directly and which still require workload-specific validation.
+
+## Limitations and unknowns
+
+### Evidence boundaries
+
+The chapters use the measurement conventions in [01 — Economics and measurement](/research/context/techniques/01-economics-and-measurement/) and the acceptance harness in [16 — Validation harness](/research/context/techniques/16-validation-harness/). Provider-sensitive facts follow the [verification contract](/research/context/techniques/28-drift-delta/). Where providers do not publish quota weights, cache scope, or internal token accounting, the result stays bounded rather than inferred.
+
+The dossier's measured heavy-session profile remains a comparison fixture, not a universal workload. Reach must be remeasured for each capsule because a docs-heavy task dominated by native reads presents different optimization opportunities from a shell-heavy code task.
+
+## Sources
+
+Evidence and repository references are cited inline beside the claims they support.
+
+## Related work
+
+- [Executive summary](/research/context/techniques/00-executive-summary/)
+- [Baseline audit](/research/context/techniques/02-baseline-audit/)
+- [Composed stacks](/research/context/techniques/15-composed-stacks/)
+- [Validation harness](/research/context/techniques/16-validation-harness/)
+- [Adoption roadmap](/research/context/techniques/17-adoption-roadmap/)

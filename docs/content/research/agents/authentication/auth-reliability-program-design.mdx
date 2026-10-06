@@ -1,0 +1,95 @@
+---
+title: "Auth reliability program — design rationale"
+description: "Explains seven authentication failure modes, their shared snapshot cause, and durable constraints for reliable credential handling."
+---
+
+**Research state:** Incomplete
+
+## Summary
+
+The seven failures share one root: credential state is treated as a one-time snapshot. A reliable design separates source resolution, health visibility, live synchronization, exposure reduction, and approved host access.
+
+## The seven failure modes this program addresses
+
+An operator working with jackin❯ across multiple projects or companies eventually hits each of these, in order of frequency:
+
+1. **Silent 401 after opening a new tab.** A stale launch-time snapshot can overwrite a freshly rotated in-container token unless seeding is idempotent per agent.
+2. **Late auth-health discovery.** Without a common pre-launch probe, invalid files, missing variables, and expiring credentials surface only after launch or the first provider request.
+3. **Account ambiguity.** A single hard-coded credential directory cannot represent personal and company accounts safely; source selection must be explicit per workspace.
+4. **Silent 401 after host token rotation.** A frozen container snapshot diverges when a host tool rotates an OAuth token.
+5. **Parallel refresh races.** Sibling containers can invalidate one another when each independently refreshes the same grant.
+6. **Manual token setup.** Copy-paste provisioning lacks validation, provenance, and a reliable rotation path.
+7. **Credential exposure.** Environment injection exposes values through container metadata, while plaintext synchronized files expand the readable secret surface. See [Container credential exposure](/research/platform/security/credential-exposure/container-credential-exposure/).
+
+## Why these failures share a root cause
+
+All of the above — except credential exposure hardening — stem from the same model: **jackin❯ treats authentication as a one-time provisioning event at container launch, not as a runtime relationship that must be maintained**.
+
+`sync` mode reads the host credential file once at launch, copies it into the role-state directory, and bind-mounts it into the container. From that moment the container's credential state is frozen. The host can change (token rotation, re-login, account switch), the agent inside the container can change (in-container OAuth refresh), and sibling containers can change (parallel session rotation) — none of it propagates anywhere. When the world moves and the snapshot does not, auth breaks.
+
+`oauth_token` and `api_key` modes are more stable for the token lifetime, but they inherit the same frozen-at-launch property: an expired or missing env var is only discovered when the first API call fails.
+
+The new-tab overwrite bug is the destructive form of the same flaw: a stale snapshot can overwrite a live in-container value that has already refreshed. Live synchronization removes that frozen-state assumption, while health visibility makes remaining snapshot modes explicit.
+
+## Architectural dependency order
+
+Explicit source selection and local health probes require no daemon. Cross-container synchronization and approval-mediated host actions require a daemon authority. Exposure hardening can proceed independently at the delivery boundary. Roadmap owns delivery order and status.
+
+## Design implications
+
+The evidence implies these operator-facing requirements:
+
+- Launch any workspace → auth loads from the correct account automatically; the launch summary shows a one-line health result per axis. If a credential is missing or expiring, the warning appears before the container starts.
+- Token rotates on the host or inside a container → all running containers on live mode see the new token within seconds. `401`-from-rotation is no longer possible.
+- Two parallel containers under the same account → the shared store serializes refresh-token exchanges; no container holds a grant the server has already revoked.
+- Multi-company operator → each workspace reads from its configured credential directory; no manual host-side account switching; parallel sessions for different companies run simultaneously.
+- Credential expires → visible 7 days in advance in `jackin auth status` and the console Auth tab; rotation is a single console action, not a manual copy-paste cycle.
+- Agent needs a new credential mid-session → host-bridge approval prompt; no restart.
+- Credentials never appear in `docker inspect`; tokens are opaque handles inside containers.
+
+## Design constraints across authentication surfaces
+
+**The host is never mutated silently.** Every write jackin❯ makes to host-side credential state must be surfaced in the launch summary or daemon status and must be opt-in through the workspace's chosen auth mode. Read-only access to host credential files is unrestricted. Full rationale: <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> § "Never mutate the host machine silently."
+
+**Token values are never logged.** Every code path that handles raw token values must redact them in debug output, using the same pattern as `GithubAuthContext`'s manual `Debug` impl (`[REDACTED]`). This applies to the pre-launch probe, `jackin auth status`, the daemon log, and every credential-source resolver. No "temporary debug logging" exceptions.
+
+**Container-path convention: `/jackin/` only.** All credential mounts remain under `/jackin/<agent>/`. The shared-store bind-mount goes under `/jackin/auth-shared/<axis>/`. No new top-level container paths.
+
+**One schema version bump per PR.** Changes to `sync_source_dir`, any `sync` → `forward` rename, and the credential-source field each require their own version bump with the full migration artifact set. A single PR must not introduce more than one version.
+
+**Migration safety.** Any `sync`-mode rename requires an automatic migration tested end-to-end by the fixture harness.
+
+## Health-probe constraints
+
+Auth health and operator visibility have three design requirements; [Auth health and operator visibility](/roadmap/auth-health-and-visibility/) owns delivery status:
+
+First, a `probe_auth_health()` function alongside the auth provisioning code, run as part of launch preparation before `docker run`, taking the same resolved inputs `provision_*_auth` takes, checking: credential file exists and is non-empty (sync mode), file parses as valid JSON (Claude, Codex, Amp, OpenCode, Grok), JWT `exp` claim decoded from the payload (no signature check, just the expiry field) with a 7-day warning window, env var set and non-empty (api_key and oauth_token modes). Never makes a network call. Result icons (`✓` / `⚠` / `✗`) in the per-agent auth rows the launch summary already prints.
+
+Second, `jackin auth status` as a new CLI subcommand, walking all configured workspaces (or a named one), resolving auth config per workspace × agent using the same resolution chain the launch path uses, running the probe for each combination, printing a structured health table, with `--json` for scripting. Running-instance health reads from the per-instance manifest; live health queries the daemon socket.
+
+Third, a console Auth-tab health indicator column per agent row (probe result, refreshed lazily when the tab is focused), and a small health glyph on running-instance rows in the workspace sidebar.
+
+## Live-sync architecture
+
+The live bidirectional auth-sync design uses per-axis daemon watcher adapters (`gh`, Claude, Codex, Amp, Kimi, OpenCode). Each adapter watches the host credential source (inotify on Linux, polling on macOS with optional Keychain callbacks where a stable API exists) and writes changes to a flock-protected shared store at `~/.jackin/auth-shared/<axis>/`. A small static `jackin-auth-watcher` binary in the construct image uses inotify on agent credential files inside the container and pushes in-container refreshes to the shared-store bind mount. Containers in `live` mode mount the shared store, while forward/snapshot mode keeps a provisioned snapshot. Conflict resolution is last-writer-wins by `(mtime, checksum)`, with in-container rotation winning over a stale host poll in the same window. See [Live bidirectional auth sync](/roadmap/live-auth-sync/) for current design state.
+
+## Credential-exposure layers
+
+Credential exposure hardening has three separable layers:
+
+- **6a — file mounts instead of env injection.** Move remaining launch-time token delivery from `docker run -e KEY=VALUE` (visible in `docker inspect`) to Compose-secrets-style file mounts for agents that accept file-path credential inputs. Medium risk, no daemon required.
+- **6b — per-command opaque handles via daemon.** The agent receives an opaque handle token from the daemon, not the raw credential value; the daemon verifies the handle before issuing the credential for each use. Tokens never appear in `docker exec` output or container env. This requires daemon authority.
+- **6c — credential proxy.** A Docker Sandboxes-style host-side proxy intercepts outbound API calls from containers and substitutes credentials at the network layer, so tokens never appear in container memory. Long-term target.
+
+See [Container credential exposure](/research/platform/security/credential-exposure/container-credential-exposure/) for the current design state.
+
+## Approval flow
+
+The design for mid-session secret and host-action requests uses a host-bridge MCP server registered in every container: agents call `secret.request(name, scope, reason)` via MCP, the daemon presents an approval prompt to the operator (TouchID on macOS, polkit or terminal password on Linux), and on approval returns an opaque handle scoped to the approved command, the session, or indefinitely per operator choice. A companion `host.run(command, reason)` flow lets agents request single approved host commands. Per-workspace policy controls which requests are always-prompt, pre-approved, or blocked, with all approvals logged. See [Host bridge — secrets and approved host actions](/roadmap/host-bridge/) for the current design state.
+
+## Related work
+
+- [Auth reliability and convenience program](/roadmap/auth-reliability-program/) — the roadmap item this page supports.
+- [Auth overwrite on new tab](/roadmap/auth-overwrite-on-new-tab/), [Auth health and operator visibility](/roadmap/auth-health-and-visibility/), [jackin❯ daemon](/roadmap/jackin-daemon/), [Live bidirectional auth sync](/roadmap/live-auth-sync/), [Credential source pattern](/roadmap/credential-source-pattern/), [Host bridge — secrets and approved host actions](/roadmap/host-bridge/) — owning roadmap items.
+- [Container credential exposure](/research/platform/security/credential-exposure/container-credential-exposure/) — exposure analysis and design constraints.
+- [Reliable Claude authentication strategy](/research/agents/authentication/claude-auth-strategy/) — rationale for the current `sync` / `token` / `ignore` mode set.

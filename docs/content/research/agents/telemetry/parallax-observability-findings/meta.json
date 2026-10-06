@@ -1,0 +1,12 @@
+{
+  "title": "Parallax observability findings",
+  "defaultOpen": false,
+  "pages": [
+    "index",
+    "01-tracing-and-instrumentation",
+    "02-parallax-ui-evidence",
+    "03-raw-data-and-root-causes",
+    "04-signal-contract-and-verification"
+  ]
+}
+

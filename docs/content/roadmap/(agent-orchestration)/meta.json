@@ -1,0 +1,5 @@
+{
+  "title": "Agent orchestration",
+  "defaultOpen": false,
+  "pages": ["(foundation)", "(live-operations)", "(fleet-automation)", "(distributed-work)", "(containment-boundary-contract)", "(containment-egress-recovery)"]
+}

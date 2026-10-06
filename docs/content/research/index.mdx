@@ -1,0 +1,40 @@
+---
+title: Research
+description: Current evidence, comparisons, experiments, and design rationale that inform jackin❯ decisions.
+---
+
+Research answers **what is true, how we know, and what remains uncertain**. It preserves dated evidence and design rationale without turning an investigation into an implementation commitment. Concrete work belongs in the [Roadmap](/roadmap/), which links back to the research that informed it.
+
+## Browse by domain
+
+<Card title="Agents" href="/research/agents/">Orchestration, runtimes, authentication, telemetry, and session capture.</Card>
+
+<Card title="Platform" href="/research/platform/">Runtime architecture, infrastructure, isolation, and security.</Card>
+
+<Card title="Product" href="/research/product/">Desktop, operator experience, product growth, and usage-provider evidence.</Card>
+
+<Card title="Engineering" href="/research/engineering/">CI, build performance, testing, documentation, and verification.</Card>
+
+<Card title="Context & efficiency" href="/research/context/">Context-engine design, token-efficiency techniques, and tool comparisons.</Card>
+
+## Research contract
+
+| Surface | Purpose | Expected shape |
+|---|---|---|
+| Domain or category index | Choose where to begin | Purpose, browse cards, reading guidance, related domains |
+| Dossier index | Orient within a multi-page study | Research question, headline findings, method, limitations, chapter map, related work |
+| Evidence chapter | Follow one line of reasoning | Summary, scope, method, findings, implications, limitations, sources |
+| Standalone study | Understand one bounded question | Summary, question, current evidence, analysis, limitations, sources, related work |
+| Supporting reference | Revisit structured evidence | Purpose, usage guidance, entries, evidence cutoff |
+| Brief | Reproduce an investigation | Repository file under `prompts/research/`; never a published docs page |
+| [Watchlist](/research/watchlist/) | Monitor time-sensitive inputs | Source, signal to monitor, affected research or roadmap work |
+
+## How to read research
+
+Start with a domain, then use its category landing pages to narrow the question. Dossier indexes give the conclusion and reading order before the detailed chapters. Standalone studies answer one bounded question directly. Every research page separates evidence and implications from Roadmap commitments.
+
+Research is current-state documentation. A verification cutoff tells you when volatile evidence was last checked; Git history carries superseded values and the chronology of the investigation.
+
+<Aside type="note">
+Research can recommend or rule out a direction. It does not declare work scheduled. The Roadmap owns implementation status, remaining work, and completion gates.
+</Aside>

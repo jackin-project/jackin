@@ -1,0 +1,106 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
+//! Product projection over `TermRock`'s scoped focus graph.
+
+use ratatui::layout::Rect;
+use termrock::interaction::{FocusGraph, FocusNode};
+
+/// Stable focus identities shared by jackin❯ tabbed surfaces.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SurfaceFocusTarget<Content> {
+    /// The tab strip owns keyboard focus.
+    TabBar,
+    /// A surface-owned content region owns keyboard focus.
+    Content(Content),
+}
+
+/// Two-level tab/content focus backed by `TermRock`'s canonical focus mechanics.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SurfaceFocus<Content> {
+    graph: FocusGraph<SurfaceFocusTarget<Content>>,
+    content: Content,
+}
+
+impl<Content: Clone + Copy + Eq> SurfaceFocus<Content> {
+    /// Create a surface with its tab strip focused.
+    pub fn tab_bar(content: Content) -> Self {
+        Self::new(content, SurfaceFocusTarget::TabBar)
+    }
+
+    /// Create a surface with one content region focused.
+    pub fn content(content: Content) -> Self {
+        Self::new(content, SurfaceFocusTarget::Content(content))
+    }
+
+    fn new(content: Content, focused: SurfaceFocusTarget<Content>) -> Self {
+        let mut state = Self {
+            graph: FocusGraph::new(),
+            content,
+        };
+        state.register();
+        drop(state.graph.request_focus(focused));
+        state
+    }
+
+    fn register(&mut self) {
+        self.graph.begin_frame();
+        // No painted geometry exists at this seam; zero areas keep the graph
+        // to pure keyboard identity, never hit testing.
+        self.graph.register(FocusNode::leaf(
+            SurfaceFocusTarget::TabBar,
+            Rect::new(0, 0, 0, 0),
+        ));
+        self.graph.register(FocusNode::leaf(
+            SurfaceFocusTarget::Content(self.content),
+            Rect::new(0, 0, 0, 0),
+        ));
+    }
+
+    /// Return the currently focused product identity.
+    pub fn focused(&self) -> SurfaceFocusTarget<Content> {
+        self.graph
+            .focused()
+            .copied()
+            .unwrap_or(SurfaceFocusTarget::TabBar)
+    }
+
+    /// Return the focused content identity, if content owns focus.
+    pub fn focused_content(&self) -> Option<Content> {
+        match self.focused() {
+            SurfaceFocusTarget::Content(content) => Some(content),
+            SurfaceFocusTarget::TabBar => None,
+        }
+    }
+
+    /// Move focus to the tab strip.
+    pub fn focus_tab_bar(&mut self) {
+        self.register();
+        drop(self.graph.request_focus(SurfaceFocusTarget::TabBar));
+    }
+
+    /// Move focus to a content identity.
+    pub fn focus_content(&mut self, content: Content) {
+        self.content = content;
+        self.register();
+        drop(
+            self.graph
+                .request_focus(SurfaceFocusTarget::Content(content)),
+        );
+    }
+
+    /// Whether the tab strip owns focus.
+    pub fn is_tab_bar(&self) -> bool {
+        matches!(self.focused(), SurfaceFocusTarget::TabBar)
+    }
+
+    /// Whether the given content identity owns focus.
+    pub fn is_content(&self, content: Content) -> bool {
+        self.graph.is_focused(&SurfaceFocusTarget::Content(content))
+    }
+
+    /// Whether a content identity should expose its focused cursor.
+    pub fn show_cursor_for(&self, content: &Content) -> bool {
+        self.is_content(*content)
+    }
+}

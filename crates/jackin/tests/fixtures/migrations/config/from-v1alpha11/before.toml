@@ -1,0 +1,13 @@
+version = "v1alpha11"
+
+[accounts.personal]
+name = "Personal"
+provider = "anthropic"
+
+[accounts.personal.credential]
+type = "api_key"
+value = "$ANTHROPIC_API_KEY"
+
+[bootstrap]
+version = 1
+fresh_install = false

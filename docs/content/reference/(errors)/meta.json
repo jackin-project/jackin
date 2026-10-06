@@ -1,0 +1,22 @@
+{
+  "title": "Error Reference",
+  "defaultOpen": false,
+  "pages": [
+    "../errors/index",
+    "../errors/E001",
+    "../errors/E002",
+    "../errors/E003",
+    "../errors/E004",
+    "../errors/E005",
+    "../errors/E006",
+    "../errors/E007",
+    "../errors/E008",
+    "../errors/E009",
+    "../errors/E010",
+    "../errors/E011",
+    "../errors/E012",
+    "../errors/E013",
+    "../errors/E014",
+    "../errors/E015"
+  ]
+}

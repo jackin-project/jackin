@@ -1,0 +1,462 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
+//! Miscellaneous Multiplexer utility methods.
+
+use super::{
+    Dialog, FullRedrawReason, MAX_SESSIONS, MAX_TABS, Multiplexer, PaletteCloseLabel, Result,
+    SESSION_ENV_PASSTHROUGH, SessionInfo,
+};
+
+impl Multiplexer {
+    pub(super) fn env_for_spawn(&self, overrides: &[(String, String)]) -> Vec<(String, String)> {
+        let mut env = self.launch_env.env_passthrough.clone();
+        for (key, value) in overrides {
+            if !SESSION_ENV_PASSTHROUGH.iter().any(|allowed| allowed == key) {
+                continue;
+            }
+            if let Some((_, existing)) =
+                env.iter_mut().find(|(existing_key, _)| existing_key == key)
+            {
+                *existing = value.clone();
+            } else {
+                env.push((key.clone(), value.clone()));
+            }
+        }
+        env
+    }
+
+    pub(super) fn open_command_palette(&mut self) {
+        let close_label = PaletteCloseLabel::for_pane_count(self.active_tab_pane_count());
+        self.dialog_push(Dialog::new_command_palette(close_label));
+    }
+
+    /// Terminal geometry + identity for a new session's grid. The single
+    /// construction point for `SessionTerminal` so both spawn paths (new tab,
+    /// split) carry the attach client's reported colors.
+    pub(super) fn session_terminal(&self, rows: u16, cols: u16) -> crate::session::SessionTerminal {
+        crate::session::SessionTerminal {
+            rows,
+            cols,
+            row_arena: self.render.terminal_row_arena.clone(),
+            default_fg: self.client_registry.attached_terminal.default_fg,
+            default_bg: self.client_registry.attached_terminal.default_bg,
+        }
+    }
+
+    /// Re-apply the attached client's terminal colors to every live grid.
+    /// Called on (re)attach: a container can be reattached from a terminal
+    /// with a different palette, and agents that query OSC 10/11 later must
+    /// see the current client's colors. A client that could not read its
+    /// palette reports `None`, which keeps each grid's previous colors —
+    /// the last known answer beats resetting to the baked-in default.
+    pub(super) fn apply_client_colors_to_sessions(&mut self) {
+        let fg = self.client_registry.attached_terminal.default_fg;
+        let bg = self.client_registry.attached_terminal.default_bg;
+        for session in self.session_supervisor.sessions.values_mut() {
+            session.shadow_grid.set_reported_colors(fg, bg);
+        }
+    }
+
+    /// Bound the per-container surface for any path that allocates a
+    /// new PTY (top-level spawn, split, etc.). All such paths must
+    /// route through here so `MAX_TABS` / `MAX_SESSIONS` are enforced
+    /// uniformly — runaway-mis-click defence. `add_tab=true` enforces
+    /// both caps; `add_tab=false` enforces only `MAX_SESSIONS` because
+    /// the caller is reusing an existing tab.
+    pub(super) fn ensure_capacity_for_new_session(&self, add_tab: bool) -> Result<()> {
+        if add_tab && self.session_supervisor.tabs.len() >= MAX_TABS {
+            anyhow::bail!(crate::tui::view::tab_limit_failure_message(MAX_TABS));
+        }
+        if self.session_supervisor.sessions.len() >= MAX_SESSIONS {
+            anyhow::bail!(crate::tui::view::pane_limit_failure_message(MAX_SESSIONS));
+        }
+        Ok(())
+    }
+
+    /// True when there are no sessions left.
+    /// `sessions.is_empty()` covers the operator-explicitly-killed-all
+    /// case; `all !alive` covers the natural-exit case (every agent /
+    /// shell process closed its PTY).
+    pub(super) fn no_live_sessions(&self) -> bool {
+        self.session_supervisor.sessions.is_empty()
+    }
+
+    /// Record a state change that can affect the visible frame. Handlers
+    /// only mutate state and call this; the render loop composes when the
+    /// generation moved. `FirstAttach` and `Resize` additionally arm the
+    /// wipe policy — the only two reasons whose next frame starts with a
+    /// screen erase.
+    pub(super) fn invalidate(&mut self, reason: FullRedrawReason) {
+        self.render.frame_generation = self.render.frame_generation.wrapping_add(1);
+        self.render.last_invalidate_reason = Some(reason);
+        if matches!(
+            reason,
+            FullRedrawReason::FirstAttach | FullRedrawReason::Resize
+        ) {
+            self.render.wipe_pending = Some(reason);
+        }
+    }
+
+    pub(super) fn has_pending_render(&self) -> bool {
+        self.render.frame_generation != self.render.rendered_generation
+    }
+
+    pub(super) fn focused_usage_snapshot(&mut self) -> jackin_protocol::control::FocusedUsageView {
+        self.focused_usage_snapshot_for_provider(None)
+    }
+
+    /// Agent codename and provider label of the currently focused session.
+    fn focused_agent_provider(
+        &self,
+    ) -> (
+        Option<String>,
+        Option<String>,
+        Option<jackin_protocol::usage_broker::UsageAccountCapability>,
+    ) {
+        self.active_focused_id()
+            .and_then(|id| self.session_supervisor.sessions.get(id))
+            .map_or((None, None, None), |session| {
+                (
+                    session.agent.clone(),
+                    session.provider.as_ref().map(|p| p.label.clone()),
+                    session.usage_capability.clone(),
+                )
+            })
+    }
+
+    pub(super) fn focused_usage_status_label(&self) -> Option<String> {
+        let (agent, provider, capability) = self.focused_agent_provider();
+        self.usage
+            .usage_cache
+            .focused_status_bar_label_for_capability(
+                agent.as_deref(),
+                provider.as_deref(),
+                capability.as_ref(),
+            )
+    }
+
+    pub(super) fn focused_usage_snapshot_for_provider(
+        &mut self,
+        provider_label: Option<&str>,
+    ) -> jackin_protocol::control::FocusedUsageView {
+        let (agent, provider, capability) = self.focused_agent_provider();
+        if agent.is_none() && self.launch_env.available_instances.is_empty() {
+            return jackin_protocol::control::FocusedUsageView::unavailable(
+                "No agent instances configured for this Capsule.",
+                chrono::Utc::now().timestamp(),
+            );
+        }
+        let provider = provider_label
+            .map(str::to_owned)
+            .or_else(|| provider.as_ref().map(ToOwned::to_owned));
+        self.usage.usage_cache.focused_snapshot_for_capability(
+            agent.as_deref(),
+            provider.as_deref(),
+            capability.as_ref(),
+        )
+    }
+
+    pub(super) fn request_usage_refresh_for_provider(&mut self, provider_label: Option<&str>) {
+        self.usage.pending_usage_refresh = self.usage_refresh_target_for_provider(provider_label);
+        self.decorate_open_usage_dialog_refreshing();
+    }
+
+    fn usage_refresh_target_for_provider(
+        &self,
+        provider_label: Option<&str>,
+    ) -> Option<crate::usage::UsageRefreshTarget> {
+        let session = self
+            .active_focused_id()
+            .and_then(|id| self.session_supervisor.sessions.get(id))?;
+        let agent = session.agent.clone()?;
+        let provider = provider_label
+            .map(str::to_owned)
+            .or_else(|| session.provider.as_ref().map(|p| p.label.clone()));
+        let capability = session.usage_capability.clone()?;
+        Some(crate::usage::UsageRefreshTarget {
+            agent,
+            provider,
+            capability,
+        })
+    }
+
+    pub(super) fn spawn_active_usage_account_refresh(&mut self) -> bool {
+        if self.usage.usage_refresh_task.is_some() {
+            return false;
+        }
+        let active_targets = self
+            .session_supervisor
+            .sessions
+            .values()
+            .filter_map(session_refresh_target)
+            .collect::<Vec<_>>();
+        let focused = self
+            .active_focused_id()
+            .and_then(|id| self.session_supervisor.sessions.get(id))
+            .and_then(session_refresh_target);
+        let manual = self.usage.pending_usage_refresh.take();
+        let focused = manual.clone().or(focused);
+        if active_targets.is_empty() && focused.is_none() {
+            return false;
+        }
+        self.usage.usage_refresh_task = Some(jackin_telemetry::spawn::joined_blocking(move || {
+            let client = jackin_usage::host::UsageBrokerClient::scoped_relay();
+            refresh_usage_targets_with_client(&client, active_targets, focused, manual.as_ref())
+        }));
+        true
+    }
+
+    pub(super) async fn finish_usage_account_refresh_if_ready(&mut self) -> bool {
+        let Some(task) = self.usage.usage_refresh_task.as_ref() else {
+            return false;
+        };
+        if !task.is_finished() {
+            return false;
+        }
+        let Some(task) = self.usage.usage_refresh_task.take() else {
+            return false;
+        };
+        match task.await {
+            Ok(refreshes) => {
+                for refresh in refreshes {
+                    match refresh.result {
+                        Ok(state) => self
+                            .usage
+                            .usage_cache
+                            .adopt_broker_generation(&refresh.target, &state),
+                        Err(error) => self
+                            .usage
+                            .usage_cache
+                            .adopt_broker_error(&refresh.target, &error),
+                    }
+                }
+                true
+            }
+            Err(error) => {
+                let error_type = if error.is_panic() {
+                    jackin_telemetry::schema::enums::ErrorType::Panic
+                } else {
+                    jackin_telemetry::schema::enums::ErrorType::DependencyCancelled
+                };
+                let _error = jackin_telemetry::record_error(error_type);
+                false
+            }
+        }
+    }
+
+    pub(super) fn refresh_open_usage_dialog_from_cache(&mut self) -> bool {
+        let Some((selected, provider_label)) = self.open_usage_dialog_selection() else {
+            return false;
+        };
+        let mut view = self.focused_usage_snapshot_for_provider(provider_label.as_deref());
+        // "Refreshing" is derived from observable truth — a refresh task is
+        // actually in flight — not from the `pending_usage_refresh` scheduling
+        // flag (which lingered Some and stuck the marker onto Fresh data). The
+        // decorate fn additionally no-ops on a Fresh snapshot, so a loaded view
+        // is never annotated as refreshing (Bug 1).
+        if self.usage.usage_refresh_task.is_some() {
+            decorate_usage_view_refreshing(&mut view);
+        }
+        if let Some(Dialog::Usage {
+            view: current,
+            selected: current_selected,
+            ..
+        }) = self.dialog_top_mut()
+        {
+            if **current == view && *current_selected == selected {
+                return false;
+            }
+            **current = view;
+            *current_selected = selected;
+            return true;
+        }
+        false
+    }
+
+    fn decorate_open_usage_dialog_refreshing(&mut self) {
+        // Same truth source as `refresh_open_usage_dialog_from_cache`: only an
+        // in-flight task drives the marker, never the scheduling flag (Bug 1).
+        if self.usage.usage_refresh_task.is_none() {
+            return;
+        }
+        if let Some(Dialog::Usage { view, .. }) = self.dialog_top_mut() {
+            decorate_usage_view_refreshing(view);
+        }
+    }
+
+    fn open_usage_dialog_selection(
+        &self,
+    ) -> Option<(
+        crate::tui::components::dialog::UsageDialogTab,
+        Option<String>,
+    )> {
+        let Dialog::Usage { view, selected, .. } = self.dialog_top()? else {
+            return None;
+        };
+        let provider = (*selected == crate::tui::components::dialog::UsageDialogTab::Provider)
+            .then(|| view.focused_provider.clone())
+            .flatten();
+        Some((*selected, provider))
+    }
+
+    pub(super) fn session_infos(&self) -> Vec<SessionInfo> {
+        let focused = self.active_focused_id();
+        self.session_supervisor
+            .sessions
+            .iter()
+            .map(|(id, s)| SessionInfo {
+                id,
+                label: s.label.clone(),
+                agent: s.agent.clone(),
+                account_id: s.account_id.clone(),
+                state: s.state,
+                active: Some(id) == focused,
+            })
+            .collect()
+    }
+
+    /// Build a tab/pane tree snapshot for the host console's preview
+    /// pane. The leaf order matches `PaneTree::leaves` so the operator
+    /// sees panes in the same left-to-right / top-to-bottom order the
+    /// multiplexer renders. Missing sessions (race against a kill)
+    /// fall back to a placeholder so the snapshot still covers every
+    /// leaf the tree references — the host UI can dim those rows.
+    pub(super) fn tab_snapshots(&self) -> Vec<crate::protocol::control::TabSnapshot> {
+        use crate::protocol::control::{PaneSnapshot, TabSnapshot};
+        use crate::tui::layout::Rect;
+        let placeholder_rect = Rect::new(0, 0, self.render.term_rows, self.render.term_cols);
+        self.session_supervisor
+            .tabs
+            .iter()
+            .map(|tab| {
+                let panes = tab
+                    .tree
+                    .leaves(placeholder_rect)
+                    .into_iter()
+                    .map(|(id, _)| match self.session_supervisor.sessions.get(id) {
+                        Some(session) => PaneSnapshot {
+                            session_id: id,
+                            label: session.label.clone(),
+                            agent: session.agent.clone(),
+                            account_id: session.account_id.clone(),
+                            state: session.state,
+                            agent_status_report: Some(session.status.report(session.agent.clone())),
+                        },
+                        None => PaneSnapshot {
+                            session_id: id,
+                            label: "(missing)".to_owned(),
+                            agent: None,
+                            account_id: None,
+                            state: crate::protocol::control::AgentState::Idle,
+                            agent_status_report: None,
+                        },
+                    })
+                    .collect();
+                TabSnapshot {
+                    label: tab.label_owned(),
+                    instance: tab.instance.clone(),
+                    account_id: tab.account_id.clone(),
+                    focused_pane: tab.focused_id,
+                    panes,
+                }
+            })
+            .collect()
+    }
+
+    /// Snapshot the agent history for the control-channel `Agents` query.
+    /// Active agents have `exited_at == None`; exited agents have a timestamp.
+    pub(super) fn agent_registry_snapshot(
+        &self,
+    ) -> Vec<jackin_protocol::control::AgentRegistryEntry> {
+        self.session_supervisor
+            .agent_history
+            .iter()
+            .map(|r| jackin_protocol::control::AgentRegistryEntry {
+                codename: r.codename.clone(),
+                agent: r.agent.clone(),
+                account_id: r.account_id.clone(),
+                provider: r.provider.clone(),
+                started_at: r.started_at.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
+                exited_at: r
+                    .exited_at
+                    .map(|t| t.format("%Y-%m-%dT%H:%M:%SZ").to_string()),
+                status: if r.exited_at.is_some() {
+                    "exited".to_owned()
+                } else {
+                    "active".to_owned()
+                },
+                // is_self is determined client-side from JACKIN_AGENT_CODENAME.
+                is_self: false,
+            })
+            .collect()
+    }
+}
+
+pub(super) fn refresh_usage_targets_with_client(
+    client: &jackin_usage::host::UsageBrokerClient,
+    active_targets: Vec<crate::usage::UsageRefreshTarget>,
+    focused: Option<crate::usage::UsageRefreshTarget>,
+    manual: Option<&crate::usage::UsageRefreshTarget>,
+) -> Vec<super::BrokerUsageRefresh> {
+    let mut requests = std::collections::BTreeMap::new();
+    for target in active_targets.into_iter().chain(focused) {
+        let force = manual == Some(&target);
+        requests
+            .entry(target.capability.clone())
+            .and_modify(|(_, existing_force)| *existing_force |= force)
+            .or_insert((target, force));
+    }
+    requests
+        .into_iter()
+        .map(|(capability, (target, force))| {
+            let result = client
+                .current_for_capability(capability.clone())
+                .and_then(|current| {
+                    client.refresh_for_capability(capability.clone(), current.generation, force)
+                })
+                .and_then(|state| {
+                    if state.phase.is_active() {
+                        client.join_for_capability(
+                            capability,
+                            state.generation,
+                            std::time::Duration::from_secs(30),
+                        )
+                    } else {
+                        Ok(state)
+                    }
+                });
+            super::BrokerUsageRefresh { target, result }
+        })
+        .collect()
+}
+
+/// Build a usage refresh target from a session, if it has an agent codename.
+fn session_refresh_target(
+    session: &crate::session::Session,
+) -> Option<crate::usage::UsageRefreshTarget> {
+    session.agent.as_ref().and_then(|agent| {
+        session
+            .usage_capability
+            .clone()
+            .map(|capability| crate::usage::UsageRefreshTarget {
+                agent: agent.clone(),
+                provider: session.provider.as_ref().map(|p| p.label.clone()),
+                capability,
+            })
+    })
+}
+
+fn decorate_usage_view_refreshing(view: &mut jackin_protocol::control::FocusedUsageView) {
+    // Never annotate a Fresh snapshot as "refreshing" — the marker is only for a
+    // view that is still loading/stale while a refresh runs. A Fresh view that is
+    // being re-fetched in the background updates its timestamp on completion
+    // instead, so the status bar never reads the contradictory
+    // `Updated just now · refreshing...` (Bug 1).
+    if view.status == jackin_protocol::control::UsageSnapshotStatus::Fresh {
+        return;
+    }
+    if !view.updated_label.contains("refreshing") {
+        view.updated_label.push_str(" · refreshing...");
+    }
+}

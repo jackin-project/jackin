@@ -1,0 +1,52 @@
+---
+title: "smolvm backend"
+description: "Evaluates smolvm as an open macOS microVM backend for workloads that need stronger isolation than hardened Docker."
+---
+
+**Research state:** Current
+
+Verification cutoff: 2026-06-10. The evidence reflects smolvm 1.0.1 and the comparison in the [Apple Container 1.0 landscape](/research/platform/isolation/apple-container-1-0-landscape/).
+
+## Research question
+
+Can smolvm provide jackin❯ with a small, open, Rust-native backend for workloads that need a stronger boundary than hardened Docker while preserving OCI-image and role ergonomics?
+
+## Headline findings
+
+- smolvm gives each workload its own kernel through libkrun and Hypervisor.framework on macOS. This addresses the shared-kernel escape class that container hardening can reduce but not remove.
+- OCI images are supported, but `smolvm-agent` remains PID 1 and launches the image entrypoint under embedded `crun`. Runtime behavior is therefore not identical to starting the image directly.
+- Docker inside smolvm is technically demonstrated, but requires virtio-net and ext4-backed `/var/lib/docker`; TSI alone and ramfs-backed Docker storage are insufficient.
+- The Rust library exists in the workspace but is not a published, supported Rust SDK. The supported integration surfaces are the CLI and an axum HTTP API over a Unix socket or loopback TCP.
+- smolvm does not provide Docker Sandboxes' productized credential proxy or policy surface. TSI operates below TLS and cannot inject HTTPS credentials by itself.
+- smolvm 1.0.1 provides VM fork, elastic memory through virtio-balloon, deny-by-default networking with explicit host access, and host-custodied SSH-agent forwarding.
+- Apple Container is the preferred native macOS path when it satisfies Docker-inside compatibility. smolvm remains the open fallback candidate; this research is not an implementation commitment.
+
+## Method and evidence
+
+The study reviewed smolvm 1.0.1 and its current upstream sources. Repository-level claims cite the exact upstream files in [Architecture and compatibility](/research/platform/isolation/smolvm-backend/01-architecture-and-compatibility/).
+
+No hands-on jackin❯ workload validation was completed. Performance, interactive attach, Docker-in-VM behavior, signing, networking, and cleanup therefore remain validation questions rather than established product behavior.
+
+## Limitations and open questions
+
+- Can representative role images boot without entrypoint, init, signal, or filesystem regressions?
+- Does nested Docker pass Compose, Testcontainers, BuildKit, port publishing, and cleanup tests?
+- Can jackin❯ obtain reliable PTY, resize, signal, exit-status, and log behavior through the available API or CLI?
+- What signing and distribution process is required for Hypervisor.framework entitlement and bundled libkrun artifacts?
+- Can network-deny and allow-host policy be enforced and explained at least as clearly as the existing Docker backend?
+- Is the operational surface acceptable without a supported Rust SDK?
+
+## How to read
+
+| Page | Purpose |
+|---|---|
+| [Architecture and compatibility](/research/platform/isolation/smolvm-backend/01-architecture-and-compatibility/) | Verified runtime internals, packaging, networking, Docker compatibility, and integration boundaries. |
+| [Alternatives and decision](/research/platform/isolation/smolvm-backend/02-alternatives-and-decision/) | Threat model, comparison with Docker Sandboxes and Apple Container, and the current decision. |
+
+## Related work
+
+- [Apple Container backend](/research/platform/isolation/apple-container-backend/)
+- [OrbStack isolated machines](/research/platform/isolation/orbstack-isolated-machines/)
+- [Agent isolation architecture](/research/platform/security/isolation-architecture/)
+- [Docker runtime hardening contract](/roadmap/docker-runtime-hardening-contract/)
+- [Apple Container backend roadmap](/roadmap/apple-container-backend/)

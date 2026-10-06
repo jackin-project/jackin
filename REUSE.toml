@@ -1,0 +1,25 @@
+version = 1
+
+SPDX-PackageName = "jackin"
+SPDX-PackageSupplier = "Alexey Zhokhov <alexey@zhokhov.com>"
+SPDX-PackageDownloadLocation = "https://github.com/jackin-project/jackin"
+SPDX-PackageOriginator = "Person: Alexey Zhokhov"
+
+# Declare copyright and license for the whole repository. Source files also
+# carry an inline SPDX header; "aggregate" merges the two without conflict.
+# Files that cannot hold a comment header (JSON, Markdown, lock files, images)
+# and any build-plumbing intentionally left without an inline header are
+# covered by this annotation.
+#
+# jackin carve-out (intentional, NOT a gap): the files under docker/construct/**,
+# docker-bake.hcl, crates/jackin-xtask/**, and .github/workflows/construct.yml
+# carry NO inline SPDX header. Adding one trips the construct CI pipeline's
+# path filter, which forces a construct-image rebuild and a version-unpublished
+# check (docker/construct/VERSION). Those files remain Apache-2.0 via this
+# block — do NOT add inline headers to them without first bumping
+# docker/construct/VERSION and intending a construct release.
+[[annotations]]
+path = "**"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Alexey Zhokhov"
+SPDX-License-Identifier = "Apache-2.0"

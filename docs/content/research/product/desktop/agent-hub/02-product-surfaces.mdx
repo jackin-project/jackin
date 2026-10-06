@@ -1,0 +1,187 @@
+---
+title: "02 — Agent Hub product surfaces"
+description: Defines the menu bar, workspace, pull-request, account, and desktop-window surfaces for supervising agent sessions.
+---
+
+## Summary
+
+The menu bar answers whether operator attention is needed; the desktop window supports deeper pull-request, project, workspace, running-agent, and account inspection. Both remain daemon-backed and optional.
+
+## Question and scope
+
+What information and actions belong in the Agent Hub glance surface, drill-down menus, and native desktop window?
+
+
+## Method
+
+The surface model applies the dossier’s comparative references to jackin❯ workspace, session, pull-request, attention, account-limit, and daemon state.
+
+## Findings
+
+### Menu bar item
+
+The menu bar item should answer one question at a glance: "Do I need to look at
+jackin❯ right now?"
+
+Proposed states:
+
+- Idle: no running jackin❯ roles.
+- Running: one or more active workspaces, with a compact count.
+- Waiting: at least one agent has called `attention.waiting` or inferred idle
+  waiting. This should visually dominate running state.
+- Ready for review: an agent has pushed or reported a PR as ready.
+- Auth/account warning: Claude, Codex, Amp, Kimi, or OpenCode account status requires operator
+  action.
+- Daemon disconnected: Desktop cannot reach the jackin❯ daemon.
+
+The menu bar label should be conservative:
+
+- Icon only by default.
+- Optional text: `3` active sessions, `2 wait` when attention is required, or the most constrained active account when quota is the highest-risk status.
+- Quota visibility is first-class and on by default for active sessions: `Claude 36%`, `Codex 18%`, `Amp login`, or a compact ring/gauge icon. The status item can stay visually quiet, but the operator must be able to see low quota, stale quota, or auth failure from the menu bar without opening the full Desktop window.
+- The popover must explain the provider, account, quota window, reset time, freshness, and source before the operator trusts the number.
+
+### Main menu
+
+The main menu should be PR-first, then workspace-aware. The fastest path should be: open the status item, pick the PR, land in GitHub. Workspaces matter because they explain which local jackin❯ sessions and repositories are currently active, but the operator's day-to-day decision is usually "which pull request do I need to open now?"
+
+1. Header: daemon status, active session count, last refresh time.
+2. My open pull requests: PRs created by the operator, sorted newest first, with direct browser actions.
+3. Active projects: repositories recently touched by jackin❯ work, grouped by owner/org and filterable later in the app window.
+4. Active workspaces: each row shows workspace name, repo/branch, role, agent, container state, last event, and primary action.
+5. Ready for review: PR rows promoted to the top when an agent explicitly reports a PR as ready.
+6. Accounts: cards for the configured built-in jackin❯ runtimes (Claude, Codex, Amp, Kimi, OpenCode), one or more accounts each.
+7. Recent / saved workspaces: launch shortcuts for jackin❯ workspaces not currently running.
+8. Footer: Open Desktop, Refresh, Open Console, Settings, Quit.
+
+Account rows follow the [Token & Cost Telemetry](/research/agents/telemetry/token-cost-telemetry/) account-snapshot model: quota window, reset time, source, stale/error state, confidence label, and repair action. The jackin❯ daemon is the data source; Tokemon, Token Tracker, Brim, MeterBar, CodexBar, and OpenUsage are comparison references.
+
+The menu should be usable without opening the full Desktop window. A first-pass
+shape:
+
+```text
+jackin❯
+  Running: 3 workspaces                         Last refresh 10s ago
+
+  My open PRs
+    jackin-project/jackin       #299 Desktop Agent Hub        2m ago  Open
+    acme/backend                #184 auth sync cleanup        1h ago  Open
+    tailrocks/site              #72 docs pass                 2d ago  Open
+
+  Active projects
+    jackin-project/jackin       1 workspace   2 agents   1 PR
+      Open project on GitHub
+      Open pull requests
+
+  Active workspaces
+    jackin-project/jackin
+      Role: the-architect       Agent: Codex      Branch: docs/desktop-hub
+      Open PR #299
+      Open repository on GitHub
+      Open in Ghostty
+      Stop role
+
+    acme/backend
+      Role: backend-engineer    Agent: Claude     Branch: feature/live-auth
+      No PR detected
+      Open repository on GitHub
+      Open pull requests page
+      Open in Ghostty
+
+  Saved workspaces
+    jackin-project/jackin       Start...
+    tailrocks/site              Start...
+
+  Accounts
+    Claude Enterprise           36% left          resets 3h    provider
+    Claude Personal             88% left          resets 4h    provider
+    Codex Personal              62% left          resets 2h    provider
+    Amp Personal                needs login
+```
+
+This is closer to a compact operations menu than a dashboard. The default click target for a PR row opens the PR in the browser. Holding Option or opening the submenu can expose secondary actions like copy URL, open checks, copy branch, or reveal the workspace that produced the PR.
+
+The **My open PRs** section is intentionally inspired by GitHub's authenticated pull-request inbox (`https://github.com/pulls/inbox`): a compact, always-available view of active pull requests. jackin❯ should not clone GitHub's full UI or attempt to show every GitHub detail. It should take the useful idea — a focused inbox for the work the operator is actively responsible for — and scope it to recently active jackin❯ projects plus optional org/project filters.
+
+### Workspace drill-down
+
+Every workspace row should be a small hierarchy:
+
+1. Workspace row: name, active/running state, number of repositories mounted,
+   number of running roles, and last relevant event.
+2. Repository rows under that workspace: each Git remote detected from mounted
+   repos or worktrees, with branch and dirty/ahead/behind status when cheap.
+3. Repository actions:
+   - Open repository on GitHub.
+   - Open repository in Finder / editor.
+   - Open pull requests page for that repository.
+   - Open current branch PR if one exists.
+   - Copy remote URL / branch name.
+
+This solves the "I cannot currently see those repositories" pain directly:
+jackin❯ desktop should only show repositories that belong to jackin❯ workspaces
+or running sessions, not the entire disk and not every GitHub repository the
+account can access.
+
+Workspace row actions:
+
+- Open Ghostty / hardline into the running role.
+- Open PR in browser.
+- Open repository in editor or Finder.
+- Copy branch name.
+- Stop / eject role.
+- Mute attention for this workspace.
+
+### Desktop window
+
+The status item is the glance surface; the window should stay simple for the first version. Do not port the full `jackin console` workspace editor into macOS yet. The existing TUI is already the right place for creating/editing workspace settings, mounts, roles, secrets, and auth. The desktop window should help the operator see current focus, launch existing workspaces, monitor running agents, inspect account-limit state, and open PRs quickly.
+
+Recommended layout:
+
+- `NavigationSplitView`.
+- Sidebar: Pull Requests, Projects, Workspaces, Running Agents, Accounts, Settings.
+- Pull Requests: an inbox-style list of open PRs authored by the operator, newest first, with filters for organization, project/repository, workspace-linked only, draft/open, and ready-for-review.
+- Projects: GitHub repositories jackin❯ has seen recently through saved workspaces, running sessions, mounted repos, branch activity, or PR tracking. This is not "all GitHub repositories"; it is the operator's current working set.
+- Workspaces: saved jackin❯ workspaces with a launch button, active/running badge, number of running agents, primary repositories, and last activity. No create/edit form in v1.
+- Running Agents: current role containers grouped by workspace/project, with agent runtime, role, branch, PR, attention state, focused-account quota, and stop/hardline/open actions.
+- Accounts: Claude/Codex/Amp/Kimi/OpenCode account cards with source, plan/quota, reset time, confidence, last refresh, stale/error state, and repair/login actions.
+- Accounts: limits-only inspection showing used or remaining percentage, reset countdown, plan, status, provenance, and provider-supplied caps.
+
+Compact visibility rule: every Desktop view that can start, focus, or stop an agent should show the active account quota beside that agent. The full Accounts screen is for inspection; the Running Agents, Workspaces, and menu-bar surfaces are for immediate "can I safely keep working?" decisions.
+
+Launching a workspace from the app should always use Ghostty in v1. The app can open a new Ghostty tab or new Ghostty window and run the appropriate `jackin load` / `jackin hardline` flow with `--debug` only for operator-requested smoke validation, not normal app launches. Other terminal adapters are out of scope until the Ghostty path proves the product shape.
+
+The desktop app must remain optional. Installing `jackin` CLI should not require
+the app. Installing the app should require or bootstrap a compatible `jackin`
+CLI and daemon.
+
+Desktop should treat the daemon as its primary data plane. The status bar and
+window ask the daemon for workspace, session, GitHub PR, account, attention,
+and host-bridge state because the daemon is the component that can keep those
+statuses warm and reactive. Direct CLI calls from the app are reserved for
+one-shot actions or fallback cases where the daemon is unavailable, broken, or
+would make the UI/UX worse.
+
+The Desktop account UI should not try to reconcile conflicting numbers silently. If provider quota says "64% used" and local logs imply "31% used," the row shows Provider quota as the enforced availability; local token or cost estimates are not rendered. This is the core accuracy distinction from the [Token & Cost Telemetry](/research/agents/telemetry/token-cost-telemetry/) roadmap item.
+
+
+
+## Implications for jackin❯
+
+Keep the menu bar glanceable and attention-led; reserve the desktop window for deeper inspection and route all mutable actions through daemon-owned contracts.
+
+## Limitations and unknowns
+
+- Validate information density and keyboard access with a native prototype.
+- Confirm the Ghostty launch/focus contract: tab, window, or operator preference.
+- Confirm whether quota can remain legible in the status item without crowding session attention.
+
+## Sources
+
+- [Native desktop references](/research/product/desktop/agent-hub/01-native-desktop-references/)
+- [Apple menu bar guidance](https://developer.apple.com/design/human-interface-guidelines/the-menu-bar)
+
+## Related work
+
+- [Agent Hub overview](/research/product/desktop/agent-hub/)
+- [Daemon and integration architecture](/research/product/desktop/agent-hub/03-daemon-integration-architecture/)

@@ -1,0 +1,132 @@
+---
+title: "Agent orchestration open questions and sources"
+description: "Collects unresolved orchestration design questions, scope boundaries, related work, and primary comparative sources."
+---
+
+## Summary
+
+The remaining decisions concern contract surfaces, network defaults, integration ownership, task identity, credentials, service access, and persistence budgets.
+
+## Question and scope
+
+Which questions remain unresolved after the comparative synthesis, what is outside this program, and which sources support the dossier?
+
+## Method
+
+This supporting chapter preserves the primary-source catalog and links each unresolved decision back to the dossier's current synthesis.
+
+## Findings
+
+Seven decisions remain open: session-contract shape, network defaults, integration ownership, task-source identity, credential-proxy ownership, service exposure, and persistence budgets. Each has a recommended design default, but delivery authority remains with its owning roadmap item.
+
+## Implications for jackin❯
+
+Resolve these questions in the owning roadmap or design work; research preserves the rationale and evidence rather than execution sequencing.
+
+## Limitations and unknowns
+
+1. **Session contract surface.** Should `jackin explain` be its own command,
+   a `--dry-run --explain` mode on `load`, or both? Recommended default:
+   both, with `jackin explain` optimized for scripts and docs.
+2. **Network policy baseline.** Should the default be open networking with a
+   contract warning, or a minimal allowlist for known agent providers plus
+   package registries? Recommended default: open in `dind` V1, explicit
+   allowlist for future microVM backends that can enforce it outside the guest.
+3. **Stack integration ownership.** Are integration hints global, role-owned,
+   workspace-owned, or repo-recommended with operator approval? Recommended
+   default: global built-ins plus repo-recommended names that require
+   hash-based operator approval.
+4. **Task source identity.** Is a task source workspace-bound, agent-bound, or
+   operator-global? Recommended default: workspace-bound, since parallelism
+   limits naturally scope to one workspace's resources.
+5. **Credential proxy destination.** Is the host bridge the long-term place for
+   credential proxying, or should sandbox backends own it? Recommended default:
+   host bridge owns operator approval and audit; backends own transport.
+6. **Service access model.** Should port publication be workspace config,
+   per-session command, console action, or all three? Recommended default:
+   command/console action first, config only for stable dev servers; always
+   show active mappings in the contract/status surface.
+7. **Persistence budget.** Should jackin❯ show per-instance disk usage and
+   cleanup recommendations before adding microVM/private-daemon backends?
+   Recommended default: yes, because Docker Sandboxes-style persistence is
+   useful only if operators can see and reclaim it.
+
+### Out of scope for this program
+
+- Shipping a macOS-only clone of Hazmat. Native macOS containment can inform a
+  future backend, but jackin❯ baseline must stay cross-platform.
+- Replacing role repos with integration manifests. Integrations are narrow
+  ergonomics overlays; roles remain the runtime distribution model.
+- Claiming Docker Sandboxes-equivalent security for `dind`, rootless DinD, or
+  first-phase microVM work before network and credential proxy gaps are closed.
+- Implementing Kubernetes support in this program. The containment and contract
+  work should make Kubernetes easier later, but the platform item stays on the
+  main roadmap.
+
+## Sources
+
+**Verification cutoff:** 2026-05-22. Revalidate volatile product capabilities before changing implementation commitments. The [Research Watchlist](/research/watchlist/) owns repeated cross-project checks; this chapter keeps the program-specific primary sources.
+
+### multicode
+
+- [`graemerocher/multicode`](https://github.com/graemerocher/multicode) —
+  active reference implementation for this research. It covers workspace
+  isolation, GitHub tag/status integration, authentication,
+  `multicode-remote`, Codex provider support, editor-tool selection,
+  autonomous queue / PR actions, and Apple-container experiments.
+
+### Agent status and attention systems
+
+- [Herdr](https://herdr.dev/docs/agents/) — best current public baseline for foreground-process ownership, visible-screen heuristics, integration reports, state roll-ups, `done` until viewed, and socket waits.
+- [Agent Runtime Status Authority](/roadmap/agent-runtime-status/) — jackin❯ comparison matrix for Herdr, multicode, CCManager, Agent Session Manager, WezTerm Agent Deck, ccmux, TUICommander, Codemux, tmux-agent-status, agent-deck, claudeye, and Codeman.
+
+### Terminal observation and automation
+
+- [Terminal observation and automation](/research/agents/orchestration/terminal-observation/terminal-observation-automation/) — jackin❯ research input for `cellshot`-style terminal frames, visible waits, input injection, artifact bundles, recording/replay, and automation scripts on top of Capsule sessions.
+- [cellshot](https://github.com/kitlangton/cellshot) — PTY capture/session daemon with `wait`, `send`, `snapshot`, structured terminal frames, JSONL recording, and text/JSON/ANSI/SVG/PNG outputs.
+- [asciinema](https://github.com/asciinema/asciinema), [Charmbracelet VHS](https://github.com/charmbracelet/vhs), [Microsoft tui-test](https://github.com/microsoft/tui-test), [termtosvg](https://github.com/nbedos/termtosvg), and classic `expect`/`ttyrec`/`scriptreplay` — adjacent references for terminal recordings, scripted demos, visible-text waits, golden terminal snapshots, and raw PTY traces.
+
+### Hazmat
+
+- [`dredozubov/hazmat`](https://github.com/dredozubov/hazmat) — README-level
+  summary of dedicated user isolation, seatbelt, firewall, DNS blocklist,
+  snapshots, harnesses, integrations, and limitations.
+- [Hazmat overview](https://github.com/dredozubov/hazmat/blob/master/docs/overview.md) —
+  tier decision flow and the "Docker changes the boundary" rule.
+- [Hazmat harnesses](https://github.com/dredozubov/hazmat/blob/master/docs/harnesses.md) —
+  supported agent CLIs and credential storage/delivery matrix.
+- [Hazmat integrations](https://github.com/dredozubov/hazmat/blob/master/docs/integrations.md) —
+  strict integration capability rules and repo-recommended integration flow.
+- [Hazmat Docker Sandboxes tier](https://github.com/dredozubov/hazmat/blob/master/docs/tier3-docker-sandboxes.md) —
+  private-daemon Docker path, devcontainer alternatives, and Compose hardening.
+- [Hazmat shared-daemon projects](https://github.com/dredozubov/hazmat/blob/master/docs/shared-daemon-projects.md) —
+  why host Docker socket access is treated as a containment escape.
+- [Hazmat threat matrix](https://github.com/dredozubov/hazmat/blob/master/docs/threat-matrix.md) —
+  risk-by-risk tier comparison.
+- [Hazmat verified scope](https://github.com/dredozubov/hazmat/blob/master/tla/VERIFIED.md) —
+  formal verification boundaries and setup/rollback findings.
+
+### Docker Sandboxes
+
+- [Docker Sandboxes usage](https://docs.docker.com/ai/sandboxes/usage/) —
+  branch mode, `.sbx/` worktrees, lifecycle, and signed-commit notes.
+- [Docker Sandboxes security model](https://docs.docker.com/ai/sandboxes/security/) —
+  hypervisor, network, Docker Engine, and credential isolation layers.
+
+### Local jackin❯ references
+
+- [Selectable sandbox backends](/research/platform/security/sandbox-backends/) —
+  deep Docker Sandboxes, OrbStack, and libkrun/smolvm comparison already
+  captured in jackin❯ research and roadmap material.
+- [Per-mount isolation](/guides/workspaces/#per-mount-isolation) —
+  worktree/clone design and Docker Sandboxes branch-mode comparison.
+- [Container credential exposure](/research/platform/security/credential-exposure/container-credential-exposure/) —
+  current credential exposure model and proxy/bridge trajectory.
+
+## Related work
+
+- [Codebase map](/reference/getting-oriented/codebase-map/) — workspace crate structure and tiered DAG.
+- [Multi-runtime support](/roadmap/multi-runtime-support/) — runtime-neutral observability owner.
+- [Per-mount isolation](/guides/workspaces/#per-mount-isolation) — parallel-agent prerequisite and branch-mode comparison.
+- [Selectable sandbox backends](/research/platform/security/sandbox-backends/) — Docker Sandboxes and microVM comparison.
+- [Container credential exposure](/research/platform/security/credential-exposure/container-credential-exposure/) — current risk and proxy trajectory.

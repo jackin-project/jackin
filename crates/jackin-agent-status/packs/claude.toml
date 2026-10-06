@@ -1,0 +1,119 @@
+schema_version = 1
+agent = "claude"
+validated_versions = ">=2.1.173, <2.2.0"
+
+[[rule]]
+id = "transcript-overlay"
+state = "freeze"
+priority = 1000
+region = "bottom:24"
+strength = "strong"
+requires_all = ["showing detailed transcript", "ctrl+o to toggle"]
+
+[[rule]]
+id = "osc-title-working"
+state = "working"
+priority = 950
+region = "osc_title"
+strength = "strong"
+regex = ["^[\\u2800-\\u28FF] "]
+
+[[rule]]
+id = "permission-dialog"
+state = "blocked"
+priority = 900
+region = "bottom_nonempty:12"
+strength = "strong"
+requires_all = ["enter to select", "esc to cancel"]
+requires_any = ["to navigate", "↑/↓"]
+
+[[rule]]
+id = "choice-dialog"
+state = "blocked"
+priority = 890
+region = "bottom_nonempty:12"
+strength = "strong"
+requires_all = ["what do you want to do?", "enter to confirm", "esc to cancel"]
+
+[[rule]]
+id = "prelaunch-enter"
+state = "blocked"
+priority = 885
+region = "bottom:32"
+strength = "strong"
+requires_all = ["press enter to launch claude"]
+
+[[rule]]
+id = "workflow-paused"
+state = "blocked"
+priority = 880
+region = "bottom:32"
+strength = "strong"
+requires_all = ["paused", "p resume"]
+requires_any = ["deep-research", "workflow"]
+
+[[rule]]
+id = "workflow-stopped"
+state = "idle"
+priority = 870
+region = "bottom:32"
+strength = "strong"
+requires_all = ["stopped", "esc back", "s save"]
+requires_any = ["deep-research", "workflow"]
+
+[[rule]]
+id = "working-interrupt"
+state = "working"
+priority = 700
+region = "bottom:24"
+strength = "strong"
+requires_all = ["esc to interrupt"]
+
+[[rule]]
+id = "working-status-line"
+state = "working"
+priority = 695
+region = "bottom:24"
+strength = "strong"
+line_regex = ["^\\s*[*·•✢✻✶✳✽✺✹]\\s+\\S.*…\\s+\\(([0-9]+m\\s+)?[0-9]+s[^)]*\\)"]
+
+[[rule]]
+id = "working-token-stats"
+state = "working"
+priority = 690
+region = "bottom:24"
+strength = "strong"
+requires_all = ["tokens)"]
+
+[[rule]]
+id = "prompt-box"
+state = "idle"
+priority = 500
+region = "bottom_nonempty:12"
+strength = "strong"
+requires_all = ["╭", "│ >"]
+
+[[rule]]
+id = "completed-live-prompt"
+state = "idle"
+priority = 495
+region = "bottom:24"
+strength = "strong"
+requires_all = ["❯"]
+requires_any = ["worked for", "baked for", "brewed for", "churned for"]
+
+[[rule]]
+id = "osc-title-idle"
+state = "idle"
+priority = 485
+region = "osc_title"
+strength = "strong"
+regex = ["^✳ "]
+
+[[rule]]
+id = "live-prompt"
+state = "idle"
+priority = 475
+region = "bottom_nonempty:8"
+strength = "strong"
+line_regex = ["^\\s*❯\\s*$"]

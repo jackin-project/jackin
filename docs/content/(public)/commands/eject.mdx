@@ -1,0 +1,58 @@
+---
+title: jackin❯ eject
+description: "Stop a running agent and clean up its container"
+---
+
+## Synopsis
+
+```bash
+jackin eject <SELECTOR> [OPTIONS]
+```
+
+Stop a running agent container.
+
+## Arguments
+
+| Argument | Required | Description |
+|---|---|---|
+| `SELECTOR` | Yes | Role selector, instance ID, or container name |
+
+## Options
+
+| Option | Description |
+|---|---|
+| `--all` | Stop every matching instance. Without `--all`, the command errors if more than one instance matches the target |
+| `--purge` | Also delete persisted state after stopping |
+| `--debug` | Print every external command jackin❯ issues and their captured output. Also enabled by `JACKIN_DEBUG=1`. |
+
+## Examples
+
+```bash
+# Stop a specific agent
+jackin eject agent-smith
+
+# Stop all instances of agent-smith
+jackin eject agent-smith --all
+
+# Stop and delete all persisted state
+jackin eject agent-smith --purge
+
+# Stop a specific indexed instance
+jackin eject k7p9m2xq
+
+# Stop a specific container by name
+jackin eject jk-k7p9m2xq-agentsmith
+```
+
+## What gets cleaned up
+
+When you eject an agent:
+- The agent container is stopped and removed
+- The DinD sidecar container is stopped and removed
+- The TLS certs volume (`{container}-dind-certs`) is removed
+- The per-agent Docker network is removed
+
+When you add `--purge`:
+- All of the above, plus the agent's persisted state (conversation history, forwarded credentials, `gh` state, plugins) is deleted
+
+Use `--purge` when Docker resources still exist and you want to delete local recovery state in the same operation. Plain `jackin purge` is local-state-only and refuses while the matching role container or DinD sidecar still exists.

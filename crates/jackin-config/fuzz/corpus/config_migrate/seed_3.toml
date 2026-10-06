@@ -1,0 +1,9 @@
+data_dir = "/tmp/jackin"
+version = "v1alpha3"
+
+[opencode]
+auth_forward = "sync"
+
+[roles.agent-smith]
+git = "https://github.com/jackin-project/jackin-agent-smith.git"
+trusted = true

@@ -1,0 +1,30 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+allow-expect-in-tests = true
+allow-panic-in-tests = true
+allow-print-in-tests = true
+allow-unwrap-in-tests = true
+# Slice/index restriction family: pure crates adopted; wider rollout deferred
+# with measured per-crate counts (lint-policy.mdx). Test escape valve stays.
+allow-indexing-slicing-in-tests = true
+allow-dbg-in-tests = true
+# No disallowed-types / disallowed-macros yet — evaluated not-banned surfaces
+# (Mutex/Rc-in-async, ring buffers, primitive payloads) recorded in lint-policy.mdx.
+# Function-length / complexity / nesting thresholds.
+# cognitive-complexity: measured max 58 (2026-07-11 census — diagnostics
+# observability helpers) — ratcheted 60 → 58 (R-complexity-threshold / plan 058).
+# too-many-lines still 150 (workspace max measured ≥145 at thr 140).
+# Nesting/arguments unchanged from pre-Workstream-A baseline.
+# Every new violation is either refactored or grandfathered with a narrow
+# `#[expect(clippy::<lint>, reason = "<why this lint is grandfathered>")]`.
+too-many-lines-threshold = 150
+cognitive-complexity-threshold = 58
+excessive-nesting-threshold = 5
+too-many-arguments-threshold = 7
+disallowed-methods = [
+    { path = "std::process::Command::output", reason = "blocking subprocess output must not run on render/runtime threads; use async process helpers or spawn_blocking" },
+    { path = "std::thread::sleep", reason = "blocking sleep must not run on render/runtime threads; use async sleep, polling hooks, or an owned OS thread" },
+    { path = "std::fs::File::open", reason = "blocking filesystem opens must not run on render/runtime threads; use async file work or spawn_blocking" },
+    { path = "std::fs::OpenOptions::open", reason = "blocking filesystem opens must not run on render/runtime threads; use async file work or spawn_blocking" },
+]

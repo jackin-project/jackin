@@ -1,0 +1,24 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "jackin-pr-trailers"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Small CLI helper to extract git trailers (Signed-off-by, Co-authored-by, etc.) from all commits in a GitHub PR for use in squash-merge commit messages."
+publish = false
+
+[dependencies]
+clap = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+jackin-process = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

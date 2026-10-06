@@ -1,0 +1,96 @@
+---
+title: "01 — Memory requirements and prior art"
+description: Establishes the need for shared workspace memory and compares external systems with jackin❯ isolation and policy requirements.
+---
+
+## Summary
+
+A tool-neutral memory layer lets every supported runtime share durable workspace facts, operator preferences, workflow rules, and run summaries without adopting one agent’s private format.
+
+## Question and scope
+
+What persistent information must jackin❯ own, and which adjacent memory systems provide useful policy and storage patterns?
+
+## Method
+
+The comparison combines current jackin❯ persistence consumers with shared-memory systems, runtime-native memory formats, and multicode's SQLite implementation.
+
+## Findings
+
+### Current need
+
+- Designing one storage layer once is dramatically cheaper than five
+  ad-hoc state files. The schema is small (a handful of tables); the
+  operational story is simple (one DB per instance, alongside existing
+  state).
+- Several leaves explicitly reference this item:
+  [GitHub link tracking](/roadmap/github-link-tracking/),
+  [Token & Cost Telemetry](/research/agents/telemetry/token-cost-telemetry/),
+  [autonomous task queue](/roadmap/autonomous-task-queue/),
+  [agent runtime status](/roadmap/agent-runtime-status/)
+  (status_log table), completed-instance retention metadata for queued work,
+  and [agent workflow orchestration](/research/agents/orchestration/workflow-systems/agent-workflow-orchestration/)
+  run handoffs.
+- A cross-agent memory layer lets jackin❯ promote durable operator preferences
+  out of agent-private storage. A Claude Code memory such as "during PR review,
+  fix every confirmed finding instead of returning report-only buckets" should
+  become a workspace or workflow memory that every selected reviewer/implementer
+  receives, not a file trapped under one Claude project path.
+
+### Memory research
+
+Several adjacent systems validate the need for a tool-neutral memory surface, but none maps directly onto jackin❯ container and host-mutation rules.
+
+| Project | Useful idea | jackin❯ stance |
+|---|---|---|
+| [OpenMemory / Mem0](https://mem0.ai/openmemory) | MCP-facing memory shared across AI apps, project-scoped memories, tags, dashboard review, and local or cloud deployment. | Strong external-memory reference and possible backend adapter. jackin❯ should still own workspace/run scope, policy, audit, and container delivery. |
+| [Mem0 state-of-agent-memory research](https://mem0.ai/blog/state-of-ai-agent-memory-2026) | Names the hard problems: cross-session identity, temporal abstraction, contradiction handling, stale memories, privacy, consent, and memory evaluation. | Use as design pressure. Avoid "append facts forever" without recency, provenance, and operator curation. |
+| [Letta shared memory blocks](https://docs.letta.com/guides/core-concepts/memory/shared-memory) | A memory block can be attached to multiple agents; updates become visible to all attached agents; read-only blocks and concurrency caveats are explicit. | Best conceptual fit for policy memory and shared project facts. jackin❯ should borrow the scoped-block model, not necessarily the server. |
+| [Zep / Graphiti](https://arxiv.org/abs/2501.13956) | Temporal knowledge graph memory for evolving facts and multi-hop retrieval. | Possible optional backend for rich semantic memory if retrieval requirements justify the added complexity. |
+| Runtime-native memories | Claude project memory, Codex skills/goals, OpenCode skills, Kimi/OpenCode local config. | Useful adapter targets, not the source of truth. jackin❯ must be able to inject or mount selected memories into each runtime without copying one runtime's private format as the canonical model. |
+
+The key product distinction is **packaged context vs mutable memory**. [Native APM support](/research/agents/runtimes/package-manager-support/native-apm-role-support/) should own installable skills, prompts, instructions, plugins, and MCP server dependencies. This persistent storage layer should own mutable state: remembered operator preferences, facts learned during a workspace, workflow/run summaries, review outcomes, and memory audit events. The two can work together: APM can install the memory client skill or MCP server; the storage layer remains the authority for what a workspace/run remembers.
+
+### Inspiration in multicode
+
+**Sources**:
+- No dedicated README section
+- Source — [`lib/src/database.rs`](https://github.com/graemerocher/multicode/blob/main/lib/src/database.rs) (Diesel + SQLite setup, migrations)
+- Source — [`lib/src/schema.rs`](https://github.com/graemerocher/multicode/blob/main/lib/src/schema.rs) (full table definitions)
+- Source — [`lib/src/services/persistent_storage.rs`](https://github.com/graemerocher/multicode/blob/main/lib/src/services/persistent_storage.rs) (read/write helpers)
+- Source — [`lib/diesel.toml`](https://github.com/graemerocher/multicode/blob/main/lib/diesel.toml) (migration toolchain config)
+
+- Per-workspace SQLite at `.multicode/cache.sqlite` (one DB per
+  workspace).
+- Schema is small: primarily `github_link_statuses` (URL-keyed cache),
+  plus a handful of metadata tables for workspace and task state.
+- Migrations via Diesel's embedded migrations (build-time SQL files
+  → embedded into the binary).
+- Concurrency via single-writer SQLite, with a brief upsert-retry
+  helper (5 attempts, exponential backoff base 100ms) for the rare
+  contention case.
+
+multicode also keeps a JSON snapshot file (`~/.multicode/workspaces/<key>.json`)
+*alongside* the SQLite — the JSON holds persistent operator-facing state
+(description and agent-provided links) while the SQLite holds the cached /
+queryable parts. We should not split this way; it duplicates state. SQLite
+alone is the right choice for jackin❯.
+
+
+## Implications for jackin❯
+
+jackin❯ should own a runtime-neutral, auditable memory authority; agent-native memory and external systems remain delivery adapters or optional backends.
+
+## Limitations and unknowns
+
+External systems validate shared-memory concepts but do not resolve jackin❯ scope, consent, provenance, container delivery, or host-mutation policy.
+
+## Sources
+
+Primary project pages and source files are linked beside the findings they support.
+
+## Related work
+
+- [Persistent storage and memory overview](/research/agents/orchestration/memory/)
+- [Storage and memory data model](/research/agents/orchestration/memory/02-storage-and-memory-model/)
+- [Native APM support](/research/agents/runtimes/package-manager-support/native-apm-role-support/)

@@ -1,0 +1,46 @@
+---
+title: "jackin❯ desktop Agent Hub"
+description: Defines the product model and architecture for supervising agent sessions from a native macOS desktop hub.
+---
+
+**Research state:** Incomplete
+
+**Verification cutoff:** 2026-07-24
+
+## Research question
+
+How should a native macOS surface help operators supervise jackin❯ workspaces, sessions, pull requests, attention, and account limits without replacing agent TUIs or duplicating runtime authority?
+
+## Headline findings
+
+- The menu bar should answer whether operator attention is needed; the desktop window should provide deeper pull-request, project, workspace, running-agent, and account inspection.
+- The daemon is the primary data plane and write authority for reactive session, attention, account, usage, and GitHub state. The app owns presentation and native macOS integrations.
+- Pull requests are the highest-value navigation surface. Workspace and project context explain which sessions produced them and which local actions are available.
+- Account quota, reset time, and freshness belong beside active agents on glance surfaces; only provider-supplied limits are in scope.
+- Established macOS tools support a cache-first native pattern, but jackin❯ should remain scoped to its saved workspaces, running sessions, and supported runtimes.
+
+## Method and evidence
+
+The study combines repository architecture, daemon and runtime touchpoints, native macOS platform guidance, and comparative analysis of OpenUsage, CodexBar, RepoBar, and adjacent usage tools. Each chapter keeps source URLs beside the findings they support.
+
+## Limitations and open questions
+
+- The native information hierarchy needs prototype validation for density, keyboard access, and accessibility.
+- Amp account status still lacks a verified local source suitable for background monitoring.
+- The binary distribution and version-negotiation relationship between the app, CLI, and daemon remains open.
+- GitHub access should use either the installed `gh` client or a daemon-native client; measured auth and cache behavior should decide.
+- Ghostty launch and focus semantics need a stable v1 contract.
+
+## How to read
+
+1. [Native desktop references](/research/product/desktop/agent-hub/01-native-desktop-references/) compares interaction patterns and scope boundaries.
+2. [Product surfaces](/research/product/desktop/agent-hub/02-product-surfaces/) defines the menu bar, pull-request inbox, workspace drill-down, and desktop window.
+3. [Daemon and integration architecture](/research/product/desktop/agent-hub/03-daemon-integration-architecture/) defines state ownership, protocol needs, account monitoring, GitHub integration, and native boundaries.
+
+## Related work
+
+- [jackin❯ daemon](/roadmap/jackin-daemon/)
+- [Agent attention prompts](/roadmap/agent-attention-prompts/)
+- [GitHub link tracking](/roadmap/github-link-tracking/)
+- [Agent runtime status](/roadmap/agent-runtime-status/)
+- [Account-limit telemetry](/research/agents/telemetry/token-cost-telemetry/)

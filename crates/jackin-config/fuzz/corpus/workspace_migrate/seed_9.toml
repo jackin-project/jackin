@@ -1,0 +1,8 @@
+version = "v1alpha8"
+workdir = "/workspace/prod"
+allowed_roles = ["the-architect"]
+last_role = "the-architect"
+
+[[mounts]]
+src = "/home/operator/projects/prod"
+dst = "/workspace/prod"

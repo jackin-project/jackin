@@ -1,0 +1,45 @@
+---
+title: Roadmap
+description: In-progress, planned, and brainstormed work on jackin❯
+---
+
+<EarlyDevelopmentNotice />
+
+The Roadmap answers **what jackin❯ intends to build next**. It contains only unfinished implementation intent: work already in progress, planned outcomes, and unscheduled ideas. Shipped behavior belongs in the normal guides, commands, and contributor references. Evidence and design rationale belong in [Research](/research/).
+
+## Browse by commitment
+
+<Card title="In progress" href="/roadmap/in-progress/">Work with a shipped baseline and concrete unfinished outcomes.</Card>
+
+<Card title="Planned" href="/roadmap/planned/">Open implementation outcomes with no completed product baseline yet.</Card>
+
+<Card title="Ideas & deferred" href="/roadmap/ideas/">Brainstormed directions and deliberately deferred work. Nothing here is scheduled.</Card>
+
+## Browse by product area
+
+| Area | Scope |
+|---|---|
+| Agent orchestration | Foundation, live operations, containment, fleet automation, and distributed work |
+| Reactive daemon | Capsule integration, reactive adapters, and operator-mediated host integration |
+| Agent runtimes & authentication | Runtime parity, credentials, account health, and launch policy |
+| Isolation & security | Runtime boundaries, supply chain, credentials, review findings, and reproducibility |
+| Infrastructure | Runtime architecture, registries, context, build storage, and platform policy |
+| Operator surface | Console and Desktop workflows, host affordances, diagnostics, and review tooling |
+| Documentation tooling | Linting, spec workflow, and generated API documentation |
+| Configuration ergonomics | Persisted-schema versioning and migration |
+| Ideas & product direction | Unscheduled platform and product candidates |
+
+## Item contract
+
+Every roadmap item starts with one exact status and a concise current-state boundary. Its body keeps implementation scope, remaining work, a completion gate, and links to related research or canonical docs. New items also state the intended outcome explicitly.
+
+| Status | Meaning |
+|---|---|
+| `Partially implemented` | A usable baseline exists; named work remains |
+| `Open` | Desired implementation outcome; no sufficient baseline yet |
+| `Deferred` | Desired but intentionally blocked or postponed |
+| `Exploring` | Brainstorm only; not designed or scheduled |
+
+<Aside type="note">
+When the last unfinished outcome ships, retire the roadmap item. Do not keep a completed archive here; canonical docs and Git history own shipped behavior and historical rationale.
+</Aside>

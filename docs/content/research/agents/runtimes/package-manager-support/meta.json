@@ -1,0 +1,9 @@
+{
+  "title": "Package manager support",
+  "defaultOpen": false,
+  "pages": [
+    "index",
+    "native-apm-role-support",
+    "workspace-skills-mount-design"
+  ]
+}

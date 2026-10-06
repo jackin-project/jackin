@@ -1,0 +1,132 @@
+---
+title: "04 — Alternatives and open questions"
+description: Records rejected bridge designs, expected code touchpoints, and unresolved platform and policy choices.
+---
+
+## Summary
+
+Rejected designs either cannot observe host-only data, expose paths the container cannot read, broaden host access, or couple the product to one runtime. Remaining questions concern bounded platform behavior and policy.
+
+## Question and scope
+
+Which tempting bridge designs violate the product contract, and which implementation-neutral choices still require evidence?
+
+
+## Method
+
+The alternatives are tested against the product contract’s host visibility, container path, protocol typing, portability, and least-authority requirements.
+
+## Findings
+
+### Keep the current docker-exec attach client and patch Capsule input parsing
+
+This is insufficient because the in-container attach client cannot read the host clipboard. It can only parse bytes that arrive through Docker's PTY. If Ghostty or the OS never sends image bytes to `stdin`, no parser can recover them.
+
+### Stage image files on the host and paste host paths
+
+This works only when the host path is mounted inside the container at the same path. That is false for general host temp paths, Finder files, screenshots, and most clipboard sources. Pasting host paths is the exact broken state the feature is meant to eliminate.
+
+### Bind-mount a host clipboard staging directory and paste mapped paths
+
+This is a viable lower-level mechanism, but it should be hidden behind the Capsule staging contract rather than exposed as the product architecture. The simplest implementation may write bytes to the bind-mounted `/jackin/run/clipboard/` directory from the host so the container sees them immediately. The invariant still needs to be "agent sees `/jackin/run/clipboard/...`", not "agent sees some host temp path."
+
+### Use OSC 52 clipboard query
+
+This is not portable enough, is text-oriented, often requires user consent, and does not solve file staging inside the container. It can remain a possible text clipboard enhancement but not the image bridge foundation.
+
+### Use Kitty graphics
+
+Kitty graphics is for displaying images in the terminal. The feature needs to import host clipboard images into the agent's filesystem/context. Display and input are different directions.
+
+### Add a persistent host daemon first
+
+A daemon can solve this and will be useful for broader host bridge features, but it is not required for explicit paste while a host attach client is active. A daemon-first design also risks conflating "operator pasted into this focused terminal" with "agent can ask the host to read clipboard later." Those are different permissions and should remain separate.
+
+### Agent-specific direct attachments
+
+Codex and Claude Code may have internal prompt attachment APIs that would let jackin❯ inject an image more semantically than pasting a path. That can be an enhancement after the generic bridge exists. The correct base layer is agent-independent: stage a file where the runtime can read it and paste a path.
+
+### Rely only on terminal-native hyperlink clicking
+
+Forwarding OSC 8 is necessary and already part of Capsule's terminal-fidelity model, but it is not sufficient. Some terminals do not expose the desired modifier-click behavior, and plain text URLs are not OSC 8 links. A host-owned open-link action makes the experience consistent while preserving terminal-native hyperlinks where they work.
+
+### Use `docker cp` as the file export product surface
+
+`docker cp` is a useful manual fallback, but it is not the right user-facing Capsule feature. It requires the operator to know the container name and exact path, bypasses the focused session and path policy, does not integrate with hover/dialog actions, and will not compose with future remote Docker or Kubernetes transports. Capsule export should be typed, policy-checked, logged, and available from the same multiplexer UI that showed the file path.
+
+### Bind-mount a host export directory into every container
+
+This makes export mechanically easy but violates the directionality that keeps the host safe. A writable host mount gives agents an ambient host write surface. The correct export direction is pull-based: the operator requests a copy, Capsule streams bytes out, and the host client writes to a surfaced destination.
+
+### Code touchpoints
+
+- Host launch and attach: <RepoFile path="crates/jackin/src/app/load_cmd.rs" />, <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs" />, <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" />, and <RepoFile path="crates/jackin-runtime/src/runtime/snapshot.rs" />.
+- Capsule PID split, socket, and attach protocol: <RepoFile path="crates/jackin-capsule/src/main.rs" />, <RepoFile path="crates/jackin-capsule/src/socket.rs" />, and <RepoFile path="crates/jackin-protocol/src/attach.rs" />.
+- Current terminal client behavior to preserve: <RepoFile path="crates/jackin-capsule/src/tui/run.rs" />, <RepoFile path="crates/jackin-capsule/src/tui/terminal.rs" />, <RepoFile path="crates/jackin-protocol/src/host_terminal.rs" />, and <RepoFile path="crates/jackin-capsule/src/tui/input.rs" />.
+- Pane input/output and OSC policy: <RepoFile path="crates/jackin-capsule/src/session.rs" />, <RepoFile path="crates/jackin-capsule/src/daemon.rs" />, and <RepoFile path="crates/jackin-capsule/src/tui/daemon/mouse_input.rs" />.
+- GitHub context data and dialog UI: <RepoFile path="crates/jackin-capsule/src/pr_context.rs" />, <RepoFile path="crates/jackin-capsule/src/pull_request.rs" />, and <RepoFile path="crates/jackin-capsule/src/tui/components/dialog.rs" />.
+- Existing host-private write posture reused conceptually for create-new, permissioned, symlink-safe writes: <RepoFile path="crates/jackin-instance/src/auth.rs" />. Credential-specific helpers were not reused directly as a generic export API without extracting the policy boundary.
+- Host clipboard readers and paste-path auto-stage: <RepoFile path="crates/jackin-host/src/host_clipboard.rs" /> and <RepoFile path="crates/jackin-runtime/src/runtime/host_attach.rs" />.
+- Command palette actions: <RepoFile path="crates/jackin-capsule/src/tui/components/palette.rs" />.
+
+
+
+## Implications for jackin❯
+
+Reject mechanisms that cannot observe host data or that broaden host access; retain only implementation-neutral choices that preserve the typed bridge contract.
+
+## Limitations and unknowns
+
+### Paste trigger
+
+What should count as an explicit image-paste trigger? Options considered: `Ctrl+V` detected in raw input (matching herdr's first implementation), empty bracketed paste while the host clipboard contains an image, a jackin-owned command palette action, or terminal-specific paste events if a host terminal library exposes them. The chosen answer: implement the command palette action and raw `Ctrl+V` first, add terminal-specific mappings only when measured. `Cmd+V` on macOS is usually handled by the terminal emulator before terminal bytes exist, so jackin❯ had to verify what Ghostty actually sends.
+
+### Host clipboard crate
+
+Should jackin❯ use a cross-platform Rust crate or platform-specific helpers? The answer should be decided by capability, not convenience. A crate is correct if it can read image payloads, file promises, and common MIME types without pulling in an unmaintained dependency. If no crate satisfies that, use platform helpers behind a small internal trait.
+
+### Where to stage bytes
+
+Two mechanically possible staging paths: the host writes into the bind-mounted host directory backing `/jackin/run/clipboard/` and sends a small frame telling Capsule the file is ready, or the host sends image bytes in a frame and Capsule writes the file. The frame approach is cleaner and centralizes validation in Capsule; the host-write approach avoids sending large payloads over the socket and may work better on Docker Desktop or OrbStack if stdio relay throughput is a real limit. Either path must produce a Capsule-validated file under `/jackin/run/clipboard/`, not a host path.
+
+### Multi-client attach
+
+Capsule currently has one active attach client. If a future daemon/Desktop client also observes the same session, image paste should route from the foreground/writable client only. Read-only observers must not be able to inject clipboard frames.
+
+### Cleanup lifetime
+
+Should staged images last until detach, until the tab closes, until container cleanup, or for a fixed TTL? Chosen answer: keep for the container lifetime, under `/jackin/run/clipboard/`, and rely on instance cleanup. Removing immediately after paste is wrong because agents may read the file after the prompt is submitted, not at paste time.
+
+### Non-image file paste
+
+Image paste naturally raises "what about PDFs, logs, and arbitrary files?" V1 stays image-specific because agent CLIs have direct multimodal image support and image signatures are easy to validate without decoding. General file paste is a separate "host file staging" feature with a broader security and policy surface.
+
+### Link opener policy
+
+Should host link opening be enabled by default or require a setting? Chosen answer: enable only for explicit operator gestures and safe schemes, and still provide an environment/config opt-out (`JACKIN_OPEN_LINKS`). Opening a URL is an observable host-side action, but a modifier-click or command palette action is already an operator request. The opt-out exists for untrusted roles or terminals where users prefer native handling only.
+
+### GitHub context CI target
+
+What URL should the GitHub context dialog open when CI is failing? Chosen answer: store enough check metadata to open the most specific failing surface. If there is exactly one failed job, open that job. If several jobs failed in one workflow run, open the run summary. If failures span runs, open the PR checks tab with the failed contexts visible. Falling back to the repository Actions page is valid only when jackin❯ does not have check/run URLs.
+
+### File export destination
+
+Where should exported files land? Chosen answer: default to `~/Downloads/jackin/<workspace-or-instance>/` with create-new writes and a visible destination cue. An explicit `--to <path>` / file-picker destination for one-off exports remains a possible later addition. Do not default to Desktop, the current repository, or the host path that "looks equivalent" to a container workspace path.
+
+### File export path policy
+
+Which container paths can be exported without confirmation? Chosen answer: workspace paths, `/jackin/run/clipboard/`, `/jackin/run/uploads/`, and jackin-owned diagnostics/artifact paths. Everything else either requires confirmation or is denied initially. This keeps the feature useful for generated artifacts while preventing a broad "copy anything from the container" footgun.
+
+### Directory export
+
+Should directories be supported? Chosen answer: support regular files only. Directory export requires explicit archiving inside Capsule as `tar.zst` with path normalization, symlink policy, size limits, and a clear destination filename.
+
+## Sources
+
+Evidence sources for these alternatives are cataloged in [Host-affordance evidence](/research/product/operator-experience/host-affordances/host-affordance-bridge-design/01-host-affordance-evidence/).
+
+## Related work
+
+- [Host Affordance Bridge overview](/research/product/operator-experience/host-affordances/host-affordance-bridge-design/)
+- [Architecture and security](/research/product/operator-experience/host-affordances/host-affordance-bridge-design/03-architecture-and-security/)
+- [Host Affordance Bridge Preflight](/research/product/operator-experience/host-affordances/host-affordance-bridge-preflight/)

@@ -1,0 +1,83 @@
+---
+title: "02 — Product contract and boundaries"
+description: Defines the Host Affordance Bridge decision, non-goals, and target operator experience across supported host actions.
+---
+
+## Summary
+
+The bridge is an explicit host-owned capability layer, not a transparent escape from container isolation. It restores selected operator actions with typed requests, visible feedback, and narrow policy.
+
+## Question and scope
+
+Which affordances should the bridge expose, and which adjacent behaviors remain outside its security and product contract?
+
+
+## Method
+
+The contract evaluates candidate affordances against explicit operator intent, typed protocol boundaries, container-readable staging, and least-authority host access.
+
+## Findings
+
+The selected design is a **host-owned attach client with typed host-affordance frames** for clipboard images and explicit host-link-open requests. It does not require a persistent host daemon.
+
+The chosen data flow is:
+
+```text
+Ghostty / terminal on host
+  -> jackin host attach client
+      -> read host clipboard on explicit paste trigger
+      -> validate and cap image bytes
+      -> Capsule attach protocol ClipboardImage frame
+          -> Capsule daemon stages under /jackin/run/clipboard/
+          -> Capsule pastes the container-readable path into the focused PTY
+```
+
+This fixes the structural cause: the host component that can read the host clipboard does so, then uses an explicit jackin❯ protocol message to cross the container boundary. It also preserves the container boundary: agents receive a file path inside the container, not arbitrary host clipboard access.
+
+A daemon remains relevant for future desktop/global bridges, but it was not required for the first correct implementation. Image paste is synchronous with an attached terminal and an explicit paste gesture. A short-lived host attach client can perform the needed host-side read without a long-running process.
+
+### Non-goals
+
+- Do not expose the host clipboard to agents as a general API.
+- Do not let agents request clipboard reads without an operator paste gesture.
+- Do not let agents open host browser windows merely by printing URLs, emitting OSC 8, or updating GitHub context.
+- Do not let agents write files to the host merely by printing paths, emitting OSC links, or creating files in the container.
+- Do not mount the host's general temp directory or Downloads directory into the container to "make paths work."
+- Do not rely on OSC 52 clipboard reads as the primary implementation.
+- Do not use Kitty graphics as the transfer path for image paste.
+- Do not make Kitty/iTerm2 proprietary clipboard or file-transfer protocols required for the primary implementation.
+- Do not add a persistent host daemon just for this feature.
+- Do not implement provider-specific hacks for Claude Code, Codex, Amp, Kimi, or OpenCode as the foundation. Runtime-specific improvements can sit above the bridge after the generic bridge is correct.
+
+### Target operator experience
+
+When an operator is attached to a jackin❯ Capsule session and presses the paste gesture while the host clipboard contains an image:
+
+1. jackin❯ reads the image from the host clipboard.
+2. jackin❯ stages it into the running role container.
+3. The focused agent prompt receives a readable container path, pasted in the same bracketed-paste-safe way as normal text paste.
+4. Claude Code, Codex, or any other image-aware CLI can attach/read that file using its normal local-file support.
+5. The operator sees a compact status cue such as `Image staged: /jackin/run/clipboard/clip-...png`.
+
+The behavior is the same whether the clipboard source is a raw screenshot, a copied browser image, a copied image file, or a drag/drop image file, subject to platform support and explicit permission policy.
+
+The status cue reuses the same transient-feedback discipline as `Selection copied`: visible enough to confirm the host clipboard action happened, constrained to the multiplexer chrome/overlay surface, and never drawn over the pane prompt, status rows, footer hint, or bottom branch/run bar. Image staging feedback proves the staged container path, not a source host path or clipboard metadata.
+
+
+
+## Implications for jackin❯
+
+Expose only typed, operator-visible host affordances; do not turn the bridge into transparent or arbitrary host access.
+
+## Limitations and unknowns
+
+Platform support may differ, but unsupported actions must fail explicitly rather than silently weakening isolation or falling back to broad host access.
+
+## Sources
+
+Evidence sources are cataloged in [Host-affordance evidence](/research/product/operator-experience/host-affordances/host-affordance-bridge-design/01-host-affordance-evidence/).
+
+## Related work
+
+- [Host Affordance Bridge overview](/research/product/operator-experience/host-affordances/host-affordance-bridge-design/)
+- [Architecture and security](/research/product/operator-experience/host-affordances/host-affordance-bridge-design/03-architecture-and-security/)

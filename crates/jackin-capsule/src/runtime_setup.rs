@@ -1,0 +1,1690 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
+//! Runtime setup that is better expressed as deterministic Rust than
+//! entrypoint shell. The shell entrypoint remains responsible for
+//! sourcing role hooks and `exec`-ing the selected agent.
+
+use std::ffi::{OsStr, OsString};
+use std::fs;
+use std::io;
+use std::os::unix::fs::PermissionsExt as _;
+use std::os::unix::fs::symlink;
+use std::path::{Path, PathBuf};
+
+use anyhow::{Context, Result, bail};
+use tempfile::Builder as TempfileBuilder;
+
+use jackin_core::container_paths;
+
+// Container home for the `agent` user. Every default agent config/credential
+// location hangs off this. The per-agent resolvers below honor an agent's
+// standard config-dir env var (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`,
+// `XDG_DATA_HOME`) when the role sets one, falling back here otherwise — so a
+// role that exports e.g. `CLAUDE_CONFIG_DIR` has its credentials written where
+// the CLI actually looks, instead of the fixed default the CLI no longer reads.
+const AGENT_HOME: &str = "/home/agent";
+
+// Grok has no standard config-dir env var, so its credential path is fixed.
+const GROK_AUTH_PATH: &str = "/home/agent/.grok/auth.json";
+
+// Each resolver pairs a thin env-reading wrapper with a pure `_from` core, so
+// path composition is unit-tested without mutating process-global env (which is
+// racy across parallel tests and `unsafe` under Rust 2024).
+
+/// Resolve a path under `AGENT_HOME` honoring an optional env override.
+/// When `env` is set, its value is used verbatim; otherwise falls back to
+/// `AGENT_HOME/subpath`. Shared by all three standard env-override resolvers.
+fn env_or_agent_home(env: Option<&str>, subpath: &str) -> PathBuf {
+    env.map_or_else(|| Path::new(AGENT_HOME).join(subpath), PathBuf::from)
+}
+
+/// Resolve Claude Code's config directory, honoring `CLAUDE_CONFIG_DIR` when the
+/// role sets it (default `~/.claude`). Claude reads `.credentials.json` — and,
+/// when the env var is set, `.claude.json` — from this directory.
+fn claude_config_dir() -> PathBuf {
+    claude_config_dir_from(nonempty_env("CLAUDE_CONFIG_DIR").as_deref())
+}
+
+fn claude_config_dir_from(env: Option<&str>) -> PathBuf {
+    env_or_agent_home(env, ".claude")
+}
+
+/// `.credentials.json` always lives inside the resolved Claude config dir.
+fn claude_credentials_path() -> PathBuf {
+    claude_config_dir().join(".credentials.json")
+}
+
+/// `.claude.json` placement is asymmetric: with `CLAUDE_CONFIG_DIR` set it lives
+/// inside that dir; with it unset Claude reads `$HOME/.claude.json` (home root).
+/// Writing it on the wrong side leaves the CLI unable to find its onboarding
+/// state, so it falls back to the interactive login screen even though a valid
+/// `.credentials.json` was forwarded.
+fn claude_account_path() -> PathBuf {
+    claude_account_path_from(nonempty_env("CLAUDE_CONFIG_DIR").as_deref())
+}
+
+fn claude_account_path_from(env: Option<&str>) -> PathBuf {
+    Path::new(env.unwrap_or(AGENT_HOME)).join(".claude.json")
+}
+
+/// Codex reads `auth.json` and `config.toml` from `CODEX_HOME` (default `~/.codex`).
+fn codex_home() -> PathBuf {
+    codex_home_from(nonempty_env("CODEX_HOME").as_deref())
+}
+
+fn codex_home_from(env: Option<&str>) -> PathBuf {
+    env_or_agent_home(env, ".codex")
+}
+
+fn codex_auth_path() -> PathBuf {
+    codex_home().join("auth.json")
+}
+
+/// XDG data root honored by Amp and opencode (default `~/.local/share`).
+fn xdg_data_home() -> PathBuf {
+    xdg_data_home_from(nonempty_env("XDG_DATA_HOME").as_deref())
+}
+
+fn xdg_data_home_from(env: Option<&str>) -> PathBuf {
+    env_or_agent_home(env, ".local/share")
+}
+
+fn amp_secrets_path() -> PathBuf {
+    xdg_data_home().join("amp/secrets.json")
+}
+
+fn opencode_auth_path() -> PathBuf {
+    xdg_data_home().join("opencode/auth.json")
+}
+
+/// Gemini home: `GEMINI_CLI_HOME` names the *parent* to which `.gemini` is
+/// appended (it is not the config dir itself); default `~/.gemini`.
+fn gemini_home() -> PathBuf {
+    gemini_home_from(nonempty_env("GEMINI_CLI_HOME").as_deref())
+}
+
+fn gemini_home_from(env: Option<&str>) -> PathBuf {
+    match env {
+        Some(parent) => Path::new(parent).join(".gemini"),
+        None => Path::new(AGENT_HOME).join(".gemini"),
+    }
+}
+
+fn gemini_oauth_creds_path() -> PathBuf {
+    gemini_home().join("oauth_creds.json")
+}
+
+fn antigravity_settings_path() -> PathBuf {
+    gemini_home().join("antigravity-cli/settings.json")
+}
+
+/// Cursor reads `auth.json` from `CURSOR_CONFIG_DIR` (default `~/.cursor`).
+/// Verbatim-dir semantics assumed from the variable name and docs citation.
+fn cursor_home() -> PathBuf {
+    cursor_home_from(nonempty_env("CURSOR_CONFIG_DIR").as_deref())
+}
+
+fn cursor_home_from(env: Option<&str>) -> PathBuf {
+    env_or_agent_home(env, ".cursor")
+}
+
+fn cursor_auth_path() -> PathBuf {
+    cursor_home().join("auth.json")
+}
+
+// Muse has no observed config-dir env var, so its credential path is fixed.
+const MUSE_AUTH_PATH: &str = "/home/agent/.config/muse/auth.json";
+
+/// `omp` reads its `SQLite` store from `PI_CODING_AGENT_DIR` (default `~/.omp`);
+/// `OMP_PROFILE` selects a named profile within that dir.
+fn omp_home() -> PathBuf {
+    omp_home_from(nonempty_env("PI_CODING_AGENT_DIR").as_deref())
+}
+
+fn omp_home_from(env: Option<&str>) -> PathBuf {
+    env_or_agent_home(env, ".omp")
+}
+
+fn omp_agent_db_path() -> PathBuf {
+    omp_home().join("agent/agent.db")
+}
+
+/// Hermes reads its store from `HERMES_HOME` (default `~/.hermes`).
+fn hermes_home() -> PathBuf {
+    hermes_home_from(nonempty_env("HERMES_HOME").as_deref())
+}
+
+fn hermes_home_from(env: Option<&str>) -> PathBuf {
+    env_or_agent_home(env, ".hermes")
+}
+const CAPSULE_RUNTIME_BIN: &str = container_paths::CAPSULE_BIN;
+#[cfg(debug_assertions)]
+const GIT_DCO_IDENTITY_CACHE_ENV: &str = "JACKIN_GIT_DCO_IDENTITY_CACHE";
+
+/// Resolve the mutable setup root supplied by the daemon for this PTY.
+/// Reject every path shape except `/jackin/run/sessions/<numeric>/state` so a
+/// compromised child cannot redirect setup writes into capsule-wide state.
+fn session_state_dir() -> Result<PathBuf> {
+    let raw = std::env::var_os(jackin_protocol::SESSION_STATE_DIR_ENV)
+        .context("isolated runtime setup requires JACKIN_SESSION_STATE_DIR")?;
+    let raw = raw
+        .to_str()
+        .context("JACKIN_SESSION_STATE_DIR must be UTF-8")?;
+    parse_session_state_dir(raw)
+}
+
+fn parse_session_state_dir(raw: &str) -> Result<PathBuf> {
+    let prefix = format!("{}/", container_paths::SESSION_ROOTS_DIR);
+    let relative = raw
+        .strip_prefix(&prefix)
+        .context("JACKIN_SESSION_STATE_DIR is outside the session roots")?;
+    let mut components = relative.split('/');
+    let session_id = components.next().unwrap_or_default();
+    let leaf = components.next().unwrap_or_default();
+    anyhow::ensure!(
+        !session_id.is_empty()
+            && session_id.parse::<u64>().is_ok()
+            && leaf == "state"
+            && components.next().is_none(),
+        "JACKIN_SESSION_STATE_DIR must name one numeric session state root"
+    );
+    Ok(PathBuf::from(raw))
+}
+
+fn session_state_path(name: &str) -> Result<PathBuf> {
+    anyhow::ensure!(
+        !name.is_empty() && !name.contains('/') && !name.contains('\\'),
+        "runtime setup path component is invalid"
+    );
+    Ok(session_state_dir()?.join(name))
+}
+
+/// # Errors
+///
+/// Returns an error when container initialization, hook installation, or
+/// agent setup fails.
+pub fn run() -> Result<()> {
+    run_runtime_setup_concurrently(
+        run_container_init_once,
+        install_git_trailer_hook_if_requested,
+        cache_dco_identity_if_needed,
+        run_agent_setup,
+    )
+}
+
+fn run_runtime_setup_concurrently(
+    container_init: impl FnOnce() -> Result<()> + Send + 'static,
+    git_hook: impl FnOnce() -> Result<()>,
+    dco_cache: impl FnOnce(),
+    agent_setup: impl FnOnce() -> Result<()> + Send + 'static,
+) -> Result<()> {
+    let agent_setup = jackin_telemetry::spawn::thread_joined(agent_setup);
+    let foreground: Result<()> = (|| {
+        container_init()?;
+        git_hook()?;
+        dco_cache();
+        Ok(())
+    })();
+    let agent_result = agent_setup
+        .join()
+        .map_err(|_| anyhow::anyhow!("runtime agent setup thread panicked"))?;
+    foreground?;
+    agent_result
+}
+
+/// Write a run-once marker (`ok\n`), creating its parent directory first.
+fn write_done_marker(marker: &Path, what: &str) -> Result<()> {
+    if let Some(parent) = marker.parent() {
+        fs::create_dir_all(parent).with_context(|| {
+            format!(
+                "failed to create {what} marker directory {}",
+                parent.display()
+            )
+        })?;
+    }
+    fs::write(marker, b"ok\n")
+        .with_context(|| format!("failed to write {what} marker at {}", marker.display()))
+}
+
+fn run_container_init_once() -> Result<()> {
+    let marker = session_state_path("container-init.done")?;
+    if marker.exists() {
+        return Ok(());
+    }
+
+    crate::output::stdout_line(format_args!("[entrypoint] running container init..."));
+
+    if let Some(name) = nonempty_env("GIT_AUTHOR_NAME") {
+        run_command("git", &["config", "--global", "user.name", &name])?;
+    }
+    if let Some(email) = nonempty_env("GIT_AUTHOR_EMAIL") {
+        run_command("git", &["config", "--global", "user.email", &email])?;
+    }
+
+    ensure_git_config_multivalue("url.https://github.com/.insteadOf", "git@github.com:")?;
+    ensure_git_config_multivalue("url.https://github.com/.insteadOf", "ssh://git@github.com/")?;
+
+    if is_executable("/usr/bin/gh") {
+        run_command(
+            "git",
+            &[
+                "config",
+                "--global",
+                "credential.helper",
+                "!gh auth git-credential",
+            ],
+        )?;
+        if nonempty_env("GH_TOKEN").is_some() || gh_auth_status_ok() {
+            crate::output::stdout_line(format_args!(
+                "[entrypoint] GitHub CLI authenticated (host: github.com)"
+            ));
+            run_command("gh", &["auth", "setup-git"])?;
+        } else {
+            crate::output::stdout_line(format_args!(
+                "[entrypoint] GitHub CLI not authenticated - run 'gh auth login' inside the runtime if needed"
+            ));
+        }
+    } else {
+        crate::output::stdout_line(format_args!(
+            "[entrypoint] GitHub CLI not installed - skipping gh setup"
+        ));
+    }
+
+    write_done_marker(&marker, "container init")?;
+    Ok(())
+}
+
+fn install_git_trailer_hook_if_requested() -> Result<()> {
+    if !env_is_one("JACKIN_GIT_COAUTHOR_TRAILER") && !env_is_one("JACKIN_GIT_DCO") {
+        return Ok(());
+    }
+    if git_trailer_hook_ready() {
+        return Ok(());
+    }
+
+    let hooks_dir = session_state_path("git-hooks")?;
+    let hook_path = hooks_dir.join("prepare-commit-msg");
+    let hook_marker = hooks_dir.join("prepare-commit-msg.v3.done");
+
+    fs::create_dir_all(&hooks_dir)
+        .with_context(|| format!("failed to create git hooks dir {}", hooks_dir.display()))?;
+    if !is_executable(CAPSULE_RUNTIME_BIN) {
+        bail!("git trailer hook target {CAPSULE_RUNTIME_BIN} is not executable");
+    }
+    remove_file_if_exists(&hook_path)?;
+    symlink(CAPSULE_RUNTIME_BIN, &hook_path).with_context(|| {
+        format!(
+            "failed to symlink {} to {CAPSULE_RUNTIME_BIN}",
+            hook_path.display()
+        )
+    })?;
+    let hooks_dir = hooks_dir
+        .to_str()
+        .context("session hooks path is not UTF-8")?;
+    run_command("git", &["config", "--global", "core.hooksPath", hooks_dir])?;
+    fs::write(&hook_marker, b"v3\n")
+        .with_context(|| format!("failed to write {}", hook_marker.display()))?;
+
+    let mut active = Vec::new();
+    if env_is_one("JACKIN_GIT_COAUTHOR_TRAILER") {
+        active.push("coauthor_trailer");
+    }
+    if env_is_one("JACKIN_GIT_DCO") {
+        active.push("dco");
+    }
+    let agent = std::env::var("JACKIN_AGENT").unwrap_or_else(|_| "unknown".to_owned());
+    crate::output::stdout_line(format_args!(
+        "[entrypoint] git trailer hook installed (agent: {agent}, active: {})",
+        active.join(" ")
+    ));
+    Ok(())
+}
+
+/// # Errors
+///
+/// Returns an error when the commit-message path is missing or the hook cannot
+/// read, update, or write the message.
+pub fn run_prepare_commit_msg_hook(args: &[String]) -> Result<()> {
+    let message_path = args
+        .first()
+        .map(Path::new)
+        .context("prepare-commit-msg hook requires a commit message path")?;
+
+    if env_is_one("JACKIN_GIT_DCO") {
+        let (dco_name, dco_email) = read_cached_dco_identity().unwrap_or_else(|| {
+            // Cache absent (e.g. daemon was started without JACKIN_GIT_DCO=1 then
+            // env changed): fall back to live git config so the hook still works.
+            let name = git_config_value("user.name").unwrap_or_default();
+            let email = git_config_value("user.email").unwrap_or_default();
+            (name, email)
+        });
+        if dco_name.is_empty() || dco_email.is_empty() {
+            crate::output::stderr_line(format_args!(
+                "[jackin prepare-commit-msg] WARNING: JACKIN_GIT_DCO=1 but git identity is not configured (user.name='{dco_name}' user.email='{dco_email}'); no Signed-off-by trailer written"
+            ));
+        } else {
+            ensure_message_trailer(
+                message_path,
+                &format!("Signed-off-by: {dco_name} <{dco_email}>"),
+                "Signed-off-by",
+                Some("before"),
+            )?;
+        }
+    }
+
+    if env_is_one("JACKIN_GIT_COAUTHOR_TRAILER") {
+        let agent = std::env::var("JACKIN_AGENT").unwrap_or_default();
+        if let Some(trailer) = coauthor_trailer_for_agent(&agent) {
+            ensure_message_trailer(message_path, trailer, "Co-authored-by", None)?;
+        } else {
+            crate::output::stderr_line(format_args!(
+                "[jackin prepare-commit-msg] WARNING: JACKIN_GIT_COAUTHOR_TRAILER=1 but JACKIN_AGENT='{agent}' is not a recognized agent slug; no Co-authored-by trailer written"
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+fn run_agent_setup() -> Result<()> {
+    let agent = std::env::var("JACKIN_AGENT").context("JACKIN_AGENT must be set")?;
+    let mode = AuthMode::from_env()?;
+    // Home emptiness is the gate: first seed copies auth; subsequent starts
+    // leave in-container credentials untouched (agent refreshes tokens in-place
+    // inside the durable home). No external marker file.
+    let materialization = match agent.as_str() {
+        "claude" => setup_claude(mode),
+        "codex" => setup_codex(mode),
+        "amp" => setup_amp(mode),
+        "kimi" => setup_kimi(mode),
+        "opencode" => setup_opencode(mode),
+        "grok" => setup_grok(mode),
+        "antigravity" => setup_antigravity(mode),
+        "gemini" => setup_gemini(mode),
+        "cursor" => setup_cursor(mode),
+        "muse" => setup_muse(mode),
+        "omp" => setup_omp(mode),
+        "hermes" => setup_hermes(mode),
+        other => bail!("unknown JACKIN_AGENT: {other}"),
+    };
+    emit_capsule_auth_provision(&agent, mode, materialization.as_ref());
+    materialization?;
+
+    // Install/repair the agent-status reporter on every launch (drift repair).
+    // Observability must never break the agent: a failure is logged, not fatal.
+    if let Err(e) = install_agent_status_reporter(&agent) {
+        let message = reporter_install_failure_message(&agent, &e);
+        record_recovered_degradation();
+        crate::output::stderr_line(format_args!("[entrypoint] {message}"));
+    }
+
+    Ok(())
+}
+
+#[derive(Clone, Copy)]
+enum AuthMode {
+    Sync,
+    ApiKey,
+    OauthToken,
+    Ignore,
+}
+
+impl AuthMode {
+    fn from_env() -> Result<Self> {
+        let mode = std::env::var(jackin_protocol::AUTH_MODE_ENV)
+            .context("JACKIN_AUTH_MODE must be set")?;
+        match mode.as_str() {
+            "sync" => Ok(Self::Sync),
+            "api_key" => Ok(Self::ApiKey),
+            "oauth_token" => Ok(Self::OauthToken),
+            "ignore" => Ok(Self::Ignore),
+            _ => bail!("JACKIN_AUTH_MODE must contain a bounded auth mode"),
+        }
+    }
+
+    const fn as_schema(self) -> jackin_telemetry::schema::enums::AuthMode {
+        use jackin_telemetry::schema::enums::AuthMode as SchemaMode;
+        match self {
+            Self::Sync => SchemaMode::Sync,
+            Self::ApiKey => SchemaMode::ApiKey,
+            Self::OauthToken => SchemaMode::OauthToken,
+            Self::Ignore => SchemaMode::Ignore,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct AuthMaterialization {
+    source: jackin_telemetry::schema::enums::CredentialSourceType,
+    outcome: jackin_telemetry::schema::enums::OutcomeValue,
+    error: Option<jackin_telemetry::schema::enums::ErrorType>,
+}
+
+fn emit_capsule_auth_provision(
+    agent: &str,
+    mode: AuthMode,
+    result: Result<&AuthMaterialization, &anyhow::Error>,
+) {
+    use jackin_telemetry::{Attr, FieldSet, Value, event, schema};
+    let fallback = AuthMaterialization {
+        source: configured_credential_source(mode),
+        outcome: schema::enums::OutcomeValue::Error,
+        error: Some(schema::enums::ErrorType::IoError),
+    };
+    let materialization = result.copied().unwrap_or(fallback);
+    let mut attrs = vec![
+        Attr {
+            key: schema::attrs::GEN_AI_AGENT_NAME,
+            value: Value::Str(agent),
+        },
+        Attr {
+            key: schema::attrs::AUTH_MODE,
+            value: Value::Str(mode.as_schema().as_str()),
+        },
+        Attr {
+            key: schema::attrs::CREDENTIAL_SOURCE_TYPE,
+            value: Value::Str(materialization.source.as_str()),
+        },
+        Attr {
+            key: schema::attrs::OUTCOME,
+            value: Value::Str(materialization.outcome.as_str()),
+        },
+    ];
+    if let Some(error) = materialization.error {
+        attrs.push(Attr {
+            key: schema::attrs::std_attrs::ERROR_TYPE,
+            value: Value::Str(error.as_str()),
+        });
+    }
+    let _emitted =
+        jackin_telemetry::emit_event(&event::AUTH_PROVISION, FieldSet::new(&attrs, None));
+}
+
+const fn configured_credential_source(
+    mode: AuthMode,
+) -> jackin_telemetry::schema::enums::CredentialSourceType {
+    use jackin_telemetry::schema::enums::CredentialSourceType as Source;
+    match mode {
+        AuthMode::Sync => Source::AgentHome,
+        AuthMode::ApiKey | AuthMode::OauthToken => Source::Environment,
+        AuthMode::Ignore => Source::None,
+    }
+}
+
+fn reporter_install_failure_message(agent: &str, error: &anyhow::Error) -> String {
+    format!("agent-status: reporter install for {agent} failed (non-fatal): {error:#}")
+}
+
+/// Install the container-local agent-status reporter for `agent` into the agent
+/// home, repairing drift each launch. Claude/Codex install too — their forwarded
+/// events are gated to identity/freshness only (Decision 0a), the screen pack
+/// owns their state. Kimi is rule-pack-only (no reporter); Amp installs no
+/// reporter (it has no plugins.json node-plugin mechanism — writing one crashes
+/// it; a real Amp reporter needs its MCP/toolbox surface); unknown/grok have no
+/// reporter yet.
+fn install_agent_status_reporter(agent: &str) -> Result<()> {
+    use crate::agent_status::hook_installer::{
+        ClaudeHookInstaller, CodexHookInstaller, HookInstaller, PluginInstaller,
+    };
+    let installer: Option<Box<dyn HookInstaller>> = match agent {
+        "claude" => Some(Box::new(ClaudeHookInstaller::default())),
+        "codex" => Some(Box::new(CodexHookInstaller::default())),
+        // Amp has no `~/.config/amp/plugins.json` node-plugin mechanism (that
+        // was assumed from OpenCode's model); writing one crashes Amp on load. A
+        // reporter must never break the agent it observes, so Amp installs no
+        // reporter — its status falls back to screen + physics evidence. A real
+        // Amp reporter needs Amp's actual extension surface (MCP/toolbox) and is
+        // tracked as remaining work.
+        "opencode" => Some(Box::new(PluginInstaller::opencode())),
+        _ => None,
+    };
+    if let Some(installer) = installer {
+        let home = Path::new("/home/agent");
+        // The daemon exports the instance's folder var before setup runs;
+        // fall back to the legacy config home when unset (manual runs).
+        let parsed = jackin_core::Agent::from_slug(agent);
+        let config_dir = parsed
+            .and_then(|agent| agent.runtime().state_paths().folder_env_var)
+            .and_then(|var| nonempty_env(var.name))
+            .map_or_else(
+                || {
+                    parsed.map_or_else(
+                        || home.to_path_buf(),
+                        |agent| home.join(agent.runtime().state_paths().credential_dir),
+                    )
+                },
+                PathBuf::from,
+            );
+        if !installer.verify(home, &config_dir) {
+            installer
+                .install(home, &config_dir)
+                .with_context(|| format!("install {agent} agent-status reporter"))?;
+        }
+    }
+    Ok(())
+}
+
+fn setup_claude(mode: AuthMode) -> Result<AuthMaterialization> {
+    // Claude is the one sync-capable agent with two forwarded files. Seed its
+    // home once, then apply the shared credential policy to credentials.json and
+    // the Claude-only account.json (.claude.json onboarding metadata) under that
+    // single first-seed signal — same policy as every other agent.
+    let home = claude_config_dir();
+    let first_seed = seed_agent_home_from_enum(jackin_core::Agent::Claude, &home)?.is_first_seed();
+    let credentials_path = claude_credentials_path();
+    let forwarded = forwarded_file(container_paths::CLAUDE_CREDENTIALS);
+    let materialization = apply_forwarded_credential(
+        first_seed,
+        mode,
+        &ForwardedCredential {
+            label: "claude",
+            forwarded: &forwarded,
+            target: &credentials_path,
+            api_key_envs: &[
+                "ANTHROPIC_API_KEY",
+                "ANTHROPIC_AUTH_TOKEN",
+                "CLAUDE_CODE_OAUTH_TOKEN",
+            ],
+        },
+    )?;
+    if matches!(mode, AuthMode::Sync) {
+        seed_claude_account_json(first_seed)?;
+    } else {
+        remove_file_if_exists(claude_account_path())?;
+    }
+
+    if env_is_one("JACKIN_DISABLE_TIRITH") {
+        crate::output::stdout_line(format_args!(
+            "[entrypoint] tirith disabled (JACKIN_DISABLE_TIRITH=1)"
+        ));
+    } else {
+        run_optional_command(
+            "claude",
+            &["mcp", "add", "tirith", "--", "tirith", "mcp-server"],
+        );
+    }
+    if env_is_one("JACKIN_DISABLE_SHELLFIRM") {
+        crate::output::stdout_line(format_args!(
+            "[entrypoint] shellfirm disabled (JACKIN_DISABLE_SHELLFIRM=1)"
+        ));
+    } else {
+        run_optional_command(
+            "claude",
+            &["mcp", "add", "shellfirm", "--", "shellfirm", "mcp"],
+        );
+    }
+    if std::env::var_os("JACKIN_EXEC_BINDINGS").is_some_and(|v| !v.is_empty()) {
+        run_optional_command(
+            "claude",
+            &[
+                "mcp",
+                "add",
+                "jackin-exec",
+                "--",
+                "jackin-capsule",
+                "mcp-server",
+            ],
+        );
+    }
+    setup_claude_plugins();
+    Ok(materialization)
+}
+
+/// Seed Claude's `.claude.json` onboarding metadata (organization type drives
+/// the plan label). On first seed, copy the forwarded account if present; on
+/// later launches, re-seed only while the container copy is still the empty
+/// `{}` skeleton — so a populated file the CLI has since written is preserved.
+fn seed_claude_account_json(first_seed: bool) -> Result<()> {
+    let forwarded_account = forwarded_file(container_paths::CLAUDE_ACCOUNT);
+    if !forwarded_account.is_file() {
+        return Ok(());
+    }
+    let account_path = claude_account_path();
+    let needs_seed = first_seed
+        || fs::read_to_string(&account_path).map_or(true, |contents| contents.trim() == "{}");
+    if needs_seed {
+        copy_file_with_mode(&forwarded_account, &account_path, 0o600)?;
+    }
+    Ok(())
+}
+
+/// Install the Claude plugin marketplaces and plugins declared by the role
+/// manifest, once per declared plugin set.
+///
+/// Plugin setup moved here from the image build: the `claude` binary is now
+/// bind-mounted read-only at `docker run` (not baked into the derived image), so
+/// there is no longer a build step to run `claude plugin install`. Idempotent:
+/// a fingerprint marker prevents re-install on re-launches and sibling tabs
+/// unless the declared plugin set changes.
+fn setup_claude_plugins() {
+    let Some(config) = crate::config::load_optional() else {
+        return;
+    };
+    if config.claude_marketplaces.is_empty() && config.claude_plugins.is_empty() {
+        return;
+    }
+    // Re-run when the declared plugin set changes. The marker records the exact
+    // marketplaces+plugins it was written for; a bare exists() check would
+    // shadow a `jackin.role.toml` plugin edit forever.
+    let config_dir = claude_config_dir();
+    let marker = config_dir.join(".jackin-plugins.done");
+    let fingerprint = claude_plugin_fingerprint(&config);
+    if fs::read_to_string(&marker).is_ok_and(|s| s == fingerprint) {
+        return;
+    }
+    // The official marketplace backs the common plugins; non-fatal if already
+    // registered (failure logged via governed INFO event, not propagated). Its result does not
+    // gate the user-declared installs or the marker — the infrastructure add is
+    // best-effort.
+    run_optional_command(
+        "claude",
+        &[
+            "plugin",
+            "marketplace",
+            "add",
+            "anthropics/claude-plugins-official",
+        ],
+    );
+    let mut all_ok = true;
+    for marketplace in &config.claude_marketplaces {
+        let mut args = vec!["plugin", "marketplace", "add", marketplace.source.as_str()];
+        if !marketplace.sparse.is_empty() {
+            args.push("--sparse");
+            args.extend(marketplace.sparse.iter().map(String::as_str));
+        }
+        all_ok &= run_optional_command("claude", &args);
+    }
+    for plugin in &config.claude_plugins {
+        all_ok &= run_optional_command("claude", &["plugin", "install", plugin.as_str()]);
+    }
+    if !all_ok {
+        crate::output::stderr_line(format_args!(
+            "[entrypoint] claude plugins: one or more installs failed; marker not written, will retry on next launch"
+        ));
+        return;
+    }
+    if let Err(e) = fs::create_dir_all(&config_dir) {
+        crate::output::stderr_line(format_args!(
+            "[entrypoint] claude plugins: failed to create marker dir {}: {e} (plugins will re-run next launch)",
+            config_dir.display()
+        ));
+        return;
+    }
+    if let Err(e) = fs::write(&marker, &fingerprint) {
+        crate::output::stderr_line(format_args!(
+            "[entrypoint] claude plugins: failed to write install marker (plugins will re-run next launch): {e}"
+        ));
+    }
+}
+
+/// Stable fingerprint of the declared Claude marketplaces + plugins, stored as
+/// the install marker's contents so a changed plugin set re-triggers install.
+fn claude_plugin_fingerprint(config: &jackin_protocol::CapsuleConfig) -> String {
+    let mut out = String::new();
+    for marketplace in &config.claude_marketplaces {
+        out.push_str("m:");
+        out.push_str(&marketplace.source);
+        for path in &marketplace.sparse {
+            out.push(' ');
+            out.push_str(path);
+        }
+        out.push('\n');
+    }
+    for plugin in &config.claude_plugins {
+        out.push_str("p:");
+        out.push_str(plugin);
+        out.push('\n');
+    }
+    out
+}
+
+/// One agent's host-forwarded single-file credential, seeded into its
+/// in-container config dir. The capsule analogue of the host-side
+/// `provision_single_file_credential` (see `jackin-runtime` `instance/auth.rs`):
+/// both ends of the host→container sync read the same shape so a reader does not
+/// have to relearn each agent.
+struct ForwardedCredential<'a> {
+    /// Short log label, e.g. `"codex"`.
+    label: &'a str,
+    /// Mounted host credential inside the container (`/jackin/<agent>/<file>`).
+    forwarded: &'a Path,
+    /// In-container destination, already resolved to honor the agent's
+    /// config-dir env var (`CODEX_HOME`, `XDG_DATA_HOME`, …) where it has one.
+    target: &'a Path,
+    /// API-key env vars that are an alternative to forwarded auth; any one set
+    /// suppresses the "needs interactive login" warning.
+    api_key_envs: &'a [&'a str],
+}
+
+/// Seed a host-forwarded credential into an agent's config dir with one uniform
+/// policy for every sync-capable agent:
+///
+/// - **First seed**: copy the forwarded file when present; otherwise clear any
+///   stale destination and warn — unless an API-key env var supplies auth.
+/// - **Later launches**: if the destination is missing but the forwarded file is
+///   present, re-seed (the first seed raced the host login). Guarded on
+///   `!target.exists()` so a token the agent refreshed in-container is never
+///   clobbered.
+fn seed_forwarded_credential(
+    agent: jackin_core::Agent,
+    mode: AuthMode,
+    seed_base: &Path,
+    spec: &ForwardedCredential<'_>,
+) -> Result<AuthMaterialization> {
+    let first_seed = seed_agent_home_from_enum(agent, seed_base)?.is_first_seed();
+    apply_forwarded_credential(first_seed, mode, spec)
+}
+
+/// The credential-seeding policy, decoupled from the home-seed signal so a
+/// multi-file agent (Claude: credentials.json + account.json) can seed its home
+/// once and apply this same policy to each file under that one `first_seed`.
+fn apply_forwarded_credential(
+    first_seed: bool,
+    mode: AuthMode,
+    spec: &ForwardedCredential<'_>,
+) -> Result<AuthMaterialization> {
+    use jackin_telemetry::schema::enums::{
+        CredentialSourceType as Source, ErrorType, OutcomeValue as Outcome,
+    };
+    if matches!(mode, AuthMode::Ignore) {
+        remove_file_if_exists(spec.target)?;
+        return Ok(AuthMaterialization {
+            source: Source::None,
+            outcome: Outcome::Skip,
+            error: None,
+        });
+    }
+    if matches!(mode, AuthMode::ApiKey | AuthMode::OauthToken) {
+        remove_file_if_exists(spec.target)?;
+        let available = spec
+            .api_key_envs
+            .iter()
+            .any(|key| nonempty_env(key).is_some());
+        return Ok(AuthMaterialization {
+            source: if available {
+                Source::Environment
+            } else {
+                Source::None
+            },
+            outcome: if available {
+                Outcome::Success
+            } else {
+                Outcome::Failure
+            },
+            error: (!available).then_some(ErrorType::CredentialUnavailable),
+        });
+    }
+    let mut copied = false;
+    if first_seed {
+        if spec.forwarded.is_file() {
+            copy_file_with_mode(spec.forwarded, spec.target, 0o600)?;
+            copied = true;
+        } else {
+            remove_file_if_exists(spec.target)?;
+            crate::output::stderr_line(format_args!(
+                "[entrypoint] {}: no forwarded credential and no api key in env - agent will require interactive login",
+                spec.label
+            ));
+        }
+    } else if !spec.target.exists() && spec.forwarded.is_file() {
+        copy_file_with_mode(spec.forwarded, spec.target, 0o600)?;
+        copied = true;
+    }
+    let available = spec.target.is_file();
+    Ok(AuthMaterialization {
+        source: if copied {
+            Source::AgentHome
+        } else if available {
+            Source::OauthStore
+        } else {
+            Source::None
+        },
+        outcome: if available {
+            Outcome::Success
+        } else {
+            Outcome::Failure
+        },
+        error: (!available).then_some(ErrorType::CredentialUnavailable),
+    })
+}
+
+fn setup_codex(mode: AuthMode) -> Result<AuthMaterialization> {
+    let forwarded = forwarded_file(container_paths::CODEX_AUTH);
+    let target = codex_auth_path();
+    seed_forwarded_credential(
+        jackin_core::Agent::Codex,
+        mode,
+        &codex_home(),
+        &ForwardedCredential {
+            label: "codex",
+            forwarded: &forwarded,
+            target: &target,
+            api_key_envs: &["OPENAI_API_KEY"],
+        },
+    )
+}
+
+fn setup_amp(mode: AuthMode) -> Result<AuthMaterialization> {
+    let forwarded = forwarded_file(container_paths::AMP_SECRETS);
+    let target = amp_secrets_path();
+    seed_forwarded_credential(
+        jackin_core::Agent::Amp,
+        mode,
+        &xdg_data_home().join("amp"),
+        &ForwardedCredential {
+            label: "amp",
+            forwarded: &forwarded,
+            target: &target,
+            api_key_envs: &["AMP_API_KEY"],
+        },
+    )
+}
+
+/// Kimi is the one sync-capable agent whose credential store is a directory, so
+/// it cannot use [`seed_forwarded_credential`]. It applies the same closed mode
+/// policy to the whole store: sync seeds/reuses it, environment modes and ignore
+/// remove it so stale credentials cannot silently override the selected mode.
+fn setup_kimi(mode: AuthMode) -> Result<AuthMaterialization> {
+    use jackin_telemetry::schema::enums::{
+        CredentialSourceType as Source, ErrorType, OutcomeValue as Outcome,
+    };
+    let target = Path::new("/home/agent/.kimi-code");
+    let first_seed = seed_agent_home_from_enum(jackin_core::Agent::Kimi, target)?.is_first_seed();
+    let forwarded = forwarded_dir(container_paths::KIMI_CODE_DIR);
+    let forwarded_present = forwarded.is_dir() && dir_nonempty(&forwarded)?;
+    if matches!(mode, AuthMode::Ignore) {
+        if target.exists() {
+            fs::remove_dir_all(target).context("failed to clear ignored Kimi credentials")?;
+        }
+        return Ok(AuthMaterialization {
+            source: Source::None,
+            outcome: Outcome::Skip,
+            error: None,
+        });
+    }
+    if matches!(mode, AuthMode::ApiKey | AuthMode::OauthToken) {
+        if target.exists() {
+            fs::remove_dir_all(target).context("failed to clear Kimi credential store")?;
+        }
+        let available = nonempty_env("KIMI_CODE_API_KEY").is_some();
+        return Ok(AuthMaterialization {
+            source: if available {
+                Source::Environment
+            } else {
+                Source::None
+            },
+            outcome: if available {
+                Outcome::Success
+            } else {
+                Outcome::Failure
+            },
+            error: (!available).then_some(ErrorType::CredentialUnavailable),
+        });
+    }
+    let mut copied = false;
+    if first_seed {
+        if forwarded_present {
+            copy_dir_contents(&forwarded, target)?;
+            copied = true;
+        } else {
+            crate::output::stderr_line(format_args!(
+                "[entrypoint] kimi: no forwarded credential and no api key in env - agent will require interactive login"
+            ));
+        }
+    } else if forwarded_present && !(target.is_dir() && dir_nonempty(target)?) {
+        copy_dir_contents(&forwarded, target)?;
+        copied = true;
+    }
+    let available = target.is_dir() && dir_nonempty(target)?;
+    Ok(AuthMaterialization {
+        source: if copied {
+            Source::AgentHome
+        } else if available {
+            Source::OauthStore
+        } else {
+            Source::None
+        },
+        outcome: if available {
+            Outcome::Success
+        } else {
+            Outcome::Failure
+        },
+        error: (!available).then_some(ErrorType::CredentialUnavailable),
+    })
+}
+
+fn setup_opencode(mode: AuthMode) -> Result<AuthMaterialization> {
+    let forwarded = forwarded_file(container_paths::OPENCODE_AUTH);
+    let target = opencode_auth_path();
+    seed_forwarded_credential(
+        jackin_core::Agent::Opencode,
+        mode,
+        &xdg_data_home().join("opencode"),
+        &ForwardedCredential {
+            label: "opencode",
+            forwarded: &forwarded,
+            target: &target,
+            api_key_envs: &["OPENCODE_API_KEY"],
+        },
+    )
+}
+
+fn setup_grok(mode: AuthMode) -> Result<AuthMaterialization> {
+    let forwarded = forwarded_file(container_paths::GROK_AUTH);
+    let seed_base = Path::new(GROK_AUTH_PATH)
+        .parent()
+        .unwrap_or(Path::new(AGENT_HOME));
+    seed_forwarded_credential(
+        jackin_core::Agent::Grok,
+        mode,
+        seed_base,
+        &ForwardedCredential {
+            label: "grok",
+            forwarded: &forwarded,
+            target: Path::new(GROK_AUTH_PATH),
+            api_key_envs: &["XAI_API_KEY", "GROK_DEPLOYMENT_KEY"],
+        },
+    )
+}
+
+fn setup_antigravity(mode: AuthMode) -> Result<AuthMaterialization> {
+    let forwarded = forwarded_file(container_paths::ANTIGRAVITY_SETTINGS);
+    let target = antigravity_settings_path();
+    seed_forwarded_credential(
+        jackin_core::Agent::Antigravity,
+        mode,
+        &gemini_home().join("antigravity-cli"),
+        &ForwardedCredential {
+            label: "antigravity",
+            forwarded: &forwarded,
+            target: &target,
+            api_key_envs: &["GEMINI_API_KEY"],
+        },
+    )
+}
+
+fn setup_gemini(mode: AuthMode) -> Result<AuthMaterialization> {
+    let forwarded = forwarded_file(container_paths::GEMINI_AUTH);
+    let target = gemini_oauth_creds_path();
+    seed_forwarded_credential(
+        jackin_core::Agent::Gemini,
+        mode,
+        &gemini_home(),
+        &ForwardedCredential {
+            label: "gemini",
+            forwarded: &forwarded,
+            target: &target,
+            api_key_envs: &["GEMINI_API_KEY"],
+        },
+    )
+}
+
+fn setup_cursor(mode: AuthMode) -> Result<AuthMaterialization> {
+    let forwarded = forwarded_file(container_paths::CURSOR_AUTH);
+    let target = cursor_auth_path();
+    seed_forwarded_credential(
+        jackin_core::Agent::Cursor,
+        mode,
+        &cursor_home(),
+        &ForwardedCredential {
+            label: "cursor",
+            forwarded: &forwarded,
+            target: &target,
+            api_key_envs: &["CURSOR_API_KEY"],
+        },
+    )
+}
+
+fn setup_muse(mode: AuthMode) -> Result<AuthMaterialization> {
+    let forwarded = forwarded_file(container_paths::MUSE_AUTH);
+    let seed_base = Path::new(MUSE_AUTH_PATH)
+        .parent()
+        .unwrap_or(Path::new(AGENT_HOME));
+    seed_forwarded_credential(
+        jackin_core::Agent::Muse,
+        mode,
+        seed_base,
+        &ForwardedCredential {
+            label: "muse",
+            forwarded: &forwarded,
+            target: Path::new(MUSE_AUTH_PATH),
+            api_key_envs: &["META_API_KEY"],
+        },
+    )
+}
+
+fn setup_omp(mode: AuthMode) -> Result<AuthMaterialization> {
+    let forwarded = forwarded_file(container_paths::OMP_AGENT_DB);
+    let target = omp_agent_db_path();
+    seed_forwarded_credential(
+        jackin_core::Agent::Omp,
+        mode,
+        &omp_home(),
+        &ForwardedCredential {
+            label: "omp",
+            forwarded: &forwarded,
+            target: &target,
+            // No native key: any routed provider key suppresses the warning.
+            api_key_envs: &[
+                "OPENROUTER_API_KEY",
+                "ANTHROPIC_API_KEY",
+                "OPENAI_API_KEY",
+                "GEMINI_API_KEY",
+                "CURSOR_API_KEY",
+                "META_API_KEY",
+                "XAI_API_KEY",
+            ],
+        },
+    )
+}
+
+/// Hermes's store is a directory (like Kimi), so it cannot use
+/// [`seed_forwarded_credential`]; same closed mode policy as [`setup_kimi`].
+fn setup_hermes(mode: AuthMode) -> Result<AuthMaterialization> {
+    use jackin_telemetry::schema::enums::{
+        CredentialSourceType as Source, ErrorType, OutcomeValue as Outcome,
+    };
+    let target = hermes_home();
+    let first_seed =
+        seed_agent_home_from_enum(jackin_core::Agent::Hermes, &target)?.is_first_seed();
+    let forwarded = forwarded_dir(container_paths::HERMES_DIR);
+    let forwarded_present = forwarded.is_dir() && dir_nonempty(&forwarded)?;
+    if matches!(mode, AuthMode::Ignore) {
+        if target.exists() {
+            fs::remove_dir_all(&target).context("failed to clear ignored Hermes credentials")?;
+        }
+        return Ok(AuthMaterialization {
+            source: Source::None,
+            outcome: Outcome::Skip,
+            error: None,
+        });
+    }
+    if matches!(mode, AuthMode::ApiKey | AuthMode::OauthToken) {
+        if target.exists() {
+            fs::remove_dir_all(&target).context("failed to clear Hermes credential store")?;
+        }
+        let available = [
+            "OPENROUTER_API_KEY",
+            "ANTHROPIC_API_KEY",
+            "OPENAI_API_KEY",
+            "GEMINI_API_KEY",
+            "CURSOR_API_KEY",
+            "META_API_KEY",
+            "XAI_API_KEY",
+        ]
+        .iter()
+        .any(|key| nonempty_env(key).is_some());
+        return Ok(AuthMaterialization {
+            source: if available {
+                Source::Environment
+            } else {
+                Source::None
+            },
+            outcome: if available {
+                Outcome::Success
+            } else {
+                Outcome::Failure
+            },
+            error: (!available).then_some(ErrorType::CredentialUnavailable),
+        });
+    }
+    let mut copied = false;
+    if first_seed {
+        if forwarded_present {
+            copy_dir_contents(&forwarded, &target)?;
+            copied = true;
+        } else {
+            crate::output::stderr_line(format_args!(
+                "[entrypoint] hermes: no forwarded credential and no api key in env - agent will require interactive login"
+            ));
+        }
+    } else if forwarded_present && !(target.is_dir() && dir_nonempty(&target)?) {
+        copy_dir_contents(&forwarded, &target)?;
+        copied = true;
+    }
+    let available = target.is_dir() && dir_nonempty(&target)?;
+    Ok(AuthMaterialization {
+        source: if copied {
+            Source::AgentHome
+        } else if available {
+            Source::OauthStore
+        } else {
+            Source::None
+        },
+        outcome: if available {
+            Outcome::Success
+        } else {
+            Outcome::Failure
+        },
+        error: (!available).then_some(ErrorType::CredentialUnavailable),
+    })
+}
+
+/// Whether a durable home was empty and got seeded on this start. Named instead
+/// of a bare `bool` so the seed/auth contract is explicit at every call site:
+/// auth handoff is copied only on [`SeedOutcome::FirstSeed`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SeedOutcome {
+    /// The home was empty (or absent); defaults were seeded and first-start auth
+    /// handoff should be copied.
+    FirstSeed,
+    /// The home already held durable state; nothing was touched and auth must
+    /// not be re-copied over in-container credentials.
+    AlreadySeeded,
+}
+
+impl SeedOutcome {
+    /// True on the first seed, when first-start auth handoff must run.
+    fn is_first_seed(self) -> bool {
+        matches!(self, Self::FirstSeed)
+    }
+}
+
+/// Seed `src` into `dst`, gated on `dst` being empty.
+///
+/// Returns [`SeedOutcome::FirstSeed`] when dst was empty, [`SeedOutcome::AlreadySeeded`]
+/// when dst already has entries (seeded on a prior start; in-container files are
+/// authoritative). Auth is copied by the caller only on `FirstSeed`.
+///
+/// If `dst` already exists, it may be a Docker bind mount target; seed it in
+/// place because POSIX cannot rename over a mount point.
+fn seed_home_dir(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> Result<SeedOutcome> {
+    let src = src.as_ref();
+    let dst = dst.as_ref();
+
+    // D5: gate on emptiness — non-empty dst is authoritative, skip
+    if dst.is_dir() && !is_dir_empty(dst) {
+        return Ok(SeedOutcome::AlreadySeeded);
+    }
+
+    if !src.is_dir() {
+        // No baked defaults; dst stays empty (or absent) — still first setup
+        return Ok(SeedOutcome::FirstSeed);
+    }
+
+    if dst.exists() {
+        // In-place copy is NOT atomic (a crash mid-copy leaves a partial home the
+        // emptiness gate then treats as durable). Accepted because `dst` here is a
+        // Docker bind-mount target, which POSIX cannot `rename` over — the atomic
+        // rename path below applies only when `dst` is absent.
+        copy_dir_contents(src, dst)?;
+        return Ok(SeedOutcome::FirstSeed);
+    }
+
+    // Atomic seed: copy to sibling temp (same mount → rename is atomic on POSIX)
+    let parent = dst.parent().unwrap_or(Path::new("/"));
+    fs::create_dir_all(parent)
+        .with_context(|| format!("failed to create parent {}", parent.display()))?;
+    let tmp = TempfileBuilder::new()
+        .prefix(".jackin-seed")
+        .tempdir_in(parent)
+        .with_context(|| format!("failed to create seed temp dir in {}", parent.display()))?;
+    copy_dir_contents(src, tmp.path())?;
+    let tmp_path = tmp.keep(); // keep() returns PathBuf, prevents Drop removal
+    // dst does not exist here (the dst.exists() branch above handled that), so
+    // rename the staged tree onto it directly.
+    if let Err(err) = fs::rename(&tmp_path, dst) {
+        // keep() defused the Drop guard, so a failed rename would orphan the
+        // staging dir next to the durable home — remove it before surfacing.
+        let _unused = fs::remove_dir_all(&tmp_path);
+        return Err(err).with_context(|| {
+            format!(
+                "atomic seed: rename {} → {}",
+                tmp_path.display(),
+                dst.display()
+            )
+        });
+    }
+
+    Ok(SeedOutcome::FirstSeed)
+}
+
+/// Seed an agent's durable home, gated on the primary data root's emptiness,
+/// and — for agents that persist a separate config root — seed that paired
+/// config root in the same first-seed pass (two sequential seeds, not one
+/// atomic transaction). Both roots share one lifecycle: empty data root means
+/// first start (seed both, returning
+/// [`SeedOutcome::FirstSeed`] so the caller copies auth); if *either* root already
+/// holds durable content, treat the agent as existing state and leave both
+/// untouched ([`SeedOutcome::AlreadySeeded`]).
+fn seed_agent_home(
+    data_default: &str,
+    data_dst: &str,
+    config: Option<(&str, &str)>,
+) -> Result<SeedOutcome> {
+    if let Some((config_default, config_dst)) = config {
+        // A config root with durable content means the agent is already set up,
+        // even if the data root looks empty (e.g. a partially recreated mount):
+        // never re-seed or re-copy auth over it.
+        let config_path = Path::new(config_dst);
+        if config_path.is_dir() && !is_dir_empty(config_path) {
+            return Ok(SeedOutcome::AlreadySeeded);
+        }
+        let outcome = seed_home_dir(data_default, data_dst)?;
+        if outcome.is_first_seed() {
+            seed_home_dir(config_default, config_dst)?;
+        }
+        return Ok(outcome);
+    }
+    seed_home_dir(data_default, data_dst)
+}
+
+/// Seed `agent`'s durable home from `/jackin/default-home` into
+/// `home`, the instance's resolved data root. The baked defaults still
+/// come from the agent enum
+/// ([`AgentStatePaths`](jackin_core::AgentStatePaths)) so the
+/// per-agent folder layout has one source of truth; only the
+/// destination varies per instance. Returns the first-seed outcome;
+/// the caller copies auth only on [`SeedOutcome::FirstSeed`].
+///
+/// The paired config root seeds only when `home` equals the enum data
+/// root (primary slots). A differing home is always a secondary
+/// same-agent slot, and multi-instance admission is rejected for the
+/// paired-root agents — so a secondary never has a config pair to seed.
+fn seed_agent_home_from_enum(agent: jackin_core::Agent, home: &Path) -> Result<SeedOutcome> {
+    let paths = agent.runtime().state_paths();
+    let data_default = format!(
+        "{}/{}",
+        container_paths::DEFAULT_HOME_DIR,
+        paths.credential_dir
+    );
+    let data_dst = format!("/home/agent/{}", paths.credential_dir);
+    let home = home.to_string_lossy().into_owned();
+    let config = match paths.config_dir {
+        Some(config_dir) if home == data_dst => {
+            let config_default = format!("{}/{config_dir}", container_paths::DEFAULT_HOME_DIR);
+            let config_dst = format!("/home/agent/{config_dir}");
+            Some((config_default, config_dst))
+        }
+        _ => None,
+    };
+    match config {
+        Some((config_default, config_dst)) => seed_agent_home(
+            &data_default,
+            &data_dst,
+            Some((&config_default, &config_dst)),
+        ),
+        // Primary homes equal the enum root, so this arm serves both
+        // primary single-root agents and secondary slots.
+        None => seed_agent_home(&data_default, &home, None),
+    }
+}
+
+fn is_dir_empty(path: &Path) -> bool {
+    // Conservative on error: treat an unreadable directory as non-empty to
+    // prevent an I/O failure from being mistaken for a first-seed opportunity.
+    !dir_nonempty(path).unwrap_or(true)
+}
+
+fn copy_dir_contents(src: &Path, dst: &Path) -> Result<()> {
+    fs::create_dir_all(dst).with_context(|| format!("failed to create {}", dst.display()))?;
+    for entry in fs::read_dir(src).with_context(|| format!("failed to read {}", src.display()))? {
+        let entry = entry?;
+        let entry_src = entry.path();
+        let entry_dst = dst.join(entry.file_name());
+        let metadata = entry
+            .metadata()
+            .with_context(|| format!("failed to stat {}", entry_src.display()))?;
+        if metadata.is_dir() {
+            copy_dir_contents(&entry_src, &entry_dst)?;
+        } else {
+            copy_file_preserving_mode(&entry_src, &entry_dst)?;
+        }
+    }
+    Ok(())
+}
+
+fn copy_file_with_mode(src: impl AsRef<Path>, dst: impl AsRef<Path>, mode: u32) -> Result<()> {
+    copy_file_preserving_mode(src.as_ref(), dst.as_ref())?;
+    let mut permissions = fs::metadata(dst.as_ref())
+        .with_context(|| format!("failed to stat {}", dst.as_ref().display()))?
+        .permissions();
+    permissions.set_mode(mode);
+    fs::set_permissions(dst.as_ref(), permissions)
+        .with_context(|| format!("failed to chmod {}", dst.as_ref().display()))
+}
+
+fn copy_file_preserving_mode(src: &Path, dst: &Path) -> Result<()> {
+    if let Some(parent) = dst.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create {}", parent.display()))?;
+    }
+    fs::copy(src, dst)
+        .with_context(|| format!("failed to copy {} to {}", src.display(), dst.display()))?;
+    Ok(())
+}
+
+fn remove_file_if_exists(path: impl AsRef<Path>) -> Result<()> {
+    let path = path.as_ref();
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(err) => Err(err).with_context(|| format!("failed to remove {}", path.display())),
+    }
+}
+
+fn dir_nonempty(path: &Path) -> Result<bool> {
+    Ok(fs::read_dir(path)
+        .with_context(|| format!("failed to read {}", path.display()))?
+        .next()
+        .transpose()?
+        .is_some())
+}
+
+fn git_trailer_hook_ready() -> bool {
+    let Ok(hooks_dir) = session_state_path("git-hooks") else {
+        return false;
+    };
+    let hook_path = hooks_dir.join("prepare-commit-msg");
+    let hook_marker = hooks_dir.join("prepare-commit-msg.v3.done");
+    if !is_executable(&hook_path) || !hook_points_to_capsule(&hook_path) || !hook_marker.exists() {
+        return false;
+    }
+    let Ok(output) = runtime_setup_output("git", ["config", "--global", "core.hooksPath"]) else {
+        return false;
+    };
+    output.success
+        && String::from_utf8_lossy(&output.stdout).trim_end()
+            == hooks_dir.to_string_lossy().as_ref()
+}
+
+fn hook_points_to_capsule(path: &Path) -> bool {
+    fs::read_link(path).is_ok_and(|target| target == Path::new(CAPSULE_RUNTIME_BIN))
+}
+
+fn coauthor_trailer_for_agent(agent: &str) -> Option<&'static str> {
+    match agent {
+        "claude" => Some("Co-authored-by: Claude <noreply@anthropic.com>"),
+        "codex" => Some("Co-authored-by: Codex <codex@openai.com>"),
+        "amp" => Some("Co-authored-by: Amp <amp@ampcode.com>"),
+        "opencode" => Some(
+            "Co-authored-by: opencode-agent[bot] <opencode-agent[bot]@users.noreply.github.com>",
+        ),
+        // Grok does not support trailers.
+        "grok" => None,
+        _ => None,
+    }
+}
+
+/// Write `user.name` and `user.email` to `GIT_DCO_IDENTITY_CACHE` at startup
+/// so the prepare-commit-msg hook never shells out to `git config` at commit
+/// time (eliminates the class of transient-empty-config silent-skip failures).
+fn cache_dco_identity_if_needed() {
+    if !env_is_one("JACKIN_GIT_DCO") {
+        return;
+    }
+    let (Some(name), Some(email)) = (
+        git_config_value("user.name"),
+        git_config_value("user.email"),
+    ) else {
+        // DCO is on but git identity is unreadable at startup; the commit-time
+        // hook will fall back to live `git config` (and warn) per commit.
+        record_recovered_degradation();
+        return;
+    };
+    let Ok(cache_path) = git_dco_identity_cache_path() else {
+        record_recovered_degradation();
+        return;
+    };
+    if let Err(_error) = fs::write(&cache_path, format!("{name}\n{email}\n")) {
+        // A failed cache write means every commit shells out to live git
+        // config — the exact failure this cache exists to prevent.
+        record_recovered_degradation();
+    }
+}
+
+fn record_recovered_degradation() {
+    let _warning = jackin_telemetry::record_recovered_degradation();
+}
+
+fn read_cached_dco_identity() -> Option<(String, String)> {
+    let Ok(cache_path) = git_dco_identity_cache_path() else {
+        record_recovered_degradation();
+        return None;
+    };
+    let content = match fs::read_to_string(cache_path) {
+        Ok(content) => content,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return None,
+        Err(_error) => {
+            record_recovered_degradation();
+            return None;
+        }
+    };
+    let mut lines = content.lines();
+    let name = lines.next().filter(|s| !s.is_empty())?.to_owned();
+    let email = lines.next().filter(|s| !s.is_empty())?.to_owned();
+    Some((name, email))
+}
+
+fn git_dco_identity_cache_path() -> Result<PathBuf> {
+    #[cfg(debug_assertions)]
+    if let Some(path) = std::env::var_os(GIT_DCO_IDENTITY_CACHE_ENV) {
+        return Ok(PathBuf::from(path));
+    }
+    session_state_path("git-dco-identity")
+}
+
+fn git_config_value(key: &str) -> Option<String> {
+    let output = runtime_setup_output("git", ["config", key]).ok()?;
+    if !output.success {
+        return None;
+    }
+    Some(
+        String::from_utf8_lossy(&output.stdout)
+            .trim_end()
+            .to_owned(),
+    )
+    .filter(|value| !value.is_empty())
+}
+
+fn ensure_message_trailer(
+    message_path: &Path,
+    trailer: &str,
+    label: &str,
+    where_arg: Option<&str>,
+) -> Result<()> {
+    remove_exact_trailer_lines(message_path, trailer, label)?;
+    let mut args = vec![
+        OsString::from("interpret-trailers"),
+        OsString::from("--in-place"),
+        OsString::from("--if-exists=addIfDifferent"),
+    ];
+    if let Some(where_arg) = where_arg {
+        args.push(OsString::from(format!("--where={where_arg}")));
+    }
+    args.extend([OsString::from("--trailer"), OsString::from(trailer)]);
+    args.push(message_path.as_os_str().to_owned());
+    let output = runtime_setup_output("git", args)
+        .with_context(|| format!("failed to run git interpret-trailers for {label}"))?;
+    if output.success {
+        return Ok(());
+    }
+    bail!(
+        "failed to append {label} trailer to {}: {}",
+        message_path.display(),
+        String::from_utf8_lossy(&output.stderr).trim()
+    );
+}
+
+fn remove_exact_trailer_lines(message_path: &Path, trailer: &str, label: &str) -> Result<()> {
+    let input = fs::read(message_path)
+        .with_context(|| format!("failed to read commit message {}", message_path.display()))?;
+    let trailer = trailer.as_bytes();
+    let mut output = Vec::with_capacity(input.len());
+    for segment in input.split_inclusive(|byte| *byte == b'\n') {
+        let mut line = segment;
+        if let Some(stripped) = line.strip_suffix(b"\n") {
+            line = stripped;
+        }
+        if let Some(stripped) = line.strip_suffix(b"\r") {
+            line = stripped;
+        }
+        if line != trailer {
+            output.extend_from_slice(segment);
+        }
+    }
+    fs::write(message_path, output).with_context(|| {
+        format!(
+            "failed to normalize existing {label} trailer in {}",
+            message_path.display()
+        )
+    })
+}
+
+fn ensure_git_config_multivalue(key: &str, value: &str) -> Result<()> {
+    let output = runtime_setup_output("git", ["config", "--global", "--get-all", key])
+        .with_context(|| format!("failed to read git config {key}"))?;
+    if output.success
+        && String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .any(|line| line == value)
+    {
+        return Ok(());
+    }
+    if !output.success && output.code != Some(1) {
+        bail!(
+            "git config --global --get-all {key} failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    run_command("git", &["config", "--global", "--add", key, value])
+}
+
+fn gh_auth_status_ok() -> bool {
+    let request = jackin_process::ExecRequest::new("gh", ["auth", "status"])
+        .stdout_mode(jackin_process::StdioMode::Null)
+        .stderr_mode(jackin_process::StdioMode::Null);
+    runtime_setup_request(&request).is_ok_and(|result| result.success)
+}
+
+pub(crate) fn run_command(program: &str, args: &[&str]) -> Result<()> {
+    let output = runtime_setup_output(program, args.iter().copied())
+        .with_context(|| format!("failed to run {}", format_command(program, args)))?;
+    if output.success {
+        return Ok(());
+    }
+    bail!(
+        "{} failed with {}: {}",
+        format_command(program, args),
+        output
+            .code
+            .map_or_else(|| "signal".to_owned(), |code| code.to_string()),
+        String::from_utf8_lossy(&output.stderr).trim()
+    )
+}
+
+fn runtime_setup_output(
+    program: &str,
+    args: impl IntoIterator<Item = impl AsRef<OsStr>>,
+) -> Result<jackin_process::ExecResult> {
+    runtime_setup_request(&jackin_process::ExecRequest::new(program, args))
+}
+
+fn runtime_setup_request(
+    request: &jackin_process::ExecRequest,
+) -> Result<jackin_process::ExecResult> {
+    use jackin_telemetry::schema::enums::{ErrorType, OutcomeValue};
+
+    let executable = jackin_telemetry::process::classify_executable(&request.program);
+    let operation = jackin_telemetry::operation_or_disabled(
+        &jackin_telemetry::operation::PROCESS_COMMAND,
+        &[jackin_telemetry::Attr {
+            key: jackin_telemetry::schema::attrs::std_attrs::PROCESS_EXECUTABLE_NAME,
+            value: jackin_telemetry::Value::Str(executable.as_str()),
+        }],
+    );
+    let result = jackin_process::exec_sync(request);
+    let completion = match &result {
+        Ok(output) => {
+            if let Some(code) = output.code {
+                let _attribute = operation.set_attr(jackin_telemetry::Attr {
+                    key: jackin_telemetry::schema::attrs::std_attrs::PROCESS_EXIT_CODE,
+                    value: jackin_telemetry::Value::I64(i64::from(code)),
+                });
+            }
+            if output.timed_out {
+                (OutcomeValue::Timeout, Some(ErrorType::Timeout))
+            } else if output.success {
+                (OutcomeValue::Success, None)
+            } else {
+                (OutcomeValue::Failure, Some(ErrorType::ProcessExitNonzero))
+            }
+        }
+        Err(_) => (OutcomeValue::Failure, Some(ErrorType::ProcessSpawnError)),
+    };
+    operation.complete(completion.0, completion.1);
+    result
+}
+
+fn run_optional_command(program: &str, args: &[&str]) -> bool {
+    // Use the shared telemetry resolver rather than parsing controls privately.
+    let verbose = matches!(
+        jackin_diagnostics::telemetry_level(false),
+        jackin_diagnostics::TelemetryLevel::Debug | jackin_diagnostics::TelemetryLevel::Trace
+    );
+    let mode = if verbose {
+        jackin_process::StdioMode::Inherit
+    } else {
+        jackin_process::StdioMode::Null
+    };
+    let request = jackin_process::ExecRequest::new(program, args.iter().copied())
+        .stdout_mode(mode)
+        .stderr_mode(mode);
+    match runtime_setup_request(&request) {
+        Ok(result) if result.success => true,
+        Ok(_) | Err(_) => false,
+    }
+}
+
+fn format_command(program: &str, args: &[&str]) -> String {
+    std::iter::once(program)
+        .chain(args.iter().copied())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn nonempty_env(name: &str) -> Option<String> {
+    std::env::var(name).ok().filter(|value| !value.is_empty())
+}
+
+/// Resolve a host-forwarded credential file for this instance: when the
+/// daemon set `JACKIN_FORWARDED_DIR`, join the legacy file name onto it;
+/// otherwise use the legacy path (primary slots).
+fn forwarded_file(legacy: &str) -> PathBuf {
+    forwarded_file_from(
+        nonempty_env(jackin_protocol::INSTANCE_FORWARDED_DIR_ENV).as_deref(),
+        legacy,
+    )
+}
+
+fn forwarded_file_from(env: Option<&str>, legacy: &str) -> PathBuf {
+    match env {
+        Some(dir) => Path::new(dir).join(Path::new(legacy).file_name().unwrap_or_default()),
+        None => PathBuf::from(legacy),
+    }
+}
+
+/// Resolve a host-forwarded credential directory for this instance:
+/// the daemon's `JACKIN_FORWARDED_DIR` when set, else the legacy dir.
+fn forwarded_dir(legacy: &str) -> PathBuf {
+    forwarded_dir_from(
+        nonempty_env(jackin_protocol::INSTANCE_FORWARDED_DIR_ENV).as_deref(),
+        legacy,
+    )
+}
+
+fn forwarded_dir_from(env: Option<&str>, legacy: &str) -> PathBuf {
+    env.map_or_else(|| PathBuf::from(legacy), PathBuf::from)
+}
+
+fn env_is_one(name: &str) -> bool {
+    std::env::var(name).as_deref() == Ok("1")
+}
+
+fn is_executable(path: impl AsRef<Path>) -> bool {
+    fs::metadata(path).is_ok_and(|metadata| metadata.permissions().mode() & 0o111 != 0)
+}
+
+#[cfg(test)]
+mod tests;

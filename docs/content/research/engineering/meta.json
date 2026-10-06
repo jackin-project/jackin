@@ -1,0 +1,12 @@
+{
+  "title": "Engineering",
+  "defaultOpen": false,
+  "pages": [
+    "index",
+    "ci",
+    "build-performance",
+    "testing",
+    "documentation",
+    "desktop-verification"
+  ]
+}

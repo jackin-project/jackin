@@ -1,0 +1,10 @@
+{
+  "title": "Memory",
+  "defaultOpen": false,
+  "pages": [
+    "index",
+    "01-requirements-and-prior-art",
+    "02-storage-and-memory-model",
+    "03-delivery-lifecycle-and-concurrency"
+  ]
+}

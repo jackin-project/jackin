@@ -1,0 +1,10 @@
+{
+  "title": "Documentation",
+  "defaultOpen": false,
+  "pages": [
+    "index",
+    "repository-strategy",
+    "docs-markdown-linting",
+    "spec-workflow"
+  ]
+}

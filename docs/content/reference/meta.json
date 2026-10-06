@@ -1,0 +1,19 @@
+{
+  "root": true,
+  "title": "Behind jackin❯",
+  "description": "Internals and developer reference. Not part of the user-facing product docs.",
+  "icon": "Layers",
+  "defaultOpen": false,
+  "pages": [
+    "index",
+    "getting-oriented",
+    "crates",
+    "runtime",
+    "capsule",
+    "adrs",
+    "tui",
+    "security-implementation",
+    "(errors)",
+    "developer-reference"
+  ]
+}

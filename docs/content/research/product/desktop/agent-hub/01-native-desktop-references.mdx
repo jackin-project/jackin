@@ -1,0 +1,159 @@
+---
+title: "01 — Native desktop references"
+description: Compares native macOS usage and repository tools for interaction patterns relevant to the Agent Hub.
+---
+
+## Summary
+
+OpenUsage, CodexBar, RepoBar, and adjacent tools demonstrate useful cache-first menu-bar, quota, repository, and pull-request patterns. jackin❯ should reuse those interaction ideas without adopting generic provider or repository scope.
+
+## Question and scope
+
+Which established macOS tools offer durable patterns for a native jackin❯ operator surface, and which product boundaries should remain distinct?
+
+
+## Method
+
+The comparison reviews current public product documentation and repository evidence for OpenUsage, CodexBar, RepoBar, and adjacent native macOS tools at the dossier cutoff.
+
+## Findings
+
+These apps are references, not implementation templates. jackin❯ should borrow
+specific native macOS interaction patterns from them while keeping the jackin❯
+daemon, workspace, isolation, and agent-runtime model.
+
+### OpenUsage
+
+Reference: https://github.com/robinebers/openusage
+
+Useful ideas:
+
+- Menu-bar-first usage panel focused on subscription visibility rather than full provider management.
+- Provider tiles with progress bars, badges, reset windows, and clear stale/error labels.
+- Automatic refresh with an operator-chosen cadence.
+- Global shortcut to open the usage panel without hunting for the status item.
+- Local HTTP API for other tools to read cached usage state.
+- Proxy support for provider requests.
+- Plugin-shaped provider extension point, even though current plugins are bundled while the API settles.
+
+Implementation details worth borrowing selectively:
+
+- The product model treats usage state as cached local data with a fast UI path, not as a live blocking request every time the menu opens.
+- Provider implementations are separate from the menu surface, so adding or repairing a provider does not rewrite the UI.
+- The local API is intentionally loopback-only. If jackin❯ exposes account usage outside the app, the daemon should provide a similarly local, explicitly scoped endpoint rather than a broad network listener.
+
+What not to copy:
+
+- OpenUsage is a generic AI subscription tracker. jackin❯ desktop should not become a catalog of every AI provider; it should start with the runtimes jackin❯ launches and accounts the operator explicitly wires into jackin❯. Provider adapter shape and host-mutation policy live in the telemetry roadmap.
+
+### CodexBar
+
+Reference: https://github.com/steipete/CodexBar
+
+Useful ideas:
+
+- Native macOS menu bar app, no Dock-first workflow.
+- Provider refresh loop with a compact status item and richer menu details.
+- Per-provider account and quota display, including multi-account support.
+- Local cost scans over Claude and Codex logs.
+- Manual and automatic credential-source settings with clear failure states.
+
+Implementation details worth borrowing selectively:
+
+- `Sources/CodexBar/StatusItemController.swift` shows the expected split:
+  AppKit owns the `NSStatusItem` and menus, while SwiftUI renders rich menu
+  cards and settings panes.
+- `Sources/CodexBar/UsageStore+Refresh.swift` shows the shape of provider
+  refresh state: enabled providers refresh in the background, errors are
+  throttled when prior data exists, and UI state stays responsive.
+- CodexBar's [docs/codex.md](https://github.com/steipete/codexbar/blob/main/docs/codex.md) documents reliable Codex paths: prefer `~/.codex/auth.json`
+  OAuth/API or `codex app-server`; avoid launching the interactive TUI for
+  routine background refresh.
+- CodexBar's [docs/claude.md](https://github.com/steipete/codexbar/blob/main/docs/claude.md) documents Claude paths: OAuth API where possible, file /
+  Keychain fallback, and CLI PTY only as fallback/diagnostic.
+- CodexBar's [docs/amp.md](https://github.com/steipete/codexbar/blob/main/docs/amp.md) and [AmpUsageFetcher.swift](https://github.com/steipete/codexbar/blob/main/Sources/CodexBarCore/Providers/Amp/AmpUsageFetcher.swift)
+  explain why Amp is brittle in CodexBar: it scrapes
+  `https://ampcode.com/settings` using browser cookies and expects a `session`
+  cookie. The recurring "please re-login to Amp" state can be caused by browser
+  cookie import drift, expired web cookies, or Amp changing its embedded
+  `freeTierUsage` payload. jackin❯ should not make Amp status depend solely on
+  browser cookies if the Amp CLI/account state is already available inside a
+  jackin❯ runtime.
+
+What not to copy:
+
+- CodexBar's provider catalog is intentionally broad. jackin❯ should not inherit
+  a generic "29 providers" architecture for a three-agent product.
+- Hidden web scraping and cookie import should be optional diagnostics, not the
+  primary path for jackin❯-owned account state.
+- Token monitoring should be scoped to accounts jackin❯ launches, not every
+  provider installed on the host.
+
+### Tokemon, Token Tracker, Brim, MeterBar, Control Tower
+
+Source priorities, confidence labels, and accuracy reasoning for these apps live in [Token & Cost Telemetry → Better accuracy references](/research/agents/telemetry/token-cost-telemetry/02-sources-and-attribution/#source-priority). Desktop borrows their **macOS UI patterns**:
+
+- Brim — native rings for 5-hour and weekly windows; explicit refresh/freshness widget.
+- MeterBar — simple multi-account dashboard layout; menu-bar plus CLI JSON pairing.
+- Control Tower — quiet-hours and alert routing.
+- Tokemon — terminal statusline export shape, burn-rate projection display.
+- Token Tracker — menu bar + widget split for at-a-glance vs. detail views.
+
+The data model and the `UsageConfidence` + `UsageSnapshotStatus` labels are the [telemetry roadmap's contract](/research/agents/telemetry/token-cost-telemetry/01-account-limit-model/#snapshot-contract); Desktop renders them.
+
+### RepoBar
+
+Reference: https://github.com/steipete/RepoBar
+
+Useful ideas:
+
+- Native macOS menu bar repository dashboard with rich submenus.
+- Repository cards/submenus that combine GitHub data and local checkout state.
+- Cache-first GitHub data model with ETags, persistent cache, and rate-limit
+  visibility.
+- Local project discovery that scans git roots, reads branch/ahead/behind/dirty
+  state, and avoids destructive sync.
+
+Implementation details worth borrowing selectively:
+
+- `Sources/RepoBar/StatusBar/StatusBarMenuBuilder.swift` builds the menu from a
+  stable "menu plan" signature so expensive SwiftUI menu rows are not rebuilt on
+  every open.
+- `Sources/RepoBarCore/LocalProjects/LocalProjectsService.swift` is a useful
+  reference for bounded local git status collection, dirty-file summaries, and
+  ahead/behind detection.
+- `Sources/RepoBar/Support/LocalRepoManager.swift` adds TTL caches and security
+  scoped folder access. jackin❯ desktop can avoid broad project scanning by using
+  jackin❯ saved workspaces and mounted paths, but the cache approach is still
+  useful.
+- RepoBar's PR/issues/actions submenus are close to the desired "jump straight
+  to pull request" workflow.
+
+What not to copy:
+
+- RepoBar is centered on GitHub account/repository management. jackin❯ desktop is
+  centered on active jackin❯ workspaces and agent sessions; GitHub is a secondary
+  integration for PR links and status.
+- RepoBar scans a configured projects folder. jackin❯ should default to the
+  workspaces jackin❯ already knows about and the containers jackin❯ is currently
+  running.
+
+
+
+## Implications for jackin❯
+
+Reuse cache-first menu-bar, quota, repository, and pull-request interaction patterns, while keeping daemon authority and jackin❯’s bounded workspace and runtime scope.
+
+## Limitations and unknowns
+
+These comparisons establish interaction patterns, not implementation compatibility. Provider behavior and private APIs require separate verification at the evidence cutoff of their owning studies.
+
+## Sources
+
+Primary repositories and documentation are linked beside each finding.
+
+## Related work
+
+- [Agent Hub overview](/research/product/desktop/agent-hub/)
+- [Product surfaces](/research/product/desktop/agent-hub/02-product-surfaces/)
+- [Token and cost telemetry](/research/agents/telemetry/token-cost-telemetry/)

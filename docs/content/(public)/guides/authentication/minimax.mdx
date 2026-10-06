@@ -1,0 +1,50 @@
+---
+title: MiniMax
+description: Register a MiniMax provider account for Claude Code or Codex
+---
+
+Register the provider key as a named account, then grant it to each workspace that may use it. Provider credentials follow the same account allowlist as native agent profiles.
+
+## Register the key
+
+The following command reads the key from a masked prompt and records the selected model:
+
+```bash
+jackin account add minimax-work --provider minimax --api-key \
+  --model MiniMax-M3
+```
+
+Use `--secret-ref '$MINIMAX_API_KEY'` to reference an existing environment variable, or `--secret-ref 'op://Work/MiniMax/api-key'` for a 1Password reference. Use the endpoint and model appropriate to your provider account.
+
+## Authorize a workspace
+
+```bash
+jackin workspace account assign my-app minimax-work
+jackin workspace account select my-app minimax-work --agent claude
+```
+
+For one role, add `--role agent-smith` to `select`. The role still uses the workspace's allowlist. A key registered globally is not automatically available in every workspace.
+
+At launch, jackin❯ resolves the selected account and configures the agent's provider endpoint and model. Host agent configuration stays separate from this account selection.
+
+## Use Codex
+
+The same account can authenticate Codex. Select it for a role supporting Codex:
+
+```bash
+jackin workspace account select my-app minimax-work --agent codex
+```
+
+With no custom `--base-url`, jackin❯ chooses the endpoint for each agent: Claude Code uses the Anthropic-compatible endpoint; Codex uses `https://api.minimax.io/v1` with the Responses protocol. Codex receives the selected key through its protected account environment. The generated configuration references that environment variable and contains no key.
+
+For `MiniMax-M3`, jackin❯ installs a model catalog with the documented 1,000,000-token context window, text and image input, and thinking on/off options. Other explicit model IDs use Codex's available metadata. These settings follow [MiniMax's official Codex guide](https://platform.minimax.io/docs/token-plan/codex).
+
+## Remove workspace access
+
+```bash
+jackin workspace account unassign my-app minimax-work
+```
+
+This clears workspace and role selections referring to the account. `jackin account remove minimax-work` removes the account from every workspace. Neither operation revokes the provider key itself.
+
+See [Account commands](/commands/account/) and [Agent authentication](/guides/authentication/agents/).

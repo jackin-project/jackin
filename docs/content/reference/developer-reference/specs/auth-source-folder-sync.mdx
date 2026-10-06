@@ -1,0 +1,31 @@
+---
+title: Account Profile Directories
+description: Exact source-directory semantics for registered coding-agent accounts
+---
+
+A profile account stores `AccountCredential::Profile { agent, directory }`. The directory belongs to the global account registry. Workspaces and role overrides select account IDs; they do not store separate source folders or authentication modes.
+
+## Directory contract
+
+| Agent | Selected directory |
+|---|---|
+| Claude Code | `CLAUDE_CONFIG_DIR`; local `.credentials.json` or that directory's exact macOS Keychain scope |
+| Codex | `CODEX_HOME`, containing `auth.json` |
+| Amp | Data directory containing `secrets.json`, or a profile root with `data/amp` and `config/amp` children |
+| Kimi | Configuration directory containing `credentials/kimi-code.json` |
+| OpenCode | Data directory containing `auth.json` |
+| Grok | Configuration directory containing agent authentication state |
+
+First-start discovery examines built-in default paths before any explicit alternate-folder registration. It checks recognized credential fields, not directory existence alone. Discovery is evidence of credential material, not an online authentication or expiry check.
+
+Explicit profile selection never falls back to the default host profile. Claude's selected directory determines its Keychain service. Provisioning validates the selected source and aborts when credentials disappear; it must not continue using an unrelated or stale credential handoff.
+
+Amp and OpenCode profile credentials may also carry explicit `xdg_roots`
+(`data`, `config`, and `cache`). The data and config roots provide the selected
+profile state; the configured cache root is mounted directly as the host-side
+source for that instance's unique `/home/agent/.cache/<agent>[-<slot>]` target.
+The capsule exports that target as `XDG_CACHE_HOME`, so the PTY-session cache
+does not replace the declared root. Overlapping configured cache roots and
+overlapping private container mount paths are rejected.
+
+Account profile tests live in `jackin-config` discovery and `jackin-instance` preparation. Workspace authorization and restore admission tests prove that source selection remains tied to an assigned account throughout launch.

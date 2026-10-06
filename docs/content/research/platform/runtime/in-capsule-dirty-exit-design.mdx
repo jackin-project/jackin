@@ -1,0 +1,112 @@
+---
+title: "In-capsule dirty-exit design rationale"
+description: Records the failure model and recovery design for preserving capsule state after an agent exits with uncommitted changes.
+---
+
+**Research state:** Reference
+
+## Summary
+
+Dirty agent exits must preserve recoverable workspace state and surface an explicit operator recovery path.
+
+This rationale explains the current dirty-exit contract; [Runtime restore and image architecture](/roadmap/instant-launch-architecture/) owns delivery work.
+
+## Research question
+
+A host-side dirty-exit confirmation can prompt only *after* the container exits, so resuming requires a rebuild or restart. The decision must occur before teardown while the session is still warm.
+
+## Decision — move the confirmation inside the capsule
+
+The confirmation runs **inside the capsule** (the in-container multiplexer), not on the host after the container exits. A host-side post-exit dialog cannot protect the dirty case because the interactive session has already ended.
+
+Why the decision belongs in the capsule:
+
+- **Ask before teardown.** In-capsule, the container is still warm; starting a new agent is instant instead of requiring a rebuild/restart cycle.
+- **Decision at the place of work.** The operator is already inside the container; the capsule already owns the TUI and a full set of dialogs. No new surface, no second binary.
+- **Less resource churn.** No stop -> ask -> recreate cycle.
+
+The split of responsibility: the **capsule** detects dirty/unpushed state and **asks** the operator before any teardown; the **host** still **executes** the filesystem keep/discard, because it owns the isolated worktrees. The capsule decides; the host carries it out.
+
+## Architecture — share the dirty-detection logic
+
+The detection logic had to be shared, not duplicated, so the capsule and the host can never disagree on what "dirty" means.
+
+The path-based assessment lives in `jackin-core` and returns `Clean | Dirty | Unpushed`, plus the per-file change list the Inspect view needs. Both the host's `assess_cleanup` wrapper and the capsule's last-session-close path use that function, so dirty-state meaning cannot diverge across the boundary.
+
+## Target workflow — in-capsule dirty-exit
+
+The hinge is the last-session-close branch in the capsule daemon:
+
+```text
+last live session exits (agent /exit, Ctrl-D, or crash)
+  │  run the shared dirty assessment on the workspace mount(s) in-container
+  ├─ clean / pushed ─────────────► drain_and_exit  (silent exit)
+  └─ dirty / unpushed ───────────► push in-capsule modal; container stays alive
+        ├─ Start a new agent ─────► open the New-tab agent picker (verbatim) → spawn → back to work
+        ├─ Inspect changes ───────► read-only diff view (Esc back to modal)
+        ├─ Exit & keep changes ───► drain_and_exit → host preserves the instance (resumable)
+        └─ Exit & discard changes ► drain_and_exit → host discards the dirty work
+```
+
+"Start a new agent" reuses the capsule's existing `new_agent_picker` (`PickerIntent::NewTab`) — the exact dialog "New tab" already opens. The confirmation reuses the capsule's existing dialog / modal-stack infrastructure; no new chrome.
+
+## Alternatives considered for the host signal
+
+Three options for how the capsule tells the host which action the operator picked:
+
+- **A file the capsule writes before draining** (chosen): the capsule writes `/jackin/state/exit-action.json` (`{ "action": "keep" | "discard" }`) before `drain_and_exit`; the host finalize reads it and executes that action. Survives the exit and is inspectable.
+- **An exit-code convention**: rejected — range-limited, and conflates the signal with real process-failure exit codes.
+- **A control frame over the existing socket**: rejected — more plumbing than a state file for the same one-shot signal.
+
+Additional decisions:
+
+- `Ctrl+Q` from the exit modal maps to `Exit & keep` — the safe default that never loses work.
+- Discard takes no extra sub-confirm: selecting `Exit & discard changes` is itself the explicit destructive approval (the operator chose the split-Exit shape). No second Yes/No.
+
+## UI contract
+
+The modal renders in the capsule's existing chrome (row 0 ` jackin❯ ` brand pill + tab strip, row 1 `━` underline) as a centered choice list, reusing the capsule's existing dialog and modal-stack components.
+
+The exit modal, `Unsaved work — exit?`, shows one summary line per dirty repo (`<repo>  N changed · N unpushed`) above four choices:
+
+```text
+ jackin❯  [the-architect]
+ ━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ┌─ Unsaved work — exit? ───────────────┐
+  │ jackin      2 changed · 1 unpushed    │
+  │ holla-apt   3 changed                 │
+  │                                       │
+  │ ▸ Start a new agent                   │
+  │   Inspect changes                     │
+  │   Exit & keep changes                 │
+  │   Exit & discard changes              │
+  └───────────────────────────────────────┘
+  ↑↓ · ↵ select · Ctrl-Q quit
+```
+
+Design decisions:
+
+- Default focus is the first row, `Start a new agent`. `Esc` is ignored — the modal is a forced explicit choice; there is no ambiguous cancel.
+- `Start a new agent` opens the exact New-tab agent picker (`Dialog::new_agent_picker(agents, PickerIntent::NewTab)`), rendered identically: title `New tab`, full-width `── agents ──` / `── shells ──` section dashes, agent display names, type-to-filter, and the `Shell` row. It is the New-tab flow verbatim, not a lookalike. `Esc` in the picker walks back one step to the exit modal (modal stack).
+- `Inspect changes` opens a read-only changed-file list inside the capsule, grouped by repo. `Esc` returns to the exit modal. A side-by-side per-file diff pane is outside the current contract.
+- Keep vs discard is decided in-capsule: the two `Exit & …` rows are the decision. The host only executes the chosen action — it never prompts.
+- Multiple dirty repos are listed one line each, with full per-file detail behind `Inspect`.
+
+The exact row wording is presentation detail. Cross-screen double-`Ctrl+C` handling is a capsule-global concern; this modal consumes `Ctrl+C` like any other key.
+
+## Current code ownership
+
+- `jackin-core::worktree_dirty` owns `assess_worktree`, `WorktreeState`, changed-file parsing, and the shared fail-closed detection semantics.
+- `jackin-capsule` owns last-session assessment, the dirty-exit and inspect dialogs, the new-agent path, and writing `/jackin/state/exit-action.json` before drain.
+- `jackin-runtime` owns final inspection and filesystem action. `keep` maps to preservation, `discard` maps to terminal cleanup, and an absent action file maps to preservation so a crash cannot silently lose work.
+
+## Related work
+
+- Roadmap tracking item: [Runtime Restore and Image Architecture](/roadmap/instant-launch-architecture/)
+- <RepoFile path="crates/jackin-core/src/worktree_dirty.rs" />
+- <RepoFile path="crates/jackin-capsule/src/daemon.rs" />
+- <RepoFile path="crates/jackin-capsule/src/tui/components/dialog.rs" />
+- <RepoFile path="crates/jackin-isolation/src/finalize.rs" />
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" />
+- <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs" />

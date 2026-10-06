@@ -1,0 +1,5564 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
+use super::*;
+use crate::usage::refresh::ProviderError;
+use std::thread;
+
+#[test]
+fn compact_count_uses_token_suffixes() {
+    assert_eq!(compact_count(999), "999");
+    assert_eq!(compact_count(1_500), "1.5K");
+    assert_eq!(compact_count(2_000_000), "2.0M");
+}
+
+#[test]
+fn provider_connector_exports_physical_attempts_without_endpoint_material() {
+    use std::io::{Read as _, Write as _};
+
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    let _subscriber = tracing::subscriber::set_default(subscriber);
+    let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut request = [0_u8; 1024];
+        let _read = stream.read(&mut request).unwrap();
+        stream
+            .write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\nconnection: close\r\n\r\nok")
+            .unwrap();
+    });
+    let secret_route = "provider-secret-route?token=provider-secret-query";
+    provider_http_client()
+        .unwrap()
+        .get(format!("http://{address}/{secret_route}"))
+        .send()
+        .unwrap();
+    server.join().unwrap();
+
+    let refused = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let refused_address = refused.local_addr().unwrap();
+    drop(refused);
+    provider_http_client()
+        .unwrap()
+        .get(format!("http://{refused_address}/{secret_route}"))
+        .send()
+        .unwrap_err();
+
+    export.force_flush();
+    let spans = export.finished_spans();
+    assert_eq!(spans.len(), 2);
+    assert!(
+        spans
+            .iter()
+            .all(|span| span.name == jackin_telemetry::schema::spans::CONNECTION_ATTEMPT)
+    );
+    assert_eq!(export.error_span_count(), 1);
+    assert!(export.contains_span_text("provider"));
+    assert!(export.contains_span_text("error"));
+    assert!(export.contains_span_text("io_error"));
+    for prohibited in [
+        secret_route,
+        "provider-secret-query",
+        &address.to_string(),
+        &refused_address.to_string(),
+    ] {
+        assert!(!export.contains_span_text(prohibited));
+        assert!(!export.contains_log_text(prohibited));
+    }
+}
+
+#[test]
+fn provider_labels_resolve_all_account_refresh_surfaces() {
+    assert_eq!(
+        resolve_surface("codex", Some("Claude")),
+        UsageSurface::Claude
+    );
+    assert_eq!(
+        resolve_surface("claude", Some("Codex")),
+        UsageSurface::Codex
+    );
+    assert_eq!(resolve_surface("codex", Some("Amp")), UsageSurface::Amp);
+    assert_eq!(
+        resolve_surface("claude", Some("Grok Build")),
+        UsageSurface::Grok
+    );
+    assert_eq!(
+        resolve_surface("codex", Some("GLM / Z.AI")),
+        UsageSurface::Zai
+    );
+    assert_eq!(resolve_surface("codex", Some("Kimi")), UsageSurface::Kimi);
+    assert_eq!(
+        resolve_surface("codex", Some("MiniMax")),
+        UsageSurface::Minimax
+    );
+    assert_eq!(
+        resolve_surface("cursor", Some("Cursor")),
+        UsageSurface::Cursor
+    );
+    assert_eq!(resolve_surface("cursor", None), UsageSurface::Cursor);
+    assert_eq!(
+        resolve_surface("gemini", Some("Google")),
+        UsageSurface::Google
+    );
+    assert_eq!(
+        resolve_surface("codex", Some("Gemini")),
+        UsageSurface::Google
+    );
+    assert_eq!(resolve_surface("gemini", None), UsageSurface::Google);
+    assert_eq!(
+        resolve_surface("opencode", Some("OpenRouter")),
+        UsageSurface::OpenRouter
+    );
+    assert_eq!(
+        broker_surface_id("opencode", Some("OpenRouter")),
+        Some("openrouter")
+    );
+    // Antigravity shares the Google surface; the remaining explicitly
+    // blocked agents never resolve to a refreshable surface.
+    assert_eq!(resolve_surface("antigravity", None), UsageSurface::Google);
+    for agent in ["muse", "omp", "hermes"] {
+        assert_eq!(
+            resolve_surface(agent, None),
+            UsageSurface::Unsupported,
+            "{agent} must stay unsupported"
+        );
+    }
+}
+
+#[test]
+fn openrouter_credential_snapshot_is_supported_and_scoped_when_missing() {
+    let view = provider_credential_snapshot("openrouter", "OPENROUTER_API_KEY", "");
+
+    assert_eq!(view.status, UsageSnapshotStatus::NeedsLogin);
+    assert_eq!(view.source, UsageSource::None);
+    assert_eq!(view.account.provider_label, "OpenRouter");
+    assert_eq!(view.focused_agent.as_deref(), Some("opencode"));
+    assert_eq!(view.focused_provider.as_deref(), Some("OpenRouter"));
+    assert_ne!(view.status, UsageSnapshotStatus::Unsupported);
+    assert_eq!(
+        view.last_error.as_deref(),
+        Some("OpenRouter API key missing")
+    );
+}
+
+#[test]
+fn claude_api_key_snapshot_does_not_use_oauth_adapter() {
+    let view = provider_credential_snapshot(
+        "claude",
+        jackin_core::ANTHROPIC_API_KEY_ENV_NAME,
+        "fixture-api-key",
+    );
+
+    assert_eq!(view.status, UsageSnapshotStatus::Unsupported);
+    assert_eq!(view.source, UsageSource::None);
+    assert_eq!(view.account.account_label, "Claude API key");
+    assert_eq!(
+        view.account.credential_origin.as_deref(),
+        Some("API key · env ANTHROPIC_API_KEY")
+    );
+    assert_eq!(
+        view.last_error.as_deref(),
+        Some("Claude API-key quota is unavailable; OAuth usage requires CLAUDE_CODE_OAUTH_TOKEN")
+    );
+}
+
+#[test]
+fn capability_matches_newly_wired_surfaces_only() {
+    use jackin_protocol::usage_broker::UsageAccountCapability;
+
+    let capability = |surface_id: &str| UsageAccountCapability {
+        account_id: "account-test".to_owned(),
+        surface_id: surface_id.to_owned(),
+    };
+    assert!(capability_matches_surface(
+        "cursor",
+        Some("Cursor"),
+        &capability("cursor")
+    ));
+    assert!(capability_matches_surface(
+        "gemini",
+        Some("Google"),
+        &capability("google")
+    ));
+    assert!(capability_matches_surface(
+        "opencode",
+        Some("OpenRouter"),
+        &capability("openrouter")
+    ));
+    // A presentation-tab override must not reuse a capability under another
+    // surface; blocked agents match nothing.
+    assert!(!capability_matches_surface(
+        "cursor",
+        Some("Cursor"),
+        &capability("google")
+    ));
+    // Antigravity is wired to the Google surface; blocked agents with no
+    // provider label match nothing (their unwired-ness lives in discovery,
+    // which mints no binding for them).
+    assert!(capability_matches_surface(
+        "antigravity",
+        None,
+        &capability("google")
+    ));
+    assert!(!capability_matches_surface(
+        "muse",
+        Some("Muse"),
+        &capability("meta")
+    ));
+}
+
+#[test]
+fn unpollable_snapshot_is_honest_unsupported() {
+    let view = unpollable_snapshot("muse", Some("Meta"), 1_781_728_000);
+    assert_eq!(view.status, UsageSnapshotStatus::Unsupported);
+    assert_eq!(view.source, UsageSource::None);
+    assert_eq!(view.confidence, UsageConfidence::None);
+    assert_eq!(
+        view.last_error.as_deref(),
+        Some("usage polling not supported for this provider")
+    );
+    assert!(view.buckets.is_empty());
+    assert!(view.account.account_label.is_empty());
+    assert_eq!(view.focused_agent.as_deref(), Some("muse"));
+}
+
+#[test]
+fn credential_snapshot_arms_cover_newly_wired_surfaces() {
+    // Cursor API keys cannot drive the personal dashboard: explicit gap.
+    let view = provider_credential_snapshot("cursor", "CURSOR_API_KEY", "fixture-key");
+    assert_eq!(view.status, UsageSnapshotStatus::Unsupported);
+    assert_eq!(view.account.provider_label, "Cursor");
+    assert!(
+        view.last_error
+            .as_deref()
+            .is_some_and(|error| error.contains("Cursor API-key"))
+    );
+    // Google keys route to the real Gemini collector with the key origin.
+    let view = provider_credential_snapshot("google", "GEMINI_API_KEY", "fixture-key");
+    assert_eq!(view.status, UsageSnapshotStatus::Unsupported);
+    assert_eq!(view.account.provider_label, "Google");
+    assert_eq!(
+        view.account.credential_origin.as_deref(),
+        Some("API key · env GEMINI_API_KEY")
+    );
+    // Blocked surfaces keep the explicit generic fallback.
+    let view = provider_credential_snapshot("meta", "META_API_KEY", "fixture-key");
+    assert_eq!(view.status, UsageSnapshotStatus::Unsupported);
+    assert_eq!(view.account.provider_label, "Usage");
+}
+
+#[test]
+fn credential_snapshot_openrouter_arm_reads_key_quota() {
+    // Live provider read with a fixture key: `/key` rejects it, so the arm
+    // must return the collector's honest NeedsLogin/Error view — never the
+    // generic "no usage adapter" fallback, which would mean the arm is dead.
+    let view = provider_credential_snapshot("openrouter", "OPENROUTER_API_KEY", "fixture-key");
+    assert_ne!(view.status, UsageSnapshotStatus::Fresh);
+    assert_ne!(view.status, UsageSnapshotStatus::Unsupported);
+    assert_eq!(view.account.provider_label, "OpenRouter");
+    assert!(view.last_error.is_some());
+}
+
+fn account_snapshot_view(
+    provider_label: &str,
+    account_label: &str,
+    plan_label: Option<&str>,
+    fetched_at_epoch: i64,
+) -> FocusedUsageView {
+    let mut view = FocusedUsageView::unavailable("none", fetched_at_epoch);
+    view.account.provider_label = provider_label.to_owned();
+    view.account.account_label = account_label.to_owned();
+    view.account.plan_label = plan_label.map(str::to_owned);
+    view.status = UsageSnapshotStatus::Fresh;
+    view
+}
+
+#[test]
+fn provider_tabs_emit_one_tab_per_account_keyed_by_stable_id() {
+    let claude_stale = account_snapshot_view("Anthropic", "a@example.com", Some("Max"), 100);
+    let claude_latest = account_snapshot_view("Anthropic", "a@example.com", Some("Max 20x"), 200);
+    let codex = account_snapshot_view("OpenAI", "codex@example.com", Some("Pro 20x"), 150);
+
+    let tabs = provider_tabs(&[&claude_stale, &claude_latest, &codex]);
+
+    // Duplicate snapshots for one account collapse to the newest fetch;
+    // same-provider accounts would each keep their own tab.
+    assert_eq!(tabs.len(), 2);
+    assert_eq!(
+        tabs.iter().map(|tab| &tab.label).collect::<Vec<_>>(),
+        vec!["Anthropic · a@example.com", "OpenAI · codex@example.com"]
+    );
+    let claude = tabs
+        .iter()
+        .find(|tab| tab.account_label == "a@example.com")
+        .expect("claude tab");
+    assert_eq!(claude.plan_label.as_deref(), Some("Max 20x"));
+    assert_eq!(
+        claude.id,
+        usage_account_tab_id("Anthropic", "a@example.com")
+    );
+    assert_eq!(
+        tabs[1].id,
+        usage_account_tab_id("OpenAI", "codex@example.com")
+    );
+    assert_ne!(tabs[0].id, tabs[1].id);
+    assert!(tabs.iter().all(|tab| !tab.active));
+
+    // An unlisted provider tabs without a hardcoded surface entry, and an
+    // empty scope stays empty.
+    let cursor = account_snapshot_view("Cursor", "cursor@example.com", None, 100);
+    let tabs = provider_tabs(&[&cursor]);
+    assert_eq!(tabs.len(), 1);
+    assert_eq!(tabs[0].label, "Cursor · cursor@example.com");
+    assert!(provider_tabs(&[]).is_empty());
+
+    // Same-provider accounts render individually visible labels; an account
+    // without identity keeps the bare provider label.
+    let claude_b = account_snapshot_view("Anthropic", "b@example.com", None, 100);
+    let tabs = provider_tabs(&[&claude_stale, &claude_b]);
+    assert_eq!(
+        tabs.iter().map(|tab| &tab.label).collect::<Vec<_>>(),
+        vec!["Anthropic · a@example.com", "Anthropic · b@example.com"]
+    );
+    let unknown = account_snapshot_view("Anthropic", "", None, 100);
+    let tabs = provider_tabs(&[&unknown]);
+    assert_eq!(tabs[0].label, "Anthropic");
+}
+
+#[test]
+fn enrich_provider_tabs_rebuilds_strip_from_snapshots() {
+    let mut view = account_snapshot_view("OpenAI", "codex@example.com", Some("Pro 20x"), 123);
+    view.tabs = vec![UsageProviderTab {
+        id: "stale".to_owned(),
+        label: "Stale".to_owned(),
+        status_label: String::new(),
+        account_label: String::new(),
+        plan_label: None,
+        source_label: None,
+        active: true,
+    }];
+    let claude = account_snapshot_view("Anthropic", "claude@example.com", Some("Max"), 120);
+
+    let mut snapshots = HashMap::new();
+    snapshots.insert(
+        "Anthropic:account-1".to_owned(),
+        CachedUsage { view: claude },
+    );
+    snapshots.insert(
+        "OpenAI:account-2".to_owned(),
+        CachedUsage { view: view.clone() },
+    );
+
+    enrich_provider_tabs(&mut view, &snapshots);
+
+    assert_eq!(view.tabs.len(), 2);
+    let codex = view
+        .tabs
+        .iter()
+        .find(|tab| tab.label == "OpenAI · codex@example.com")
+        .expect("codex tab");
+    assert_eq!(codex.account_label, "codex@example.com");
+    assert_eq!(codex.plan_label.as_deref(), Some("Pro 20x"));
+    let claude = view
+        .tabs
+        .iter()
+        .find(|tab| tab.label == "Anthropic · claude@example.com")
+        .expect("claude tab");
+    assert_eq!(claude.account_label, "claude@example.com");
+    assert_eq!(claude.plan_label.as_deref(), Some("Max"));
+
+    // Empty broker state clears the strip instead of leaving stale tabs.
+    let mut view = account_snapshot_view("OpenAI", "codex@example.com", None, 123);
+    enrich_provider_tabs(&mut view, &HashMap::new());
+    assert!(view.tabs.is_empty());
+}
+
+#[test]
+fn two_claude_accounts_and_codex_produce_three_tabs_with_distinct_ids() {
+    let mut cache = UsageCache::default();
+    cache.insert_snapshot_for_test(
+        "claude",
+        Some("Anthropic"),
+        account_snapshot_view("Anthropic", "a@example.com", Some("Max"), 100),
+    );
+    cache.insert_snapshot_for_test(
+        "claude",
+        Some("Anthropic"),
+        account_snapshot_view("Anthropic", "b@example.com", Some("Max 20x"), 200),
+    );
+    cache.insert_snapshot_for_test(
+        "codex",
+        Some("OpenAI"),
+        account_snapshot_view("OpenAI", "codex@example.com", Some("Pro 20x"), 150),
+    );
+
+    let snapshot = cache.focused_snapshot(Some("claude"), Some("Anthropic"));
+
+    // One tab (and therefore one overview row) per admitted account.
+    assert_eq!(snapshot.tabs.len(), 3);
+    let mut ids: Vec<String> = snapshot.tabs.iter().map(|tab| tab.id.clone()).collect();
+    ids.sort();
+    ids.dedup();
+    assert_eq!(ids.len(), 3);
+    let mut expected = vec![
+        usage_account_tab_id("Anthropic", "a@example.com"),
+        usage_account_tab_id("Anthropic", "b@example.com"),
+        usage_account_tab_id("OpenAI", "codex@example.com"),
+    ];
+    expected.sort();
+    assert_eq!(ids, expected);
+    // The focused account (newest Claude fetch) is the active tab.
+    let active: Vec<&UsageProviderTab> = snapshot.tabs.iter().filter(|tab| tab.active).collect();
+    assert_eq!(active.len(), 1);
+    assert_eq!(
+        active[0].id,
+        usage_account_tab_id("Anthropic", "b@example.com")
+    );
+
+    // Selection by id focuses the correct account: a view focused on the
+    // other Claude account marks exactly its tab, matched by id rather than
+    // the shared "Anthropic" display label.
+    let id_a = usage_account_tab_id("Anthropic", "a@example.com");
+    let mut selected = account_snapshot_view("Anthropic", "a@example.com", Some("Max"), 100);
+    enrich_provider_tabs(&mut selected, &cache.snapshots);
+    mark_active_tab(&mut selected);
+    let active: Vec<&UsageProviderTab> = selected.tabs.iter().filter(|tab| tab.active).collect();
+    assert_eq!(active.len(), 1);
+    assert_eq!(active[0].id, id_a);
+    assert_eq!(active[0].account_label, "a@example.com");
+    // Strip labels stay individually visible per account.
+    let mut labels: Vec<String> = selected.tabs.iter().map(|tab| tab.label.clone()).collect();
+    labels.sort();
+    labels.dedup();
+    assert_eq!(labels.len(), 3);
+}
+
+#[test]
+fn focused_snapshot_for_account_id_selects_exact_account() {
+    let mut cache = UsageCache::default();
+    cache.insert_snapshot_for_test(
+        "claude",
+        Some("Anthropic"),
+        account_snapshot_view("Anthropic", "a@example.com", Some("Max"), 100),
+    );
+    cache.insert_snapshot_for_test(
+        "claude",
+        Some("Anthropic"),
+        account_snapshot_view("Anthropic", "b@example.com", Some("Max 20x"), 200),
+    );
+    let id_b = usage_account_tab_id("Anthropic", "b@example.com");
+
+    let snapshot = cache
+        .focused_snapshot_for_account_id(&id_b)
+        .expect("snapshot for claude-b");
+    assert_eq!(snapshot.account.account_label, "b@example.com");
+    assert_eq!(snapshot.tabs.len(), 2);
+    let active: Vec<&UsageProviderTab> = snapshot.tabs.iter().filter(|tab| tab.active).collect();
+    assert_eq!(active.len(), 1);
+    assert_eq!(active[0].id, id_b);
+
+    assert!(
+        cache
+            .focused_snapshot_for_account_id("sha256:unknown")
+            .is_none()
+    );
+    assert!(cache.focused_snapshot_for_account_id("").is_none());
+}
+
+#[test]
+fn broker_account_id_for_tab_id_recovers_broker_key() {
+    use jackin_protocol::usage_broker::UsageAccountCapability;
+
+    let mut cache = UsageCache::default();
+    let capability_a = UsageAccountCapability {
+        account_id: "broker-claude-a".to_owned(),
+        surface_id: "claude".to_owned(),
+    };
+    cache.insert_snapshot_for_capability_for_test(
+        "claude",
+        Some("Anthropic"),
+        &capability_a,
+        account_snapshot_view("Anthropic", "a@example.com", Some("Max"), 100),
+    );
+    cache.insert_snapshot_for_test(
+        "codex",
+        Some("OpenAI"),
+        account_snapshot_view("OpenAI", "codex@example.com", Some("Pro 20x"), 150),
+    );
+
+    assert_eq!(
+        cache.broker_account_id_for_tab_id(&usage_account_tab_id("Anthropic", "a@example.com")),
+        Some("broker-claude-a".to_owned())
+    );
+    // Legacy keys carry no capability; unknown ids match nothing.
+    assert_eq!(
+        cache.broker_account_id_for_tab_id(&usage_account_tab_id("OpenAI", "codex@example.com")),
+        None
+    );
+    assert_eq!(cache.broker_account_id_for_tab_id("sha256:unknown"), None);
+}
+
+#[test]
+fn claude_account_email_reads_oauth_account_metadata() {
+    // the email identity comes from `oauthAccount.emailAddress`.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("claude.json");
+    fs::write(
+        &path,
+        r#"{"oauthAccount":{"emailAddress":"alexey@example.com"}}"#,
+    )
+    .expect("write");
+    assert_eq!(
+        load_claude_account_email(&path).as_deref(),
+        Some("alexey@example.com")
+    );
+
+    let empty = dir.path().join("empty.json");
+    fs::write(&empty, r#"{"oauthAccount":{}}"#).expect("write");
+    assert_eq!(load_claude_account_email(&empty), None);
+
+    let none = dir.path().join("none.json");
+    fs::write(&none, "{}").expect("write");
+    assert_eq!(load_claude_account_email(&none), None);
+}
+
+#[test]
+fn first_credential_uses_home_first_then_handoff_fallback() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let home = dir.path().join("home.credentials.json");
+    let handoff = dir.path().join("handoff.credentials.json");
+    // Home present but WITHOUT a usable token — the proven in-container
+    // failure mode — so resolution must fall through to the forwarded
+    // handoff rather than dropping to the impoverished CLI path.
+    fs::write(&home, r#"{"oauthAccount":{"emailAddress":"a@b.c"}}"#).expect("write home");
+    fs::write(
+        &handoff,
+        r#"{"claudeAiOauth":{"accessToken":"handoff-token"}}"#,
+    )
+    .expect("write handoff");
+    let resolved = first_credential(
+        &[home.clone(), handoff.clone()],
+        load_claude_oauth_credentials,
+    );
+    assert_eq!(
+        resolved.map(|c| c.access_token),
+        Some("handoff-token".to_owned())
+    );
+    // A valid home token wins over the handoff (home is the source of truth).
+    fs::write(&home, r#"{"claudeAiOauth":{"accessToken":"home-token"}}"#).expect("rewrite home");
+    let resolved = first_credential(&[home, handoff], load_claude_oauth_credentials);
+    assert_eq!(
+        resolved.map(|c| c.access_token),
+        Some("home-token".to_owned())
+    );
+}
+
+#[test]
+fn claude_oauth_usage_decodes_live_api_body() {
+    // Mirrors the live api.anthropic.com/api/oauth/usage 200 body: `seven_day`
+    // and `seven_day_oauth_apps` are SEPARATE keys (they must not collide on
+    // one field), plus new codename windows the model must tolerate.
+    let body = r#"{
+            "five_hour": {"utilization": 12, "resets_at": "2026-06-25T19:00:00Z"},
+            "seven_day": {"utilization": 34, "resets_at": "2026-06-26T14:00:00Z"},
+            "seven_day_oauth_apps": null,
+            "seven_day_sonnet": {"utilization": 5, "resets_at": "2026-06-26T14:00:00Z"},
+            "seven_day_opus": null,
+            "seven_day_cowork": null,
+            "seven_day_omelette": null,
+            "amber_ladder": null, "cinder_cove": null, "iguana_necktie": null,
+            "omelette_promotional": null, "tangelo": null,
+            "extra_usage": {"is_enabled": false, "monthly_limit": 0, "used_credits": 0,
+                "utilization": 0, "currency": "USD", "decimal_places": 2,
+                "disabled_reason": "x", "daily": null, "weekly": null},
+            "limits": [{"kind": "x", "group": "x", "percent": 0, "severity": "x",
+                "resets_at": "x", "scope": null, "is_active": false}],
+            "spend": null
+        }"#;
+    let parsed: ClaudeOAuthUsageResponse =
+        serde_json::from_str(body).expect("decode live OAuth usage body");
+    assert!(parsed.five_hour.is_some());
+    assert!(parsed.seven_day.is_some());
+    assert!(parsed.seven_day_sonnet.is_some());
+}
+
+#[test]
+fn codex_rpc_maps_spark_windows_and_reset_credits() {
+    // Mirrors the live `account/rateLimits/read` response: the main "codex"
+    // limit is Session/Weekly; a separate "…Codex-Spark" entry under
+    // rateLimitsByLimitId carries the Spark windows; rateLimitResetCredits
+    // carries the manual-reset count.
+    let body = r#"{
+            "rateLimits": {"limitId": "codex",
+                "primary": {"usedPercent": 7, "windowDurationMins": 300, "resetsAt": 1782396144},
+                "secondary": {"usedPercent": 5, "windowDurationMins": 10080, "resetsAt": 1782940724},
+                "credits": {"hasCredits": false, "unlimited": false, "balance": "0"},
+                "planType": "pro"},
+            "rateLimitsByLimitId": {
+                "codex_bengalfox": {"limitId": "codex_bengalfox", "limitName": "GPT-5.3-Codex-Spark",
+                    "primary": {"usedPercent": 0, "windowDurationMins": 300, "resetsAt": 1782411283},
+                    "secondary": {"usedPercent": 0, "windowDurationMins": 10080, "resetsAt": 1782998083}},
+                "codex": {"limitId": "codex",
+                    "primary": {"usedPercent": 7, "windowDurationMins": 300, "resetsAt": 1782396144},
+                    "secondary": {"usedPercent": 5, "windowDurationMins": 10080, "resetsAt": 1782940724}}
+            },
+            "rateLimitResetCredits": {"availableCount": 2}
+        }"#;
+    let limits: CodexRpcRateLimitsResponse =
+        serde_json::from_str(body).expect("decode rateLimits response");
+    let usage = CodexRpcUsage::from_rpc(limits, None);
+    let labels: Vec<String> = usage
+        .response
+        .buckets(1_782_300_000)
+        .into_iter()
+        .map(|b| b.label)
+        .collect();
+    assert!(labels.contains(&"Session".to_owned()));
+    assert!(labels.contains(&"Weekly".to_owned()));
+    assert!(labels.contains(&"Codex Spark 5-hour".to_owned()));
+    assert!(labels.contains(&"Codex Spark Weekly".to_owned()));
+    assert!(labels.contains(&"Limit Reset Credits".to_owned()));
+    // The main "codex" limit must not be duplicated as an extra limit.
+    assert_eq!(labels.iter().filter(|l| l.as_str() == "Session").count(), 1);
+}
+
+#[test]
+fn usage_status_label_reads_in_memory_cache() {
+    let mut cache = UsageCache::default();
+    let view = codex_cached_usage_view();
+    let expected = view.status_bar_label.clone();
+    cache.snapshots.insert(
+        canonical_usage_cache_key("codex", Some("OpenAI")),
+        CachedUsage { view },
+    );
+
+    assert_eq!(
+        cache.focused_status_bar_label(Some("codex"), Some("OpenAI")),
+        Some(expected)
+    );
+}
+
+#[test]
+fn usage_snapshot_reads_in_memory_cache() {
+    let mut cache = UsageCache::default();
+    let view = codex_cached_usage_view();
+    let expected_label = view.status_bar_label.clone();
+    cache.snapshots.insert(
+        canonical_usage_cache_key("codex", Some("OpenAI")),
+        CachedUsage { view },
+    );
+
+    let snapshot = cache.focused_snapshot(Some("codex"), Some("OpenAI"));
+
+    assert_eq!(snapshot.status_bar_label, expected_label);
+    assert_eq!(snapshot.account.account_label, "codex@example.com");
+    assert!(
+        snapshot
+            .tabs
+            .iter()
+            .any(|tab| tab.label == "OpenAI · codex@example.com" && tab.active)
+    );
+}
+
+#[test]
+fn usage_status_label_cache_miss_is_refreshing() {
+    let cache = UsageCache::default();
+
+    // A focused agent with no cached snapshot is mid-load → `refreshing`
+    // (P3), computed without touching the store.
+    assert_eq!(
+        cache.focused_status_bar_label(Some("codex"), Some("OpenAI")),
+        Some("refreshing".to_owned())
+    );
+}
+
+#[test]
+fn usage_snapshot_cache_miss_is_refreshing() {
+    let mut cache = UsageCache::default();
+
+    let snapshot = cache.focused_snapshot(Some("codex"), Some("OpenAI"));
+
+    // a focused agent with no cached snapshot renders `refreshing`
+    // (still without reading the store), not a stale/unavailable headline.
+    assert_eq!(snapshot.status_bar_label, "refreshing");
+    assert_eq!(snapshot.last_error.as_deref(), Some("refreshing"));
+}
+
+#[test]
+fn focused_usage_lifecycle_hides_before_start_and_refreshes_on_start() {
+    // P3 lifecycle: no focused agent → segment hidden; focused agent with
+    // no data yet → `refreshing` (no fabricated quota); resolved → headline.
+    let mut cache = UsageCache::default();
+
+    // Before start: no focused agent → status bar renders nothing.
+    assert_eq!(cache.focused_status_bar_label(None, None), None);
+
+    // Started, not yet resolved → refreshing on both surfaces.
+    assert_eq!(
+        cache.focused_status_bar_label(Some("codex"), Some("OpenAI")),
+        Some("refreshing".to_owned())
+    );
+    let refreshing = cache.focused_snapshot(Some("codex"), Some("OpenAI"));
+    assert_eq!(refreshing.status_bar_label, "refreshing");
+    assert!(
+        refreshing.buckets.is_empty(),
+        "refreshing must carry no fabricated quota"
+    );
+
+    // Resolved: a cached snapshot wins and the real headline renders.
+    cache.snapshots.insert(
+        canonical_usage_cache_key("codex", Some("OpenAI")),
+        CachedUsage {
+            view: codex_cached_usage_view(),
+        },
+    );
+    let resolved = cache.focused_snapshot(Some("codex"), Some("OpenAI"));
+    assert_ne!(resolved.status_bar_label, "refreshing");
+    assert!(!resolved.buckets.is_empty());
+}
+
+#[test]
+fn account_snapshot_rows_carry_reset_epoch() {
+    // the CLI report (`usage accounts`) emits the raw reset epoch, not
+    // a dropped null — so the CLI and TUI agree on reset data.
+    let now = 1_782_000_000;
+    let reset_at = now + 3_600;
+    let mut view = codex_cached_usage_view();
+    view.buckets = vec![timed_bucket(
+        "Session",
+        Some("7% used".to_owned()),
+        Some("100%".to_owned()),
+        Some(93),
+        Some(reset_at),
+        now,
+        None,
+        UsageSnapshotStatus::Fresh,
+    )];
+    let mut snapshots = HashMap::new();
+    snapshots.insert("codex".to_owned(), CachedUsage { view });
+    let rows = account_snapshot_views_from_cache(&snapshots);
+    let session = rows
+        .iter()
+        .find(|row| row.window_kind == "Session")
+        .expect("session row");
+    assert_eq!(session.resets_at, Some(reset_at));
+}
+
+#[test]
+fn usage_account_snapshots_use_in_memory_cache() {
+    let mut cache = UsageCache::default();
+    cache.snapshots.insert(
+        canonical_usage_cache_key("codex", Some("OpenAI")),
+        CachedUsage {
+            view: codex_cached_usage_view(),
+        },
+    );
+
+    let accounts = cache.account_snapshot_views();
+
+    assert_eq!(accounts.len(), 1);
+    assert_eq!(accounts[0].provider, "OpenAI");
+    assert_eq!(accounts[0].account_label, "codex@example.com");
+    assert_eq!(accounts[0].source, "provider_api");
+    assert_eq!(accounts[0].confidence, "authoritative");
+    assert_eq!(accounts[0].window_kind, "Session");
+    assert_eq!(accounts[0].used_amount, Some(63));
+    assert_eq!(accounts[0].used_unit.as_deref(), Some("percent"));
+    assert_eq!(accounts[0].limit_amount, Some(100));
+    assert_eq!(accounts[0].limit_unit.as_deref(), Some("percent"));
+    assert_eq!(accounts[0].fetched_at, 123);
+    assert_eq!(accounts[0].status, "fresh");
+}
+
+#[test]
+fn account_snapshot_rows_preserve_money_units_for_spend_buckets() {
+    let mut view = codex_cached_usage_view();
+    view.buckets = vec![QuotaBucketView {
+        label: "Extra usage".to_owned(),
+        used_label: Some("SGD 78.00 of SGD 260.00".to_owned()),
+        limit_label: Some("SGD 260.00".to_owned()),
+        remaining_percent: Some(70),
+        reset_label: None,
+        resets_at: None,
+        status_slot: Some(StatusSlot::Spend),
+        pace_label: None,
+        status: UsageSnapshotStatus::Fresh,
+        used_money: Some(Money::new(7_800, "SGD", 2)),
+        limit_money: Some(Money::new(26_000, "SGD", 2)),
+        severity: UsageSeverity::Normal,
+    }];
+    let mut snapshots = HashMap::new();
+    snapshots.insert("codex".to_owned(), CachedUsage { view });
+
+    let rows = account_snapshot_views_from_cache(&snapshots);
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].used_amount, Some(7_800));
+    assert_eq!(rows[0].used_unit.as_deref(), Some("SGD"));
+    assert_eq!(rows[0].limit_amount, Some(26_000));
+    assert_eq!(rows[0].limit_unit.as_deref(), Some("SGD"));
+}
+
+#[test]
+fn account_snapshot_rows_propagate_view_failure_to_retained_buckets() {
+    let mut view = codex_cached_usage_view();
+    view.status = UsageSnapshotStatus::Stale;
+    view.buckets[0].status = UsageSnapshotStatus::Fresh;
+    let mut snapshots = HashMap::new();
+    snapshots.insert("codex".to_owned(), CachedUsage { view });
+
+    let rows = account_snapshot_views_from_cache(&snapshots);
+    assert_eq!(rows[0].status, "stale");
+}
+
+fn codex_cached_usage_view() -> FocusedUsageView {
+    usage_view(UsageViewInput {
+        agent: "codex",
+        provider: Some("OpenAI"),
+        surface: UsageSurface::Codex,
+        account_label: "codex@example.com".to_owned(),
+        username: None,
+        plan_label: Some("Pro 20x".to_owned()),
+        credential_origin: None,
+        buckets: vec![QuotaBucketView {
+            used_money: None,
+            limit_money: None,
+            severity: UsageSeverity::default(),
+            label: "Session".to_owned(),
+            used_label: Some("63% used".to_owned()),
+            limit_label: Some("100%".to_owned()),
+            remaining_percent: Some(37),
+            reset_label: Some("Resets in 2h".to_owned()),
+            resets_at: None,
+            status_slot: None,
+            pace_label: None,
+            status: UsageSnapshotStatus::Fresh,
+        }],
+        status: UsageSnapshotStatus::Fresh,
+        source: UsageSource::ProviderApi,
+        confidence: UsageConfidence::Authoritative,
+        now: 123,
+        last_error: None,
+    })
+}
+
+#[test]
+fn materialized_usage_accounts_write_normalized_snapshots() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("usage").join("accounts.json");
+    let mut view = FocusedUsageView::unavailable("none", 123);
+    view.focused_agent = Some("codex".to_owned());
+    view.status_bar_label = "Codex Session: 63% used · 37% left".to_owned();
+
+    write_materialized_usage_accounts(&path, 456, &[&view]).expect("write accounts");
+
+    let body = fs::read_to_string(&path).expect("accounts json");
+    let decoded: MaterializedUsageAccounts = serde_json::from_str(&body).expect("decode accounts");
+    assert_eq!(decoded.generated_at_epoch, 456);
+    assert_eq!(decoded.snapshots.len(), 1);
+    assert_eq!(decoded.snapshots[0].focused_agent.as_deref(), Some("codex"));
+    assert_eq!(
+        decoded.snapshots[0].status_bar_label,
+        "Codex Session: 63% used · 37% left"
+    );
+    let leftovers = fs::read_dir(path.parent().expect("parent"))
+        .expect("read usage dir")
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_name().to_string_lossy().contains(".tmp."))
+        .count();
+    assert_eq!(leftovers, 0);
+}
+
+#[test]
+fn status_bar_label_uses_session_and_weekly_remaining() {
+    let buckets = vec![
+        QuotaBucketView {
+            used_money: None,
+            limit_money: None,
+            severity: UsageSeverity::default(),
+            label: "Session".to_owned(),
+            used_label: Some("63% used".to_owned()),
+            limit_label: Some("100%".to_owned()),
+            remaining_percent: Some(37),
+            reset_label: None,
+            resets_at: None,
+            status_slot: Some(StatusSlot::Session),
+            pace_label: None,
+            status: UsageSnapshotStatus::Fresh,
+        },
+        QuotaBucketView {
+            used_money: None,
+            limit_money: None,
+            severity: UsageSeverity::default(),
+            label: "Weekly".to_owned(),
+            used_label: Some("90% used".to_owned()),
+            limit_label: Some("100%".to_owned()),
+            remaining_percent: Some(10),
+            reset_label: Some("Resets in 3h 52m".to_owned()),
+            resets_at: None,
+            status_slot: Some(StatusSlot::Weekly),
+            pace_label: None,
+            status: UsageSnapshotStatus::Fresh,
+        },
+    ];
+
+    assert_eq!(
+        status_bar_label(
+            UsageSurface::Codex,
+            "alexey@example.com",
+            UsageSnapshotStatus::Fresh,
+            &buckets
+        ),
+        "Session 37% · Weekly 10%"
+    );
+}
+
+#[test]
+fn status_bar_reads_session_weekly_slots_from_tags() {
+    // The headline reads the semantic slot the provider tagged at
+    // construction, not the (free-text) window label — Z.AI's weekly window
+    // is "Tokens", MiniMax's is "General · Weekly", Grok tags its billing
+    // cycle Weekly with no session. An untagged window (MCP) never reaches
+    // the headline.
+    let pct = |label: &str, remaining: u8, slot: Option<StatusSlot>| QuotaBucketView {
+        used_money: None,
+        limit_money: None,
+        severity: UsageSeverity::default(),
+        label: label.to_owned(),
+        used_label: None,
+        limit_label: None,
+        remaining_percent: Some(remaining),
+        reset_label: None,
+        resets_at: None,
+        status_slot: slot,
+        pace_label: None,
+        status: UsageSnapshotStatus::Fresh,
+    };
+
+    let zai = vec![
+        pct("5-hour", 80, Some(StatusSlot::Session)),
+        pct("Tokens", 42, Some(StatusSlot::Weekly)),
+        pct("MCP", 90, None),
+    ];
+    assert_eq!(
+        status_bar_label(UsageSurface::Zai, "", UsageSnapshotStatus::Fresh, &zai),
+        "Session 80% · Weekly 42%"
+    );
+
+    let minimax = vec![
+        pct("General · 5h", 70, Some(StatusSlot::Session)),
+        pct("General · Weekly", 55, Some(StatusSlot::Weekly)),
+    ];
+    assert_eq!(
+        status_bar_label(
+            UsageSurface::Minimax,
+            "",
+            UsageSnapshotStatus::Fresh,
+            &minimax
+        ),
+        "Session 70% · Weekly 55%"
+    );
+
+    // Grok: billing cycle tagged Weekly, no session → "Weekly N%".
+    let grok = vec![pct("Monthly", 33, Some(StatusSlot::Weekly))];
+    assert_eq!(
+        status_bar_label(UsageSurface::Grok, "", UsageSnapshotStatus::Fresh, &grok),
+        "Weekly 33%"
+    );
+}
+
+#[test]
+fn codex_plan_display_name_matches_codexbar() {
+    // ported from CodexBar's CodexPlanFormatting tests.
+    assert_eq!(codex_plan_display_name("pro").as_deref(), Some("Pro 20x"));
+    assert_eq!(codex_plan_display_name("Pro").as_deref(), Some("Pro 20x"));
+    assert_eq!(
+        codex_plan_display_name("Codex Pro").as_deref(),
+        Some("Pro 20x")
+    );
+    assert_eq!(
+        codex_plan_display_name("prolite").as_deref(),
+        Some("Pro 5x")
+    );
+    assert_eq!(
+        codex_plan_display_name("pro_lite").as_deref(),
+        Some("Pro 5x")
+    );
+    assert_eq!(
+        codex_plan_display_name("Pro Lite").as_deref(),
+        Some("Pro 5x")
+    );
+    assert_eq!(
+        codex_plan_display_name("Codex Pro Lite").as_deref(),
+        Some("Pro 5x")
+    );
+    assert_eq!(codex_plan_display_name(""), None);
+    assert_eq!(codex_plan_display_name("   "), None);
+    assert_eq!(
+        codex_plan_display_name("enterprise_cbp_usage_based").as_deref(),
+        Some("Enterprise CBP Usage Based")
+    );
+    assert_eq!(codex_plan_display_name("k12").as_deref(), Some("K12"));
+    assert_eq!(
+        codex_plan_display_name("Enterprise").as_deref(),
+        Some("Enterprise")
+    );
+}
+
+#[test]
+fn status_bar_label_uses_stale_cached_percentages() {
+    let buckets = vec![QuotaBucketView {
+        used_money: None,
+        limit_money: None,
+        severity: UsageSeverity::default(),
+        label: "Session".to_owned(),
+        used_label: Some("99% used".to_owned()),
+        limit_label: Some("100%".to_owned()),
+        remaining_percent: Some(1),
+        reset_label: None,
+        resets_at: None,
+        status_slot: Some(StatusSlot::Session),
+        pace_label: None,
+        status: UsageSnapshotStatus::Stale,
+    }];
+
+    assert_eq!(
+        status_bar_label(
+            UsageSurface::Claude,
+            "alexey@example.com",
+            UsageSnapshotStatus::Stale,
+            &buckets
+        ),
+        "Session 1%"
+    );
+}
+
+#[test]
+fn status_bar_label_drops_tagged_bucket_that_failed() {
+    // A Session-tagged bucket whose own status is not Fresh/Stale (e.g. the
+    // window errored) must not surface its percentage as if it were live;
+    // the headline falls through to the snapshot-level status label.
+    let buckets = vec![QuotaBucketView {
+        used_money: None,
+        limit_money: None,
+        severity: UsageSeverity::default(),
+        label: "Session".to_owned(),
+        used_label: Some("50% used".to_owned()),
+        limit_label: Some("100%".to_owned()),
+        remaining_percent: Some(50),
+        reset_label: None,
+        resets_at: None,
+        status_slot: Some(StatusSlot::Session),
+        pace_label: None,
+        status: UsageSnapshotStatus::Error,
+    }];
+
+    assert_eq!(
+        status_bar_label(
+            UsageSurface::Claude,
+            "alexey@example.com",
+            UsageSnapshotStatus::Error,
+            &buckets
+        ),
+        "error"
+    );
+}
+
+#[test]
+fn status_bar_label_uses_amp_daily_only() {
+    let buckets = vec![
+        QuotaBucketView {
+            used_money: None,
+            limit_money: None,
+            severity: UsageSeverity::default(),
+            label: "Amp Free".to_owned(),
+            used_label: None,
+            limit_label: None,
+            remaining_percent: Some(48),
+            reset_label: Some("Resets daily".to_owned()),
+            resets_at: None,
+            status_slot: Some(StatusSlot::Daily),
+            pace_label: None,
+            status: UsageSnapshotStatus::Fresh,
+        },
+        QuotaBucketView {
+            used_money: None,
+            limit_money: None,
+            severity: UsageSeverity::default(),
+            label: "Individual credits".to_owned(),
+            used_label: None,
+            limit_label: Some("$4.76".to_owned()),
+            remaining_percent: None,
+            reset_label: None,
+            resets_at: None,
+            status_slot: None,
+            pace_label: Some("Individual credits: $4.76".to_owned()),
+            status: UsageSnapshotStatus::Fresh,
+        },
+    ];
+
+    // Daily is the only glance; credits stay detail-only.
+    assert_eq!(
+        status_bar_label(
+            UsageSurface::Amp,
+            "alexey@example.com",
+            UsageSnapshotStatus::Fresh,
+            &buckets
+        ),
+        "Free 48%"
+    );
+}
+
+#[test]
+fn status_bar_label_uses_stale_amp_cache() {
+    let buckets = vec![QuotaBucketView {
+        used_money: None,
+        limit_money: None,
+        severity: UsageSeverity::default(),
+        label: "Amp Free".to_owned(),
+        used_label: None,
+        limit_label: None,
+        remaining_percent: Some(9),
+        reset_label: Some("Resets daily".to_owned()),
+        resets_at: None,
+        status_slot: Some(StatusSlot::Daily),
+        pace_label: None,
+        status: UsageSnapshotStatus::Stale,
+    }];
+
+    assert_eq!(
+        status_bar_label(
+            UsageSurface::Amp,
+            "alexey@example.com",
+            UsageSnapshotStatus::Stale,
+            &buckets
+        ),
+        "Free 9%"
+    );
+}
+
+#[test]
+fn usage_cache_key_canonicalizes_provider_aliases() {
+    assert_eq!(
+        canonical_usage_cache_key("claude", Some("Anthropic")),
+        canonical_usage_cache_key("claude", Some("Anthropic / Claude"))
+    );
+    assert_eq!(
+        canonical_usage_cache_key("codex", Some("OpenAI")),
+        canonical_usage_cache_key("codex", Some("OpenAI / Codex"))
+    );
+    assert_eq!(
+        canonical_usage_cache_key("claude", Some("Z.AI")),
+        canonical_usage_cache_key("glm", Some("GLM / Z.AI"))
+    );
+    assert_eq!(
+        canonical_usage_cache_key("opencode", Some("OpenRouter")),
+        "OpenRouter"
+    );
+    assert_ne!(
+        canonical_usage_cache_key("claude", Some("Anthropic")),
+        canonical_usage_cache_key("claude", Some("Z.AI"))
+    );
+}
+
+#[test]
+fn usage_cache_keeps_account_snapshots_isolated_across_one_provider_target() {
+    let personal = jackin_protocol::usage_broker::UsageAccountCapability {
+        account_id: "account-personal".to_owned(),
+        surface_id: "codex".to_owned(),
+    };
+    let work = jackin_protocol::usage_broker::UsageAccountCapability {
+        account_id: "account-work".to_owned(),
+        surface_id: "codex".to_owned(),
+    };
+    let mut first = codex_cached_usage_view();
+    first.account.account_label = "personal@example.test".to_owned();
+    let mut second = codex_cached_usage_view();
+    second.account.account_label = "work@example.test".to_owned();
+
+    let mut cache = UsageCache::default();
+    cache.insert_snapshot_for_capability_for_test("codex", Some("OpenAI"), &personal, first);
+    cache.insert_snapshot_for_capability_for_test("codex", Some("OpenAI"), &work, second);
+
+    assert_eq!(cache.snapshots.len(), 2);
+    let rows = cache.account_snapshot_views();
+    assert_eq!(rows.len(), 2);
+    assert!(
+        rows.iter()
+            .any(|row| row.account_label == "personal@example.test")
+    );
+    assert!(
+        rows.iter()
+            .any(|row| row.account_label == "work@example.test")
+    );
+
+    cache.adopt_broker_error(
+        &UsageRefreshTarget {
+            agent: "codex".to_owned(),
+            provider: Some("OpenAI".to_owned()),
+            capability: personal.clone(),
+        },
+        &jackin_protocol::usage_broker::UsageCoordinationError {
+            kind: jackin_protocol::usage_broker::UsageCoordinationErrorKind::ProviderUnavailable,
+            message: "provider unavailable".to_owned(),
+        },
+    );
+    assert_eq!(cache.snapshots.len(), 2);
+    assert_eq!(
+        cache
+            .snapshots
+            .values()
+            .find(|cached| cached.view.account.account_label == "personal@example.test")
+            .map(|cached| cached.view.status),
+        Some(UsageSnapshotStatus::Stale)
+    );
+    assert_eq!(
+        cache
+            .snapshots
+            .values()
+            .find(|cached| cached.view.account.account_label == "work@example.test")
+            .map(|cached| cached.view.status),
+        Some(UsageSnapshotStatus::Fresh)
+    );
+}
+
+#[test]
+fn usage_cache_rejects_provider_surface_capability_mismatch() {
+    let capability = jackin_protocol::usage_broker::UsageAccountCapability {
+        account_id: "account-codex".to_owned(),
+        surface_id: "codex".to_owned(),
+    };
+    let target = UsageRefreshTarget {
+        agent: "codex".to_owned(),
+        provider: Some("Claude".to_owned()),
+        capability: capability.clone(),
+    };
+    let state = jackin_protocol::usage_broker::UsageGenerationView {
+        capability,
+        generation: 1,
+        phase: jackin_protocol::usage_broker::UsageRefreshPhase::Completed,
+        snapshot: Some(codex_cached_usage_view()),
+        error: None,
+        retry_at_epoch: None,
+    };
+    let mut cache = UsageCache::default();
+
+    cache.adopt_broker_generation(&target, &state);
+    assert!(cache.snapshots.is_empty());
+    assert_eq!(
+        cache
+            .focused_snapshot_for_capability(
+                Some("codex"),
+                Some("Claude"),
+                Some(&target.capability),
+            )
+            .status,
+        UsageSnapshotStatus::Unavailable
+    );
+}
+
+#[test]
+fn openrouter_cache_preserves_exact_capability_and_last_good_rows_on_error() {
+    let capability = jackin_protocol::usage_broker::UsageAccountCapability {
+        account_id: "account-openrouter".to_owned(),
+        surface_id: "openrouter".to_owned(),
+    };
+    assert!(capability_matches_surface(
+        "opencode",
+        Some("OpenRouter"),
+        &capability
+    ));
+
+    let target = UsageRefreshTarget {
+        agent: "opencode".to_owned(),
+        provider: Some("OpenRouter".to_owned()),
+        capability: capability.clone(),
+    };
+    let mut view = provider_credential_snapshot("openrouter", "OPENROUTER_API_KEY", "");
+    view.status = UsageSnapshotStatus::Fresh;
+    view.source = UsageSource::ProviderApi;
+    view.confidence = UsageConfidence::Authoritative;
+
+    let mut cache = UsageCache::default();
+    cache.insert_snapshot_for_capability_for_test(
+        "opencode",
+        Some("OpenRouter"),
+        &capability,
+        view,
+    );
+    cache.adopt_broker_error(
+        &target,
+        &jackin_protocol::usage_broker::UsageCoordinationError {
+            kind: jackin_protocol::usage_broker::UsageCoordinationErrorKind::ProviderUnavailable,
+            message: "OpenRouter key request failed".to_owned(),
+        },
+    );
+
+    let adopted = cache.focused_snapshot_for_capability(
+        Some("opencode"),
+        Some("OpenRouter"),
+        Some(&capability),
+    );
+    assert_eq!(adopted.status, UsageSnapshotStatus::Stale);
+    assert_eq!(adopted.account.provider_label, "OpenRouter");
+    assert_eq!(adopted.buckets[0].label, "Usage");
+    assert_eq!(
+        adopted.last_error.as_deref(),
+        Some("OpenRouter key request failed")
+    );
+
+    let wrong_surface = jackin_protocol::usage_broker::UsageAccountCapability {
+        account_id: capability.account_id.clone(),
+        surface_id: "opencode".to_owned(),
+    };
+    assert!(!capability_matches_surface(
+        "opencode",
+        Some("OpenRouter"),
+        &wrong_surface
+    ));
+    assert_eq!(
+        cache
+            .focused_snapshot_for_capability(
+                Some("opencode"),
+                Some("OpenRouter"),
+                Some(&wrong_surface),
+            )
+            .status,
+        UsageSnapshotStatus::Unavailable
+    );
+}
+
+#[test]
+fn empty_broker_error_snapshot_is_error_not_fresh() {
+    let target = UsageRefreshTarget {
+        agent: "codex".to_owned(),
+        provider: Some("OpenAI".to_owned()),
+        capability: jackin_protocol::usage_broker::UsageAccountCapability {
+            account_id: "account-codex".to_owned(),
+            surface_id: "codex".to_owned(),
+        },
+    };
+    let mut empty = codex_cached_usage_view();
+    empty.status = UsageSnapshotStatus::Fresh;
+    empty.buckets.clear();
+    let error = jackin_protocol::usage_broker::UsageCoordinationError {
+        kind: jackin_protocol::usage_broker::UsageCoordinationErrorKind::ProviderUnavailable,
+        message: "fixture provider unavailable".to_owned(),
+    };
+    let state = jackin_protocol::usage_broker::UsageGenerationView {
+        capability: target.capability.clone(),
+        generation: 1,
+        phase: jackin_protocol::usage_broker::UsageRefreshPhase::Completed,
+        snapshot: Some(empty.clone()),
+        error: Some(error.clone()),
+        retry_at_epoch: None,
+    };
+    let mut cache = UsageCache::default();
+    cache.adopt_broker_generation(&target, &state);
+    assert_eq!(
+        cache
+            .focused_snapshot_for_capability(
+                Some("codex"),
+                Some("OpenAI"),
+                Some(&target.capability),
+            )
+            .status,
+        UsageSnapshotStatus::Error
+    );
+
+    let mut second = UsageCache::default();
+    second.insert_snapshot_for_capability_for_test(
+        "codex",
+        Some("OpenAI"),
+        &target.capability,
+        empty,
+    );
+    second.adopt_broker_error(&target, &error);
+    assert_eq!(
+        second
+            .focused_snapshot_for_capability(
+                Some("codex"),
+                Some("OpenAI"),
+                Some(&target.capability),
+            )
+            .status,
+        UsageSnapshotStatus::Error
+    );
+}
+
+#[test]
+fn focused_usage_cache_selects_the_exact_account_capability() {
+    let personal = jackin_protocol::usage_broker::UsageAccountCapability {
+        account_id: "account-personal".to_owned(),
+        surface_id: "codex".to_owned(),
+    };
+    let work = jackin_protocol::usage_broker::UsageAccountCapability {
+        account_id: "account-work".to_owned(),
+        surface_id: "codex".to_owned(),
+    };
+    let mut personal_view = codex_cached_usage_view();
+    personal_view.status_bar_label = "personal account".to_owned();
+    personal_view.account.account_label = "same@example.test".to_owned();
+    let mut work_view = codex_cached_usage_view();
+    work_view.status_bar_label = "work account".to_owned();
+    work_view.account.account_label = "same@example.test".to_owned();
+
+    let mut cache = UsageCache::default();
+    cache.insert_snapshot_for_capability_for_test(
+        "codex",
+        Some("OpenAI"),
+        &personal,
+        personal_view,
+    );
+    cache.insert_snapshot_for_capability_for_test("codex", Some("OpenAI"), &work, work_view);
+
+    assert_eq!(
+        cache
+            .focused_snapshot_for_capability(Some("codex"), Some("OpenAI"), Some(&personal))
+            .status_bar_label,
+        "personal account"
+    );
+    assert_eq!(
+        cache
+            .focused_snapshot_for_capability(Some("codex"), Some("OpenAI"), Some(&work))
+            .status_bar_label,
+        "work account"
+    );
+}
+
+#[test]
+fn usage_cache_isolates_provider_targets_that_share_one_agent_slug() {
+    let mut zai = codex_cached_usage_view();
+    zai.status_bar_label = "zai".to_owned();
+    let mut minimax = codex_cached_usage_view();
+    minimax.status_bar_label = "minimax".to_owned();
+
+    let mut cache = UsageCache::default();
+    cache.insert_snapshot_for_test("codex", Some("Z.AI"), zai);
+    cache.insert_snapshot_for_test("codex", Some("MiniMax"), minimax);
+
+    assert_eq!(
+        cache
+            .focused_snapshot(Some("codex"), Some("Z.AI"))
+            .status_bar_label,
+        "zai"
+    );
+    assert_eq!(
+        cache
+            .focused_snapshot(Some("codex"), Some("MiniMax"))
+            .status_bar_label,
+        "minimax"
+    );
+}
+
+#[test]
+fn usage_cache_adopts_broker_generations_by_account_capability() {
+    let target = UsageRefreshTarget {
+        agent: "codex".to_owned(),
+        provider: Some("OpenAI".to_owned()),
+        capability: jackin_protocol::usage_broker::UsageAccountCapability {
+            account_id: "account-a".to_owned(),
+            surface_id: "codex".to_owned(),
+        },
+    };
+    let generation = |account_id: &str, account_label: &str| {
+        let mut view = codex_cached_usage_view();
+        view.account.account_label = account_label.to_owned();
+        jackin_protocol::usage_broker::UsageGenerationView {
+            capability: jackin_protocol::usage_broker::UsageAccountCapability {
+                account_id: account_id.to_owned(),
+                surface_id: "codex".to_owned(),
+            },
+            generation: 1,
+            phase: jackin_protocol::usage_broker::UsageRefreshPhase::Completed,
+            snapshot: Some(view),
+            error: None,
+            retry_at_epoch: None,
+        }
+    };
+
+    let mut cache = UsageCache::default();
+    cache.adopt_broker_generation(&target, &generation("account-a", "personal@example.test"));
+    let other_target = UsageRefreshTarget {
+        capability: jackin_protocol::usage_broker::UsageAccountCapability {
+            account_id: "account-b".to_owned(),
+            surface_id: "codex".to_owned(),
+        },
+        ..target.clone()
+    };
+    cache.adopt_broker_generation(&other_target, &generation("account-b", "work@example.test"));
+
+    assert_eq!(cache.snapshots.len(), 2);
+    assert_eq!(cache.account_snapshot_views().len(), 2);
+    cache.adopt_broker_error(
+        &target,
+        &jackin_protocol::usage_broker::UsageCoordinationError {
+            kind: jackin_protocol::usage_broker::UsageCoordinationErrorKind::ProviderUnavailable,
+            message: "provider unavailable".to_owned(),
+        },
+    );
+    assert_eq!(
+        cache
+            .snapshots
+            .values()
+            .find(|cached| cached.view.account.account_label == "personal@example.test")
+            .map(|cached| cached.view.status),
+        Some(UsageSnapshotStatus::Stale)
+    );
+    assert_eq!(
+        cache
+            .snapshots
+            .values()
+            .find(|cached| cached.view.account.account_label == "work@example.test")
+            .map(|cached| cached.view.status),
+        Some(UsageSnapshotStatus::Fresh)
+    );
+}
+
+#[test]
+fn failed_refresh_preserves_last_fresh_quota_rows_as_stale_cache() {
+    let mut cached = FocusedUsageView::unavailable("seed", 123);
+    cached.status = UsageSnapshotStatus::Fresh;
+    cached.confidence = UsageConfidence::Authoritative;
+    cached.account = FocusedAccountHeader {
+        provider_label: "OpenAI / Codex".to_owned(),
+        account_label: "alexey@example.com".to_owned(),
+        username: None,
+        plan_label: Some("Pro 20x".to_owned()),
+        credential_origin: None,
+    };
+    cached.buckets = vec![QuotaBucketView {
+        used_money: None,
+        limit_money: None,
+        severity: UsageSeverity::default(),
+        label: "Weekly".to_owned(),
+        used_label: Some("90% used".to_owned()),
+        limit_label: Some("100%".to_owned()),
+        remaining_percent: Some(10),
+        reset_label: Some("Resets in 3h 52m".to_owned()),
+        resets_at: None,
+        status_slot: Some(StatusSlot::Weekly),
+        pace_label: None,
+        status: UsageSnapshotStatus::Fresh,
+    }];
+
+    for failed_status in [
+        UsageSnapshotStatus::Stale,
+        UsageSnapshotStatus::NeedsLogin,
+        UsageSnapshotStatus::Error,
+    ] {
+        let mut view = FocusedUsageView::unavailable("seed", 124);
+        view.focused_agent = Some("codex".to_owned());
+        view.focused_provider = Some("Codex".to_owned());
+        view.status = failed_status;
+        view.account = FocusedAccountHeader {
+            provider_label: "OpenAI / Codex".to_owned(),
+            account_label: "alexey@example.com".to_owned(),
+            username: None,
+            plan_label: None,
+            credential_origin: None,
+        };
+        view.last_error = Some("Codex provider usage unavailable".to_owned());
+
+        preserve_cached_quota_on_failed_refresh(&mut view, &cached);
+
+        assert_eq!(view.status, UsageSnapshotStatus::Stale);
+        assert_eq!(view.source, UsageSource::Cache);
+        assert_eq!(view.confidence, UsageConfidence::Authoritative);
+        assert_eq!(view.buckets.len(), 1);
+        assert_eq!(view.buckets[0].status, UsageSnapshotStatus::Stale);
+        assert_eq!(view.account.plan_label.as_deref(), Some("Pro 20x"));
+        assert_eq!(view.status_bar_label, "Weekly 10%");
+        assert!(
+            view.last_error
+                .as_deref()
+                .is_some_and(|error| error.contains("showing last cached quota"))
+        );
+    }
+}
+
+#[test]
+fn broker_client_failure_preserves_last_good_quota() {
+    let target = UsageRefreshTarget {
+        agent: "claude".to_owned(),
+        provider: Some("Claude".to_owned()),
+        capability: jackin_protocol::usage_broker::UsageAccountCapability {
+            account_id: "account-claude".to_owned(),
+            surface_id: "claude".to_owned(),
+        },
+    };
+    let mut cached = FocusedUsageView::unavailable("seed", 123);
+    cached.status = UsageSnapshotStatus::Fresh;
+    cached.buckets = vec![QuotaBucketView {
+        used_money: None,
+        limit_money: None,
+        severity: UsageSeverity::Normal,
+        label: "Weekly".to_owned(),
+        used_label: Some("36% used".to_owned()),
+        limit_label: Some("100%".to_owned()),
+        remaining_percent: Some(64),
+        reset_label: None,
+        resets_at: None,
+        status_slot: Some(StatusSlot::Weekly),
+        pace_label: None,
+        status: UsageSnapshotStatus::Fresh,
+    }];
+    let mut cache = UsageCache::default();
+    cache.insert_snapshot_for_capability_for_test(
+        "claude",
+        Some("Claude"),
+        &target.capability,
+        cached,
+    );
+
+    cache.adopt_broker_error(
+        &target,
+        &jackin_protocol::usage_broker::UsageCoordinationError {
+            kind: jackin_protocol::usage_broker::UsageCoordinationErrorKind::Unavailable,
+            message: "usage broker is unavailable".to_owned(),
+        },
+    );
+
+    let adopted = cache.focused_snapshot_for_capability(
+        Some("claude"),
+        Some("Claude"),
+        Some(&target.capability),
+    );
+    assert_eq!(adopted.status, UsageSnapshotStatus::Stale);
+    assert_eq!(adopted.buckets[0].remaining_percent, Some(64));
+    assert_eq!(adopted.buckets[0].status, UsageSnapshotStatus::Stale);
+    assert_eq!(
+        cache
+            .snapshots
+            .values()
+            .next()
+            .map(|cached| cached.view.updated_label.as_str()),
+        Some("Stale")
+    );
+    assert_eq!(
+        adopted.last_error.as_deref(),
+        Some("usage broker is unavailable")
+    );
+}
+
+#[test]
+fn claude_oauth_response_maps_windows_to_buckets() {
+    let usage: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+        "five_hour": { "utilization": 0.84, "resets_at": "2026-06-11T15:12:00Z" },
+        "seven_day": { "utilization": 0.78, "resets_at": "2026-06-12T14:26:00Z" },
+        "seven_day_sonnet": { "utilization": 0.02, "resets_at": "2026-06-12T14:26:00Z" },
+        "seven_day_routines": { "utilization": 0.0 },
+        // Real API shape: credits are MINOR units (cents) with `decimal_places`,
+        // and `utilization` is a percent (0..100). No `spend` object here, so this
+        // exercises the `extra_usage` fallback path.
+        "extra_usage": {
+            "is_enabled": true,
+            "monthly_limit": 26000.0,
+            "used_credits": 7849.0,
+            "utilization": 30.0,
+            "currency": "SGD",
+            "decimal_places": 2
+        }
+    }))
+    .expect("valid Claude OAuth usage");
+
+    let buckets = usage.into_buckets(1_781_185_560);
+
+    assert_eq!(buckets[0].label, "Session");
+    assert_eq!(buckets[0].status_slot, Some(StatusSlot::Session));
+    assert_eq!(buckets[0].remaining_percent, Some(16));
+    assert_eq!(
+        buckets[0].reset_label.as_deref(),
+        Some(
+            reset_label(
+                parse_iso_epoch("2026-06-11T15:12:00Z").expect("session reset"),
+                1_781_185_560,
+            )
+            .as_str()
+        )
+    );
+    assert_eq!(buckets[1].label, "Weekly");
+    assert_eq!(buckets[1].status_slot, Some(StatusSlot::Weekly));
+    assert_eq!(buckets[1].remaining_percent, Some(22));
+    // Sonnet / Daily Routines fill no headline slot.
+    assert!(buckets.iter().any(|bucket| bucket.label == "Sonnet"));
+    assert!(
+        buckets
+            .iter()
+            .find(|bucket| bucket.label == "Sonnet")
+            .is_some_and(|bucket| bucket.status_slot.is_none())
+    );
+    // Sonnet is a weekly window, so the unified model paces it the same way a
+    // `limits`-sourced Fable window is paced (it has both a reset and a 7-day
+    // duration). Daily Routines carries no `resets_at`, so it still has none.
+    assert!(
+        buckets
+            .iter()
+            .find(|bucket| bucket.label == "Sonnet")
+            .is_some_and(|bucket| bucket.pace_label.is_some())
+    );
+    assert!(buckets.iter().any(|bucket| bucket.label == "Daily Routines"
+        && bucket.remaining_percent == Some(100)
+        && bucket.pace_label.is_none()
+        && bucket.status_slot.is_none()));
+    // `seven_day_opus` was absent from the response — it must be omitted
+    // entirely, never fabricated into a (full-meter) row.
+    assert!(!buckets.iter().any(|bucket| bucket.label == "Opus"));
+    let extra = buckets
+        .iter()
+        .find(|bucket| bucket.label == "Extra usage")
+        .expect("extra usage bucket");
+    // spent vs cap — `<currency> <spent> spent` + `NN% used`. Minor units are
+    // scaled by `decimal_places` (7849 → 78.49), and the bucket fills the Spend
+    // slot carrying structured Money for the status-bar chunk.
+    assert_eq!(extra.status_slot, Some(StatusSlot::Spend));
+    assert_eq!(extra.remaining_percent, Some(70));
+    assert_eq!(extra.used_label.as_deref(), Some("SGD 78.49 spent"));
+    assert_eq!(extra.limit_label.as_deref(), Some("SGD 260.00"));
+    assert_eq!(extra.pace_label.as_deref(), Some("30% used"));
+    assert_eq!(
+        extra.used_money.as_ref().map(Money::to_string).as_deref(),
+        Some("SGD 78.49")
+    );
+    assert_eq!(
+        extra
+            .used_money
+            .as_ref()
+            .map(Money::format_compact)
+            .as_deref(),
+        Some("SGD 78")
+    );
+}
+
+/// The self-describing `spend{}` object is preferred over `extra_usage` and
+/// reproduces the web console's Enterprise figure exactly ($53.31 / $300.00,
+/// 18% used) — the regression guard for the 100×-too-large bug.
+#[test]
+fn claude_spend_object_preferred_and_scaled() {
+    let usage: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+        // Enterprise responses carry no rolling windows, only spend.
+        "five_hour": null,
+        "seven_day": null,
+        // A stale/raw extra_usage is also present; spend{} must win.
+        "extra_usage": {
+            "is_enabled": true,
+            "monthly_limit": 30000.0,
+            "used_credits": 5331.0,
+            "utilization": 17.77,
+            "currency": "USD",
+            "decimal_places": 2
+        },
+        "spend": {
+            "used": { "amount_minor": 5331, "currency": "USD", "exponent": 2 },
+            "limit": { "amount_minor": 30000, "currency": "USD", "exponent": 2 },
+            "percent": 18,
+            "severity": "normal",
+            "enabled": true
+        }
+    }))
+    .expect("valid Claude OAuth usage");
+
+    let buckets = usage.into_buckets(1_781_185_560);
+    let spend = buckets
+        .iter()
+        .find(|bucket| bucket.status_slot == Some(StatusSlot::Spend))
+        .expect("spend bucket");
+    assert_eq!(spend.used_label.as_deref(), Some("$53.31 spent"));
+    assert_eq!(spend.limit_label.as_deref(), Some("$300.00"));
+    assert_eq!(spend.pace_label.as_deref(), Some("18% used"));
+    assert_eq!(spend.remaining_percent, Some(82));
+    assert_eq!(spend.severity, UsageSeverity::Normal);
+
+    // The headline renders compact money as `<used> of <limit>`, currency once.
+    assert_eq!(
+        spend_headline_label(&buckets).as_deref(),
+        Some("$53 of 300")
+    );
+}
+
+/// The `limits` array is the authoritative shape on current accounts: it
+/// carries Session, "All models" Weekly, and per-model Weekly (`weekly_scoped`
+/// — Fable today). When present, `into_buckets` builds from it and must NOT
+/// also emit the legacy `seven_day*` windows (the API returns both, so
+/// skipping the legacy path is what prevents double rows). Mirrors the live
+/// 2026-07-03 OAuth response: session 7%, all-models 28%, Fable 35%.
+#[test]
+fn claude_oauth_limits_array_surfaces_fable_and_all_models() {
+    let usage: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+        // Legacy named windows are still present but null on current accounts;
+        // they must contribute nothing because `limits` takes precedence.
+        "five_hour": null,
+        "seven_day": null,
+        "seven_day_sonnet": null,
+        "seven_day_opus": null,
+        "seven_day_cowork": null,
+        "limits": [
+            { "kind": "session", "group": "session", "percent": 7,
+              "severity": "normal", "resets_at": "2026-07-03T03:19:59Z",
+              "scope": null, "is_active": false },
+            { "kind": "weekly_all", "group": "weekly", "percent": 28,
+              "severity": "normal", "resets_at": "2026-07-03T07:00:00Z",
+              "scope": null, "is_active": false },
+            { "kind": "weekly_scoped", "group": "weekly", "percent": 35,
+              "severity": "warn", "resets_at": "2026-07-03T06:59:59Z",
+              "scope": { "model": { "id": null, "display_name": "Fable" },
+                         "surface": null },
+              "is_active": true }
+        ]
+    }))
+    .expect("valid Claude OAuth limits-array response");
+
+    let buckets = usage.into_buckets(1_781_300_000);
+
+    let session = buckets
+        .iter()
+        .find(|b| b.status_slot == Some(StatusSlot::Session))
+        .expect("session bucket from limits");
+    assert_eq!(session.label, "Session");
+    assert_eq!(session.remaining_percent, Some(93));
+    assert_eq!(session.used_label.as_deref(), Some("7% used"));
+
+    // "All models" fills the Weekly headline slot (status bar still reads
+    // "Weekly" via the slot), label matches the web console row.
+    let all_models = buckets
+        .iter()
+        .find(|b| b.status_slot == Some(StatusSlot::Weekly))
+        .expect("weekly slot from limits");
+    assert_eq!(all_models.label, "All models");
+    assert_eq!(all_models.remaining_percent, Some(72));
+
+    // Fable — the model-scoped window the legacy parser dropped. Non-headline
+    // (no status slot), severity mirrored from the API for meter color.
+    let fable = buckets
+        .iter()
+        .find(|b| b.label == "Fable")
+        .expect("Fable model-scoped bucket");
+    assert_eq!(fable.remaining_percent, Some(65));
+    assert_eq!(fable.used_label.as_deref(), Some("35% used"));
+    assert_eq!(fable.status_slot, None);
+    assert_eq!(fable.severity, UsageSeverity::Warn);
+    // Reset epoch is carried (RC2) so the CLI report can emit `resets_at`.
+    assert!(fable.resets_at.is_some());
+
+    // No legacy fabricated rows leaked through: the null `seven_day*` windows
+    // produce nothing once `limits` is authoritative.
+    assert!(buckets.iter().all(|b| b.label != "Weekly"));
+    assert!(buckets.iter().all(|b| b.label != "Sonnet"));
+    assert!(buckets.iter().all(|b| b.label != "Opus"));
+    assert!(buckets.iter().all(|b| b.label != "Daily Routines"));
+}
+
+/// A `weekly_scoped` window with no model display name is skipped rather than
+/// fabricated into an empty-label row — the same "absent window must be
+/// omitted, never fabricated" rule the legacy path follows.
+#[test]
+fn claude_oauth_limits_array_skips_unnamed_scoped_window() {
+    let usage: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+        "limits": [
+            { "kind": "weekly_scoped", "group": "weekly", "percent": 40,
+              "severity": "normal", "resets_at": "2026-07-03T06:59:59Z",
+              "scope": { "model": { "id": null, "display_name": null } },
+              "is_active": true }
+        ]
+    }))
+    .expect("valid limits response");
+    let buckets = usage.into_buckets(1_781_300_000);
+    assert!(buckets.is_empty(), "unnamed scoped window must be omitted");
+}
+
+/// A non-empty `limits` array must not erase legacy windows that are still the
+/// only usable source for a semantic slot. Current Claude responses can mix the
+/// new carrier with older fields; unknown/partial limits backfill from legacy
+/// windows, while duplicate Session/Weekly windows are not emitted twice.
+#[test]
+fn claude_oauth_limits_array_backfills_missing_legacy_windows() {
+    let reset_at = "2026-07-03T06:59:59Z";
+    let usage: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+        "five_hour": { "utilization": 22.0, "resets_at": "2026-07-03T03:19:59Z" },
+        "seven_day": { "utilization": 44.0, "resets_at": reset_at },
+        "seven_day_sonnet": { "utilization": 55.0, "resets_at": reset_at },
+        "limits": [
+            { "kind": "session", "group": "session", "percent": 7,
+              "severity": "normal", "resets_at": "2026-07-03T03:19:59Z",
+              "scope": null },
+            { "kind": "future_shape", "group": "weekly", "percent": 99,
+              "severity": "normal", "resets_at": reset_at, "scope": null }
+        ]
+    }))
+    .expect("mixed limits/legacy response");
+
+    let buckets = usage.into_buckets(1_781_300_000);
+
+    let session_buckets = buckets
+        .iter()
+        .filter(|b| b.status_slot == Some(StatusSlot::Session))
+        .count();
+    assert_eq!(session_buckets, 1, "Session duplicate must be skipped");
+    let weekly = buckets
+        .iter()
+        .find(|b| b.status_slot == Some(StatusSlot::Weekly))
+        .expect("legacy Weekly backfill");
+    assert_eq!(weekly.label, "Weekly");
+    assert_eq!(weekly.remaining_percent, Some(56));
+    let sonnet = buckets
+        .iter()
+        .find(|b| b.label == "Sonnet")
+        .expect("legacy Sonnet backfill");
+    assert_eq!(sonnet.remaining_percent, Some(45));
+}
+
+/// `limits.percent` is an external API boundary: accept string/float/over-cap
+/// values instead of narrowing serde to `u8` before the existing percent helpers
+/// can normalize and render them.
+#[test]
+fn claude_oauth_limits_percent_accepts_string_float_and_over_cap() {
+    let usage: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+        "limits": [
+            { "kind": "session", "group": "session", "percent": "35.4",
+              "severity": "normal", "resets_at": null, "scope": null },
+            { "kind": "weekly_scoped", "group": "weekly", "percent": 150.0,
+              "severity": "danger", "resets_at": null,
+              "scope": { "model": { "display_name": "Fable" } } }
+        ]
+    }))
+    .expect("lenient percent response");
+
+    let buckets = usage.into_buckets(1_781_300_000);
+    let session = buckets
+        .iter()
+        .find(|b| b.status_slot == Some(StatusSlot::Session))
+        .expect("session bucket");
+    assert_eq!(session.used_label.as_deref(), Some("35% used"));
+    assert_eq!(session.remaining_percent, Some(65));
+    let fable = buckets
+        .iter()
+        .find(|b| b.label == "Fable")
+        .expect("Fable bucket");
+    assert_eq!(fable.used_label.as_deref(), Some("150% used"));
+    assert_eq!(fable.remaining_percent, Some(0));
+}
+
+/// The unified model: a legacy `seven_day_sonnet` window and a `limits`
+/// `weekly_scoped` window carrying the same usage/resets produce the same
+/// bucket (modulo label). This is the design invariant — Fable is not a
+/// separate code path, it is the same path as a legacy model window, so a
+/// regression that re-introduces parallel builders would fail here.
+#[test]
+fn claude_legacy_and_limits_sources_share_one_builder() {
+    let reset_at = "2026-07-03T06:59:59Z";
+    let now = 1_781_300_000;
+    let legacy: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+        // `utilization` is percent-form here (35.0 > 1.0), matching the limits
+        // `percent` field so both resolve to 35% used through the same helpers.
+        "seven_day_sonnet": { "utilization": 35.0, "resets_at": reset_at }
+    }))
+    .expect("legacy response");
+    let limits: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+        "limits": [
+            { "kind": "weekly_scoped", "group": "weekly", "percent": 35,
+              "severity": "normal", "resets_at": reset_at,
+              "scope": { "model": { "display_name": "Fable" } }, "is_active": true }
+        ]
+    }))
+    .expect("limits response");
+
+    let sonnet = legacy
+        .into_buckets(now)
+        .into_iter()
+        .find(|b| b.label == "Sonnet")
+        .expect("legacy Sonnet bucket");
+    let fable = limits
+        .into_buckets(now)
+        .into_iter()
+        .find(|b| b.label == "Fable")
+        .expect("limits Fable bucket");
+
+    // Same builder ⇒ identical meter, pace, reset, and severity. Only the label
+    // (the model the window is scoped to) differs.
+    assert_eq!(sonnet.used_label, fable.used_label);
+    assert_eq!(sonnet.remaining_percent, fable.remaining_percent);
+    assert_eq!(sonnet.reset_label, fable.reset_label);
+    assert_eq!(sonnet.resets_at, fable.resets_at);
+    assert_eq!(sonnet.pace_label, fable.pace_label);
+    assert_eq!(sonnet.severity, fable.severity);
+    assert_eq!(sonnet.status_slot, fable.status_slot);
+}
+
+/// A single response can carry several model-scoped weekly windows at once
+/// (Sonnet, Opus, Fable, …). Each `weekly_scoped` entry surfaces as its own
+/// non-headline bucket, so "all models as before plus Fable" renders together
+/// — the whole point of the generic handler (no per-model code).
+#[test]
+fn claude_limits_array_surfaces_every_scoped_model_together() {
+    let reset_at = "2026-07-03T06:59:59Z";
+    let usage: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+        "limits": [
+            { "kind": "session", "group": "session", "percent": 46,
+              "severity": "normal", "resets_at": "2026-07-03T03:20:00Z", "scope": null },
+            { "kind": "weekly_all", "group": "weekly", "percent": 36,
+              "severity": "normal", "resets_at": reset_at, "scope": null },
+            { "kind": "weekly_scoped", "group": "weekly", "percent": 12,
+              "severity": "normal", "resets_at": reset_at,
+              "scope": { "model": { "display_name": "Sonnet" } } },
+            { "kind": "weekly_scoped", "group": "weekly", "percent": 8,
+              "severity": "normal", "resets_at": reset_at,
+              "scope": { "model": { "display_name": "Opus" } } },
+            { "kind": "weekly_scoped", "group": "weekly", "percent": 43,
+              "severity": "warn", "resets_at": reset_at,
+              "scope": { "model": { "display_name": "Fable" } } }
+        ]
+    }))
+    .expect("multi-model limits response");
+
+    let buckets = usage.into_buckets(1_781_300_000);
+    let labels: Vec<&str> = buckets.iter().map(|b| b.label.as_str()).collect();
+
+    // Headline windows bind to their slots; every model-scoped window renders
+    // as its own labelled, non-headline row.
+    assert!(labels.contains(&"Session"));
+    assert!(labels.contains(&"All models"));
+    assert!(labels.contains(&"Sonnet"));
+    assert!(labels.contains(&"Opus"));
+    assert!(labels.contains(&"Fable"));
+    for label in ["Sonnet", "Opus", "Fable"] {
+        let b = buckets
+            .iter()
+            .find(|b| b.label == label)
+            .unwrap_or_else(|| panic!("{label} bucket"));
+        assert_eq!(b.status_slot, None, "{label} must be non-headline");
+        assert!(b.remaining_percent.is_some(), "{label} must carry a meter");
+    }
+    // Fable carries its own (warn) severity for meter color, independent of the
+    // other scoped windows.
+    let fable = buckets.iter().find(|b| b.label == "Fable").expect("Fable");
+    assert_eq!(fable.severity, UsageSeverity::Warn);
+    assert_eq!(fable.remaining_percent, Some(57));
+}
+
+#[test]
+fn codex_refresh_request_body_uses_refresh_grant() {
+    let body = codex_refresh_request_body("rt-abc");
+    assert_eq!(body["grant_type"], "refresh_token");
+    assert_eq!(body["refresh_token"], "rt-abc");
+    assert_eq!(body["client_id"], CODEX_OAUTH_CLIENT_ID);
+    assert!(
+        !CODEX_OAUTH_CLIENT_ID.is_empty(),
+        "client id must be set for the refresh grant"
+    );
+}
+
+#[test]
+fn codex_access_token_parsed_from_refresh_response() {
+    let value = serde_json::json!({ "access_token": "  new-token  ", "token_type": "Bearer" });
+    assert_eq!(
+        codex_access_token_from_response(&value).as_deref(),
+        Some("new-token")
+    );
+    // Missing / empty token yields None so the caller falls back to NeedsLogin.
+    assert!(codex_access_token_from_response(&serde_json::json!({})).is_none());
+    assert!(codex_access_token_from_response(&serde_json::json!({ "access_token": "" })).is_none());
+}
+
+#[test]
+fn codex_oauth_credentials_carry_refresh_token() {
+    let value = serde_json::json!({
+        "tokens": {
+            "access_token": "at-1",
+            "refresh_token": "rt-1",
+            "account_id": "acct-1"
+        }
+    });
+    let creds = codex_oauth_from_value(&value).expect("codex credentials");
+    assert_eq!(creds.access_token, "at-1");
+    assert_eq!(creds.refresh_token.as_deref(), Some("rt-1"));
+    // A static API key has nothing to refresh.
+    let api = codex_oauth_from_value(&serde_json::json!({ "OPENAI_API_KEY": "sk-x" }))
+        .expect("api key credentials");
+    assert!(api.refresh_token.is_none());
+}
+
+#[test]
+fn unauthorized_errors_are_distinguished_from_transient() {
+    for status in [401, 403] {
+        assert!(usage_error_is_unauthorized(&ProviderError::from(
+            ProviderHttpError::HttpStatus {
+                status,
+                message: format!("HTTP {status}"),
+                retry_after_seconds: None,
+                response_received_at_epoch: None,
+            },
+        )));
+    }
+    assert!(!usage_error_is_unauthorized(&ProviderError::from(
+        ProviderHttpError::Transport("request failed: HTTP 401".to_owned()),
+    )));
+    assert!(!usage_error_is_unauthorized(&ProviderError::from(
+        ProviderHttpError::Decode("payload mentions 403".to_owned()),
+    )));
+    // A rate-limit is transient, not an auth failure.
+    assert!(!usage_error_is_unauthorized(&ProviderError::from(
+        ProviderHttpError::HttpStatus {
+            status: 429,
+            message: "usage HTTP 429 rate limit".to_owned(),
+            retry_after_seconds: None,
+            response_received_at_epoch: None,
+        },
+    )));
+}
+
+#[test]
+fn typed_rate_limit_preserves_retry_after_but_rendered_429_text_does_not() {
+    let typed = ProviderError::from(ProviderHttpError::HttpStatus {
+        status: 429,
+        message: "provider response body mentions 429".to_owned(),
+        retry_after_seconds: Some(37),
+        response_received_at_epoch: Some(1_700_000_000),
+    });
+    assert!(usage_error_is_rate_limited(&typed));
+    assert_eq!(typed.retry_after_seconds(), Some(37));
+    assert_eq!(
+        typed.rate_limit(),
+        Some(ProviderRateLimit {
+            retry_at_epoch: Some(1_700_000_037),
+        })
+    );
+
+    for error in [
+        ProviderError::from(ProviderHttpError::Transport(
+            "transport failed after HTTP 429".to_owned(),
+        )),
+        ProviderError::from(ProviderHttpError::Decode(
+            "decode failed: payload mentions 429 and Retry-After: 37".to_owned(),
+        )),
+    ] {
+        assert!(!usage_error_is_rate_limited(&error));
+        assert_eq!(error.retry_after_seconds(), None);
+        assert_eq!(error.rate_limit(), None);
+    }
+}
+
+#[test]
+fn retry_after_accepts_delay_seconds_and_http_dates_against_response_time() {
+    let mut headers = reqwest::header::HeaderMap::new();
+    headers.insert(
+        reqwest::header::RETRY_AFTER,
+        reqwest::header::HeaderValue::from_static(" 37 "),
+    );
+    assert_eq!(
+        retry_after_header_seconds(&headers, 1_445_412_400),
+        Some(37)
+    );
+
+    headers.insert(
+        reqwest::header::RETRY_AFTER,
+        reqwest::header::HeaderValue::from_static("Wed, 21 Oct 2015 07:28:00 GMT"),
+    );
+    let delay = retry_after_header_seconds(&headers, 1_445_412_400);
+    assert_eq!(delay, Some(80));
+    let typed = ProviderError::from(ProviderHttpError::HttpStatus {
+        status: 429,
+        message: "provider HTTP 429".to_owned(),
+        retry_after_seconds: delay,
+        response_received_at_epoch: Some(1_445_412_400),
+    });
+    assert_eq!(
+        typed.rate_limit(),
+        Some(ProviderRateLimit {
+            retry_at_epoch: Some(1_445_412_480),
+        })
+    );
+
+    assert_eq!(retry_after_header_value("invalid", 1_445_412_400), None);
+    assert_eq!(retry_after_header_value("37.5", 1_445_412_400), None);
+    assert_eq!(retry_after_header_value("-1", 1_445_412_400), None);
+    assert_eq!(
+        retry_after_header_value("Wed, 21 Oct 2015 07:28:00 GMT", 1_445_412_500),
+        Some(0)
+    );
+}
+
+/// Rotating-codename dollar-budget windows (enterprise contractual
+/// allocations) surface as dollar buckets instead of being dropped by the
+/// fixed-field struct; zero/absent ones are ignored.
+#[test]
+fn claude_codename_dollar_window_is_surfaced() {
+    let usage: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+        "five_hour": null,
+        "amber_ladder": {
+            "utilization": 0.0,
+            "resets_at": "2026-09-02T06:59:59+00:00",
+            "limit_dollars": 25000,
+            "used_dollars": 5000.0
+        },
+        // Present but empty — must not produce a bucket.
+        "omelette_promotional": { "utilization": 0.0, "limit_dollars": null }
+    }))
+    .expect("valid Claude OAuth usage");
+
+    let buckets = usage.into_buckets(1_781_185_560);
+    let amber = buckets
+        .iter()
+        .find(|bucket| bucket.label == "Amber Ladder")
+        .expect("amber_ladder dollar window surfaced");
+    assert_eq!(amber.used_label.as_deref(), Some("$5000.00 spent"));
+    assert_eq!(amber.limit_label.as_deref(), Some("$25000.00"));
+    assert_eq!(amber.remaining_percent, Some(80));
+    assert_eq!(amber.status_slot, None);
+    assert!(
+        !buckets
+            .iter()
+            .any(|bucket| bucket.label.contains("omelette")),
+        "a null-budget codename window must not produce a bucket"
+    );
+}
+
+/// A disabled (out-of-credits) spend window is still surfaced — with its
+/// reason — instead of being silently dropped, so the cap stays visible.
+#[test]
+fn claude_spend_disabled_is_surfaced_with_reason() {
+    let usage: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+        "spend": {
+            "used": { "amount_minor": 7849, "currency": "SGD", "exponent": 2 },
+            "limit": { "amount_minor": 26000, "currency": "SGD", "exponent": 2 },
+            "percent": 30,
+            "severity": "normal",
+            "enabled": false,
+            "disabled_reason": "out_of_credits"
+        }
+    }))
+    .expect("valid Claude OAuth usage");
+
+    let buckets = usage.into_buckets(1_781_185_560);
+    let spend = buckets
+        .iter()
+        .find(|bucket| bucket.status_slot == Some(StatusSlot::Spend))
+        .expect("disabled spend bucket is still present");
+    assert_eq!(spend.used_label.as_deref(), Some("SGD 78.49 spent"));
+    assert_eq!(
+        spend.pace_label.as_deref(),
+        Some("disabled · out of credits")
+    );
+    // Headline still shows the cap context: `<used> of <limit>`.
+    assert_eq!(
+        spend_headline_label(&buckets).as_deref(),
+        Some("SGD 78 of 260")
+    );
+}
+
+/// The status-bar headline joins the percentage windows and the monetary spend
+/// into one ` · `-separated string.
+#[test]
+fn status_bar_headline_joins_windows_and_spend() {
+    let usage: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+        "five_hour": { "utilization": 11.0, "resets_at": "2026-06-28T16:40:00Z" },
+        "seven_day": { "utilization": 27.0, "resets_at": "2026-07-03T07:00:00Z" },
+        "spend": {
+            "used": { "amount_minor": 7849, "currency": "SGD", "exponent": 2 },
+            "limit": { "amount_minor": 26000, "currency": "SGD", "exponent": 2 },
+            "percent": 30,
+            "enabled": true
+        }
+    }))
+    .expect("valid Claude OAuth usage");
+    let buckets = usage.into_buckets(1_781_185_560);
+    assert_eq!(
+        status_bar_headline_for_surface(UsageSurface::Claude, &buckets).as_deref(),
+        Some("Session 89% · Weekly 73% · SGD 78 of 260")
+    );
+}
+
+/// Bug 8: the compact headline drops every zero-value segment — a `0%` window
+/// and `$0` spend — while the dialog (not this fn) still shows them.
+#[test]
+fn status_bar_headline_drops_zero_window_and_zero_spend() {
+    let usage: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+        "five_hour": { "utilization": 0.0, "resets_at": "2026-06-28T16:40:00Z" },
+        "seven_day": { "utilization": 1.0, "resets_at": "2026-07-03T07:00:00Z" },
+        "spend": {
+            "used": { "amount_minor": 0, "currency": "USD", "exponent": 2 },
+            "limit": { "amount_minor": 30000, "currency": "USD", "exponent": 2 },
+            "percent": 0,
+            "enabled": true
+        }
+    }))
+    .expect("valid Claude OAuth usage");
+    let buckets = usage.into_buckets(1_781_185_560);
+    assert_eq!(
+        status_bar_headline_for_surface(UsageSurface::Claude, &buckets).as_deref(),
+        Some("Session 100%"),
+        "Weekly 0% and $0 spent must be omitted from the status bar"
+    );
+}
+
+/// Bug 11: an over-cap window (>100% utilization) keeps its true used figure in
+/// the label instead of being clamped to `100% used`; `remaining` stays 0.
+#[test]
+fn over_cap_window_surfaces_true_used_percent() {
+    let usage: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+        "seven_day": { "utilization": 150.0, "resets_at": "2026-07-03T07:00:00Z" }
+    }))
+    .expect("valid Claude OAuth usage");
+    let buckets = usage.into_buckets(1_781_185_560);
+    let weekly = buckets
+        .iter()
+        .find(|b| b.status_slot == Some(StatusSlot::Weekly))
+        .expect("weekly bucket");
+    assert_eq!(
+        weekly.remaining_percent,
+        Some(0),
+        "nothing left when over cap"
+    );
+    assert_eq!(weekly.used_label.as_deref(), Some("150% used"));
+}
+
+/// D30: the overview summary is the first available Rust-ranked limit
+/// (long-range, model-specific, session, then other) — never the tightest
+/// bucket, and never the reset-less spend bucket while a real limit carries a
+/// percent (Bug 5's spend exclusion survives as the last rank).
+#[test]
+fn summary_bucket_selects_first_ranked_limit_over_tighter_spend() {
+    let usage: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+        "five_hour": { "utilization": 11.0, "resets_at": "2026-06-28T16:40:00Z" },
+        "seven_day": { "utilization": 27.0, "resets_at": "2026-07-03T07:00:00Z" },
+        "spend": {
+            "used": { "amount_minor": 9000, "currency": "USD", "exponent": 2 },
+            "limit": { "amount_minor": 30000, "currency": "USD", "exponent": 2 },
+            "percent": 30,
+            "enabled": true
+        }
+    }))
+    .expect("valid Claude OAuth usage");
+    // Spend = 70% left (tightest), Session = 89%, Weekly = 73%: the Weekly
+    // long-range window wins by rank, not by tightness.
+    let buckets = usage.into_buckets(1_781_185_560);
+    let chosen = summary_bucket(&buckets).expect("a ranked bucket");
+    assert_eq!(chosen.status_slot, Some(StatusSlot::Weekly));
+    assert_eq!(chosen.remaining_percent, Some(73));
+}
+
+/// D30: a tighter model-scoped window (Fable) does not steal the summary from
+/// the ranked long-range window; the scoped name is still prepended when an
+/// unslotted window wins (nothing slotted carries a percent), so the row
+/// tells the operator *which* limit the % traces to.
+#[test]
+fn usage_tab_status_label_selects_ranked_limit_and_names_unslotted_winner() {
+    let reset_at = "2026-07-03T06:59:59Z";
+    // Fable (10% left) is tighter than Session (50% left) and Weekly (60%),
+    // but Weekly wins by rank and stays bare.
+    let ranked_wins: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+        "limits": [
+            { "kind": "session", "group": "session", "percent": 50,
+              "severity": "normal", "resets_at": "2026-07-03T03:20:00Z", "scope": null },
+            { "kind": "weekly_all", "group": "weekly", "percent": 40,
+              "severity": "normal", "resets_at": reset_at, "scope": null },
+            { "kind": "weekly_scoped", "group": "weekly", "percent": 90,
+              "severity": "danger", "resets_at": reset_at,
+              "scope": { "model": { "display_name": "Fable" } } }
+        ]
+    }))
+    .expect("limits response");
+    let mut view = FocusedUsageView::unavailable("x", 1_781_300_000);
+    view.status = UsageSnapshotStatus::Fresh;
+    view.buckets = ranked_wins.into_buckets(1_781_300_000);
+    let label = usage_tab_status_label(&view);
+    assert!(
+        label.starts_with("60% left"),
+        "ranked weekly must win over tighter fable: got {label:?}"
+    );
+
+    // Nothing slotted carries a percent: the unslotted Fable window wins and
+    // is named.
+    let fable_wins: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+        "limits": [
+            { "kind": "weekly_scoped", "group": "weekly", "percent": 90,
+              "severity": "danger", "resets_at": reset_at,
+              "scope": { "model": { "display_name": "Fable" } } }
+        ]
+    }))
+    .expect("limits response");
+    view.buckets = fable_wins.into_buckets(1_781_300_000);
+    let label = usage_tab_status_label(&view);
+    assert!(
+        label.starts_with("Fable 10% left"),
+        "unslotted winner must be named: got {label:?}"
+    );
+}
+
+#[test]
+fn fraction_helpers_reject_absent_and_clamp_present() {
+    // Fraction form (0..=1) and already-percent form (>1) both map to a
+    // clamped used percentage.
+    assert_eq!(used_percent_from_fraction(0.0), Some(0));
+    assert_eq!(used_percent_from_fraction(1.0), Some(100));
+    assert_eq!(used_percent_from_fraction(0.84), Some(84));
+    assert_eq!(used_percent_from_fraction(42.0), Some(42));
+    assert_eq!(used_percent_from_fraction(150.0), Some(100));
+
+    // Absent/unknown sentinels must yield None, never a fabricated value.
+    // A negative input previously rendered as `Some(100)` — a "100% left"
+    // row for data that is genuinely absent.
+    assert_eq!(used_percent_from_fraction(-0.5), None);
+    assert_eq!(used_percent_from_fraction(f64::NAN), None);
+    assert_eq!(used_percent_from_fraction(f64::INFINITY), None);
+    assert_eq!(used_percent_from_fraction(f64::NEG_INFINITY), None);
+
+    // remaining = 100 - used, propagating None for absent data.
+    assert_eq!(remaining_from_fraction(0.84), Some(16));
+    assert_eq!(remaining_from_fraction(1.0), Some(0));
+    assert_eq!(remaining_from_fraction(-0.5), None);
+    assert_eq!(remaining_from_fraction(f64::NAN), None);
+
+    // The "used" label tracks the same absence contract.
+    assert_eq!(used_percent_label(0.84).as_deref(), Some("84% used"));
+    assert_eq!(used_percent_label(-0.5), None);
+    assert_eq!(used_percent_label(f64::NAN), None);
+}
+
+#[test]
+fn claude_oauth_response_accepts_window_aliases() {
+    let usage: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+        "five_hour": { "utilization": 0.10 },
+        "seven_day": { "utilization": 0.45 },
+        "seven_day_opus": { "utilization": 0.30 },
+        // `seven_day_oauth_apps` is a SEPARATE window, not an alias of
+        // `seven_day` — it must be ignored, never override Weekly.
+        "seven_day_oauth_apps": { "utilization": 0.99 },
+        "seven_day_cowork": { "utilization": 0.25 }
+    }))
+    .expect("valid Claude OAuth usage aliases");
+
+    let buckets = usage.into_buckets(1_781_185_560);
+
+    assert!(
+        buckets
+            .iter()
+            .any(|bucket| bucket.label == "Weekly" && bucket.remaining_percent == Some(55))
+    );
+    assert!(
+        buckets
+            .iter()
+            .any(|bucket| bucket.label == "Daily Routines" && bucket.remaining_percent == Some(75))
+    );
+    // A present Opus window is a detail row, never a headline slot.
+    assert!(
+        buckets
+            .iter()
+            .any(|bucket| bucket.label == "Opus" && bucket.status_slot.is_none())
+    );
+}
+
+#[test]
+fn codex_oauth_response_maps_primary_weekly_spark_and_credits() {
+    let mut usage: CodexUsageResponse = serde_json::from_value(serde_json::json!({
+        "plan_type": "pro",
+        "rate_limit": {
+            "primary_window": {
+                "used_percent": 63,
+                "reset_at": 1781189520,
+                "limit_window_seconds": 18000
+            },
+            "secondary_window": {
+                "used_percent": 90,
+                "reset_at": 1781197200,
+                "limit_window_seconds": 604800
+            }
+        },
+        "additional_rate_limits": [{
+            "limit_name": "gpt-5.3-codex-spark",
+            "rate_limit": {
+                "primary_window": {
+                    "used_percent": 0,
+                    "reset_at": 1781200800,
+                    "limit_window_seconds": 18000
+                },
+                "secondary_window": {
+                    "used_percent": 0,
+                    "reset_at": 1781798400,
+                    "limit_window_seconds": 604800
+                }
+            }
+        }],
+        "credits": {
+            "has_credits": true,
+            "unlimited": false,
+            "balance": "12.5"
+        }
+    }))
+    .expect("valid Codex usage");
+    usage.reset_credits = Some(CodexResetCredits {
+        available_count: 2,
+        credits: vec![
+            CodexResetCredit {
+                status: Some("available".to_owned()),
+                expires_at: Some("2026-06-10T00:00:00Z".to_owned()),
+            },
+            CodexResetCredit {
+                status: Some("available".to_owned()),
+                expires_at: Some("2026-06-18T00:00:00Z".to_owned()),
+            },
+            CodexResetCredit {
+                status: Some("redeemed".to_owned()),
+                expires_at: Some("2026-06-17T00:00:00Z".to_owned()),
+            },
+        ],
+    });
+
+    let buckets = usage.buckets(1_781_185_560);
+
+    assert_eq!(buckets[0].label, "Session");
+    assert_eq!(buckets[0].remaining_percent, Some(37));
+    assert_eq!(buckets[0].status_slot, Some(StatusSlot::Session));
+    assert_eq!(buckets[1].label, "Weekly");
+    assert_eq!(buckets[1].remaining_percent, Some(10));
+    assert_eq!(buckets[1].status_slot, Some(StatusSlot::Weekly));
+    assert!(buckets.iter().any(
+        |bucket| bucket.label == "Codex Spark 5-hour" && bucket.remaining_percent == Some(100)
+    ));
+    // The per-feature Spark detail rows are not headline slots.
+    assert!(buckets.iter().all(|bucket| {
+        !bucket.label.starts_with("Codex Spark") || bucket.status_slot.is_none()
+    }));
+    let reset_credits = buckets
+        .iter()
+        .position(|bucket| bucket.label == "Limit Reset Credits")
+        .expect("reset credits bucket");
+    let reset_credit_label = format!(
+        "2 manual resets available · Next expires {}",
+        expiry_label(
+            parse_iso_epoch("2026-06-18T00:00:00Z").expect("expiry epoch"),
+            1_781_185_560
+        )
+    );
+    assert_eq!(
+        buckets[reset_credits].pace_label.as_deref(),
+        Some(reset_credit_label.as_str())
+    );
+    let credits = buckets
+        .iter()
+        .enumerate()
+        .find(|(_, bucket)| bucket.label == "Credits")
+        .expect("credits bucket");
+    assert!(reset_credits < credits.0);
+    assert_eq!(credits.1.limit_label.as_deref(), Some("12.50 credits"));
+}
+
+#[test]
+fn codex_rpc_response_maps_account_windows_and_credits() {
+    let limits: CodexRpcRateLimitsResponse = serde_json::from_value(serde_json::json!({
+        "rateLimits": {
+            "primary": {
+                "usedPercent": 63.0,
+                "windowDurationMins": 300,
+                "resetsAt": 1781189520
+            },
+            "secondary": {
+                "usedPercent": 90.0,
+                "windowDurationMins": 10080,
+                "resetsAt": 1781798400
+            },
+            "credits": {
+                "hasCredits": true,
+                "unlimited": false,
+                "balance": "12.5"
+            },
+            "planType": "pro"
+        }
+    }))
+    .expect("valid Codex RPC rate limits");
+    let account: CodexRpcAccountResponse = serde_json::from_value(serde_json::json!({
+        "account": {
+            "type": "chatgpt",
+            "email": "person@example.com",
+            "planType": "pro"
+        }
+    }))
+    .expect("valid Codex RPC account");
+
+    let usage = CodexRpcUsage::from_rpc(limits, Some(account));
+    let buckets = usage.response.buckets(1_781_185_560);
+
+    assert_eq!(usage.account_label.as_deref(), Some("person@example.com"));
+    assert_eq!(usage.response.plan_type.as_deref(), Some("pro"));
+    assert_eq!(buckets[0].label, "Session");
+    assert_eq!(buckets[0].status_slot, Some(StatusSlot::Session));
+    assert_eq!(buckets[0].remaining_percent, Some(37));
+    assert_eq!(buckets[0].pace_label.as_deref(), Some("15% in reserve"));
+    assert_eq!(buckets[1].label, "Weekly");
+    assert_eq!(buckets[1].status_slot, Some(StatusSlot::Weekly));
+    assert_eq!(buckets[1].remaining_percent, Some(10));
+    assert_eq!(buckets[1].pace_label.as_deref(), Some("1 week window"));
+    let credits = buckets
+        .iter()
+        .find(|bucket| bucket.label == "Credits")
+        .expect("credits bucket");
+    assert_eq!(credits.limit_label.as_deref(), Some("12.50 credits"));
+}
+
+fn codex_minimal_limits_value() -> serde_json::Value {
+    serde_json::json!({
+        "rateLimits": {
+            "primary": {
+                "usedPercent": 25.0,
+                "windowDurationMins": 300,
+                "resetsAt": 1_781_189_520_i64
+            }
+        }
+    })
+}
+
+#[test]
+fn codex_rpc_account_api_key_tag_yields_origin_label_and_rate_limits() {
+    let usage = decode_codex_rpc_usage(
+        codex_minimal_limits_value(),
+        Some(serde_json::json!({ "account": { "type": "apiKey" } })),
+    )
+    .expect("Codex RPC decode");
+    assert_eq!(usage.account_label.as_deref(), Some("Codex API key"));
+    let buckets = usage.response.buckets(1_781_185_560);
+    assert!(buckets.iter().any(|bucket| bucket.label == "Session"));
+}
+
+#[test]
+fn codex_rpc_account_amazon_bedrock_tag_decodes_without_label() {
+    let account: CodexRpcAccountResponse = serde_json::from_value(serde_json::json!({
+        "account": { "type": "amazonBedrock", "usesCodexManagedCredentials": true }
+    }))
+    .expect("Codex Bedrock account decodes");
+    let limits: CodexRpcRateLimitsResponse =
+        serde_json::from_value(codex_minimal_limits_value()).expect("limits");
+    let usage = CodexRpcUsage::from_rpc(limits, Some(account));
+    assert_eq!(usage.account_label, None);
+}
+
+#[test]
+fn codex_rpc_account_decode_failure_degrades_to_no_label() {
+    let usage = decode_codex_rpc_usage(
+        codex_minimal_limits_value(),
+        Some(serde_json::json!({ "account": { "type": "someFutureTag" } })),
+    )
+    .expect("unknown account tag still yields usage");
+    assert_eq!(usage.account_label, None);
+    let buckets = usage.response.buckets(1_781_185_560);
+    assert!(buckets.iter().any(|bucket| bucket.label == "Session"));
+}
+
+#[test]
+fn managed_cli_launch_gate_cools_down_after_launch_failure() {
+    let mut gate = ManagedCliLaunchGate::default();
+    gate.can_launch("probe", Instant::now()).unwrap();
+
+    gate.record_launch_failure("blocked".to_owned());
+
+    let error = gate
+        .can_launch("probe", Instant::now())
+        .expect_err("cooldown should block launch");
+    assert!(error.contains("cooldown active"));
+    assert!(error.contains("blocked"));
+
+    gate.record_success();
+    gate.can_launch("probe", Instant::now()).unwrap();
+}
+
+#[test]
+fn claude_usage_diagnostic_invokes_explicit_usage_command() {
+    let diagnostic = run_claude_usage_diagnostic_with(|command, args, timeout| {
+        assert_eq!(command, "claude");
+        assert_eq!(args, ["-p", "/usage"]);
+        assert_eq!(timeout, PROVIDER_CLI_TIMEOUT);
+        Ok(CliOutput {
+            success: true,
+            exit_code: Some(0),
+            stdout: "usage output".to_owned(),
+            stderr: String::new(),
+        })
+    })
+    .expect("diagnostic");
+
+    assert_eq!(diagnostic.command, "claude");
+    assert_eq!(diagnostic.args, vec!["-p", "/usage"]);
+    assert!(diagnostic.success);
+    assert_eq!(diagnostic.stdout, "usage output");
+}
+
+#[test]
+fn claude_usage_diagnostic_preserves_cli_failure_output() {
+    let diagnostic = run_claude_usage_diagnostic_with(|_, _, _| {
+        Ok(CliOutput {
+            success: false,
+            exit_code: Some(1),
+            stdout: String::new(),
+            stderr: "not logged in".to_owned(),
+        })
+    })
+    .expect("diagnostic");
+
+    assert!(!diagnostic.success);
+    assert_eq!(diagnostic.exit_code, Some(1));
+    assert_eq!(diagnostic.stderr, "not logged in");
+}
+
+#[test]
+fn claude_cli_usage_output_maps_current_windows() {
+    let usage = parse_claude_usage_output(
+        "You are currently using your subscription to power your Claude Code usage\n\
+             \n\
+             Current session: 0% used\n\
+             Current week (all models): 46% used · resets Jun 26, 6:59am (UTC)\n\
+             Current week (Sonnet only): 15% used · resets Jun 26, 6:59am (UTC)\n",
+    )
+    .expect("usage output");
+
+    let buckets = usage.buckets();
+
+    assert_eq!(buckets[0].label, "Session");
+    assert_eq!(buckets[0].remaining_percent, Some(100));
+    // The CLI fallback still fills the headline slots (regression guard:
+    // OAuth-fetch failure must not blank the Claude status bar).
+    assert_eq!(buckets[0].status_slot, Some(StatusSlot::Session));
+    assert_eq!(buckets[1].label, "Weekly");
+    assert_eq!(buckets[1].remaining_percent, Some(54));
+    assert_eq!(buckets[1].status_slot, Some(StatusSlot::Weekly));
+    assert_eq!(buckets[2].label, "Sonnet");
+    assert_eq!(buckets[2].remaining_percent, Some(85));
+    assert_eq!(buckets[2].status_slot, None);
+
+    // End-to-end: the tagged CLI buckets still render the Claude headline, so
+    // an OAuth-fetch failure that drops to the CLI path does not blank it.
+    assert_eq!(
+        status_bar_label(
+            UsageSurface::Claude,
+            "",
+            UsageSnapshotStatus::Fresh,
+            &buckets
+        ),
+        "Session 100% · Weekly 54%"
+    );
+}
+
+/// The CLI prints per-model weekly lines as `Current week (<model>): …` (Fable
+/// today, future codenames tomorrow). The parser captures each generically so
+/// a new model prints without a per-model edit. Mirrors the live 2026-07-03
+/// `claude -p /usage` output, where Sonnet was replaced by Fable.
+#[test]
+fn claude_cli_usage_output_maps_scoped_weekly_fable() {
+    let usage = parse_claude_usage_output(
+        "You are currently using your subscription to power your Claude Code usage\n\
+             \n\
+             Current session: 9% used · resets Jul 3 at 10:19am (Asia/Saigon)\n\
+             Current week (all models): 28% used · resets Jul 3 at 2pm (Asia/Saigon)\n\
+             Current week (Fable): 35% used · resets Jul 3 at 1:59pm (Asia/Saigon)\n",
+    )
+    .expect("usage output");
+
+    // The model-scoped line lands in `scoped_weekly` (not `sonnet_used`).
+    assert_eq!(usage.scoped_weekly.len(), 1);
+    assert_eq!(usage.scoped_weekly[0].0, "Fable");
+    assert!((usage.scoped_weekly[0].1 - 35.0).abs() < f64::EPSILON);
+
+    let buckets = usage.buckets();
+    let fable = buckets
+        .iter()
+        .find(|b| b.label == "Fable")
+        .expect("Fable CLI bucket");
+    assert_eq!(fable.remaining_percent, Some(65));
+    assert_eq!(fable.status_slot, None);
+
+    // Headline still binds to the slot from the explicit (all models) line.
+    assert_eq!(
+        status_bar_label(
+            UsageSurface::Claude,
+            "",
+            UsageSnapshotStatus::Fresh,
+            &buckets
+        ),
+        "Session 91% · Weekly 72%"
+    );
+}
+
+#[test]
+fn grok_billing_config_maps_current_fallback_and_bounds() {
+    let usage: GrokBillingResponse = serde_json::from_value(serde_json::json!({
+        "subscription_tier": "SuperGrok",
+        "on_demand_enabled": true,
+        "config": {
+            "monthlyLimit": { "val": 5000 },
+            "used": { "val": 1800 },
+            "billingPeriodStart": "2026-06-01T00:00:00Z",
+            "billingPeriodEnd": "2026-07-01T00:00:00Z",
+            "prepaidBalance": { "val": 2500 },
+            "onDemandCap": { "val": 4000 },
+            "onDemandUsed": { "val": 300 }
+        }
+    }))
+    .expect("valid current Grok billing response");
+
+    assert_eq!(usage.plan_label().as_deref(), Some("SuperGrok"));
+    let buckets = usage.buckets(1_780_315_200);
+
+    // One headline (Weekly slot), detail rows stay untagged.
+    assert_eq!(buckets[0].label, "Monthly");
+    assert_eq!(buckets[0].status_slot, Some(StatusSlot::Weekly));
+    assert_eq!(buckets[0].remaining_percent, Some(64));
+    assert!(
+        buckets[1..]
+            .iter()
+            .all(|bucket| bucket.status_slot.is_none())
+    );
+
+    let credits = buckets
+        .iter()
+        .find(|bucket| bucket.label == "Extra usage credits")
+        .expect("prepaid balance bound");
+    assert_eq!(credits.limit_label.as_deref(), Some("$25"));
+    assert!(credits.limit_money.is_some());
+    assert_eq!(credits.used_label, None);
+
+    let on_demand = buckets
+        .iter()
+        .find(|bucket| bucket.label == "On-demand usage")
+        .expect("on-demand bound");
+    assert_eq!(on_demand.used_label.as_deref(), Some("$3"));
+    assert_eq!(on_demand.limit_label.as_deref(), Some("$40"));
+    assert!(on_demand.limit_money.is_some());
+}
+
+#[test]
+fn grok_billing_config_preferred_percent_path_has_pace() {
+    let usage: GrokBillingResponse = serde_json::from_value(serde_json::json!({
+        "config": {
+            "creditUsagePercent": 43.0,
+            "currentPeriod": {
+                "type": "USAGE_PERIOD_TYPE_WEEKLY",
+                "start": "2026-06-01T00:00:00Z",
+                "end": "2026-06-08T00:00:00Z"
+            }
+        }
+    }))
+    .expect("valid preferred config");
+    let now = parse_iso_epoch("2026-06-04T00:00:00Z").expect("now");
+    let buckets = usage.buckets(now);
+    assert_eq!(buckets[0].label, "Weekly");
+    assert_eq!(buckets[0].status_slot, Some(StatusSlot::Weekly));
+    assert_eq!(buckets[0].remaining_percent, Some(57));
+    assert!(buckets[0].pace_label.is_some());
+}
+
+#[test]
+fn grok_plan_label_from_server_tier_only() {
+    let free: GrokBillingResponse = serde_json::from_value(serde_json::json!({
+        "config": {},
+        "subscription_tier": "  "
+    }))
+    .expect("blank tier");
+    assert_eq!(free.plan_label(), None);
+    // Web path never guesses a plan (no auth heuristic).
+    let web = GrokBillingSnapshot::Web(GrokWebBillingSnapshot {
+        used_percent: 40.0,
+        reset_at_epoch: Some(1_780_315_200),
+    });
+    assert_eq!(web.plan_label(), None);
+}
+
+#[test]
+fn grok_on_demand_requires_positive_cap() {
+    let usage: GrokBillingResponse = serde_json::from_value(serde_json::json!({
+        "on_demand_enabled": true,
+        "config": { "onDemandUsed": { "val": 500 } }
+    }))
+    .expect("no cap config");
+    let buckets = usage.buckets(1_780_315_200);
+    // Used without a positive provider cap is unbounded spend, not a quota bound.
+    assert!(
+        buckets
+            .iter()
+            .all(|bucket| bucket.label != "On-demand usage")
+    );
+}
+
+#[test]
+fn grok_rpc_payload_keeps_billing_method_unescaped() {
+    let payload = grok_rpc_request_payload(2, "x.ai/billing", serde_json::json!({}));
+    let encoded = serde_json::to_string(&payload).expect("encode payload");
+
+    assert!(encoded.contains("\"method\":\"x.ai/billing\""));
+    assert!(!encoded.contains("x.ai\\/billing"));
+}
+
+#[test]
+fn grok_account_label_prefers_auth_identity_over_env_presence() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let auth = dir.path().join("auth.json");
+    fs::write(
+        &auth,
+        r#"{"account":{"email":"operator@example.com"},"token":"redacted"}"#,
+    )
+    .expect("write auth");
+
+    let label = grok_account_label_or_presence(&auth, true, true, true);
+
+    assert_eq!(label, "operator@example.com");
+}
+
+#[test]
+fn grok_account_label_reports_safe_credential_presence() {
+    let missing = Path::new("/tmp/nonexistent-grok-auth-for-test.json");
+
+    assert_eq!(
+        grok_account_label_or_presence(missing, false, true, true),
+        "XAI_API_KEY present"
+    );
+    assert_eq!(
+        grok_account_label_or_presence(missing, false, false, true),
+        "GROK_DEPLOYMENT_KEY present"
+    );
+    assert_eq!(
+        grok_account_label_or_presence(missing, false, false, false),
+        "needs Grok login"
+    );
+}
+
+#[test]
+fn grok_snapshot_uses_probe_success_without_local_credential_marker() {
+    let missing = Path::new("/tmp/nonexistent-grok-auth-for-test.json");
+    let billing: GrokBillingResponse = serde_json::from_value(serde_json::json!({
+        "config": {
+            "monthlyLimit": { "val": 5000 },
+            "used": { "val": 1000 },
+            "billingPeriodStart": "2026-06-01T00:00:00Z",
+            "billingPeriodEnd": "2026-07-01T00:00:00Z"
+        }
+    }))
+    .expect("valid current Grok billing response");
+
+    let view = grok_snapshot_from_rpc_result(
+        "grok",
+        1_780_315_200,
+        missing,
+        false,
+        false,
+        false,
+        Ok(GrokBillingSnapshot::Rpc(Box::new(billing))),
+    );
+
+    assert_eq!(view.status, UsageSnapshotStatus::Fresh);
+    assert_eq!(view.source, UsageSource::Cli);
+    assert_eq!(view.confidence, UsageConfidence::Authoritative);
+    assert_eq!(view.account.account_label, "needs Grok login");
+    assert_eq!(view.buckets[0].label, "Monthly");
+    assert_eq!(view.buckets[0].remaining_percent, Some(80));
+    assert_eq!(view.last_error, None);
+}
+
+#[test]
+fn grok_web_billing_response_maps_weekly_usage() {
+    let data = [
+        0x00, 0x00, 0x00, 0x00, 0x3c, 0x0a, 0x3a, 0x0d, 0x9c, 0x7d, 0xac, 0x42, 0x12, 0x00, 0x1a,
+        0x00, 0x22, 0x06, 0x08, 0x80, 0x97, 0xf3, 0xd0, 0x06, 0x2a, 0x06, 0x08, 0x80, 0xb1, 0x91,
+        0xd2, 0x06, 0x3a, 0x07, 0x08, 0x02, 0x15, 0x12, 0x03, 0xa5, 0x42, 0x42, 0x12, 0x08, 0x01,
+        0x12, 0x06, 0x08, 0x80, 0x97, 0xf3, 0xd0, 0x06, 0x1a, 0x06, 0x08, 0x80, 0xb1, 0x91, 0xd2,
+        0x06, 0x62, 0x00, 0x68, 0x01, 0x72, 0x00, 0x7a, 0x00, 0x82, 0x01, 0x00, 0x8a, 0x01, 0x00,
+        0x92, 0x01, 0x00, 0x9a, 0x01, 0x00, 0xa2, 0x01, 0x00, 0xaa, 0x01, 0x00,
+    ];
+
+    let snapshot =
+        parse_grok_web_billing_response(&data, 1_782_318_000).expect("parse grok billing");
+    let buckets = snapshot.buckets(1_782_318_000);
+    assert_eq!(buckets[0].status_slot, Some(StatusSlot::Weekly));
+
+    assert_eq!(buckets[0].label, "Weekly");
+    assert_eq!(buckets[0].remaining_percent, Some(14));
+    assert_eq!(
+        buckets[0].reset_label.as_deref(),
+        Some(
+            reset_label(
+                parse_iso_epoch("2026-07-01T00:00:00Z").expect("billing reset"),
+                1_782_318_000,
+            )
+            .as_str()
+        )
+    );
+}
+
+#[test]
+fn grok_cycle_label_falls_back_to_credits_for_irregular_cycles() {
+    assert_eq!(grok_cycle_label_from_minutes(7 * 24 * 60), "Weekly");
+    assert_eq!(grok_cycle_label_from_minutes(30 * 24 * 60), "Monthly");
+    assert_eq!(grok_cycle_label_from_minutes(13 * 24 * 60), "Credits");
+}
+
+#[test]
+fn grok_snapshot_reports_probe_error_instead_of_presence_gate() {
+    let missing = Path::new("/tmp/nonexistent-grok-auth-for-test.json");
+
+    let view = grok_snapshot_from_rpc_result(
+        "grok",
+        1_780_315_200,
+        missing,
+        false,
+        false,
+        false,
+        Err(ProviderError::from(
+            "grok agent stdio failed to start: not found".to_owned(),
+        )),
+    );
+
+    assert_eq!(view.status, UsageSnapshotStatus::NeedsLogin);
+    assert_eq!(view.source, UsageSource::None);
+    assert_eq!(view.confidence, UsageConfidence::None);
+    assert_eq!(
+        view.last_error.as_deref(),
+        Some("grok agent stdio failed to start: not found")
+    );
+}
+
+#[test]
+fn codex_oauth_credentials_parse_nested_tokens() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("auth.json");
+    let id_token = test_jwt(serde_json::json!({
+        "email": "person@example.com",
+        "sub": "acct-sub"
+    }));
+    fs::write(
+        &path,
+        serde_json::json!({
+            "tokens": {
+                "access_token": "access",
+                "refresh_token": "refresh",
+                "account_id": "acct",
+                "id_token": id_token
+            }
+        })
+        .to_string(),
+    )
+    .expect("write auth");
+
+    let credentials = load_codex_oauth_credentials(&path).expect("credentials");
+
+    assert_eq!(credentials.access_token, "access");
+    assert_eq!(credentials.account_id.as_deref(), Some("acct"));
+    assert_eq!(
+        credentials.account_label.as_deref(),
+        Some("person@example.com")
+    );
+}
+
+#[test]
+fn codex_id_token_identity_falls_back_to_subject() {
+    let id_token = test_jwt(serde_json::json!({
+        "sub": "user-123"
+    }));
+
+    assert_eq!(
+        codex_account_label_from_id_token(&id_token).as_deref(),
+        Some("ChatGPT account user-123")
+    );
+}
+
+#[test]
+fn credential_file_loaders_reread_updated_container_files() {
+    let dir = tempfile::tempdir().expect("tempdir");
+
+    let claude_path = dir.path().join(".credentials.json");
+    fs::write(
+        &claude_path,
+        serde_json::json!({
+            "claudeAiOauth": {
+                "accessToken": "old-claude",
+                "subscriptionType": "max"
+            }
+        })
+        .to_string(),
+    )
+    .expect("write Claude auth");
+    assert_eq!(
+        load_claude_oauth_credentials(&claude_path)
+            .expect("Claude credentials")
+            .access_token,
+        "old-claude"
+    );
+    fs::write(
+        &claude_path,
+        serde_json::json!({
+            "claudeAiOauth": {
+                "accessToken": "new-claude",
+                "subscriptionType": "max"
+            }
+        })
+        .to_string(),
+    )
+    .expect("refresh Claude auth");
+    assert_eq!(
+        load_claude_oauth_credentials(&claude_path)
+            .expect("updated Claude credentials")
+            .access_token,
+        "new-claude"
+    );
+
+    let codex_path = dir.path().join("auth.json");
+    fs::write(
+        &codex_path,
+        serde_json::json!({
+            "tokens": {
+                "access_token": "old-codex",
+                "id_token": test_jwt(serde_json::json!({"email": "old@example.com"}))
+            }
+        })
+        .to_string(),
+    )
+    .expect("write Codex auth");
+    assert_eq!(
+        load_codex_oauth_credentials(&codex_path)
+            .expect("Codex credentials")
+            .access_token,
+        "old-codex"
+    );
+    fs::write(
+        &codex_path,
+        serde_json::json!({
+            "tokens": {
+                "access_token": "new-codex",
+                "id_token": test_jwt(serde_json::json!({"email": "new@example.com"}))
+            }
+        })
+        .to_string(),
+    )
+    .expect("refresh Codex auth");
+    let codex = load_codex_oauth_credentials(&codex_path).expect("updated Codex credentials");
+    assert_eq!(codex.access_token, "new-codex");
+    assert_eq!(codex.account_label.as_deref(), Some("new@example.com"));
+
+    let kimi_path = dir.path().join(".kimi-code/credentials/kimi-code.json");
+    fs::create_dir_all(kimi_path.parent().expect("Kimi credentials parent"))
+        .expect("create Kimi credentials dir");
+    fs::write(
+        &kimi_path,
+        serde_json::json!({
+            "access_token": "old-kimi",
+            "expires_at": 1_781_300_000
+        })
+        .to_string(),
+    )
+    .expect("write Kimi auth");
+    assert_eq!(
+        load_kimi_local_token_from_home(dir.path(), 1_781_200_000).as_deref(),
+        Some("old-kimi")
+    );
+    fs::write(
+        &kimi_path,
+        serde_json::json!({
+            "access_token": "new-kimi",
+            "expires_at": 1_781_300_000
+        })
+        .to_string(),
+    )
+    .expect("refresh Kimi auth");
+    assert_eq!(
+        load_kimi_local_token_from_home(dir.path(), 1_781_200_000).as_deref(),
+        Some("new-kimi")
+    );
+    fs::write(
+        &kimi_path,
+        serde_json::json!({
+            "access_token": "expired-kimi",
+            "expires_at": 1_781_100_000
+        })
+        .to_string(),
+    )
+    .expect("expire Kimi auth");
+    assert_eq!(
+        load_kimi_local_token_from_home(dir.path(), 1_781_200_000),
+        None
+    );
+}
+
+fn test_jwt(payload: serde_json::Value) -> String {
+    let header = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode("{}");
+    let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(payload.to_string());
+    format!("{header}.{payload}.signature")
+}
+
+#[test]
+fn quota_pace_label_uses_codexbar_reserve_deficit_onpace() {
+    // Behind pace (burning faster than the clock): 60% quota left with 90%
+    // of the window still remaining -> 30 points of deficit, and the linear
+    // projection runs out before the reset (Variant A composite).
+    let deficit = quota_pace_label(Some(60), Some(900), Some(1_000), 0).expect("pace label");
+    assert_eq!(deficit, "30% in deficit · Runs out in 2m");
+
+    // Ahead of pace (quota outlasting the clock): 90% left, 60% of window
+    // remaining -> 30 points in reserve.
+    let reserve = quota_pace_label(Some(90), Some(600), Some(1_000), 0).expect("pace label");
+    assert_eq!(reserve, "30% in reserve");
+
+    // Within 2 points of the clock -> On pace.
+    let on_pace = quota_pace_label(Some(50), Some(500), Some(1_000), 0).expect("pace label");
+    assert_eq!(on_pace, "On pace");
+}
+
+#[test]
+fn reset_label_uses_relative_and_local_timestamp() {
+    let now = parse_iso_epoch("2026-06-11T13:46:00Z").expect("now");
+    let same_day = parse_iso_epoch("2026-06-11T15:12:00Z").expect("same day");
+    assert_eq!(
+        reset_label(same_day, now),
+        format!(
+            "Resets in 1h 26m ({})",
+            format::local_timestamp_label(same_day)
+        )
+    );
+    let tomorrow = parse_iso_epoch("2026-06-12T04:18:00Z").expect("tomorrow");
+    assert_eq!(
+        reset_label(tomorrow, now),
+        format!(
+            "Resets in 14h 32m ({})",
+            format::local_timestamp_label(tomorrow)
+        )
+    );
+    let future = parse_iso_epoch("2026-07-01T16:31:00Z").expect("future");
+    assert_eq!(
+        reset_label(future, now),
+        format!(
+            "Resets in 20d 2h ({})",
+            format::local_timestamp_label(future)
+        )
+    );
+    assert_eq!(reset_label(now, now), "Resets now");
+}
+
+#[test]
+fn claude_oauth_credentials_parse_subscription_label() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("claude.json");
+    fs::write(
+        &path,
+        serde_json::json!({
+            "claudeAiOauth": {
+                "accessToken": "access",
+                "subscriptionType": "claude_max"
+            }
+        })
+        .to_string(),
+    )
+    .expect("write auth");
+
+    let credentials = load_claude_oauth_credentials(&path).expect("credentials");
+
+    assert_eq!(credentials.access_token, "access");
+    assert_eq!(credentials.subscription_type.as_deref(), Some("Claude Max"));
+}
+
+#[test]
+fn claude_oauth_credentials_fall_back_to_rate_limit_tier() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("claude.json");
+    fs::write(
+        &path,
+        serde_json::json!({
+            "claudeAiOauth": {
+                "accessToken": "access",
+                "rateLimitTier": "max"
+            }
+        })
+        .to_string(),
+    )
+    .expect("write auth");
+
+    let credentials = load_claude_oauth_credentials(&path).expect("credentials");
+
+    assert_eq!(credentials.access_token, "access");
+    assert_eq!(credentials.subscription_type.as_deref(), Some("Max"));
+}
+
+#[test]
+fn claude_organization_type_humanizes_enterprise_tier() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("claude.json");
+    fs::write(
+        &path,
+        serde_json::json!({
+            "oauthAccount": {
+                "emailAddress": "user@company.com",
+                "organizationType": "claude_enterprise",
+                "subscriptionType": "API Usage Billing"
+            }
+        })
+        .to_string(),
+    )
+    .expect("write account");
+    assert_eq!(
+        load_claude_organization_type(&path).as_deref(),
+        Some("Claude Enterprise")
+    );
+}
+
+#[test]
+fn claude_organization_type_humanizes_team_tier() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("claude.json");
+    fs::write(
+        &path,
+        serde_json::json!({
+            "oauthAccount": {
+                "emailAddress": "user@team.ai",
+                "organizationType": "claude_team"
+            }
+        })
+        .to_string(),
+    )
+    .expect("write account");
+    assert_eq!(
+        load_claude_organization_type(&path).as_deref(),
+        Some("Claude Team")
+    );
+}
+
+#[test]
+fn claude_organization_type_humanizes_max_tier() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("claude.json");
+    fs::write(
+        &path,
+        serde_json::json!({
+            "oauthAccount": {
+                "organizationType": "claude_max"
+            }
+        })
+        .to_string(),
+    )
+    .expect("write account");
+    assert_eq!(
+        load_claude_organization_type(&path).as_deref(),
+        Some("Claude Max")
+    );
+}
+
+#[test]
+fn claude_organization_type_absent_returns_none() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("claude.json");
+    fs::write(
+        &path,
+        serde_json::json!({ "oauthAccount": { "emailAddress": "x@y.com" } }).to_string(),
+    )
+    .expect("write account");
+    assert_eq!(load_claude_organization_type(&path), None);
+}
+
+#[test]
+fn claude_code_user_agent_parses_cli_version() {
+    assert_eq!(
+        claude_code_version_from_text("Claude Code 2.1.7\n").as_deref(),
+        Some("2.1.7")
+    );
+    assert_eq!(
+        claude_code_user_agent_with(|command, args, timeout| {
+            assert_eq!(command, "claude");
+            assert_eq!(args, ["--version"]);
+            assert_eq!(timeout, CLAUDE_VERSION_TIMEOUT);
+            Ok(CliOutput {
+                success: true,
+                exit_code: Some(0),
+                stdout: "Claude Code 2.2.0".to_owned(),
+                stderr: String::new(),
+            })
+        })
+        .as_deref(),
+        Some("claude-code/2.2.0")
+    );
+}
+
+const AMP_DAILY_FIXTURE: &str = "Signed in as user@example.com (example)\n\
+     Amp Free: 61% remaining today (resets daily)\n\
+     Individual credits: $9.86 remaining\n\
+     Workspace example: $5.33 remaining";
+
+const AMP_TWO_WORKSPACE_FIXTURE: &str = "Amp Free: 61% remaining today (resets daily)\n\
+     Individual credits: $9.86 remaining\n\
+     Workspace alpha: $5.33 remaining\n\
+     Workspace beta: $2.25 remaining";
+
+#[test]
+fn amp_daily_display_text_maps_daily_slot_and_reset_description() {
+    let api = AmpUsage::from_api_value(serde_json::json!({
+        "result": { "displayText": AMP_DAILY_FIXTURE }
+    }))
+    .expect("Amp API daily usage");
+    let cli = parse_amp_usage_output(AMP_DAILY_FIXTURE).expect("Amp CLI daily usage");
+
+    // API and CLI delegate to one parser: identical parsed fields.
+    assert_eq!(api.account_label.as_deref(), Some("user@example.com"));
+    assert_eq!(api.account_label, cli.account_label);
+    assert_eq!(api.daily_remaining_percent, Some(61));
+    assert_eq!(api.daily_remaining_percent, cli.daily_remaining_percent);
+    assert_eq!(api.individual_credits, cli.individual_credits);
+    assert_eq!(api.workspace_balances, cli.workspace_balances);
+
+    let buckets = api.buckets(1_781_185_560);
+    assert_eq!(buckets[0].label, "Amp Free");
+    assert_eq!(buckets[0].status_slot, Some(StatusSlot::Daily));
+    assert_eq!(buckets[0].remaining_percent, Some(61));
+    assert_eq!(buckets[0].reset_label.as_deref(), Some("Resets daily"));
+    assert_eq!(buckets[0].resets_at, None);
+}
+
+#[test]
+fn amp_daily_percentage_clamps_to_protocol_range() {
+    let high = parse_amp_usage_output("Amp Free: 140% remaining today (resets daily)")
+        .expect("high daily");
+    assert_eq!(high.daily_remaining_percent, Some(100));
+    let low =
+        parse_amp_usage_output("Amp Free: -5% remaining today (resets daily)").expect("low daily");
+    assert_eq!(low.daily_remaining_percent, Some(0));
+    // A malformed/non-finite percent yields no Daily bucket.
+    assert!(parse_amp_usage_output("Amp Free: abc% remaining today (resets daily)").is_none());
+}
+
+#[test]
+fn amp_daily_parser_preserves_workspace_balances_in_order() {
+    let usage = parse_amp_usage_output(AMP_TWO_WORKSPACE_FIXTURE).expect("two workspace");
+    assert_eq!(usage.individual_credits, Some(9.86));
+    assert_eq!(
+        usage.workspace_balances,
+        vec![
+            AmpWorkspaceBalance {
+                name: "alpha".to_owned(),
+                remaining: 5.33,
+            },
+            AmpWorkspaceBalance {
+                name: "beta".to_owned(),
+                remaining: 2.25,
+            },
+        ]
+    );
+    let buckets = usage.buckets(1_781_185_560);
+    let labels: Vec<_> = buckets.iter().map(|bucket| bucket.label.as_str()).collect();
+    assert_eq!(
+        labels,
+        vec![
+            "Amp Free",
+            "Individual credits",
+            "Workspace alpha",
+            "Workspace beta"
+        ]
+    );
+    // Only the Amp Free bucket carries a status slot.
+    assert!(
+        buckets[1..]
+            .iter()
+            .all(|bucket| bucket.status_slot.is_none())
+    );
+}
+
+#[test]
+fn amp_paid_only_balances_do_not_infer_daily_or_plan() {
+    let usage = parse_amp_usage_output(
+        "Signed in as user@example.com (example)\n\
+         Individual credits: $9.86 remaining\n\
+         Workspace example: $5.33 remaining",
+    )
+    .expect("paid-only usage");
+    assert_eq!(usage.plan_label(), None);
+    let buckets = usage.buckets(1_781_185_560);
+    assert!(
+        buckets
+            .iter()
+            .all(|bucket| bucket.status_slot != Some(StatusSlot::Daily))
+    );
+    assert_eq!(
+        status_bar_headline_for_surface(UsageSurface::Amp, &buckets),
+        None
+    );
+
+    // The Fresh, Authoritative view preserves provenance and has no plan label.
+    for source in [UsageSource::ProviderApi, UsageSource::Cli] {
+        let view = amp_view_from_usage(
+            AmpSuccessContext {
+                agent: "amp",
+                credential_origin: Some("API key · env AMP_API_KEY".to_owned()),
+                source,
+            },
+            usage.clone(),
+            1_781_185_560,
+        );
+        assert_eq!(view.status, UsageSnapshotStatus::Fresh);
+        assert_eq!(view.confidence, UsageConfidence::Authoritative);
+        assert_eq!(view.source, source);
+        assert_eq!(
+            view.account.credential_origin.as_deref(),
+            Some("API key · env AMP_API_KEY")
+        );
+        assert_eq!(view.account.plan_label, None);
+        assert!(
+            view.buckets
+                .iter()
+                .any(|bucket| bucket.label == "Individual credits")
+        );
+    }
+
+    // A Daily bucket beside credits yields the daily headline, never a credit amount.
+    let mut with_daily = usage.clone();
+    with_daily.daily_remaining_percent = Some(61);
+    assert_eq!(
+        status_bar_headline_for_surface(UsageSurface::Amp, &with_daily.buckets(1_781_185_560))
+            .as_deref(),
+        Some("Free 61%")
+    );
+}
+
+#[test]
+fn amp_legacy_hourly_display_text_is_rejected() {
+    // The retired hourly-dollar line alone parses to nothing.
+    assert!(
+        parse_amp_usage_output("Amp Free: $2.42/$10 remaining (replenishes +$0.42/hour)").is_none()
+    );
+    // Paired with current credit rows it contributes no Amp Free bucket.
+    let usage = parse_amp_usage_output(
+        "Amp Free: $2.42/$10 remaining (replenishes +$0.42/hour)\n\
+         Individual credits: $0.33 remaining",
+    )
+    .expect("credit rows");
+    assert_eq!(usage.daily_remaining_percent, None);
+    assert!(
+        usage
+            .buckets(1_781_185_560)
+            .iter()
+            .all(|bucket| bucket.status_slot != Some(StatusSlot::Daily))
+    );
+}
+
+#[test]
+fn cli_output_collector_treats_reaped_child_as_success() {
+    let output = format::collect_cli_output(
+        "amp",
+        None,
+        thread::spawn(|| Ok("usage rows".to_owned())),
+        thread::spawn(|| Ok(String::new())),
+    )
+    .expect("cli output");
+
+    assert!(output.success);
+    assert_eq!(output.exit_code, None);
+    assert_eq!(output.stdout, "usage rows");
+}
+
+#[cfg(unix)]
+#[test]
+fn usage_cli_owner_exports_outcomes_without_process_material() {
+    // A fresh executable in a temporary directory can be held by macOS
+    // Gatekeeper longer than the process timeout under parallel test load.
+    let command = "/bin/sh";
+
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    let _subscriber = tracing::subscriber::set_default(subscriber);
+
+    // Success/error paths must outlive heavy parallel nextest load; 1s races
+    // under full `ci --fast` when the host is saturated (poll loop is 50ms).
+    let settle = Duration::from_secs(10);
+    run_cli_with_timeout_full(command, &["-c", "printf usage-secret-output"], settle).unwrap();
+    run_cli_with_timeout_full(
+        command,
+        &["-c", "printf usage-secret-stderr >&2; exit 17"],
+        settle,
+    )
+    .unwrap();
+    let _timeout = run_cli_with_timeout_full(command, &["-c", "sleep 1"], Duration::from_millis(5))
+        .unwrap_err();
+    let _spawn = run_cli_with_timeout_full(
+        "/usage-secret/missing/claude",
+        &["usage-secret-argument"],
+        settle,
+    )
+    .unwrap_err();
+
+    export.force_flush();
+    assert_eq!(export.finished_spans().len(), 4);
+    assert_eq!(export.error_span_count(), 3);
+    for expected in [
+        "claude",
+        "process_exit_nonzero",
+        "process_spawn_error",
+        "timeout",
+    ] {
+        assert!(export.contains_span_text(expected), "missing {expected}");
+    }
+    for prohibited in [
+        command,
+        "usage-secret-output",
+        "usage-secret-stderr",
+        "/usage-secret/missing/claude",
+        "usage-secret-argument",
+    ] {
+        assert!(!export.contains_span_text(prohibited));
+    }
+}
+
+#[test]
+fn usage_cli_output_capture_is_bounded() {
+    let oversized = vec![b'x'; format::PROCESS_OUTPUT_MAX + 1];
+    assert_eq!(
+        format::read_process_pipe(std::io::Cursor::new(oversized)).unwrap_err(),
+        "process output exceeded limit"
+    );
+}
+
+#[test]
+fn amp_secrets_json_provides_api_key() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("secrets.json");
+    fs::write(
+        &path,
+        serde_json::json!({
+            "other": "ignored",
+            "apiKey@https://ampcode.com/": " amp-token "
+        })
+        .to_string(),
+    )
+    .expect("write Amp secrets");
+
+    assert_eq!(load_amp_api_key(&path).as_deref(), Some("amp-token"));
+}
+
+#[test]
+fn zai_quota_response_maps_token_session_and_time_limits() {
+    let quota: ZaiQuotaResponse = serde_json::from_value(serde_json::json!({
+        "code": 200,
+        "success": true,
+        "msg": "ok",
+        "data": {
+            "planName": "Coding Pro",
+            "limits": [
+                {
+                    "type": "TOKENS_LIMIT",
+                    "unit": 5,
+                    "number": 300,
+                    "usage": 1000,
+                    "currentValue": 250,
+                    "remaining": 750,
+                    "percentage": 25,
+                    "nextResetTime": 1_781_189_520_000_i64
+                },
+                {
+                    "type": "TOKENS_LIMIT",
+                    "unit": 6,
+                    "number": 1,
+                    "usage": 10000,
+                    "currentValue": 9000,
+                    "remaining": 1000,
+                    "percentage": 90,
+                    "nextResetTime": 1_781_798_400_000_i64
+                },
+                {
+                    "type": "TIME_LIMIT",
+                    "unit": 5,
+                    "number": 1,
+                    "usage": 120,
+                    "currentValue": 30,
+                    "remaining": 90,
+                    "percentage": 25
+                }
+            ]
+        }
+    }))
+    .expect("valid Z.AI quota");
+
+    let buckets = quota.buckets(1_781_185_560);
+
+    assert_eq!(quota.plan_name().as_deref(), Some("Coding Pro"));
+    // Semantic identity comes from explicit duration, not array position.
+    assert_eq!(buckets[0].label, "Session");
+    assert_eq!(buckets[0].status_slot, Some(StatusSlot::Session));
+    assert_eq!(buckets[0].remaining_percent, Some(75));
+    assert_eq!(buckets[0].pace_label, None);
+    assert_eq!(buckets[1].label, "Weekly");
+    assert_eq!(buckets[1].status_slot, Some(StatusSlot::Weekly));
+    assert_eq!(buckets[1].remaining_percent, Some(10));
+    assert_eq!(buckets[1].pace_label, None);
+    assert_eq!(buckets[2].label, "MCP");
+    assert_eq!(buckets[2].status_slot, None);
+    assert_eq!(buckets[2].remaining_percent, Some(75));
+    assert_eq!(
+        buckets[2].pace_label.as_deref(),
+        Some("30 / 120 (90 remaining)")
+    );
+}
+
+#[test]
+fn zai_plan_label_falls_back_to_level() {
+    let tokens_limit = serde_json::json!({
+        "type": "TOKENS_LIMIT",
+        "unit": 5,
+        "number": 300,
+        "usage": 1000,
+        "currentValue": 250,
+        "remaining": 750,
+        "percentage": 25,
+        "nextResetTime": 1_781_189_520_000_i64
+    });
+    // `level` present, no `planName`: the one plan field observed in the wild.
+    let level_only: ZaiQuotaResponse = serde_json::from_value(serde_json::json!({
+        "code": 200,
+        "success": true,
+        "data": { "level": "pro", "limits": [tokens_limit.clone()] }
+    }))
+    .expect("level-only quota");
+    assert_eq!(level_only.plan_name().as_deref(), Some("pro"));
+
+    // Both present parses without a duplicate-field error; explicit name wins.
+    let both: ZaiQuotaResponse = serde_json::from_value(serde_json::json!({
+        "code": 200,
+        "success": true,
+        "data": { "planName": "Coding Pro", "level": "pro", "limits": [tokens_limit] }
+    }))
+    .expect("planName + level quota");
+    assert_eq!(both.plan_name().as_deref(), Some("Coding Pro"));
+}
+
+#[test]
+fn zai_duration_classifier_handles_sole_and_reordered_limits() {
+    let quota: ZaiQuotaResponse = serde_json::from_value(serde_json::json!({
+        "code": 200,
+        "success": true,
+        "data": {
+            "limits": [
+                {"type": "CREDIT_LIMIT", "unit": 6, "number": 1, "percentage": 75},
+                {"type": "TOKENS_LIMIT", "unit": 5, "number": 300, "percentage": 10},
+                {"type": "TIME_LIMIT", "unit": 5, "number": 2, "percentage": 20}
+            ]
+        }
+    }))
+    .expect("duration fixture");
+    let buckets = quota.buckets(1_781_185_560);
+    assert_eq!(buckets[0].label, "Weekly");
+    assert_eq!(buckets[1].label, "Session");
+    assert_eq!(buckets[2].label, "MCP");
+
+    let malformed: ZaiQuotaResponse = serde_json::from_value(serde_json::json!({
+        "data": {"limits": [{"type": "TOKENS_LIMIT", "unit": 99, "number": 1, "percentage": 50}]}
+    }))
+    .expect("malformed duration fixture");
+    assert!(malformed.buckets(1_781_185_560).is_empty());
+}
+
+#[test]
+fn codex_duration_classifier_and_individual_limit_are_provider_evidenced() {
+    let response: CodexUsageResponse = serde_json::from_value(serde_json::json!({
+        "rate_limit": {
+            "primary_window": {"used_percent": 10, "limit_window_seconds": 604800, "reset_at": 1782000000},
+            "secondary_window": {"used_percent": 20, "limit_window_seconds": 300, "reset_at": 1781000000}
+        },
+        "spend_control": {"individual_limit": {
+            "limit": 300,
+            "used": 53.31,
+            "remaining_percent": 82,
+            "resets_at": 1783000000
+        }}
+    }))
+    .expect("Codex duration fixture");
+    let buckets = response.buckets(1_781_000_000);
+    assert_eq!(buckets[0].label, "Weekly");
+    assert_eq!(buckets[1].label, "Session");
+    let cap = buckets
+        .iter()
+        .find(|bucket| bucket.label == "Individual limit")
+        .expect("individual cap");
+    assert_eq!(cap.remaining_percent, Some(82));
+    assert_eq!(
+        cap.limit_money.as_ref().map(|money| money.amount_minor),
+        Some(30_000)
+    );
+    assert_eq!(
+        cap.used_money.as_ref().map(|money| money.amount_minor),
+        Some(5_331)
+    );
+}
+
+#[test]
+fn opencode_auth_and_usage_contract_is_typed_without_secret_identity() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("auth.json");
+    fs::write(
+        &path,
+        serde_json::json!({
+            "opencode-go": {"type": "api", "key": "secret-not-output"}
+        })
+        .to_string(),
+    )
+    .expect("auth fixture");
+    fs::write(dir.path().join("opencode.db"), "database fixture").expect("database fixture");
+    assert_eq!(
+        load_opencode_api_key(&path).as_deref(),
+        Ok("secret-not-output")
+    );
+    let quota = parse_opencode_usage(
+        serde_json::json!({
+            "usage": {
+                "rolling": {"status": "ok", "percent": 20, "resetsAt": "2026-08-21T12:00:00Z"},
+                "weekly": {"status": "rate-limited", "percent": 80, "resetsAt": "2026-08-25T12:00:00Z"},
+                "monthly": {"status": "ok", "percent": 5, "resetsAt": "2026-09-01T12:00:00Z"}
+            }
+        }),
+        1_776_000_000,
+    )
+    .expect("OpenCode usage fixture");
+    assert_eq!(quota.buckets.len(), 3);
+    assert_eq!(quota.buckets[0].label, "Rolling");
+    assert_eq!(quota.buckets[1].status, UsageSnapshotStatus::Unavailable);
+    assert!(quota.rate_limited);
+    fs::write(
+        &path,
+        serde_json::json!({
+            "anthropic": {"type": "api", "key": "unrelated-sentinel"},
+            "opencode-go": {"type": "api", "key": "secret-not-output"}
+        })
+        .to_string(),
+    )
+    .expect("ambiguous auth fixture");
+    let error = load_opencode_api_key(&path).unwrap_err();
+    assert!(error.contains("multiple credentials"), "{error}");
+    assert!(!error.contains("unrelated-sentinel"));
+    fs::write(
+        &path,
+        serde_json::json!({"opencode-go": {"type": "oauth", "key": "secret-not-output"}})
+            .to_string(),
+    )
+    .expect("malformed auth fixture");
+    load_opencode_api_key(&path).unwrap_err();
+    fs::write(
+        &path,
+        serde_json::json!({"anthropic": {"type": "api", "key": "unrelated-sentinel"}}).to_string(),
+    )
+    .expect("foreign-only auth fixture");
+    let error = load_opencode_api_key(&path).unwrap_err();
+    assert!(error.contains("opencode-go credential is missing"));
+    assert!(!error.contains("unrelated-sentinel"));
+}
+
+#[test]
+fn grok_rest_contract_accepts_current_and_legacy_top_level_shapes() {
+    let current = serde_json::json!({
+        "creditUsagePercent": 12.5,
+        "currentPeriod": {"type": "WEEKLY", "start": "2026-08-17T00:00:00Z", "end": "2026-08-24T00:00:00Z"}
+    });
+    let response = parse_grok_rest_billing_response(&current).expect("current REST shape");
+    assert_eq!(response.buckets(1_755_000_000)[0].label, "Weekly");
+    let legacy = serde_json::json!({
+        "monthlyLimit": {"val": 30000}, "used": {"val": 5000},
+        "billingPeriodStart": "2026-08-01T00:00:00Z", "billingPeriodEnd": "2026-09-01T00:00:00Z"
+    });
+    let response = parse_grok_rest_billing_response(&legacy).expect("legacy REST shape");
+    assert_eq!(response.buckets(1_754_000_000)[0].label, "Monthly");
+}
+
+#[test]
+fn zai_url_normalization_accepts_hosts_and_full_urls() {
+    assert_eq!(
+        normalize_url_or_host("open.bigmodel.cn", "api/monitor/usage/quota/limit"),
+        "https://open.bigmodel.cn/api/monitor/usage/quota/limit"
+    );
+    assert_eq!(
+        normalize_url_or_host("https://example.test/custom", ""),
+        "https://example.test/custom"
+    );
+    assert_eq!(
+        normalize_url_or_host(
+            &zai_quota_host("https://api.z.ai/api/anthropic"),
+            "api/monitor/usage/quota/limit"
+        ),
+        "https://api.z.ai/api/monitor/usage/quota/limit"
+    );
+    assert_eq!(
+        resolve_zai_quota_url_from(Some("https://example.test/quota"), None),
+        "https://example.test/quota"
+    );
+}
+
+#[test]
+fn kimi_usage_response_maps_weekly_and_rate_limit() {
+    let usage: KimiUsageResponse = serde_json::from_value(serde_json::json!({
+        "usages": [{
+            "scope": "FEATURE_CODING",
+            "detail": {
+                "limit": "1000",
+                "used": "220",
+                "remaining": "780",
+                "resetTime": "2026-06-18T12:00:00Z"
+            },
+            "limits": [{
+                "window": { "duration": 300, "timeUnit": "TIME_UNIT_MINUTE" },
+                "detail": {
+                    "limit": "200",
+                    "remaining": "150",
+                    "resetTime": "2026-06-11T16:00:00Z"
+                }
+            }]
+        }]
+    }))
+    .expect("valid Kimi usage");
+
+    let buckets = usage.buckets(1_781_185_560);
+
+    // render order is Rate Limit, then Weekly.
+    assert_eq!(buckets[0].label, "Rate Limit");
+    assert_eq!(buckets[0].status_slot, Some(StatusSlot::Session));
+    assert_eq!(buckets[0].used_label.as_deref(), Some("50"));
+    assert_eq!(buckets[0].remaining_percent, Some(75));
+    assert_eq!(buckets[0].pace_label.as_deref(), Some("30% in reserve"));
+    assert_eq!(buckets[1].label, "Weekly");
+    assert_eq!(buckets[1].status_slot, Some(StatusSlot::Weekly));
+    assert_eq!(buckets[1].used_label.as_deref(), Some("220"));
+    assert_eq!(buckets[1].limit_label.as_deref(), Some("1.0K"));
+    assert_eq!(buckets[1].remaining_percent, Some(78));
+    assert_eq!(buckets[1].pace_label, None);
+}
+
+#[test]
+fn kimi_local_token_loader_skips_expired_tokens() {
+    let value = serde_json::json!({
+        "access_token": "expired-token",
+        "expires_at": 1_781_000_000.0
+    });
+
+    assert_eq!(kimi_local_token_from_value(&value, 1_781_200_000), None);
+}
+
+#[test]
+fn kimi_local_token_loader_accepts_unexpired_tokens() {
+    let value = serde_json::json!({
+        "access_token": "fresh-token",
+        "expires_at": 1_781_300_000
+    });
+
+    assert_eq!(
+        kimi_local_token_from_value(&value, 1_781_200_000).as_deref(),
+        Some("fresh-token")
+    );
+}
+
+#[test]
+fn kimi_local_token_loader_normalizes_millisecond_expiry() {
+    let value = serde_json::json!({
+        "access_token": "fresh-ms-token",
+        "expires_at": 1_781_300_000_000_i64
+    });
+
+    assert_eq!(
+        kimi_local_token_from_value(&value, 1_781_200_000).as_deref(),
+        Some("fresh-ms-token")
+    );
+}
+
+#[test]
+fn minimax_usage_response_maps_model_remains() {
+    let usage: MiniMaxUsageResponse = serde_json::from_value(serde_json::json!({
+        "base_resp": { "status_code": 0 },
+        "data": {
+            "current_subscribe_title": "MiniMax Pro",
+            "model_remains": [{
+                "model_name": "MiniMax Text",
+                "current_interval_total_count": 100,
+                "current_interval_usage_count": 60,
+                "current_interval_status": 0,
+                "start_time": 1781172000,
+                "end_time": 1781186400,
+                "current_weekly_total_count": 700,
+                "current_weekly_usage_count": 630,
+                "current_weekly_remaining_percent": 90,
+                "weekly_start_time": 1780761600,
+                "weekly_end_time": 1781366400
+            }]
+        }
+    }))
+    .expect("valid MiniMax usage");
+
+    usage.validate().expect("valid quota response");
+    let buckets = usage.buckets(1_781_185_560);
+
+    assert_eq!(usage.plan_name().as_deref(), Some("MiniMax Pro"));
+    assert_eq!(buckets[0].label, "MiniMax Text");
+    // A non-general model fills no headline slot.
+    assert_eq!(buckets[0].status_slot, None);
+    assert_eq!(buckets[0].used_label.as_deref(), Some("60"));
+    assert_eq!(buckets[0].limit_label.as_deref(), Some("100"));
+    assert_eq!(buckets[0].remaining_percent, Some(40));
+    assert_eq!(buckets[0].pace_label.as_deref(), Some("Usage: 60 / 100"));
+    assert_eq!(buckets.len(), 1);
+}
+
+#[test]
+fn minimax_usage_response_maps_live_root_model_remains() {
+    let usage: MiniMaxUsageResponse = serde_json::from_value(serde_json::json!({
+        "model_remains": [
+            {
+                "model_name": "general",
+                "current_interval_total_count": 0,
+                "current_interval_usage_count": 0,
+                "current_interval_remaining_percent": 100,
+                "current_interval_status": 1,
+                "remains_time": 14_400_000,
+                "current_weekly_total_count": 0,
+                "current_weekly_usage_count": 1,
+                "current_weekly_remaining_percent": 99,
+                "current_weekly_status": 1,
+                "weekly_remains_time": 345_600_000
+            },
+            {
+                "model_name": "video",
+                "current_interval_total_count": 5,
+                "current_interval_usage_count": 0,
+                "current_interval_remaining_percent": 100,
+                "current_interval_status": 1,
+                "remains_time": 28_800_000,
+                "current_weekly_total_count": 35,
+                "current_weekly_usage_count": 0,
+                "current_weekly_remaining_percent": 100,
+                "current_weekly_status": 1,
+                "weekly_remains_time": 345_600_000
+            }
+        ],
+        "base_resp": { "status_code": 0, "status_msg": "success" }
+    }))
+    .expect("valid MiniMax usage");
+
+    usage.validate().expect("valid quota response");
+    let buckets = usage.buckets(1_782_315_600);
+
+    assert_eq!(
+        buckets
+            .iter()
+            .map(|bucket| {
+                (
+                    bucket.label.as_str(),
+                    bucket.remaining_percent,
+                    bucket.pace_label.as_deref(),
+                )
+            })
+            .collect::<Vec<_>>(),
+        vec![
+            ("General · 5h", Some(100), Some("Usage: 0 / 100")),
+            ("General · Weekly", Some(99), Some("Usage: 1 / 100")),
+            ("Video", Some(100), Some("Usage: 0 / 5")),
+        ]
+    );
+    // The general model's windows fill the headline slots; per-model windows
+    // (Video) fill none.
+    assert_eq!(
+        buckets
+            .iter()
+            .map(|bucket| (bucket.label.as_str(), bucket.status_slot))
+            .collect::<Vec<_>>(),
+        vec![
+            ("General · 5h", Some(StatusSlot::Session)),
+            ("General · Weekly", Some(StatusSlot::Weekly)),
+            ("Video", None),
+        ]
+    );
+}
+
+#[test]
+fn minimax_remains_urls_accept_override_and_api_host_alias() {
+    assert_eq!(
+        resolve_minimax_remains_urls_from(Some("https://example.test/custom"), None),
+        vec!["https://example.test/custom"]
+    );
+
+    assert_eq!(
+        resolve_minimax_remains_urls_from(None, Some("https://api.minimax.io/anthropic")),
+        vec![
+            "https://api.minimax.io/v1/token_plan/remains",
+            "https://api.minimax.io/v1/api/openplatform/coding_plan/remains"
+        ]
+    );
+}
+
+#[test]
+fn minimax_remains_urls_include_documented_host() {
+    assert_eq!(
+        resolve_minimax_remains_urls_from(None, None),
+        vec![
+            "https://api.minimax.io/v1/token_plan/remains",
+            "https://api.minimax.io/v1/api/openplatform/coding_plan/remains",
+            "https://api.minimaxi.com/v1/token_plan/remains",
+            "https://api.minimaxi.com/v1/api/openplatform/coding_plan/remains",
+            "https://www.minimax.io/v1/token_plan/remains",
+        ]
+    );
+}
+
+#[test]
+fn minimax_fanout_reaches_documented_host_after_four_failures() {
+    let mut attempted = Vec::new();
+    let result = first_minimax_usage(resolve_minimax_remains_urls_from(None, None), |url| {
+        attempted.push(url.to_owned());
+        if url == "https://www.minimax.io/v1/token_plan/remains" {
+            Ok("documented")
+        } else {
+            Err(format!("HTTP 500 for {url}"))
+        }
+    });
+    assert_eq!(result, Ok("documented"));
+    assert_eq!(
+        attempted,
+        vec![
+            "https://api.minimax.io/v1/token_plan/remains",
+            "https://api.minimax.io/v1/api/openplatform/coding_plan/remains",
+            "https://api.minimaxi.com/v1/token_plan/remains",
+            "https://api.minimaxi.com/v1/api/openplatform/coding_plan/remains",
+            "https://www.minimax.io/v1/token_plan/remains",
+        ]
+    );
+}
+
+#[test]
+fn minimax_empty_fanout_preserves_unavailable_error() {
+    let mut calls = 0;
+    let result: Result<&str, String> = first_minimax_usage(Vec::new(), |_url| {
+        calls += 1;
+        Ok("unreachable")
+    });
+    assert_eq!(calls, 0);
+    assert_eq!(result, Err("MiniMax usage endpoint unavailable".to_owned()));
+}
+
+#[test]
+fn minimax_operation_path_matches_candidate_path() {
+    assert_eq!(
+        minimax_operation_path("https://api.minimax.io/v1/token_plan/remains"),
+        "/v1/token_plan/remains"
+    );
+    assert_eq!(
+        minimax_operation_path("https://www.minimax.io/v1/token_plan/remains"),
+        "/v1/token_plan/remains"
+    );
+    assert_eq!(
+        minimax_operation_path("https://api.minimax.io/v1/api/openplatform/coding_plan/remains"),
+        "/v1/api/openplatform/coding_plan/remains"
+    );
+    assert_eq!(
+        minimax_operation_path("https://api.minimaxi.com/v1/api/openplatform/coding_plan/remains"),
+        "/v1/api/openplatform/coding_plan/remains"
+    );
+    // An arbitrary override never exposes its real path in telemetry.
+    assert_eq!(
+        minimax_operation_path("https://quota.example/custom/remains?tenant=secret"),
+        "/custom"
+    );
+}
+
+#[test]
+fn provider_outcome_maps_presence_states() {
+    use jackin_protocol::control::{UsageConfidence, UsageSnapshotStatus, UsageSource};
+    assert_eq!(
+        provider_outcome(ProviderPresence {
+            has_data: true,
+            has_secret: true
+        }),
+        (
+            UsageSnapshotStatus::Fresh,
+            UsageSource::ProviderApi,
+            UsageConfidence::Authoritative
+        )
+    );
+    assert_eq!(
+        provider_outcome(ProviderPresence {
+            has_data: false,
+            has_secret: true
+        }),
+        (
+            UsageSnapshotStatus::Unsupported,
+            UsageSource::None,
+            UsageConfidence::PresenceOnly
+        )
+    );
+    assert_eq!(
+        provider_outcome(ProviderPresence {
+            has_data: false,
+            has_secret: false
+        }),
+        (
+            UsageSnapshotStatus::NeedsSecret,
+            UsageSource::None,
+            UsageConfidence::None
+        )
+    );
+}
+
+#[test]
+fn split_fetch_partitions_ok_err_and_absent() {
+    assert_eq!(split_fetch(Some(Ok::<_, String>(7u64))), (Some(7), None));
+    assert_eq!(
+        split_fetch(Some(Err::<u64, _>("boom".to_owned()))),
+        (None, Some("boom".to_owned()))
+    );
+    assert_eq!(split_fetch(None::<Result<u64, String>>), (None, None));
+}
+
+#[test]
+fn provider_boundary_exports_only_bounded_request_fields() {
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    tracing::subscriber::with_default(subscriber, || {
+        let result = provider_request(
+            jackin_telemetry::schema::enums::ProviderName::Openai,
+            "GET",
+            "/backend-api/wham/usage",
+            || Ok::<_, String>("telemetry-private-response"),
+        );
+        assert_eq!(result.unwrap(), "telemetry-private-response");
+    });
+    export.force_flush();
+
+    let spans = export
+        .finished_spans()
+        .into_iter()
+        .filter(|span| span.name == jackin_telemetry::schema::spans::HTTP_CLIENT)
+        .collect::<Vec<_>>();
+    assert_eq!(spans.len(), 1);
+    for prohibited in [
+        "authorization",
+        "account_id",
+        "telemetry-private-response",
+        "?private=query",
+    ] {
+        assert!(!export.contains_span_text(prohibited));
+        assert!(!export.contains_log_text(prohibited));
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn conformance_wire_provider_boundary_exports_bounded_private_shapes() {
+    if std::env::var_os("JACKIN_USAGE_WIRE_USAGE_CHILD").is_none() {
+        let status = Command::new(
+            std::env::current_exe().expect("usage test executable must resolve"),
+        )
+        .arg("--exact")
+        .arg("usage::tests::conformance_wire_provider_boundary_exports_bounded_private_shapes")
+        .arg("--nocapture")
+        .env("JACKIN_USAGE_WIRE_USAGE_CHILD", "1")
+        .status()
+        .expect("isolated wire usage test must start");
+        assert!(status.success(), "isolated wire usage test failed");
+        return;
+    }
+    let testbed = jackin_otlp_testbed::Testbed::start().expect("start OTLP testbed");
+    jackin_diagnostics::init_wire_test_export(
+        &testbed.endpoint(),
+        jackin_diagnostics::ServiceIdentity::CAPSULE,
+    )
+    .expect("initialize wire test export");
+
+    let success = provider_request(
+        jackin_telemetry::schema::enums::ProviderName::Openai,
+        "GET",
+        "/backend-api/wham/usage",
+        || Ok::<_, String>("private-provider-response"),
+    );
+    assert_eq!(
+        success.expect("provider request succeeds"),
+        "private-provider-response"
+    );
+    let failure = provider_request(
+        jackin_telemetry::schema::enums::ProviderName::Anthropic,
+        "POST",
+        "/api/oauth/usage",
+        || Err::<(), _>("private-token private-account ?private=query".to_owned()),
+    );
+    assert!(failure.is_err());
+    jackin_diagnostics::flush_wire_test_export().expect("flush wire test export");
+
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let spans = loop {
+        let spans = testbed
+            .spans()
+            .into_iter()
+            .filter(|span| span.name == "http.client")
+            .collect::<Vec<_>>();
+        if spans.len() == 2 {
+            break spans;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "provider HTTP wire spans did not arrive"
+        );
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    };
+    let wire_text = format!("{spans:?}");
+    for expected in [
+        "openai",
+        "anthropic",
+        "GET",
+        "POST",
+        "/backend-api/wham/usage",
+        "/api/oauth/usage",
+        "success",
+        "failure",
+        "http_error",
+    ] {
+        assert!(
+            wire_text.contains(expected),
+            "missing {expected}: {wire_text}"
+        );
+    }
+    let prohibited = [
+        "private-provider-response",
+        "private-token",
+        "private-account",
+        "?private=query",
+    ];
+    for value in prohibited {
+        assert!(!wire_text.contains(value), "exported {value}");
+    }
+    assert_eq!(
+        testbed.prohibited_value_violations(&prohibited),
+        Vec::<String>::new()
+    );
+    assert_eq!(testbed.legacy_namespace_violations(), Vec::<String>::new());
+    jackin_diagnostics::shutdown_capsule_tracing();
+}
+
+#[test]
+fn managed_probe_boundaries_export_fixed_private_shapes() {
+    use std::sync::mpsc;
+
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    tracing::subscriber::with_default(subscriber, || {
+        let codex = process_telemetry::ChildOperation::begin("codex");
+        codex.spawn_failed();
+        let grok = process_telemetry::ChildOperation::begin("/private/bin/grok");
+        grok.io_failed();
+
+        let (codex_tx, codex_rx) = mpsc::channel();
+        codex_tx
+            .send(
+                serde_json::json!({
+                    "id": 1,
+                    "result": {"private_response": "codex-secret"}
+                })
+                .to_string(),
+            )
+            .unwrap();
+        let mut codex_wire = Vec::new();
+        codex_rpc_request(
+            &mut codex_wire,
+            &codex_rx,
+            1,
+            "account/rateLimits/read",
+            serde_json::json!({"private_request": "codex-secret"}),
+            Duration::from_secs(1),
+        )
+        .unwrap();
+        codex_rpc_notification(&mut codex_wire, "initialized").unwrap();
+
+        let (grok_tx, grok_rx) = mpsc::channel();
+        grok_tx
+            .send(
+                serde_json::json!({
+                    "id": 2,
+                    "error": {"message": "grok-private-error"}
+                })
+                .to_string(),
+            )
+            .unwrap();
+        let mut grok_wire = Vec::new();
+        grok_rpc_request(
+            &mut grok_wire,
+            &grok_rx,
+            2,
+            "x.ai/billing",
+            serde_json::json!({"private_request": "grok-secret"}),
+            Duration::from_secs(1),
+        )
+        .unwrap_err();
+
+        let (_timeout_tx, timeout_rx) = mpsc::channel();
+        codex_rpc_request(
+            &mut Vec::new(),
+            &timeout_rx,
+            3,
+            "account/read",
+            serde_json::json!({}),
+            Duration::from_millis(1),
+        )
+        .unwrap_err();
+    });
+    export.force_flush();
+
+    let spans = export.finished_spans();
+    assert_eq!(
+        spans
+            .iter()
+            .filter(|span| span.name == jackin_telemetry::schema::spans::PROCESS_COMMAND)
+            .count(),
+        2
+    );
+    assert_eq!(
+        spans
+            .iter()
+            .filter(|span| span.name == jackin_telemetry::schema::spans::RPC_CLIENT)
+            .count(),
+        4
+    );
+    for expected in [
+        "codex",
+        "grok",
+        "codex.app-server",
+        "grok.acp",
+        "account/rateLimits/read",
+        "account/read",
+        "initialized",
+        "x.ai/billing",
+        "process_spawn_error",
+        "io_error",
+        "rpc_error",
+        "timeout",
+    ] {
+        assert!(export.contains_span_text(expected), "missing {expected}");
+    }
+    for prohibited in [
+        "/private/bin/grok",
+        "private_request",
+        "private_response",
+        "codex-secret",
+        "grok-secret",
+        "grok-private-error",
+    ] {
+        assert!(!export.contains_span_text(prohibited));
+        assert!(!export.contains_log_text(prohibited));
+    }
+}
+
+// ===== Plan 002: Claude Keychain credential source =====
+
+fn keychain_test_scope(is_default: bool) -> jackin_core::ClaudeKeychainScope {
+    jackin_core::ClaudeKeychainScope {
+        normalized_config_dir: PathBuf::from(if is_default {
+            "/home/u/.claude"
+        } else {
+            "/home/u/.claude-work"
+        }),
+        service: if is_default {
+            "Claude Code-credentials".to_owned()
+        } else {
+            "Claude Code-credentials-3342f2c7".to_owned()
+        },
+        is_default,
+    }
+}
+
+const KEYCHAIN_PAYLOAD: &str = r#"{"claudeAiOauth":{"accessToken":"kc-token","subscriptionType":"max","refreshToken":"rt-1"}}"#;
+
+fn empty_file_probe() -> ClaudeFileProbe {
+    ClaudeFileProbe {
+        credential: None,
+        origin: None,
+        account_email: None,
+        organization_type: None,
+    }
+}
+
+#[test]
+fn classify_claude_keychain_status_maps_denial_and_absence() {
+    assert!(matches!(
+        classify_claude_keychain_status(-128),
+        ClaudeKeychainRead::Denied
+    ));
+    assert!(matches!(
+        classify_claude_keychain_status(-25293),
+        ClaudeKeychainRead::Denied
+    ));
+    assert!(matches!(
+        classify_claude_keychain_status(-25300),
+        ClaudeKeychainRead::Missing
+    ));
+    assert!(matches!(
+        classify_claude_keychain_status(-25308),
+        ClaudeKeychainRead::ConsentRequired
+    ));
+    assert!(matches!(
+        classify_claude_keychain_status(-1),
+        ClaudeKeychainRead::Missing
+    ));
+}
+
+#[test]
+fn claude_keychain_credential_wins_over_file_paths() {
+    let scope = keychain_test_scope(true);
+    let state = ClaudeKeychainState::default();
+    let resolution = resolve_claude_refresh_wave_with(
+        &scope,
+        &state,
+        |_service| ClaudeKeychainRead::Payload {
+            json: KEYCHAIN_PAYLOAD.to_owned(),
+        },
+        || ClaudeFileProbe {
+            credential: claude_oauth_from_value(
+                &serde_json::json!({"claudeAiOauth":{"accessToken":"file-token"}}),
+            ),
+            origin: Some("OAuth · file".to_owned()),
+            account_email: Some("user@example.com".to_owned()),
+            organization_type: Some("Max".to_owned()),
+        },
+        || Some(ClaudeOAuthEnvToken::new("env-token".to_owned())),
+    );
+    match resolution {
+        ClaudeWaveResolution::Resolved(resolved) => {
+            assert_eq!(resolved.access_token, "kc-token");
+            assert_eq!(
+                resolved.credential_origin,
+                "OAuth · macOS Keychain (Claude Code-credentials)"
+            );
+            assert!(!resolved.is_anonymous);
+        }
+        _ => panic!("expected Resolved"),
+    }
+    assert_eq!(state.read_count(), 1);
+}
+
+#[test]
+fn claude_keychain_denial_short_circuits_before_file_or_env_read() {
+    let scope = keychain_test_scope(true);
+    let state = ClaudeKeychainState::default();
+    let resolution = resolve_claude_refresh_wave_with(
+        &scope,
+        &state,
+        |_service| ClaudeKeychainRead::Denied,
+        || panic!("file probe must not run after denial"),
+        || panic!("env reader must not run after denial"),
+    );
+    assert!(matches!(resolution, ClaudeWaveResolution::Denied));
+    // Terminal for the service: a later wave whose reader panics still returns
+    // Denied from the process-lifetime cache without re-prompting.
+    let again = resolve_claude_refresh_wave_with(
+        &scope,
+        &state,
+        |_service| panic!("reader must not run after cached denial"),
+        || panic!("no file probe"),
+        || panic!("no env"),
+    );
+    assert!(matches!(again, ClaudeWaveResolution::Denied));
+    assert_eq!(state.read_count(), 1);
+    assert_eq!(claude_wave_policy(&again), ClaudeWavePolicy::LocalDenied);
+}
+
+#[test]
+fn claude_keychain_missing_falls_back_to_file_then_env() {
+    let scope = keychain_test_scope(true);
+    let state = ClaudeKeychainState::default();
+    let with_file = resolve_claude_refresh_wave_with(
+        &scope,
+        &state,
+        |_| ClaudeKeychainRead::Missing,
+        || ClaudeFileProbe {
+            credential: claude_oauth_from_value(
+                &serde_json::json!({"claudeAiOauth":{"accessToken":"file-token","refreshToken":"rt"}}),
+            ),
+            origin: Some("OAuth · file".to_owned()),
+            account_email: None,
+            organization_type: None,
+        },
+        || None,
+    );
+    match with_file {
+        ClaudeWaveResolution::Resolved(r) => assert_eq!(r.access_token, "file-token"),
+        _ => panic!("file fallback"),
+    }
+    let state2 = ClaudeKeychainState::default();
+    let with_env = resolve_claude_refresh_wave_with(
+        &scope,
+        &state2,
+        |_| ClaudeKeychainRead::Missing,
+        empty_file_probe,
+        || Some(ClaudeOAuthEnvToken::new("env-token".to_owned())),
+    );
+    match &with_env {
+        ClaudeWaveResolution::Resolved(r) => {
+            assert_eq!(r.access_token, "env-token");
+            assert!(r.is_anonymous);
+        }
+        _ => panic!("env fallback"),
+    }
+    assert_eq!(
+        claude_wave_policy(&with_env),
+        ClaudeWavePolicy::LocalAnonymous
+    );
+}
+
+#[test]
+fn claude_oauth_env_reader_never_reads_api_key_variables() {
+    let mut requested = None;
+    let token = read_claude_oauth_env_token(|name| {
+        requested = Some(name.to_owned());
+        match name {
+            jackin_core::ANTHROPIC_API_KEY_ENV_NAME
+            | jackin_core::ANTHROPIC_AUTH_TOKEN_ENV_NAME => {
+                Ok("api-key-must-not-be-read".to_owned())
+            }
+            jackin_core::CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME => Ok("oauth-token".to_owned()),
+            _ => panic!("unexpected environment variable: {name}"),
+        }
+    });
+
+    assert_eq!(requested.as_deref(), Some("CLAUDE_CODE_OAUTH_TOKEN"));
+    assert_eq!(
+        token,
+        Some(ClaudeOAuthEnvToken::new("oauth-token".to_owned()))
+    );
+}
+
+#[test]
+fn claude_keychain_consent_required_falls_back_like_missing() {
+    let scope = keychain_test_scope(true);
+    let state = ClaudeKeychainState::default();
+    let resolution = resolve_claude_refresh_wave_with(
+        &scope,
+        &state,
+        |_| ClaudeKeychainRead::ConsentRequired,
+        || ClaudeFileProbe {
+            credential: claude_oauth_from_value(
+                &serde_json::json!({"claudeAiOauth":{"accessToken":"file-token"}}),
+            ),
+            origin: Some("OAuth · file".to_owned()),
+            account_email: None,
+            organization_type: None,
+        },
+        || None,
+    );
+    match resolution {
+        ClaudeWaveResolution::Resolved(resolved) => {
+            assert_eq!(resolved.access_token, "file-token");
+        }
+        _ => panic!("consent-gated Keychain must preserve file fallback"),
+    }
+    assert_eq!(state.read_count(), 1);
+}
+
+#[test]
+fn claude_keychain_missing_with_no_credential_is_local_missing() {
+    let scope = keychain_test_scope(true);
+    let state = ClaudeKeychainState::default();
+    let resolution = resolve_claude_refresh_wave_with(
+        &scope,
+        &state,
+        |_| ClaudeKeychainRead::Missing,
+        empty_file_probe,
+        || None,
+    );
+    assert!(matches!(resolution, ClaudeWaveResolution::Missing));
+    assert_eq!(
+        claude_wave_policy(&resolution),
+        ClaudeWavePolicy::LocalMissing
+    );
+}
+
+#[test]
+fn claude_keychain_metadata_makes_resolution_shared() {
+    let scope = keychain_test_scope(true);
+    let state = ClaudeKeychainState::default();
+    let resolution = resolve_claude_refresh_wave_with(
+        &scope,
+        &state,
+        |_| ClaudeKeychainRead::Payload {
+            json: r#"{"claudeAiOauth":{"accessToken":"kc"}}"#.to_owned(),
+        },
+        || ClaudeFileProbe {
+            credential: None,
+            origin: None,
+            account_email: Some("id@example.com".to_owned()),
+            organization_type: Some("Max".to_owned()),
+        },
+        || None,
+    );
+    match &resolution {
+        ClaudeWaveResolution::Resolved(r) => {
+            assert!(!r.is_anonymous);
+            assert_eq!(r.account_email.as_deref(), Some("id@example.com"));
+        }
+        _ => panic!("resolved"),
+    }
+    assert_eq!(claude_wave_policy(&resolution), ClaudeWavePolicy::Shared);
+}
+
+#[test]
+fn claude_denied_view_has_no_quota_and_exact_error() {
+    let view = claude_view_from_wave_with_rate_limit(
+        "claude",
+        Some("Anthropic / Claude"),
+        1_781_185_560,
+        ClaudeWaveResolution::Denied,
+    )
+    .0;
+    assert_eq!(view.status, UsageSnapshotStatus::NeedsLogin);
+    assert!(view.buckets.is_empty());
+    assert!(view.account.account_label.is_empty());
+    assert_eq!(view.account.plan_label, None);
+    assert_eq!(view.account.credential_origin, None);
+    assert_eq!(
+        view.last_error.as_deref(),
+        Some("Claude Keychain access denied")
+    );
+}
+
+// ===== Plan 005 Step 1: shared bucket-presentation formatter =====
+
+fn presentation_bucket(
+    label: &str,
+    remaining: Option<u8>,
+    slot: Option<StatusSlot>,
+    status: UsageSnapshotStatus,
+) -> QuotaBucketView {
+    QuotaBucketView {
+        label: label.to_owned(),
+        used_label: None,
+        limit_label: None,
+        remaining_percent: remaining,
+        reset_label: None,
+        resets_at: None,
+        status_slot: slot,
+        pace_label: None,
+        status,
+        used_money: None,
+        limit_money: None,
+        severity: UsageSeverity::Normal,
+    }
+}
+
+#[test]
+fn usage_bucket_presentation_orders_normal_segments() {
+    let mut bucket = presentation_bucket(
+        "Weekly",
+        Some(57),
+        Some(StatusSlot::Weekly),
+        UsageSnapshotStatus::Fresh,
+    );
+    bucket.pace_label = Some("13% in deficit · Runs out in 2d".to_owned());
+    bucket.reset_label = Some("Resets in 4d".to_owned());
+    let presentation = usage_bucket_presentation(&bucket);
+    assert_eq!(
+        presentation.display_segments,
+        vec![
+            "57% left",
+            "13% in deficit",
+            "Runs out in 2d",
+            "Resets in 4d"
+        ]
+    );
+    assert_eq!(presentation.remaining_label.as_deref(), Some("57% left"));
+    assert_eq!(presentation.meter_percent, Some(57));
+    assert_eq!(
+        presentation.display_label,
+        "57% left · 13% in deficit · Runs out in 2d · Resets in 4d"
+    );
+}
+
+#[test]
+fn usage_bucket_presentation_flattens_runout_composite() {
+    let mut bucket = presentation_bucket(
+        "Weekly",
+        Some(40),
+        Some(StatusSlot::Weekly),
+        UsageSnapshotStatus::Fresh,
+    );
+    bucket.pace_label = Some("On pace · Runs out in 5d".to_owned());
+    let presentation = usage_bucket_presentation(&bucket);
+    assert_eq!(
+        presentation.display_segments,
+        vec!["40% left", "On pace", "Runs out in 5d"]
+    );
+}
+
+#[test]
+fn usage_bucket_presentation_orders_spend_cap() {
+    let mut bucket = presentation_bucket(
+        "Extra usage",
+        Some(70),
+        Some(StatusSlot::Spend),
+        UsageSnapshotStatus::Fresh,
+    );
+    bucket.used_label = Some("SGD 78.49".to_owned());
+    bucket.limit_label = Some("SGD 260.00".to_owned());
+    let presentation = usage_bucket_presentation(&bucket);
+    assert_eq!(
+        presentation.display_segments,
+        vec!["30% used", "Monthly cap: SGD 78.49 / SGD 260.00"]
+    );
+    // Spend text reads used, but meter geometry fills by remaining — the same
+    // rule as every other slot and the console windows.
+    assert_eq!(presentation.meter_percent, Some(70));
+}
+
+#[test]
+fn usage_bucket_presentation_recovers_spend_overage_from_money() {
+    // $150 against a $100 cap with a saturated 0% remaining: the money ratio
+    // recovers the raw "150% used" text (matching the console window value)
+    // and the meter reads empty (nothing left), matching the console meter.
+    let mut bucket = presentation_bucket(
+        "Extra usage",
+        Some(0),
+        Some(StatusSlot::Spend),
+        UsageSnapshotStatus::Fresh,
+    );
+    bucket.used_label = Some("$150.00".to_owned());
+    bucket.limit_label = Some("$100.00".to_owned());
+    bucket.used_money = Some(Money::new(15_000, "USD", 2));
+    bucket.limit_money = Some(Money::new(10_000, "USD", 2));
+    let presentation = usage_bucket_presentation(&bucket);
+    assert_eq!(presentation.remaining_label.as_deref(), Some("150% used"));
+    assert_eq!(presentation.meter_percent, Some(0));
+
+    // A non-overage money ratio agrees with the remaining percent; the text
+    // still reads used and the meter still fills by remaining.
+    let mut bucket = presentation_bucket(
+        "Extra usage",
+        Some(55),
+        Some(StatusSlot::Spend),
+        UsageSnapshotStatus::Fresh,
+    );
+    bucket.used_label = Some("$45.20".to_owned());
+    bucket.limit_label = Some("$100.00".to_owned());
+    bucket.used_money = Some(Money::new(4_520, "USD", 2));
+    bucket.limit_money = Some(Money::new(10_000, "USD", 2));
+    let presentation = usage_bucket_presentation(&bucket);
+    assert_eq!(presentation.remaining_label.as_deref(), Some("45% used"));
+    assert_eq!(presentation.meter_percent, Some(55));
+}
+
+#[test]
+fn usage_bucket_presentation_orders_non_spend_budget() {
+    let mut bucket = presentation_bucket(
+        "Global budget",
+        None,
+        Some(StatusSlot::Weekly),
+        UsageSnapshotStatus::Fresh,
+    );
+    bucket.used_label = Some("$0.00 spent".to_owned());
+    bucket.limit_label = Some("$25,000.00".to_owned());
+    bucket.used_money = Some(Money::new(0, "USD", 2));
+    bucket.limit_money = Some(Money::new(2_500_000, "USD", 2));
+    let presentation = usage_bucket_presentation(&bucket);
+    assert!(
+        presentation
+            .display_segments
+            .contains(&"Budget: $0.00 spent / $25,000.00".to_owned())
+    );
+}
+
+#[test]
+fn usage_bucket_presentation_appends_degraded_status() {
+    let bucket = presentation_bucket(
+        "Weekly",
+        Some(57),
+        Some(StatusSlot::Weekly),
+        UsageSnapshotStatus::Stale,
+    );
+    let presentation = usage_bucket_presentation(&bucket);
+    assert_eq!(presentation.display_segments, vec!["57% left", "stale"]);
+}
+
+#[test]
+fn usage_bucket_presentation_credits_zero_left() {
+    let mut bucket = presentation_bucket("Credits", Some(0), None, UsageSnapshotStatus::Fresh);
+    bucket.limit_label = Some("$4.76".to_owned());
+    let presentation = usage_bucket_presentation(&bucket);
+    assert_eq!(
+        presentation.display_segments.first().map(String::as_str),
+        Some("0 left")
+    );
+    assert!(presentation.display_segments.contains(&"$4.76".to_owned()));
+    assert_eq!(presentation.meter_percent, Some(0));
+}
+
+#[test]
+fn usage_bucket_presentation_limit_only_balance() {
+    let mut bucket = presentation_bucket("Prepaid", None, None, UsageSnapshotStatus::Fresh);
+    bucket.limit_label = Some("$25".to_owned());
+    let presentation = usage_bucket_presentation(&bucket);
+    assert_eq!(presentation.display_segments, vec!["$25"]);
+    assert_eq!(presentation.meter_percent, None);
+    assert_eq!(presentation.remaining_label, None);
+}
+
+// ===== Plan 008: shared detail-presentation producer =====
+
+fn detail_view(
+    buckets: Vec<QuotaBucketView>,
+    last_error: Option<&str>,
+    status: UsageSnapshotStatus,
+) -> FocusedUsageView {
+    FocusedUsageView {
+        focused_agent: Some("codex".to_owned()),
+        focused_provider: Some("OpenAI".to_owned()),
+        account: FocusedAccountHeader {
+            provider_label: "OpenAI".to_owned(),
+            account_label: "operator@example.com".to_owned(),
+            username: Some("operator".to_owned()),
+            plan_label: Some("Pro 20x".to_owned()),
+            credential_origin: Some("OAuth · ~/.codex/auth.json".to_owned()),
+        },
+        buckets,
+        status,
+        updated_label: "Updated 2m ago".to_owned(),
+        last_error: last_error.map(str::to_owned),
+        ..FocusedUsageView::unavailable("seed", 1_781_185_560)
+    }
+}
+
+#[test]
+fn usage_detail_presentation_preserves_exact_capsule_row_order() {
+    let session = presentation_bucket(
+        "Session",
+        Some(97),
+        Some(StatusSlot::Session),
+        UsageSnapshotStatus::Fresh,
+    );
+    let view = detail_view(vec![session], None, UsageSnapshotStatus::Fresh);
+    let presentation = usage_detail_presentation(&view);
+    let ids: Vec<&str> = presentation
+        .rows
+        .iter()
+        .map(|r| r.row_id.as_str())
+        .collect();
+    assert_eq!(ids, vec!["username", "plan", "auth", "bucket:0"]);
+    assert!(!ids.iter().any(|id| matches!(
+        *id,
+        "focused" | "header" | "provider" | "account" | "status" | "updated"
+    )));
+    assert_eq!(presentation.rows[0].display_label, "operator");
+}
+
+#[test]
+fn usage_identity_presentation_owns_account_and_activity_copy() {
+    let view = detail_view(Vec::new(), None, UsageSnapshotStatus::Fresh);
+    let idle = usage_identity_presentation("OpenAI", &view, false);
+    assert_eq!(idle.provider_title, "OpenAI");
+    assert_eq!(idle.account_label, "operator@example.com");
+    assert_eq!(idle.activity_label, "Updated 2m ago");
+    assert_eq!(
+        idle.activity_kind,
+        jackin_protocol::control::UsageActivityKind::Idle
+    );
+    assert_eq!(
+        idle.accessibility_label,
+        "OpenAI, operator@example.com, Updated 2m ago"
+    );
+
+    let updating = usage_identity_presentation("OpenAI", &view, true);
+    assert_eq!(updating.activity_label, "Updating…");
+    assert_eq!(
+        updating.activity_kind,
+        jackin_protocol::control::UsageActivityKind::Updating
+    );
+}
+
+#[test]
+fn usage_identity_presentation_is_honest_without_account_and_on_failure() {
+    let mut view = detail_view(Vec::new(), Some("upstream 503"), UsageSnapshotStatus::Error);
+    view.account.account_label.clear();
+    let identity = usage_identity_presentation("OpenAI", &view, false);
+    assert_eq!(identity.account_label, "No authenticated account");
+    assert_eq!(identity.activity_label, "Update failed · Updated 2m ago");
+    assert_eq!(
+        identity.activity_kind,
+        jackin_protocol::control::UsageActivityKind::Exceptional
+    );
+}
+
+#[test]
+fn usage_detail_presentation_flattens_lines_once_in_semantic_order() {
+    let mut bucket = presentation_bucket(
+        "Weekly",
+        Some(40),
+        Some(StatusSlot::Weekly),
+        UsageSnapshotStatus::Fresh,
+    );
+    bucket.pace_label = Some("5% in deficit · Runs out in 3d 1h".to_owned());
+    bucket.reset_label = Some("Resets in 6d 22h".to_owned());
+    let view = detail_view(vec![bucket], None, UsageSnapshotStatus::Fresh);
+    let presentation = usage_detail_presentation(&view);
+    let row = presentation
+        .rows
+        .iter()
+        .find(|r| r.row_id == "bucket:0")
+        .expect("bucket row");
+    // pace then run-out then reset, exactly once, in that order.
+    assert_eq!(
+        row.display_label,
+        "40% left · 5% in deficit · Runs out in 3d 1h · Resets in 6d 22h"
+    );
+    // The reset segment is the trailing column; every other segment is leading.
+    let flattened: Vec<String> = row
+        .layout_lines
+        .iter()
+        .flat_map(|line| {
+            [line.leading.clone(), line.trailing.clone()]
+                .into_iter()
+                .flatten()
+        })
+        .collect();
+    assert_eq!(
+        flattened,
+        vec![
+            "40% left",
+            "5% in deficit",
+            "Runs out in 3d 1h",
+            "Resets in 6d 22h"
+        ]
+    );
+    let reset_line = row.layout_lines.last().expect("reset line");
+    assert_eq!(reset_line.leading, None);
+    assert_eq!(reset_line.trailing.as_deref(), Some("Resets in 6d 22h"));
+}
+
+#[test]
+fn usage_detail_presentation_keeps_duplicate_bucket_labels() {
+    let first = presentation_bucket(
+        "Weekly",
+        Some(80),
+        Some(StatusSlot::Weekly),
+        UsageSnapshotStatus::Fresh,
+    );
+    let second = presentation_bucket(
+        "Weekly",
+        Some(20),
+        Some(StatusSlot::Weekly),
+        UsageSnapshotStatus::Fresh,
+    );
+    let view = detail_view(vec![first, second], None, UsageSnapshotStatus::Fresh);
+    let presentation = usage_detail_presentation(&view);
+    let buckets: Vec<(&str, &str)> = presentation
+        .rows
+        .iter()
+        .filter(|r| r.kind == jackin_protocol::control::UsageDetailRowKind::Bucket)
+        .map(|r| (r.row_id.as_str(), r.label.as_str()))
+        .collect();
+    assert_eq!(
+        buckets,
+        vec![("bucket:0", "Weekly"), ("bucket:1", "Weekly")]
+    );
+    let by_id = |id: &str| {
+        presentation
+            .rows
+            .iter()
+            .find(|r| r.row_id == id)
+            .map(|r| r.display_label.as_str())
+    };
+    assert_eq!(by_id("bucket:0"), Some("80% left"));
+    assert_eq!(by_id("bucket:1"), Some("20% left"));
+}
+
+#[test]
+fn usage_detail_presentation_stale_keeps_buckets_and_one_detail() {
+    let bucket = presentation_bucket(
+        "Weekly",
+        Some(57),
+        Some(StatusSlot::Weekly),
+        UsageSnapshotStatus::Stale,
+    );
+    let view = detail_view(
+        vec![bucket],
+        Some("upstream 503"),
+        UsageSnapshotStatus::Stale,
+    );
+    let presentation = usage_detail_presentation(&view);
+    let detail_rows: Vec<&jackin_protocol::control::UsageDetailRow> = presentation
+        .rows
+        .iter()
+        .filter(|r| r.kind == jackin_protocol::control::UsageDetailRowKind::Detail)
+        .collect();
+    assert_eq!(detail_rows.len(), 1, "exactly one Detail row");
+    assert_eq!(detail_rows[0].display_label, "upstream 503");
+    // The Detail row is last and the last-good bucket survives.
+    assert_eq!(
+        presentation.rows.last().map(|r| r.row_id.as_str()),
+        Some("detail")
+    );
+    assert!(
+        presentation.rows.iter().any(|r| r.row_id == "bucket:0"),
+        "bucket retained under stale"
+    );
+}
+
+#[test]
+fn usage_detail_presentation_amp_daily_and_bounds() {
+    let mut daily = presentation_bucket(
+        "Daily",
+        Some(61),
+        Some(StatusSlot::Daily),
+        UsageSnapshotStatus::Fresh,
+    );
+    daily.reset_label = Some("Resets daily".to_owned());
+    let mut individual = presentation_bucket("Credits", None, None, UsageSnapshotStatus::Fresh);
+    individual.limit_label = Some("$4.76".to_owned());
+    let view = detail_view(vec![daily, individual], None, UsageSnapshotStatus::Fresh);
+    let presentation = usage_detail_presentation(&view);
+    let by_id = |id: &str| {
+        presentation
+            .rows
+            .iter()
+            .find(|r| r.row_id == id)
+            .expect("row")
+    };
+    let daily_row = by_id("bucket:0");
+    assert_eq!(daily_row.display_label, "61% left · Resets daily");
+    // No fabricated exact reset timestamp or paid-plan label.
+    assert!(!daily_row.display_label.contains('('));
+    // Credit bound stays in source order after Daily.
+    assert_eq!(by_id("bucket:1").display_label, "$4.76");
+}
+
+#[test]
+fn usage_detail_presentation_grok_bounds_no_provider_path() {
+    let mut weekly = presentation_bucket(
+        "Weekly",
+        Some(72),
+        Some(StatusSlot::Weekly),
+        UsageSnapshotStatus::Fresh,
+    );
+    weekly.reset_label = Some("Resets in 3d".to_owned());
+    let mut prepaid = presentation_bucket(
+        "Extra usage credits",
+        None,
+        None,
+        UsageSnapshotStatus::Fresh,
+    );
+    prepaid.limit_label = Some("$25.00".to_owned());
+    let view = detail_view(vec![weekly, prepaid], None, UsageSnapshotStatus::Fresh);
+    let view = FocusedUsageView {
+        account: FocusedAccountHeader {
+            plan_label: Some("SuperGrok".to_owned()),
+            ..view.account.clone()
+        },
+        ..view
+    };
+    let presentation = usage_detail_presentation(&view);
+    assert_eq!(
+        presentation
+            .rows
+            .iter()
+            .find(|row| row.row_id == "plan")
+            .map(|row| row.display_label.as_str()),
+        Some("SuperGrok")
+    );
+    assert_eq!(
+        presentation.rows.last().map(|r| r.display_label.as_str()),
+        Some("$25.00")
+    );
+}
+
+// ===== Plan 004: Variant A run-out producer =====
+
+#[test]
+fn quota_pace_label_appends_runout_when_behind_pace() {
+    // time_left=53%, delta=-5; elapsed=470, used=52; 48*470/52=433.85 -> 434s -> "7m"; 434 < 530.
+    assert_eq!(
+        quota_pace_label(Some(48), Some(10_530), Some(1_000), 10_000).expect("pace"),
+        "5% in deficit · Runs out in 7m"
+    );
+    // Weekly-realistic 7-day window: 48*284401/52 = 262524s ~ 3d; 262524 < 320399.
+    assert_eq!(
+        quota_pace_label(Some(48), Some(320_399), Some(604_800), 0).expect("pace"),
+        "5% in deficit · Runs out in 3d"
+    );
+}
+
+#[test]
+fn quota_pace_label_no_runout_when_ahead_of_pace() {
+    // run-out would be 90*400/10 = 3600 >= 600 -> no segment.
+    assert_eq!(
+        quota_pace_label(Some(90), Some(600), Some(1_000), 0).expect("pace"),
+        "30% in reserve"
+    );
+}
+
+#[test]
+fn quota_pace_label_no_runout_when_nothing_used() {
+    // used == 0 -> returns without dividing (no division by zero).
+    assert_eq!(
+        quota_pace_label(Some(100), Some(500), Some(1_000), 0).expect("pace"),
+        "50% in reserve"
+    );
+}
+
+#[test]
+fn quota_pace_label_no_runout_at_window_start() {
+    // elapsed == 0 -> no segment even though delta = -40.
+    assert_eq!(
+        quota_pace_label(Some(60), Some(1_000), Some(1_000), 0).expect("pace"),
+        "40% in deficit"
+    );
+}
+
+#[test]
+fn quota_pace_label_runout_iff_behind_clock_boundary() {
+    // reset_at=500, window=1000, now=0.
+    // delta=0 -> On pace; run-out 50*500/50=500, not strictly < 500 -> bare.
+    assert_eq!(
+        quota_pace_label(Some(50), Some(500), Some(1_000), 0).expect("pace"),
+        "On pace"
+    );
+    // delta=+1 (ahead, in band); 51*500/49=520.4 -> 520 >= 500 -> bare.
+    assert_eq!(
+        quota_pace_label(Some(51), Some(500), Some(1_000), 0).expect("pace"),
+        "On pace"
+    );
+    // delta=-1 (behind, in band); 49*500/51=480.4 -> 480s -> "8m"; 480 < 500.
+    assert_eq!(
+        quota_pace_label(Some(49), Some(500), Some(1_000), 0).expect("pace"),
+        "On pace · Runs out in 8m"
+    );
+    // delta=-2 (band edge); 48*500/52=461.5 -> 462s -> "7m".
+    assert_eq!(
+        quota_pace_label(Some(48), Some(500), Some(1_000), 0).expect("pace"),
+        "On pace · Runs out in 7m"
+    );
+    // delta=-3 (first deficit token); 47*500/53=443.4 -> 443s -> "7m".
+    assert_eq!(
+        quota_pace_label(Some(47), Some(500), Some(1_000), 0).expect("pace"),
+        "3% in deficit · Runs out in 7m"
+    );
+}
+
+#[test]
+fn quota_pace_label_runout_depleted_bucket() {
+    // used=100, elapsed=500, run-out=0 < 500 -> trivially precedes reset.
+    assert_eq!(
+        quota_pace_label(Some(0), Some(500), Some(1_000), 0).expect("pace"),
+        "50% in deficit · Runs out in <1m"
+    );
+}
+
+#[test]
+fn quota_pace_label_exact_projection_precedes_reset_before_rounding() {
+    // Exact 49*536/51 = 514.98… < 515; display rounding is 515 (would fail if
+    // rounded seconds were compared to reset seconds).
+    assert_eq!(
+        quota_pace_label(Some(49), Some(10_515), Some(1_051), 10_000).expect("pace"),
+        "On pace · Runs out in 8m"
+    );
+}
+
+#[test]
+fn quota_pace_label_exact_clock_equality_ignores_float_drift() {
+    // 7*1000 == 70*100 -> projection reaches reset exactly -> no run-out segment.
+    let label = quota_pace_label(Some(7), Some(70), Some(1_000), 0).expect("pace");
+    assert!(!label.contains("Runs out"), "unexpected run-out: {label}");
+}
+
+// ===================================================================
+// Lane A (multi-account T02): Claude/Codex/Amp contract upgrades.
+// Sanitized fixtures only — no tokens, no account IDs.
+// ===================================================================
+
+#[test]
+fn claude_limits_inactive_flag_does_not_gate_rendering() {
+    // Live responses send `is_active: false` on headline limits that still
+    // carry quota — the flag must never suppress a bucket.
+    let response: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+        "five_hour": null,
+        "seven_day": null,
+        "limits": [
+            {"kind": "session", "percent": 10, "is_active": false,
+             "resets_at": "2026-09-17T10:00:00Z"},
+            {"kind": "weekly_all", "percent": 42, "is_active": false,
+             "resets_at": "2026-09-24T10:00:00Z"},
+        ]
+    }))
+    .expect("inactive limits decode");
+    let buckets = response.into_buckets(1_781_185_560);
+    let session = buckets
+        .iter()
+        .find(|bucket| bucket.status_slot == Some(StatusSlot::Session))
+        .expect("session bucket despite is_active false");
+    assert_eq!(session.label, "Session");
+    assert_eq!(session.remaining_percent, Some(90));
+    let weekly = buckets
+        .iter()
+        .find(|bucket| bucket.status_slot == Some(StatusSlot::Weekly))
+        .expect("weekly bucket despite is_active false");
+    assert_eq!(weekly.label, "All models");
+    assert_eq!(weekly.remaining_percent, Some(58));
+}
+
+#[test]
+fn claude_scope_restriction_error_is_explicit() {
+    let forbidden = ProviderError::from(ProviderHttpError::HttpStatus {
+        status: 403,
+        message: "Claude OAuth usage HTTP 403 Forbidden".to_owned(),
+        retry_after_seconds: None,
+        response_received_at_epoch: None,
+    });
+    assert!(claude_error_is_scope_restriction(&forbidden));
+    assert!(!claude_error_is_scope_restriction(&ProviderError::from(
+        ProviderHttpError::Transport("HTTP 403 insufficient_scope".to_owned()),
+    )));
+    assert!(!claude_error_is_scope_restriction(&ProviderError::from(
+        ProviderHttpError::HttpStatus {
+            status: 401,
+            message: "Claude OAuth usage HTTP 401 Unauthorized".to_owned(),
+            retry_after_seconds: None,
+            response_received_at_epoch: None,
+        },
+    )));
+    assert!(!claude_error_is_scope_restriction(&ProviderError::from(
+        "Claude OAuth usage request failed: connection reset".to_owned(),
+    )));
+    assert_eq!(
+        claude_provider_error_label(
+            Some(&forbidden),
+            Some(&ProviderError::from("cli boom".to_owned()))
+        )
+        .as_deref(),
+        Some("Claude token lacks usage scope (inference-only); quota unavailable")
+    );
+    // Non-scope errors pass through verbatim, OAuth first.
+    assert_eq!(
+        claude_provider_error_label(
+            Some(&ProviderError::from("oauth boom".to_owned())),
+            Some(&ProviderError::from("cli boom".to_owned())),
+        )
+        .as_deref(),
+        Some("oauth boom")
+    );
+    assert_eq!(
+        claude_provider_error_label(None, Some(&ProviderError::from("cli boom".to_owned())))
+            .as_deref(),
+        Some("cli boom")
+    );
+    assert_eq!(claude_provider_error_label(None, None), None);
+}
+
+#[test]
+fn codex_wham_relative_reset_resolves_against_now() {
+    let usage: CodexUsageResponse = serde_json::from_value(serde_json::json!({
+        "plan_type": "pro",
+        "rate_limit": {
+            "primary_window": {"used_percent": 25, "reset_after_seconds": 3_600},
+            "secondary_window": {"used_percent": 50, "reset_at": 1_782_000_000}
+        }
+    }))
+    .expect("wham relative reset decodes");
+    let buckets = usage.buckets(1_781_185_560);
+    let session = buckets
+        .iter()
+        .find(|bucket| bucket.status_slot == Some(StatusSlot::Session))
+        .expect("session bucket");
+    assert_eq!(session.remaining_percent, Some(75));
+    assert_eq!(session.resets_at, Some(1_781_185_560 + 3_600));
+    // Absolute reset_at still wins when both are present.
+    let weekly = buckets
+        .iter()
+        .find(|bucket| bucket.status_slot == Some(StatusSlot::Weekly))
+        .expect("weekly bucket");
+    assert_eq!(weekly.resets_at, Some(1_782_000_000));
+}
+
+#[test]
+fn codex_used_percent_tolerates_float_string_and_missing() {
+    for (raw, expected) in [
+        (serde_json::json!(63), Some(63)),
+        (serde_json::json!(63.7), Some(64)),
+        (serde_json::json!("41"), Some(41)),
+        (serde_json::json!(140), Some(100)),
+        (serde_json::json!(-3), Some(0)),
+        (serde_json::json!("bogus"), None),
+    ] {
+        let snapshot: CodexWindowSnapshot =
+            serde_json::from_value(serde_json::json!({"used_percent": raw}))
+                .expect("tolerant decode");
+        assert_eq!(snapshot.used_percent_clamped(), expected, "raw: {raw}");
+    }
+    let missing: CodexWindowSnapshot =
+        serde_json::from_value(serde_json::json!({"reset_at": 1_782_000_000}))
+            .expect("missing used decodes");
+    assert_eq!(missing.used_percent_clamped(), None);
+}
+
+#[test]
+fn codex_rpc_tolerates_missing_windows_credits_and_counts() {
+    // Missing `usedPercent`, `rateLimits`, `availableCount`, and credit flags
+    // all decode; unknown extra fields are ignored.
+    let usage = decode_codex_rpc_usage(
+        serde_json::json!({
+            "rateLimits": {
+                "primary": {"resetsAt": 1_782_000_000, "windowDurationMins": 300},
+                "credits": {"balance": "12", "future_field": true},
+                "planType": "pro",
+            },
+            "rateLimitsByLimitId": {},
+            "rateLimitResetCredits": {"future_field": 1},
+            "future_top_level": {"nested": [1, 2]},
+        }),
+        None,
+    )
+    .expect("sparse RPC decodes");
+    let buckets = usage.response.buckets(1_781_185_560);
+    let session = buckets
+        .iter()
+        .find(|bucket| bucket.status_slot == Some(StatusSlot::Session))
+        .expect("session bucket");
+    assert_eq!(session.used_label, None);
+    assert_eq!(session.remaining_percent, None);
+    assert_eq!(session.resets_at, Some(1_782_000_000));
+    assert!(
+        buckets
+            .iter()
+            .all(|bucket| bucket.label != "Limit Reset Credits"),
+        "zero-count credits stay hidden"
+    );
+    assert!(
+        buckets.iter().all(|bucket| bucket.label != "Credits"),
+        "flag-less credits stay hidden"
+    );
+
+    // A wholly absent `rateLimits` object still decodes to an empty snapshot.
+    let empty = decode_codex_rpc_usage(serde_json::json!({}), None).expect("empty decodes");
+    assert!(empty.response.buckets(1_781_185_560).is_empty());
+}
+
+const AMP_TIER_FIXTURE: &str = "Signed in as user@example.com (example)\n\
+     Amp Free: 61% remaining today (resets daily)\n\
+     Amp Pro Tier: agent usage $80.00 of $100.00 remaining, orb usage 7.5h of 10h a1.small orb hours remaining, period 2026-09-01 to 2026-10-01, resets upon renewal in 12 days\n\
+     Individual credits: $9.86 remaining";
+
+#[test]
+fn amp_tier_line_maps_agent_dollars_orb_hours_and_renewal() {
+    let now = 1_781_185_560;
+    let usage = parse_amp_usage_output(AMP_TIER_FIXTURE).expect("tier usage");
+    assert_eq!(usage.account_label.as_deref(), Some("user@example.com"));
+    assert_eq!(usage.plan_label().as_deref(), Some("Amp Pro"));
+    assert_eq!(
+        usage.renewal,
+        Some(AmpRenewal {
+            value: 12,
+            months: false,
+        })
+    );
+    assert_eq!(
+        usage.billing_period.as_deref(),
+        Some("2026-09-01 to 2026-10-01")
+    );
+
+    let buckets = usage.buckets(now);
+    let agent = buckets
+        .iter()
+        .find(|bucket| bucket.label == "Agent usage")
+        .expect("agent bucket");
+    assert_eq!(agent.used_label.as_deref(), Some("$20.00 used"));
+    assert_eq!(agent.limit_label.as_deref(), Some("$100.00"));
+    assert_eq!(agent.remaining_percent, Some(80));
+    assert_eq!(agent.resets_at, Some(now + 12 * 86_400));
+    assert_eq!(agent.status_slot, Some(StatusSlot::Spend));
+    assert_eq!(
+        agent.used_money.as_ref().map(|m| m.amount_minor),
+        Some(2_000)
+    );
+    assert_eq!(
+        agent.limit_money.as_ref().map(|m| m.amount_minor),
+        Some(10_000)
+    );
+
+    let orb = buckets
+        .iter()
+        .find(|bucket| bucket.label == "Orb usage")
+        .expect("orb bucket");
+    assert_eq!(orb.used_label.as_deref(), Some("2h used"));
+    assert_eq!(orb.limit_label.as_deref(), Some("10h"));
+    assert_eq!(orb.remaining_percent, Some(75));
+    assert_eq!(orb.resets_at, Some(now + 12 * 86_400));
+
+    // Daily headline is untouched by subscription pools.
+    assert_eq!(
+        status_bar_headline_for_surface(UsageSurface::Amp, &buckets).as_deref(),
+        Some("Free 61%")
+    );
+}
+
+#[test]
+fn amp_tier_without_orb_keeps_agent_and_skips_orb() {
+    let usage = parse_amp_usage_output(
+        "Amp Team Tier: agent usage $1,234.50 of $2,000.00 remaining, resets upon renewal in 2 months",
+    )
+    .expect("orb-less tier");
+    assert_eq!(usage.plan_label().as_deref(), Some("Amp Team"));
+    let buckets = usage.buckets(1_781_185_560);
+    let agent = buckets
+        .iter()
+        .find(|bucket| bucket.label == "Agent usage")
+        .expect("agent bucket");
+    assert_eq!(agent.remaining_percent, Some(62));
+    assert_eq!(agent.resets_at, Some(1_781_185_560 + 60 * 86_400));
+    assert!(
+        buckets.iter().all(|bucket| bucket.label != "Orb usage"),
+        "no orb segment, no orb bucket"
+    );
+}
+
+#[test]
+fn amp_unrecognized_orb_data_does_not_hide_agent() {
+    let usage = parse_amp_usage_output(
+        "Amp Pro Tier: agent usage $80.00 of $100.00 remaining, orb usage someday maybe, resets upon renewal in 12 days",
+    )
+    .expect("agent survives bad orb");
+    let buckets = usage.buckets(1_781_185_560);
+    assert!(
+        buckets.iter().any(|bucket| bucket.label == "Agent usage"),
+        "agent bucket present"
+    );
+    assert!(
+        buckets.iter().all(|bucket| bucket.label != "Orb usage"),
+        "malformed orb skipped"
+    );
+}
+
+#[test]
+fn amp_legacy_subscription_line_maps_percent_pools() {
+    let usage = parse_amp_usage_output(
+        "Subscription Business: 30% other usage and 55% orb usage remaining - resets upon renewal in 1 month - https://ampcode.com/settings",
+    )
+    .expect("legacy subscription");
+    assert_eq!(usage.plan_label().as_deref(), Some("Amp Business"));
+    let buckets = usage.buckets(1_781_185_560);
+    let agent = buckets
+        .iter()
+        .find(|bucket| bucket.label == "Agent usage")
+        .expect("agent bucket");
+    assert_eq!(agent.remaining_percent, Some(30));
+    assert_eq!(agent.resets_at, Some(1_781_185_560 + 30 * 86_400));
+    let orb = buckets
+        .iter()
+        .find(|bucket| bucket.label == "Orb usage")
+        .expect("orb bucket");
+    assert_eq!(orb.remaining_percent, Some(55));
+
+    // The `Amp <plan> Subscription:` variant parses identically.
+    let variant = parse_amp_usage_output(
+        "Amp Business Subscription: 30% other usage and 55% orb usage remaining - resets upon renewal in 5 days",
+    )
+    .expect("amp-prefixed legacy");
+    assert_eq!(
+        variant.subscription, usage.subscription,
+        "same pools, only renewal differs"
+    );
+    assert_eq!(
+        variant.renewal,
+        Some(AmpRenewal {
+            value: 5,
+            months: false,
+        })
+    );
+}
+
+#[test]
+fn amp_tier_wins_over_legacy_and_bold_markers_strip() {
+    let usage = parse_amp_usage_output(
+        "Subscription Business: 30% other usage and 55% orb usage remaining - resets upon renewal in 5 days\n\
+         **Amp Pro Tier:** agent usage $80.00 of $100.00 remaining, resets upon renewal in 12 days",
+    )
+    .expect("tier over legacy");
+    assert_eq!(usage.plan_label().as_deref(), Some("Amp Pro"));
+    assert!(
+        matches!(
+            usage.subscription.as_ref().map(|s| &s.kind),
+            Some(AmpSubscriptionKind::Tier { .. })
+        ),
+        "tier kind kept"
+    );
+}

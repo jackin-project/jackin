@@ -1,0 +1,92 @@
+---
+title: "02 — Usage sources and session attribution"
+description: "Evaluates provider APIs, runtime CLIs, local logs, privacy, host effects, and confidence limits for account state and internal attribution."
+---
+
+## Summary
+
+Provider account state and local session evidence answer different questions. Provider APIs and runtime-owned account endpoints are the authority for limits; structured runtime events and logs provide internal attribution and fallback signals, not provider quota truth.
+
+## Question and scope
+
+Which sources should each adapter prefer, how should jackin❯ label fallback evidence, and what local attribution is safe to retain without creating forbidden token-price or trend surfaces?
+
+## Method
+
+The review compares multicode, CodexBar, OpenUsage, Tokemon, Token Tracker, Brim, MeterBar, Control Tower, and known runtime source shapes. It evaluates source authority, non-interactive access, privacy, multi-session attribution, host effects, and failure behavior.
+
+## Findings
+
+### Two truth channels
+
+1. **Account availability** comes from provider-side or runtime-owned usage sources. It answers whether the account is near a session, weekly, monthly, credit, or other enforced limit.
+2. **Internal session attribution** comes from jackin❯ session identity plus structured runtime events, transcripts, or local logs. It can explain which session produced activity, but cannot reconstruct hidden provider weighting, cache treatment, model-specific allowance, or server resets.
+
+These channels must never be merged into an unlabeled percentage. Internal token evidence may support diagnostics, capacity analysis, or adapter validation; it does not authorize user-facing token histories, cost estimates, or trends.
+
+### Source priority
+
+| Runtime | Account-limit priority | Internal attribution evidence | Confidence boundary |
+|---|---|---|---|
+| Codex | app-server or OAuth-backed account/rate-limit reads | Codex session JSONL and runtime events correlated to a jackin❯ session | Strong candidate when the account RPC is available; logs are not quota authority |
+| Claude | Provider/runtime usage endpoint under managed auth; CLI status only as explicit repair/diagnostic fallback | Claude JSONL or structured usage payloads deduplicated by message/request identity | Undocumented endpoints can degrade; local evidence remains an estimate |
+| Amp | Non-interactive usage command with timeout | Runtime/thread events where structured counts exist | CLI-derived state needs schema and failure validation |
+| Kimi | Billing/limit endpoint under the runtime token | Runtime logs or hooks when per-turn evidence exists | Separate server windows from local events |
+| OpenCode | Backing-provider account state | OpenCode message history where correlation is reliable | No generic OpenCode account limit should be invented |
+
+Bare TUI probing is excluded from background refresh when it can trigger login, steal input, or disturb the operator session. Browser-cookie access is explicit opt-in fallback only.
+
+### Attribution integrity
+
+Attribution requires stable instance, workspace, runtime, account, and session identities. A provider log glob is unsafe when several same-provider sessions coexist: it can assign the union of all activity to whichever session polls it. Correlate by runtime session identifier, working directory, file metadata, or explicit launch-time handle; otherwise mark attribution unknown.
+
+Streaming formats may repeat cumulative usage across chunks. Deduplicate by provider message/request identity and normalize events before aggregation. Store only the fields required to validate attribution; never persist prompts, completions, or raw conversation content in the account cache.
+
+Local token-class evidence can remain an internal diagnostic record when needed to test adapters. It must not flow into the limits-only render model except when the provider itself defines a token-denominated quota window and the source/confidence label remains attached.
+
+### Privacy and host effects
+
+Reading existing auth/config may be allowed when the operator enabled and can see the source. Normal refresh must not write provider configuration, Keychain entries, browser profiles, Git configuration, shell dotfiles, or user repositories.
+
+Account keys should be stable opaque hashes, not raw tokens or email addresses. Operator-facing labels are display fields, not primary keys. Authentication failures become `NeedsLogin` or explicit repair state; background refresh does not silently connect accounts.
+
+Containers get narrow read-only account views through daemon/Capsule protocols. They do not receive writable host cache directories or provider secrets merely to render a limit.
+
+### External evidence
+
+- [multicode usage aggregation](https://github.com/graemerocher/multicode/blob/main/lib/src/services/usage_aggregation_service.rs) demonstrates local message-history aggregation; its synthetic price table and cost columns are not applicable to jackin❯ usage surfaces.
+- [multicode resource usage](https://github.com/graemerocher/multicode/blob/main/lib/src/services/resource_usage_service.rs) is relevant only to CPU/RAM/OOM telemetry, not account limits.
+- [Token Tracker](https://github.com/mm7894215/TokenTracker) demonstrates hooks plus passive log readers and emphasizes local processing; host hook installation would require explicit operator authority.
+- [Tokemon](https://www.tokemon.ai/) demonstrates provider quota plus local evidence, but is Claude-focused and should inform source priority rather than become canonical.
+- [MeterBar](https://meterbar.app/) demonstrates a simple account dashboard and local credential handling; jackin❯ should prefer daemon-owned connectors.
+- [Control Tower](https://github.com/krishcdbry/ControlTower) and its [product site](https://control-tower.dev/) are UI comparisons only; maturity requires revalidation.
+- [Token Tracker product site](https://www.tokentracker.cc/) and [OpenUsage](https://github.com/robinebers/openusage) confirm demand for local provider/account state, but do not override jackin❯ privacy and limits-only policy.
+
+## Implications for jackin❯
+
+- Define one adapter source-priority table per supported runtime.
+- Keep account-limit truth provider-first and label every fallback.
+- Reject ambiguous multi-session attribution instead of assigning it optimistically.
+- Minimize retained local evidence and exclude conversation content.
+- Keep all user-facing usage renderers on the shared limits-only snapshot model.
+
+## Limitations and unknowns
+
+Provider sources can be undocumented, scope-gated, rate-limited, or absent. Runtime log schemas and storage locations change. Multi-account and same-provider concurrency require current real-output fixtures before attribution can be considered reliable.
+
+## Sources
+
+- [CodexBar](https://github.com/steipete/CodexBar)
+- [OpenUsage](https://github.com/robinebers/openusage)
+- [Tokemon](https://github.com/richyparr/tokemon)
+- [Token Tracker](https://github.com/mm7894215/TokenTracker)
+- [Brim](https://getbrim.tech/)
+- [MeterBar](https://github.com/shipshitdev/meterbar.app)
+- [Control Tower](https://github.com/krishcdbry/ControlTower)
+
+## Related work
+
+- [Account-limit model](/research/agents/telemetry/token-cost-telemetry/01-account-limit-model/)
+- [Provider usage APIs](/research/product/desktop/usage-provider-apis/)
+- [Agent runtime status authority](/roadmap/agent-runtime-status/)
+- [Persistent storage and workspace memory](/research/agents/orchestration/memory/)

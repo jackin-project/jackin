@@ -1,0 +1,299 @@
+---
+title: "Parallax signal contract and verification"
+description: "Defines the current run, trace, span, log, and metric contract with priorities, verification criteria, and open questions."
+---
+
+## Summary
+
+The target contract uses stable run identity, linked workflow traces, typed spans and errors, clean structured logs, low-cardinality metrics, and verification against Parallax behavior.
+
+## Question and scope
+
+What signal model should jackin❯ expose, which structural changes must precede noise reduction, and how should the resulting contract be verified?
+
+## Method
+
+This synthesis uses the [dossier findings](/research/agents/telemetry/parallax-observability-findings/), [tracing analysis](/research/agents/telemetry/parallax-observability-findings/01-tracing-and-instrumentation/), [UI evidence](/research/agents/telemetry/parallax-observability-findings/02-parallax-ui-evidence/), and [raw-data analysis](/research/agents/telemetry/parallax-observability-findings/03-raw-data-and-root-causes/).
+
+## Findings
+
+### Runs
+
+Run is the top-level correlation unit:
+
+- `parallax.run.id`
+- `service.name=jackin`
+- `service.version`
+- `jackin.component=host|capsule`
+- `jackin.workspace`
+- `jackin.workspace.kind`
+- `jackin.invocation.command`
+- `jackin.exit_code`
+
+Every log, span, metric, and issue event must carry `parallax.run.id`.
+
+### Traces and linked subtraces
+
+Use one trace per operator-meaningful workflow:
+
+- `launch`
+- `capsule.session.start`
+- `capsule.attach`
+- `usage.refresh`
+- `image.build`
+- `auth.prewarm`
+- `agent.session`
+
+Use linked subtraces when one workflow contains a large independent subsystem:
+
+- Host launch trace links to BuildKit/buildx trace.
+- Host launch trace links to capsule session trace via propagated `traceparent`.
+- Capsule session trace links to child agent session traces.
+- Usage refresh trace links to provider probes when provider work is concurrent or high-volume.
+
+Do not force all sub-activity into one giant trace. Use span links and shared `parallax.run.id` / `session.id` / `jackin.workflow.id`.
+
+### Spans
+
+Spans should be user/workflow operations, not every loop iteration:
+
+- Good: `launch.build_derived_image`, `docker.container.inspect`, `capsule.attach`, `usage.refresh_accounts`.
+- Bad as default spans: `emit_insn`, `read_page_no_cache`, `bind_and_rewrite_expr`, terminal byte send/parse loops.
+
+Rules:
+
+- Use spans for things with duration and causal hierarchy.
+- Use span events for notable details inside a span.
+- Use metrics for counters/gauges/hot-loop counts.
+- Use logs for human diagnostic facts.
+
+### Logs
+
+Log body should be short and readable:
+
+```text
+capsule attach failed
+```
+
+Attributes should carry structure:
+
+```text
+severity=ERROR
+event.name=capsule.attach.failed
+jackin.component=host
+jackin.operation=capsule.attach
+jackin.stage=attach
+error.type=attach_error
+container.name=jk-qfrehkbv-holla-thearchitect
+command.name=docker
+command.args_redacted=["exec","-e=JACKIN_HOST_ALT_SCREEN=1","<container>","/jackin/runtime/jackin-capsule"]
+parallax.run.id=18bc74b282b0a850
+trace_id=...
+span_id=...
+```
+
+Console renderer may display:
+
+```text
+[jackin debug docker] inspect container jk-... -> running
+```
+
+But backend export should be:
+
+```text
+body="inspect container"
+log.category="docker"
+docker.object="container"
+docker.action="inspect"
+container.name="jk-..."
+container.state="running"
+diagnostic.tier="debug"
+```
+
+### Metrics
+
+Move high-frequency observations into metrics:
+
+- `jackin.terminal.bytes_sent`
+- `jackin.terminal.cursor_moves`
+- `jackin.render.duration_us`
+- `jackin.render.painted_cells`
+- `jackin.usage.accounts_refreshed`
+- `jackin.db.statement_count`
+- `jackin.db.read_pages`
+- `jackin.docker.inspect_count`
+- `jackin.errors.count` by `error.type`
+
+Metrics should be grouped by low-cardinality labels only.
+
+## Implications for jackin❯
+
+### Rust implementation guidance
+
+- Use `tracing` spans for work units and events for point facts, matching the crate model.
+- Use `EnvFilter` per layer so console, local file, OTLP logs, and OTLP spans can have different filters.
+- Keep target/module filters for dependency noise, but do not disable jackin❯ operation spans needed for development.
+- Prefer explicit fields over formatted strings:
+
+```rust
+tracing::info!(
+    target: "jackin::launch",
+    event.name = "launch.plan.selected",
+    jackin.operation = "launch.plan",
+    jackin.stage = "plan",
+    event.outcome = "success",
+    plan = %plan_name,
+    "launch plan selected"
+);
+```
+
+Bad default OTLP body:
+
+```text
+[jackin debug docker] inspect container jk-abc -> running
+```
+
+Good structured log:
+
+```text
+body="container inspected"
+severity=DEBUG
+event.name=docker.container.inspect
+jackin.category=docker
+docker.object=container
+container.name=jk-abc
+container.state=running
+```
+
+### Parallax UX requirements
+
+- Logs page should show severity filter with OTel severity ranges, not only raw `severity_text`.
+- Logs page should show columns for `event.name`, `jackin.operation`, `jackin.stage`, `event.outcome`, `error.type`.
+- Run page should default to `INFO+` lifecycle timeline and hide `DEBUG/TRACE` behind toggles.
+- Trace page should let operator toggle span events/logs by severity.
+- Bundle should include:
+  - `INFO+` timeline,
+  - warnings/errors,
+  - top slow spans,
+  - linked subtraces,
+  - artifact links,
+  - optional `DEBUG/TRACE` sections only when requested.
+
+
+### Structured logs
+
+1. Add a structured diagnostic event API beside current `clog!`/`cdebug!`.
+2. Keep existing console strings for terminal/file output.
+3. Export OTel logs with structured attributes and clean bodies.
+4. Add category attributes for debug logs instead of bracket prefixes.
+5. Redact sensitive values before any OTel export.
+6. Cap or artifact-route large payloads (`docker inspect`, capsule log tails, raw command output).
+7. Add tests asserting:
+   - console line still has old prefix where needed,
+   - OTel/log event body has no prefix,
+   - `log.category` exists,
+   - secrets are redacted,
+   - huge payloads are summarized.
+
+### Coverage prerequisites
+
+Before removing or downsampling noisy rows, add typed coverage to the operations that currently depend on those rows for diagnosis:
+
+1. Wrap `ShellRunner` with spans/logs for every subprocess:
+   - `process.command`
+   - `process.args_redacted`
+   - `process.cwd.kind`
+   - `process.exit_code`
+   - `process.duration_ms`
+   - `error.type` on failure.
+2. Wrap HTTP metadata and download helpers:
+   - host and route class, not full secret-bearing URL where unsafe,
+   - status code,
+   - bytes,
+   - retry count,
+   - timeout/cancel/error type.
+3. Wrap Docker lifecycle operations:
+   - object type/name,
+   - action,
+   - state before/after,
+   - exit code,
+   - duration.
+4. Convert nested `timing_started/done` events into real child spans or span events where the duration matters in the waterfall.
+5. Promote launch stage details into attributes and stable span names.
+6. Add coverage tests using a fake runner/export sink so a regression cannot silently remove spans/log attrs for critical operations.
+
+### Error semantics
+
+1. Add domain error helpers:
+   - `record_error(error_type, message, attrs)`
+   - `record_exception(error, attrs)`
+2. Mark active span status `ERROR` when a workflow fails.
+3. Emit OTel `ERROR` logs for actual failures, not `INFO` diagnostic rows.
+4. Normalize issue fingerprints:
+   - include stable error type/operation/component,
+   - exclude container ids, run ids, temp paths, branch names, uid/gid, raw command strings.
+5. Replace `log_error: ...` titles with domain titles.
+
+### Trace shape
+
+1. Rename launch spans or set `otel.name` so waterfall rows are meaningful.
+2. Make logs inherit the active trace/span context.
+3. Split huge workflows into linked subtraces:
+   - launch trace,
+   - build trace,
+   - attach trace,
+   - capsule session trace.
+4. Emit standard OTel span links for subtraces, and let Parallax store/render derived `parallax.parent_trace_id` navigation fields.
+5. Drop dependency-internal spans from default export only after equivalent workflow-level spans/metrics exist.
+6. Convert hot-loop and storage-engine details into metrics/span events.
+
+### Parallax UX contract
+
+Even though this is mainly a jackin❯ telemetry problem, define the backend-facing contract:
+
+- Logs page can filter by `parallax.run.id`, `jackin.component`, `log.category`, `jackin.operation`, `error.type`, `stage`.
+- Issues page groups by stable fingerprint.
+- Trace page displays operation + stage.
+- Run page shows:
+  - top failures,
+  - linked traces,
+  - correlated logs,
+  - metrics around run,
+  - redacted evidence bundle.
+- Trace page shows linked subtraces and backlinks using OTel span links plus Parallax-derived relation fields.
+
+### Verification criteria
+
+Run a new `jackin --debug` under Parallax and verify:
+
+- `DEBUG` volume is at least an order of magnitude lower, unless an explicit internal-firehose flag is enabled.
+- No OTel log body contains `[jackin debug`.
+- No OTel log body contains raw API-token-shaped values.
+- `parallax issue list` groups repeated capsule attach failures into one issue.
+- A forced attach failure creates:
+  - one `ERROR` log,
+  - one error span or failed parent workflow span,
+  - stable `error.type`,
+  - stable issue fingerprint,
+  - link to run and trace.
+- Launch trace waterfall rows are visually distinct.
+- Run detail trace has correlated logs (`Logs > 0`) for stages that emitted logs.
+- `emit_insn` and storage-engine spans disappear from default trace lists.
+
+## Limitations and unknowns
+
+- Should raw local diagnostics files preserve full debug payloads when OTLP export is active, or only when `JACKIN_DIAGNOSTICS_FILE=1` is set?
+- What is the exact allowlist for OTel-exported attributes versus local-only artifacts?
+- Should Parallax issue fingerprinting be fixed in Parallax, jackin❯, or both? jackin❯ should still send stable fields so any backend can group correctly.
+- What threshold should promote debug events into span events versus metrics?
+- Which workflows need linked subtraces first: launch/build/attach likely first, usage refresh second.
+
+## Sources
+
+- [Dossier method and primary sources](/research/agents/telemetry/parallax-observability-findings/#method-and-evidence)
+- [Parallax raw data and root causes](/research/agents/telemetry/parallax-observability-findings/03-raw-data-and-root-causes/)
+
+## Related work
+
+- [Tracing and instrumentation](/research/agents/telemetry/parallax-observability-findings/01-tracing-and-instrumentation/)
+- [Token and cost telemetry](/research/agents/telemetry/token-cost-telemetry/)

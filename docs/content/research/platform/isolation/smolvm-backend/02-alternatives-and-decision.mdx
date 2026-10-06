@@ -1,0 +1,74 @@
+---
+title: "smolvm alternatives and decision"
+description: "Compares smolvm with hardened Docker, Docker Sandboxes, Apple Container, and OrbStack against the required isolation boundary."
+---
+
+## Summary
+
+smolvm is the open fallback candidate when hardened Docker is insufficient and Apple Container cannot meet Docker-inside compatibility. Docker Sandboxes is more productized, while OrbStack isolated machines do not add a per-workload kernel boundary.
+
+## Question and scope
+
+Which post-Docker option best matches jackin❯ on macOS ARM when the required property is a separate kernel per agent workload rather than another namespace layer?
+
+## Method
+
+The comparison uses evidence verified through 2026-06-10: the [Docker Sandboxes overview](https://docs.docker.com/ai/sandboxes/), [architecture](https://docs.docker.com/ai/sandboxes/architecture/), [security model](https://docs.docker.com/ai/sandboxes/security/), [isolation layers](https://docs.docker.com/ai/sandboxes/security/isolation/), smolvm 1.0.1 sources, Apple Container research, and OrbStack's documented architecture.
+
+## Findings
+
+### Required boundary
+
+Hardened containers reduce capabilities, mounts, egress, and daemon exposure, but continue to share the host VM kernel. A VM-per-workload backend limits a successful guest-kernel exploit to that workload's VM. This stronger boundary matters most for privileged nested Docker and untrusted dependency execution.
+
+### Comparison
+
+| Concern | Hardened Docker | smolvm | Docker Sandboxes | Apple Container |
+|---|---|---|---|---|
+| Kernel boundary | Shared | Per workload | Per sandbox | Per container |
+| OCI input | Native | Native | Docker-native | Native |
+| Private Docker engine | Existing DinD pattern | Demonstrated with constraints | Product feature | Needs validation |
+| Credential proxy | jackin❯-owned mechanisms | Not provided by TSI | Product feature | Needs jackin❯ design |
+| Policy maturity | Existing backend | Low-level building blocks | Productized | New platform |
+| Openness | Docker/runtime ecosystem | Apache-2.0 Rust project | Proprietary product surface | Open-source Apple project |
+| macOS floor | Current supported hosts | Hypervisor.framework | Supported product | macOS 26 |
+
+Docker Sandboxes already provides the closest complete product shape: dedicated microVM, private Docker Engine, workspace lifecycle, network policy, and credential proxy. Its tradeoff is dependency on Docker's product and control surface.
+
+Apple Container is architecturally attractive because it provides native per-container VMs on Apple Silicon without a Docker daemon at the VM layer. Docker-inside behavior and the operator OS floor decide whether it can cover jackin❯ roles.
+
+smolvm 1.0.1 provides the smallest open foundation and the best opportunity for jackin❯-owned policy, including VM fork, elastic memory, deny-by-default networking, and host-custodied SSH-agent forwarding. jackin❯ would still own more lifecycle, credential, packaging, and validation work.
+
+OrbStack machines share OrbStack's Linux kernel. For operators already using OrbStack as the Docker backend, an isolated machine adds namespaces inside the existing outer VM rather than a new workload kernel. See [OrbStack isolated machines](/research/platform/isolation/orbstack-isolated-machines/).
+
+### Current decision
+
+1. Keep hardened Docker as the near-term baseline.
+2. Prefer Apple Container when its runtime and Docker-inside validation satisfy role requirements.
+3. Keep smolvm as the open fallback and research candidate.
+4. Do not select OrbStack isolated machines to solve per-workload kernel isolation.
+
+This ordering is a research conclusion, not delivery status. Implementation commitments and gates belong to the linked roadmap items.
+
+## Implications for jackin❯
+
+Any stronger backend must preserve the operator-visible contract: explicit isolation boundary, mount list, network policy, Docker capability, credential handling, lifecycle, and residual risks. Backend selection must not imply security properties the runtime does not provide.
+
+## Limitations and unknowns
+
+No comparable local benchmark exists across the four options. Apple Container and Docker Sandboxes are moving products; smolvm APIs and release packaging can change. Revalidate before an implementation decision.
+
+## Sources
+
+- [smolvm](https://github.com/smol-machines/smolvm)
+- [Docker Sandboxes](https://docs.docker.com/ai/sandboxes/)
+- [Docker Sandboxes architecture](https://docs.docker.com/ai/sandboxes/architecture/)
+- [Docker Sandboxes security](https://docs.docker.com/ai/sandboxes/security/)
+- [OrbStack architecture](https://docs.orbstack.dev/architecture)
+
+## Related work
+
+- [smolvm architecture and compatibility](/research/platform/isolation/smolvm-backend/01-architecture-and-compatibility/)
+- [Agent isolation architecture](/research/platform/security/isolation-architecture/)
+- [Apple Container backend roadmap](/roadmap/apple-container-backend/)
+- [Docker runtime hardening contract](/roadmap/docker-runtime-hardening-contract/)

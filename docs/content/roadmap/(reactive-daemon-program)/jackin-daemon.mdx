@@ -1,0 +1,45 @@
+---
+title: "jackin❯ daemon"
+---
+
+**Status**: Partially implemented
+
+**Current state**: The lifecycle foundation and first attention adapter are shipped; `jackin daemon serve/start/stop/restart/status/install/uninstall` exists with a private Unix control socket, protocol/build skew checks, direct OTLP export, typed sanitized telemetry health, per-user launchd/systemd unit writers, and a muted-by-default one-way attention snapshot adapter. Reactive features that still depend on the daemon ([live auth sync](/roadmap/live-auth-sync/), [host bridge](/roadmap/host-bridge/), broader Desktop Agent Hub APIs) remain deferred until their own adapter plans land.
+
+## Shipped facts
+
+jackin❯ now has a per-user host daemon command group documented at [`jackin daemon`](/commands/daemon/). The daemon owns lifecycle, a same-user Unix socket at `~/.jackin/run/jackin-daemon.sock`, JSONL request/response framing, `hello`/`status`/`telemetry_health`/`shutdown`, launchd/systemd user-unit file writers, an `attention_snapshot` consumer, and immutable process-owned OTLP providers. Startup failures remain on the invoking product error surface; the control protocol reports a credential-free resolved configuration fingerprint, typed configuration failure, per-signal exporter health, flush state, and shutdown state. The in-container `jackin-capsule` PID 1 process remains a separate per-container control plane; Capsule Phase 4 still depends on future host-daemon event subscriptions.
+
+Usage coordination now has a dedicated host-only Rust broker in `jackin-usage`.
+Desktop attaches as a host client; each Capsule reaches it only through an immutable
+launch-capability relay at `/jackin/run/usage.sock`. The broker is deliberately not a
+global socket/state tree mounted into containers. It owns per-account single-flight
+generations, atomic last-good state, and shared retry deadlines independently of the
+general daemon lifecycle; a future daemon integration may host its lifecycle without
+moving its domain authority out of `jackin-usage`.
+
+The clearest concrete stand-in for a daemon-owned watcher remains the keep-awake reconciler in <RepoFile path="crates/jackin-host/src/caffeinate.rs">crates/jackin-host/src/caffeinate.rs</RepoFile>: it still runs at every CLI command boundary, acquiring a lock file and starting/stopping `caffeinate -imsu` based on whether any keep-awake-labelled container is running. Moving that watcher into the daemon remains future work.
+
+Research: [jackin❯ daemon — design proposal](/research/platform/infrastructure/jackin-daemon-design/) has the full design rationale and the Plan 042 spike resolution: selected lifecycle, install, protocol, security posture, redaction rules, host-vs-Capsule relationship, and implementation phasing.
+
+The Plan 047/048 production daemon lives in <RepoFile path="crates/jackin-runtime/src/host_daemon.rs" /> and is wired through <RepoFile path="crates/jackin/src/cli/daemon.rs" /> plus <RepoFile path="crates/jackin/src/app/daemon_cmd.rs" />. The older spike prototype remains feature-gated and not user-wired: <RepoFile path="crates/jackin-runtime/src/reactive_daemon.rs" /> defines the original proof.
+
+## Remaining work
+
+1. **Desktop-ready API.** Add the small versioned endpoints [jackin❯ desktop Agent Hub](/research/product/desktop/agent-hub/) needs first: `daemon/hello`, workspace/session discovery, GitHub PR lookup, account status, event subscription, Ghostty/browser open actions.
+2. **Caffeinate migration.** Move the keep-awake reconciler from per-command into a daemon-owned Docker-events watcher.
+3. **Live auth sync.** Add the per-axis watcher adapters for [live bidirectional auth sync](/roadmap/live-auth-sync/) only after the daemon foundation has shipped and log/core-dump redaction is proven.
+4. **Further reactive adapters.** Container event watcher, cross-session notifications, and [host bridge](/roadmap/host-bridge/) each plug into the daemon's adapter surface once it exists; host bridge remains blocked until per-request approval and audit are specified.
+
+## Related work
+
+- Research: [jackin❯ daemon — design proposal](/research/platform/infrastructure/jackin-daemon-design/) — full design rationale, open questions, phasing.
+- [Live bidirectional auth sync](/roadmap/live-auth-sync/) — the first reactive feature this daemon hosts.
+- [Agent attention prompts](/roadmap/agent-attention-prompts/) — host-side OS notifications when an agent waits on operator input. Plugs into this daemon.
+- [Host bridge — secrets and approved host actions](/roadmap/host-bridge/) — operator-mediated channel for agents to request secrets or invoke host commands. Plugs into this daemon and uses the same approval surface (TouchID / polkit / password) the daemon hosts.
+- [jackin❯ Capsule](/roadmap/jackin-capsule/) — the in-container per-container control plane; its Phase 4 (host daemon integration) is designed together with this item.
+- [jackin❯ desktop Agent Hub](/research/product/desktop/agent-hub/) — native macOS status bar and desktop companion that consumes daemon state for workspaces, sessions, GitHub PRs, account status, notifications, and approved host actions.
+- <RepoFile path="crates/jackin-host/src/caffeinate.rs">crates/jackin-host/src/caffeinate.rs</RepoFile> — today's per-command keep-awake reconciler; first migration target once the daemon exists.
+- <RepoFile path="crates/jackin-runtime/src/reactive_daemon.rs">crates/jackin-runtime/src/reactive_daemon.rs</RepoFile> — feature-gated Plan 042 prototype proving the control socket shape and one-way attention adapter.
+- [Reliable Claude authentication strategy](/research/agents/authentication/claude-auth-strategy/) — concurrent-session token-drift concerns the live-auth-sync feature ultimately answers, so the daemon hosts the answer.
+- [Credential source pattern](/roadmap/credential-source-pattern/) — future unified credential resolver; the daemon's per-axis adapter trait should be expressible inside that pattern.

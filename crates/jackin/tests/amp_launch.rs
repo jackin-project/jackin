@@ -1,0 +1,337 @@
+#![expect(
+    clippy::expect_used,
+    reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
+)]
+mod common;
+
+use common::{
+    FakeDockerClient, FakeRunner, install_agent_binary_stubs, install_capsule_binary_stub,
+    launched_role_container,
+};
+
+use jackin::workspace::{MountConfig, ResolvedWorkspace};
+use jackin_config::{AccountConfig, AccountCredential, AiProvider, AppConfig, ConfigEditor};
+use jackin_core::Agent;
+use jackin_core::ContainerSpec;
+use jackin_core::JackinPaths;
+use jackin_core::MountIsolation;
+use jackin_core::RoleSelector;
+use jackin_runtime::runtime::{LoadOptions, load_role};
+use tempfile::tempdir;
+
+fn assert_amp_not_staged_without_install_recipe(dockerfile: &str) {
+    // This direct build-context helper call does not pass an agent install
+    // recipe. The full launch path prepares and bakes supported agents.
+    assert!(
+        !dockerfile.contains("agent-binaries"),
+        "direct build context must not stage an amp binary without an install recipe; got: {dockerfile}"
+    );
+}
+
+fn assert_amp_container_spec(spec: &ContainerSpec) {
+    assert!(
+        !spec
+            .env
+            .iter()
+            .any(|entry| entry.starts_with("JACKIN_AGENT=")),
+        "JACKIN_AGENT must not be a container env var; got: {:?}",
+        spec.env
+    );
+    assert_eq!(spec.command, Some(vec!["amp-main".to_owned()]));
+    assert!(
+        !spec
+            .binds
+            .iter()
+            .any(|bind| bind.ends_with(":/home/agent/.amp/bin/amp:ro")),
+        "amp binary is baked into the image and must not be bind-mounted at run time; got: {:?}",
+        spec.binds
+    );
+    assert!(
+        !spec
+            .env
+            .iter()
+            .any(|entry| entry.starts_with("JACKIN_ROLE=")),
+        "{spec:?}"
+    );
+    assert!(!spec.env.iter().any(|entry| entry.contains("test-amp-key")));
+    assert!(
+        !spec
+            .binds
+            .iter()
+            .any(|bind| bind.contains("/jackin/claude/"))
+    );
+    assert!(
+        !spec
+            .binds
+            .iter()
+            .any(|bind| bind.contains("/jackin/codex/"))
+    );
+    assert!(
+        !spec
+            .binds
+            .iter()
+            .any(|bind| bind.contains("/jackin/amp/secrets.json"))
+    );
+}
+
+#[tokio::test]
+async fn amp_launch_creates_container_with_amp_agent() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    paths.ensure_base_dirs().unwrap();
+    install_capsule_binary_stub(&paths);
+    install_agent_binary_stubs(&paths);
+    std::fs::write(
+        &paths.config_file,
+        r#"default_launch = ["amp-main"]
+
+[accounts.amp-test]
+name = "Amp test"
+provider = "amp"
+[accounts.amp-test.credential]
+type = "api_key"
+value = "test-amp-key"
+
+[agent_configurations.amp-main]
+agent = "amp"
+account = "amp-test"
+
+[roles.the-architect]
+git = "https://github.com/jackin-project/jackin-the-architect.git"
+trusted = true
+"#,
+    )
+    .unwrap();
+
+    let selector = RoleSelector::new(None, "the-architect");
+    let repo_dir = jackin_manifest::repo::CachedRepo::new(&paths, &selector).repo_dir;
+    std::fs::create_dir_all(&repo_dir).unwrap();
+    std::fs::write(
+        repo_dir.join("Dockerfile"),
+        "FROM projectjackin/construct:0.1-trixie\n",
+    )
+    .unwrap();
+    std::fs::write(
+        repo_dir.join("jackin.role.toml"),
+        r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+agents = ["amp"]
+
+[amp]
+"#,
+    )
+    .unwrap();
+
+    let validated = jackin_manifest::repo::validate_role_repo(&repo_dir).unwrap();
+    let build = jackin_image::derived_image::create_derived_build_context(
+        &repo_dir, &validated, None, None,
+    )
+    .unwrap();
+    let dockerfile = std::fs::read_to_string(&build.dockerfile_path).unwrap();
+    assert_amp_not_staged_without_install_recipe(&dockerfile);
+
+    let mut config = AppConfig::load_or_init(&paths).unwrap();
+    let workspace = ResolvedWorkspace {
+        name: String::new(),
+        label: repo_dir.display().to_string(),
+        workdir: "/workspace".to_owned(),
+        mounts: vec![MountConfig {
+            src: repo_dir.display().to_string(),
+            dst: "/workspace".to_owned(),
+            readonly: false,
+            isolation: MountIsolation::Shared,
+        }],
+        default_agent: Some(Agent::Amp),
+        keep_awake_enabled: false,
+        git_pull_on_entry: false,
+        mount_heal: jackin_config::MountHealReport::default(),
+    };
+    // Capture queue (role-specific, after 4-slot preamble):
+    //   [0] capture_secret: gh auth token → empty (no gh session in test)
+    let mut runner = FakeRunner::for_load_agent([String::new()]);
+    let docker = FakeDockerClient::default();
+
+    load_role(
+        &paths,
+        &mut config,
+        &selector,
+        &workspace,
+        &docker,
+        &mut runner,
+        &LoadOptions::default(),
+    )
+    .await
+    .unwrap();
+
+    let (container_name, spec) = launched_role_container(&docker);
+    assert_amp_container_spec(&spec);
+    let credentials_path = paths.data_dir.join(&container_name).join(format!(
+        "credentials/{}",
+        jackin_protocol::account_credentials_filename("amp-main")
+    ));
+    let credentials: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&credentials_path).unwrap()).unwrap();
+    assert_eq!(credentials["schema_version"], 1);
+    assert_eq!(
+        credentials["credential"]["env"]["AMP_API_KEY"],
+        "test-amp-key"
+    );
+    assert_eq!(credentials["instance"], "amp-main");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        assert_eq!(
+            std::fs::metadata(&credentials_path)
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o600
+        );
+    }
+    let capsule_config_path = paths
+        .jackin_home
+        .join("sockets")
+        .join(&container_name)
+        .join(jackin_protocol::CAPSULE_CONFIG_FILENAME);
+    let capsule_config: jackin_protocol::CapsuleConfig =
+        toml::from_str(&std::fs::read_to_string(capsule_config_path).unwrap()).unwrap();
+    assert_eq!(capsule_config.role, "the-architect");
+    assert_eq!(capsule_config.workdir, "/workspace");
+    assert_eq!(capsule_config.instances, vec!["amp-main"]);
+    assert_eq!(capsule_config.agents.get("amp-main").unwrap(), "amp");
+    assert!(capsule_config.models.is_empty());
+}
+
+#[tokio::test]
+async fn amp_launch_profile_account_mounts_secrets_json_in_container() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    paths.ensure_base_dirs().unwrap();
+    install_capsule_binary_stub(&paths);
+    install_agent_binary_stubs(&paths);
+
+    // Stage host ~/.local/share/amp/secrets.json under the test's fake
+    // home (paths.home_dir, which load_role consults for host-side
+    // auth state) so the Sync arm of provision_amp_auth produces a
+    // non-None mounted path.
+    let amp_dir = paths.home_dir.join(".local/share/amp");
+    std::fs::create_dir_all(&amp_dir).unwrap();
+    std::fs::write(
+        amp_dir.join("secrets.json"),
+        "{\"apiKey@https://ampcode.com/\":\"sgamp_user_test\"}",
+    )
+    .unwrap();
+
+    std::fs::write(
+        &paths.config_file,
+        r#"default_launch = ["amp-main"]
+
+[agent_configurations.amp-main]
+agent = "amp"
+account = "amp-profile"
+
+[roles.the-architect]
+git = "https://github.com/jackin-project/jackin-the-architect.git"
+trusted = true
+"#,
+    )
+    .unwrap();
+
+    let selector = RoleSelector::new(None, "the-architect");
+    let repo_dir = jackin_manifest::repo::CachedRepo::new(&paths, &selector).repo_dir;
+    std::fs::create_dir_all(&repo_dir).unwrap();
+    std::fs::write(
+        repo_dir.join("Dockerfile"),
+        "FROM projectjackin/construct:0.1-trixie\n",
+    )
+    .unwrap();
+    std::fs::write(
+        repo_dir.join("jackin.role.toml"),
+        r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+agents = ["amp"]
+
+[amp]
+"#,
+    )
+    .unwrap();
+
+    let amp_account = AccountConfig {
+        enabled: true,
+        name: "Amp profile".into(),
+        provider: AiProvider::Amp,
+        credential: AccountCredential::Profile {
+            agent: Agent::Amp,
+            directory: amp_dir,
+            xdg_roots: None,
+            source_selector: None,
+        },
+    };
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    editor.upsert_account("amp-profile", &amp_account).unwrap();
+    let saved_config = editor.save().unwrap();
+    let persisted_config = AppConfig::load_or_init(&paths).unwrap();
+    assert_eq!(
+        saved_config.accounts, persisted_config.accounts,
+        "launch account registry must match persisted configuration"
+    );
+    assert_eq!(
+        saved_config.agent_configurations, persisted_config.agent_configurations,
+        "launch agent configurations must match persisted configuration"
+    );
+    assert_eq!(
+        saved_config.default_launch, persisted_config.default_launch,
+        "launch defaults must match persisted configuration"
+    );
+    let mut config = persisted_config;
+    let workspace = ResolvedWorkspace {
+        name: String::new(),
+        label: repo_dir.display().to_string(),
+        workdir: "/workspace".to_owned(),
+        mounts: vec![MountConfig {
+            src: repo_dir.display().to_string(),
+            dst: "/workspace".to_owned(),
+            readonly: false,
+            isolation: MountIsolation::Shared,
+        }],
+        default_agent: Some(Agent::Amp),
+        keep_awake_enabled: false,
+        git_pull_on_entry: false,
+        mount_heal: jackin_config::MountHealReport::default(),
+    };
+    // Capture queue (role-specific, after 4-slot preamble):
+    //   [0] capture_secret: gh auth token → empty (no gh session in test)
+    let mut runner = FakeRunner::for_load_agent([String::new()]);
+    let docker = FakeDockerClient::default();
+
+    load_role(
+        &paths,
+        &mut config,
+        &selector,
+        &workspace,
+        &docker,
+        &mut runner,
+        &LoadOptions::default(),
+    )
+    .await
+    .unwrap();
+
+    let (_, spec) = launched_role_container(&docker);
+    assert!(
+        spec.binds
+            .iter()
+            .any(|bind| bind.contains(":/jackin/amp/secrets.json")),
+        "Sync mode must mount secrets.json into the container: {:?}",
+        spec.binds
+    );
+    // No AMP_API_KEY in env config → no -e flag.
+    assert!(
+        !spec
+            .env
+            .iter()
+            .any(|entry| entry.starts_with("AMP_API_KEY=")),
+        "Sync mode without AMP_API_KEY must not inject the var: {:?}",
+        spec.env
+    );
+}

@@ -1,0 +1,241 @@
+---
+title: "Agent isolation layer contracts and open questions"
+description: "Defines layer contracts, residual risks, validation gates, threat scope, code touchpoints, and owning research or roadmap work."
+---
+
+## Summary
+
+Each layer has an independent contract, technical dependencies, and residual risks; the architecture remains bounded to a trusted-operator, semi-trusted-agent threat model.
+
+## Question and scope
+
+What does each layer change, what remains open, which failure modes are covered, and where are the relevant implementation seams?
+
+## Method
+
+This chapter derives constraints from the [threat evidence](/research/platform/security/isolation-architecture/agent-isolation-architecture/01-threat-and-platform-evidence/) and [four-layer model](/research/platform/security/isolation-architecture/agent-isolation-architecture/02-four-layer-model/) while leaving delivery state to Roadmap.
+
+## Findings
+
+Each layer independently narrows a different risk class; the full model composes their contracts.
+
+### Docker baseline
+
+```
+macOS ARM → OrbStack Linux VM → Docker daemon → --privileged DinD + role container
+```
+
+Risks:
+- DinD `--privileged` → kernel access to OrbStack VM
+- Shared kernel → all sessions share one attack surface
+- Credentials in env vars → agent can read raw API keys
+- No per-operation access control
+- Open network egress
+
+### Docker hardening contract
+
+```
+macOS ARM → OrbStack Linux VM → Docker daemon → rootless DinD + role container
+                                                  (capability policy, read-only root,
+                                                   resource limits, profile reporting)
+```
+
+What changes:
+- DinD sidecar moves to rootless mode (no `--privileged`) or uses minimal capability set
+- `hardened` profile: `--cap-drop=ALL` + minimal caps, read-only root, resource limits
+- Session contract output: operators see exactly what was enforced
+
+What remains:
+- Shared OrbStack VM kernel (structural)
+- Credentials still in env vars
+- No per-operation isolation
+- Open egress
+
+See: [Docker runtime hardening contract](/roadmap/docker-runtime-hardening-contract/)
+
+### Per-session VM boundary
+
+```
+macOS ARM → apple/container VM (own kernel, Virtualization.framework)
+              → rootless DinD + role container + jackin-capsule
+```
+
+What changes:
+- Each jackin❯ session gets its own Linux kernel via Apple's hypervisor
+- Kernel exploit in one session cannot reach other sessions or the host
+- OrbStack VM no longer in the critical path for session isolation
+- Zero install friction on macOS 26 (built into the OS)
+- gRPC/vsock attach via `vminitd` — structured I/O and signal forwarding for TUI sessions
+
+What remains:
+- Credentials still in env vars (jackin-exec not yet present)
+- No per-operation isolation
+- Open egress
+
+**Prerequisite**: Docker hardening's rootless DinD must validate successfully inside apple/container VMs (specifically: does `CAP_SYS_ADMIN` work inside apple/container for rootless DinD mount namespaces?). This is an empirical compatibility gate.
+
+See: [smolvm backend research](/research/platform/isolation/smolvm-backend/) (contains the Apple Container comparison and compatibility constraints)
+
+### On-demand credential injection
+
+```
+macOS ARM → apple/container VM (own kernel)
+              → rootless DinD + role container + jackin-capsule
+                → agent calls: jackin-exec ssh sentry
+                  → jackin-capsule intercepts
+                  → operator approves in TUI (optional)
+                  → SSH key resolved from host vault at execution time
+                  → command runs with injected key (temp file, /jackin/run/)
+                  → output scanned for secret patterns, redacted
+                  → sanitized output returned to agent
+                  → temp key file deleted
+```
+
+What changes:
+- Agent never receives raw credential values in env vars or files
+- Operator gets TUI-native approval dialog for sensitive commands
+- Workspace secret bindings map command patterns to host-side vaults (`op://`, `env:`, `file:`)
+- Output filtering redacts PEM blocks, AWS key patterns, configured regexes
+
+What remains:
+- Agent's general tool calls (npm install, etc.) still unconstrained inside container
+- Open egress for non-jackin-exec commands
+
+See: [Process-level sandboxing](/research/platform/security/process-sandboxing/) (jackin-exec design), [Container credential exposure](/research/platform/security/credential-exposure/container-credential-exposure/), [Host bridge](/roadmap/host-bridge/)
+
+### Process sandboxing and network egress
+
+```
+macOS ARM → apple/container VM (own kernel)
+              → rootless DinD + role container + jackin-capsule
+                → every agent tool call:
+                    → zerobox: filesystem policy (declared mounts only)
+                               network policy (declared hosts only)
+                               env policy (no leaked secrets)
+                    → jackin-exec: credential injection for sensitive commands
+                → session-level egress policy: allowlist enforced at VM boundary
+```
+
+What changes:
+- Every subprocess wrapped by zerobox: reads/writes only declared mount paths, reaches only declared network hosts, cannot see env vars not explicitly passed
+- Session-level network allowlist enforced at VM egress
+- Full audit trail: every operation, every allow/deny decision, logged to diagnostics run file
+
+Together these layers address the enumerated failure modes for a trusted operator running semi-trusted agents; the limitations below remain explicit.
+
+See: [Process-level sandboxing](/research/platform/security/process-sandboxing/), [Network egress policy](/roadmap/network-egress-policy/)
+
+---
+
+### Analysis
+
+The operator cost, engineering scope, and technical dependencies differ by layer.
+
+| Layer | Operator friction | Engineering scope | Design dependencies |
+|---|---|---|---|
+| Docker hardening contract | Low — profiles are opt-in, `compat` preserves today | Medium — profiles, capability policy, rootless DinD validation | None |
+| Apple Container VM boundary | Zero on macOS 26 (built-in) | High — new backend abstraction, lifecycle API, empirical compatibility testing | Docker hardening (rootless DinD) must validate first |
+| jackin-exec credential injection | Low — system prompt instructs agent; approval dialog is contextual | Medium — binary, vsock protocol to capsule, workspace bindings schema | jackin-capsule vsock/Unix socket extension |
+| zerobox per-operation sandboxing | Low — transparent to agent | Medium — zerobox in construct image, policy derivation from mounts | Depends on zerobox compatibility inside apple/container VM |
+| Network egress policy | Low — deny/allowlist declarative | Medium — egress policy schema, enforcement at VM boundary | Apple Container VM boundary (egress enforced at VM level) |
+
+---
+
+
+### Threat model
+
+This architecture is designed for jackin❯'s threat model: a **trusted operator running semi-trusted AI agents against potentially untrusted external code** on a personal macOS ARM machine. It is explicitly NOT designed for:
+
+- Hosted or multi-tenant workloads (strangers' code running on shared infrastructure)
+- Enterprise regulatory compliance (HIPAA, PCI-DSS) where third-party audited attestations are required
+- Adversarial operators trying to escape the sandbox themselves
+
+For the current threat model, the four layers close the practical failure modes:
+
+| Failure mode | Closed by |
+|---|---|
+| Agent exploits kernel CVE to escape container | Apple Container VM boundary |
+| Agent reads secret injected as env var | jackin-exec credential injection |
+| Agent writes to wrong mounted path | zerobox per-operation policy |
+| Agent calls unexpected network endpoint | zerobox + egress policy |
+| Agent runs code that exhausts CPU/memory | Docker hardening resource limits |
+| Agent exfiltrates data to unexpected host | Egress policy session allowlist |
+| Agent remembers raw API key across prompts | jackin-exec (key never in context) |
+| DinD privilege escalation to host kernel | Apple Container VM boundary + rootless DinD |
+
+---
+
+
+
+### Code touchpoints
+
+The key implementation seams for this architecture are:
+
+- <RepoFile path="crates/jackin-capsule/src/main.rs" /> — PID-1 detection and `JACKIN_CAPSULE_FORCE_DAEMON` dispatch for Apple Container
+- <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> — daemon control plane and jackin-exec picker dispatch
+- <RepoFile path="crates/jackin-instance/src/manifest.rs" /> — `InstanceManifest`, `DockerResources`, and `BackendResources` with `AppleContainerResources`
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> — launch orchestration; backend split point
+- <RepoFile path="crates/jackin-docker/src/docker_client.rs" /> — Docker lifecycle boundary; Apple Container gets a peer module
+- <RepoFile path="docker/construct/Dockerfile" /> — role base image; install `jackin-exec` and `zerobox` here
+- <RepoFile path="docker/runtime/entrypoint.sh" /> — capsule startup inside role container; inject `JACKIN_EXEC_BINDINGS` env var
+- <RepoFile path="crates/jackin-config/src/schema.rs" /> — `AppConfig` + `WorkspaceConfig` runtime backend fields
+- <RepoFile path="crates/jackin-core/src/env_value.rs" /> — `EnvValue::Extended` and `OpRef.on_demand` for jackin-exec
+
+
+## Implications for jackin❯
+
+Keep roadmap delivery state separate from this architecture. Validate compatibility gates empirically and expose active layers and residual risk through the session contract.
+
+## Limitations and unknowns
+
+### Apple Container compatibility gate
+
+The most critical open question is whether rootless DinD can run inside an apple/container VM:
+
+1. Does apple/container allow `--cap-add CAP_SYS_ADMIN`? (needed for mount namespaces in rootless DinD)
+2. Does rootless DinD pass `docker build`, Compose, and Testcontainers inside the apple/container VM?
+3. Does jackin-capsule run correctly as non-PID-1 (`JACKIN_CAPSULE_FORCE_DAEMON=1`) with proper SIGTERM propagation, exit-code visibility, and Ctrl+C passthrough?
+
+If rootless DinD fails inside apple/container: smolvm is the fallback (documented Docker-in-VM path exists, though constrained). See [smolvm backend research](/research/platform/isolation/smolvm-backend/) for the full fallback plan.
+
+### jackin-exec design decisions
+
+1. **Binary name**: `jackin-exec` proposed — needs final decision before baking into construct image (renaming later breaks existing role system prompts and MCP tool descriptions)
+2. **MCP vs binary vs PATH-shadowing**: binary + MCP recommended; PATH-shadowing noted but not recommended (lacks transparency)
+3. **Approval UX for high-frequency sessions**: "Approve All Similar" and "Always for Session" modes need TUI design — see [TUI design decisions](/reference/tui/)
+
+### Apple Container limitations at the cutoff
+
+| Limitation | Current constraint | Impact |
+|---|---|---|
+| `--privileged` not supported | By design (use `--cap-add`) | Requires rootless DinD — the compatibility gate |
+| Multi-container bridge networking rough edges | Upstream v0.11.0 known issue | Affects DinD inner container networking; monitor for fix |
+| DNS hiccuping after macOS sleep/wake | Upstream v0.11.0 known issue | Operator must reconnect after sleep; jackin❯ should detect and prompt |
+| No health checks (`--health-cmd`) | Not implemented | jackin-capsule liveness probes instead |
+| Apple Silicon only | By design | Acceptable — jackin❯ is macOS ARM only |
+
+---
+
+
+## Sources
+
+- [Threat and platform evidence](/research/platform/security/isolation-architecture/agent-isolation-architecture/01-threat-and-platform-evidence/)
+- [Four-layer model](/research/platform/security/isolation-architecture/agent-isolation-architecture/02-four-layer-model/)
+
+
+
+## Related work
+
+| Item | Role in this architecture |
+|---|---|
+| [Docker runtime hardening contract](/roadmap/docker-runtime-hardening-contract/) | Layer 1 — prerequisite for Apple Container (rootless DinD must validate). Independently valuable for current Docker backend operators. |
+| [Apple Container backend](/roadmap/apple-container-backend/) | Layer 2 — dedicated item owns the VM-backend contract, `AppleContainerResources`, schema work, and `JACKIN_CAPSULE_FORCE_DAEMON` behavior. |
+| [jackin-exec](/roadmap/jackin-exec/) | Layer 3 — owns workspace secret bindings, the MCP/tool contract, and operator approval UI. |
+| [Process-level sandboxing](/research/platform/security/process-sandboxing/) | Cross-layer — zerobox per-operation filesystem/network sandboxing only (jackin-exec is separate). |
+| [Network egress policy](/roadmap/network-egress-policy/) | Layer 4 — session-level outbound policy, enforced at VM egress when Apple Container backend lands. |
+| [Container credential exposure](/research/platform/security/credential-exposure/container-credential-exposure/) | The problem that jackin-exec (Layer 3) solves. |
+| [Host bridge — secrets and approved host actions](/roadmap/host-bridge/) | Host-side resolver that jackin-exec calls for `op://` credentials. |
+| [Session contract and explain mode](/roadmap/session-contract-explain-mode/) | How the operator sees which layers are active and what residual risks remain. |
+| [Selectable sandbox backends](/research/platform/security/sandbox-backends/) | Umbrella for Docker and Apple Container as the two runtime families; backend selection model, instance registry design. |
+| [smolvm backend research](/research/platform/isolation/smolvm-backend/) | Open fallback candidate if Apple Container fails Docker-inside compatibility. |
+| [OrbStack isolated machine backend](/research/platform/isolation/orbstack-isolated-machines/) | Shared-kernel comparison that explains why namespace isolation is not a hypervisor boundary. |

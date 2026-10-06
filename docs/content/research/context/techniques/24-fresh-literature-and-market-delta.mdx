@@ -1,0 +1,71 @@
+---
+title: "24 — Literature and market evidence map"
+description: "Primary-source map for cache research, retrieval, compression, routing, and provider-sensitive product evidence."
+---
+
+## Summary
+
+The durable literature map is usable. Provider product, pricing, model, quota, and beta claims require one-cutoff revalidation before they inform a decision.
+
+The durable evidence supports four boundaries: server-side KV compression does not reduce hosted API input billing; cache-augmented generation maps to stable-prefix reuse on hosted APIs; prompt-compression proxies add an integrity boundary; and routing claims require workload-specific evaluation. Volatile provider facts are deliberately excluded.
+
+## Question and scope
+
+Which durable research families extend the dossier without turning it into a volatile provider changelog?
+
+## Method
+
+### Method and sources
+
+The map favors primary papers and official project pages. It keeps mechanisms whose conclusion is stable across provider releases and excludes live product facts that cannot be represented under one verified cutoff.
+
+- [H2O](https://arxiv.org/abs/2306.14048)
+- [SnapKV](https://arxiv.org/abs/2404.14469)
+- [PyramidKV](https://arxiv.org/abs/2406.02069)
+- [KVQuant](https://arxiv.org/abs/2401.18079)
+- [Cache-Augmented Generation](https://arxiv.org/abs/2412.15605)
+- [CompressionAttack](https://arxiv.org/abs/2510.22963)
+- [RouteLLM](https://arxiv.org/abs/2406.18665)
+- [LLMRouterBench](https://arxiv.org/abs/2504.11154)
+- [OrcaRouter](https://arxiv.org/abs/2408.11348)
+
+## Findings
+
+### Findings
+
+### KV-cache compression is a serving-layer technique
+
+H2O, SnapKV, PyramidKV, and KVQuant reduce accelerator memory or improve self-hosted inference throughput. They do not change the token payload crossing a hosted API boundary. They therefore belong to the self-hosted serving tier, not the hosted-token optimization tier.
+
+### Cache-augmented generation has a hosted analogue
+
+The CAG literature preloads a bounded corpus and reuses its inference state. Hosted APIs do not expose portable KV tensors, but stable-prefix prompt caching approximates the reusable-corpus pattern when the corpus fits the provider context window.
+
+### Compression adds an integrity boundary
+
+CompressionAttack/COMA studies whether perturbations that survive prompt compression can alter downstream agent behavior. This strengthens the dossier's rule that a lossy compressor in the request path needs security and quality validation, not cost validation alone.
+
+### Routing evidence is workload-specific
+
+RouteLLM, LLMRouterBench, and OrcaRouter show that routing can improve cost-quality tradeoffs. None establishes a universal route for jackin❯ workloads or proves cache-aware behavior for every provider. A local paired harness remains required.
+
+## Implications for jackin❯
+
+For jackin❯, the literature and market evidence map evidence identifies which mechanisms are safe to adopt directly and which still require workload-specific validation.
+
+## Limitations and unknowns
+
+- Reverify provider model, price, quota, cache, and beta matrices at one declared cutoff before adding them.
+- Measure routing and compression against representative jackin❯ tasks before adopting either.
+- Keep implementation status and release chronology in Roadmap or Git history.
+
+## Sources
+
+Evidence and repository references are cited inline beside the claims they support.
+
+## Related work
+
+- [Provider-level features](/research/context/techniques/12-provider-features/)
+- [Infrastructure-level techniques](/research/context/techniques/13-infrastructure-level/)
+- [Validation harness](/research/context/techniques/16-validation-harness/)
+- [Current claim verification](/research/context/techniques/28-drift-delta/)

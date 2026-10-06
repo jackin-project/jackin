@@ -1,0 +1,345 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
+//! Tests for `save_preview`.
+use super::{
+    MountPreviewRow, SettingsEnvPreview, SettingsGeneralPreview, SettingsGeneralToggles,
+    SettingsSavePreview, TrustPreviewRow, WorkspaceAuthChange, WorkspaceMountDiff,
+    WorkspaceMountPreviewRow, WorkspaceSaveMode, WorkspaceSavePreview, WorkspaceToggleSet,
+    build_workspace_save_lines, settings_env_preview, settings_save_lines,
+    workspace_create_display_name, workspace_save_lines,
+};
+use crate::mount_info_cache::MountInfoCache;
+use crate::tui::screens::editor::model::EditorState;
+use jackin_config::{
+    AccountConfig, AccountCredential, AiProvider, AppConfig, EnvValue, WorkspaceConfig,
+    WorkspaceRoleOverride,
+};
+use jackin_core::Agent;
+use std::collections::BTreeMap;
+
+type TestEditorState = EditorState<MountInfoCache, (), (), EnvValue, (), (), (), ()>;
+
+#[test]
+fn workspace_create_display_name_uses_pending_or_visible_fallback() {
+    assert_eq!(workspace_create_display_name(Some("demo")), "demo");
+    assert_eq!(workspace_create_display_name(None), "(unnamed)");
+}
+
+fn empty_workspace_preview() -> WorkspaceSavePreview {
+    WorkspaceSavePreview {
+        mode: WorkspaceSaveMode::Edit {
+            original_name: "demo".to_owned(),
+            display_name: "demo".to_owned(),
+            pending_name: None,
+        },
+        original_workdir: Some("/repo".to_owned()),
+        pending_workdir: "/repo".to_owned(),
+        mount_diffs: Vec::new(),
+        auth_changes: Vec::new(),
+        original_allowed_roles: Vec::new(),
+        pending_allowed_roles: Vec::new(),
+        role_count: 0,
+        original_default_role: None,
+        pending_default_role: None,
+        original_toggles: WorkspaceToggleSet::default(),
+        pending_toggles: WorkspaceToggleSet::default(),
+        env_original: SettingsEnvPreview::default(),
+        env_pending: SettingsEnvPreview::default(),
+        collapse_lines: Vec::new(),
+    }
+}
+
+fn empty_settings_preview() -> SettingsSavePreview {
+    SettingsSavePreview {
+        general: SettingsGeneralPreview {
+            original_toggles: SettingsGeneralToggles::default(),
+            pending_toggles: SettingsGeneralToggles::default(),
+        },
+        mounts_original: Vec::new(),
+        mounts_pending: Vec::new(),
+        env_original: SettingsEnvPreview::default(),
+        env_pending: SettingsEnvPreview::default(),
+        auth_original: BTreeMap::new(),
+        auth_pending: BTreeMap::new(),
+        github_original: jackin_config::GithubAuthConfig::default(),
+        github_pending: jackin_config::GithubAuthConfig::default(),
+        bindings_original: BTreeMap::new(),
+        bindings_pending: BTreeMap::new(),
+        trust_original: Vec::new(),
+        trust_pending: Vec::new(),
+    }
+}
+
+fn line_text(lines: &[ratatui::text::Line<'_>]) -> String {
+    lines
+        .iter()
+        .map(|line| {
+            line.spans
+                .iter()
+                .map(|span| span.content.as_ref())
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn edit_lines(original: WorkspaceConfig, pending: WorkspaceConfig) -> String {
+    let config = AppConfig::default();
+    let mut editor = TestEditorState::new_edit("demo".to_owned(), original);
+    editor.pending = pending;
+    line_text(&build_workspace_save_lines(&editor, &config, &[]))
+}
+
+#[test]
+fn workspace_save_lines_omits_auth_section_without_auth_changes() {
+    let text = line_text(&workspace_save_lines(&empty_workspace_preview()));
+
+    assert!(!text.contains("Accounts:"));
+}
+
+#[test]
+fn workspace_save_lines_renders_auth_old_new_pairs() {
+    let mut preview = empty_workspace_preview();
+    preview.auth_changes = vec![
+        WorkspaceAuthChange {
+            label: "Claude Code mode".to_owned(),
+            original: "sync".to_owned(),
+            pending: "api_key".to_owned(),
+        },
+        WorkspaceAuthChange {
+            label: "Role smith / Codex source folder".to_owned(),
+            original: "inherited: /global/codex".to_owned(),
+            pending: "/role/codex".to_owned(),
+        },
+    ];
+
+    let text = line_text(&workspace_save_lines(&preview));
+
+    assert!(text.contains("Accounts:"));
+    assert!(text.contains("  Claude Code mode"));
+    assert!(text.contains("    - sync"));
+    assert!(text.contains("    + api_key"));
+    assert!(text.contains("  Role smith / Codex source folder"));
+    assert!(text.contains("    - inherited: /global/codex"));
+    assert!(text.contains("    + /role/codex"));
+}
+
+#[test]
+fn workspace_save_preview_lists_account_assignment_and_binding_changes() {
+    let original = WorkspaceConfig::default();
+    let mut pending = original.clone();
+    pending.accounts.push("work".into());
+    pending
+        .account_bindings
+        .insert(Agent::Claude, "work".into());
+    pending.roles.insert(
+        "smith".into(),
+        WorkspaceRoleOverride {
+            account_bindings: [(Agent::Claude, "work".into())].into(),
+            ..Default::default()
+        },
+    );
+    let text = edit_lines(original, pending);
+    assert!(text.contains("Accounts allowed"));
+    assert!(text.contains("Default claude"));
+    assert!(text.contains("Role smith claude"));
+    assert!(text.contains("work"));
+}
+
+fn account(secret: &str) -> AccountConfig {
+    AccountConfig {
+        enabled: true,
+        name: "Work".into(),
+        provider: AiProvider::Anthropic,
+        credential: AccountCredential::ApiKey {
+            value: EnvValue::Plain(secret.into()),
+            base_url: None,
+            model: None,
+        },
+    }
+}
+
+#[test]
+fn changed_account_credential_is_reported_without_disclosing_either_secret() {
+    let mut preview = empty_settings_preview();
+    preview
+        .auth_original
+        .insert("work".into(), account("old-secret"));
+    preview
+        .auth_pending
+        .insert("work".into(), account("new-secret"));
+    let text = line_text(&settings_save_lines(&preview));
+    assert!(text.contains("1 changed"));
+    assert!(text.contains("updated; enabled; credential hidden"));
+    assert!(!text.contains("old-secret"));
+    assert!(!text.contains("new-secret"));
+}
+
+#[test]
+fn settings_env_preview_hides_account_owned_sentinel_in_global_and_role_maps() {
+    let config = crate::tui::screens::settings::model::SettingsEnvConfig {
+        env: [(
+            "ANTHROPIC_API_KEY".to_owned(),
+            EnvValue::Plain("settings-preview-sentinel".into()),
+        )]
+        .into(),
+        roles: [(
+            "smith".to_owned(),
+            [(
+                "OPENAI_API_KEY".to_owned(),
+                EnvValue::Plain("role-preview-sentinel".into()),
+            )]
+            .into(),
+        )]
+        .into(),
+    };
+
+    let preview = settings_env_preview(&config);
+    let rendered = format!("{preview:?}");
+    assert!(!rendered.contains("settings-preview-sentinel"));
+    assert!(!rendered.contains("role-preview-sentinel"));
+    assert!(preview.env.is_empty());
+    assert!(preview.roles["smith"].is_empty());
+}
+
+#[test]
+fn workspace_save_lines_pin_representative_edit_output() {
+    let mut preview = empty_workspace_preview();
+    preview.original_workdir = Some("/old".to_owned());
+    preview.pending_workdir = "/new".to_owned();
+    preview.original_allowed_roles = vec!["architect".to_owned()];
+    preview.pending_allowed_roles = vec!["operator".to_owned()];
+    preview.original_default_role = Some("architect".to_owned());
+    preview.pending_default_role = Some("operator".to_owned());
+    preview.original_toggles.keep_awake = false;
+    preview.pending_toggles.keep_awake = true;
+    preview.mount_diffs = vec![
+        WorkspaceMountDiff::Added(WorkspaceMountPreviewRow {
+            src: "~/src".to_owned(),
+            dst: "/jackin/src".to_owned(),
+            readonly: false,
+            isolation: "workspace".to_owned(),
+            kind: "git".to_owned(),
+        }),
+        WorkspaceMountDiff::Removed(WorkspaceMountPreviewRow {
+            src: "~/old".to_owned(),
+            dst: "/jackin/old".to_owned(),
+            readonly: true,
+            isolation: "shared".to_owned(),
+            kind: "dir".to_owned(),
+        }),
+    ];
+    preview.env_pending.env.insert("FOO".into(), "bar".into());
+    preview.auth_changes = vec![WorkspaceAuthChange {
+        label: "Claude Code mode".to_owned(),
+        original: "sync".to_owned(),
+        pending: "api_key".to_owned(),
+    }];
+
+    let text = line_text(&workspace_save_lines(&preview));
+
+    assert_eq!(
+        text,
+        concat!(
+            "Edit workspace: demo\n",
+            "\n",
+            "Working directory:\n",
+            "  - /old\n",
+            "  + /new\n",
+            "\n",
+            "Mounts:\n",
+            "  + /jackin/src  host: ~/src  (rw, workspace, git)\n",
+            "  - /jackin/old  host: ~/old  (ro, shared, dir)\n",
+            "\n",
+            "Allowed roles:\n",
+            "  + operator\n",
+            "  - architect\n",
+            "\n",
+            "Default role:\n",
+            "  - architect\n",
+            "  + operator\n",
+            "\n",
+            "Keep awake:\n",
+            "  - disabled\n",
+            "  + enabled\n",
+            "\n",
+            "Env vars:\n",
+            "  + FOO = bar\n",
+            "\n",
+            "Accounts:\n",
+            "  Claude Code mode\n",
+            "    - sync\n",
+            "    + api_key",
+        )
+    );
+}
+
+#[test]
+fn settings_save_lines_pin_representative_output() {
+    let mut preview = empty_settings_preview();
+    preview.general.original_toggles.coauthor_trailer = false;
+    preview.general.pending_toggles.coauthor_trailer = true;
+    preview.mounts_original.push(MountPreviewRow {
+        scope: None,
+        name: "cargo".to_owned(),
+        src: "~/.cargo".to_owned(),
+        dst: "/cargo".to_owned(),
+        readonly: true,
+    });
+    preview.mounts_pending.push(MountPreviewRow {
+        scope: Some("role".to_owned()),
+        name: "cache".to_owned(),
+        src: "~/.cache".to_owned(),
+        dst: "/cache".to_owned(),
+        readonly: false,
+    });
+    preview.env_original.env.insert("OLD".into(), "1".into());
+    preview.env_pending.env.insert("NEW".into(), "2".into());
+    preview
+        .auth_original
+        .insert("work".into(), account("before"));
+    preview.auth_pending.insert("work".into(), account("after"));
+    preview.trust_original.push(TrustPreviewRow {
+        role: "architect".to_owned(),
+        trusted: false,
+    });
+    preview.trust_pending.push(TrustPreviewRow {
+        role: "architect".to_owned(),
+        trusted: true,
+    });
+
+    let text = line_text(&settings_save_lines(&preview));
+
+    assert_eq!(
+        text,
+        concat!(
+            "Save settings\n",
+            "\n",
+            "  General:      1 change\n",
+            "  Mounts:       1 added, 1 removed\n",
+            "  Environments: 1 added, 1 removed\n",
+            "  Accounts:     1 changed\n",
+            "  Trust:        1 changed\n",
+            "\n",
+            "  ─  ─  ─  ─  ─  ─  ─  ─  ─  ─  ─  ─  ─  ─  ─  ─  ─  ─  ─  ─  ─  ─  ─  ─  ─  ─  ─  ─  ─  ─\n",
+            "\n",
+            "General:\n",
+            "  co-author trailer: disabled → enabled\n",
+            "\n",
+            "Mounts:\n",
+            "  + [role] ~/.cache → /cache\n",
+            "  - ~/.cargo → /cargo (ro)\n",
+            "\n",
+            "Environments:\n",
+            "  + NEW = 2\n",
+            "  - OLD\n",
+            "\n",
+            "Accounts:\n",
+            "  + Work [work] (updated; enabled; credential hidden)\n",
+            "\n",
+            "Trust:\n",
+            "  + architect  trusted",
+        )
+    );
+}

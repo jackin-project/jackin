@@ -1,0 +1,36 @@
+---
+title: "Console Agent Session Control: Product Model and Design Rationale"
+description: Explains the product model behind tree-based agent-session controls, row actions, and multiplexer integration.
+---
+
+**Research state:** Reference
+
+## Summary
+
+Agent sessions belong as children of their container, with row-local actions and multiplexer state exposed in the same tree.
+
+This page preserves the product reasoning behind [Console agent session control](/roadmap/console-agent-session-control/); current behavior lives in canonical product documentation.
+
+## Research question
+
+Raw container commands leak Docker details into normal operator work. A shell in a running environment can be opened with a command such as:
+
+```sh
+docker exec -ti jackin-chainargos__agent-brown zsh
+```
+
+When the operator wanted to reconnect to the original foreground agent, the path was `jackin hardline <container-name>`. That worked for one primary process, but it gave the console no first-class model of "this workspace or directory has one isolated container with multiple active agent sessions inside it."
+
+The missing product model was a running container as an isolated collaboration environment, with one or more agent sessions inside it. The operator needed to be able to open `jackin console`, see all running instances for configured workspaces and ad-hoc directories, see each agent role and exact agent session inside those containers, attach to one, start another, open a shell, or hardline the original agent without remembering Docker names.
+
+## Current product goals
+
+- Operators can open a shell in a running role container from CLI and console without typing `docker exec`.
+- Operators can see which configured workspaces and ad-hoc directories have running or preserved instances.
+- Operators can see which agent sessions are running inside each instance.
+- Operators can reconnect to the primary session through the console.
+- Operators can start and reconnect to a secondary agent session inside the same container.
+- Exiting one agent session does not stop the container or other concurrent sessions.
+- Raw Docker container names are no longer required for normal shell, hardline, or session attach flows.
+
+These goals are why the console models a container as a tree node with expandable instance-session children, rather than a flat list of containers or a single "attach" action — the container is the collaboration environment, and the tree exposes the sessions living inside it as first-class rows with their own action set (reconnect, new session, shell, stop, purge). See [Console Agent Session Control](/roadmap/console-agent-session-control/) for delivery state.

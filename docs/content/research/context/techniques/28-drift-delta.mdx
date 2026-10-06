@@ -1,0 +1,51 @@
+---
+title: "28 — Provider-sensitive claim verification"
+description: "Verification contract for model, pricing, quota, cache, beta, and tool claims that can drift between provider releases."
+---
+
+## Summary
+
+No provider-sensitive value on this page is actionable until the dossier is refreshed under one declared cutoff.
+
+Provider claims age at different rates. Model availability, prices, quota behavior, cache semantics, beta headers, and tool compatibility need primary-source verification as one atomic refresh; old and new values must never coexist as a correction ledger.
+
+## Question and scope
+
+How should the dossier represent volatile provider facts without preserving superseded claims?
+
+## Method
+
+For each provider, verify official documentation, product announcements, and release notes at the same cutoff. Record source URLs and access dates in the owning chapter. Run local measurements only when the method, input, tool version, and limitations are reproducible from the repository.
+
+## Findings
+
+### Findings
+
+- One refresh declares one cutoff for every provider-sensitive chapter it touches.
+- Owning chapters state only the verified current value and link the primary source.
+- A changed claim replaces the old prose. Git history preserves the prior state.
+- Unverified or conflicting evidence yields `Needs refresh`, not an inferred value.
+- Product chronology, rollout progress, and implementation status belong outside Research.
+
+## Implications for jackin❯
+
+### How to use this page
+
+Treat this as the refresh contract, not a fact register. Consult the owning chapter for a verified claim. If its cutoff is absent or older than a relevant provider release, mark it `Needs refresh` and avoid the value.
+
+## Limitations and unknowns
+
+- The provider-sensitive chapters have not yet completed a single-cutoff refresh.
+- Undocumented subscription weighting and private response headers cannot support exact public formulas.
+- Local credentials and private host state are not reproducible research evidence.
+
+## Sources
+
+This page defines verification policy rather than external product facts. The policy applies to the primary-source ledgers in [Economics and measurement](/research/context/techniques/01-economics-and-measurement/), [Provider-level features](/research/context/techniques/12-provider-features/), and [Evidence and claims](/research/context/tools/07-evidence-and-claims/).
+
+## Related work
+
+- [Literature and market evidence map](/research/context/techniques/24-fresh-literature-and-market-delta/)
+- [Economics and measurement](/research/context/techniques/01-economics-and-measurement/)
+- [Validation harness](/research/context/techniques/16-validation-harness/)
+- [Evidence and claims](/research/context/tools/07-evidence-and-claims/)

@@ -1,0 +1,11 @@
+{
+  "title": "Host affordance bridge",
+  "defaultOpen": false,
+  "pages": [
+    "index",
+    "01-host-affordance-evidence",
+    "02-product-contract",
+    "03-architecture-and-security",
+    "04-alternatives-and-open-questions"
+  ]
+}

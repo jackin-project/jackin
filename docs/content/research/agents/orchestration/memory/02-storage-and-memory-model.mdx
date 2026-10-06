@@ -1,0 +1,182 @@
+---
+title: "02 — Storage and memory data model"
+description: Defines per-instance persistence tables, cross-agent memory scopes, provenance, read policy, and write authority.
+---
+
+## Summary
+
+Per-instance SQLite stores runtime events and auditable memory records. Memory is scoped, provenance-bearing, policy-controlled, and delivered through runtime-neutral briefs rather than direct database access.
+
+## Question and scope
+
+What relational model can support runtime state and cross-agent memory while preserving scope, provenance, auditability, and bounded retention?
+
+## Method
+
+The model applies the prior-art requirements to the existing Turso constraint, then tests table ownership against delivery, lifecycle, and concurrency boundaries.
+
+## Findings
+
+### Storage shape
+
+One SQLite database **per instance**, at
+`~/.jackin/data/<container>/jackin.db`. Schema versioned via
+embedded migrations. "SQLite-first" names the on-disk **format**, not the client: all SQLite access uses `turso` (the workspace's single, async DB stack, already used by the Capsule-local cache) — never `rusqlite`, Diesel-on-SQLite, or any other binding. A sync caller makes its path async rather than reaching for a sync client. Document the production rationale in an ADR before promoting the current in-container cache pattern.
+
+### Data model
+
+```sql
+-- Status transitions. Rolling N=10000 entries, then trim oldest.
+CREATE TABLE status_log (
+    id INTEGER PRIMARY KEY,
+    occurred_at INTEGER NOT NULL,            -- epoch seconds
+    new_status TEXT NOT NULL,                -- 'idle' | 'busy' | 'question' | ...
+    metadata TEXT                            -- optional JSON blob (e.g. prompt for 'question')
+);
+
+-- Captured agent tag emissions. Idempotent on (kind, value).
+CREATE TABLE agent_tags (
+    kind TEXT NOT NULL,                      -- 'repo' | 'issue' | 'pr' | 'link'
+    value TEXT NOT NULL,
+    first_seen INTEGER NOT NULL,
+    last_seen INTEGER NOT NULL,
+    PRIMARY KEY (kind, value)
+);
+
+-- GitHub link cache. Owned by github-link-tracking; defined here so
+-- the schema is in one place.
+CREATE TABLE github_link_statuses (
+    url TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    host TEXT NOT NULL,
+    owner TEXT NOT NULL,
+    repo TEXT NOT NULL,
+    resource_number INTEGER NOT NULL,
+    issue_state TEXT,
+    pr_state TEXT,
+    build_state TEXT,
+    review_state TEXT,
+    pr_is_draft INTEGER,                     -- 0/1
+    fetched_at INTEGER NOT NULL,
+    refresh_after INTEGER NOT NULL,
+    last_error TEXT
+);
+
+-- Token / cost samples. Rolling N=86400 entries (~1/sec for 24h).
+-- `instance` is implicit in the per-instance DB file path; not stored per-row.
+-- `session_id` is the Capsule session ID assigned over the in-container control
+-- channel (`session.create` reply, also visible as the leftmost column in
+-- `tmux list-sessions` analogues). There is no `sessions` table so this
+-- column has no FOREIGN KEY; sessions are owned by the running jackin-capsule
+-- daemon, not by the SQLite schema.
+CREATE TABLE usage_samples (
+    id INTEGER PRIMARY KEY,
+    occurred_at INTEGER NOT NULL,            -- epoch seconds
+    session_id INTEGER,                      -- Capsule session id; null when sample is not session-attributed
+    workspace TEXT,
+    provider TEXT NOT NULL,                  -- Agent::slug() from src/agent/mod.rs
+    model TEXT NOT NULL,
+    token_input INTEGER,
+    token_output INTEGER,
+    token_cache_read INTEGER,
+    token_cache_write INTEGER,
+    cost_usd_micros INTEGER,                 -- $cost * 1e6, integer-safe
+    source_hash TEXT                         -- optional scanner/stream event hash for dedupe; never raw prompt text
+);
+CREATE INDEX usage_samples_by_time ON usage_samples (occurred_at);
+CREATE INDEX usage_samples_by_session ON usage_samples (session_id, occurred_at);
+CREATE INDEX usage_samples_by_workspace ON usage_samples (workspace, occurred_at);
+CREATE UNIQUE INDEX usage_samples_by_source_hash
+    ON usage_samples (source_hash)
+    WHERE source_hash IS NOT NULL;
+
+-- Tool fire audit. Rolling N=1000 entries.
+CREATE TABLE tool_history (
+    id INTEGER PRIMARY KEY,
+    occurred_at INTEGER NOT NULL,
+    tool_key TEXT NOT NULL,
+    exit_code INTEGER,
+    duration_ms INTEGER
+);
+
+-- Workspace/run memory. stores text plus metadata; semantic indexes
+-- and external memory backends remain outside the core relational model unless evidence justifies them.
+CREATE TABLE memory_items (
+    id TEXT PRIMARY KEY,
+    scope_kind TEXT NOT NULL,                -- 'operator' | 'workspace' | 'role' | 'run' | 'workflow'
+    scope_key TEXT NOT NULL,
+    kind TEXT NOT NULL,                      -- 'preference' | 'project_fact' | 'workflow_rule' | 'review_feedback' | 'run_summary'
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    source TEXT NOT NULL,                    -- 'operator' | 'agent' | 'workflow' | 'import'
+    source_session_id INTEGER,
+    source_run_id TEXT,
+    confidence TEXT NOT NULL,                -- 'operator_asserted' | 'agent_inferred' | 'verified' | 'stale'
+    read_policy TEXT NOT NULL,               -- 'always' | 'workflow' | 'agent' | 'manual'
+    write_policy TEXT NOT NULL,              -- 'operator_only' | 'agent_append' | 'workflow_append'
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    expires_at INTEGER,
+    supersedes_id TEXT
+);
+CREATE INDEX memory_items_by_scope ON memory_items (scope_kind, scope_key, updated_at);
+CREATE INDEX memory_items_by_kind ON memory_items (kind, updated_at);
+
+-- Memory access audit. This is deliberately separate from memory_items so
+-- retrieval/injection can be inspected without mutating the memory row.
+CREATE TABLE memory_events (
+    id INTEGER PRIMARY KEY,
+    occurred_at INTEGER NOT NULL,
+    memory_id TEXT,
+    event_kind TEXT NOT NULL,                -- 'created' | 'read' | 'served_to_agent' | 'updated' | 'superseded' | 'hidden'
+    actor_kind TEXT NOT NULL,                -- 'operator' | 'agent' | 'workflow' | 'system'
+    actor_id TEXT,
+    session_id INTEGER,
+    run_id TEXT,
+    metadata TEXT
+);
+CREATE INDEX memory_events_by_memory ON memory_events (memory_id, occurred_at);
+CREATE INDEX memory_events_by_run ON memory_events (run_id, occurred_at);
+
+-- Schema version. One row.
+CREATE TABLE _meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+```
+
+### Cross-agent memory model
+
+Memory is not a replacement for role packages, docs, or AGENTS files. It is the durable, queryable layer for context that is discovered or refined while work happens.
+
+| Memory scope | Example | Default lifetime | Default write policy |
+|---|---|---|---|
+| `operator` | "During PR review, address every confirmed finding in the same pass." | Until changed by operator | Operator-only |
+| `workspace` | "This repo uses roadmap pages as source-of-truth specs before implementation." | Until changed or superseded | Operator-only or workflow-append |
+| `role` | "Security reviewer should prefer exploitability evidence over style comments." | Until changed by operator/role owner | Operator-only |
+| `run` | "The operator manually verified the UI before review cycle 2." | Run retention window | Workflow-append |
+| `workflow` | "The `pr-review-fix-cycle` profile runs Claude, Codex, then Claude again before final operator verification." | Until profile changes | Operator-only |
+
+The reader should be conservative. It should assemble a small "memory brief" before launching a session, ordered by scope specificity and provenance: workflow/run memory, workspace memory, role memory, then operator memory. The brief is delivered through runtime adapters: native memory/skill directories where safe, prompt preamble for runtimes without a stable memory API, and an MCP memory server once the [host bridge](/roadmap/host-bridge/) and MCP surfaces exist. The agent should see the memory content and provenance, not the raw SQLite path.
+
+The writer should be even stricter. Agents may propose memory items or append run summaries, but automatic mutation of durable operator/workspace memory should require either an explicit operator command or a workflow-controlled append policy. This avoids the failure mode where one confused reviewer teaches every future agent a bad rule. Contradictions should create a new item that supersedes the old one instead of editing history in place; the audit table records the supersession.
+
+
+## Implications for jackin❯
+
+Use one versioned per-instance database for runtime state, but expose memory through policy-enforcing APIs and preserve provenance rather than granting agents direct file access.
+
+## Limitations and unknowns
+
+- Physical workspace-memory placement must survive instance purge without creating competing authorities.
+- Retrieval should remain explicit and operator-curated unless measured use justifies semantic indexing.
+- Durable operator preferences and project facts require operator authority; agent and workflow writes stay constrained by policy.
+
+## Sources
+
+- [Memory requirements and prior art](/research/agents/orchestration/memory/01-requirements-and-prior-art/)
+
+## Related work
+
+- [Persistent storage and memory overview](/research/agents/orchestration/memory/)
+- [Delivery, lifecycle, and concurrency](/research/agents/orchestration/memory/03-delivery-lifecycle-and-concurrency/)

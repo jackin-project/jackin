@@ -1,0 +1,12 @@
+{
+  "title": "Developer Reference",
+  "defaultOpen": false,
+  "pages": [
+    "index",
+    "architecture",
+    "code-tour",
+    "lint-policy",
+    "domain-newtypes-census",
+    "specs"
+  ]
+}

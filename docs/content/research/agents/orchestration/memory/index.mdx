@@ -1,0 +1,49 @@
+---
+title: "Persistent storage and workspace memory"
+description: Defines durable runtime storage and a policy-controlled memory layer shared across agent runtimes.
+---
+
+**Research state:** Incomplete
+
+**Verification cutoff:** 2026-08-12. Revalidate external storage and memory-system capabilities after this date.
+
+## Research question
+
+How should jackin❯ persist runtime events, account quota, task state, and cross-agent workspace memory while preserving isolation, provenance, lifecycle, and operator authority?
+
+## Headline findings
+
+- One structured storage layer avoids competing JSON files and gives status, GitHub, usage, tool, task, and memory consumers a consistent migration and retention model.
+- Runtime state belongs in per-instance SQLite storage; provider account quota belongs in a daemon-global cache with one host-side writer.
+- Workspace memory is distinct from packaged skills and prompts. It stores mutable preferences, project facts, workflow rules, review outcomes, and run summaries.
+- Memory records need explicit scope, provenance, confidence, read/write policy, expiry, supersession, and access audit.
+- Agents consume small runtime-neutral memory briefs through controlled adapters or MCP operations; they never open host storage directly.
+- Per-instance and daemon-global databases require separate lifecycle and concurrency rules.
+
+## Method and evidence
+
+The design combines current jackin❯ runtime and telemetry needs with OpenMemory/Mem0, Letta shared blocks, Zep/Graphiti, runtime-native memory formats, multicode’s SQLite layout, and the workspace’s Turso storage constraint.
+
+## Limitations and open questions
+
+- Choose the physical home for workspace memory so it survives instance purge without creating another authority.
+- Document Turso production posture, migrations, multi-process behavior, and backup/export in an ADR.
+- Validate explicit retrieval and operator curation before adding semantic indexes or external memory backends.
+- Define which workflow-generated summaries and findings may append automatically.
+- Keep durable operator preferences and project facts operator-controlled unless an accepted policy grants narrower write authority.
+
+## How to read
+
+1. [Memory requirements and prior art](/research/agents/orchestration/memory/01-requirements-and-prior-art/) establishes the product need and compares adjacent systems.
+2. [Storage and memory data model](/research/agents/orchestration/memory/02-storage-and-memory-model/) defines tables, scopes, provenance, audit, and memory briefs.
+3. [Delivery, lifecycle, and concurrency](/research/agents/orchestration/memory/03-delivery-lifecycle-and-concurrency/) defines APIs, global quota ownership, migrations, concurrency, trimming, and open policy.
+
+## Related work
+
+- [Agent Orchestration Program](/research/agents/orchestration/program-research/)
+- [Token and cost telemetry](/research/agents/telemetry/token-cost-telemetry/)
+- [GitHub link tracking](/roadmap/github-link-tracking/)
+- [Autonomous task queue](/roadmap/autonomous-task-queue/)
+- [Agent workflow orchestration](/research/agents/orchestration/workflow-systems/agent-workflow-orchestration/)
+- [Native APM support](/research/agents/runtimes/package-manager-support/native-apm-role-support/)
+- [Architecture Decision Records](/reference/adrs/)

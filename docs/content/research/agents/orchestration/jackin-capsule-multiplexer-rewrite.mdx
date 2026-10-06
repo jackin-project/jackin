@@ -1,0 +1,78 @@
+---
+title: "jackin❯ Capsule multiplexer design rationale"
+description: "Explains the terminal, protocol, and compatibility decisions behind the current jackin❯ Capsule multiplexer architecture."
+---
+
+**Research state:** Reference
+
+## Summary
+
+The current Capsule architecture separates terminal emulation, protocol, and compatibility concerns so obsolete hand-rolled terminal behavior cannot corrupt modern agent TUIs.
+
+## Failure modes that shaped the design
+
+Five failure classes define non-negotiable invariants for the current architecture:
+
+1. **Complete terminal-mode semantics.** Dropping DEC private modes such as alternate screen (`\x1b[?1049h`), cursor visibility (`\x1b[?25h/l`), application cursor keys (`\x1b[?1`), bracketed paste (`\x1b[?2004`), or mouse modes (`\x1b[?1000-1006`) leaves modern agent TUIs blank or garbled. The `termpane` `DamageGrid` owns those semantics; [Capsule Terminal Model](/reference/capsule/terminal-model/) documents the boundary.
+2. **Prefix-key input routing.** `Ctrl+J` and line feed are the same byte (`0x0A`), so a single-byte palette binding consumes legitimate newlines from paste or TUI input. The prefix-key state machine in [jackin❯ Capsule](/reference/capsule/#input-routing) separates multiplexer commands from agent bytes.
+3. **PID 1 survives session failure.** Session exit cannot terminate the daemon, because terminating PID 1 stops the container. The daemon persists until `SIGTERM` and reports individual session state independently.
+4. **Mouse events follow pane geometry and negotiated mode.** Dropped or globally forwarded events break selection, scrolling, and agent controls. <RepoFile path="crates/jackin-capsule/src/tui/daemon/mouse_input.rs">crates/jackin-capsule/src/tui/daemon/mouse_input.rs</RepoFile> owns pane-relative re-encoding, hover feedback, scrollbar drag, and text selection.
+5. **The hot path carries raw bytes.** Rebuilding a full grid, encoding it as text, and wrapping it in JSON multiplies work for every PTY chunk. The attach channel uses tag-plus-length binary frames for raw PTY bytes; see [jackin❯ Capsule](/reference/capsule/#unix-socket-and-wire-protocol).
+
+Related invariants follow from the same failures: single-tab layouts omit unnecessary borders, tab click regions include state-glyph width, reattach retains its outbound sender, and the client propagates `SIGWINCH`.
+
+## Architectural reference: Zellij
+
+[Zellij](https://github.com/zellij-org/zellij) is the closest architectural reference. It is Apache-2.0 and solves the same class of problem at larger scope. The current design aligns on these boundaries:
+
+- **Client-server split over a Unix domain socket.** The server owns all PTYs, all VT state, all tabs/panes; the client owns user input and rendering. Detach and reattach leave PTYs running.
+- **Typed instruction bus.** Zellij's server threads talk over MPSC channels carrying typed enums. jackin❯ remains single-threaded enough to avoid a full bus while retaining typed enums over channels in the daemon's `tokio::select!` loop.
+- **Per-pane VT state, replayed on switch.** The server keeps a grid for every pane, including non-visible ones; switching tabs replays the target pane from its saved screen instead of asking the program to redraw.
+- **Binary protocol on the hot path.** Zellij uses protobuf; jackin❯ uses simpler tag-plus-length-prefix binary framing. The durable rule is to keep base64-inside-JSON off the hot path.
+
+Zellij carries scope jackin❯ does not need: multi-client collaboration, WASM plugins, scrollback search, and copy-mode regex.
+
+## Prior art: Herdr
+
+[Herdr](https://github.com/ogulcancelik/herdr) is the closest public reference for the multiplexer-server concept: a single Rust binary managing multiple AI coding agents with per-project workspace grouping, four-state status tracking, a Unix socket API, and session persistence across client detach. The comparative table against other tools lives in [Agent Orchestration Program](/research/agents/orchestration/program-research/). Herdr's AGPL-3.0 license limits this comparison to independently implemented UI and interaction patterns.
+
+Herdr wraps **bare host processes**; jackin❯ wraps **Docker containers**. When Herdr sees `docker attach` rather than the agent itself, its foreground-process and screen heuristics degrade — it is watching the wrong process. `jackin-capsule` runs *inside* the container and reads the agent's PTY output directly, which is why the same heuristic approach is reliable for jackin❯ in a way it structurally cannot be for Herdr wrapping a container.
+
+**Supported structural UI patterns:**
+
+- **Top-of-screen chrome** — a brand pill on the left followed by one tab per active session, active tab visually distinct, tab labels carrying the rolled-up state glyph.
+- **Empty initial state when no agent is preselected** — brand header, zero tabs, a centred hint listing configured agents plus `Shell`, matching `jackin console`'s no-preselection launch path.
+- **Per-tab "most urgent" state roll-up** — a tab containing any `blocked` pane is `blocked`; otherwise `done`; otherwise `working`; otherwise `idle`. This priority order (`blocked > done > working > idle > unknown`) drives the in-container tab-strip glyph (`tab_label` in <RepoFile path="crates/jackin-capsule/src/tui/components/status_bar.rs">crates/jackin-capsule/src/tui/components/status_bar.rs</RepoFile>, computed inline). <RepoFile path="crates/jackin-agent-status/src/arbitrate.rs">crates/jackin-agent-status/src/arbitrate.rs</RepoFile> also exposes a reusable `roll_up_states` helper with the same priority order and unit tests, but production routing must use the same authority — it is the natural building block for the host-side per-instance roll-up.
+
+**Concepts supported by the comparison:**
+
+- **Two-stage done state.** `done` (work finished, not yet reviewed) vs. `idle` (reviewed or empty) prevents an autonomous task queue from refilling a slot before operator acknowledgement. The current authority is `SessionStatus::acknowledge()` in <RepoFile path="crates/jackin-agent-status/src/lib.rs">crates/jackin-agent-status/src/lib.rs</RepoFile>.
+- **Notification suppression when already looking** and **sound escalation as opt-in** — validated design inputs for [agent attention prompts](/research/agents/orchestration/agent-attention-prompts-design/), which is still an open roadmap item.
+- **Blocking `wait` semantics on the socket** — Herdr's `herdr wait agent-status 1-1 --status done` is a better interface than polling for automation scripts. This is validated design input whose delivery belongs to Roadmap: the control channel in <RepoFile path="crates/jackin-protocol/src/control.rs">crates/jackin-protocol/src/control.rs</RepoFile> is request/reply only today (`Status`, `Snapshot`, `Agents`, `ReportRuntimeEvent`, `StatusCapture`, the `Usage*` family, `TokenUsage`), with no blocking-wait or streaming-subscribe method. Delivery is tracked by the [jackin❯ Capsule roadmap item](/roadmap/jackin-capsule/).
+- **Layered state authority** — foreground process state, visible-screen signals, and semantic integration reports combine into one arbitration result. The [agent runtime status authority](/roadmap/agent-runtime-status/) owns its current contract.
+
+**Explicit exclusions:** Herdr's bare-host PTY substrate does not fit a container-internal, statically linked binary; its theme system conflicts with the fixed jackin❯ palette; its SSH tunneling has a different threat model from [jackin-remote](/roadmap/jackin-remote/); and its wire protocol does not match the jackin❯ data model.
+
+## Terminal compatibility requirements
+
+Five observable behaviors keep agent TUIs compatible across terminal implementations. [Multiplexer design rules](/reference/capsule/multiplexer-design-rules/#reference-tmux-options-we-replicate) owns their canonical contract.
+
+| Behavior | Compatibility requirement | Current mechanism |
+|---|---|---|
+| Extended keys | Agent TUIs do not consistently emit per-application activation escapes | The attach channel forwards raw bytes both directions, so kitty keyboard and CSI-u sequences round-trip unchanged |
+| Focus events | Claude Code and Codex pause animations and polling on focus-out | The daemon tracks a per-pane outer-terminal-focus flag and synthesizes events only for the focused pane in the active tab |
+| Controlled passthrough | Notifications, progress, clipboard, and titles need explicit handling | OSC sequences forward from the focused pane only. OSC 52 clipboard writes are default-deny behind `JACKIN_OSC52=allow`; other families have per-family operator opt-outs |
+| Escape disambiguation | Delayed bare `ESC` handling can misfire vi-mode navigation | `JACKIN_ESCAPE_TIME` controls the bare-escape deadline while complete sequences survive chunk boundaries |
+| Mouse reporting | Clicks, drags, and scroll must reach TUIs that negotiate reporting | The outer terminal uses any-event SGR tracking, re-encoded per pane's negotiated protocol and encoding |
+
+## Ghostty compatibility notes
+
+The operator runs jackin❯ inside [Ghostty](https://ghostty.org/), whose feature set is wider than xterm's. The current compatibility contract lives in [Multiplexer design rules](/reference/capsule/multiplexer-design-rules/): kitty keyboard protocol pass-through, true-color/OSC 10-11 answered from the pane grid's stored palette, bracketed paste, OSC 52 clipboard, scheme-filtered OSC 8 hyperlinks, and synchronized output (`?2026`) absorbed by the grid. The Capsule `ClientWriter` brackets every composed frame; forwarding an agent's markers verbatim could let a dropped ESU freeze the outer terminal.
+
+Two Ghostty features remain outside the current compatibility contract: the kitty graphics protocol (inline images via APC `\x1b_G…\x1b\\`) and Sixel graphics. Their required behavior is focused-pane forwarding with silence for backgrounded panes, matching the OSC passthrough model. `termpane` has no `PassthroughEvent` variant or session-level APC/Sixel handling, so the grid's default-deny policy drops these sequences. The [jackin❯ Capsule roadmap item](/roadmap/jackin-capsule/) owns this gap.
+
+## Code touchpoints
+
+Cleanup depends on `finalize_foreground_session` in <RepoFile path="crates/jackin-isolation/src/finalize.rs">crates/jackin-isolation/src/finalize.rs</RepoFile> and teardown coverage in <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile>. Terminal-state ownership and the current `termpane` model are documented in [Capsule Terminal Model](/reference/capsule/terminal-model/).
+
+The current control channel uses request/reply methods (`Status`, `Snapshot`, `Agents`, `ReportRuntimeEvent`, `StatusCapture`, the `Usage*` family, `TokenUsage`, `ExecCommand`) defined in <RepoFile path="crates/jackin-protocol/src/control.rs">crates/jackin-protocol/src/control.rs</RepoFile>. Session creation belongs to the attach channel's `Hello { spawn }` frame, while daemon-side operator actions handle session close and title behavior. Structured host-callable kill/title methods and a streaming event channel remain open on the [jackin❯ Capsule roadmap item](/roadmap/jackin-capsule/).

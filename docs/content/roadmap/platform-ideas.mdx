@@ -1,0 +1,41 @@
+---
+title: Platform ideas
+description: Unscheduled implementation ideas that need promotion before work begins
+---
+
+**Status**: Exploring
+
+**Outcome**: Keep promising implementation directions visible without implying that they are designed, sequenced, or committed.
+
+## Security and trust
+
+- **Indirect prompt-injection boundary** — constrain what untrusted repository, issue, web, and tool content can cause an agent to disclose or execute.
+- **MCP gateway** — govern server identity, tool names, approvals, write/execute policy, rate limits, and audit events between agents and MCP servers.
+- **Credential proxy** — deliver narrowly scoped credentials on demand without persisting reusable provider tokens inside a session.
+- **Blast-radius summary** — make `jackin doctor` and launch surfaces show the effective isolation, egress, credential, and sensitive-mount posture.
+
+## Fleet quality and control
+
+- **Outcome evaluation harness** — run repeatable tasks across runtime, provider, and role combinations, then score verifiable outcomes.
+- **Budget enforcement** — pause or stop autonomous work at operator-defined quota bounds rather than reporting usage only.
+- **AI-generated-code provenance** — associate sessions and turns with produced diffs so review and audit can target agent-authored changes.
+
+## Models and tools
+
+- **OpenTelemetry GenAI export** — emit governed agent and MCP events using current semantic conventions.
+- **Local and hybrid model routing** — run local model engines inside the managed boundary and route work by declared policy.
+- **Sandboxed browser and computer use** — give web-focused agents a browser sidecar inside the same isolation and egress contract.
+
+## Platform expansion
+
+- **Kubernetes backend** — run scoped agent sessions on Kubernetes while preserving the same workspace, identity, policy, and lifecycle contracts.
+
+## Promotion gate
+
+Before implementation, move one idea into its own roadmap item with an explicit outcome, current state, remaining work, completion gate, and related research. Until then every entry remains unscheduled.
+
+## Related research
+
+- [Platform gap scan](/research/product/future-directions/platform-ideas-scan/)
+- [Agent-to-agent collaboration](/research/agents/orchestration/multi-agent-collaboration/)
+- [Process-level sandboxing](/research/platform/security/process-sandboxing/)

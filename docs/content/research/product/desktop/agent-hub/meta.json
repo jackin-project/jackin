@@ -1,0 +1,10 @@
+{
+  "title": "Agent hub",
+  "defaultOpen": false,
+  "pages": [
+    "index",
+    "01-native-desktop-references",
+    "02-product-surfaces",
+    "03-daemon-integration-architecture"
+  ]
+}
