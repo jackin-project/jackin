@@ -472,14 +472,13 @@ fn selected_account_route_dto(route: HostSelectedAccountRoute) -> SelectedAccoun
             account_key: Some(account_key),
             notice: None,
         },
-        HostSelectedAccountRoute::Unavailable {
-            account_key,
-            notice,
-        } => SelectedAccountRouteDto {
-            status: "unavailable".to_owned(),
-            account_key: Some(account_key),
-            notice: Some(notice.to_owned()),
-        },
+        HostSelectedAccountRoute::Unavailable { account_key, notice } => {
+            SelectedAccountRouteDto {
+                status: "unavailable".to_owned(),
+                account_key: Some(account_key),
+                notice: Some(notice.to_owned()),
+            }
+        }
     }
 }
 

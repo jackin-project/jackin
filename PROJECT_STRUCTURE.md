@@ -75,19 +75,30 @@ For runtime behavior, see [The Construct Image](https://jackin.tailrocks.com/dev
 
 | Workflow | Triggers |
 |---|---|
+| `cache-cleanup.yml` | Manual/scheduled cleanup of cached CI artifacts |
+| `ci-policy.yml` | Pull-request-target workflow-policy and actionlint validation |
 | `ci-pr.yml` | Generated pull-request validation: policy plus affected Bun, Docker, Rust, and Swift units |
 | `ci-main.yml` | Generated `main`-push validation: policy plus affected/full Bun, Docker, Rust, and Swift units |
-| `ci-policy.yml` | Pull-request-target workflow-policy and actionlint validation |
 | `ci-unit-bun.yml` | Reusable Bun unit, including the `docs/` build and test surface |
 | `ci-unit-docker.yml` | Reusable Docker image unit |
-| `ci-unit-rust.yml` | Reusable Rust unit |
+| `ci-unit-rust.yml` | Reusable Rust unit, first shard |
+| `ci-unit-rust-2.yml` | Reusable Rust unit, second shard |
 | `ci-unit-swift.yml` | Reusable Swift/Xcode unit |
+| `construct.yml` | Builds and publishes the construct base Docker image on push to `main`; pull-request rehearsal builds without publishing |
+| `desktop-cadence.yml` | Heavier desktop merge and scheduled cadences on `main` pushes, schedule, and manual dispatch |
 | `desktop-merge.yml` | Desktop merge cadence on pushes to `main` and manual dispatch |
 | `desktop-scheduled.yml` | Weekly desktop cadence plus manual dispatch, including the dead-code scan |
-| `maintenance.yml` | Closed-PR cache cleanup and scheduled/manual maintenance |
+| `docs.yml` | Builds and deploys the documentation site on push to `main`; link and spell checks on pull requests |
+| `hygiene.yml` | Repository hygiene checks on pull requests and manual dispatch |
+| `jackin-dev.yml` | Version-bump validation, desktop release validation/build/sign, and Homebrew promotion |
+| `maintenance.yml` | Closed-pull-request cache cleanup and scheduled/manual maintenance |
 | `nightly.yml` | Scheduled nightly validation and manual dispatch |
+| `preview.yml` | Publishes the Homebrew preview formula after successful `main` CI; manual dispatch supports validation or publishing |
 | `release.yml` | `v[0-9]*` tag signing and publication; manual dispatch runs release validation only |
 | `renovate-upstream-sources.yml` | Push, pull-request, and manual validation of Renovate upstream sources |
+| `renovate.yml` | Self-hosted Renovate dependency-update runner |
+| `renovate-validate.yml` | Verifies upstream sources targeted by Renovate's `customManagers` still resolve |
+| `reuse-compliance.yml` | REUSE license-compliance lint on pushes and pull requests |
 
 ## Code ↔ docs cross-reference
 

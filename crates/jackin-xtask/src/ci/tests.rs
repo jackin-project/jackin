@@ -3,6 +3,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use toml::Value;
+
 use super::{CiArgs, e2e_selected, parse_capsule_export, step_names, validate_capsule_path};
 
 #[test]
@@ -83,55 +85,233 @@ fn workspace_file(path: &str) -> String {
     fs::read_to_string(workspace_root().join(path)).expect("workspace file")
 }
 
-fn assert_no_sccache_env(text: &str, context: &str) {
+fn assert_sccache_env(value: &Value, context: &str) {
+    let env = value
+        .get("env")
+        .and_then(Value::as_table)
+        .unwrap_or_else(|| panic!("{context} has no env table"));
+    for (name, expected) in [
+        ("CARGO_INCREMENTAL", "0"),
+        ("RUSTC_WRAPPER", "sccache"),
+        ("SCCACHE_GHA_ENABLED", "true"),
+    ] {
+        assert_eq!(
+            env.get(name).and_then(Value::as_str),
+            Some(expected),
+            "{context} has the wrong {name}"
+        );
+    }
+}
+
+#[test]
+fn sccache_env_is_bound_only_to_provisioned_cargo_profiles() {
+    let config: Value = toml::from_str(&workspace_file(".github-gen/velnor-workflow.toml"))
+        .expect("parse Velnor workflow config");
+    let profiles = config
+        .get("check_profile")
+        .and_then(Value::as_array)
+        .expect("check profiles");
+    let mut sccache_profile_ids = Vec::new();
+    for profile in profiles {
+        let id = profile
+            .get("id")
+            .and_then(Value::as_str)
+            .expect("check profile id");
+        let has_sccache = profile
+            .get("tools")
+            .and_then(Value::as_array)
+            .is_some_and(|tools| {
+                tools
+                    .iter()
+                    .any(|tool| tool.as_str() == Some("cargo:sccache"))
+            });
+        let env = profile.get("env").and_then(Value::as_table);
+        if has_sccache {
+            sccache_profile_ids.push(id);
+            assert_sccache_env(profile, &format!("check profile {id}"));
+        } else if let Some(env) = env {
+            assert!(
+                !env.contains_key("RUSTC_WRAPPER"),
+                "{id} has an unprovisioned wrapper"
+            );
+            assert!(
+                !env.contains_key("SCCACHE_GHA_ENABLED"),
+                "{id} enables an unprovisioned sccache backend"
+            );
+        }
+    }
+    assert_eq!(
+        sccache_profile_ids,
+        ["desktop-merge", "desktop-scheduled"],
+        "all cargo:sccache check profiles must be wired"
+    );
+
+    let units = config
+        .get("units")
+        .and_then(Value::as_array)
+        .expect("units");
+    let design_unit_id = "swift-package-native-design-prototypes-unifiedagentusage";
+    let design_unit = units
+        .iter()
+        .find(|unit| unit.get("id").and_then(Value::as_str) == Some(design_unit_id))
+        .unwrap_or_else(|| panic!("unit {design_unit_id}"));
+    assert!(
+        design_unit
+            .get("mise_tools")
+            .and_then(Value::as_array)
+            .is_some_and(|tools| {
+                tools
+                    .iter()
+                    .any(|tool| tool.as_str() == Some("cargo:sccache"))
+            }),
+        "Swift member {design_unit_id} must provision the shared wrapper"
+    );
+    for id in [
+        "swift-package-native",
+        "swift-xcodegen-native-project-yml-jackindesktop",
+    ] {
+        let unit = units
+            .iter()
+            .find(|unit| unit.get("id").and_then(Value::as_str) == Some(id))
+            .unwrap_or_else(|| panic!("unit {id}"));
+        let env = unit.get("env").and_then(Value::as_table).expect("unit env");
+        assert_eq!(env.len(), 3, "{id} has unsupported extra env fields");
+        assert_sccache_env(unit, &format!("unit {id}"));
+    }
+
+    let swift = workspace_file(".github/workflows/ci-unit-swift.yml");
     for line in [
-        "CARGO_INCREMENTAL: \"0\"",
-        "RUSTC_WRAPPER: sccache",
-        "SCCACHE_GHA_ENABLED: \"true\"",
-        "CARGO_INCREMENTAL=0",
-        "RUSTC_WRAPPER=sccache",
-        "SCCACHE_GHA_ENABLED=true",
+        "  CARGO_INCREMENTAL: \"0\"",
+        "  RUSTC_WRAPPER: sccache",
+        "  SCCACHE_GHA_ENABLED: \"true\"",
     ] {
-        assert!(!text.contains(line), "{context} exports `{line}`");
+        assert!(swift.contains(line), "Swift reusable job lacks `{line}`");
     }
-}
+    assert!(
+        swift.find("- name: Set up Mise tools") < swift.find("- name: Run unit checks"),
+        "Swift wrapper must be installed before checks"
+    );
 
-#[test]
-fn sccache_is_absent_from_generated_workflow_environment() {
     for workflow in [
-        ".github/workflows/ci-unit-swift.yml",
-        ".github/workflows/desktop-merge.yml",
-        ".github/workflows/desktop-scheduled.yml",
-        ".github/workflows/ci-unit-rust.yml",
-        ".github/workflows/release.yml",
+        ".github/workflows/ci-main.yml",
+        ".github/workflows/ci-pr.yml",
     ] {
         let text = workspace_file(workflow);
-        assert_no_sccache_env(&text, workflow);
+        for id in [
+            "swift-package-native-design-prototypes-unifiedagentusage",
+            "swift-package-native",
+            "swift-xcodegen-native-project-yml-jackindesktop",
+        ] {
+            let block = text
+                .split("\n  github-hosted-")
+                .find(|block| block.contains(&format!("unit: {id}")))
+                .unwrap_or_else(|| panic!("{workflow} caller for {id}"));
+            assert!(
+                block.contains("uses: ./.github/workflows/ci-unit-swift.yml"),
+                "{workflow} caller for {id} uses the wrong reusable workflow"
+            );
+            assert!(
+                block.contains("mise_tools:") && block.contains("cargo:sccache"),
+                "{workflow} caller for {id} does not provision sccache"
+            );
+        }
     }
-}
 
-#[test]
-fn sccache_is_absent_from_installer_environment() {
     for workflow in [
-        ".github/workflows/ci-unit-swift.yml",
         ".github/workflows/desktop-merge.yml",
         ".github/workflows/desktop-scheduled.yml",
     ] {
         let text = workspace_file(workflow);
-        let setup = text
-            .find("- name: Set up Mise")
-            .unwrap_or_else(|| panic!("{workflow} has no Mise installer"));
-        assert_no_sccache_env(&text[..setup], &format!("{workflow} installer prefix"));
+        for line in [
+            "CARGO_INCREMENTAL: \"0\"",
+            "RUSTC_WRAPPER: sccache",
+            "SCCACHE_GHA_ENABLED: \"true\"",
+        ] {
+            assert!(text.contains(line), "{workflow} lacks `{line}`");
+        }
+        assert!(
+            text.find("install_args:").expect("Mise setup")
+                < text.find("Run desktop-").expect("desktop task"),
+            "{workflow} must install sccache before its Cargo task"
+        );
     }
+
+    let rust = workspace_file(".github/workflows/ci-unit-rust.yml");
+    assert!(!rust.contains("RUSTC_WRAPPER: sccache"));
+    assert!(!rust.contains("SCCACHE_GHA_ENABLED: \"true\""));
+
+    let release = workspace_file(".github/workflows/release.yml");
+    assert!(!release.contains("RUSTC_WRAPPER: sccache"));
+    assert!(!release.contains("SCCACHE_GHA_ENABLED: \"true\""));
 }
 
 #[test]
-fn desktop_merge_and_scheduled_contracts_preserve_cadence_concurrency_and_gates() {
+fn desktop_merge_declaration_covers_push_pull_request_and_merge_group() {
+    let config: Value = toml::from_str(&workspace_file(".github-gen/velnor-workflow.toml"))
+        .expect("parse Velnor workflow config");
+    let declarations = config
+        .get("declare")
+        .and_then(Value::as_array)
+        .expect("declarations");
+    let desktop_merge = declarations
+        .iter()
+        .filter(|declaration| {
+            declaration.get("primitive").and_then(Value::as_str) == Some("scheduled-checks")
+                && declaration.get("file").and_then(Value::as_str) == Some("desktop-merge.yml")
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        desktop_merge.len(),
+        1,
+        "desktop merge must have one declaration"
+    );
+
+    let args = desktop_merge[0]
+        .get("args")
+        .and_then(Value::as_table)
+        .expect("desktop merge declaration args");
+    let events = args
+        .get("events")
+        .and_then(Value::as_array)
+        .expect("desktop merge events")
+        .iter()
+        .map(|event| event.as_str().expect("event name"))
+        .collect::<Vec<_>>();
+    assert_eq!(events, ["push", "pull_request", "merge_group"]);
+    assert_eq!(
+        args.get("branches")
+            .and_then(Value::as_array)
+            .expect("desktop merge push branches")
+            .iter()
+            .map(|branch| branch.as_str().expect("branch name"))
+            .collect::<Vec<_>>(),
+        ["main"]
+    );
+    assert_eq!(
+        args.get("profiles")
+            .and_then(Value::as_array)
+            .expect("desktop merge profiles")
+            .iter()
+            .map(|profile| profile.as_str().expect("profile id"))
+            .collect::<Vec<_>>(),
+        ["desktop-merge"]
+    );
+}
+
+#[test]
+fn desktop_merge_candidates_preserve_main_schedule_concurrency_and_graph() {
     let merge = workspace_file(".github/workflows/desktop-merge.yml");
-    assert!(merge.contains("on:\n  push:\n    branches: [main]\n  workflow_dispatch:"));
-    assert!(!merge.contains("  schedule:"));
-    assert!(merge.contains("group: desktop-merge-${{ github.repository }}-${{ github.ref }}"));
-    assert!(merge.contains("cancel-in-progress: true"));
+    assert!(merge.contains(
+        "on:\n  push:\n    branches: [main]\n  pull_request:\n  merge_group:\n  workflow_dispatch:"
+    ));
+    assert!(
+        !merge.contains("  schedule:"),
+        "merge cadence must not become cron-driven"
+    );
+    assert!(merge.contains(
+        "group: desktop-merge-${{ github.repository }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}"
+    ));
+    assert!(merge.contains("cancel-in-progress: ${{ github.event_name == 'pull_request' }}"));
     assert_eq!(
         merge.matches("run: mise run desktop-merge").count(),
         1,
@@ -157,21 +337,7 @@ fn desktop_merge_and_scheduled_contracts_preserve_cadence_concurrency_and_gates(
     );
     assert!(scheduled.contains("cancel-in-progress: true"));
     assert!(!scheduled.contains("  pull_request:"));
-
-    for workflow in [
-        ".github/workflows/ci-main.yml",
-        ".github/workflows/ci-pr.yml",
-    ] {
-        let text = workspace_file(workflow);
-        assert!(
-            text.contains("plan_digest"),
-            "{workflow} lost plan digest wiring"
-        );
-    }
-
-    let swift = workspace_file(".github/workflows/ci-unit-swift.yml");
-    assert!(swift.contains("product_transport_ready:"));
-    assert!(swift.contains("SELECTION_PLAN_DIGEST:"));
+    assert!(!scheduled.contains("  merge_group:"));
 
     let mise = workspace_file("mise.toml");
     for required in [
@@ -190,4 +356,23 @@ fn desktop_merge_and_scheduled_contracts_preserve_cadence_concurrency_and_gates(
     ] {
         assert!(mise.contains(required), "desktop graph lost `{required}`");
     }
+}
+
+#[test]
+fn ci_evidence_rollover_pipes_gh_json_into_jq() {
+    let mise = workspace_file("mise.toml");
+    let start = mise
+        .find("[tasks.ci-evidence]\n")
+        .expect("ci-evidence task");
+    let task = &mise[start..];
+    let end = task.find("\n[tasks.").expect("next mise task");
+    let task = &task[..end];
+
+    let expected = [
+        "--json databaseId,event,headBranch,status,createdAt,workflowName \\",
+        "    | jq -r --arg current",
+    ]
+    .join("\n");
+    assert!(task.contains(&expected));
+    assert!(!task.contains("--jq --arg current"));
 }

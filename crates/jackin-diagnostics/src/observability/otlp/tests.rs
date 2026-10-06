@@ -482,9 +482,6 @@ fn empty_endpoint_disables_export() {
 
 #[test]
 fn disabled_configuration_creates_no_runtime_and_shutdown_is_idempotent() {
-    let _lock = crate::DIAGNOSTICS_TEST_LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let before = runtime_creation_count();
     let env = |_key: &str| None;
     assert_eq!(super::super::config::resolve_otlp_config(&env), Ok(None));
@@ -1535,8 +1532,8 @@ fn in_memory_layers_hold_global_telemetry_lock_until_export_drop() {
 
 #[test]
 fn governed_unknown_names_and_forged_severity_are_rejected() {
-    let (export, subscriber) = super::test_layers_at("trace", "unused");
     let before = jackin_telemetry::facade_health();
+    let (export, subscriber) = super::test_layers_at("trace", "unused");
     tracing::subscriber::with_default(subscriber, || {
         tracing::event!(
             name: "unknown.governed.event",
@@ -1974,9 +1971,6 @@ fn governed_raw_meter_rejects_every_metric_contract_class() {
 
 #[test]
 fn rejected_metric_collection_is_not_reported_as_exported() {
-    let _lock = crate::DIAGNOSTICS_TEST_LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let facade_before = jackin_telemetry::facade_health();
     let export_before = crate::telemetry_health_snapshot();
     let result =

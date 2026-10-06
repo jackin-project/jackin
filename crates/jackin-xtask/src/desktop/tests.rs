@@ -489,25 +489,40 @@ fn cadence_tasks_define_the_canonical_graph() {
     assert_subsequence(
         task_block(&mise, "desktop-ci"),
         &[
-            "desktop-bindings-check",
-            "desktop-generate",
-            "desktop-format-check",
-            "desktop-lint",
-            "desktop-test\n",
-            "desktop-build",
-            "desktop test-swift",
-            "desktop-verify",
+            "{ task = \"desktop-bindings-check\" }",
+            "{ task = \"desktop-generate\" }",
+            "{ task = \"desktop-format-check\" }",
+            "{ task = \"desktop-lint\" }",
+            "{ task = \"desktop-test\" }",
+            "{ task = \"desktop-build\" }",
+            "{ task = \"desktop-test-swift\" }",
+            "{ task = \"desktop-verify\" }",
         ],
         "desktop-ci",
     );
     assert_subsequence(
+        task_block(&mise, "swift-package-native-ci"),
+        &[
+            "mise run desktop-bindings-check",
+            "mise run desktop-xcframework",
+            "cd native && swift build && swift test --parallel",
+        ],
+        "swift-package-native-ci",
+    );
+    assert_subsequence(
         task_block(&mise, "desktop-merge"),
-        &["desktop-ci", "desktop-test-ui"],
+        &[
+            "{ task = \"desktop-ci\" }",
+            "{ task = \"desktop-test-ui\" }",
+        ],
         "desktop-merge",
     );
     assert_subsequence(
         task_block(&mise, "desktop-scheduled"),
-        &["desktop-merge", "desktop-deadcode"],
+        &[
+            "{ task = \"desktop-merge\" }",
+            "{ task = \"desktop-deadcode\" }",
+        ],
         "desktop-scheduled",
     );
 }
@@ -538,8 +553,7 @@ fn cargo_wrapper_routes_native_commands_through_mbx() {
 
 #[test]
 fn standalone_native_package_ci_uses_counted_bounded_swift_driver() {
-    let mise = repo_text("mise.toml");
-    let task = task_block(&mise, "swift-package-native-ci");
+    let task = task_block(&repo_text("mise.toml"), "swift-package-native-ci");
     assert_subsequence(
         task,
         &[

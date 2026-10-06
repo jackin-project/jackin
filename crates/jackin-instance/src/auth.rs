@@ -25,8 +25,8 @@ use super::{
 use crate::{InstanceError, SyncSourceValidationError};
 use anyhow::Context;
 use jackin_config::{
-    AiProvider, AuthForwardMode, GithubAuthMode, MAX_STANDALONE_DATABASE_BYTES, OmpSelectedAccount,
-    OmpSelector, OmpSnapshot, ProfileSelector,
+    AiProvider, AuthForwardMode, GithubAuthMode, MAX_STANDALONE_DATABASE_BYTES,
+    OmpSelectedAccount, OmpSelector, OmpSnapshot, ProfileSelector,
 };
 use jackin_core::Agent;
 use std::path::{Path, PathBuf};
@@ -465,11 +465,7 @@ fn capture_locked_source(
         }
         Agent::Omp => {
             let content = capture_omp_database_snapshot(&source.root, provider, selector)?;
-            write_snapshot_bytes(
-                snapshot_root,
-                Path::new("agent/agent.db"),
-                content.as_slice(),
-            )?;
+            write_snapshot_bytes(snapshot_root, Path::new("agent/agent.db"), content.as_slice())?;
             Ok(())
         }
         Agent::Hermes => {
@@ -2150,8 +2146,6 @@ mod auth_directory {
     thread_local! {
         static HERMES_SNAPSHOT_HOOK: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
             const { std::cell::RefCell::new(None) };
-        static OMP_AFTER_DATABASE_READ_HOOK: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
-            const { std::cell::RefCell::new(None) };
         static SOURCE_OPEN_HOOK: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
             const { std::cell::RefCell::new(None) };
     }
@@ -2602,6 +2596,52 @@ mod auth_directory {
         anyhow::ensure!(
             bytes.len() <= MAX_AUTH_SOURCE_FILE_BYTES,
             "{label} exceeds the credential source size limit"
+        );
+        Ok(Some(bytes))
+    }
+
+    pub(crate) fn read_locked_source_file_bounded(
+        source: &File,
+        components: &[&str],
+        label: &str,
+        max_bytes: usize,
+    ) -> anyhow::Result<Option<Vec<u8>>> {
+        let Some((file_name_text, directory_names)) = components.split_last() else {
+            anyhow::bail!("{label} has no source path components");
+        };
+        let mut directory = source.try_clone()?;
+        for directory_name_text in directory_names {
+            let directory_name = source_name(directory_name_text)?;
+            let Some(stat) = source_entry_kind(&directory, &directory_name, label)? else {
+                return Ok(None);
+            };
+            validate_owned_stat(&stat, label, SFlag::S_IFDIR)?;
+            directory = open_source_directory_at_with_hook(
+                &directory,
+                &directory_name,
+                &stat,
+                label,
+                false,
+            )?;
+        }
+        let file_name = source_name(file_name_text)?;
+        let Some(stat) = source_entry_kind(&directory, &file_name, label)? else {
+            return Ok(None);
+        };
+        validate_owned_stat(&stat, label, SFlag::S_IFREG)?;
+        let file = open_source_file_with_hook(&directory, &file_name, &stat, label, true)?;
+        let read_limit = u64::try_from(max_bytes)
+            .ok()
+            .and_then(|limit| limit.checked_add(1))
+            .ok_or_else(|| anyhow::anyhow!("{label} size limit overflows"))?;
+        let mut bytes = Vec::new();
+        Read::by_ref(&mut &file)
+            .take(read_limit)
+            .read_to_end(&mut bytes)
+            .with_context(|| format!("reading {label}"))?;
+        anyhow::ensure!(
+            bytes.len() <= max_bytes,
+            "{label} exceeds its {max_bytes}-byte source size limit"
         );
         Ok(Some(bytes))
     }
@@ -4273,7 +4313,8 @@ impl RoleState {
         if mode == AuthForwardMode::Sync {
             let content = match auth_directory::lock_source_dir(source_dir)? {
                 Some(source) => {
-                    let content = capture_omp_database_snapshot(&source.root, provider, selector)?;
+                    let content =
+                        capture_omp_database_snapshot(&source.root, provider, selector)?;
                     Some(content)
                 }
                 None => None,
@@ -4288,7 +4329,8 @@ impl RoleState {
         }
         #[cfg(not(unix))]
         if mode == AuthForwardMode::Sync {
-            let content = capture_omp_database_snapshot_from_paths(source_dir, provider, selector)?;
+            let content =
+                capture_omp_database_snapshot_from_paths(source_dir, provider, selector)?;
             return provision_single_blob_credential_from_content(
                 agent_db,
                 mode,
@@ -4307,95 +4349,6 @@ impl RoleState {
     ) -> anyhow::Result<(AuthProvisionOutcome, Option<PathBuf>)> {
         provision_single_blob_credential(agent_db, host_agent_db, mode, "omp agent.db", "omp")
     }
-}
-
-/// Capture a bounded OMP database/WAL pair and materialize its last committed
-/// SQLite view as a standalone database image.
-///
-/// OMP's account reader admits committed WAL frames. Provisioning only mounts
-/// `agent.db`, so the WAL must be applied before that single file is copied.
-/// The directory lock coordinates Jackin readers and writers, but OMP does not
-/// participate in that advisory lock. Read both bounded images twice and
-/// accept only byte-identical observations, retrying a bounded number of times
-/// when they differ. This is an optimistic capture, not a SQLite-held read
-/// transaction. Descriptor-relative opens reject path substitution and
-/// verify each opened inode. WAL commit frames are accepted only when their
-/// salts and rolling checksums validate; a complete but torn frame therefore
-/// cannot be treated as a commit. The materialized image is checked against
-/// the selected provider and account identity before provisioning.
-#[cfg(unix)]
-fn capture_omp_database_snapshot(
-    source: &std::fs::File,
-    provider: Option<AiProvider>,
-    selector: Option<&ProfileSelector>,
-) -> anyhow::Result<Zeroizing<Vec<u8>>> {
-    let Some(mut snapshot) = OmpSnapshot::capture_from_root(source)? else {
-        anyhow::bail!("OMP credential source is unavailable");
-    };
-    capture_omp_snapshot_bytes(&mut snapshot, provider, selector)
-}
-
-#[cfg(unix)]
-fn validate_omp_source_selection(
-    source: &std::fs::File,
-    provider: Option<AiProvider>,
-    selector: Option<&ProfileSelector>,
-) -> anyhow::Result<()> {
-    let Some(mut snapshot) = OmpSnapshot::capture_from_root(source)? else {
-        anyhow::bail!("OMP credential source is unavailable");
-    };
-    drop(select_omp_snapshot_account(
-        &mut snapshot,
-        provider,
-        selector,
-    )?);
-    Ok(())
-}
-
-fn select_omp_snapshot_account<'a>(
-    snapshot: &'a mut OmpSnapshot,
-    provider: Option<AiProvider>,
-    selector: Option<&ProfileSelector>,
-) -> anyhow::Result<OmpSelectedAccount<'a>> {
-    // The current launch contract copies the whole OMP database. Until a
-    // selected-row-only SQLite image is supported, more than one usable row
-    // would expose a sibling account to the role and is therefore unavailable.
-    if snapshot.accounts().len() != 1 {
-        anyhow::bail!("OMP account selection is missing or ambiguous");
-    }
-    let selector = selector.map(|selector| OmpSelector {
-        entry: selector.entry.clone(),
-        profile: selector.profile.clone(),
-    });
-    snapshot
-        .select(provider.map(AiProvider::slug), selector.as_ref())
-        .map_err(anyhow::Error::new)
-}
-
-fn capture_omp_snapshot_bytes(
-    snapshot: &mut OmpSnapshot,
-    provider: Option<AiProvider>,
-    selector: Option<&ProfileSelector>,
-) -> anyhow::Result<Zeroizing<Vec<u8>>> {
-    let selected = select_omp_snapshot_account(snapshot, provider, selector)?;
-    let mut bytes = Zeroizing::new(Vec::with_capacity(MAX_STANDALONE_DATABASE_BYTES));
-    selected
-        .write_standalone_database(&mut *bytes)
-        .map_err(anyhow::Error::new)?;
-    Ok(bytes)
-}
-
-/// Bounded fallback for platforms without descriptor-relative Unix traversal.
-#[cfg(not(unix))]
-fn capture_omp_database_snapshot_from_paths(
-    source_dir: &Path,
-    provider: Option<AiProvider>,
-    selector: Option<&ProfileSelector>,
-) -> anyhow::Result<Option<Zeroizing<Vec<u8>>>> {
-    let Some(mut snapshot) = OmpSnapshot::capture_from_directory(source_dir)? else {
-        return Ok(None);
-    };
-    capture_omp_snapshot_bytes(&mut snapshot, provider, selector).map(Some)
 }
 
 #[cfg(unix)]
@@ -4625,6 +4578,77 @@ fn wipe_hermes_state(hermes_dir: &Path) -> anyhow::Result<()> {
 
 fn read_source_bytes(path: &Path, label: &str) -> anyhow::Result<Option<Vec<u8>>> {
     auth_directory::read_source_path(path, label)
+}
+
+#[cfg(unix)]
+fn capture_omp_database_snapshot(
+    source: &std::fs::File,
+    provider: Option<AiProvider>,
+    selector: Option<&ProfileSelector>,
+) -> anyhow::Result<Zeroizing<Vec<u8>>> {
+    let Some(mut snapshot) = OmpSnapshot::capture_from_root(source)? else {
+        anyhow::bail!("OMP credential source is unavailable");
+    };
+    capture_omp_snapshot_bytes(&mut snapshot, provider, selector)
+}
+
+#[cfg(unix)]
+fn validate_omp_source_selection(
+    source: &std::fs::File,
+    provider: Option<AiProvider>,
+    selector: Option<&ProfileSelector>,
+) -> anyhow::Result<()> {
+    let Some(mut snapshot) = OmpSnapshot::capture_from_root(source)? else {
+        anyhow::bail!("OMP credential source is unavailable");
+    };
+    drop(select_omp_snapshot_account(&mut snapshot, provider, selector)?);
+    Ok(())
+}
+
+fn select_omp_snapshot_account(
+    snapshot: &mut OmpSnapshot,
+    provider: Option<AiProvider>,
+    selector: Option<&ProfileSelector>,
+) -> anyhow::Result<OmpSelectedAccount<'_>> {
+    // The current launch contract copies the whole OMP database. Until a
+    // selected-row-only SQLite image is supported, more than one usable row
+    // would expose a sibling account to the role and is therefore unavailable.
+    if snapshot.accounts().len() != 1 {
+        anyhow::bail!("OMP account selection is missing or ambiguous");
+    }
+    let selector = selector.map(|selector| OmpSelector {
+        entry: selector.entry.clone(),
+        profile: selector.profile.clone(),
+    });
+    snapshot
+        .select(provider.map(AiProvider::slug), selector.as_ref())
+        .map_err(anyhow::Error::new)
+}
+
+fn capture_omp_snapshot_bytes(
+    snapshot: &mut OmpSnapshot,
+    provider: Option<AiProvider>,
+    selector: Option<&ProfileSelector>,
+) -> anyhow::Result<Zeroizing<Vec<u8>>> {
+    let selected = select_omp_snapshot_account(snapshot, provider, selector)?;
+    let mut bytes = Zeroizing::new(Vec::with_capacity(MAX_STANDALONE_DATABASE_BYTES));
+    selected
+        .write_standalone_database(&mut *bytes)
+        .map_err(anyhow::Error::new)?;
+    Ok(bytes)
+}
+
+/// Bounded fallback for platforms without descriptor-relative Unix traversal.
+#[cfg(not(unix))]
+fn capture_omp_database_snapshot_from_paths(
+    source_dir: &Path,
+    provider: Option<AiProvider>,
+    selector: Option<&ProfileSelector>,
+) -> anyhow::Result<Option<Zeroizing<Vec<u8>>>> {
+    let Some(mut snapshot) = OmpSnapshot::capture_from_directory(source_dir)? else {
+        return Ok(None);
+    };
+    capture_omp_snapshot_bytes(&mut snapshot, provider, selector).map(Some)
 }
 
 fn read_source_text(path: &Path, label: &str) -> anyhow::Result<Option<String>> {

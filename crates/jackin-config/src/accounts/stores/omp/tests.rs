@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::enumerate_omp_credentials;
-use crate::accounts::stores::StoreError;
 use crate::accounts::stores::tests::{Cell, Value, database, leaf_page, wal_image};
+use crate::accounts::stores::StoreError;
 use std::path::Path;
 
 const SCHEMA: &str = "CREATE TABLE credentials (provider TEXT, value TEXT, profile TEXT)";
@@ -60,7 +60,10 @@ fn enumerates_row_identity_in_rowid_order_without_exposing_secret_values() {
         .iter()
         .map(|account| (account.entry(), account.profile()))
         .collect();
-    assert_eq!(identities, vec![("anthropic", "work"), ("openai", "")]);
+    assert_eq!(
+        identities,
+        vec![("anthropic", Some("work")), ("openai", None)]
+    );
     assert!(!format!("{accounts:?}").contains("synthetic-omp-secret"));
 }
 
@@ -131,5 +134,5 @@ fn wal_committed_frames_supply_the_discovered_identity() {
     let accounts = enumerate_omp_credentials(&source).unwrap();
     assert_eq!(accounts.len(), 1);
     assert_eq!(accounts[0].entry(), "openai");
-    assert_eq!(accounts[0].profile(), "work");
+    assert_eq!(accounts[0].profile(), Some("work"));
 }

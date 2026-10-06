@@ -1,0 +1,53 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+name: Sign and attest a release archive
+description: |
+  Sign a built release archive (`.tar.gz`, `.zip`, or other file) with cosign
+  keyless signing (producing `<archive>.bundle`), generate a CycloneDX SBOM with
+  syft (`<archive>.sbom.json`), and optionally attest SLSA build provenance for
+  it. Used by the `build` / `build-jackin-capsule` jobs in release.yml and the
+  `build-preview` / `build-jackin-capsule` jobs in preview.yml so the three-step
+  signing contract lives in one place instead of four verbatim copies. The
+  usage menu-bar job may inline the same steps after Apple credential cleanup.
+
+  Caller requirements: `cosign` and `syft` already on PATH (the calling job
+  installs them in its `jdx/mise-action` step), and job-level
+  `id-token: write` + `attestations: write` permissions for keyless signing
+  and provenance attestation.
+inputs:
+  archive:
+    description: Path to the release archive file to sign, SBOM, and attest.
+    required: true
+  attest:
+    description: Whether to run GitHub artifact attestation for the archive.
+    required: false
+    default: "true"
+runs:
+  using: composite
+  steps:
+    - name: Sign archive
+      shell: bash
+      env:
+        ARCHIVE: ${{ inputs.archive }}
+      run: cosign sign-blob --bundle "${ARCHIVE}.bundle" --yes "${ARCHIVE}"
+
+    - name: Generate SBOM
+      shell: bash
+      env:
+        ARCHIVE: ${{ inputs.archive }}
+      run: syft scan "${ARCHIVE}" -o cyclonedx-json > "${ARCHIVE}.sbom.json"
+
+    - name: Attest build provenance
+      if: inputs.attest == 'true'
+      uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+      env:
+        INPUT_CREATE-STORAGE-RECORD: "true"
+        INPUT_PUSH-TO-REGISTRY: "false"
+        INPUT_SHOW-SUMMARY: "true"
+        INPUT_SUBJECT-PATH: ${{ inputs.archive }}
+      with:
+        create-storage-record: "true"
+        push-to-registry: "false"
+        show-summary: "true"
+        subject-path: ${{ inputs.archive }}

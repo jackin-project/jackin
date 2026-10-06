@@ -64,11 +64,16 @@ pub(crate) fn load_console_usage_state(
     force_refresh: bool,
 ) -> anyhow::Result<jackin_console::tui::state::UsageScreenState> {
     use jackin_usage::host::{
-        HostProbePolicy, HostRuntimeConfig, HostUsageRuntime, UsageBrokerConfig,
-        UsageDiscoveryScope, ensure_usage_broker_process, request_usage_batch,
-        usage_broker_capabilities,
+        HostProbePolicy, HostRuntimeConfig, HostUsageRuntime, ProviderCredentialEnvResolver,
+        UsageBrokerConfig, UsageDiscoveryScope, ensure_usage_broker, request_usage_batch,
     };
+    use std::sync::Arc;
 
+    let resolver = Arc::new(
+        jackin_usage::host::CachedProviderCredentialResolver::new(
+            crate::cli::usage::CliUsageSecretSource,
+        ),
+    );
     let discovery_scope = UsageDiscoveryScope::HostDesktop {
         config_root: paths.config_dir.clone(),
         operator_home: paths.home_dir.clone(),
@@ -83,22 +88,23 @@ pub(crate) fn load_console_usage_state(
                 probe_policy: HostProbePolicy::Live,
                 discovery_scope: discovery_scope.clone(),
             },
-            &jackin_usage::host::CachedProviderCredentialResolver::new(
-                crate::cli::usage::CliUsageSecretSource,
-            ),
+            resolver.as_ref(),
         )
         .map_err(anyhow::Error::msg)?;
     let discovery = runtime
         .validated_discovery()
         .ok_or_else(|| anyhow::anyhow!("host usage discovery unavailable"))?;
-    let client = ensure_usage_broker_process(
+    let broker_resolver: Arc<dyn ProviderCredentialEnvResolver> = resolver;
+    let handle = ensure_usage_broker(
         UsageBrokerConfig::for_data_dir(paths.data_dir.clone()),
-        &discovery_scope,
+        discovery_scope,
+        discovery,
+        broker_resolver,
     )
     .map_err(|error| anyhow::anyhow!(error.message))?;
     for (capability, result) in request_usage_batch(
-        &client,
-        usage_broker_capabilities(&discovery),
+        &handle.client,
+        handle.capabilities,
         force_refresh,
     ) {
         match result {

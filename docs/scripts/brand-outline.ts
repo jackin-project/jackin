@@ -1,3 +1,4 @@
+// PROBE b10-B overlap marker — comment-only.
 // Word outlining for the brand generators. The jackin❯ word is rendered as
 // vector paths (JetBrains Mono Bold → outlines), never as SVG <text>, so every
 // generated SVG is font-independent and identical on any surface.

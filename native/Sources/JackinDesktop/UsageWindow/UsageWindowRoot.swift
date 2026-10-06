@@ -24,7 +24,8 @@ public struct UsageWindowSidebar: View {
             surfaces: store.surfaces,
             accounts: store.accounts,
             providerGroups: store.providerGroups,
-            selection: store.usageSelection
+            selection: store.usageSelection,
+            accountSelection: store.usageAccountSelection
         )
     }
 
@@ -60,14 +61,7 @@ public struct UsageWindowSidebar: View {
 
     private var destination: Binding<Destination?> {
         Binding(
-            get: {
-                switch model.selection {
-                case .overview:
-                    return .overview
-                case .provider(let surfaceId):
-                    return .provider(surfaceId)
-                }
-            },
+            get: { store.usageSelection.map(Destination.provider) ?? .overview },
             set: { value in
                 let surfaceId: String?
                 switch value {
@@ -114,7 +108,8 @@ public struct UsageWindowDetail: View {
             surfaces: store.surfaces,
             accounts: store.accounts,
             providerGroups: store.providerGroups,
-            selection: store.usageSelection
+            selection: store.usageSelection,
+            accountSelection: store.usageAccountSelection
         )
     }
 
@@ -153,31 +148,21 @@ public struct UsageWindowDetail: View {
                 onRetry: { store.refresh(surfaceId: content.surfaceId) }
             )
         } else {
-            VStack(spacing: 0) {
-                if let routeNotice = model.routeNotice {
-                    Text(routeNotice.message)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 10)
-                        .accessibilityIdentifier(
-                            "usage.account-route.notice.\(routeNotice.surfaceId)"
-                        )
-                }
-                OverviewListView(
-                    groups: store.providerGroups,
-                    selectedRowID: $store.overviewSelectionID,
-                    expandedProviderIDs: $store.overviewExpandedProviderIDs,
-                    onSelect: { surfaceId, accountKey in
-                        if let accountKey {
-                            store.setSelectedAccount(surfaceId: surfaceId, accountKey: accountKey)
-                        }
-                        store.selectUsageContext(surfaceId: surfaceId, accountKey: accountKey)
-                    },
-                    onRetry: { surfaceId in
-                        store.refresh(surfaceId: surfaceId)
+            OverviewListView(
+                groups: store.providerGroups,
+                notice: store.usageNotice,
+                selectedRowID: $store.overviewSelectionID,
+                expandedProviderIDs: $store.overviewExpandedProviderIDs,
+                onSelect: { surfaceId, accountKey in
+                    if let accountKey {
+                        store.setSelectedAccount(surfaceId: surfaceId, accountKey: accountKey)
                     }
-                )
-            }
+                    store.selectUsageContext(surfaceId: surfaceId, accountKey: accountKey)
+                },
+                onRetry: { surfaceId in
+                    store.refresh(surfaceId: surfaceId)
+                }
+            )
         }
     }
 }

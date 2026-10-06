@@ -9,7 +9,7 @@ description: Ranks CI speed opportunities from measured job and step timing, cac
 
 Measured job timing points first to dependency and cache work, with lane changes justified only by wall-clock evidence.
 
-The current generated <RepoFile path=".github/workflows/ci.yml" /> has Rust verification and actionlint jobs; it has no construct, docs, preview, release, or selectable self-hosted jobs. The old topology and cache assertions below describe the measured historical pipeline, and the suggested integrations require current generator support.
+The current generated <RepoFile path=".github/workflows/ci-pr.yml" /> has Rust verification and actionlint jobs; it has no construct, docs, preview, release, or selectable self-hosted jobs. The old topology and cache assertions below describe the measured historical pipeline, and the suggested integrations require current generator support.
 
 The ranking uses June 2026 job and step evidence; compare the [CI/CD speed baseline](/research/engineering/ci/performance/ci-speed-roadmap/) and remeasure before prioritizing work.
 
@@ -137,7 +137,7 @@ All package shards started ~18:08:07, right after `construct E2E image` finished
 
 ### Root cause of the unit/E2E coupling
 
-In the measured June 2026 single-workflow PR CI, the single `test` job depended on `construct-e2e-image` and called the former `rust-nextest.yml` reusable workflow, which contained six jobs: five pure-Rust shards (`jackin`, `jackin-capsule`, `jackin-runtime`, `jackin-tui`, `small-crates`) and one `docker-e2e`. Only `docker-e2e` downloaded the construct image, but the reusable-workflow call was a single dependency-graph node, so all five package shards inherited the caller's `needs: construct-e2e-image` gate. The later `ci-pr.yml` account retained in source snapshot `81a26f7e8511b2f19c9ba5a59a85b3ef0bbc804a` is historical; the current <RepoFile path=".github/workflows/ci.yml">.github/workflows/ci.yml</RepoFile> has per-crate Rust jobs and no construct-image lane.
+In the measured June 2026 single-workflow PR CI, the single `test` job depended on `construct-e2e-image` and called the former `rust-nextest.yml` reusable workflow, which contained six jobs: five pure-Rust shards (`jackin`, `jackin-capsule`, `jackin-runtime`, `jackin-tui`, `small-crates`) and one `docker-e2e`. Only `docker-e2e` downloaded the construct image, but the reusable-workflow call was a single dependency-graph node, so all five package shards inherited the caller's `needs: construct-e2e-image` gate. The later `ci-pr.yml` account retained in source snapshot `81a26f7e8511b2f19c9ba5a59a85b3ef0bbc804a` is historical; the current <RepoFile path=".github/workflows/ci-pr.yml">.github/workflows/ci-pr.yml</RepoFile> has per-crate Rust jobs and no construct-image lane.
 
 ### Cold-cache variance (run [28254775151](https://github.com/jackin-project/jackin/actions/runs/28254775151), ~14m02s)
 
@@ -206,4 +206,4 @@ The measured historical jobs set `--locked` and `CARGO_INCREMENTAL=0`; current M
 
 ## Host-side effects
 
-None on the operator's machine. Current CI configuration is generated into <RepoFile path=".github/workflows/ci.yml" /> from <RepoFile path=".velnor/config.toml" />; the performance proposals in this analysis are not proof of current generated coverage. Other root tool/config files include <RepoFile path=".cargo/config.toml">.cargo/config.toml</RepoFile>. Any remote `sccache` backend or third-party runner is an opt-in infrastructure decision with its own credentials.
+None on the operator's machine. Current CI configuration is generated into <RepoFile path=".github/workflows/ci-pr.yml" /> from <RepoFile path=".velnor/config.toml" />; the performance proposals in this analysis are not proof of current generated coverage. Other root tool/config files include <RepoFile path=".cargo/config.toml">.cargo/config.toml</RepoFile>. Any remote `sccache` backend or third-party runner is an opt-in infrastructure decision with its own credentials.

@@ -1,3 +1,4 @@
+// PROBE b10-A overlap marker — comment-only.
 // Single generator for the jackin❯ logo. One geometry source (brand-geometry.ts)
 // → one set of assets, used everywhere:
 //   - public/brand/jackin-wordmark.svg  ← the canonical logo, imported by

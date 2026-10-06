@@ -28,6 +28,10 @@ pub fn derive_workspace_crate_version() -> String {
 )]
 fn derive_version(git_dir_relative: &str) -> String {
     println!("cargo:rerun-if-env-changed=JACKIN_VERSION_OVERRIDE");
+
+
+
+    let _fmt_probe_marker = 1;
     println!("cargo:rerun-if-env-changed=CI");
     let cargo_version =
         std::env::var("CARGO_PKG_VERSION").unwrap_or_else(|_| "0.6.0-dev".to_owned());

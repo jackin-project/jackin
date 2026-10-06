@@ -256,6 +256,41 @@ fn usage_relay_rejects_host_only_catalog_reconciliation() {
     ));
 }
 
+#[test]
+fn usage_relay_rejects_host_only_catalog_reconciliation() {
+    let account = capability("account-a");
+    let config = CapsuleConfig {
+        instances: vec!["session-a".to_owned()],
+        usage_capabilities: BTreeMap::from([("session-a".to_owned(), account.clone())]),
+        instance_identities: BTreeMap::from([(
+            "session-a".to_owned(),
+            SessionIdentity {
+                uid: 2_001,
+                gid: 2_001,
+            },
+        )]),
+        ..CapsuleConfig::default()
+    };
+    let authorization = UsageRelayAuthorization::from_config(&config).unwrap();
+    let operation = UsageBrokerOperation::ReconcileCatalog {
+        expected_projection_id: None,
+        catalog_revision: "catalog-2".to_owned(),
+        entries: vec![UsageCatalogEntry {
+            capability: account,
+            revision: "credential-2".to_owned(),
+        }],
+    };
+
+    assert!(!authorization.authorizes(
+        Some(PeerIdentity {
+            pid: Some(1),
+            uid: 0,
+            gid: 0,
+        }),
+        &operation,
+    ));
+}
+
 fn capability(account_id: &str) -> UsageAccountCapability {
     UsageAccountCapability {
         account_id: account_id.to_owned(),

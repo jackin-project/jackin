@@ -90,8 +90,7 @@ pub(crate) fn enumerate(
     let mut statement = connection
         .prepare(ACTIVE_ROWS_SQL)
         .map_err(|_| OmpError::Unavailable)?;
-    let mut rows = statement
-        .query([i64::try_from(MAX_ROWS + 1).unwrap_or(i64::MAX)])
+    let mut rows = statement.query([i64::try_from(MAX_ROWS + 1).unwrap_or(i64::MAX)])
         .map_err(|_| OmpError::Unavailable)?;
     let mut accounts = Vec::new();
     while let Some(row) = rows.next().map_err(|_| OmpError::Unavailable)? {
@@ -100,12 +99,10 @@ pub(crate) fn enumerate(
             return Err(OmpError::LimitExceeded);
         }
         let credential = read_credential(row, 7)?;
-        let id = credential.id;
-        let provider = credential.provider.clone();
         accounts.push(OmpAccount {
-            id,
-            entry: provider,
-            profile: row_profile(id),
+            id: credential.id,
+            entry: credential.provider,
+            profile: row_profile(credential.id),
         });
         // The query only needs row identity. Drop the temporary, zeroized
         // payload rather than retaining credentials during discovery.
@@ -142,7 +139,10 @@ pub(crate) fn selected_credential(
     Ok(credential)
 }
 
-fn validate_supported_schema(connection: &Connection, deadline: Instant) -> Result<(), OmpError> {
+fn validate_supported_schema(
+    connection: &Connection,
+    deadline: Instant,
+) -> Result<(), OmpError> {
     check_deadline(deadline)?;
     let version = connection
         .query_row(
@@ -200,10 +200,7 @@ fn validate_supported_schema(connection: &Connection, deadline: Instant) -> Resu
     check_deadline(deadline)
 }
 
-fn read_credential(
-    row: &rusqlite::Row<'_>,
-    validity_column: usize,
-) -> Result<OmpCredential, OmpError> {
+fn read_credential(row: &rusqlite::Row<'_>, validity_column: usize) -> Result<OmpCredential, OmpError> {
     let id: i64 = row.get(0).map_err(|_| OmpError::Unavailable)?;
     if id <= 0 {
         return Err(OmpError::Unavailable);
@@ -217,11 +214,13 @@ fn read_credential(
         return Err(OmpError::Unavailable);
     }
     let data = match row.get_ref(3).map_err(|_| OmpError::Unavailable)? {
-        ValueRef::Text(bytes) if bytes.len() <= MAX_CREDENTIAL_JSON_BYTES => Zeroizing::new(
-            std::str::from_utf8(bytes)
-                .map_err(|_| OmpError::Unavailable)?
-                .to_owned(),
-        ),
+        ValueRef::Text(bytes) if bytes.len() <= MAX_CREDENTIAL_JSON_BYTES => {
+            Zeroizing::new(
+                std::str::from_utf8(bytes)
+                    .map_err(|_| OmpError::Unavailable)?
+                    .to_owned(),
+            )
+        }
         ValueRef::Text(_) => return Err(OmpError::LimitExceeded),
         ValueRef::Null | ValueRef::Blob(_) | ValueRef::Integer(_) | ValueRef::Real(_) => {
             return Err(OmpError::Unavailable);
@@ -256,7 +255,9 @@ fn owned_text(value: ValueRef<'_>) -> Result<Option<String>, OmpError> {
             .map(|text| Some(text.to_owned()))
             .map_err(|_| OmpError::Unavailable),
         ValueRef::Null => Ok(None),
-        ValueRef::Integer(_) | ValueRef::Real(_) | ValueRef::Blob(_) => Err(OmpError::Unavailable),
+        ValueRef::Integer(_) | ValueRef::Real(_) | ValueRef::Blob(_) => {
+            Err(OmpError::Unavailable)
+        }
     }
 }
 
@@ -331,7 +332,7 @@ mod tests {
 
     use rusqlite::Connection;
 
-    use super::{OmpAccount, enumerate};
+    use super::{enumerate, OmpAccount};
     use crate::OmpError;
 
     const SCHEMA: &str = r#"
@@ -426,10 +427,7 @@ CREATE TABLE auth_credentials (
     fn rejects_unknown_auth_schema_version_and_column_layout() {
         let connection = connection();
         connection
-            .execute(
-                "UPDATE auth_schema_version SET version = 8 WHERE id = 1",
-                [],
-            )
+            .execute("UPDATE auth_schema_version SET version = 8 WHERE id = 1", [])
             .unwrap();
         assert_eq!(
             enumerate(&connection, deadline()),

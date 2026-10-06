@@ -15,8 +15,8 @@ use super::StoreError;
 pub(crate) fn enumerate_omp_credentials(
     source_directory: &Path,
 ) -> Result<Vec<OmpAccount>, StoreError> {
-    let Some(snapshot) =
-        OmpSnapshot::capture_from_directory(source_directory).map_err(map_omp_error)?
+    let Some(snapshot) = OmpSnapshot::capture_from_directory(source_directory)
+        .map_err(map_omp_error)?
     else {
         return Ok(Vec::new());
     };

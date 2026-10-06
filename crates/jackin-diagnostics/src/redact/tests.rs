@@ -1,5 +1,7 @@
-use super::stream_redactor::{MAX_ACTIVE_ENVELOPES, MAX_PEM_LABEL_BYTES, MAX_STREAM_LINE_BYTES};
-use super::{StreamRedactor, redact_and_cap, redact_text};
+use super::{
+    MAX_ACTIVE_ENVELOPES, MAX_PEM_LABEL_BYTES, MAX_STREAM_LINE_BYTES, StreamRedactor,
+    redact_and_cap, redact_text,
+};
 
 #[test]
 fn redacts_named_secret_values() {

@@ -32,9 +32,9 @@ use crate::runtime::progress::{LaunchProgress, LaunchStage};
 use super::{
     PreparedRuntimeBinaries, docker_build_env, dockerfile_body_requests_role_git_sha_arg,
     dockerfile_requests_role_git_sha_arg, emit_build_context_snapshot, emit_image_build_source,
-    emit_non_containerd_image_store_note, local_image_build_args, local_image_output_arg,
-    local_role_base_labels_match, record_built_agent_version, role_git_sha_for_recipe,
-    should_stream_build_output,
+    emit_non_containerd_image_store_note, local_image_build_args,
+    local_image_output_arg, local_role_base_labels_match, record_built_agent_version,
+    role_git_sha_for_recipe, should_stream_build_output,
 };
 
 pub(crate) fn should_mint_fresh_cache_bust(

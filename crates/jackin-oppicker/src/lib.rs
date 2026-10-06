@@ -1323,6 +1323,24 @@ pub fn build_op_picker_ref<'a>(
     fields_in_item: impl IntoIterator<Item = OpPickerFieldRef<'a>>,
     sections: &[OpSection],
 ) -> Option<BuiltOpPickerRef> {
+    build_op_picker_ref_with_section(
+        vault,
+        selected_item,
+        items_in_vault,
+        field,
+        fields_in_item,
+        sections,
+    )
+}
+
+pub(crate) fn build_op_picker_ref_with_section<'a>(
+    vault: OpPickerVaultRef<'a>,
+    selected_item: OpPickerItemRef<'a>,
+    items_in_vault: impl IntoIterator<Item = OpPickerItemRef<'a>>,
+    field: OpPickerFieldRef<'a>,
+    fields_in_item: impl IntoIterator<Item = OpPickerFieldRef<'a>>,
+    sections: &[OpSection],
+) -> Option<BuiltOpPickerRef> {
     let item_name_collides = items_in_vault
         .into_iter()
         .any(|item| item.id != selected_item.id && item.name == selected_item.name);

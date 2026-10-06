@@ -1,6 +1,6 @@
 # jackin❯ desktop
 
-Native macOS limits display over `jackin-usage-ffi` (boltffi). Product identity is **jackin❯ desktop** (`JackinDesktop.app`, bundle id `com.jackin-project.desktop`). Rust owns probes, provider ordering, accounts, quota semantics, refresh policy, severity, and every domain string. Swift owns AppKit/SwiftUI presentation and OS integration.
+Native macOS limits display over `jackin-usage-ffi` (boltffi). Product identity is **jackin❯ desktop** (`JackinDesktop.app`, bundle id `com.jackin-project.desktop`). Rust owns all probes, provider ordering, accounts, quota semantics, refresh policy, severity, and every domain string. Swift owns AppKit/SwiftUI presentation and OS integration.
 
 Production Swift passes no config, home, or data paths. Rust derives canonical host
 paths, loads the global/workspace/role configuration read-only, resolves configured

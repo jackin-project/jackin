@@ -9,7 +9,7 @@ description: Evaluates Rust CI tooling for dependency hygiene, spell checking, c
 
 Rust CI should add focused dependency, spelling, coverage, and snapshot gates only where each tool has a clear ownership boundary.
 
-The tooling research records earlier dependency-hygiene and Codebook choices. Current <RepoFile path=".github/workflows/ci.yml" /> provides Rust crate verification and actionlint, with no dependency-hygiene, Codebook, coverage, or scheduled hygiene jobs. The historical adoption evidence and proposed wiring below do not establish current CI execution.
+The tooling research records earlier dependency-hygiene and Codebook choices. Current <RepoFile path=".github/workflows/ci-pr.yml" /> provides Rust crate verification and actionlint, with no dependency-hygiene, Codebook, coverage, or scheduled hygiene jobs. The historical adoption evidence and proposed wiring below do not establish current CI execution.
 
 Generated workflow changes belong in the Velnor generator and <RepoFile path=".velnor/config.toml" />, following <RepoFile path=".github/AGENTS.md" />; the generated YAML must not be hand-edited.
 
@@ -131,7 +131,7 @@ The substantive design for *what* is snapshotted — styled SVG goldens for TUI 
 
 Codebook (`codebook-lsp lint`) was the earlier adopted spell-check choice; it is absent from current generated CI. It combines Spellbook's Hunspell-compatible dictionary engine with Tree-sitter-aware parsing, so it can check prose-heavy project files and source comments without treating every code token as plain English.
 
-The proposed integration checks the whole branch. The former `.github/workflows/ci-pr.yml` and `docs.yml` workflows are deleted; neither proposed job exists in current <RepoFile path=".github/workflows/ci.yml" />:
+The proposed integration checks the whole branch. The former `.github/workflows/ci-pr.yml` and `docs.yml` workflows are deleted; neither proposed job exists in current <RepoFile path=".github/workflows/ci-pr.yml" />:
 
 - `spell-check-docs` checks root contributor Markdown, GitHub workflow text, and the published docs corpus.
 - `spell-check-source` checks Rust source, crate TOML files, and Docker runtime/construct scripts.
@@ -172,7 +172,7 @@ There are two integration paths for `cargo-deny`, and they pull in different dir
 - **Upstream-canonical: `EmbarkStudios/cargo-deny-action@v2`** — the documented canonical CI integration, a single step after `actions/checkout` with the binary bundled by the action (`@v2` currently ships cargo-deny 0.19.x). Lowest friction, but installs a tool *outside* `mise`.
 - **Project-consistent: install via `mise`, run the binary directly** — jackin❯ mise-only CI tool-install rule in <RepoFile path="PULL_REQUESTS.md">PULL_REQUESTS.md</RepoFile> requires every CI tool to come from <RepoFile path="mise.toml">mise.toml</RepoFile>, like the existing `cargo:cargo-nextest` and `cargo:cargo-zigbuild` entries.
 
-**Recommendation: the mise path**, to honour the project's tool-install rule and keep one tool-install mechanism. The `cargo-deny-action` is noted as the upstream-canonical alternative, explicitly *not* adopted because it bypasses `mise`. The current <RepoFile path=".github/workflows/ci.yml">.github/workflows/ci.yml</RepoFile> has no `deny` job; introduce the required capability in the workflow generator, then select it through <RepoFile path=".velnor/config.toml">.velnor/config.toml</RepoFile>. The following is a proposed job shape, not an instruction to edit generated YAML:
+**Recommendation: the mise path**, to honour the project's tool-install rule and keep one tool-install mechanism. The `cargo-deny-action` is noted as the upstream-canonical alternative, explicitly *not* adopted because it bypasses `mise`. The current <RepoFile path=".github/workflows/ci-pr.yml">.github/workflows/ci-pr.yml</RepoFile> has no `deny` job; introduce the required capability in the workflow generator, then select it through <RepoFile path=".velnor/config.toml">.velnor/config.toml</RepoFile>. The following is a proposed job shape, not an instruction to edit generated YAML:
 
 ```yaml
   deny:

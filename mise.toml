@@ -18,6 +18,7 @@ cargo-binstall = "1.21.1"
 "aqua:nextest-rs/nextest/cargo-nextest" = "0.9.140"
 "cargo:cargo-shear" = "1.13.4"
 # Provides `boltffi`; pin matches the jackin-usage-ffi boltffi crate.
+"cargo:boltffi_cli" = "0.30.1"
 "cargo:cargo-zigbuild" = "0.23.0"
 "cargo:codebook-lsp" = { version = "0.3.42", default-features = false }
 "cargo:sccache" = "0.16.0"
@@ -34,10 +35,7 @@ ripgrep = "15.2.0"
 periphery = { version = "3.8.0", os = ["macos"] }
 swiftlint = { version = "0.65.1", os = ["macos"] }
 uv = "0.11.29"
-"pipx:reuse" = { version = "6.2.0", extras = "charset-normalizer", depends = [
-  "python",
-  "uv",
-] }
+"pipx:reuse" = { version = "6.2.0", extras = "charset-normalizer", depends = ["python", "uv"] }
 syft = "1.46.0"
 xcodegen = "2.46.0"
 xcbeautify = { version = "3.2.1", os = ["macos"] }
@@ -45,21 +43,10 @@ zig = "0.16.0"
 # rust is read from `rust-toolchain.toml` via the `idiomatic_version_file`
 # setting below — single source of truth for the toolchain channel and components.
 
-[tools."github:boltffi/boltffi"]
-version = "0.30.1"
-matching_regex = '^boltffi-(darwin-aarch64|darwin-x86_64|linux-aarch64(-musl)?|linux-x86_64(-musl)?|windows-arm64|windows-x86_64)\.(tar\.gz|zip)$'
-
 [settings]
 cargo.binstall = true
 idiomatic_version_file_enable_tools = ["rust"]
 lockfile = true
-
-# Keep ordinary Cargo calls routed through MBX, including Cargo subprocesses
-# started by jackin-xtask and boltffi. Rust version selection remains owned by
-# rust-toolchain.toml; MBX has its own independent pinned tool entry above.
-[wrappers.cargo]
-command = "mbx"
-env = { MBX_CARGO_SHIM_MODE = "1" }
 
 # Construct image tasks. Each delegates to the `jackin-xtask` Rust binary
 # via `cargo xtask construct <sub>`; all task logic lives in Rust, not shell.
@@ -101,16 +88,6 @@ run = "cargo xtask construct publish-manifest"
 description = "Print the resolved construct Bake configuration"
 run = "cargo xtask construct inspect"
 
-# CI evidence observer tasks keep GitHub event parsing and Actions API handling
-# in the typed xtask boundary. Results are advisory and best effort.
-[tasks.ci-evidence]
-description = "Collect advisory first-attempt CI evidence"
-run = "cargo xtask ci-evidence run"
-
-[tasks.ci-push-head-ledger]
-description = "Record the exact main push head and event payload"
-run = "cargo xtask ci-evidence record-push"
-
 # Canonical gate contract (native class). The generated ci-pr.yml gates map to
 # exactly these commands; keep the names stable because ci-pr.yml is generated
 # and never hand-edited:
@@ -145,6 +122,189 @@ run = "cargo fmt --check"
 description = "Apply workspace formatting (fix side of the fmt gate; staged by hand after hook review)"
 run = "cargo fmt"
 
+# Scheduled evidence task. The collector owns API pagination and first-attempt
+# joins; the generated check-profile workflow owns cadence and artifact upload.
+[tasks.ci-evidence]
+description = "Collect first-attempt CI/Main and Desktop evidence and write the rollup"
+run = '''
+set -euo pipefail
+mkdir -p target/ci-evidence
+if [ "${GITHUB_ACTIONS:-false}" = "true" ]; then
+  test "${GITHUB_EVENT_NAME:-}" = "schedule"
+  test "${GITHUB_REF_NAME:-}" = "main"
+  case "${GITHUB_WORKFLOW_REF:-}" in
+    */.github/workflows/ci-evidence.yml@*) ;;
+    *) echo "ci-evidence must run from the scheduled main workflow" >&2; exit 1 ;;
+  esac
+fi
+if [ "${GITHUB_ACTIONS:-false}" = "true" ] && [ ! -s target/ci-evidence/attempts.json ]; then
+  previous_dir="${RUNNER_TEMP:?RUNNER_TEMP must be set}/ci-evidence-previous"
+  rm -rf "$previous_dir"
+  mkdir -p "$previous_dir"
+  previous_run="$(gh run list \
+    --repo "${GITHUB_REPOSITORY:?GITHUB_REPOSITORY must be set}" \
+    --workflow ci-evidence.yml \
+    --status completed \
+    --limit 100 \
+    --json databaseId,event,headBranch,status,createdAt,workflowName \
+    | jq -r --arg current "${GITHUB_RUN_ID:-}" 'map(select(.event == "schedule" and .headBranch == "main" and .status == "completed" and .workflowName == "CI first-attempt evidence" and ((.databaseId | tostring) != $current))) | sort_by(.createdAt) | last.databaseId // empty')"
+  if [ -n "${previous_run}" ] && [ "${previous_run}" != "${GITHUB_RUN_ID:-}" ]; then
+    gh run download "${previous_run}" \
+      --repo "${GITHUB_REPOSITORY}" \
+      --name ci-evidence \
+      --dir "$previous_dir"
+    test -s "$previous_dir/attempts.json"
+    jq -e \
+      --arg repository "${GITHUB_REPOSITORY}" \
+      --arg run_id "${previous_run}" \
+      '.schema == 4
+       and .repository == $repository
+       and .provenance.repository == $repository
+       and .provenance.event == "schedule"
+       and .provenance.branch == "main"
+       and .provenance.workflow_path == "ci-evidence.yml"
+       and (.provenance.run_id | tostring) == $run_id
+       and (.window.since | type) == "string"
+       and (.window.until | type) == "string"
+       and .denominator.window == .window
+       and .runtime.runtime_revision != null
+       and .runtime.contract_digest != null
+       and .denominator.source == "push_head_ledger"
+       and .denominator.branch == "main"
+       and .denominator.fetch_succeeded == true
+       and .denominator.source_workflow == "ci-push-head-ledger.yml"
+       and (.denominator.source_run_count | numbers) > 0' \
+      "$previous_dir/attempts.json" >/dev/null
+    cp "$previous_dir/attempts.json" target/ci-evidence/attempts.json
+  fi
+fi
+cargo xtask ci-evidence collect \
+  --repository "${GITHUB_REPOSITORY:?GITHUB_REPOSITORY must be set}" \
+  --output target/ci-evidence/attempts.json
+cargo xtask ci-evidence rollup \
+  --input target/ci-evidence/attempts.json \
+  --json target/ci-evidence/rollup.json \
+  --markdown target/ci-evidence/rollup.md
+'''
+
+# One immutable artifact per main push. Git history cannot identify the push
+# head when several commits arrive in one push; this event-backed artifact is
+# the denominator source for ci-evidence. The collector verifies the raw
+# payload, run identity, before/after chain, tree, and first-parent range
+# before it creates obligations. Velnor always adds workflow_dispatch to this
+# primitive; the task rejects manual dispatch because only push events can
+# create ledger evidence.
+[tasks.ci-push-head-ledger]
+description = "Record the durable main push head and raw push event"
+run = '''
+set -euo pipefail
+test "${GITHUB_ACTIONS:-false}" = "true"
+test "${GITHUB_EVENT_NAME:-}" = "push"
+test "${GITHUB_REF:-}" = "refs/heads/main"
+test -n "${GITHUB_REPOSITORY:-}"
+test -n "${GITHUB_SHA:-}"
+test -n "${GITHUB_RUN_ID:-}"
+event_path="${GITHUB_EVENT_PATH:?GITHUB_EVENT_PATH must be set}"
+mkdir -p target/ci-push-head-ledger
+before_sha="$(jq -er '.before | strings' "$event_path")"
+jq -e \
+  --arg repository "$GITHUB_REPOSITORY" \
+  --arg ref "refs/heads/main" \
+  --arg head "$GITHUB_SHA" \
+  --arg before "$before_sha" \
+  '.repository.full_name == $repository
+   and .ref == $ref
+   and .after == $head
+   and .before == $before
+   and (.commits | type) == "array"
+   and any(.commits[]; .id == $head)' \
+  "$event_path" >/dev/null
+tree_sha="$(git rev-parse "${GITHUB_SHA}^{tree}")"
+committed_at="$(git show -s --format=%cI "$GITHUB_SHA")"
+raw_event_sha256="$(sha256sum "$event_path" | awk '{print $1}')"
+jq -n \
+  --slurpfile event "$event_path" \
+  --arg repository "$GITHUB_REPOSITORY" \
+  --arg branch "main" \
+  --arg event "push" \
+  --arg workflow_path "ci-push-head-ledger.yml" \
+  --arg run_id "$GITHUB_RUN_ID" \
+  --arg head_sha "$GITHUB_SHA" \
+  --arg before_sha "$before_sha" \
+  --arg tree_sha "$tree_sha" \
+  --arg committed_at "$committed_at" \
+  --arg raw_event_sha256 "$raw_event_sha256" \
+  '{schema: 1, repository: $repository, branch: $branch, event: $event,
+    workflow_path: $workflow_path, run_id: ($run_id | tonumber),
+    head_sha: $head_sha, before_sha: $before_sha, tree_sha: $tree_sha,
+    committed_at: $committed_at,
+    pushed_commits: ($event[0].commits | map(.id)),
+    raw_event_sha256: $raw_event_sha256}' \
+  > target/ci-push-head-ledger/push-head.json
+cp "$event_path" target/ci-push-head-ledger/event.json
+test -s target/ci-push-head-ledger/push-head.json
+test -s target/ci-push-head-ledger/event.json
+'''
+
+# One immutable artifact per main push. Git history cannot identify the push
+# head when several commits arrive in one push; this event-backed artifact is
+# the denominator source for ci-evidence. The collector verifies the raw
+# payload, run identity, before/after chain, tree, and first-parent range
+# before it creates obligations. Velnor always adds workflow_dispatch to this
+# primitive; the task rejects manual dispatch because only push events can
+# create ledger evidence.
+[tasks.ci-push-head-ledger]
+description = "Record the durable main push head and raw push event"
+run = '''
+set -euo pipefail
+test "${GITHUB_ACTIONS:-false}" = "true"
+test "${GITHUB_EVENT_NAME:-}" = "push"
+test "${GITHUB_REF:-}" = "refs/heads/main"
+test -n "${GITHUB_REPOSITORY:-}"
+test -n "${GITHUB_SHA:-}"
+test -n "${GITHUB_RUN_ID:-}"
+event_path="${GITHUB_EVENT_PATH:?GITHUB_EVENT_PATH must be set}"
+mkdir -p target/ci-push-head-ledger
+before_sha="$(jq -er '.before | strings' "$event_path")"
+jq -e \
+  --arg repository "$GITHUB_REPOSITORY" \
+  --arg ref "refs/heads/main" \
+  --arg head "$GITHUB_SHA" \
+  --arg before "$before_sha" \
+  '.repository.full_name == $repository
+   and .ref == $ref
+   and .after == $head
+   and .before == $before
+   and (.commits | type) == "array"
+   and any(.commits[]; .id == $head)' \
+  "$event_path" >/dev/null
+tree_sha="$(git rev-parse "${GITHUB_SHA}^{tree}")"
+committed_at="$(git show -s --format=%cI "$GITHUB_SHA")"
+raw_event_sha256="$(sha256sum "$event_path" | awk '{print $1}')"
+jq -n \
+  --slurpfile event "$event_path" \
+  --arg repository "$GITHUB_REPOSITORY" \
+  --arg branch "main" \
+  --arg event "push" \
+  --arg workflow_path "ci-push-head-ledger.yml" \
+  --arg run_id "$GITHUB_RUN_ID" \
+  --arg head_sha "$GITHUB_SHA" \
+  --arg before_sha "$before_sha" \
+  --arg tree_sha "$tree_sha" \
+  --arg committed_at "$committed_at" \
+  --arg raw_event_sha256 "$raw_event_sha256" \
+  '{schema: 1, repository: $repository, branch: $branch, event: $event,
+    workflow_path: $workflow_path, run_id: ($run_id | tonumber),
+    head_sha: $head_sha, before_sha: $before_sha, tree_sha: $tree_sha,
+    committed_at: $committed_at,
+    pushed_commits: ($event[0].commits | map(.id)),
+    raw_event_sha256: $raw_event_sha256}' \
+  > target/ci-push-head-ledger/push-head.json
+cp "$event_path" target/ci-push-head-ledger/event.json
+test -s target/ci-push-head-ledger/push-head.json
+test -s target/ci-push-head-ledger/event.json
+'''
+
 [tasks.clippy-affected]
 description = "Run Clippy with CI flags over crates affected by worktree changes (pre-commit hook)"
 run = "cargo xtask clippy-affected"
@@ -164,26 +324,29 @@ run = "scripts/hooks-install"
 
 [tasks.desktop-bindings]
 description = "Generate boltffi Swift bindings for jackin❯ desktop"
+tools = { rust = "1.97.1", "cargo:boltffi_cli" = "0.30.1" }
 run = "cargo xtask desktop bindings"
 
 [tasks.desktop-bindings-check]
 description = "Fail when committed boltffi bindings drift from regeneration"
+tools = { rust = "1.97.1", "cargo:boltffi_cli" = "0.30.1" }
 run = "cargo xtask desktop bindings-check"
 
 [tasks.desktop-xcframework]
 description = "Build the arm64 static JackinUsageFFI XCFramework"
+tools = { rust = "1.97.1", "cargo:boltffi_cli" = "0.30.1" }
 run = "cargo xtask desktop xcframework"
 
 [tasks.swift-package-native-ci]
 description = "CI gate for native SwiftPM package (xcframework then build/test)"
-run = '''
-set -euo pipefail
-mise run desktop-xcframework
-cargo xtask desktop test-swift --jobs 2
-'''
+run = [
+  { task = "desktop-xcframework" },
+  "cd native && swift build && swift test --parallel",
+]
 
 [tasks.desktop-generate]
 description = "Regenerate the jackin❯ desktop Xcode project"
+tools = { xcodegen = "2.46.0" }
 run = "xcodegen generate --spec native/project.yml"
 
 [tasks.desktop-format]
@@ -198,20 +361,24 @@ run = "cd native && find Sources Tests UITests Tools Scripts -name '*.swift' ! -
 
 [tasks.desktop-lint]
 description = "Fail on jackin❯ desktop SwiftLint violations"
+tools = { swiftlint = { version = "0.65.1", os = ["macos"] } }
 # No --config flag: an explicit config path disables SwiftLint's nested-config
 # discovery, which the per-directory test-policy and size-debt files rely on.
 run = "cd native && swiftlint lint --strict"
 
 [tasks.desktop-test-ui]
 description = "Run jackin❯ desktop UI tests against the real app host"
+tools = { ripgrep = "15.2.0", xcbeautify = { version = "3.2.1", os = ["macos"] } }
 run = "native/Scripts/run-ui-tests.sh"
 
 [tasks.desktop-deadcode]
 description = "Scan jackin❯ desktop for unused declarations"
+tools = { periphery = { version = "3.8.0", os = ["macos"] } }
 run = "cd native && periphery scan --project JackinDesktop.xcodeproj --schemes JackinDesktop --retain-public --retain-objc-accessible --retain-assign-only-properties --report-exclude '**/JackinUsageBindings/**' --strict --quiet"
 
 [tasks.desktop-build]
 description = "Build JackinDesktop.app (prints absolute path + how to run)"
+tools = { rust = "1.97.1", "cargo:boltffi_cli" = "0.30.1", xcodegen = "2.46.0" }
 usage = '''
 arg "[version]" help="CFBundleShortVersionString (e.g. 0.6.0)"
 arg "[build]" help="CFBundleVersion numeric build (e.g. 1)"
@@ -227,6 +394,7 @@ cargo xtask desktop build --version "$version" --build "$build"
 
 [tasks.desktop-verify]
 description = "Fail-closed verify of JackinDesktop.app (prints path + run hint)"
+tools = { rust = "1.97.1" }
 usage = '''
 arg "<app>" help="Path to JackinDesktop.app" default="native/dist/JackinDesktop.app"
 arg "[version]" help="Expected CFBundleShortVersionString"
@@ -244,7 +412,13 @@ cargo xtask desktop verify "${args[@]}"
 
 [tasks.desktop-test]
 description = "Host + pure Swift OpenUsage/CodexBar limits-only parity harnesses for Desktop"
+tools = { rust = "1.97.1", "aqua:nextest-rs/nextest/cargo-nextest" = "0.9.140" }
 run = "cargo xtask desktop test"
+
+[tasks.desktop-test-swift]
+description = "Run the counted native SwiftPM unit tests"
+tools = { rust = "1.97.1" }
+run = "cargo xtask desktop test-swift"
 
 # Canonical cadence graph — one definition per command, CI and release invoke
 # these exact task names (see native/Design/UnifiedAgentUsage/SwiftProjectReadiness.md).
@@ -258,33 +432,30 @@ run = "cargo xtask desktop test"
 # resilience probes out of `desktop-ci`.
 [tasks.desktop-ci]
 description = "PR cadence: full nonmutating jackin❯ desktop gate graph"
-run = '''
-set -euo pipefail
-mise run desktop-bindings-check
-mise run desktop-generate
-mise run desktop-format-check
-mise run desktop-lint
-mise run desktop-test
-mise run desktop-build
-cargo xtask desktop test-swift --jobs 2
-mise run desktop-verify
-'''
+run = [
+  { task = "desktop-bindings-check" },
+  { task = "desktop-generate" },
+  { task = "desktop-format-check" },
+  { task = "desktop-lint" },
+  { task = "desktop-test" },
+  { task = "desktop-build" },
+  { task = "desktop-test-swift" },
+  { task = "desktop-verify" },
+]
 
 [tasks.desktop-merge]
 description = "Merge cadence: PR graph plus UI tests against the real app host"
-run = '''
-set -euo pipefail
-mise run desktop-ci
-mise run desktop-test-ui
-'''
+run = [
+  { task = "desktop-ci" },
+  { task = "desktop-test-ui" },
+]
 
 [tasks.desktop-scheduled]
 description = "Scheduled cadence: merge graph plus dead-code scan"
-run = '''
-set -euo pipefail
-mise run desktop-merge
-mise run desktop-deadcode
-'''
+run = [
+  { task = "desktop-merge" },
+  { task = "desktop-deadcode" },
+]
 
 [tasks.desktop-run]
 description = "Launch JackinDesktop.app (menu bar only — no Dock icon)"
@@ -428,10 +599,6 @@ if [ -n "${usage_build:-}" ]; then set -- "$@" --build "$usage_build"; fi
 cargo xtask desktop sign-notarize "$@"
 '''
 
-[tasks.desktop-release-tools]
-description = "Install the locked tool closure required by desktop release jobs"
-run = "mise install --locked rust github:boltffi/boltffi xcodegen"
-
 [tasks.desktop-release-state]
 description = "Print independent Desktop release/cask state KEY=value lines"
 usage = '''
@@ -495,6 +662,277 @@ if [ -n "${GITHUB_ENV:-}" ]; then
 fi
 printf 'JACKIN_APP_VERSION=%s\nJACKIN_APP_BUILD=%s\n' "$version" "$build"
 '''
+
+[tasks.release-preview-package]
+description = "Build and attest the complete six-payload Homebrew preview package"
+run = '''
+set -euo pipefail
+
+source_commit="${VELNOR_SOURCE_COMMIT:-$(git rev-parse HEAD)}"
+case "$source_commit" in
+  ''|*[!0-9a-f]*) echo "source commit is not lowercase hex: $source_commit" >&2; exit 1 ;;
+esac
+[ "$(printf '%s' "$source_commit" | wc -c | tr -d ' ')" = 40 ]
+[ "$(git rev-parse HEAD)" = "$source_commit" ]
+
+source_ref="${VELNOR_SOURCE_REF:-refs/heads/main}"
+[ "$source_ref" = "refs/heads/main" ] || { echo "preview source ref must be refs/heads/main: $source_ref" >&2; exit 1; }
+source_repository="jackin-project/jackin"
+base_version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
+case "$base_version" in
+  ''|*[!0-9.]*|.*|*.|*..*) echo "workspace version is not X.Y.Z: $base_version" >&2; exit 1 ;;
+esac
+case "$(printf '%s' "$base_version" | tr -cd '.')" in
+  '..') ;;
+  *) echo "workspace version is not X.Y.Z: $base_version" >&2; exit 1 ;;
+esac
+short_commit="$(printf '%s' "$source_commit" | cut -c1-7)"
+commit_count="$(git rev-list --count "$source_commit")"
+case "$commit_count" in
+  ''|*[!0-9]*) echo "invalid source commit count: $commit_count" >&2; exit 1 ;;
+esac
+version="${base_version}-preview.${commit_count}+${short_commit}"
+
+package_dir="${VELNOR_VERIFIED_PACKAGE_DIR:?missing VELNOR_VERIFIED_PACKAGE_DIR}"
+runner_temp="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
+archive_root="$runner_temp/jackin-preview-archives"
+check_dir="$runner_temp/jackin-preview-check"
+rm -rf -- "$archive_root" "$check_dir" "$package_dir"
+mkdir -p -- "$archive_root/jackin" "$archive_root/capsule" "$package_dir" "$check_dir"
+trap 'rm -rf -- "$archive_root" "$check_dir"' EXIT
+
+export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$PWD/target}"
+cargo xtask release-archives \
+  --package jackin \
+  --version "$version" \
+  --output-dir "$archive_root/jackin"
+cargo xtask release-archives \
+  --package jackin-capsule \
+  --version "$version" \
+  --output-dir "$archive_root/capsule"
+
+cp -- "$archive_root/jackin/"*.tar.gz* "$package_dir/"
+cp -- "$archive_root/capsule/"*.tar.gz* "$package_dir/"
+
+payloads=(
+  jackin-aarch64-apple-darwin.tar.gz
+  jackin-x86_64-apple-darwin.tar.gz
+  jackin-aarch64-unknown-linux-gnu.tar.gz
+  jackin-x86_64-unknown-linux-gnu.tar.gz
+  jackin-capsule-aarch64-unknown-linux-gnu.tar.gz
+  jackin-capsule-x86_64-unknown-linux-gnu.tar.gz
+)
+supporting_assets=(
+  jackin-aarch64-apple-darwin.tar.gz.sha256
+  jackin-aarch64-apple-darwin.tar.gz.bundle
+  jackin-aarch64-apple-darwin.tar.gz.sbom.json
+  jackin-x86_64-apple-darwin.tar.gz.sha256
+  jackin-x86_64-apple-darwin.tar.gz.bundle
+  jackin-x86_64-apple-darwin.tar.gz.sbom.json
+  jackin-aarch64-unknown-linux-gnu.tar.gz.sha256
+  jackin-aarch64-unknown-linux-gnu.tar.gz.bundle
+  jackin-aarch64-unknown-linux-gnu.tar.gz.sbom.json
+  jackin-x86_64-unknown-linux-gnu.tar.gz.sha256
+  jackin-x86_64-unknown-linux-gnu.tar.gz.bundle
+  jackin-x86_64-unknown-linux-gnu.tar.gz.sbom.json
+  jackin-capsule-aarch64-unknown-linux-gnu.tar.gz.sha256
+  jackin-capsule-aarch64-unknown-linux-gnu.tar.gz.bundle
+  jackin-capsule-aarch64-unknown-linux-gnu.tar.gz.sbom.json
+  jackin-capsule-x86_64-unknown-linux-gnu.tar.gz.sha256
+  jackin-capsule-x86_64-unknown-linux-gnu.tar.gz.bundle
+  jackin-capsule-x86_64-unknown-linux-gnu.tar.gz.sbom.json
+  SHA256SUMS
+  capsule-manifest.json
+  capsule-manifest.json.bundle
+)
+for payload in "${payloads[@]}"; do
+  test -s "$package_dir/$payload"
+  test -s "$package_dir/$payload.sha256"
+  test -s "$package_dir/$payload.bundle"
+  test -s "$package_dir/$payload.sbom.json"
+  expected="$(awk 'NR == 1 {print $1}' "$package_dir/$payload.sha256")"
+  [[ "$expected" =~ ^[0-9a-f]{64}$ ]]
+  test "$(sha256sum "$package_dir/$payload" | awk '{print $1}')" = "$expected"
+  cargo xtask release-verify "$package_dir/$payload" --skip-attestation
+done
+
+test "$(tar -xzf "$package_dir/jackin-x86_64-unknown-linux-gnu.tar.gz" -C "$check_dir" && "$check_dir/jackin" --version)" = "jackin $version"
+
+LC_ALL=C sha256sum \
+  "$package_dir/jackin-aarch64-apple-darwin.tar.gz" \
+  "$package_dir/jackin-x86_64-apple-darwin.tar.gz" \
+  "$package_dir/jackin-aarch64-unknown-linux-gnu.tar.gz" \
+  "$package_dir/jackin-x86_64-unknown-linux-gnu.tar.gz" \
+  "$package_dir/jackin-capsule-aarch64-unknown-linux-gnu.tar.gz" \
+  "$package_dir/jackin-capsule-x86_64-unknown-linux-gnu.tar.gz" \
+  | sed "s# $package_dir/# #" > "$package_dir/SHA256SUMS"
+
+jq -n \
+  --arg version "$version" \
+  --arg arm64 "$(awk 'NR == 1 {print $1}' "$package_dir/jackin-capsule-aarch64-unknown-linux-gnu.tar.gz.sha256")" \
+  --arg x86 "$(awk 'NR == 1 {print $1}' "$package_dir/jackin-capsule-x86_64-unknown-linux-gnu.tar.gz.sha256")" \
+  '{version: $version, targets: {"aarch64-unknown-linux-gnu": $arm64, "x86_64-unknown-linux-gnu": $x86}}' \
+  > "$package_dir/capsule-manifest.json"
+cosign sign-blob \
+  --bundle "$package_dir/capsule-manifest.json.bundle" \
+  --yes "$package_dir/capsule-manifest.json"
+
+for supporting_asset in "${supporting_assets[@]}"; do
+  test -s "$package_dir/$supporting_asset"
+done
+
+jq -n \
+  --arg version "$version" \
+  --arg source_commit "$source_commit" \
+  --arg source_ref "$source_ref" \
+  --arg source_repository "$source_repository" \
+  --arg schema "velnor.package-release.v1" \
+  --argjson assets "$(
+    for payload in "${payloads[@]}"; do
+      jq -n \
+        --arg name "$payload" \
+        --arg sha256 "$(awk 'NR == 1 {print $1}' "$package_dir/$payload.sha256")" \
+        '{name: $name, sha256: $sha256}'
+    done | jq -s .
+  )" \
+  --argjson supporting_assets "$(
+    for supporting_asset in "${supporting_assets[@]}"; do
+      jq -n \
+        --arg name "$supporting_asset" \
+        --arg sha256 "$(sha256sum "$package_dir/$supporting_asset" | awk '{print $1}')" \
+        '{name: $name, sha256: $sha256}'
+    done | jq -s .
+  )" \
+  '{assets: $assets, schema: $schema, source_commit: $source_commit, source_ref: $source_ref, source_repository: $source_repository, supporting_assets: $supporting_assets, version: $version}' \
+  > "$package_dir/release-manifest.json"
+
+payload_count="$(printf '%s\n' "${payloads[@]}" | wc -l | tr -d '[:space:]')"
+supporting_asset_count="$(printf '%s\n' "${supporting_assets[@]}" | wc -l | tr -d '[:space:]')"
+jq -e \
+  --arg schema "velnor.package-release.v1" \
+  --arg source_commit "$source_commit" \
+  --arg source_ref "$source_ref" \
+  --arg source_repository "$source_repository" \
+  --arg version "$version" \
+  --argjson payload_count "$payload_count" \
+  --argjson supporting_asset_count "$supporting_asset_count" \
+  'keys == ["assets", "schema", "source_commit", "source_ref", "source_repository", "supporting_assets", "version"] and
+   .schema == $schema and
+   .source_commit == $source_commit and
+   .source_ref == $source_ref and
+   .source_repository == $source_repository and
+   .version == $version and
+   (.assets | type == "array" and length == $payload_count and all(.[]; (keys == ["name", "sha256"] and (.sha256 | test("^[0-9a-f]{64}$"))))) and
+   (.supporting_assets | type == "array" and length == $supporting_asset_count and all(.[]; (keys == ["name", "sha256"] and (.sha256 | test("^[0-9a-f]{64}$")))))' \
+  "$package_dir/release-manifest.json" >/dev/null
+for payload in "${payloads[@]}"; do
+  expected="$(sha256sum "$package_dir/$payload" | awk '{print $1}')"
+  jq -e --arg name "$payload" --arg sha256 "$expected" \
+    '[.assets[] | select(.name == $name and .sha256 == $sha256)] | length == 1' \
+    "$package_dir/release-manifest.json" >/dev/null
+done
+for supporting_asset in "${supporting_assets[@]}"; do
+  expected="$(sha256sum "$package_dir/$supporting_asset" | awk '{print $1}')"
+  jq -e --arg name "$supporting_asset" --arg sha256 "$expected" \
+    '[.supporting_assets[] | select(.name == $name and .sha256 == $sha256)] | length == 1' \
+    "$package_dir/release-manifest.json" >/dev/null
+done
+
+jq -n \
+  --arg source_digest "$source_commit" \
+  --arg source_ref "$source_ref" \
+  --arg source_repository "$source_repository" \
+  --slurpfile manifest "$package_dir/release-manifest.json" \
+  '{manifest: $manifest[0], source_digest: $source_digest, source_ref: $source_ref, source_repository: $source_repository}' \
+  > "$package_dir/identity.json"
+
+jq -e \
+  --arg source_digest "$source_commit" \
+  --arg source_ref "$source_ref" \
+  --arg source_repository "$source_repository" \
+  --slurpfile manifest "$package_dir/release-manifest.json" \
+  'keys == ["manifest", "source_digest", "source_ref", "source_repository"] and
+   .source_digest == $source_digest and
+   .source_ref == $source_ref and
+   .source_repository == $source_repository and
+   .manifest == $manifest[0]' \
+  "$package_dir/identity.json" >/dev/null
+
+# Verify the complete handoff, including the signed capsule manifest's target
+# bindings, before exposing the package to the workflow's publish steps.
+cargo xtask release-verify-package
+
+printf 'version=%s\nsource_commit=%s\n' "$version" "$source_commit"
+'''
+
+[tasks.verify-preview-package]
+description = "Verify the complete six-payload Homebrew preview package handoff"
+run = '''
+set -euo pipefail
+: "${VELNOR_VERIFIED_PACKAGE_DIR:?missing VELNOR_VERIFIED_PACKAGE_DIR}"
+cargo xtask release-verify-package
+'''
+
+[tasks.migrate-preview-legacy]
+description = "One-time migration of the known legacy rolling preview release"
+run = 'cargo xtask preview migrate-legacy'
+
+[tasks.renovate-upstream-sources]
+description = "Verify the pinned mise release ships both construct architectures (guards the construct installer URLs and the MISE_VERSION customManager)"
+run = '''
+set -eu
+. ./docker/construct/versions.env
+if [ -z "${MISE_VERSION:-}" ]; then
+  echo "::error::MISE_VERSION is empty"
+  exit 1
+fi
+# The standalone installer (https://mise.run) the construct
+# Dockerfile pipes to `sh` downloads these exact release assets.
+for arch in x64 arm64; do
+  url="https://github.com/jdx/mise/releases/download/v${MISE_VERSION}/mise-v${MISE_VERSION}-linux-${arch}.tar.gz"
+  if ! curl --fail --silent --show-error --location --head \
+    --retry 5 --retry-all-errors --retry-delay 2 \
+    --connect-timeout 15 --max-time 60 \
+    -o /dev/null "$url"; then
+    echo "::error::${url} did not resolve — mise v${MISE_VERSION} is missing the linux-${arch} release asset"
+    exit 1
+  fi
+done
+'''
+[tasks.construct-ci-dockerfile]
+description = "CI gate: build the construct Dockerfile with pinned tool versions"
+run = '''source 'docker/construct/versions.env' && docker build --file 'docker/construct/Dockerfile' --build-arg SHELLFIRM_VERSION="$SHELLFIRM_VERSION" --build-arg TIRITH_VERSION="$TIRITH_VERSION" --build-arg MISE_VERSION="$MISE_VERSION" --build-arg STARSHIP_VERSION="$STARSHIP_VERSION" --tag local-ci:docker-construct-dockerfile 'docker/construct''''
+
+[tasks.jackin-lints-ci]
+description = "Verify jackin-lints with its crate-local nightly toolchain"
+run = """
+cd -- 'crates/jackin-lints'
+env -u RUSTUP_TOOLCHAIN cargo fmt --manifest-path 'Cargo.toml' -- --check
+env -u RUSTUP_TOOLCHAIN cargo clippy --locked --all-targets --all-features --package 'jackin_lints' -- -D warnings
+env -u RUSTUP_TOOLCHAIN cargo nextest run --no-run --locked --all-features --package 'jackin_lints'
+"""
+
+# Canonical gate contract (native class). The generated ci-pr.yml gates map to
+# exactly these commands; keep the names stable because ci-pr.yml is generated
+# and never hand-edited:
+#   install → `mise install --locked`   (direct command, no task by design)
+#   build   → `mise run ci`             (depends-only aggregate over `build`)
+#   test    → `mise run desktop-ci`     (platform-only gate, macOS lane)
+#   lint    → `mise run lint`
+#   format  → `mise run fmt`
+# `lint` and `fmt` stay out of the `ci` aggregate: the generated workflow
+# runs them as separate gates, so aggregating them here would re-run them.
+[tasks.native-swift-ci]
+description = "CI gate: build the XCFramework, then compile and test the native Swift package"
+run = """
+mise run desktop-xcframework
+cd -- 'native' && swift build
+cd -- 'native' && swift test --parallel
+"""
+
+[tasks.desktop-release-tools]
+description = "Install the locked tool closure required by desktop release jobs"
+run = "mise install --locked rust cargo:boltffi_cli xcodegen"
 
 [tasks.release-preview-package]
 description = "Build and attest the complete six-payload Homebrew preview package"
@@ -815,25 +1253,3 @@ cargo xtask release-verify-package
 description = "One-time migration of the known legacy rolling preview release"
 run = 'cargo xtask preview migrate-legacy'
 
-[tasks.renovate-upstream-sources]
-description = "Verify the pinned mise release ships both construct architectures (guards the construct installer URLs and the MISE_VERSION customManager)"
-run = '''
-set -eu
-. ./docker/construct/versions.env
-if [ -z "${MISE_VERSION:-}" ]; then
-  echo "::error::MISE_VERSION is empty"
-  exit 1
-fi
-# The standalone installer (https://mise.run) the construct
-# Dockerfile pipes to `sh` downloads these exact release assets.
-for arch in x64 arm64; do
-  url="https://github.com/jdx/mise/releases/download/v${MISE_VERSION}/mise-v${MISE_VERSION}-linux-${arch}.tar.gz"
-  if ! curl --fail --silent --show-error --location --head \
-    --retry 5 --retry-all-errors --retry-delay 2 \
-    --connect-timeout 15 --max-time 60 \
-    -o /dev/null "$url"; then
-    echo "::error::${url} did not resolve — mise v${MISE_VERSION} is missing the linux-${arch} release asset"
-    exit 1
-  fi
-done
-'''

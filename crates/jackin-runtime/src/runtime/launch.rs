@@ -28,6 +28,7 @@ mod account_config;
 mod account_identity;
 pub(crate) use account_identity::{
     AccountConfigRevision, GenerationLeaseViolation, ensure_current_or_remove_stale_container,
+    ensure_current_or_remove_stale_container_by_name,
 };
 mod launch_dind;
 pub use launch_dind::DIND_IMAGE;
@@ -160,6 +161,10 @@ pub struct LoadOptions {
     /// Shared ownership of one construct-entry lease, activated after role start.
     /// Pending ownership survives preflight errors and asynchronous cancellation.
     pub entry_claim: Option<std::sync::Arc<crate::runtime::universe::EntryClaim>>,
+
+    /// Exact agent configuration selected for this launch. This takes
+    /// precedence over `account`; callers must not supply both.
+    pub configuration: Option<String>,
 
     /// Exact model id for the launched agent, overriding the role manifest's
     /// `[<agent>].model`. Also passed to the in-container Codex role hook so

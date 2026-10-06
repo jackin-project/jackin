@@ -14,11 +14,7 @@ use jackin_test_support::{FakeDockerClient, FakeRunner};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Mutex, MutexGuard};
 #[cfg(unix)]
-use std::{
-    os::unix::fs::PermissionsExt,
-    path::{Path, PathBuf},
-    process::Command as ProcessCommand,
-};
+use std::{os::unix::fs::PermissionsExt, path::Path, process::Command as ProcessCommand};
 
 #[cfg(unix)]
 const BUILD_TOKEN_TEST_CHILD: &str = "JACKIN_BUILD_TOKEN_TEST_CHILD";
@@ -157,7 +153,8 @@ static RICH_SURFACE_TEST_LOCK: Mutex<()> = Mutex::new(());
 const IMAGE_BUILD_SOURCE: &str = include_str!("build.rs");
 const IMAGE_VERSION_SOURCE: &str = include_str!("version.rs");
 const IMAGE_MODULE_SOURCE: &str = include_str!("../image.rs");
-const SHARED_IMAGE_BUILD_SOURCE: &str = include_str!("../../../../jackin-image/src/image_build.rs");
+const SHARED_IMAGE_BUILD_SOURCE: &str =
+    include_str!("../../../../jackin-image/src/image_build.rs");
 
 struct RichSurfaceTestGuard {
     _guard: MutexGuard<'static, ()>,
@@ -263,12 +260,11 @@ fn image_build_sources_have_no_ambient_github_secret_contract() {
 #[cfg(unix)]
 #[tokio::test]
 async fn ambient_github_credentials_are_not_forwarded_to_buildkit() -> anyhow::Result<()> {
-    const CHILD_TEST: &str =
-        "runtime::image::tests::ambient_github_credentials_are_not_forwarded_to_buildkit";
+    const CHILD_TEST: &str = "runtime::image::tests::ambient_github_credentials_are_not_forwarded_to_buildkit";
 
     if let Some(case) = std::env::var_os(BUILD_TOKEN_TEST_CHILD) {
         let marker = std::env::var_os(BUILD_TOKEN_TEST_MARKER)
-            .map(PathBuf::from)
+            .map(std::path::PathBuf::from)
             .ok_or_else(|| anyhow::anyhow!("isolated test omitted the fake gh marker path"))?;
         match case.to_str() {
             Some("github-token") => anyhow::ensure!(
@@ -362,10 +358,7 @@ async fn ambient_github_credentials_are_not_forwarded_to_buildkit() -> anyhow::R
     )?;
 
     for (case, token) in [
-        (
-            "github-token",
-            Some(("GITHUB_TOKEN", BUILD_TOKEN_TEST_GITHUB_TOKEN)),
-        ),
+        ("github-token", Some(("GITHUB_TOKEN", BUILD_TOKEN_TEST_GITHUB_TOKEN))),
         ("gh-token", Some(("GH_TOKEN", BUILD_TOKEN_TEST_GH_TOKEN))),
         ("gh-cli", None),
     ] {
@@ -407,9 +400,7 @@ async fn buildkit_errors_propagate_from_role_base_and_derived_builds() -> anyhow
             .await
             .expect_err("Docker BuildKit failure must propagate to the image caller");
         anyhow::ensure!(
-            error
-                .to_string()
-                .contains("simulated Docker BuildKit failure"),
+            error.to_string().contains("simulated Docker BuildKit failure"),
             "unexpected image build error: {error:#}"
         );
         anyhow::ensure!(

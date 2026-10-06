@@ -7,6 +7,7 @@ import SwiftUI
 /// Native provider/account hierarchy for the Overview destination.
 public struct OverviewListView: View {
     public let groups: [PresentationStore.ProviderGroupRow]
+    public let notice: String?
     @Binding public var selectedRowID: String?
     @Binding public var expandedProviderIDs: Set<String>
     public var onSelect: (String, String?) -> Void
@@ -14,12 +15,14 @@ public struct OverviewListView: View {
 
     public init(
         groups: [PresentationStore.ProviderGroupRow],
+        notice: String? = nil,
         selectedRowID: Binding<String?>,
         expandedProviderIDs: Binding<Set<String>>,
         onSelect: @escaping (String, String?) -> Void,
         onRetry: @escaping (String) -> Void
     ) {
         self.groups = groups
+        self.notice = notice
         _selectedRowID = selectedRowID
         _expandedProviderIDs = expandedProviderIDs
         self.onSelect = onSelect
@@ -31,79 +34,88 @@ public struct OverviewListView: View {
     }
 
     public var body: some View {
-        if inventory.isEmpty {
-            ContentUnavailableView(
-                "No providers detected",
-                systemImage: "chevron.right",
-                description: Text(UsageWindowModel.emptyHint)
-            )
-            .accessibilityIdentifier("usage.overview.empty")
-        } else {
-            Table(of: OverviewTreeRow.self, selection: $selectedRowID) {
-                TableColumn("Provider") { row in
-                    Text(row.providerLabel)
-                        .lineLimit(2)
-                        .accessibilityLabel(row.accessibilityLabel)
-                        .accessibilityIdentifier(rowAccessibilityIdentifier(row))
-                }
-                TableColumn("Account") { row in
-                    Text(row.accountLabel)
-                        .lineLimit(2)
-                        .accessibilityHidden(true)
-                }
-                TableColumn("Plan or status") { row in
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(row.planOrStatusLabel)
-                            .foregroundStyle(.primary)
-                        if let error = row.lastError {
-                            Text(error)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(2)
-                                .accessibilityIdentifier("usage.overview.error.\(row.surfaceId)")
-                            Button("Retry") { onRetry(row.surfaceId) }
-                                .controlSize(.small)
-                                .buttonStyle(.bordered)
-                                .accessibilityIdentifier("usage.overview.retry.\(row.surfaceId)")
-                        }
+        VStack(alignment: .leading, spacing: 8) {
+            if let notice {
+                Label(notice, systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("usage.overview.notice")
+            }
+            if inventory.isEmpty {
+                ContentUnavailableView(
+                    "No providers detected",
+                    systemImage: "chevron.right",
+                    description: Text(UsageWindowModel.emptyHint)
+                )
+                .accessibilityIdentifier("usage.overview.empty")
+            } else {
+                Table(of: OverviewTreeRow.self, selection: $selectedRowID) {
+                    TableColumn("Provider") { row in
+                        Text(row.providerLabel)
+                            .lineLimit(2)
+                            .accessibilityLabel(row.accessibilityLabel)
+                            .accessibilityIdentifier(rowAccessibilityIdentifier(row))
                     }
-                    .accessibilityHidden(row.lastError == nil)
-                }
-                .width(min: 120, ideal: 210)
-                TableColumn("Remaining") { row in
-                    Text(row.remainingLabel)
-                        .monospacedDigit()
-                        .accessibilityHidden(true)
-                }
-                .width(min: 90, ideal: 110)
-                TableColumn("Reset") { row in
-                    Text(row.resetLabel)
-                        .foregroundStyle(.primary)
-                        .lineLimit(2)
-                        .accessibilityHidden(true)
-                }
-                .width(min: 140, ideal: 210)
-            } rows: {
-                ForEach(inventory) { provider in
-                    if let children = provider.children {
-                        DisclosureTableRow(
-                            provider,
-                            isExpanded: expansionBinding(provider.surfaceId)
-                        ) {
-                            ForEach(children) { account in
-                                TableRow(account)
+                    TableColumn("Account") { row in
+                        Text(row.accountLabel)
+                            .lineLimit(2)
+                            .accessibilityHidden(true)
+                    }
+                    TableColumn("Plan or status") { row in
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(row.planOrStatusLabel)
+                                .foregroundStyle(.primary)
+                            if let error = row.lastError {
+                                Text(error)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                                    .accessibilityIdentifier(
+                                        "usage.overview.error.\(row.surfaceId)")
+                                Button("Retry") { onRetry(row.surfaceId) }
+                                    .controlSize(.small)
+                                    .buttonStyle(.bordered)
+                                    .accessibilityIdentifier(
+                                        "usage.overview.retry.\(row.surfaceId)")
                             }
                         }
-                    } else {
-                        TableRow(provider)
+                        .accessibilityHidden(row.lastError == nil)
+                    }
+                    .width(min: 120, ideal: 210)
+                    TableColumn("Remaining") { row in
+                        Text(row.remainingLabel)
+                            .monospacedDigit()
+                            .accessibilityHidden(true)
+                    }
+                    .width(min: 90, ideal: 110)
+                    TableColumn("Reset") { row in
+                        Text(row.resetLabel)
+                            .foregroundStyle(.primary)
+                            .lineLimit(2)
+                            .accessibilityHidden(true)
+                    }
+                    .width(min: 140, ideal: 210)
+                } rows: {
+                    ForEach(inventory) { provider in
+                        if let children = provider.children {
+                            DisclosureTableRow(
+                                provider,
+                                isExpanded: expansionBinding(provider.surfaceId)
+                            ) {
+                                ForEach(children) { account in
+                                    TableRow(account)
+                                }
+                            }
+                        } else {
+                            TableRow(provider)
+                        }
                     }
                 }
-            }
-            .accessibilityLabel("Usage overview")
-            .accessibilityIdentifier("usage.overview.table")
-            .onChange(of: selectedRowID) { _, selectedID in
-                guard let selectedID, let row = findRow(id: selectedID) else { return }
-                onSelect(row.surfaceId, row.accountKey)
+                .accessibilityLabel("Usage overview")
+                .accessibilityIdentifier("usage.overview.table")
+                .onChange(of: selectedRowID) { _, selectedID in
+                    guard let selectedID, let row = findRow(id: selectedID) else { return }
+                    onSelect(row.surfaceId, row.accountKey)
+                }
             }
         }
     }

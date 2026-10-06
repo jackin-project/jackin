@@ -203,13 +203,11 @@ fn validate_wal_with_page_limit(
     for index in 0..frame_count {
         check_deadline(deadline)?;
         let frame_start = WAL_HEADER_BYTES
-            .checked_add(
-                index
-                    .checked_mul(frame_size)
-                    .ok_or(WalError::InvalidLength)?,
-            )
+            .checked_add(index.checked_mul(frame_size).ok_or(WalError::InvalidLength)?)
             .ok_or(WalError::InvalidLength)?;
-        let header_end = frame_start.checked_add(8).ok_or(WalError::InvalidLength)?;
+        let header_end = frame_start
+            .checked_add(8)
+            .ok_or(WalError::InvalidLength)?;
         let page_start = frame_start
             .checked_add(WAL_FRAME_HEADER_BYTES)
             .ok_or(WalError::InvalidLength)?;
@@ -219,9 +217,7 @@ fn validate_wal_with_page_limit(
         let frame_header = wal
             .get(frame_start..header_end)
             .ok_or(WalError::InvalidLength)?;
-        let frame_page = wal
-            .get(page_start..page_end)
-            .ok_or(WalError::InvalidLength)?;
+        let frame_page = wal.get(page_start..page_end).ok_or(WalError::InvalidLength)?;
 
         if read_u32_be(wal, frame_start + 8) != Some(salt_one)
             || read_u32_be(wal, frame_start + 12) != Some(salt_two)
@@ -258,7 +254,8 @@ fn validate_wal_with_page_limit(
 
         let committed_pages = read_u32_be(wal, frame_start + 4).ok_or(WalError::InvalidLength)?;
         if committed_pages != 0 {
-            let page_count = usize::try_from(committed_pages).map_err(|_| WalError::PageLimit)?;
+            let page_count =
+                usize::try_from(committed_pages).map_err(|_| WalError::PageLimit)?;
             if page_count > max_pages {
                 return Err(WalError::PageLimit);
             }
@@ -290,8 +287,12 @@ fn checksum(
         if index.is_multiple_of(CHECKSUM_DEADLINE_INTERVAL / 8) {
             check_deadline(deadline)?;
         }
-        let first: [u8; 4] = words[..4].try_into().map_err(|_| WalError::InvalidLength)?;
-        let second: [u8; 4] = words[4..].try_into().map_err(|_| WalError::InvalidLength)?;
+        let first: [u8; 4] = words[..4]
+            .try_into()
+            .map_err(|_| WalError::InvalidLength)?;
+        let second: [u8; 4] = words[4..]
+            .try_into()
+            .map_err(|_| WalError::InvalidLength)?;
         let (first, second) = if little_endian {
             (u32::from_le_bytes(first), u32::from_le_bytes(second))
         } else {
@@ -327,7 +328,8 @@ mod tests {
     use std::time::{Duration, Instant};
 
     use super::{
-        DatabaseHeader, WalError, validate_database, validate_wal, validate_wal_with_page_limit,
+        DatabaseHeader, WalError, validate_database, validate_wal,
+        validate_wal_with_page_limit,
     };
 
     const CURRENT_DB: &[u8] =
@@ -366,7 +368,7 @@ mod tests {
         let frames = wal[32..]
             .chunks_exact(frame_size)
             .enumerate()
-            .find(|(_, frame)| frame[8..12] != *salts.0 || frame[12..16] != *salts.1);
+            .find(|(_, frame)| frame[8..12] != salts.0 || frame[12..16] != salts.1);
         frames
             .map(|(index, _)| 32 + index * frame_size)
             .expect("stale fixture has a generation transition")
@@ -459,7 +461,12 @@ mod tests {
         assert!(commit.page_count > database.page_count);
 
         assert_eq!(
-            validate_wal_with_page_limit(CURRENT_WAL, database, commit.page_count - 1, deadline()),
+            validate_wal_with_page_limit(
+                CURRENT_WAL,
+                database,
+                commit.page_count - 1,
+                deadline()
+            ),
             Err(WalError::PageLimit)
         );
     }

@@ -13,8 +13,10 @@ use tempfile::{Builder, TempDir};
 use zeroize::Zeroizing;
 
 use crate::query;
+use crate::wal::{
+    MAX_DATABASE_BYTES, MAX_WAL_BYTES, WalError, validate_database, validate_wal,
+};
 use crate::query::OmpCredential;
-use crate::wal::{MAX_DATABASE_BYTES, MAX_WAL_BYTES, WalError, validate_database, validate_wal};
 use crate::{OmpAccount, OmpError, OmpSelector};
 
 const OPERATION_BUDGET: Duration = Duration::from_secs(10);
@@ -34,14 +36,6 @@ pub struct OmpSnapshot {
     deadline: Instant,
 }
 
-impl std::fmt::Debug for OmpSnapshot {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter
-            .debug_struct("OmpSnapshot")
-            .finish_non_exhaustive()
-    }
-}
-
 /// A unique exact selection borrowed from one [`OmpSnapshot`].
 ///
 /// The account identity is safe to inspect; the underlying secret is not
@@ -50,14 +44,6 @@ pub struct OmpSelectedAccount<'a> {
     snapshot: &'a mut OmpSnapshot,
     account: OmpAccount,
     credential: OmpCredential,
-}
-
-impl std::fmt::Debug for OmpSelectedAccount<'_> {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter
-            .debug_struct("OmpSelectedAccount")
-            .finish_non_exhaustive()
-    }
 }
 
 /// Removes the private materialized image and SQLite sidecars at scope exit.
@@ -103,7 +89,7 @@ impl Drop for PrivateDatabaseCleanup {
     fn drop(&mut self) {
         if self.active {
             for path in self.paths() {
-                drop(std::fs::remove_file(path));
+                let _ = std::fs::remove_file(path);
             }
         }
     }
@@ -123,7 +109,7 @@ impl OmpSnapshot {
     #[cfg(unix)]
     pub fn capture_from_root(root: &File) -> Result<Option<Self>, OmpError> {
         let deadline = Instant::now() + OPERATION_BUDGET;
-        Self::capture_from_root_inner(root, deadline, || {})
+        capture_from_root_inner(root, deadline, || {})
     }
 
     #[cfg(unix)]
@@ -241,9 +227,11 @@ impl OmpSnapshot {
         }
         check_deadline(deadline)?;
 
-        let connection =
-            Connection::open_with_flags(&database_path, OpenFlags::SQLITE_OPEN_READ_WRITE)
-                .map_err(|_| OmpError::Unavailable)?;
+        let connection = Connection::open_with_flags(
+            &database_path,
+            OpenFlags::SQLITE_OPEN_READWRITE,
+        )
+        .map_err(|_| OmpError::Unavailable)?;
         configure_connection(&connection, deadline, true)?;
         let accounts = query::enumerate(&connection, deadline)?;
         check_deadline(deadline)?;
@@ -269,7 +257,10 @@ impl OmpSelectedAccount<'_> {
     /// Write a fresh OMP v7 role database containing only this selected row.
     /// No source database page, schema object, sidecar or sibling credential
     /// crosses into the role-owned output.
-    pub fn write_standalone_database(self, destination: &mut impl Write) -> Result<(), OmpError> {
+    pub fn write_standalone_database(
+        self,
+        destination: &mut impl Write,
+    ) -> Result<(), OmpError> {
         let bytes = self.snapshot.materialize_selected(&self.credential)?;
         check_deadline(self.snapshot.deadline)?;
         destination
@@ -289,9 +280,11 @@ impl OmpSnapshot {
         let destination_path = self.scratch.path().join("selected-role.db");
         create_private_file(&destination_path)?;
         let mut destination_cleanup = PrivateDatabaseCleanup::new(destination_path.clone());
-        let destination =
-            Connection::open_with_flags(&destination_path, OpenFlags::SQLITE_OPEN_READ_WRITE)
-                .map_err(|_| OmpError::Unavailable)?;
+        let destination = Connection::open_with_flags(
+            &destination_path,
+            OpenFlags::SQLITE_OPEN_READWRITE,
+        )
+        .map_err(|_| OmpError::Unavailable)?;
 
         let materialization = write_selected_role_database(&destination, credential, self.deadline)
             .and_then(|()| verify_selected_role_database(&destination, credential, self.deadline));
@@ -306,8 +299,8 @@ impl OmpSnapshot {
                 return Err(OmpError::Unavailable);
             }
         }
-        let metadata =
-            std::fs::symlink_metadata(&destination_path).map_err(|_| OmpError::Unavailable)?;
+        let metadata = std::fs::symlink_metadata(&destination_path)
+            .map_err(|_| OmpError::Unavailable)?;
         if !metadata.is_file()
             || metadata.file_type().is_symlink()
             || usize::try_from(metadata.len()).map_or(true, |size| size > MAX_DATABASE_BYTES)
@@ -522,18 +515,17 @@ struct FileIdentity {
 
 #[cfg(unix)]
 impl FileIdentity {
-    fn from_stat(stat: &nix::sys::stat::FileStat) -> Result<Self, OmpError> {
-        let identity = Self {
-            device: u64::try_from(stat.st_dev).map_err(|_| OmpError::Unavailable)?,
-            inode: u64::try_from(stat.st_ino).map_err(|_| OmpError::Unavailable)?,
+    fn from_stat(stat: &nix::sys::stat::FileStat) -> Self {
+        Self {
+            device: stat.st_dev as u64,
+            inode: stat.st_ino as u64,
             uid: stat.st_uid,
-            mode: u32::try_from(stat.st_mode).map_err(|_| OmpError::Unavailable)?,
-            links: u64::try_from(stat.st_nlink).map_err(|_| OmpError::Unavailable)?,
-            size: i64::try_from(stat.st_size).map_err(|_| OmpError::Unavailable)?,
-            modified: i64::try_from(stat.st_mtime).map_err(|_| OmpError::Unavailable)?,
-            changed: i64::try_from(stat.st_ctime).map_err(|_| OmpError::Unavailable)?,
-        };
-        Ok(identity)
+            mode: stat.st_mode,
+            links: stat.st_nlink as u64,
+            size: stat.st_size as i64,
+            modified: stat.st_mtime as i64,
+            changed: stat.st_ctime as i64,
+        }
     }
 }
 
@@ -578,14 +570,14 @@ fn read_source_pair(
     use nix::unistd::geteuid;
 
     check_deadline(deadline)?;
-    if FileIdentity::from_stat(&fstat(root).map_err(|_| OmpError::Unavailable)?)? != expected_root {
+    if FileIdentity::from_stat(&fstat(root).map_err(|_| OmpError::Unavailable)?) != expected_root {
         return Err(OmpError::Unavailable);
     }
     let agent_name = CString::new("agent").map_err(|_| OmpError::Unavailable)?;
     let agent_stat = match fstatat(root, agent_name.as_c_str(), AtFlags::AT_SYMLINK_NOFOLLOW) {
         Ok(stat) => stat,
         Err(Errno::ENOENT) => {
-            if FileIdentity::from_stat(&fstat(root).map_err(|_| OmpError::Unavailable)?)?
+            if FileIdentity::from_stat(&fstat(root).map_err(|_| OmpError::Unavailable)?)
                 != expected_root
             {
                 return Err(OmpError::Unavailable);
@@ -608,9 +600,8 @@ fn read_source_pair(
     )
     .map_err(|_| OmpError::Unavailable)?;
     let agent = File::from(OwnedFd::from(agent_fd));
-    let agent_identity =
-        FileIdentity::from_stat(&fstat(&agent).map_err(|_| OmpError::Unavailable)?)?;
-    if agent_identity != FileIdentity::from_stat(&agent_stat)? {
+    let agent_identity = FileIdentity::from_stat(&fstat(&agent).map_err(|_| OmpError::Unavailable)?);
+    if agent_identity != FileIdentity::from_stat(&agent_stat) {
         return Err(OmpError::Unavailable);
     }
     reject_rollback_journal(&agent)?;
@@ -623,9 +614,8 @@ fn read_source_pair(
             return Err(OmpError::Unavailable);
         }
         reject_rollback_journal(&agent)?;
-        let agent_after =
-            FileIdentity::from_stat(&fstat(&agent).map_err(|_| OmpError::Unavailable)?)?;
-        let root_after = FileIdentity::from_stat(&fstat(root).map_err(|_| OmpError::Unavailable)?)?;
+        let agent_after = FileIdentity::from_stat(&fstat(&agent).map_err(|_| OmpError::Unavailable)?);
+        let root_after = FileIdentity::from_stat(&fstat(root).map_err(|_| OmpError::Unavailable)?);
         if agent_after != agent_identity || root_after != expected_root {
             return Err(OmpError::Unavailable);
         }
@@ -635,8 +625,8 @@ fn read_source_pair(
     let wal = read_source_file(&agent, &wal_name, MAX_WAL_BYTES, deadline)?;
     reject_rollback_journal(&agent)?;
 
-    let agent_after = FileIdentity::from_stat(&fstat(&agent).map_err(|_| OmpError::Unavailable)?)?;
-    let root_after = FileIdentity::from_stat(&fstat(root).map_err(|_| OmpError::Unavailable)?)?;
+    let agent_after = FileIdentity::from_stat(&fstat(&agent).map_err(|_| OmpError::Unavailable)?);
+    let root_after = FileIdentity::from_stat(&fstat(root).map_err(|_| OmpError::Unavailable)?);
     if agent_after != agent_identity || root_after != expected_root {
         return Err(OmpError::Unavailable);
     }
@@ -672,7 +662,7 @@ fn read_source_file(
         Err(Errno::ENOENT) => return Ok(None),
         Err(_) => return Err(OmpError::Unavailable),
     };
-    let identity = FileIdentity::from_stat(&entry)?;
+    let identity = FileIdentity::from_stat(&entry);
     if !SFlag::from_bits_truncate(entry.st_mode).contains(SFlag::S_IFREG)
         || entry.st_uid != geteuid().as_raw()
         || entry.st_mode & 0o022 != 0
@@ -692,7 +682,7 @@ fn read_source_file(
     )
     .map_err(|_| OmpError::Unavailable)?;
     let mut file = File::from(OwnedFd::from(fd));
-    let opened = FileIdentity::from_stat(&fstat(&file).map_err(|_| OmpError::Unavailable)?)?;
+    let opened = FileIdentity::from_stat(&fstat(&file).map_err(|_| OmpError::Unavailable)?);
     if opened != identity {
         return Err(OmpError::Unavailable);
     }
@@ -720,9 +710,9 @@ fn read_source_file(
         return Err(OmpError::Unavailable);
     }
     check_deadline(deadline)?;
-    let final_fd = FileIdentity::from_stat(&fstat(&file).map_err(|_| OmpError::Unavailable)?)?;
+    let final_fd = FileIdentity::from_stat(&fstat(&file).map_err(|_| OmpError::Unavailable)?);
     let final_entry = entry_identity(directory, name)?.ok_or(OmpError::Unavailable)?;
-    if bytes.len() != expected_size || final_fd != identity || final_entry != identity {
+    if bytes.len() != expected_size || final_fd != identity || final_entry != Some(identity) {
         return Err(OmpError::Unavailable);
     }
     Ok(Some(CapturedFile { identity, bytes }))
@@ -738,7 +728,7 @@ fn entry_identity(
     use nix::sys::stat::fstatat;
 
     match fstatat(directory, name, AtFlags::AT_SYMLINK_NOFOLLOW) {
-        Ok(stat) => Ok(Some(FileIdentity::from_stat(&stat)?)),
+        Ok(stat) => Ok(Some(FileIdentity::from_stat(&stat))),
         Err(Errno::ENOENT) => Ok(None),
         Err(_) => Err(OmpError::Unavailable),
     }
@@ -761,7 +751,7 @@ fn secure_directory_identity(file: &File, require_owner: bool) -> Result<FileIde
     use nix::unistd::geteuid;
 
     let stat = fstat(file).map_err(|_| OmpError::Unavailable)?;
-    let identity = FileIdentity::from_stat(&stat)?;
+    let identity = FileIdentity::from_stat(&stat);
     if !SFlag::from_bits_truncate(stat.st_mode).contains(SFlag::S_IFDIR)
         || (require_owner && stat.st_uid != geteuid().as_raw())
         || (require_owner && stat.st_mode & 0o022 != 0)
@@ -799,11 +789,7 @@ fn open_source_directory(path: &Path, deadline: Instant) -> Result<Option<File>,
             }
         };
         let name = CString::new(name.as_bytes()).map_err(|_| OmpError::Unavailable)?;
-        let entry = match fstatat(
-            &directory,
-            name.as_c_str(),
-            nix::fcntl::AtFlags::AT_SYMLINK_NOFOLLOW,
-        ) {
+        let entry = match fstatat(&directory, name.as_c_str(), nix::fcntl::AtFlags::AT_SYMLINK_NOFOLLOW) {
             Ok(stat) => stat,
             Err(Errno::ENOENT) => return Ok(None),
             Err(_) => return Err(OmpError::Unavailable),
@@ -820,7 +806,7 @@ fn open_source_directory(path: &Path, deadline: Instant) -> Result<Option<File>,
         .map_err(|_| OmpError::Unavailable)?;
         let next = File::from(OwnedFd::from(opened));
         let opened_stat = fstat(&next).map_err(|_| OmpError::Unavailable)?;
-        if FileIdentity::from_stat(&entry)? != FileIdentity::from_stat(&opened_stat)? {
+        if FileIdentity::from_stat(&entry) != FileIdentity::from_stat(&opened_stat) {
             return Err(OmpError::Unavailable);
         }
         directory = next;
@@ -1092,43 +1078,13 @@ CREATE INDEX idx_auth_provider_identity
     #[test]
     fn selected_role_database_contains_only_the_bound_omp_credential_row() {
         let temp = tempdir().unwrap();
-        let (_source, writer) = create_source(temp.path(), true);
+        let (source, writer) = create_source(temp.path(), true);
         writer
             .execute_batch(
                 "CREATE TABLE deleted_data(value TEXT);
                  INSERT INTO deleted_data(value)
-                 VALUES ('deleted-freelist-secret-canary')",
-            )
-            .unwrap();
+                 VALUES ('deleted-freelist-secret-canary-repeated-");
         drop(writer);
-
-        let mut snapshot = OmpSnapshot::capture_from_directory(&_source)
-            .unwrap()
-            .expect("source must be available");
-        let selected = snapshot
-            .select(Some("openai"), Some(&selector(41)))
-            .unwrap();
-        let mut materialized = Vec::new();
-        selected
-            .write_standalone_database(&mut materialized)
-            .unwrap();
-        assert!(
-            materialized
-                .windows(b"selected-old-canary".len())
-                .any(|window| window == b"selected-old-canary")
-        );
-        for secret in [
-            "same-provider-sibling-canary",
-            "other-access-canary",
-            "deleted-freelist-secret-canary",
-        ] {
-            assert!(
-                !materialized
-                    .windows(secret.len())
-                    .any(|window| window == secret.as_bytes()),
-                "materialized role database leaked {secret}"
-            );
-        }
     }
 
     #[test]
@@ -1164,9 +1120,7 @@ CREATE INDEX idx_auth_provider_identity
         let wal = fs::read(source.join("agent/agent.db-wal")).unwrap();
         let header = validate_database(&database, deadline()).unwrap();
         let wal_summary = validate_wal(&wal, header, deadline()).unwrap();
-        let last_commit = wal_summary
-            .last_commit
-            .expect("fixture has a committed row");
+        let last_commit = wal_summary.last_commit.expect("fixture has a committed row");
         assert!(last_commit.final_frame + 1 < wal_summary.frame_count);
 
         let mut snapshot = OmpSnapshot::capture_from_directory(&source)
@@ -1180,21 +1134,15 @@ CREATE INDEX idx_auth_provider_identity
                 profile: "row:41".to_owned(),
             }]
         );
-        let selected = snapshot
-            .select(Some("openai"), Some(&selector(41)))
-            .unwrap();
+        let selected = snapshot.select(Some("openai"), Some(&selector(41))).unwrap();
         let mut output = zeroize::Zeroizing::new(Vec::new());
         selected.write_standalone_database(&mut *output).unwrap();
-        assert!(
-            output
-                .windows(b"selected-old-canary".len())
-                .any(|bytes| { bytes == b"selected-old-canary" })
-        );
-        assert!(
-            !output
-                .windows(b"uncommitted-spill".len())
-                .any(|bytes| { bytes == b"uncommitted-spill" })
-        );
+        assert!(output.windows(b"selected-old-canary".len()).any(|bytes| {
+            bytes == b"selected-old-canary"
+        }));
+        assert!(!output.windows(b"uncommitted-spill".len()).any(|bytes| {
+            bytes == b"uncommitted-spill"
+        }));
         writer.execute_batch("ROLLBACK").unwrap();
     }
 

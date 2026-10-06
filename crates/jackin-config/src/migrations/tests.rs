@@ -792,7 +792,7 @@ value = { op = "op://vault-id/account-item/api-key", path = "Work/Account/API Ke
         Some("op://vault-id/item-id/section-id/field-id?attribute=username")
     );
     assert_eq!(token["account"].as_str(), Some("work"));
-    assert!(token.get("path").is_none());
+    assert_eq!(token.get("path"), None);
     assert_eq!(token["breadcrumb"]["version"].as_integer(), Some(1));
     assert_eq!(
         token["breadcrumb"]["value"].as_str(),

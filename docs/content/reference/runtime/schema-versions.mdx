@@ -32,20 +32,13 @@ The split-workspace layout described in [Configuration File](/reference/runtime/
 
 Each entry is one upgrade path the current binary applies. <RepoFile path="crates/jackin/tests/migration_fixtures.rs">crates/jackin/tests/migration_fixtures.rs</RepoFile> walks every fixture on every CI run, so a regression breaks here before it breaks on a delayed operator's machine. Newest first; append, never edit.
 
-### Config `v1alpha13` and workspace `v1alpha11` — 2026-10-05
-
-| File kind | Predecessor | Migration mode | Fixture |
-|---|---|---|---|
-| Config (`config.toml`) | `v1alpha12` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/config/from-v1alpha12/meta.toml">crates/jackin/tests/fixtures/migrations/config/from-v1alpha12/meta.toml</RepoFile> |
-| Workspace (`workspaces/<name>.toml`) | `v1alpha10` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/workspace/from-v1alpha10/meta.toml">crates/jackin/tests/fixtures/migrations/workspace/from-v1alpha10/meta.toml</RepoFile> |
+### Config `v1alpha13` and workspace `v1alpha11` — 2026-10-04
 
 **Summary**: replaces the ambiguous OpRef `path` string with a versioned
 `breadcrumb` object. The migration treats old percent sequences as literal
 text, escapes them into the v1 value, and checks the breadcrumb segment count
-against its `op://` reference. It walks global, GitHub, role, workspace, and
-account credential values before strict deserialization. Values whose
-component boundaries cannot be recovered stop migration with an explicit
-error before any file is written.
+against its `op://` reference. Values whose component boundaries cannot be
+recovered stop migration with an explicit error.
 
 **Before**:
 

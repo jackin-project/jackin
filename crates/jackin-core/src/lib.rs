@@ -1,4 +1,4 @@
-//! jackin-core: universal vocabulary types shared across all jackin❯ crates.
+//! jackin-core: universal vocabulary types shared across every jackin❯ crate.
 //!
 //! **Architecture Invariant:** T0.
 //! Entry point: [`Agent`] — primary domain noun re-exported to every crate.
