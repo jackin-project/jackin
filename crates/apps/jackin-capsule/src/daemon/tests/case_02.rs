@@ -144,7 +144,7 @@ fn pane_sgr_regions_clamps_run_to_inner_width() {
 
 #[test]
 fn status_tick_select_arm_stays_above_pty_output() {
-    let source = include_str!("../../daemon.rs");
+    let source = include_str!("../run_loop.rs");
     let tick_arm = source
         .find("_ = state_ticker.tick()")
         .unwrap_or_else(|| panic!("state ticker select arm missing"));
