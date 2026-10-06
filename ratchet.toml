@@ -103,7 +103,13 @@ key = "clippy::disallowed_methods@jackin-image"
 bound = 3
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-instance"
+bound = 1
+[[family.entry]]
+key = "clippy::disallowed_methods@jackin-instance-credentials"
 bound = 3
+[[family.entry]]
+key = "clippy::disallowed_methods@jackin-instance-roles"
+bound = 1
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-runtime"
 bound = 6
@@ -252,7 +258,7 @@ bound = 4
 key = "clippy::print_stderr@jackin-dev"
 bound = 1
 [[family.entry]]
-key = "clippy::print_stderr@jackin-instance"
+key = "clippy::print_stderr@jackin-instance-agents"
 bound = 3
 [[family.entry]]
 key = "clippy::print_stderr@jackin-isolation"
@@ -330,8 +336,11 @@ bound = 4
 key = "clippy::too_many_arguments@jackin-image"
 bound = 1
 [[family.entry]]
-key = "clippy::too_many_arguments@jackin-instance"
+key = "clippy::too_many_arguments@jackin-instance-agents"
 bound = 2
+[[family.entry]]
+key = "clippy::too_many_arguments@jackin-instance-roles"
+bound = 1
 [[family.entry]]
 key = "clippy::too_many_arguments@jackin-isolation"
 bound = 1
@@ -430,7 +439,7 @@ bound = 1
 key = "missing_debug_implementations@jackin-console"
 bound = 1
 [[family.entry]]
-key = "missing_debug_implementations@jackin-instance"
+key = "missing_debug_implementations@jackin-instance-roles"
 bound = 1
 [[family.entry]]
 key = "missing_debug_implementations@jackin-launch"
@@ -524,8 +533,17 @@ bound = 1999
 key = "crates/adapters/jackin-image/README.md"
 bound = 2988
 [[family.entry]]
+key = "crates/services/jackin-instance-agents/README.md"
+bound = 1988
+[[family.entry]]
+key = "crates/services/jackin-instance-credentials/README.md"
+bound = 1713
+[[family.entry]]
+key = "crates/services/jackin-instance-roles/README.md"
+bound = 1266
+[[family.entry]]
 key = "crates/services/jackin-instance/README.md"
-bound = 2007
+bound = 2072
 [[family.entry]]
 key = "crates/services/jackin-isolation/README.md"
 bound = 2171
@@ -667,6 +685,9 @@ bound = 9
 key = "jackin-instance"
 bound = 2
 [[family.entry]]
+key = "jackin-instance-credentials"
+bound = 1
+[[family.entry]]
 key = "jackin-isolation"
 bound = 6
 [[family.entry]]
@@ -788,6 +809,12 @@ bound = 21
 [[family.entry]]
 key = "jackin-image"
 bound = 28
+[[family.entry]]
+key = "jackin-instance-agents"
+bound = 26
+[[family.entry]]
+key = "jackin-instance-credentials"
+bound = 39
 [[family.entry]]
 key = "jackin-isolation"
 bound = 23

@@ -23,6 +23,9 @@ members = [
     "crates/services/jackin-diagnostics",
     "crates/services/jackin-host",
     "crates/services/jackin-instance",
+    "crates/services/jackin-instance-agents",
+    "crates/services/jackin-instance-credentials",
+    "crates/services/jackin-instance-roles",
     "crates/services/jackin-isolation",
     "crates/services/jackin-runtime",
     "crates/services/jackin-telemetry",
@@ -83,6 +86,9 @@ jackin-env = { version = "0.6.4", path = "crates/core/jackin-env" }
 jackin-host = { version = "0.6.4", path = "crates/services/jackin-host" }
 jackin-image = { version = "0.6.4", path = "crates/adapters/jackin-image" }
 jackin-instance = { version = "0.6.4", path = "crates/services/jackin-instance" }
+jackin-instance-agents = { version = "0.6.4", path = "crates/services/jackin-instance-agents" }
+jackin-instance-credentials = { version = "0.6.4", path = "crates/services/jackin-instance-credentials" }
+jackin-instance-roles = { version = "0.6.4", path = "crates/services/jackin-instance-roles" }
 jackin-isolation = { version = "0.6.4", path = "crates/services/jackin-isolation" }
 jackin-launch = { version = "0.6.4", path = "crates/ui/jackin-launch" }
 jackin-manifest = { version = "0.6.4", path = "crates/core/jackin-manifest" }

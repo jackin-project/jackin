@@ -2,12 +2,12 @@
 # SPDX-License-Identifier: Apache-2.0
 
 [package]
-name = "jackin-instance"
+name = "jackin-instance-credentials"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
-description = "Instance identity, manifest/index persistence, container naming, and auth API re-exports for jackin❯ role containers."
+description = "Credential substrate for jackin❯ role containers: outcome types, journaled auth-directory transactions, and secure path primitives."
 license.workspace = true
 readme = "README.md"
 publish = false
@@ -15,30 +15,25 @@ publish = false
 repository.workspace = true
 
 [lib]
-name = "jackin_instance"
+name = "jackin_instance_credentials"
 path = "src/lib.rs"
 
 [dependencies]
-jackin-core            = { workspace = true }
-jackin-config          = { workspace = true }
-jackin-instance-agents = { workspace = true }
-jackin-instance-credentials = { workspace = true }
-jackin-instance-roles       = { workspace = true }
+jackin-core   = { workspace = true }
+jackin-config = { workspace = true }
 
 anyhow     = { workspace = true }
+thiserror  = { workspace = true }
 serde      = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
-rand       = { workspace = true }
-chrono     = { workspace = true, features = ["clock"] }
 sha2       = { workspace = true }
 hex        = { workspace = true }
 fs4        = { workspace = true }
+nix        = { workspace = true, features = ["dir", "fs", "user"] }
+tempfile   = { workspace = true }
 
 [features]
 test-support = []
-
-[dev-dependencies]
-tempfile = { workspace = true }
 
 [lints]
 workspace = true

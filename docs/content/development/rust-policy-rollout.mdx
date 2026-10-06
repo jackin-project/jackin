@@ -676,3 +676,48 @@ passes.
   `/tmp/jackin-s7-split-{auth,lib,manifest}-gen.py`
   + fix loop `/tmp/jackin-s7-split-auth-fix.py`,
   originals `/tmp/jackin-s7-{auth,lib,manifest}-orig.rs`.
+
+### Split 2: jackin-instance crates (credentials/agents/roles + facade)
+
+- `jackin-instance` -> facade (manifest, naming, compat
+  re-exports: every split-1 pub name preserved) +
+  `jackin-instance-credentials` (leaf substrate:
+  outcomes, limits, paths, permissions, mounts,
+  journaled `auth_directory` + 9 chunks) +
+  `jackin-instance-agents` (provisioners, capture,
+  slots, telemetry) + `jackin-instance-roles`
+  (RoleState/prepare/provision orchestration, canonical
+  `tests/` suite). Layering fix: `admit_auth_mounts`
+  moved credentials -> agents (takes agents-owned
+  `ProvisionedAuth`; the reverse edge would cycle).
+  Test-merge fix: `auth_tests/` + `tests/` merged into
+  one `tests/` suite (`GAP-TEST-001` names the suite
+  `tests` exactly; cases renamed `auth_case_NN`,
+  duplicate `simple_manifest` dropped); provision-fn
+  imports keep all case files <= 400 lines.
+- Verify: `cargo check --locked --workspace
+  --all-targets` green; `cargo fmt --all --check`
+  clean; `cargo clippy` 0 errors, 0 warnings in the
+  4 split crates. `cargo nextest list --workspace
+  --all-targets`: 7272 -> 7272, bijection exact
+  (`auth::tests::case_NN` 140 ->
+  `tests::auth_case_NN` in roles, `tests::` 27
+  identical, `process_telemetry::` 1 -> agents,
+  manifest/naming 31 identical); `nextest run`
+  199/199 split + 19/19 omp-store (repointed
+  fixture includes). Root <RepoFile path="Cargo.lock" />
+  gains the 3 members. `alint check`: 300 -> 298
+  (`size-file-400` flat at 235, `policy-gaps` 30 ->
+  28: facade manifest formatter-clean).
+  `check-gaps`: `GAP-SIZE-001` 15 -> 14 (instance
+  out), `GAP-SIZE-002` 11 -> 10 (S6-transient
+  cleared), `GAP-TEST-001/002/003` 0/0/0.
+  `ratchet.toml`: expect rows redistributed with
+  conserved totals (no new sites), +3 README rows,
+  complexity agents 26 / credentials 39,
+  credentials public-surface 1; zero instance
+  findings remain. Health baseline regenerated.
+- Raw outputs: `/tmp/nextest-final.txt` (7272),
+  rewrite `/tmp/jackin-s7-split2-rewrite.py`,
+  gap/ratchet/alint pairs `/tmp/{*-old,*-new*}.txt`
+  (kept out of the repo).

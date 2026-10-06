@@ -205,11 +205,7 @@ const NAMESPACE_TEST_FIXTURES: &[(&str, &str)] = &[
         "jackin.role.toml",
     ),
     (
-        "crates/services/jackin-instance/src/auth/tests.rs",
-        "jackin.role.toml",
-    ),
-    (
-        "crates/services/jackin-instance/src/tests.rs",
+        "crates/services/jackin-instance-roles/src/tests.rs",
         "jackin.role.toml",
     ),
     (

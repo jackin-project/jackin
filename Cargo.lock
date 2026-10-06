@@ -3340,26 +3340,76 @@ version = "0.6.4"
 dependencies = [
  "anyhow",
  "chrono",
- "directories",
  "fs4",
  "hex",
  "jackin-config",
  "jackin-core",
+ "jackin-instance-agents",
+ "jackin-instance-credentials",
+ "jackin-instance-roles",
+ "rand 0.10.2",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tempfile",
+]
+
+[[package]]
+name = "jackin-instance-agents"
+version = "0.6.4"
+dependencies = [
+ "anyhow",
+ "directories",
+ "hex",
+ "jackin-config",
+ "jackin-core",
  "jackin-diagnostics",
- "jackin-manifest",
+ "jackin-instance-credentials",
  "jackin-process",
  "jackin-telemetry",
- "nix 0.31.3",
- "rand 0.10.2",
- "rusqlite",
  "serde",
  "serde_json",
  "serde_yaml_ng",
  "sha2 0.11.0",
  "tempfile",
- "thiserror 2.0.18",
  "tracing",
  "zeroize",
+]
+
+[[package]]
+name = "jackin-instance-credentials"
+version = "0.6.4"
+dependencies = [
+ "anyhow",
+ "fs4",
+ "hex",
+ "jackin-config",
+ "jackin-core",
+ "nix 0.31.3",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tempfile",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "jackin-instance-roles"
+version = "0.6.4"
+dependencies = [
+ "anyhow",
+ "jackin-config",
+ "jackin-core",
+ "jackin-diagnostics",
+ "jackin-instance-agents",
+ "jackin-instance-credentials",
+ "jackin-manifest",
+ "jackin-telemetry",
+ "nix 0.31.3",
+ "rusqlite",
+ "serde_json",
+ "tempfile",
+ "tracing",
 ]
 
 [[package]]

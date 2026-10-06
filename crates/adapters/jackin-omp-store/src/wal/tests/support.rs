@@ -3,35 +3,35 @@
 
 use super::*;
 pub(super) const CURRENT_DB: &[u8] = include_bytes!(
-    "../../../../../services/jackin-instance/src/auth/tests/fixtures/omp-real-current.db"
+    "../../../../../services/jackin-instance-roles/src/tests/fixtures/omp-real-current.db"
 );
 
 pub(super) const CURRENT_WAL: &[u8] = include_bytes!(
-    "../../../../../services/jackin-instance/src/auth/tests/fixtures/omp-real-current.db-wal"
+    "../../../../../services/jackin-instance-roles/src/tests/fixtures/omp-real-current.db-wal"
 );
 
 pub(super) const BIG_ENDIAN_DB: &[u8] = include_bytes!(
-    "../../../../../services/jackin-instance/src/auth/tests/fixtures/omp-real-current-big-endian.db"
+    "../../../../../services/jackin-instance-roles/src/tests/fixtures/omp-real-current-big-endian.db"
 );
 
 pub(super) const BIG_ENDIAN_WAL: &[u8] = include_bytes!(
-    "../../../../../services/jackin-instance/src/auth/tests/fixtures/omp-real-current-big-endian.db-wal"
+    "../../../../../services/jackin-instance-roles/src/tests/fixtures/omp-real-current-big-endian.db-wal"
 );
 
 pub(super) const REUSED_STALE_DB: &[u8] = include_bytes!(
-    "../../../../../services/jackin-instance/src/auth/tests/fixtures/omp-reused-stale-suffix.db"
+    "../../../../../services/jackin-instance-roles/src/tests/fixtures/omp-reused-stale-suffix.db"
 );
 
 pub(super) const REUSED_STALE_WAL: &[u8] = include_bytes!(
-    "../../../../../services/jackin-instance/src/auth/tests/fixtures/omp-reused-stale-suffix.db-wal"
+    "../../../../../services/jackin-instance-roles/src/tests/fixtures/omp-reused-stale-suffix.db-wal"
 );
 
 pub(super) const REUSED_UNCOMMITTED_STALE_DB: &[u8] = include_bytes!(
-    "../../../../../services/jackin-instance/src/auth/tests/fixtures/omp-reused-uncommitted-stale-suffix.db"
+    "../../../../../services/jackin-instance-roles/src/tests/fixtures/omp-reused-uncommitted-stale-suffix.db"
 );
 
 pub(super) const REUSED_UNCOMMITTED_STALE_WAL: &[u8] = include_bytes!(
-    "../../../../../services/jackin-instance/src/auth/tests/fixtures/omp-reused-uncommitted-stale-suffix.db-wal"
+    "../../../../../services/jackin-instance-roles/src/tests/fixtures/omp-reused-uncommitted-stale-suffix.db-wal"
 );
 
 pub(super) fn deadline() -> Instant {
