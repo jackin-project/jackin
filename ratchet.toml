@@ -253,7 +253,7 @@ key = "clippy::print_stderr@jackin-dev"
 bound = 1
 [[family.entry]]
 key = "clippy::print_stderr@jackin-instance"
-bound = 1
+bound = 3
 [[family.entry]]
 key = "clippy::print_stderr@jackin-isolation"
 bound = 2

@@ -5,6 +5,8 @@
 
 use super::*;
 
+use jackin_core::Agent;
+
 use tempfile::tempdir;
 
 mod support;

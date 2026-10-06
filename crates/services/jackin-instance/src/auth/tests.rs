@@ -11,24 +11,21 @@ use super::auth_directory::{
 };
 
 use super::{
-    Agent, AuthProvisionOutcome, PermissionRepairFailure, RoleState, capture_selected_source,
-    inject_permission_repair_failure, repair_permissions, validate_sync_source_dir,
-    validate_sync_source_dir_for_provider,
+    PermissionRepairFailure, capture_selected_source, inject_permission_repair_failure,
+    repair_permissions, validate_sync_source_dir, validate_sync_source_dir_for_provider,
 };
 
-use crate::PrepareResolvers;
+use crate::{AuthProvisionOutcome, PrepareResolvers, RoleState};
 
-use jackin_config::{AiProvider, AuthForwardMode, ProfileSelector};
+use jackin_config::{AiProvider, AuthForwardMode, GithubAuthMode, ProfileSelector};
 
-use jackin_core::JackinPaths;
+use jackin_core::{Agent, JackinPaths};
 
 use std::path::{Path, PathBuf};
 
 use tempfile::tempdir;
 
-use super::{
-    GithubAuthMode, MAX_AUTH_SOURCE_FILE_BYTES, copy_host_claude_json, parse_gh_hosts_yml,
-};
+use super::{MAX_AUTH_SOURCE_FILE_BYTES, copy_host_claude_json, parse_gh_hosts_yml};
 
 use crate::{
     GithubAuthContext, GithubProvisionKind, GithubProvisionOutcome, GithubTokenSource,

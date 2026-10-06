@@ -611,3 +611,68 @@ passes.
   `/tmp/jackin-s7-v012-gaps.txt` (identical),
   `/tmp/jackin-s7-v012-alint.txt`, parser
   `/tmp/parse-alint-s7.py`.
+
+## Slice 7: SIZE splits (2026-10-06)
+
+- Base: `214ce6fd` (slice 7 preface re-pin). Clone:
+  `/tmp/jackin-s7`, branch `rust-policy-rollout`, pushed per
+  split, NOT merged to `main`.
+- Scope: `size-file-400` 238, `size-lib-main-150` 14,
+  `GAP-SIZE-001` 15 crates over 6000 lines, `GAP-SIZE-002`
+  10 crates over 60 files. Real boundaries only
+  (usage/console/runtime/capsule/instance/auth first); no
+  facades, no false generated labels. File splits precede
+  crate splits (a >400-line file cannot move to a new
+  crate as-is); the S6-precedented file-count overshoot
+  (`GAP-SIZE-002` 7 -> 10 from split output) repeats
+  transiently per crate and clears with its crate split.
+- Discipline per split: script-assisted moves along
+  module seams, public paths preserved via parent
+  re-exports (explicit imports, no globs in prod code),
+  `#[cfg(test)]`-gated re-exports for test-only-shared
+  items; `nextest list` before/after mapping,
+  `fmt`/`clippy`/`check` green, `Cargo.lock` consistent,
+  `GAP-TEST` stays 0/0/0.
+
+### Split 1: jackin-instance files (auth + lib + manifest)
+
+- `auth.rs` 5222 -> `auth.rs` (103) + 17 modules
+  (per-agent provisioners, snapshot/capture/validation,
+  mounts, single-file helpers, paths, permissions) +
+  `auth_directory` parent (182) + 9 unix transaction
+  chunks with the non-unix stub inline (no `#[path]`).
+  `lib.rs` 1974 -> `lib.rs` (56) + 10 modules
+  (outcomes, agent_auth, slots, account_sources,
+  role_state, prepare, provision, agent_slots,
+  single_file_slots, ignore). `manifest.rs` 745 ->
+  `manifest.rs` (35) + 4 modules (resources, records,
+  store, index). S7-owed touch-up: `ratchet.toml`
+  `clippy::print_stderr@jackin-instance` 1 -> 3 (one
+  file -> three files, lint-true sites unchanged; all
+  other expect counts verified identical to base).
+- Verify: rustup-direct cargo/rustc 1.98.1, nextest
+  0.9.143, alint 0.17.0, v0.1.2 helper. `cargo check
+  --locked --workspace --all-targets` green;
+  `cargo fmt --all --check` clean; `cargo clippy`
+  0 errors, warnings identical to base (xtask 1,
+  runtime 7; instance 42 new pedantic wildcards
+  eliminated via explicit imports). `cargo nextest
+  list --workspace --all-targets`: 7272 -> 7272
+  byte-identical (zero test churn: no test fn moved,
+  only `use` lines in 3 `tests.rs` repointed to true
+  owners). Root <RepoFile path="Cargo.lock" />
+  untouched. `alint check`: 303 -> 300
+  (`size-file-400` 238 -> 235, `size-lib-main-150`
+  14 -> 13, `policy-gaps` 29 -> 30);
+  `check-gaps`: 29 -> 30 (instance `SIZE-001`
+  12614 -> 13103 code lines from split scaffolding,
+  instance `SIZE-002` newly over 60 files at 74:
+  transient, clears with the instance crate split).
+  `GAP-TEST-001/002/003` stay 0/0/0.
+- Raw outputs: `/tmp/jackin-s7-list1b.txt` (7272,
+  identical to `/tmp/jackin-s7-baselist.txt`),
+  `/tmp/jackin-s7-s1-alint.txt`,
+  `/tmp/jackin-s7-s1-gaps.txt`, generators
+  `/tmp/jackin-s7-split-{auth,lib,manifest}-gen.py`
+  + fix loop `/tmp/jackin-s7-split-auth-fix.py`,
+  originals `/tmp/jackin-s7-{auth,lib,manifest}-orig.rs`.

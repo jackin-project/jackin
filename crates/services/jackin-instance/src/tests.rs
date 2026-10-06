@@ -5,11 +5,13 @@
 
 use super::*;
 
+use jackin_config::{AuthForwardMode, GithubAuthMode};
+
 use jackin_core::JackinPaths;
 
-use jackin_manifest::load_role_manifest;
+use jackin_manifest::{RoleManifest, load_role_manifest};
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use tempfile::tempdir;
 
