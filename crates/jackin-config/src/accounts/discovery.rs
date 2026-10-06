@@ -3,6 +3,7 @@
 
 //! Credential discovery reports locations, never credential values.
 
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
 use jackin_core::{Agent, MOONSHOT_API_KEY_ENV_NAME};
@@ -214,12 +215,47 @@ pub struct DiscoveryReport {
     pub issues: Vec<DiscoveryIssue>,
 }
 
-/// Scan catalog defaults first, independent of shell config-directory overrides.
-/// This performs blocking filesystem/Keychain work; UI callers must use a worker.
+/// Scan catalog defaults first. Codex uses a nonempty `CODEX_HOME` when set;
+/// an unset or empty value selects the operator's `home/.codex`. Other shell
+/// config-directory overrides are imported separately. This performs
+/// blocking filesystem/Keychain work; UI callers must use a worker.
 pub fn discover_default_accounts(home: &Path) -> DiscoveryReport {
+    let codex_home = std::env::var_os("CODEX_HOME");
+    discover_default_accounts_with_codex_home(home, codex_home.as_deref())
+}
+
+/// Discover catalog defaults with the Codex home supplied by the caller.
+/// `None` or an empty value selects the operator's `home/.codex`; a nonempty
+/// override is resolved from the current directory if relative and must be an
+/// existing directory.
+pub(crate) fn discover_default_accounts_with_codex_home(
+    home: &Path,
+    codex_home: Option<&OsStr>,
+) -> DiscoveryReport {
     let mut report = DiscoveryReport::default();
+    let has_explicit_codex_home = codex_home.is_some_and(|value| !value.is_empty());
+    let codex_directory = match codex_home_directory(home, codex_home) {
+        Ok(directory) => Some(directory),
+        Err(error) => {
+            // Do not include the environment value in diagnostics: paths may
+            // contain private operator directory names.
+            report.issues.push(DiscoveryIssue {
+                agent: Agent::Codex,
+                directory: PathBuf::from("CODEX_HOME"),
+                error,
+            });
+            None
+        }
+    };
     for &agent in Agent::ALL {
-        let primary = home.join(agent.runtime().state_paths().credential_dir);
+        let primary = if agent == Agent::Codex {
+            let Some(directory) = codex_directory.as_ref() else {
+                continue;
+            };
+            directory.clone()
+        } else {
+            home.join(agent.runtime().state_paths().credential_dir)
+        };
         let fallback = (agent == Agent::Kimi).then(|| home.join(".kimi"));
         for directory in std::iter::once(primary).chain(fallback) {
             if agent == Agent::Opencode {
@@ -243,15 +279,52 @@ pub fn discover_default_accounts(home: &Path) -> DiscoveryReport {
                     break;
                 }
                 Ok(None) => {}
-                Err(error) => report.issues.push(DiscoveryIssue {
-                    agent,
-                    directory,
-                    error,
-                }),
+                Err(error) => {
+                    report.issues.push(DiscoveryIssue {
+                        agent,
+                        directory: if agent == Agent::Codex && has_explicit_codex_home {
+                            PathBuf::from("CODEX_HOME")
+                        } else {
+                            directory
+                        },
+                        error,
+                    });
+                }
             }
         }
     }
     report
+}
+
+fn codex_home_directory(
+    home: &Path,
+    codex_home: Option<&OsStr>,
+) -> Result<PathBuf, DiscoveryError> {
+    let Some(value) = codex_home.filter(|value| !value.is_empty()) else {
+        return Ok(home.join(Agent::Codex.runtime().state_paths().credential_dir));
+    };
+    let configured = PathBuf::from(value);
+    let directory = if configured.is_absolute() {
+        configured
+    } else {
+        std::env::current_dir()
+            .map_err(|_| {
+                DiscoveryError::Unsupported("CODEX_HOME cannot be resolved from current directory")
+            })?
+            .join(configured)
+    };
+    let metadata = std::fs::metadata(&directory).map_err(|error| match error.kind() {
+        std::io::ErrorKind::NotFound => {
+            DiscoveryError::Unsupported("CODEX_HOME path does not exist")
+        }
+        _ => DiscoveryError::Unreadable,
+    })?;
+    if !metadata.is_dir() {
+        return Err(DiscoveryError::Unsupported(
+            "CODEX_HOME path is not a directory",
+        ));
+    }
+    Ok(directory)
 }
 
 /// Inspect a selected config/credential directory, without reading shell files.

@@ -38,6 +38,33 @@ plugins = []
 }
 
 #[test]
+fn loads_architect_manifest_from_immutable_ci_snapshot() -> Result<(), Box<dyn std::error::Error>> {
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../jackin-xtask/tests/fixtures/architect");
+    assert!(
+        fixture
+            .join(crate::repo_contract::MANIFEST_FILENAME)
+            .is_file(),
+        "Architect snapshot must provide Jackin's current manifest path"
+    );
+    let manifest = load_role_manifest(&fixture)?;
+
+    assert_eq!(manifest.version, jackin_core::CURRENT_MANIFEST_VERSION);
+    assert_eq!(
+        manifest.supported_agents(),
+        vec![
+            jackin_core::Agent::Claude,
+            jackin_core::Agent::Codex,
+            jackin_core::Agent::Amp,
+            jackin_core::Agent::Opencode,
+            jackin_core::Agent::Kimi,
+            jackin_core::Agent::Grok,
+        ]
+    );
+    Ok(())
+}
+
+#[test]
 fn legacy_manifest_without_agents_field_defaults_to_claude_only() {
     let temp = tempdir().unwrap();
     std::fs::write(

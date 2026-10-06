@@ -3,6 +3,201 @@
 
 use super::*;
 
+fn write_codex_fixture(directory: &Path, token: &str) {
+    std::fs::create_dir_all(directory).unwrap();
+    std::fs::write(
+        directory.join("auth.json"),
+        format!(r#"{{"tokens":{{"access_token":"{token}"}}}}"#),
+    )
+    .unwrap();
+}
+
+fn codex_accounts(report: &DiscoveryReport) -> Vec<&DiscoveredAccount> {
+    report
+        .accounts
+        .iter()
+        .filter(|account| account.agent == Agent::Codex)
+        .collect()
+}
+
+#[test]
+fn codex_discovery_uses_explicit_home_without_probing_default() {
+    let home = tempfile::tempdir().unwrap();
+    let default = home.path().join(".codex");
+    let explicit = home.path().join("codex-work");
+    write_codex_fixture(&default, "default-sentinel");
+    write_codex_fixture(&explicit, "override-sentinel");
+
+    let report = discover_default_accounts_with_codex_home(home.path(), Some(explicit.as_os_str()));
+    let accounts = codex_accounts(&report);
+    assert_eq!(accounts.len(), 1);
+    assert_eq!(accounts[0].directory, explicit);
+    assert_eq!(
+        accounts[0].evidence,
+        CredentialEvidence::File(home.path().join("codex-work/auth.json"))
+    );
+    let rendered = format!("{report:?}");
+    assert!(!rendered.contains("default-sentinel"));
+    assert!(!rendered.contains("override-sentinel"));
+}
+
+#[test]
+fn codex_discovery_resolves_relative_home_from_working_directory() {
+    let home = tempfile::tempdir().unwrap();
+    let working_directory = std::env::current_dir().unwrap();
+    let relative = tempfile::Builder::new()
+        .prefix("jackin-codex-home-relative-")
+        .tempdir_in(&working_directory)
+        .unwrap();
+    let relative_path = relative
+        .path()
+        .strip_prefix(&working_directory)
+        .expect("relative fixture is beneath working directory");
+    write_codex_fixture(relative.path(), "relative-override-sentinel");
+
+    let report =
+        discover_default_accounts_with_codex_home(home.path(), Some(relative_path.as_os_str()));
+    let accounts = codex_accounts(&report);
+    assert_eq!(accounts.len(), 1);
+    assert_eq!(accounts[0].directory, working_directory.join(relative_path));
+    assert!(!format!("{report:?}").contains("relative-override-sentinel"));
+}
+
+#[test]
+fn codex_discovery_uses_home_default_only_when_override_is_unset() {
+    let home = tempfile::tempdir().unwrap();
+    let default = home.path().join(".codex");
+    write_codex_fixture(&default, "default-sentinel");
+
+    let report = discover_default_accounts_with_codex_home(home.path(), None);
+    let accounts = codex_accounts(&report);
+    assert_eq!(accounts.len(), 1);
+    assert_eq!(accounts[0].directory, default);
+    assert!(!format!("{report:?}").contains("default-sentinel"));
+}
+
+#[test]
+fn missing_explicit_codex_home_does_not_fall_back_to_default() {
+    let home = tempfile::tempdir().unwrap();
+    write_codex_fixture(&home.path().join(".codex"), "fallback-sentinel");
+    let missing = home.path().join("missing-codex-home");
+
+    let report = discover_default_accounts_with_codex_home(home.path(), Some(missing.as_os_str()));
+    assert!(codex_accounts(&report).is_empty());
+    let issue = report
+        .issues
+        .iter()
+        .find(|issue| issue.agent == Agent::Codex)
+        .expect("missing explicit home is reported");
+    assert_eq!(issue.directory, PathBuf::from("CODEX_HOME"));
+    assert_eq!(
+        issue.error,
+        DiscoveryError::Unsupported("CODEX_HOME path does not exist")
+    );
+    assert!(!format!("{report:?}").contains("fallback-sentinel"));
+}
+
+#[test]
+fn explicit_codex_file_path_is_rejected_without_fallback() {
+    let home = tempfile::tempdir().unwrap();
+    write_codex_fixture(&home.path().join(".codex"), "fallback-sentinel");
+    let explicit_file = home.path().join("codex-home-file");
+    std::fs::write(&explicit_file, "synthetic non-directory").unwrap();
+
+    let report =
+        discover_default_accounts_with_codex_home(home.path(), Some(explicit_file.as_os_str()));
+    assert!(codex_accounts(&report).is_empty());
+    let issue = report
+        .issues
+        .iter()
+        .find(|issue| issue.agent == Agent::Codex)
+        .expect("non-directory explicit home is reported");
+    assert_eq!(issue.directory, PathBuf::from("CODEX_HOME"));
+    assert_eq!(
+        issue.error,
+        DiscoveryError::Unsupported("CODEX_HOME path is not a directory")
+    );
+    let rendered = format!("{report:?}");
+    assert!(!rendered.contains("synthetic non-directory"));
+    assert!(!rendered.contains("fallback-sentinel"));
+}
+
+#[test]
+fn malformed_explicit_codex_home_does_not_fall_back_to_default() {
+    let home = tempfile::tempdir().unwrap();
+    write_codex_fixture(&home.path().join(".codex"), "fallback-sentinel");
+    let explicit = home.path().join("codex-invalid");
+    std::fs::create_dir_all(&explicit).unwrap();
+    std::fs::write(
+        explicit.join("auth.json"),
+        "synthetic malformed credential document",
+    )
+    .unwrap();
+
+    let report = discover_default_accounts_with_codex_home(home.path(), Some(explicit.as_os_str()));
+    assert!(codex_accounts(&report).is_empty());
+    let issue = report
+        .issues
+        .iter()
+        .find(|issue| issue.agent == Agent::Codex)
+        .expect("malformed explicit source is reported");
+    assert_eq!(issue.directory, PathBuf::from("CODEX_HOME"));
+    assert_eq!(issue.error, DiscoveryError::Malformed);
+    assert!(!format!("{report:?}").contains("synthetic malformed"));
+    assert!(!format!("{report:?}").contains("fallback-sentinel"));
+}
+
+#[test]
+fn unreadable_explicit_codex_file_does_not_fall_back_to_default() {
+    let home = tempfile::tempdir().unwrap();
+    write_codex_fixture(&home.path().join(".codex"), "fallback-sentinel");
+    let explicit = home.path().join("codex-unreadable");
+    std::fs::create_dir_all(explicit.join("auth.json")).unwrap();
+
+    let report = discover_default_accounts_with_codex_home(home.path(), Some(explicit.as_os_str()));
+    assert!(codex_accounts(&report).is_empty());
+    let issue = report
+        .issues
+        .iter()
+        .find(|issue| issue.agent == Agent::Codex)
+        .expect("unreadable explicit source is reported");
+    assert_eq!(issue.directory, PathBuf::from("CODEX_HOME"));
+    assert_eq!(issue.error, DiscoveryError::Unreadable);
+    assert!(!format!("{report:?}").contains("fallback-sentinel"));
+}
+
+#[test]
+fn codex_discovery_does_not_reject_refreshable_expired_token_fixture() {
+    let home = tempfile::tempdir().unwrap();
+    let explicit = home.path().join("codex-expired-access-token");
+    std::fs::create_dir_all(&explicit).unwrap();
+    std::fs::write(
+        explicit.join("auth.json"),
+        r#"{"tokens":{"access_token":"synthetic-expired-access","refresh_token":"synthetic-refresh","expires_at":0}}"#,
+    )
+    .unwrap();
+
+    let report = discover_default_accounts_with_codex_home(home.path(), Some(explicit.as_os_str()));
+    let accounts = codex_accounts(&report);
+    assert_eq!(accounts.len(), 1);
+    assert_eq!(accounts[0].directory, explicit);
+    assert!(!format!("{report:?}").contains("synthetic-expired-access"));
+    assert!(!format!("{report:?}").contains("synthetic-refresh"));
+}
+
+#[test]
+fn empty_explicit_codex_home_uses_default_like_codex_cli() {
+    let home = tempfile::tempdir().unwrap();
+    let default = home.path().join(".codex");
+    write_codex_fixture(&default, "default-sentinel");
+
+    let report = discover_default_accounts_with_codex_home(home.path(), Some(OsStr::new("")));
+    let accounts = codex_accounts(&report);
+    assert_eq!(accounts.len(), 1);
+    assert_eq!(accounts[0].directory, default);
+    assert!(!format!("{report:?}").contains("default-sentinel"));
+}
+
 #[test]
 fn environment_discovery_returns_names_without_secret_values() {
     let environment = [

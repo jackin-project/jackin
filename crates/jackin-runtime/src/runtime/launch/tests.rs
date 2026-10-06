@@ -4410,11 +4410,11 @@ plugins = []
     let recorded = runner.recorded.join("\n");
     assert!(
         !recorded.contains("gh auth token"),
-        "Dockerfiles without id=github_token must skip build-token lookup; recorded:\n{recorded}"
+        "image builds must not resolve host GitHub credentials; recorded:\n{recorded}"
     );
     assert!(
         !build_call.contains("--secret") && !build_call.contains("id=github_token"),
-        "Dockerfiles without id=github_token must not inject a BuildKit secret; got:\n{build_call}"
+        "the default image build must not forward a host credential to BuildKit; got:\n{build_call}"
     );
     assert!(!recorded.contains("id -u"));
     assert!(!recorded.contains("id -g"));
@@ -6140,8 +6140,217 @@ async fn load_agent_does_not_short_circuit_on_running_instance() {
     );
 }
 
+fn task_override_current_role_fixture(
+    state: ContainerState,
+) -> (
+    tempfile::TempDir,
+    JackinPaths,
+    AppConfig,
+    RoleSelector,
+    jackin_config::ResolvedWorkspace,
+    jackin_test_support::FakeDockerClient,
+    FakeRunner,
+    String,
+) {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+    std::fs::write(&paths.config_file, CODEX_ADMISSION_TOML).unwrap();
+    let mut config = AppConfig::load_or_init(&paths).unwrap();
+    let selector = RoleSelector::new(None, "agent-smith");
+    let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
+    std::fs::create_dir_all(&cached_repo.repo_dir).unwrap();
+    std::fs::write(
+        cached_repo.repo_dir.join("Dockerfile"),
+        "FROM projectjackin/construct:0.1-trixie\n",
+    )
+    .unwrap();
+    std::fs::write(
+        cached_repo.repo_dir.join("jackin.role.toml"),
+        "version = \"v1alpha5\"\ndockerfile = \"Dockerfile\"\nagents = [\"codex\"]\n\n[codex]\nmodel = \"role-default\"\n",
+    )
+    .unwrap();
+    config.workspaces.insert(
+        "workspace".to_owned(),
+        jackin_config::WorkspaceConfig {
+            accounts: vec!["test".to_owned()],
+            workdir: "/workspace".to_owned(),
+            mounts: repo_workspace(&cached_repo.repo_dir).mounts,
+            default_agent: Some(jackin_core::Agent::Codex),
+            ..jackin_config::WorkspaceConfig::default()
+        },
+    );
+    persist_test_config(&paths, &config);
+
+    let current_container = "jk-k7p9m2xq-workspace-agentsmith".to_owned();
+    let mut manifest = workspace_manifest(
+        &current_container,
+        "agent-smith",
+        "Agent Smith",
+        jackin_core::Agent::Codex,
+    );
+    manifest.mark_status(InstanceStatus::Running);
+    manifest.docker_identity = Some(crate::instance::DockerIdentity {
+        role_container_id: current_container.clone(),
+        dind_container_id: manifest.docker.dind_container.clone(),
+    });
+    write_indexed_manifest(&paths, &manifest);
+    provision_restore_account_policy(&paths, &config, &manifest);
+
+    let docker = jackin_test_support::FakeDockerClient::default();
+    docker
+        .container_id_by_name
+        .borrow_mut()
+        .insert(current_container.clone(), "current-role-id".to_owned());
+    docker
+        .inspect_state_by_name
+        .borrow_mut()
+        .insert(current_container.clone(), state);
+    let runner = FakeRunner::for_load_agent([
+        "https://github.com/jackin-project/jackin-agent-smith.git".to_owned(),
+        String::new(),
+        "main".to_owned(),
+    ]);
+    let mut workspace = repo_workspace(&cached_repo.repo_dir);
+    workspace.label = "workspace".to_owned();
+    workspace.name = "workspace".to_owned();
+    workspace.default_agent = Some(jackin_core::Agent::Codex);
+    (
+        temp,
+        paths,
+        config,
+        selector,
+        workspace,
+        docker,
+        runner,
+        current_container,
+    )
+}
+
+async fn task_overrides_launch_fresh_codex_for_current_state(state: ContainerState) {
+    let preserve_existing = matches!(&state, ContainerState::Running);
+    let (_temp, paths, mut config, selector, workspace, docker, mut runner, current_container) =
+        task_override_current_role_fixture(state);
+    let opts = LoadOptions {
+        agent: Some(jackin_core::Agent::Codex),
+        model: Some("gpt-6-luna".to_owned()),
+        effort: Some(jackin_core::ReasoningEffort::Max),
+        ..LoadOptions::default()
+    };
+
+    load_role(
+        &paths,
+        &mut config,
+        &selector,
+        &workspace,
+        &docker,
+        &mut runner,
+        &opts,
+    )
+    .await
+    .unwrap();
+
+    let calls = docker.recorded.borrow();
+    assert!(
+        !calls
+            .iter()
+            .any(|call| call == &format!("start_container:{current_container}")),
+        "task-scoped overrides must not start the existing role; calls: {calls:?}"
+    );
+    if preserve_existing {
+        assert!(
+            !calls
+                .iter()
+                .any(|call| call == &format!("docker rm -f {current_container}")),
+            "a fresh task-scoped launch must preserve the unrelated running session; calls: {calls:?}"
+        );
+        assert_eq!(
+            docker
+                .inspect_state_by_name
+                .borrow()
+                .get(&current_container),
+            Some(&ContainerState::Running),
+            "the unrelated running container must stay running"
+        );
+        assert_eq!(
+            docker
+                .container_id_by_name
+                .borrow()
+                .get(&current_container)
+                .map(String::as_str),
+            Some("current-role-id"),
+            "the unrelated running container identity must remain registered"
+        );
+    }
+    let recorded = runner.recorded.join("\n");
+    assert!(
+        recorded.contains("docker run -d")
+            && !recorded
+                .lines()
+                .any(|line| { line.contains("docker exec") && line.contains(&current_container) }),
+        "task-scoped overrides must pass through a fresh launch; recorded:\n{recorded}"
+    );
+    let launched_container = launched_role_container_name(&runner);
+    let capsule_config_path = paths
+        .jackin_home
+        .join("sockets")
+        .join(launched_container)
+        .join(jackin_protocol::CAPSULE_CONFIG_FILENAME);
+    let capsule_config: jackin_protocol::CapsuleConfig =
+        toml::from_str(&std::fs::read_to_string(capsule_config_path).unwrap()).unwrap();
+    assert_eq!(capsule_config.models["codex-main"], "gpt-6-luna");
+    assert_eq!(capsule_config.efforts["codex-main"], "max");
+}
+
 #[tokio::test]
-async fn load_agent_attaches_explicit_restore_container_before_role_repo() {
+async fn task_scoped_overrides_bypass_running_current_role_reuse() {
+    task_overrides_launch_fresh_codex_for_current_state(ContainerState::Running).await;
+}
+
+#[tokio::test]
+async fn task_scoped_overrides_bypass_stopped_current_role_reuse() {
+    task_overrides_launch_fresh_codex_for_current_state(ContainerState::Stopped {
+        exit_code: 137,
+        oom_killed: false,
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn explicit_restore_rejects_agent_different_from_stored_instance() {
+    let (_temp, paths, mut config, selector, workspace, docker, mut runner, current_container) =
+        task_override_current_role_fixture(ContainerState::Running);
+    let opts = LoadOptions {
+        agent: Some(jackin_core::Agent::Claude),
+        restore_container_base: Some(current_container),
+        ..LoadOptions::default()
+    };
+
+    let error = load_role(
+        &paths,
+        &mut config,
+        &selector,
+        &workspace,
+        &docker,
+        &mut runner,
+        &opts,
+    )
+    .await
+    .unwrap_err();
+
+    assert!(
+        error
+            .to_string()
+            .contains("does not match stored instance agent")
+    );
+    assert!(
+        docker.recorded.borrow().is_empty(),
+        "agent mismatch must fail before inspecting or starting a container"
+    );
+}
+
+#[tokio::test]
+async fn load_agent_attaches_explicit_restore_container_with_stored_agent_before_role_repo() {
     struct FailingOpRunner;
 
     impl jackin_env::OpRunner for FailingOpRunner {
@@ -6199,6 +6408,10 @@ async fn load_agent_attaches_explicit_restore_container_before_role_repo() {
         "main".to_owned(),
     ]);
     let opts = LoadOptions {
+        // The normal `jackin restore` path resolves this from the persisted
+        // instance manifest. It is identity for the exact target, not an
+        // incompatible agent override.
+        agent: Some(jackin_core::Agent::Claude),
         op_runner: Some(Box::new(FailingOpRunner)),
         restore_container_base: Some(container_name.to_owned()),
         role_branch: Some("restore-ref".to_owned()),

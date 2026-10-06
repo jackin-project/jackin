@@ -57,7 +57,10 @@ mod image_plan;
 pub use image_plan::{LaunchImagePlan, resolve_launch_image_plan};
 
 mod dry_run;
-pub use dry_run::{DryRunIdentity, resolve_dry_run_identity};
+pub use dry_run::{
+    DryRunIdentity, DryRunModelProjection, resolve_dry_run_identity,
+    resolve_dry_run_model_projection,
+};
 mod programmatic;
 pub use account_identity::{
     account_admission_matches, account_configuration_fingerprint, account_configuration_matches,
@@ -178,9 +181,6 @@ pub struct LoadOptions {
     /// Extra bind mounts appended to the resolved workspace's mounts for this
     /// launch only, mirroring repeated `--mount` on the CLI.
     pub extra_mounts: Vec<jackin_config::MountConfig>,
-
-    /// Initial prompt handed to the agent's first session.
-    pub prompt: Option<String>,
 
     /// Slot the launch writes its claimed instance identity into.
     pub identity_sink: Option<IdentitySink>,

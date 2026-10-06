@@ -127,9 +127,41 @@ pub(crate) fn resolved_instance_models(
     selected_agent: jackin_core::Agent,
     model_override: Option<&str>,
 ) -> anyhow::Result<std::collections::BTreeMap<String, String>> {
+    resolved_instance_models_from_role_models(
+        config,
+        &role_model_defaults(manifest),
+        instances,
+        selected_agent,
+        model_override,
+    )
+}
+
+/// Role model defaults as a stable per-agent map for dry-run projection.
+pub(crate) fn role_model_defaults(
+    manifest: &jackin_manifest::RoleManifest,
+) -> std::collections::BTreeMap<jackin_core::Agent, String> {
+    jackin_core::Agent::ALL
+        .iter()
+        .filter_map(|agent| {
+            manifest
+                .agent_model(*agent)
+                .map(|model| (*agent, model.to_owned()))
+        })
+        .collect()
+}
+
+/// Resolve role, account, and task-scoped model choices through the one
+/// projection used by launch and `--dry-run`.
+pub(crate) fn resolved_instance_models_from_role_models(
+    config: &jackin_config::AppConfig,
+    role_models: &std::collections::BTreeMap<jackin_core::Agent, String>,
+    instances: &[jackin_config::ResolvedInstance],
+    selected_agent: jackin_core::Agent,
+    model_override: Option<&str>,
+) -> anyhow::Result<std::collections::BTreeMap<String, String>> {
     let mut launch = jackin_protocol::CapsuleConfig::default();
     for instance in instances {
-        if let Some(model) = manifest.agent_model(instance.agent) {
+        if let Some(model) = role_models.get(&instance.agent) {
             let model = if instance.agent == jackin_core::Agent::Opencode {
                 let account = config
                     .accounts
@@ -137,7 +169,7 @@ pub(crate) fn resolved_instance_models(
                     .ok_or_else(|| anyhow::anyhow!("unknown account {:?}", instance.account_id))?;
                 super::account_config::opencode_model(account.provider, model)?
             } else {
-                model.to_owned()
+                model.clone()
             };
             launch.models.insert(instance.config_id.clone(), model);
         }
