@@ -4,8 +4,8 @@
 
 use super::super::refresh::ProviderError;
 use super::super::{
-    CLAUDE_CODE_USER_AGENT_FALLBACK, CLAUDE_VERSION_TIMEOUT, CliOutput, Duration,
-    QuotaBucketView, Serialize, StatusSlot, parse_claude_usage_output, run_claude_usage_diagnostic,
+    CLAUDE_CODE_USER_AGENT_FALLBACK, CLAUDE_VERSION_TIMEOUT, CliOutput, Duration, QuotaBucketView,
+    Serialize, StatusSlot, parse_claude_usage_output, run_claude_usage_diagnostic,
     run_cli_with_timeout_full,
 };
 use super::{CLAUDE_SESSION_WINDOW_SECONDS, CLAUDE_WEEKLY_WINDOW_SECONDS, ClaudeQuotaWindow};
