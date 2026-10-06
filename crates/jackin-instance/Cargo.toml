@@ -39,6 +39,7 @@ nix          = { workspace = true, features = ["dir", "fs", "user"] }
 serde_yaml_ng = { workspace = true }
 directories  = { workspace = true }
 tempfile     = { workspace = true }
+zeroize      = { workspace = true }
 
 [features]
 test-support = []

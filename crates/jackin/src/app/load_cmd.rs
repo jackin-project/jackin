@@ -161,6 +161,7 @@ pub(super) async fn handle_load(
             identity: &identity,
             model_projection: &model_projection,
             effort,
+            overrides: DryRunLaunchOverrides::new(model.as_deref(), effort),
         };
         return print_dry_run_plan(
             &class,
@@ -177,10 +178,9 @@ pub(super) async fn handle_load(
     opts.force = force;
     opts.agent = agent;
     opts.selection = account.map(jackin_core::LaunchSelection::Account);
-    opts.model = model;
-    opts.effort = effort;
     opts.role_branch = role_branch;
     opts.docker_profile = docker_profile;
+    apply_load_model_effort(&mut opts, model, effort);
     // Pre-launch reconcile: if a previous role in a keep_awake
     // workspace already runs, ensure caffeinate is up before we
     // build/launch (so a long Docker build doesn't see the host
@@ -564,6 +564,15 @@ fn docker_startup_error(error: &anyhow::Error) -> (String, String) {
     )
 }
 
+fn apply_load_model_effort(
+    options: &mut runtime::LoadOptions,
+    model: Option<String>,
+    effort: Option<jackin_core::ReasoningEffort>,
+) {
+    options.model = model;
+    options.effort = effort;
+}
+
 fn error_chain_message(error: &anyhow::Error) -> String {
     let message = error
         .chain()
@@ -743,12 +752,13 @@ pub(super) async fn handle_eject(
 ///
 /// Split out from printing so the wire shape is asserted directly, without a
 /// Docker daemon or a captured stdout.
-pub(crate) fn dry_run_plan_json(
+fn dry_run_plan_json(
     class: &RoleSelector,
     workspace: &crate::workspace::ResolvedWorkspace,
     agent_slug: &str,
     role_branch: Option<&str>,
     rebuild: bool,
+    overrides: DryRunLaunchOverrides<'_>,
     image_plan: &runtime::LaunchImagePlan,
 ) -> serde_json::Value {
     let mounts: Vec<serde_json::Value> = workspace
@@ -771,6 +781,8 @@ pub(crate) fn dry_run_plan_json(
             "role_branch": role_branch,
             "agent": agent_slug,
             "rebuild": rebuild,
+            "model_override": overrides.model,
+            "effort": overrides.effort.map(jackin_core::ReasoningEffort::as_str),
             "mounts": mounts,
             "image_decision": image_plan.to_json(),
             "published_image": image_plan.published_image,
@@ -843,6 +855,19 @@ struct DryRunPlan<'a> {
     identity: &'a runtime::DryRunIdentity,
     model_projection: &'a runtime::DryRunModelProjection,
     effort: Option<jackin_core::ReasoningEffort>,
+    overrides: DryRunLaunchOverrides<'a>,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct DryRunLaunchOverrides<'a> {
+    model: Option<&'a str>,
+    effort: Option<jackin_core::ReasoningEffort>,
+}
+
+impl<'a> DryRunLaunchOverrides<'a> {
+    const fn new(model: Option<&'a str>, effort: Option<jackin_core::ReasoningEffort>) -> Self {
+        Self { model, effort }
+    }
 }
 
 /// Print the resolved load plan for `--dry-run` and exit without launching.
@@ -873,6 +898,7 @@ fn print_dry_run_plan(
             agent_slug,
             role_branch,
             rebuild,
+            plan_identity.overrides,
             image_plan,
         );
         apply_dry_run_identity_json(&mut plan, identity);

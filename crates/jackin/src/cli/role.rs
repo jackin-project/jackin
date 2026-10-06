@@ -34,7 +34,7 @@ Examples:
   jackin load agent-smith big-monorepo
   jackin load agent-smith big-monorepo --mount ~/extra-data
   jackin load agent-smith ~/app --mount ~/cache:/cache:ro
-  jackin load the-architect --agent codex --model gpt-6-luna --effort max
+  jackin load agent-smith --agent codex --model gpt-5-codex --effort high
   jackin load the-architect --role-branch feat/my-pr   # build + test a PR branch locally"
 )]
 pub struct LoadArgs {
@@ -62,10 +62,10 @@ pub struct LoadArgs {
     /// Registered account ID assigned to this workspace; overrides its agent binding
     #[arg(long)]
     pub account: Option<String>,
-    /// Model ID for this load only; overrides the selected agent's role and account defaults.
-    #[arg(long, value_name = "MODEL", value_parser = parse_model)]
+    /// Model ID for this launch; overrides the role and selected account model.
+    #[arg(long, value_name = "MODEL", value_parser = parse_model_id)]
     pub model: Option<String>,
-    /// Reasoning effort for this load only (low, medium, high, or max).
+    /// Reasoning effort for this launch (`low`, `medium`, `high`, or `max`).
     #[arg(long, value_name = "EFFORT", value_parser = parse_reasoning_effort)]
     pub effort: Option<jackin_core::ReasoningEffort>,
     /// Check out a specific branch of the role repository for local testing.
@@ -96,16 +96,18 @@ fn parse_agent(s: &str) -> Result<jackin_core::Agent, String> {
         .map_err(|e: jackin_core::ParseAgentError| e.to_string())
 }
 
-fn parse_model(s: &str) -> Result<String, String> {
-    if s.trim().is_empty() {
-        return Err("model ID cannot be empty".to_owned());
+fn parse_model_id(s: &str) -> Result<String, String> {
+    let model = s.trim();
+    if model.is_empty() {
+        Err("model ID must not be empty".to_owned())
+    } else {
+        Ok(model.to_owned())
     }
-    Ok(s.to_owned())
 }
 
 fn parse_reasoning_effort(s: &str) -> Result<jackin_core::ReasoningEffort, String> {
-    s.parse::<jackin_core::ReasoningEffort>()
-        .map_err(|error| error.to_string())
+    s.parse()
+        .map_err(|e: jackin_core::ParseReasoningEffortError| e.to_string())
 }
 
 fn parse_docker_profile(s: &str) -> Result<jackin_runtime::runtime::DockerSecurityProfile, String> {

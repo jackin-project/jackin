@@ -362,12 +362,10 @@ fn inspect_directory(
         }
         return Ok(None);
     }
-    // Stores-backed agents enumerate content-verified candidates via the
-    // `stores` enumerators (JSON + read-only SQLite, WAL-safe, no writes):
-    // OpenCode checks auth.json AND the opencode.db `credential` table, omp
-    // checks the agent.db `credentials` table, Hermes checks config.yaml +
-    // profiles + auth.json. Candidates carry secrets for import; discovery
-    // keeps only the source location and drops the values at this boundary.
+    // Stores-backed agents enumerate content-verified candidates via their
+    // bounded readers. OMP and OpenCode inspect private SQLite snapshots and
+    // never write their user source; Hermes checks config.yaml + profiles +
+    // auth.json. Discovery retains only source-bound identities and locations.
     if matches!(agent, Agent::Opencode | Agent::Omp | Agent::Hermes) {
         return inspect_store(agent, directory);
     }
@@ -450,13 +448,11 @@ fn inspect_store(
 /// Inspect a store and retain every source-bound account candidate.
 ///
 /// `OpenCode` candidates are keyed by the provider entry in `auth.json`.
-/// Omp candidates use the provider/account entry plus optional profile label;
+/// OMP candidates use the provider/account entry plus optional profile label;
 /// Hermes candidates use the provider entry plus required profile name. Those
-/// exact dimensions are persisted as [`ProfileSelector`] values.
-/// Database-only stores are not launchable by the current profile contract, so
-/// they are rejected instead of registering candidates with no materializable
-/// source. A sibling database is ignored when a single usable `auth.json`
-/// entry supplies the source-bound profile.
+/// exact dimensions are persisted as [`ProfileSelector`] values. OpenCode's
+/// database-only stores remain unavailable without a source-bound `auth.json`
+/// profile; a sibling database is ignored when one usable auth entry exists.
 fn inspect_store_accounts(
     agent: Agent,
     directory: &Path,
@@ -465,13 +461,36 @@ fn inspect_store_accounts(
     if agent == Agent::Opencode {
         opencode::validate_opencode_auth_layout(directory).map_err(map_store_error)?;
     }
+    if agent == Agent::Omp {
+        let accounts = omp::enumerate_omp_credentials(directory).map_err(map_store_error)?;
+        return accounts
+            .into_iter()
+            .map(|account| {
+                let provider = account.entry().parse().map_err(|_| {
+                    DiscoveryError::Unsupported(
+                        "OMP credential provider is not in jackin's catalog",
+                    )
+                })?;
+                Ok(DiscoveredAccount {
+                    agent,
+                    provider: Some(provider),
+                    source_selector: Some(ProfileSelector {
+                        entry: account.entry().to_owned(),
+                        profile: Some(account.profile().to_owned()),
+                    }),
+                    directory: directory.to_path_buf(),
+                    evidence: CredentialEvidence::File(directory.join("agent/agent.db")),
+                })
+            })
+            .collect();
+    }
     let candidates = match agent {
         // The database parser remains available for audit fixtures, but its
         // row identity cannot cross the profile boundary. A valid auth.json
         // entry is the only source currently materialized for launch/usage;
         // ignore a sibling database rather than mixing two identity systems.
         Agent::Opencode => opencode::enumerate_opencode_auth(&directory.join("auth.json")),
-        Agent::Omp => omp::enumerate_omp_credentials(&directory.join("agent/agent.db")),
+        Agent::Omp => unreachable!("OMP discovery uses the exact snapshot path above"),
         Agent::Hermes => hermes::enumerate_hermes_store(directory),
         _ => unreachable!("stores-backed agents only"),
     };
@@ -519,19 +538,8 @@ fn inspect_store_accounts(
                     evidence: CredentialEvidence::File(candidate.source),
                 });
             }
-            if matches!(agent, Agent::Omp | Agent::Hermes) && accounts.len() == 1 {
-                use super::stores::{hermes, omp};
-                match agent {
-                    Agent::Omp => {
-                        omp::validate_single_credential_store(directory)
-                            .map_err(map_store_error)?;
-                    }
-                    Agent::Hermes => {
-                        hermes::validate_single_profile_store(directory)
-                            .map_err(map_store_error)?;
-                    }
-                    _ => unreachable!("validated stores-backed agent"),
-                }
+            if agent == Agent::Hermes && accounts.len() == 1 {
+                hermes::validate_single_profile_store(directory).map_err(map_store_error)?;
             }
             Ok(accounts)
         }
