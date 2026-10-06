@@ -1,0 +1,11 @@
+{
+  "title": "Agent isolation architecture",
+  "defaultOpen": false,
+  "pages": [
+    "index",
+    "01-threat-and-platform-evidence",
+    "02-four-layer-model",
+    "03-layer-contracts-and-open-questions"
+  ]
+}
+

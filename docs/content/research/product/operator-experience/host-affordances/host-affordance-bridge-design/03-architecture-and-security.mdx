@@ -1,0 +1,219 @@
+---
+title: "03 — Architecture and security"
+description: Defines the host attach client, protocol, staging, routing, observability, security model, and correctness invariants.
+---
+
+## Summary
+
+A host attach client captures host-only actions, sends typed bounded requests over authenticated local channels, and lets Capsule stage or route data without granting broad host access.
+
+## Question and scope
+
+How should clipboard, link, and file actions cross the host-container boundary while preserving isolation, attribution, cleanup, and failure visibility?
+
+
+## Method
+
+The architecture applies the product contract to attach transport, authenticated framing, bounded staging, routing, cleanup, observability, and host-side effects.
+
+## Findings
+
+### Host Attach Client
+
+The host `jackin` binary owns the interactive terminal during attach instead of delegating the whole interactive session to `docker exec -it ... /jackin/runtime/jackin-capsule`.
+
+This host client:
+
+- Enters raw mode, enables bracketed paste, and owns terminal cleanup.
+- Collects terminal identity and color information previously collected only by the in-container attach client.
+- Connects to the Capsule attach protocol directly when the bind-mounted socket is usable from the host.
+- Uses a stdio relay fallback through `docker exec -i` when direct host connection to the Unix socket is impossible, especially Docker Desktop and OrbStack on macOS.
+- Forwards normal input bytes unchanged.
+- Intercepts only explicit image-paste triggers and converts them into typed clipboard-image frames.
+- Preserves copy-out behavior by forwarding focused-pane OSC 52 writes only when `JACKIN_OSC52=allow`, and by continuing to send jackin-owned OSC 52 copy actions to the host terminal with the same visible feedback behavior operators already see.
+- Preserves host-terminal selection behavior. If the operator selects text directly in Ghostty's viewport and copies it, jackin❯ does not interfere; if the operator uses jackin-owned pane selection, jackin❯ continues to emit OSC 52 and render its own copy feedback.
+- Provides the correct home for future host-only operator actions such as "open link under cursor", because a process inside the Linux role container cannot reliably open the operator's macOS or Linux desktop browser.
+
+The first stage kept the existing in-container client for compatibility while adding a host client behind a feature flag (`JACKIN_HOST_ATTACH=1`). The end state removes the architectural dependency on the in-container client for host-terminal capabilities once the opt-in path is promoted to default.
+
+### Socket Connectivity
+
+jackin❯ already bind-mounts a per-instance host directory at `/jackin/run`; the Capsule socket appears at `~/.jackin/sockets/<container>/jackin.sock`. On same-kernel Docker hosts, host code can open that socket directly. On Docker Desktop for macOS, the host can see the inode through the bind mount but cannot connect to the Linux VM's Unix socket reliably. OrbStack is Docker-compatible but has its own macOS/VM filesystem and socket integration behavior, so it had to be tested as a separate local container backend rather than assumed equivalent to Docker Desktop.
+
+The chosen portable attach strategy:
+
+| Environment | Attach transport |
+|---|---|
+| Same-kernel Linux Docker | Host `UnixStream` directly to `~/.jackin/sockets/<container>/jackin.sock`. |
+| Docker Desktop macOS | Host process runs `docker exec -i <container> /jackin/runtime/jackin-capsule attach-proxy`; the proxy connects to `/jackin/run/jackin.sock` inside the container and relays framed bytes over stdio. |
+| OrbStack macOS | Probe direct host connection to `~/.jackin/sockets/<container>/jackin.sock`; if connect fails, use the same `docker exec -i ... attach-proxy` relay. The implementation records which path was selected in debug logs. |
+| Future remote Docker / Kubernetes | Host-side attach transport becomes another adapter, but the clipboard-image frame and staging contract remain the same. |
+
+This keeps the image bridge independent of Docker implementation details. The protocol says "client sends ClipboardImage"; the transport decides how bytes reach the daemon.
+
+The implementation reuses the existing snapshot/control precedent: try the host-visible socket path first when the Docker backend makes that meaningful, then fall back through an in-container command when the host can see the socket inode but cannot connect through the VM boundary.
+
+### Protocol
+
+`ClipboardImageFormat` is an explicit tag, not a free-form extension string. The first implementation supports `Png`, `Jpeg`, `Gif`, `Webp`, and `Tiff`; Capsule validates the claimed format against image magic bytes before staging.
+
+Normal paste stays `ClientFrame::Input`. A host image paste is not encoded as base64 text inside a terminal paste sequence; it is a typed frame so Capsule can validate, stage, log, and route it deliberately.
+
+The normal `MAX_FRAME_PAYLOAD` is 4 MiB. Small clipboard-image frames deliberately use a separate 16 MiB frame cap and expose `MAX_CLIPBOARD_IMAGE_BYTES = 16 MiB - 1` for the one-byte format discriminator. Larger image paste uses chunked client-to-server frames (`ClipboardImageStart` / `ClipboardImageChunk` / `ClipboardImageEnd`), each chunk capped at 1 MiB, with a 64 MiB first-implementation transfer cap. Capsule assembles by transfer id, enforces contiguous offsets and total byte count, verifies SHA-256, and cancels the active transfer id on a malformed chunk. File export uses the equivalent server-to-host chunked shape (`FileExportStart` / `FileExportChunk` / `FileExportEnd`), each chunk capped at 1 MiB with a 64 MiB export cap, writing to a temporary host file under `~/Downloads/jackin/<instance>/`, verifying byte count and SHA-256, then renaming to a collision-resistant final path.
+
+Broader file export and very large binary transfers still need more transfer work: a negotiated side stream that still routes through Capsule policy and telemetry, and explicit cancellation frames for interrupted image/file transfers if live validation proves they are useful.
+
+### Host Clipboard Readers
+
+Each backend is isolated behind one trait (`HostClipboardImageReader`) so platform-specific reads stay swappable:
+
+| Platform | Primary backend | Fallback |
+|---|---|---|
+| macOS | Native pasteboard access through a small Rust/ObjC or Swift helper, or a maintained Rust clipboard crate if it can read images reliably. | `osascript` coercing the pasteboard to PNG/TIFF, used as a compatibility fallback and test oracle. |
+| Wayland Linux | `wl-paste --type image/png` and sibling image MIME types. | None initially; return "no image" if unavailable. |
+| X11 Linux | `xclip -selection clipboard -t image/png -o` and sibling image MIME types. | `xsel` if it can read typed image selections reliably. |
+| Windows | Out of scope until native Windows host support exists. | None. |
+
+The reader tries image MIME types in a deterministic order and validates the returned bytes against the claimed format. It never trusts a clipboard command just because it exited successfully.
+
+Supported formats: PNG (`\x89PNG\r\n\x1a\n` signature), JPEG (`0xFF 0xD8 0xFF` prefix), GIF (`GIF87a`/`GIF89a`), WebP (`RIFF....WEBP`), TIFF (`MM\0*`/`II*\0` prefix). SVG is not accepted as an image clipboard payload in V1: it is text with active-content and parser concerns. If needed later, it should be a separate explicit file-staging path with stricter sanitization.
+
+### Container Staging
+
+Capsule stages received images under `/jackin/run/clipboard/`. The staged files are jackin-owned runtime state and therefore belong under `/jackin/`, specifically the ephemeral runtime mount, rather than a new top-level container path or host path family.
+
+`/jackin/run/clipboard/` is runtime staging, not durable artifact storage. It is acceptable for clipboard images that need to survive long enough for the agent to read them after prompt submission. It is not the destination for exported host files, diagnostics archives, or user-kept artifacts.
+
+Staging rules: create the directory with `0700`, create files with `0600` and `create_new`, generate collision-resistant names that do not include host paths or clipboard text, use the extension only after sanitization, re-validate magic bytes in Capsule before writing even if the host reader already validated, return the staged in-container path to the paste router, and delete staged files on clean daemon exit and SIGINT/SIGTERM shutdown when possible (always on instance socket-dir cleanup; ordinary client reattach does not remove staged files because a running agent may still need to read a just-pasted path).
+
+### Paste Routing
+
+After staging, Capsule pastes the path into the focused PTY using the same bracketed-paste semantics as normal text paste: bracketed-paste wrapper if the focused pane has bracketed paste enabled, otherwise ordinary bytes. Enter is not appended automatically in V1, so the operator reviews the prompt before submission. If no pane is focused, or the focused pane is not writable, Capsule reports the staged path and a `not pasted` warning instead of dropping the image silently.
+
+### Host Link Opening
+
+The design goal for host link opening:
+
+- Preserve Capsule's existing OSC 8 passthrough so terminals with native hyperlink support keep working.
+- Track safe hyperlink regions in the focused pane and jackin-owned chrome as queryable frame metadata.
+- Add an attach request such as `OpenLinkAt { row, col }` or `LinkAt { row, col }` so the host client can ask Capsule what link lives under a mouse event.
+- Add a direct `OpenUrl { url, source }` request for jackin-owned chrome and dialogs that already carry an exact URL, starting with GitHub context's PR and CI/check URLs.
+- Fall back to plain-text URL detection in the visible row when no OSC 8 region exists, reusing the selection URL-token rules instead of adding a second URL parser.
+- Support both primary-screen transcript output and alternate-screen rich TUI output by querying Capsule's composed grid, not by scraping terminal scrollback from the host terminal emulator.
+- Render modifier-hover disclosure as a compositor overlay derived from the current frame's link metadata, never writing highlight escape sequences into the agent PTY.
+- Restrict openable schemes to `http`, `https`, and `mailto` unless a later operator setting explicitly adds more.
+- Execute the browser-open command only in the host process.
+- Never open a URL just because an agent emitted OSC 8 or printed text.
+
+This shares the same transport foundation as image paste: the host client owns the operator gesture and host-side action; Capsule owns terminal state, pane focus, and URL safety classification.
+
+### Container File Export
+
+The inverse of host-to-container image/file staging is container-to-host export. Operators often need to inspect or keep artifacts created by agents: screenshots, generated images, logs, patch files, archives, reports, or build outputs. Before this feature they had to manually use `docker cp`, bind mounts, or copy text out of the pane.
+
+The selected data flow:
+
+```text
+Operator selects / points at a container path
+  -> Capsule validates path and file metadata inside the container
+      -> Capsule streams file bytes over the attach protocol
+          -> host attach client writes to an explicit host destination
+              -> operator sees Exported: ~/Downloads/jackin/<instance>/...
+```
+
+Destination policy: default to a jackin-owned host download root (`~/Downloads/jackin/<workspace-or-instance>/`), preserve the basename but sanitize it and append a collision-resistant suffix when needed, never write to Desktop, Downloads root, a user repository, or an arbitrary host path without an explicit file-picker/CLI destination, and surface the destination before or immediately after export.
+
+Validation and transfer rules: resolve the requested path inside the container before transfer and reject symlink escapes outside the workspace and `/jackin/run/`; allow workspace files and jackin-owned runtime files by default, with other container paths requiring later confirmation or a policy setting; start with regular files only (directory archive export is a separate later action); apply size caps and stream in chunks (1 MiB chunks, 64 MiB V1 cap); compute a digest during transfer and report bytes + digest in debug logs; never log file contents (compact logs use path category, basename, byte count, destination category, coarse rejection reason, and result, not full container paths or full host destinations — host notices may show the exported destination because they are the operator-facing confirmation for the explicit export action).
+
+This uses typed attach frames rather than shelling out to `docker cp` as the product architecture, because `docker cp` bypasses Capsule's path policy, focus/session ownership, telemetry, and future remote-transport abstraction. A `docker cp` helper can remain a manual fallback outside the multiplexer.
+
+### Observability
+
+Compact logs: `clipboard-image: paste trigger source=clipboard`, `clipboard-image: staged extension=png bytes=123456 path=/jackin/run/clipboard/...`, `clipboard-image: rejected reason=oversize stage=transfer-start`, `clipboard-image: rejected reason=signature-mismatch stage=payload`, `clipboard-image: no-image source=clipboard text-paste=forwarded`, `host-link-open: opened scheme=https source=osc8`, `host-link-open: opened scheme=https source=github-context-pr`, `host-link-open: opened scheme=https source=github-context-ci`, `host-link-open: rejected reason=unsafe-scheme scheme=file`, `host-file-export: requested category=workspace basename=report.md`, `host-file-export: exported bytes=123456 dest=downloads/jackin/...`, `host-file-export: rejected reason=oversize bytes=... max=...`, `host-file-export: rejected reason=path-policy path_category=container-root`.
+
+Debug logs: which host backend was attempted; which MIME type was tried; why each backend returned no image; clipboard command exit status or platform error, with no image bytes and no base64; attach transport path (direct socket vs stdio proxy); for host link opening, the mouse/modifier event, link source (`osc8`, chrome metadata, or plain text), policy decision, and opener command exit status, with query strings and fragments redacted; for host file export, path resolution category, transfer id, byte count, digest, destination category, and failure cause, without file contents.
+
+Never log image contents, base64 payloads, source host paths unless the user explicitly used a file-staging command, clipboard-derived metadata that may contain private content, or full URL query strings from host link opening.
+
+### Host-side effects
+
+This roadmap authorizes five classes of host-side effects, all gated by an explicit operator gesture:
+
+| Effect | Trigger | Host mutation / action | Required guardrails |
+|---|---|---|---|
+| Clipboard image paste | Operator invokes paste while the attach client is focused and the host clipboard contains an image. | Read host clipboard; copy validated bytes into per-instance jackin-owned runtime state visible as `/jackin/run/clipboard/...` inside the container. | No general clipboard API for agents; no host paths pasted; no image bytes in logs; size and format caps. |
+| Clipboard text-path image staging | Operator pastes a single absolute host image path (default-on auto-stage), or invokes the command-palette `Stage image from clipboard path` action; the referenced host file must be a real image. | Read the referenced image file from the host (auto-stage reads only the pasted bytes; the palette action reads host clipboard text); copy validated bytes into per-instance jackin-owned runtime state visible as `/jackin/run/clipboard/...` inside the container. | Absolute image files only, validated by magic bytes; host path is never pasted; ordinary non-image text stays text; auto-stage rejects prose, relative paths, missing files, and mixed pastes, and is opt-out via `JACKIN_PASTE_IMAGE_PATHS=0`; same caps as direct image paste. |
+| Open link in browser | Operator invokes an open-link gesture, such as modifier-click or command palette action, on a safe URL. | Launch the host browser/opener for that URL. | User gesture required; scheme allowlist; operator opt-out; no automatic opens from agent output. |
+| Open GitHub context targets | Operator invokes an explicit GitHub context action such as "open PR" or "open CI". | Launch the host browser/opener for the known PR or CI/checks URL. | User gesture required; target is derived from trusted jackin❯ GitHub context state; failing CI should prefer the failing run/check URL when known. |
+| Export container file | Operator invokes an explicit export action on a resolved container file path. | Write a copy under a surfaced host destination, defaulting to a jackin-owned Downloads subdirectory. | User gesture required; path policy; regular-file-only V1; size cap; no arbitrary host destination without explicit file picker/CLI destination. |
+
+None of these effects writes host configuration, shell files, git state, browser profiles, or user repositories. If a later implementation needs persistent host preferences, they must live under jackin-owned host state and be surfaced before the behavior ships.
+
+### Security model
+
+This feature must preserve the rule that jackin❯ does not silently mutate or expose the host.
+
+The allowed host-side effects are deliberately narrow: read the host clipboard image data on an operator paste gesture, read host clipboard text plus one absolute image path on the explicit image-stage action, open a safe URL on an operator open gesture, open known GitHub context targets on an operator dialog action, and write an exported container file to a surfaced host destination on an operator export action. The host clipboard, browser, and filesystem are not exposed to the agent as APIs. Image bytes are copied into per-instance jackin-owned runtime state, URLs are opened only by the host attach client, and exported files are written only by the host attach client after Capsule validates and streams the selected container file.
+
+Threats and mitigations:
+
+| Threat | Mitigation |
+|---|---|
+| Malicious agent tries to read clipboard repeatedly. | Agents cannot invoke the host reader. Only the host attach client reads the clipboard on operator paste. |
+| Agent prints a host image path and expects jackin❯ to auto-import it. | Agent-printed output is never auto-staged: only an operator paste (a bracketed paste in the input stream) or an explicit palette action can stage, and only when the content is a single absolute path to a real readable image file. Plain prose and non-image text stay ordinary text; the paste auto-stage is opt-out via `JACKIN_PASTE_IMAGE_PATHS=0`. |
+| Malicious pane tricks the operator into pasting secrets. | This is the same class as ordinary paste. Add visible staging feedback and never auto-submit. |
+| Clipboard command returns text for an image MIME request. | Validate magic bytes before staging. |
+| Oversized clipboard image exhausts memory or socket bandwidth. | Apply host read cap, protocol image cap, and Capsule staging cap. |
+| Staged file leaks after session. | Keep files under per-instance `/jackin/run/clipboard/`; remove on detach and instance cleanup. |
+| Host path leaks into the prompt. | Generate container-local paths; do not paste host paths. |
+| Any same-UID process injects image frames into the socket. | Preserve existing `0700` socket directory and `0600` socket file permissions; typed frame validation prevents arbitrary file writes outside staging. |
+| Image parser vulnerability. | Do not decode pixels in jackin❯ V1. Validate only small magic-byte/header checks and pass bytes through as files. |
+| Agent spams OSC 8 to open browser windows. | Host link opening is gesture-gated; OSC 8 alone only marks a region and never opens anything. |
+| Link opens a dangerous local or active-content URI. | Restrict schemes to `http`, `https`, and `mailto`; keep `file`, `javascript`, `data`, and custom app schemes blocked unless explicitly configured later. |
+| Agent prints `/etc/shadow` and tricks export. | Export requires explicit operator action and path policy; sensitive container paths outside workspace and `/jackin/` require confirmation or are denied by default. |
+| Export follows a symlink to an unexpected location. | Resolve and validate paths inside Capsule before streaming; reject symlink escapes when exporting from a restricted root. |
+| Export overwrites host files. | Host client uses create-new or collision-resistant names by default; arbitrary overwrite requires explicit file-picker confirmation. |
+| Large export exhausts memory or disk. | Stream chunks, enforce caps, surface byte counts, and fail cleanly before writing beyond policy. |
+
+### Correctness invariants
+
+- Every host clipboard image accepted by jackin❯ becomes a file readable from inside the focused agent container.
+- No host-only path is pasted to an agent unless the same path is intentionally mounted and readable inside the container.
+- Every staged path lives under `/jackin/run/clipboard/`.
+- An image paste never becomes raw terminal base64.
+- An image paste never auto-submits unless a later explicit operator setting enables that behavior.
+- A failed image paste is visible to the operator.
+- Normal text paste behavior remains byte-for-byte compatible unless the host clipboard reader positively detects an image on an explicit image-paste trigger.
+- Plain text paths remain ordinary terminal text unless the operator invokes the explicit image-path staging action.
+- Same-kernel Docker, Docker Desktop, and OrbStack use the same attach protocol; only transport differs.
+- Existing copy-out behavior remains intact: pane OSC 52 still reaches the host terminal when explicitly allowed, while jackin-owned selection copy, double-click word copy, and copyable dialog rows still render visible feedback.
+- Image-stage feedback follows the same overlay constraints as `Selection copied`: it must not cover the prompt cursor, pane input line, status bar, footer hint, or branch/run bar.
+- A host browser open happens only after an explicit operator gesture and only from the host attach client or a future daemon/Desktop surface with the same approval semantics.
+- Links emitted by an agent are inert until the operator clicks or invokes an open command.
+- Plain-text URL detection uses one shared URL-token rule with double-click selection; there must not be separate subtly different URL grammars for copying and opening.
+- Rich TUI mouse fidelity remains intact: unmodified mouse events and mouse events without a safe link target continue to the focused pane exactly as they do today.
+- Link-hover highlighting is presentational only; it never mutates the PTY, never changes pane scrollback, and never rewrites the agent's rendered cells.
+- jackin-owned dialogs that already know URLs expose explicit open actions instead of forcing the operator through text selection, terminal-native hyperlinks, or modifier-click detection.
+- GitHub context's CI open action resolves to the most useful available target: failing job/check URL first, then workflow run URL, then PR checks tab or repository Actions page only as a fallback.
+- Container file export is always a copy from container to a surfaced host path; agents never receive a writable host directory as a side effect of export.
+- Exported host files use create-new/collision-resistant writes by default and never overwrite operator files silently.
+- Export path resolution happens inside Capsule against the container filesystem before any host write begins.
+
+
+
+## Implications for jackin❯
+
+The host attach client should capture host-only actions and send bounded typed frames, while Capsule remains responsible for validated staging and session attribution.
+
+## Limitations and unknowns
+
+Platform capability probing, multi-client arbitration, staging lifetime, and destination policy require explicit validation. Security invariants apply even when a platform lacks a preferred native API.
+
+## Sources
+
+Protocol and platform sources are cataloged in [Host affordance evidence](/research/product/operator-experience/host-affordances/host-affordance-bridge-design/01-host-affordance-evidence/).
+
+## Related work
+
+- [Host Affordance Bridge overview](/research/product/operator-experience/host-affordances/host-affordance-bridge-design/)
+- [Alternatives and open questions](/research/product/operator-experience/host-affordances/host-affordance-bridge-design/04-alternatives-and-open-questions/)

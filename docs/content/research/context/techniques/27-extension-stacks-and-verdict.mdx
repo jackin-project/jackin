@@ -1,0 +1,122 @@
+---
+title: "27 — Current verdict and stack guidance"
+description: "Current conclusions and stack guidance across quota, multimodal, latency, fleet, portability, governance, and quality evidence."
+---
+
+## Summary
+
+The current evidence preserves the central dollar verdict: about **2.5× is defensible without a quality trade**, and about **5–6.2× is conditional on a routing change passing the acceptance harness**. No reviewed mechanism supports an honest 10× claim at equal quality. Frontier-model thinking billed as output and the cache-read floor of genuinely useful context remain binding constraints.
+
+For subscription users, the primary metric changes from dollars per task to **accepted tasks per usage cap**. That reorders the levers: prefix stability, context-window discipline, and request volume rise; uncontrolled fan-out can lose despite appearing cheap in API-dollar arithmetic. Provider quota weights remain partly opaque, so quota conclusions stay bounded where direct measurement is unavailable.
+
+## Question and scope
+
+What reduction remains defensible after composing the durable findings, quota constraints, and unresolved frontier ideas?
+
+## Method
+
+The verdict recomposes only independent, quality-gated effects from the durable chapters, then reports subscription and API-priced outcomes separately with unresolved inputs left explicit.
+
+## Findings
+
+### Current evidence by topic
+
+| Topic | Current finding | Detail |
+|---|---|---|
+| Subscription quota | Use tasks per cap; apply API dollars only to credits or explicitly off-cap traffic | [19 — Subscription and quota economics](/research/context/techniques/19-subscription-and-quota-economics/) |
+| Multimodal | Vision-tier routing can reduce image tokens by 67%; text-over-PDF can save about 50% on document tokens in measured cases | [20 — Multimodal token economics](/research/context/techniques/20-multimodal-token-economics/) |
+| Latency | A token-saving path is unacceptable when added wall-clock or human wait exceeds its value | [21 — Latency and time economics](/research/context/techniques/21-latency-and-time-economics/) |
+| Fleet | Prefix identity, dynamic sections, start timing, and provider cache scope determine cross-agent reuse | [22 — Fleet and multi-tenant cache](/research/context/techniques/22-fleet-and-multitenant-cache/) |
+| Portability | Instruction-level techniques travel broadly; hooks, provider betas, and storage surfaces do not | [23 — Portability matrix](/research/context/techniques/23-cross-agent-portability/) |
+| Literature | KV-cache compression is meaningful for self-hosted inference but does not reduce hosted API-billed tokens | [24 — Literature and market scan](/research/context/techniques/24-fresh-literature-and-market-delta/) |
+| Governance | Measurement overhead, retries, raw recovery, and live quality checks belong in net accounting | [25 — Governance and online quality](/research/context/techniques/25-meta-cost-governance-and-online-quality/) |
+| Frontier | Conditional ideas remain gated by feasibility, provider support, and paired quality tests | [26 — Frontier mechanisms](/research/context/techniques/26-extension-frontier/) |
+
+### Dollar verdict
+
+The added mechanisms change choices at the margins but do not remove the two structural floors:
+
+1. Thinking from a frontier model is billed as output and is reachable mainly through effort control or model routing.
+2. Context the model genuinely needs still incurs a cache-read floor even under stable-prefix caching.
+
+Multimodal substitution matters when media is a material share of the workload. Cached-context retrieval can reduce fresh-input cost, but it remains a context-architecture and caching lever rather than a new independent multiplier. Savings from overlapping layers must not be multiplied as if each acted on the full baseline.
+
+### Quota verdict
+
+For a capped subscription, use a two-part objective:
+
+```text
+accepted tasks per cap = accepted tasks / provider-accounted usage
+overage cost           = credits or API traffic × applicable rates
+```
+
+The provider does not publish a stable conversion from all token classes to cap consumption. Measure relative changes from the provider surface and session records; do not present an inferred quota weight as a provider fact. Cache stability and fewer requests are robust priorities because both reduce avoidable repeated work even when the exact cap denominator is hidden.
+
+### Conservative stack
+
+- Stabilize system, tool, and project prefixes.
+- Keep raw recovery for every transformed observation.
+- Use retrieval to avoid irrelevant reads before compressing relevant ones.
+- Apply deterministic output discipline.
+- Measure fresh input, cache write, cache read, thinking, visible output, turns, rereads, latency, and accepted-task quality separately.
+
+### Quota-bound subscriber stack
+
+- Add request-volume and context-window budgets.
+- Stagger or pre-warm fleet starts only when measurement shows prefix reuse.
+- Gate fan-out by expected task value and cap pressure.
+- Attribute each capsule's provider-reported usage where the provider exposes it.
+
+### Conditional routing stack
+
+- Route only task classes that pass the paired acceptance harness.
+- Preserve an advisor or escalation path for hard cases.
+- Recompute savings for the actual current model pair and tokenizer family.
+- Reject the route when retries, cache fragmentation, or quality loss erase the nominal price benefit.
+
+### Cross-layer caveats
+
+Server-side provider cache scope is not the same as a local file cache. Local recovery stores make compressed observations reversible; they do not prove shared provider-prefix reuse. Subagent cache behavior is version- and execution-path-dependent, so inspect current session records before relying on it.
+
+Absolute dollar examples tied to one model price can age while ratios and structural constraints remain valid. Apply the [provider-sensitive claim verification contract](/research/context/techniques/28-drift-delta/) before using provider-sensitive numbers.
+
+## Implications for jackin❯
+
+### Current tier adjustments
+
+| Mechanism | Current treatment | Reason |
+|---|---|---|
+| Prefix stability and cache preservation | Promote for quota-bound work | Repeated prefix writes and cache misses consume avoidable allowance |
+| Request-volume discipline | Promote | Extra turns repeat fixed context and create more opportunities for cache misses |
+| Uncontrolled subagent fan-out | Downgrade for quota-bound work | Parallel agents can multiply requests and fixed-prefix consumption |
+| Vision-tier routing and cropping | Conditional | Strong local savings only when media is present and still legible |
+| Text extraction before full PDF/image ingestion | Conditional | Useful when structure and exact text survive extraction |
+| Per-request gateway routing | Keep harness-gated | Model savings can be erased by cache fragmentation or quality loss |
+| Hosted KV-cache compression claims | Reject | Self-host GPU-memory savings are not hosted API token savings |
+| Compression without raw recovery | Reject | Exact identifiers, errors, configuration, and security evidence require recovery |
+
+### Current stack guidance
+
+For jackin❯, the current verdict and stack guidance evidence identifies which mechanisms are safe to adopt directly and which still require workload-specific validation.
+
+## Limitations and unknowns
+
+### Rejected or downgraded claims
+
+- No evidence supports stacking every reported percentage into a 10× accepted-task claim.
+- A payload-reduction benchmark is not a task-level, quota-level, or quality result.
+- Self-host KV eviction does not lower billed hosted tokens.
+- A flat-rate subscription does not make unlimited retries or fan-out free; the usage cap is the scarce resource.
+- A cheaper route is not a saving when quality failures cause escalation, rereads, or repeated turns.
+
+## Sources
+
+Evidence and repository references are cited inline beside the claims they support.
+
+## Related work
+
+- [Executive summary](/research/context/techniques/00-executive-summary/)
+- [Composed stacks](/research/context/techniques/15-composed-stacks/)
+- [Validation harness](/research/context/techniques/16-validation-harness/)
+- [Coverage and gap map](/research/context/techniques/18-extension-overview/)
+- [Provider-sensitive claim verification](/research/context/techniques/28-drift-delta/)

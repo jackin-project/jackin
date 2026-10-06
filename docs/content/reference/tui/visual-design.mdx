@@ -1,0 +1,153 @@
+---
+title: "Visual Design"
+description: "PHOSPHOR color palette, border color semantics, left sidebar conventions, and tab bar specifications."
+---
+
+## TermRock theme and product palette
+
+Reusable component styling flows through TermRock's semantic `DesignSystem` and `Role` API ([TermRock source](https://github.com/tailrocks/termrock)). jackin❯ surfaces resolve neutral presentation with `DesignSystem::default().style(Role::…)` so ordinary, strong, muted, border, focus, danger, warning, tab, input, link, and scroll colors stay on TermRock's default phosphor preset. Product-owned brand/domain colors (brand pill, menu chips, status accents) live in `jackin_tui::tokens`.
+
+Product-owned tokens only — brand pill, launch rain, debug amber, blocked status,
+menu button states, action/disclosure accents, and light-bar `LINK_BLUE` — live
+as renderer-neutral RGB values in `jackin-brand` and are adapted for Ratatui by
+`jackin_tui::tokens`. Never
+define a second surface-local palette, and never import raw shared phosphor or
+neutral RGB constants for generic TUI painting.
+
+| Source | Examples | Usage |
+|---|---|---|
+| TermRock `Role` | `Text`, `TextStrong`, `TextMuted`, `Border`, `BorderFocused`, `Accent`, `Danger`, `Warning`, `Tab*`, `Link*`, `Scroll*` | Shared presentation via `DesignSystem::default().style(role)` |
+| Product tokens | `BRAND_BLOCK`, `DEBUG_AMBER`, `STATUS_BLOCKED_RED`, `MENU_*`, `ACTION_ACCENT`, `DISCLOSURE_ACCENT`, `LINK_BLUE`, rain RGB | Brand chrome and domain/agent states only |
+| TermRock escape hatch | `termrock::style::PHOSPHOR_GREEN`, `PREVIEW_CARD` | When the documented preset color itself is required (rare) |
+
+**No inline product `Color::Rgb(...)` literals outside `jackin_tui::tokens`.**
+Lookbook preview cards use TermRock's `PREVIEW_CARD` token.
+
+### Background fills use the terminal default, never forced black
+
+**Modal backdrops and dialog surfaces paint the terminal's *default* background, not a fixed black.** The Ratatui tokens `tui_theme::DIALOG_BACKDROP` and `tui_theme::DIALOG_SURFACE` are `Color::Reset`; the raw-ANSI token `ansi::BG_DARK` is `\x1b[49m` (the default-background SGR). A dialog backdrop or surface must never set `Color::Black`, `Color::Rgb(0, 0, 0)`, or a `48;2;0;0;0m` fill. Forcing pure black makes overlays stand out as a dark rectangle against a themed (non-black) terminal background; emitting the default background lets every overlay match the operator's terminal theme. Occlusion still holds — a `Color::Reset` cell with a space overwrites the chrome behind it, just on the operator's background instead of black. This applies to every surface (console, launch cockpit, capsule) because all three consume the same shared tokens. Black as a **foreground** (e.g. black text on a light status chip) is unaffected by this rule; it governs background fills only.
+
+## Panel Title Spacing
+
+Every titled block passes its title through `Panel::title()`, which normalizes the string to `" {trimmed_title} "` (one space, trimmed title, one space) internally. Callers must **not** pre-pad the title string with spaces. The resulting display is `┌ Title ┐` with exactly one space on each side of the title text.
+
+A title passed as `"  Title  "` (extra spaces) or `"Title"` (no spaces) is a design-decision violation — pass the bare trimmed title and let `Panel::title()` apply the canonical padding.
+
+---
+
+## Panel Body Inset
+
+Panel body content must be inset from the border by exactly 1 cell horizontally. Use TermRock `Panel::inner` and the canonical content padding rather than rendering directly against the border. The inset prevents text from touching the left and right border characters and is a visual requirement across all titled panels.
+
+TermRock `Viewport` and `Panel` apply this inset through their chrome. Direct callers that render text content into a titled panel must paint into `Panel::inner(area)` (or the inner rect returned by `render_dialog_shell`), not into the raw outer rect.
+
+---
+
+## Action Rows (`+ Add …` / `+ Override …`)
+
+Every row that begins with `+` is an add/create action and must render through the one shared `action_row_style(selected)` function in `jackin-console`. Rules:
+
+- Same `ACTION_ACCENT` foreground on every `+ …` row app-wide, on every screen and tab.
+- Bold when selected, normal weight when not.
+- No trailing parenthetical description (no `(all roles overridden)`, no `(0 remaining)`, no any-other-parenthetical). The action label alone is sufficient.
+- One shared style function for all `+ …` rows; no surface hand-rolls its own style.
+
+---
+
+## Block Border Colors
+
+- **Active interaction container**: `PHOSPHOR_GREEN` border — dialogs, pickers, forms, tab panels, and the currently active list/sidebar use the bright border whenever they own keyboard or scroll interaction. The paint path maps `focused = true` → `PanelChrome::Focused` with no overflow gate.
+- **Passive list-detail scroll block that still owns focus**: `PHOSPHOR_GREEN` border — state keeps `focused = true` only while content overflows (see focusability / `list_pre_render_focus_plan`). The renderer does not second-guess `focused`.
+- **Passive list-detail block after content fits**: `BORDER_GRAY` border — callers clear focus in pre-render state so `focused` is already false; there is no false scroll affordance.
+- **Unfocused / background container**: `BORDER_GRAY` border regardless of scrollability.
+
+Every container uses plain single-line glyphs (`┌─┐`, `│ │`, `└─┘`). Border
+weight never signals focus. The one interaction owner uses TermRock
+`Role::BorderFocused` (phosphor green in the default theme); all other visible
+containers use `Role::Border` (neutral gray). Double-line, heavy, or mixed
+panel borders are a design violation. Scrollbar thumbs may occupy edge cells
+without changing the surrounding panel's border contract.
+
+TermRock `Viewport` paints border emphasis from `PanelChrome`. Console scrollable panels go through `scroll_block::render_scrollable_block_at`, which maps the caller's `focused` flag to `PanelChrome::Focused` / `Normal`. Passive list-detail surfaces clear focus state when content no longer overflows so a non-scrollable detail block does not keep a false green affordance. Active interaction containers (forms, dialogs, pickers) keep the bright border whenever they own interaction.
+
+---
+
+## Left Sidebar (Workspace Name List)
+
+- Horizontal scroll only — no vertical scroll.
+- Uses the shared fixed-prefix line renderer (`render_line_with_fixed_prefix_scroll`) so the disclosure/cursor prefix stays visible while only the workspace label scrolls. The renderer must slice by display columns through TermRock text helpers, not by Rust `char` or byte count.
+- H/L keys and `ScrollLeft`/`ScrollRight` both update `state.list_names_scroll_x`.
+- Focus set on click via `update_scroll_focus`; persists until user clicks the right pane.
+- Focus persists until the user explicitly clicks the right pane. Horizontal scroll is clamped on resize, but focus state is not cleared (focus-sustainability rule).
+- Selected and hovered rows must paint their background across the full visible row after horizontal scroll, even when the scrolled label is shorter than the viewport. Do not let generic line scrolling clip the highlighted prefix or leave unpainted cells inside the row.
+
+---
+
+## Tab Bar
+
+**W3C ARIA Tabs pattern** (see <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> → TUI navigation conventions for full spec). Summary:
+
+- Tab bar has its own focus area (`tab_bar_focused: bool` in state).
+- **Tab chrome is shared with the in-container multiplexer status bar** (`jackin-capsule`): inactive tabs render on a dark-grey background (`TAB_BG_INACTIVE`), the active tab lifts to graphite (`TAB_BG_ACTIVE` — never the brand green, so it stays distinct from the ` jackin❯ ` pill), both with WHITE text and the active tab bold. These backgrounds and the canonical `widgets::Tabs` renderer live in TermRock and are consumed by the console tab strips (workspace editor, settings) and capsule status bar.
+- **Capsule agent tabs reserve one status glyph cell** after the tab label: blocked `●` in red, working `▶` in bold amber, done `○`, idle `◆` in bright phosphor green, and unknown blank. Working and idle must be full-cell visible marks, not tiny or subtle separator-like glyphs, so they cannot be confused with usage/status text separators.
+- **Tab bar focused**: the active tab shows a `PHOSPHOR_GREEN` `━` underline bar — the keyboard-focus cue. GREEN = "tab bar owns focus."
+- **Content focused** (tab bar NOT focused): the active tab still shows a `━` underline bar, but in `WHITE` — a dim context indicator. This tells the operator which tab is selected without implying the tab bar is the focus owner. The GREEN border on the content block below is the real focus signal.
+- **Neither**: no underline bar rendered (edge case only; one of the two areas always owns focus in normal operation).
+- **Content focused** (tab bar not focused): same graphite active tab, no underline bar.
+- `←`/`→` cycle tabs when tab bar is focused.
+- `Tab`/`↓` moves focus from tab bar into the first content block.
+- `BackTab`/`Esc` returns focus to the tab bar from content.
+
+- **Tab hover lifts the cell under the pointer** (`TAB_BG_INACTIVE_HOVER` / `TAB_BG_ACTIVE_HOVER` in the shared palette), matching the in-container multiplexer's pointer feedback. The console enables any-event motion tracking (`?1003h` alongside `?1000h`/`?1002h`/`?1015h`/`?1006h`) so a `MouseEventKind::Moved` event repaints the hovered tab; moving off the strip clears it. TermRock `TabsState` regions are produced by the same `Tabs` render that paints the strip, so click-selection and hover stay in lock-step with the visible cells.
+
+---
+
+
+## Lookbook SVG Exports — Padded Preview Canvas
+
+**Rule:** lookbook SVG exports use the same `PREVIEW_CARD` padded canvas as the interactive preview. The SVG export path and the interactive preview must render identically — each story floats on a uniform charcoal card, never edge-to-edge against a black background.
+
+Concretely, `render_story_to_buffer` allocates a buffer of `(story.width + 2·STORY_PAD) × (story.height + 2·STORY_PAD)`, fills the whole area with `PREVIEW_CARD` (`Rgb(28, 28, 28)`), `Clear`s the inset story rect, and renders the story into that inset. The resulting SVG has a `#1c1c1c` ring around every component.
+
+Two paths that must always agree:
+- **Interactive preview** (`main.rs` `preview_inner`): fills with `PREVIEW_CARD`, applies `Margin { horizontal: 1, vertical: 1 }`.
+- **SVG export** (`svg.rs` `render_story_to_buffer`): same `PREVIEW_CARD` fill, same `STORY_PAD = 1` padding ring.
+
+If one path is updated (different padding, different background), the other must be updated in the same PR. DRY miss here = every screenshot on the docs site drifts from the interactive browser.
+
+---
+
+## Panel and Dialog Title Capitalization
+
+Every panel border title, dialog title, and box border title must start with an uppercase letter. The first character of the title string (after `Panel::title()` normalizes spacing) must be uppercase.
+
+**Rule:** pass titles with an uppercase first character at the call site. `Panel::title()` does not normalize letter case — it only normalizes spacing. A title `"workspace"` produces `┌ workspace ┐` (wrong); `"Workspace"` produces `┌ Workspace ┐` (correct).
+
+Data-derived titles (workspace names, role names, story group labels) must be capitalized at their **source**, not with a post-hoc `to_uppercase()` call. If a data source can produce a lowercase first character that ends up as a panel border title, capitalize it at the point where the string is constructed.
+
+Examples of correctly capitalized titles: `"General"`, `"Environments"`, `"Debug info"`, `"Stories"`, `"About"`, `"Preview"`. A lowercase first letter in any title visible to the operator is a violation of this rule.
+
+---
+
+## Capsule ANSI color encoders: static allowlist vs dynamic runtime
+
+The capsule's ANSI renderer uses two flavors of the color-encoding helpers in [TermRock source](https://github.com/tailrocks/termrock):
+
+- **`rgb_fg(color)` / `rgb_bg(color)` — `const fn`, compile-time only.** These return a `&'static str` from a fixed allowlist of named palette colors. An unlisted color is a **compile error** (not a runtime panic), which is the desired behavior for constant tables: if you add a named color to the palette and forget to add it to the allowlist, the build fails loudly. Use these for `const COLOR_NAME: &str = rgb_fg(PHOSPHOR_GREEN)` table entries.
+
+- **`rgb_fg_dyn(Rgb) -> String` / `rgb_bg_dyn(Rgb) -> String` — dynamic, runtime.** These emit the standard truecolor SGR sequence `\x1b[38;2;r;g;bm` / `\x1b[48;2;r;g;bm` for **any** `Rgb` value and never panic. Use these whenever the color value is not a compile-time constant — any place a color is chosen at runtime (e.g. the debug chip which is conditionally rendered with `DANGER_RED`).
+
+**Rule:** capsule render code must never call `rgb_fg` or `rgb_bg` with a value that is not a `const` palette constant. Any non-const color use must route through `rgb_fg_dyn` / `rgb_bg_dyn`. A `const` call with an unlisted color is a build error (correct!); a non-`const` call with an unlisted color is an exit-101 panic (bug!).
+
+---
+
+## Copyable values — link style, hover, click-to-copy
+
+Any value the operator can click to copy (an invocation ID, container ID, file path, or URL) must read as a link and behave identically on every surface, following the W3C native-link convention:
+
+- **Colour:** `LINK_FG` (cyan) on a dark dialog surface — never blue, never the same as plain or emphasised text. `LINK_BLUE` is reserved for clickable text on the *white* status bar, where cyan lacks contrast; do not use it on dark dialog surfaces.
+- **Underline:** always underlined, with or without an OSC 8 hyperlink. Underline is the resting affordance that marks the value as a link; underlining only the hyperlinked rows is a violation.
+- **Hover:** the value brightens to `LINK_FG_HOVER` while the pointer is over it, and the pointer switches to the clickable shape where supported. A copyable value with no hover colour change is a violation — the hover feedback is what tells the operator it is interactive.
+- **Click:** copies the full value to the clipboard (OSC 52) and shows the transient "Copied!" badge on that row. The visible text may be abbreviated; the copied payload and the OSC 8 `href` carry the full value.
+
+These rules are enforced by the shared component ([TermRock source](https://github.com/tailrocks/termrock)): every copyable row renders through the same styling, so the affordance never drifts between the console, launch cockpit, and capsule. New copyable surfaces reuse that component rather than re-implementing the colour/underline/hover rules.

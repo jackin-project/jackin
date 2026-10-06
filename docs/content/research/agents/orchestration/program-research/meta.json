@@ -1,0 +1,12 @@
+{
+  "title": "Agent orchestration program",
+  "defaultOpen": false,
+  "pages": [
+    "index",
+    "01-decision-and-benefit-matrices",
+    "02-containment-benchmarks",
+    "03-fleet-and-recovery-comparison",
+    "04-open-questions-and-sources"
+  ]
+}
+

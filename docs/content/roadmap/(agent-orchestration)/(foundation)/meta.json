@@ -1,0 +1,5 @@
+{
+  "title": "Foundation",
+  "defaultOpen": false,
+  "pages": ["workspace-description", "operator-handler-system", "declarative-resource-limits", "ephemeral-mount-modes", "source-branch-policy-isolated-mounts"]
+}

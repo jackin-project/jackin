@@ -1,0 +1,61 @@
+---
+title: Amp
+description: Register Amp accounts and authorize them for workspaces
+---
+
+Amp profiles use `~/.local/share/amp` by default. jackin❯ scans that location on first start and imports an account only when it finds credentials in `secrets.json`. Importing an account does not grant it to a workspace.
+
+## Register and assign a profile
+
+Complete the agent's login flow on the host, then scan and list the imported accounts:
+
+```bash
+jackin account scan
+jackin account list
+```
+
+To register a specific profile explicitly:
+
+```bash
+jackin account add amp-work --agent amp --directory ~/.local/share/amp
+jackin workspace account assign my-app amp-work
+jackin workspace account select my-app amp-work --agent amp
+```
+
+For an additional login, select the same directory that your host alias uses. A custom profile stays separate from the default profile. jackin❯ validates credential evidence inside the selected directory before registration.
+
+## API-key account
+
+Register a provider key with the masked prompt, then authorize and select it:
+
+```bash
+jackin account add amp-key --provider amp --api-key
+jackin workspace account assign my-app amp-key
+jackin workspace account select my-app amp-key --agent amp
+```
+
+Use `--secret-ref '$AMP_API_KEY'` to reference a host environment variable, or `--secret-ref 'op://Work/Amp/api-key'` for a 1Password reference. The account stores the reference; jackin❯ resolves it when launching an authorized workspace.
+
+## Alias directories with separate XDG roots
+
+An alias may place Amp state under `~/.amp-work/data/amp` and preferences under `~/.amp-work/config/amp`. Select the common root:
+
+```bash
+jackin account add amp-work --agent amp --directory ~/.amp-work
+```
+
+A direct Amp data directory containing `secrets.json` is also supported. `settings.json` alone is not credential evidence.
+
+## Runtime trust prompts
+
+jackin❯ launches Amp with `--dangerously-allow-all`, so workspace-backed launches do not stop on command confirmation prompts. This applies only inside the jackin❯ container runtime; jackin❯ does not write Amp preferences on the host.
+
+## Check workspace access
+
+```bash
+jackin workspace account list my-app
+```
+
+The account must be assigned and support `amp`. When several assigned accounts support the same agent, select one explicitly; role-specific selection uses `--role <ROLE>`. An empty account allowlist forwards no coding-agent credentials.
+
+See [Account commands](/commands/account/) and [Agent authentication](/guides/authentication/agents/) for the registry and authorization rules.

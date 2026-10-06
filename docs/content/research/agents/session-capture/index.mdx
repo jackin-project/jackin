@@ -1,0 +1,56 @@
+---
+title: "Session Capture Research"
+description: "Dossier on coding-session capture mechanisms, products, native agent stores, market coverage, and jackin❯ integration options."
+---
+
+**Research state:** Needs refresh
+
+Research dossier on **AI coding-session capture**: how SpecStory works internally, what the rest of the market provides, where every agent in jackin❯'s roster stores its conversations, and what it means for the [Déjà Vu conversation-capture design](/research/agents/orchestration/conversation-capture/). Every external claim carries a source URL; every local number carries its method. **Verification cutoff: 2026-07-03.** Specification: <RepoFile path="prompts/research/session-capture.md">research brief</RepoFile>.
+
+## Research question
+
+How can jackin❯ capture durable, searchable conversations across every supported agent without coupling the archive to one runtime or container lifecycle?
+
+## Headline findings
+
+- **1** production cross-agent capture pipeline exists — SpecStory CLI: Apache-2.0, 57,988 LOC Go (~40% tests), 6 providers, no PTY, pure fsnotify-on-native-stores; v2.0.0 (2026-06-29) added cross-agent resume + FTS search. ([02](/research/agents/session-capture/02-specstory-cli-internals/))
+- **~40** tools cataloged across exporters, viewers, analytics, platforms; **0** ship the cross-agent, host-side, purge-surviving archive Déjà Vu targets. ([11](/research/agents/session-capture/11-open-source-exporters/), [12](/research/agents/session-capture/12-platforms-and-observability/))
+- **2/6 to 3/6** — best off-the-shelf coverage of jackin❯'s six-agent roster (SpecStory: claude+codex; claude-replay: +opencode); **0 tools** cover Kimi or Grok. ([20](/research/agents/session-capture/20-comparison-matrix/))
+- **6/6** of jackin❯'s agents are capturable: five persist watchable local transcripts (Claude/Codex/Kimi/Grok append-only JSONL, OpenCode SQLite+SSE); Amp needs live `--stream-json` — and turns out to also keep an undocumented local `threads/T-*.json` materialization. ([10](/research/agents/session-capture/10-agent-session-stores/))
+- **30 days** — Claude Code's default transcript auto-delete; jackin❯'s own `eject`/`prune` deletes restored histories today. Capture is a race against retention on both sides. ([10](/research/agents/session-capture/10-agent-session-stores/), [30](/research/agents/session-capture/30-jackin-fit/))
+- **±5 s / per-turn git snapshots** — two independent implementations (SpecStory provenance engine, Mantra) of turn↔code attribution: the competitive layer above capture. ([12](/research/agents/session-capture/12-platforms-and-observability/))
+
+## Method and evidence
+
+The dossier combines primary product documentation, source inspection at the declared cutoff, local store-format inspection, and a cross-tool capability matrix. Each chapter carries its own sources and limitations.
+
+## Limitations and open questions
+
+- Provider-private stores and undocumented schemas can change without notice.
+- Amp live capture and cross-agent resume require empirical validation in the jackin❯ lifecycle.
+- Retention, redaction, encryption, and purge ownership remain product decisions.
+
+## How to read
+
+- Start: [00 — Executive summary](/research/agents/session-capture/00-executive-summary/) — the landscape and what changes for Déjà Vu.
+- SpecStory: [01 — Product, business, reception](/research/agents/session-capture/01-specstory-product/) · [02 — CLI internals](/research/agents/session-capture/02-specstory-cli-internals/) (the mechanism chapter — SPI, per-provider extraction, schema, index, resume, cloud, provenance, Lore).
+- Landscape: [10 — Agent session stores](/research/agents/session-capture/10-agent-session-stores/) (per-agent paths/formats/stability for jackin❯'s roster) · [11 — OSS exporters](/research/agents/session-capture/11-open-source-exporters/) · [12 — Platforms and observability](/research/agents/session-capture/12-platforms-and-observability/).
+- Synthesis: [20 — Comparison matrix and tiers](/research/agents/session-capture/20-comparison-matrix/) · [30 — jackin❯ fit and the Déjà Vu delta](/research/agents/session-capture/30-jackin-fit/).
+
+## Tool tier list
+
+Tier = usefulness to a jackin❯ session-capture effort (roster coverage × mechanism robustness × output quality × maintenance × license). Full rationale in [20](/research/agents/session-capture/20-comparison-matrix/).
+
+| Tier | Tools |
+|---|---|
+| **S** | SpecStory CLI — the reusable Apache-2.0 blueprint (SPI, schema, index, reconstruct) |
+| **A** | Mantra (closed; proves turn↔git attribution) · claude-replay (portable HTML replay, 3/6 roster) · coding_agent_session_search (11+ provider retrieval) · claude-code-log (Claude archival workhorse) |
+| **B** | claude-code-transcripts (publishing) · aichat search / claude-history / claude-code-history-viewer · Amp threads + opencode `/share` (native benchmarks) · Langfuse hook route |
+| **C** | claude-trace / LeanMCP (wire depth) · ccusage + usage monitors (metrics, different job) · Happy / vibe-kanban / Crystal / Conductor (captive history) |
+| **F** | cursor-chat-export · cclogviewer · sniffly · claude-code-otel · opcode · omnara · cui · claude-code-exporter — stale, archived, or deleted |
+
+## Related work
+
+- [Déjà Vu conversation capture](/research/agents/orchestration/conversation-capture/)
+- [Persistent storage layer](/research/agents/orchestration/memory/)
+- <RepoFile path="prompts/research/session-capture.md">Session capture research brief</RepoFile>

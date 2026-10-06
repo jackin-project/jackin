@@ -1,0 +1,5 @@
+---
+source: crates/jackin-capsule/src/tui/components/branch_context_bar/tests.rs
+expression: text
+---
+ Branch · feature/tui-architecture                            jk-test-container

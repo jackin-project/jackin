@@ -1,0 +1,23 @@
+# not: working
+
+› Do a deep research for a random topic in the internet. Anything, any random topic.
+
+• I’ll do a full sweep on a random topic and pull primary/current sources, then summarize key findings with concrete links and dates. I’ll pick a
+  topic now and keep it evidence-backed.
+
+• Searching the web
+
+• Searched the web for Direct air capture current status 2026 global projects 2025 2026
+
+• Searching the web
+
+• Searched the web for Reuters Climeworks Mammoth performance reports 2026
+
+• Searching the web
+
+• Working (13s • esc to interrupt)
+
+
+› Find and fix a bug in @filename
+
+  gpt-5.3-codex-spark low · /Users/donbeave/Projects/tailrocks/holla-project/holla

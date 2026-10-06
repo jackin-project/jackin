@@ -1,0 +1,10 @@
+{
+  "title": "Desktop",
+  "defaultOpen": false,
+  "pages": [
+    "index",
+    "agent-hub",
+    "usage-provider-apis",
+    "usage-visual-references"
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "title": "Platform",
+  "defaultOpen": false,
+  "pages": [
+    "index",
+    "infrastructure",
+    "runtime",
+    "isolation",
+    "security"
+  ]
+}

@@ -1,0 +1,46 @@
+---
+title: "Host Affordance Bridge"
+description: Explains why selected clipboard, link, and file actions require a typed host-owned bridge across capsule isolation.
+---
+
+**Research state:** Incomplete
+
+**Verification cutoff:** 2026-08-12. Revalidate terminal, clipboard, and runtime integration capabilities after this date.
+
+## Research question
+
+How can jackin❯ restore selected host-local terminal affordances for containerized agents without weakening the host-container trust boundary?
+
+## Headline findings
+
+- Image clipboard data often never enters the terminal byte stream, so Capsule cannot reconstruct it with input parsing alone.
+- The responsible fix is a host-owned attach client that captures host-only actions and sends typed, bounded requests through authenticated local channels.
+- Clipboard images and files must be validated, staged into container-readable storage, attributed to a session, and cleaned up predictably.
+- URL opening and container-file export use the same capability boundary but require independent allowlists, path policy, and visible operator feedback.
+- OSC 52, Kitty graphics, host-path paste, broad bind mounts, and agent-specific attachment APIs do not provide a complete or safe bridge.
+- The bridge remains an explicit optional capability layer. Unsupported actions fail visibly and do not gain generic host command access.
+
+## Method and evidence
+
+The study combines jackin❯ runtime architecture, agent CLI behavior, Ghostty and terminal protocols, herdr’s host-client design, tmux clipboard behavior, remote-terminal products, and platform file/clipboard mechanisms. Sources remain beside the claims they support.
+
+## Limitations and open questions
+
+- Validate paste-trigger behavior across Ghostty, Terminal.app, iTerm2, SSH, tmux, and supported Linux display servers.
+- Select native clipboard libraries and fallbacks by measured capability and permission behavior.
+- Define multi-client attach ownership, staging lifetime, directory export, and destination policy.
+- Keep link-opening and file-export policy narrow enough to prevent arbitrary host execution or writes.
+
+## How to read
+
+1. [Host affordance evidence](/research/product/operator-experience/host-affordances/host-affordance-bridge-design/01-host-affordance-evidence/)
+2. [Product contract and boundaries](/research/product/operator-experience/host-affordances/host-affordance-bridge-design/02-product-contract/)
+3. [Architecture and security](/research/product/operator-experience/host-affordances/host-affordance-bridge-design/03-architecture-and-security/)
+4. [Alternatives and open questions](/research/product/operator-experience/host-affordances/host-affordance-bridge-design/04-alternatives-and-open-questions/)
+
+## Related work
+
+- [Host Affordance Bridge Preflight](/research/product/operator-experience/host-affordances/host-affordance-bridge-preflight/)
+- [Custom operator tools](/research/product/operator-experience/host-affordances/custom-operator-tools-design/)
+- [Operator handler system](/research/product/operator-experience/host-affordances/operator-handler-system-design/)
+- [Host Affordance Bridge roadmap](/roadmap/clipboard-image-bridge/)

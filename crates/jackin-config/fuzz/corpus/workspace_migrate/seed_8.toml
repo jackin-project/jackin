@@ -1,0 +1,11 @@
+version = "v1alpha8"
+# Sample per-workspace file carried through the legacy migration chain.
+
+workdir = "/workspace/prod"
+
+[[mounts]]
+src = "/home/operator/projects/prod"
+dst = "/workspace/prod"
+
+[env]
+LOCAL_ENV = "only-prod"

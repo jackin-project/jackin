@@ -1,0 +1,126 @@
+---
+title: "11 — Jackin integration strategy"
+description: "Concrete source-reuse, capsule-local setup, host adapters, correctness gates, and staged automatic token optimization for Jackin."
+---
+
+## Summary
+
+Cutoff: **2026-09-23 UTC**. **Build the Jackin-specific contracts; reuse upstream implementations behind replaceable boundaries.** Do not embed a complete optimizer into the launcher, rewrite every upstream algorithm, or activate six installers. The recommendation is an implementation plan, not a claim that these controls already ship.
+
+## Question and scope
+
+How should token optimization become automatic and useful without taking over native agent execution, editing, credentials, or repository engineering standards?
+
+## Method
+
+Map the six current tools onto Jackin's existing workspace and runtime setup, then specify separate source-build, host-conformance, fidelity, and outcome gates. The reviewed Jackin base is `9598c3662fd6befa790d3a5ee0dae99b80565e70`. See the [comparison](/research/context/tools/05-head-to-head/) and [evidence protocol](/research/context/tools/07-evidence-and-claims/).
+
+## Findings
+
+### Existing ownership, not a greenfield replacement
+
+The workspace already separates configuration, manifests, capsule setup, process handling, launch, protocol, telemetry, usage, and isolation. Extend these boundaries rather than duplicate them. <RepoFile path="Cargo.toml">Workspace manifest</RepoFile> and <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs">capsule runtime setup</RepoFile> are the inspected integration anchors.
+
+| Responsibility | Proposed owner |
+|---|---|
+| Operator policy, component selection, schema migration | Existing Jackin configuration/manifest components |
+| Reproducible installation and capsule-local agent config | Jackin image/capsule setup |
+| Agent command execution, edits, approvals, provider connection | Existing agent, unchanged by default |
+| Result transformation and recovery | Optional Jackin worker with narrow upstream adapters |
+| Repository discovery | One selected read-only backend |
+| Process deadlines, state scope, cancellation | Existing Jackin process/isolation components plus worker contract |
+| Actual usage and accepted outcomes | Existing usage/telemetry infrastructure plus an evaluation harness |
+
+Owning a PTY or container does **not** mean seeing every native tool result or model request. Embedding a crate does not create an interception path. Each host must prove that the transformed content is actually what the model receives.
+
+### Concrete reuse choices
+
+**Headroom:** first source-reuse spike for selected `headroom-core` transforms. The current [manifest](https://github.com/headroomlabs-ai/headroom/blob/v0.38.0/crates/headroom-core/Cargo.toml) supports excluding optional ML dependencies. Use a separate worker initially so failures and heavy dependencies do not destabilize Jackin's launcher. The following is a candidate source pin, not build-verified configuration:
+
+```toml
+[dependencies.headroom-core]
+git = "https://github.com/headroomlabs-ai/headroom.git"
+rev = "94206e265203acfd72a3b939e9a964e29175ad50"
+default-features = false
+```
+
+Compile and test the actual feature matrix, source-license obligations, native-library linkage, offline startup, allocations, latency, and cancellation. Do not assume the internal crate's 0.1.0 version is a stable registry SDK. If the public surface is too broad, propose upstream feature decomposition before porting kernels.
+
+**RTK:** a pinned CLI arm now includes recall. There is no verified library target. Request an upstream pure-filter interface; otherwise extract only individually tested Apache-2.0 functions and their regression corpus when required. Keep a provenance map and upstream-change review. Do not fork the entire executable to obtain one formatter.
+
+**LeanCTX:** initially restricted stdio MCP. Its current [lean-ctx-embed facade](https://github.com/yvgude/lean-ctx/blob/v3.10.2/rust/crates/lean-ctx-embed/README.md) is preview/unpublished and owns a runtime. Compare embedding separately after the process backend is understood; ask for caller-owned runtime and finer feature gates if they matter.
+
+**LemonCrow:** source is now available in the reviewed release. Compare its ranked retrieval/read path against native tools and LeanCTX using a pinned, per-worktree process. Keep full tool replacement as another arm. Python alone is not a rejection criterion; dependency and runtime costs must be measured.
+
+**Ponytail and Caveman:** deliver small versioned instruction assets through existing role config. A Jackin adaptation must preserve testing, architecture, completeness, and chosen reasoning effort. It is a new policy treatment. Do not import Caveman's BSL engine into an Apache-only distribution without separate license review.
+
+### Ordinary primitives remain an alternative
+
+When a full engine is unnecessary, start with exact filesystem selection and existing agent tools. Candidate ecosystem building blocks are the [official Rust MCP SDK](https://github.com/modelcontextprotocol/rust-sdk), [ripgrep's search crates](https://github.com/BurntSushi/ripgrep), and [tree-sitter](https://github.com/tree-sitter/tree-sitter). They avoid requiring a whole context platform for a targeted search or outline. Their actual versions/features still require implementation-time verification; no dependency is added by this research.
+
+Tree-sitter describes syntax, not complete Rust macro/type/call semantics. An index result is a pointer to source, not proof that all affected callers were found. Native read-before-edit and stale-write protection must remain satisfied when retrieval comes from MCP.
+
+## Implications for jackin❯
+
+### Host-specific adapters
+
+| Host path | Verified documentation surface | Proposed first qualification |
+|---|---|---|
+| Claude Code | `PostToolUse.updatedToolOutput` can replace results; native result shape must match | Native execution followed by selected typed-result transformation |
+| Codex | Stdio MCP supports working directory, environment, tool allowlists, and timeouts | Read-only backend; native edits/execution/provider untouched |
+| Other Jackin agents | Product integration labels are not sufficient proof | Probe each installed host/version and record the supported subset |
+
+Sources: [Claude hooks](https://code.claude.com/docs/en/hooks), [Codex MCP](https://developers.openai.com/codex/mcp/). Appending context or changing the terminal display does not remove original model input. A malformed replacement can be ignored. A hook runs after the command's side effects and does not redact previously captured telemetry. Treat failed-tool events separately and retain their diagnostics.
+
+### Worker contract
+
+The proposed request identifies capsule, worktree, session, context epoch, tool call, producer/exit status when known, content type, raw bytes, and capture completeness. The response is either unchanged or a typed replacement with source hash, transform ID/version, omissions, and scoped recovery reference. Statistics travel out of band, not as verbose prompt metadata.
+
+Use bounded queues and deadlines, but never retry an already-executed command to recover from a failed transform. Preserve interrupts, signals, stdout/stderr distinctions, and operation identity. If optional transformation or artifact persistence fails, pass through the original observed result. Do not fail open on authorization, path escape, or state-integrity errors.
+
+One process per worktree is the conservative starting point. Shared immutable indexes may be added later; mutable exposure state must remain session/epoch-scoped. Protect dirty buffers, ignored/private files, generated code, symlinks, branch switches, and concurrent writers. An empty ranked result cannot be presented as proof that a symbol or dependency does not exist.
+
+### Automatic setup and activation
+
+Package the selected helper and assets in the capsule image using reviewed commits and checksummed artifacts. Do not run upstream global installers, fetch moving latest versions at startup, silently add public tunnels, or download models. Disable remote optimizer telemetry and self-updates unless explicitly permitted. Respect per-agent config homes and existing user hooks; do not erase malformed config while trying to repair it.
+
+Compile an effective profile from operator configuration, role, agent version, provider/auth mode, content class, and qualification record. The automatic profile should contain actual qualified capabilities, not merely a dashboard. Initially, it can remove duplicate Jackin-generated instruction delivery and offer a restrained policy; after conformance and task gates pass, activate selected structured transforms and retrieval. No current research percentage authorizes unconditional compression.
+
+A simple proposed configuration surface is:
+
+```toml
+# Proposal only: requires schema design and migrations before implementation.
+[optimization]
+profile = "auto" # off | auto | experimental
+```
+
+Advanced overrides can select components and raw mode, but cannot bypass the operator's isolation or credential policy. Display effective versions, activation status, bypass reasons, and observed versus estimated usage. A silent no-op is not successful optimization.
+
+### Rollout and completion gates
+
+| Stage | Deliverable | Gate before promotion |
+|---|---|---|
+| Measurement | Native baseline and usage provenance | Provider fields and local estimates cannot be confused |
+| Build/reuse | Headroom worker, RTK executable arm, restricted retrieval adapters | Reproducible build, licenses, target support, no unintended egress |
+| Host conformance | Exact result replacement or explicit MCP routing | Observe model-bound content, schema behavior, permissions, native edit prerequisites |
+| Fidelity | Real-producer and adversarial corpus | Exits, failures, identifiers, diffs, Unicode, truncation, recovery, cancellation preserved |
+| Outcome | Paired current-version tasks and parallel-worktree runs | Predeclared non-inferiority and net-benefit gates, with all failed attempts included |
+| Automatic rollout | Qualified profile plus one-switch bypass | Clean disable/uninstall, resume/recovery continuity, no host-global writes |
+
+Use test-generated producer output rather than only hand-authored logs. Include CRLF/no-EOL diffs, binary/rename changes, process pipelines, partial reads, diagnostics on success, sparse JSON anomalies, missing recovery entries, disk-full conditions, and a stalled worker. Evaluate 1, 4, and 16 concurrent sessions as test scenarios, not assumed supported capacities.
+
+Keep a raw independent verifier lane. Compressing evidence must not make the verifier dependent on the implementer's omissions. Keep expensive counterfactual A/B experiments opt-in: silently running a second paid agent is not passive measurement.
+
+## Limitations and unknowns
+
+No worker, manifest field, CLI command, migration, or runtime behavior is implemented by this documentation PR. Cargo/Bun builds and installed-agent probes were unavailable in this research environment. Final crate selection and default enablement remain gated by the explicit executable checks above; that does not require delaying the integration-contract and measurement work.
+
+## Sources
+
+Current tagged product sources, official host docs, and verified Jackin workspace anchors are linked inline. Recommendations are proposed architecture, not claims of measured Jackin savings.
+
+## Related work
+
+- [Evidence and acceptance protocol](/research/context/tools/07-evidence-and-claims/)
+- [Composition](/research/context/tools/06-combining/)
+- [Engine reuse decision](/research/context/engine/09-reuse-decision-matrix/)

@@ -1,0 +1,12 @@
+  ⎿  You've hit your monthly spend limit.
+
+✻ Brewed for 1s
+
+▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+   What do you want to do?
+
+   ❯ 1. Stop and wait for limit to reset
+     2. Add funds to continue with usage credits
+     3. Switch to Team plan
+
+   Enter to confirm · Esc to cancel

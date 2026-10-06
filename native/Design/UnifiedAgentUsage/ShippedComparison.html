@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Unified Agent Usage — Blessed Prototype vs Shipped Desktop</title>
+<style>
+  :root {
+    --ink: #1d1d1f;
+    --ink-2: #444;
+    --muted: #6e6e73;
+    --hair: #d8d8dd;
+    --stage: #f5f5f7;
+    --blessed: #1a7f4b;
+    --shipped: #b3261e;
+  }
+  body {
+    font: 14px/1.6 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    max-width: 1180px;
+    margin: 2rem auto;
+    padding: 0 1rem 5rem;
+    color: var(--ink);
+    background: #fff;
+  }
+  h1 { font-size: 1.6rem; margin-bottom: .35rem; }
+  h2 { font-size: 1.2rem; margin-top: 3rem; border-top: 2px solid var(--ink); padding-top: .8rem; }
+  h3 { font-size: 1rem; margin: 0 0 .3rem; }
+  p { max-width: 74ch; color: var(--ink-2); }
+  .lede { font-size: 1rem; color: var(--ink-2); max-width: 74ch; }
+  code {
+    font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+    background: var(--stage);
+    padding: .1em .35em;
+    border-radius: 3px;
+  }
+  .meta {
+    font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 2rem;
+  }
+  .pair {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+    gap: 1.5rem;
+    margin-top: 1.2rem;
+  }
+  figure { margin: 0; }
+  figure img {
+    width: 100%;
+    height: auto;
+    display: block;
+    border: 1px solid var(--hair);
+    border-radius: 6px;
+    background: #0b0e0f;
+  }
+  figcaption { margin-top: .55rem; font-size: 13px; color: var(--ink-2); }
+  .tag {
+    display: block;
+    font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+    margin-bottom: .2rem;
+  }
+  .tag.b { color: var(--blessed); }
+  .tag.s { color: var(--shipped); }
+  ul { max-width: 74ch; color: var(--ink-2); padding-left: 1.15rem; }
+  li { margin-bottom: .35rem; }
+  .note {
+    background: var(--stage);
+    border-left: 4px solid var(--muted);
+    padding: .8rem 1rem;
+    border-radius: 4px;
+    max-width: 74ch;
+  }
+  .note p { margin: 0; }
+  footer {
+    margin-top: 4rem;
+    border-top: 1px solid var(--hair);
+    padding-top: 1rem;
+    font: 11px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink: #e8e8ea; --ink-2: #bcbcc2; --muted: #8b8b93;
+      --hair: #34343a; --stage: #1c1c1f;
+      --blessed: #5cf07a; --shipped: #ff7a6b;
+    }
+    body { background: #111113; }
+  }
+</style>
+</head>
+<body>
+
+<h1>Blessed prototype vs shipped desktop</h1>
+<p class="meta">Captured 2026-08-21 · revision 8400e14d · both apps at 1000&times;680 · captured by window id</p>
+
+<p class="lede">
+  Side-by-side capture of the runnable prototype blessed in
+  <a href="../Prototypes/UnifiedAgentUsage/SIGNOFF.md">SIGNOFF.md</a> against
+  <code>native/dist/JackinDesktop.app</code> built from this branch. Both were launched from
+  their built bundles on matching fixtures at the same window size. The written findings live in
+  <a href="../../../research/agent-usage-platform/09-shipped-surface-review.md">09 — Shipped surface review</a>;
+  this page exists because the composition gap is not describable in prose.
+</p>
+
+<h2>Overview — fixture F02</h2>
+
+<div class="pair">
+  <figure>
+    <img src="shipped-comparison/prototype-overview-f02.png" alt="Prototype Overview: grid of provider cards with brand marks, large remaining percentages and full-width meters.">
+    <figcaption>
+      <span class="tag b">Blessed prototype</span>
+      Provider cards on a stage ground. Brand-mark wells, hero numerals, meters with visible
+      tracks, severity tint, one block per canonical account. The sidebar carries a mini meter
+      and a percentage per row.
+    </figcaption>
+  </figure>
+  <figure>
+    <img src="shipped-comparison/shipped-overview-f02.png" alt="Shipped Overview: five-column table where most cells are em dashes.">
+    <figcaption>
+      <span class="tag s">Shipped</span>
+      A five-column <code>Table</code>. No meters, no cards, no design tokens. The Reset column
+      is empty for every row, provider rows are entirely em dashes, account labels wrap
+      mid-word, the toolbar shows the debug string <code>Fixture</code>, and empty striped rows
+      fill the lower half.
+    </figcaption>
+  </figure>
+</div>
+
+<h2>Account detail — fixture F03, multi-account</h2>
+
+<div class="pair">
+  <figure>
+    <img src="shipped-comparison/prototype-detail-f03.png" alt="Prototype detail with a state strip, a limits card and an account card.">
+    <figcaption>
+      <span class="tag b">Blessed prototype</span>
+      Provider eyebrow, summary chip, a three-cell state strip, a Limits card with mono hero
+      numerals, an Account card carrying Plan. All three accounts are selectable in the sidebar,
+      each with its own meter.
+    </figcaption>
+  </figure>
+  <figure>
+    <img src="shipped-comparison/shipped-detail-f03.png" alt="Shipped detail rendered as a settings-style list.">
+    <figcaption>
+      <span class="tag s">Shipped</span>
+      A settings-style <code>List</code>. Edge-to-edge <code>ProgressView</code> bars, no
+      grouping, no Plan row. Accounts moved out of the sidebar into a <code>Picker</code>
+      dropdown, leaving a stray empty combobox in the rail.
+    </figcaption>
+  </figure>
+</div>
+
+<h2>Overview against live host data</h2>
+
+<div class="pair">
+  <figure>
+    <img src="shipped-comparison/shipped-overview-live.png" alt="Shipped Usage window against live host data showing three providers and mostly empty cells.">
+    <figcaption>
+      <span class="tag s">Shipped · no fixture, real credentials</span>
+      The sidebar lists only xAI while the table lists OpenAI, Amp and xAI. The two panes are fed
+      by different Rust builders — <code>provider_glance_rows</code> and
+      <code>desktop_inventory</code> — whose inclusion rules disagree. Anthropic, Z.AI, Kimi and
+      MiniMax are absent although the broker holds fresh data for three of them. OpenAI reads
+      <code>unavailable</code>; xAI reads <code>Resets now</code> where the broker says
+      <code>Resets in 3d 5h</code>; Amp's account identity is the URL
+      <code>https://ampcode.com/</code>. The Overview pill is system blue, which
+      <code>BrandColors.swift</code> explicitly forbids for selection wells.
+    </figcaption>
+  </figure>
+  <figure>
+    <img src="shipped-comparison/shipped-popover-f02.png" alt="Shipped status popover with provider identity, three limit rows and meters.">
+    <figcaption>
+      <span class="tag s">Shipped · popover</span>
+      The closest surface to the prototype, and worth keeping. Remaining defects are local: the
+      debug string <code>Fixture</code> is rendered in the header, the Open Usage control is a
+      system-blue icon button with no label, there is no Liquid Glass treatment, and the third
+      limit row clips at the bottom edge without a scroll affordance.
+    </figcaption>
+  </figure>
+</div>
+
+<h2>What the gap consists of</h2>
+
+<ul>
+  <li>
+    <strong>Design system.</strong> The prototype's <code>DesignSystem/Brand.swift</code> is 419
+    lines — <code>stage</code>, <code>card</code>, <code>inset</code>, <code>hover</code>,
+    <code>separator</code>, <code>meterTrack</code>, <code>muted</code>, <code>quiet</code>,
+    <code>warning</code>, <code>danger</code>, <code>selectionWell</code>,
+    <code>phosphorWash</code>, plus the <code>JackinSpace</code> scale. Production
+    <code>BrandColors.swift</code> is 85 lines carrying the phosphor accent only.
+  </li>
+  <li>
+    <strong>Liquid Glass.</strong> Zero occurrences of <code>GlassEffectContainer</code>,
+    <code>.buttonStyle(.glass)</code> or <code>.glassProminent</code> in
+    <code>native/Sources/</code>; the prototype uses all three.
+  </li>
+  <li>
+    <strong>Meters.</strong> <code>meterPercent</code> crosses the FFI boundary and is drawn
+    only in the detail view and the popover. Overview draws none.
+  </li>
+  <li>
+    <strong>Fixture matrix.</strong> The blessed matrix is F00&ndash;F29 at three window sizes.
+    Production <code>VisualQAFixtureID</code> stops at F14, so the localization scenarios and
+    everything above F14 have no production counterpart.
+  </li>
+  <li>
+    <strong>AppKit correctness.</strong> Every launch logs
+    <code>Application performed a reentrant operation in its NSTableView delegate</code>, which
+    Apple states will become an assertion.
+  </li>
+</ul>
+
+<div class="note">
+  <p>
+    <strong>This is not a SwiftUI-only fix.</strong> The em-dash filler, the column-shaped label
+    fields, and the split sidebar/table sources all originate in Rust —
+    <code>crates/jackin-usage/src/host.rs</code> hard-codes <code>—</code> into
+    <code>account_column_label</code>, <code>remaining_label</code>,
+    <code>reset_display_label</code> and <code>provider_column_label</code> so that provider rows
+    have table cells to fill. Collapsing the parallel projection builders comes first, or the
+    rebuild fights the DTOs.
+  </p>
+</div>
+
+<footer>
+  jackin❯ desktop · unified agent usage · verified locally 2026-08-21 · PR #898
+</footer>
+
+</body>
+</html>

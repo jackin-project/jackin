@@ -1,0 +1,111 @@
+---
+title: "02 — Workflow design constraints"
+description: "Defines workflow run state, evidence, Capsule control, GitHub reporting, memory, operator intervention, and adapter constraints."
+---
+
+## Summary
+
+The workflow layer should be a deterministic state machine above Capsule, runtime-status authority, persistent storage, and GitHub reporting. It must remain visible, evidence-driven, interruptible, and substrate-neutral.
+
+## Question and scope
+
+Which durable objects and invariants must remain stable regardless of whether execution is manual, native, daemon-driven, or controlled by an external orchestrator?
+
+## Method
+
+The design extracts the common requirements from the prior-art comparison and applies jackin❯ rules for isolation, host effects, agent visibility, repository state, verification, and explicit operator authority.
+
+## Findings
+
+### Core objects
+
+| Object | Responsibility |
+|---|---|
+| `WorkflowRun` | Source, workspace, role, branch, current state, sessions, GitHub links, events, artifacts, evidence, and intervention history |
+| `WorkflowDefinition` | Deterministic graph of typed agent, context, review, verify, GitHub, gate, artifact, and parallel steps |
+| `WorkItemSource` | Roadmap page, GitHub issue or PR, local specification, or explicit prompt; reuse the [task source abstraction](/research/agents/orchestration/workflow-systems/task-source-abstraction-design/) |
+| `RunSession` | Stable identity binding a run phase and purpose to a visible Capsule session |
+| `RunReporter` | GitHub and console projections of one event stream |
+| `WorkflowProfile` | Phase graph, agent defaults, context, verification, review policy, and human gates |
+| `MemoryBrief` | Scoped, versioned context served to one phase/session with recorded provenance |
+
+Stable identities should distinguish implementer, reviewer, verifier, and diagnostic sessions. Workflow state must not encode “Docker container” as the only substrate; selectable isolation backends should remain possible.
+
+### Run state and evidence
+
+| State | Meaning | Valid evidence for leaving it |
+|---|---|---|
+| `planned` | Source and policy resolved | Explicit provisioning request or cancellation |
+| `provisioning` | Workspace and first session being prepared | Created branch/instance/session artifacts |
+| `implementing` | Implementer working visibly | Runtime state plus artifact, verifier, or operator evidence |
+| `awaiting_operator` | Human input required | Recorded operator decision |
+| `verifying` | Deterministic checks running | Commands, exit codes, and captured output |
+| `reviewing` | Independent review active | Structured findings tied to a git ref |
+| `fixing` | Confirmed findings being addressed | New git ref and verification evidence |
+| `ready_for_operator` | Reviewable result, stopped before merge | Operator close/reopen decision |
+| `failed` | Command, runtime, verifier, or reporter failed | Explicit retry or cancellation |
+| `cancelled` / `closed` | Terminal disposition | None |
+
+Every transition records actor, reason, session when applicable, git head, and evidence. “The agent said it is done” is insufficient by itself. Silence and visible-screen text are diagnostic signals, not transition authority.
+
+### Control-plane ownership
+
+| Surface | Owns |
+|---|---|
+| [Capsule](/reference/capsule/) | Visible PTYs, sessions, attach/hijack, input/output, lifecycle |
+| [Agent runtime status authority](/roadmap/agent-runtime-status/) | Effective working, blocked, done, idle, unknown, and stuck signals |
+| [Persistent storage](/research/agents/orchestration/memory/) | Durable runs, events, links, findings, retries, cancellation, and memory provenance |
+| Workflow runner | Allowed transitions, policies, gates, evidence requirements, and reporters |
+| GitHub | Durable external visibility and review artifacts, never hidden execution truth |
+
+The required typed session surface includes create, targeted input/context injection, attach/focus, visible-output diagnostics, wait, kill, semantic agent reports, and event subscription. The detailed API belongs to [Terminal observation and automation](/research/agents/orchestration/terminal-observation/terminal-observation-automation/). Raw host shell and broad filesystem access must not be exposed as workflow control primitives.
+
+### Operator intervention
+
+Attach, prompt, pause, manual Git changes, and cancel are normal events. Record session, phase, mode, git head before/after, and resume policy. Direct input should default to pause-until-operator or verification-before-continue because the runner no longer exclusively owns state.
+
+Hijacking is not failure. The design fails when intervention is invisible or the runner continues under stale assumptions.
+
+### GitHub visibility
+
+The reporter should expose source, branch, active phase, session attachment command, verification, structured review findings, fixes, and final risk. Use a tracking issue or selected issue during active work and a reviewable PR when verification permits. Check runs are suitable for compact phase state; comments carry sparse summaries.
+
+The reporter must not publish internal host paths or merge automatically. Branch mutation, PR publication, review requests, and merge-like actions remain declared effects subject to project policy and operator gates.
+
+### Workflow memory
+
+Each phase receives only relevant operator preferences, workspace facts, source material, workflow rules, recent run summaries, and explicit notes. Record memory identifiers and revisions served to every session. Phase outputs may propose durable memory; they must not silently promote it.
+
+Private runtime memory is not the cross-agent source of truth. A reviewer or replacement implementer must receive the same scoped brief through runtime adapters.
+
+### Definitions and adapters
+
+Typed steps are safer than arbitrary shell-plus-prompt graphs: `agent`, `context`, `review`, `verify`, `github`, `gate`, `artifact`, and `parallel`. Operator/workspace policy must outrank role-provided definitions, and no lower-precedence workflow may widen host trust.
+
+MCP can expose typed jackin❯ run/session operations to external agents after the native API is stable. [ACP](https://agentclientprotocol.com/get-started/introduction) is the interoperability candidate for structured agent transports. Both must preserve visible sessions, durable state, declared host effects, and operator gates.
+
+## Implications for jackin❯
+
+- Design the event schema, session identity, GitHub ownership, intervention model, and host-effect declarations before broad automation.
+- Keep agent selection, graph format, loop count, UI, and background scheduling outside the stable core until evidence demands them.
+- Make deterministic verification and artifact provenance first-class rather than parsing agent narration.
+- Keep implementation sequencing and delivery status in the linked roadmap items.
+
+## Limitations and unknowns
+
+The model has not been proven across enough real runs. GitHub noise, memory selection, review quality, event volume, recovery after operator edits, and adapter security require prototype evidence.
+
+## Sources
+
+- [Prior-art comparison](/research/agents/orchestration/workflow-systems/agent-workflow-orchestration/01-prior-art/)
+- [Agent Client Protocol](https://agentclientprotocol.com/get-started/introduction)
+- [Terminal observation and automation](/research/agents/orchestration/terminal-observation/terminal-observation-automation/)
+
+## Related work
+
+- [Agent runtime status authority](/roadmap/agent-runtime-status/)
+- [Autonomous task queue](/roadmap/autonomous-task-queue/)
+- [GitHub link tracking](/roadmap/github-link-tracking/)
+- [Agent tag protocol](/roadmap/agent-tag-protocol/)
+- [Console agent session control](/roadmap/console-agent-session-control/)
+- [jackin❯ daemon](/roadmap/jackin-daemon/)

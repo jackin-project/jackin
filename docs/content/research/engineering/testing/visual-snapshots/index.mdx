@@ -1,0 +1,144 @@
+---
+title: "Visual snapshot testing (CLI & TUI)"
+description: Designs deterministic, reviewable visual snapshots for CLI and TUI surfaces beyond text-only assertions.
+---
+
+**Research state:** Incomplete
+
+## Summary
+
+CLI and TUI visual regressions need deterministic SVG goldens with one review workflow and explicit rendering controls.
+
+Text snapshots and render assertions provide the current baseline. The historical component SVG lookbook, encoder, and exported gallery were removed; they are not a current command or drift gate. Styled full-surface, PR-diffable SVG coverage remains proposed and unproven.
+
+## Research question
+
+Every surface jackin❯ renders is something an operator sees: the operator console, the in-container `jackin-capsule` multiplexer, the launch-progress TUI, and the plain CLI stdout/stderr of commands like `jackin status`, `jackin doctor`, `jackin --help`, and the friendly `E0xx` error blocks. All of it is visual, and a one-character change to a layout, a wrong colour token, a dropped `BOLD`, or a misaligned table column is a real regression an operator will notice. Current text goldens capture glyph layout; render assertions can check individual styles. Neither establishes the full styled SVG coverage proposed here.
+
+There are two concrete blind spots:
+
+- **The console snapshot helper captures glyphs only.** It dumps each cell's `.symbol()` and discards colour and every text attribute (see <RepoFile path="crates/jackin-console/src/tui/view/tests.rs">crates/jackin-console/src/tui/view/tests.rs</RepoFile>). A change to colour, underline, or `REVERSED` alone cannot change this glyph-only artifact. Separate render assertions may catch those changes; they do not make the text snapshot style-complete.
+- **The historical component SVG encoder is absent.** The removed `jackin-tui-lookbook` implementation encoded foreground/background colour but omitted modifiers. Its old gallery and `--check` command cannot establish current coverage. Current render assertions and text snapshots need separate style-fidelity evidence; this proposal supplies no executed SVG gate.
+
+The goal is a single, deterministic, **PR-diffable snapshot of what is on screen** — for both TUI screens and CLI output — so that every visual change is surfaced as a reviewable before/after in the pull request, and an unintended change fails CI.
+
+This page is the canonical home for visual / styled-snapshot regression testing of rendered output. It absorbs the former *Snapshot tests for TUI render* item; shared deterministic fixtures live in the [`jackin-test-support` crate](/reference/crates/jackin-test-support/), the CI wiring and coverage are owned by [Rust CI tooling & dependency hygiene](/research/engineering/ci/rust-tooling/), and live PTY read/wait/send automation is owned by [Terminal observation and automation](/research/agents/orchestration/terminal-observation/terminal-observation-automation/). The boundaries between those items and this one are spelled out under *Related work* below.
+
+## Goals and non-goals
+
+**Goals.** Capture the complete styled cell (glyph + foreground + background + underline colour + all modifiers) for every rendered surface; store goldens as deterministic SVG; surface every visual change as a before/after diff in the pull request; gate drift in CI; keep the whole pipeline Rust-only.
+
+**Non-goals.** This is not live terminal automation (driving a running agent session, waiting for visible text, injecting input) — that is [Terminal observation and automation](/research/agents/orchestration/terminal-observation/terminal-observation-automation/). It is not functional CLI testing (exit codes, behaviour, "must contain X") — that stays with the existing `assert_cmd` / `predicates` tests and the golden stdout/stderr work tracked under CI tooling. It is not a hosted visual-review SaaS; the review surface is the SVG diff GitHub already renders in the PR.
+
+## Why SVG, not PNG or any raster format
+
+SVG is the right golden format for this work, and the decision is deliberate:
+
+- **Deterministic and text-based.** The same render produces byte-identical SVG every time, so a committed golden is stable and a mismatch means the *render* changed, not the rasteriser, font hinting, or anti-aliasing.
+- **Semantic diffs.** A change shows up as a changed attribute — a `fill="#ff0000"`, a `font-weight="bold"`, a `text-decoration="underline"`, a moved `x`/`y` — which is human-readable in the diff. A raster diff only tells you "some pixels changed" and cannot say which property or why.
+- **GitHub renders SVG inline.** A committed `.svg` shows in the PR file view, so reviewers see the actual before/after image *and* the underlying attribute diff in the same place. This is precisely the "compare in the pull request" experience we want, with no external service.
+- **Scalable and small.** SVG is vector, so it is crisp at any zoom and the files stay diff-friendly, unlike binary PNGs that bloat the repo and force Git LFS.
+
+PNG / raster goldens are explicitly rejected: every pixel can shift with the smallest rendering difference, diffs are opaque, and there is no semantic signal about what changed. SVG is the format for the whole program.
+
+<Aside type="note">
+SVG goldens must still be made deterministic at the source: a fixed render size, a fixed theme, a frozen clock for any time-derived content (timers, durations, "started 3m ago"), and redaction of paths, versions, and run IDs. A deterministic input is what makes the byte-level SVG comparison trustworthy.
+</Aside>
+
+## What "visual" means here — capture the full styled cell
+
+The single source of truth for "what the user sees" in a ratatui surface is the `Buffer` of `Cell`s, where each cell carries `symbol`, `fg`, `bg`, `underline_color`, and a `Modifier` bitset. The live in-container terminal has the equivalent in termpane's `GridSnapshot`: `DamageGrid::dump()` produces the snapshot, whose API exposes `to_text`, `cell`, and `non_blank_count`; `SnapCell` carries `fg`, `bg`, `bold`, `italic`, `underline`, `inverse`, and `dim` (see [termpane src/snapshot.rs](https://github.com/tailrocks/termpane/blob/v0.1.0/src/snapshot.rs)). `GridSnapshot` is a cell model for a renderer to read, not a styled-screen serializer. The canonical artifact for this program must encode all of it, and the SVG encoder must map every modifier to an SVG attribute:
+
+| Modifier | SVG encoding |
+|---|---|
+| `BOLD` | `font-weight="bold"` |
+| `ITALIC` | `font-style="italic"` |
+| `UNDERLINED` (+ `underline_color`) | `text-decoration: underline` + `text-decoration-color` |
+| `CROSSED_OUT` | `text-decoration: line-through` |
+| `DIM` | `opacity="0.5"` (or blend foreground toward background) |
+| `REVERSED` | swap `fg`/`bg` before emitting |
+| `HIDDEN` | foreground = background |
+| `SLOW_BLINK` / `RAPID_BLINK` | static marker class / `data-` attribute so the diff still flips |
+
+Two further classes of test pin **intent** independently of pixel output, so a "wrong token used" regression fails even when two tokens look similar:
+
+- **Palette golden.** A single snapshot of every `pub const` colour/style token in `crates/jackin-tui/src/theme.rs`. Changing `STATUS_BLOCKED_RED_RGB` then shows as one intentional, reviewable diff instead of rippling silently through dozens of screen goldens.
+- **Semantic style assertions.** At known coordinates, assert the resolved style of high-value cells (the `Blocked` badge resolves to `STATUS_BLOCKED_RED` + `BOLD`; a link has `UNDERLINED`), separating "the token's value changed" from "the wrong token was applied".
+
+## Surfaces to cover
+
+| Surface | Source | Status today |
+|---|---|---|
+| Shared components (`jackin-tui`) | ratatui `Buffer` / `TestBackend` assertions | Historical SVG lookbook, encoder, gallery, and `--check` removed; no current SVG exporter |
+| Composite TUI screens (console list/editor/settings, capsule chrome/pane/branch bar, launch TUI) | ratatui `Buffer` | text-only `insta` and render assertions; no full-screen SVG |
+| Live in-container session screens | `termpane` `GridSnapshot` | snapshot model exists; few committed fixtures |
+| CLI stdout / stderr (`help`, `status`, `doctor`, `--format json`, `E0xx` errors) | captured process output (with ANSI) | functional `assert_cmd` checks only; no visual goldens |
+
+## Tool research — Rust-only options
+
+The constraint is Rust-native tooling for the CLI and TUI test path: those surfaces and their render models live in Rust, while the native macOS app uses Swift for AppKit/SwiftUI presentation and OS integration. We do not want to pull a Node or Go toolchain into this Rust test path. The candidates — SVG/screenshot emitters, snapshot stores, and CLI test harnesses:
+
+| Tool | Language / licence | What it does | Fit for jackin❯ |
+|---|---|---|---|
+| Historical `buffer_to_svg` | Rust (removed implementation) | Former ratatui `Buffer` → SVG renderer | Design reference only. A current exporter would need implementation, modifier fidelity, deterministic geometry, and independent regression proof. |
+| [`term-transcript`](https://github.com/slowli/term-transcript) | Rust, Apache-2.0 / MIT | Captures CLI/REPL output + ANSI colour, writes and parses SVG, tests that a parsed transcript matches output | **Good for CLI line output.** Purpose-built for exactly the stdout/stderr case and licence-compatible. Limitation: only SGR ANSI is kept; CSI cursor *and* OSC sequences are dropped (the optional `portable-pty` feature does not change this — confirmed in its v0.4.0 docs), so it is *not* a fit for full-screen TUI. Adopt-or-borrow for the CLI surface. |
+| [`snapbox`](https://github.com/assert-rs/snapbox) / [`trycmd`](https://docs.rs/trycmd/latest/trycmd/) | Rust, MIT / Apache-2.0 | CLI snapshot harness (Ed Page / assert-rs): stdout/stderr/exit-code with redactions | **Good for unstyled CLI assertions** — `--help`, `--format json`, exit codes — where a styled image adds nothing. Actively maintained (≈8.78M all-time downloads, latest v1.2.2 on 2026-05-26). Captures text, not the styled cell, so it complements the SVG path rather than replacing it. |
+| [`termframe`](https://github.com/pamburus/termframe) | Rust, MIT | Runs a command and exports its output as an SVG screenshot with ANSI styling (bold/italic/underline, 16/256/24-bit), themes, light/dark | A screenshot generator, not a test library — and whether it preserves full-screen CSI cursor-addressed output (vs SGR line runs) is unverified. Useful reference for styled-SVG rendering and docs/demo capture; not a regression harness on its own. |
+| [`cellshot`](https://github.com/kitlangton/cellshot) | Rust, MIT | PTY capture with a structured cell-frame model; emits text/JSON/ANSI/SVG/PNG | Already the research trigger for [Terminal observation and automation](/research/agents/orchestration/terminal-observation/terminal-observation-automation/); its frame model and block-element SVG rendering are worth borrowing, but it is a PTY daemon, not a render-regression library. |
+| [`agg`](https://github.com/asciinema/agg) | Rust, Apache-2.0 | Renders asciinema `.cast` recordings to animated GIF | Animated, raster output — useful for session *recordings*, not deterministic static goldens. |
+| ratatui `TestBackend` | Rust (dependency) | In-memory styled-cell buffer + `assert_buffer` | Already used widely; it is the *source* the SVG encoder renders from, and its styled `assert_buffer` is the right primitive for tight unit-level style checks. |
+| [`insta`](https://github.com/mitsuhiko/insta) (+ `insta-cmd`) | Rust, Apache-2.0 / MIT | Snapshot storage + `cargo insta review` accept workflow; stores any `Display`/string verbatim in plain-text `.snap` files; regex filters, redaction selectors, binary snapshots | **The golden store for every surface.** The dominant Rust snapshot crate by a wide margin (≈70M all-time / ≈17.7M recent downloads, ≈2.9k GitHub stars, latest v1.47.2 on 2026-03-30). An SVG string is stored verbatim, so all four surfaces reuse one review loop; its filters and redactions are the determinism knobs for paths, versions, and durations. |
+| [`expect-test`](https://docs.rs/expect-test/latest/expect_test/) | Rust, MIT / Apache-2.0 | rust-analyzer's in-house inline + file snapshot lib (`expect!`, `expect_file!`, `UPDATE_EXPECT`) | The main alternative to `insta`, deliberately lighter (no external review tool). Second by usage but well behind (≈1.8M/mo vs `insta`'s ≈6.6M/mo) and without SVG/redaction tooling — `insta` is the better store here. |
+
+Excluded from the test path because they are not Rust: Charmbracelet **VHS** and **freeze** (Go), Microsoft `tui-test` (Node/xterm.js), `termtosvg` (Python, archived). VHS is doubly unfit for this work — it is a `ttyd` + `ffmpeg`-driven recorder that emits only raster/recording formats (GIF/MP4/WebM/PNG), never SVG. They remain useful as references and, at most, as optional docs/demo tooling.
+
+<Aside type="note">
+Multi-source, adversarially-verified external research (primary sources: crates.io, GitHub, lib.rs, docs.rs; captured 2026-06) confirms this build-vs-buy split. `insta` is the dominant Rust snapshot store and holds an SVG string verbatim. No off-the-shelf Rust crate does full-screen *styled* TUI → SVG render-regression: the one tool that pairs SVG output with a snapshot harness, `term-transcript`, drops CSI by design, and the Go generators (VHS, freeze) cannot sit in a Rust-only test path. The smallest correct path is therefore a first-party `Buffer` / `GridSnapshot` → SVG encoder feeding `insta`. Absolute download and star counts drift; the ranking — `insta` ≫ `expect-test`, with `snapbox` / `trycmd` the active choice for unstyled CLI output — is durable.
+</Aside>
+
+## Decision
+
+- **TUI, composite, and live surfaces: render the styled `Buffer` / `GridSnapshot` to SVG with our own encoder.** Reading their cells directly preserves the render models and styles; `term-transcript` documents SGR-only handling and drops CSI/OSC, so it is not established for cursor-addressed full-screen TUI goldens. Other PTY and screenshot tools need separate fidelity checks. ratatui's own default `TestBackend` text dump is style-blind — it drops colour and modifiers (ratatui issue [#1402](https://github.com/ratatui/ratatui/issues/1402)) — so the encoder must read the `Buffer` cells directly rather than reuse that path. Implement a modifier-complete encoder in a small reusable crate alongside [`jackin-test-support`](/reference/crates/jackin-test-support/), or into a focused `termpane-svg` crate, so the console, Capsule, launch TUI, and any future component gallery emit one identical artifact format.
+- **CLI line output: capture stdout/stderr (with ANSI) and render to the same SVG.** Evaluate `term-transcript` as adopt-or-borrow for this surface; if its SGR-only limitation or its rendering shape does not fit, feed the captured bytes through a small ANSI→cell parser into the *same* SVG encoder, so every surface in the project shares one golden format. For purely *functional* CLI checks — exit codes, `--format json`, must-contain assertions — where style is not what is under test, prefer `snapbox` / `trycmd` over hand-rolled assertions and skip the SVG entirely; reserve the styled-SVG golden for output whose *appearance* is the regression target (the `E0xx` error blocks, the coloured `status` and `doctor` summaries).
+- **Build our own crate where needed.** No off-the-shelf Rust tool covers full-screen TUI render regression; `term-transcript` is CLI-only and `termframe`/`cellshot` are screenshot/PTY tools, not render-regression libraries. The smallest correct path is to implement and verify a current encoder using the historical design as a reference, reusing `term-transcript` for the CLI surface where it fits and borrowing SVG-rendering ideas from `termframe`/`cellshot`. The result is mostly first-party, fully Rust.
+- **Review and gate in the PR.** Commit `.svg` goldens; implement a drift gate across all surfaces using the historical lookbook `--check` pattern as a design reference (and/or `insta` review for the same SVG strings). GitHub renders the committed SVG inline, so the PR shows the before/after image and the attribute-level diff together. An optional static gallery could provide a component browse surface; no current lookbook exports one.
+- **Determinism harness first.** Fixed render sizes, a fixed resolved theme (resolve `Color::Reset`/named colours to a reference palette so goldens reflect what the user sees, not the CI terminal), a frozen clock, and redaction of paths/versions/durations/run IDs. This harness is shared with the CLI golden work and lives in `jackin-test-support`. The encoder's cell geometry must be deterministic and independent of any host font: bundle a fixed monospace advance-width metric, or pin a vendored font parsed with a crate such as `ttf-parser` / `swash`, so the emitted `x` / `y` coordinates are byte-identical on every CI machine — a system-font lookup would make goldens host-dependent.
+
+## Current state (absorbed from prior items)
+
+- **Historical component SVG lookbook** — the former `jackin-tui-lookbook`, `buffer_to_svg`, `--check`, and `docs/public/tui-lookbook` gallery are absent from the current tree. This records the earlier implementation, not shipped capability. Restoring styled SVG artifacts and a gate requires new implementation and proof.
+- **Text-only console snapshots** — `insta` snapshots (including list, settings, editor-general, and editor-mounts) in <RepoFile path="crates/jackin-console/src/tui/view/tests.rs">crates/jackin-console/src/tui/view/tests.rs</RepoFile> with committed `.snap` files, generated with `INSTA_UPDATE=new`. These capture glyphs only.
+- **Capsule render tests** — `insta` and buffer assertions exist for capsule chrome and the branch-context bar.
+- **Live screen model** — `DamageGrid::dump()` produces a `GridSnapshot` whose cells can feed a future styled renderer; the snapshot API does not itself serialize a complete styled screen.
+
+## Design implications
+
+- The shared encoder must preserve every styled-cell attribute and have intent tests proving that colour or modifier loss changes the golden.
+- One deterministic harness owns fixed sizes, resolved themes, clocks, redaction, and cell geometry for console, Capsule, launch TUI, and CLI artifacts.
+- Composite goldens cover representative full-screen layouts at fixed dimensions and both supported theme variants; functional CLI behavior remains in `assert_cmd` tests.
+- Live-session fixtures consume `GridSnapshot`; optional replay artifacts remain documentation aids rather than the regression authority.
+- [Launch progress TUI](/roadmap/launch-progress-tui/) and the relevant component roadmaps own delivery order and remaining implementation work.
+
+## Tradeoffs and risks
+
+- **Golden churn.** Style-complete SVG goldens change whenever the render legitimately changes; the `insta`/`--check` review workflow keeps that a one-keystroke accept, but reviewers must actually look at the diff, not rubber-stamp it.
+- **Determinism is load-bearing.** Any unpinned size, theme, clock, or path makes a golden flaky. Broad golden coverage requires the shared deterministic harness.
+- **Encoder fidelity.** The SVG encoder must apply the same colour resolution and dim/scaling transform the real renderer uses (see the `scale()` path in `crates/jackin-tui/src/theme.rs`), or goldens will diverge from on-screen reality.
+- **Scope discipline.** This item owns the *visual render artifact and its regression net*. It must not absorb live-automation or functional-CLI concerns; cross-reference the owning items instead.
+
+## Limitations and open questions
+
+These unresolved harness contracts must be settled before broad golden adoption:
+
+- **Deterministic cell geometry.** The encoder emits per-cell `x` / `y` coordinates, so glyph advance width must come from a fixed source — a bundled monospace metrics constant, or a vendored font parsed with `ttf-parser` / `swash` / `fontdue` — never a system-font lookup, or goldens diverge across CI hosts.
+- **Encoder input contract.** The encoder should take a styled *cell grid*, not raw bytes: the console and launch TUI hand it a ratatui `Buffer`; the live container surface hands it a `termpane` `GridSnapshot`. Any raw-ANSI input (captured CLI bytes) must first be parsed into that grid by a VT crate (`vt100` / `vte` / `avt`) so all four surfaces converge on one encoder.
+- **Borrow vs reference for `termframe` / `cellshot`.** Both are Rust and MIT, but neither is verified as a full-screen-CSI-faithful regression harness; decide per-tool whether to lift SVG-rendering code or keep them as design references only.
+- **One harness home.** Confirm the determinism bundle (fixed size, frozen clock, resolved theme, `insta` filters/redactions) lives once in the shared test crate so the console, capsule, launch TUI, and CLI goldens cannot drift apart.
+
+## Related work
+
+- [`jackin-test-support` crate](/reference/crates/jackin-test-support/) — owns the shared fixtures and determinism harness this item builds on; this item supplies the styled SVG artifact and visual assertions.
+- [Rust CI tooling & dependency hygiene](/research/engineering/ci/rust-tooling/) — owns CI wiring, coverage, and the `insta` dev-dependency; the golden-comparison steps slot into its aggregators.
+- [Terminal observation and automation](/research/agents/orchestration/terminal-observation/terminal-observation-automation/) — owns live PTY read/wait/send automation of running sessions; complementary, not overlapping: that item captures live sessions for orchestration, this one asserts deterministic render regressions. The two should share the styled-cell frame schema.
+- [Brand identity system](/reference/brand-identity/) — defines the colour and wordmark contract these visual tests defend.
+- [Launch progress TUI](/roadmap/launch-progress-tui/) — its renderer snapshots should use this item's harness.

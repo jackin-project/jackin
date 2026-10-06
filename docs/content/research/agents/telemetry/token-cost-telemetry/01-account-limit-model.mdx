@@ -1,0 +1,144 @@
+---
+title: "01 — Account-limit model"
+description: "Defines normalized account-limit snapshots, provenance, freshness, daemon caching, reset windows, and limits-only rendering."
+---
+
+## Summary
+
+Account-limit telemetry needs one normalized snapshot that carries quota numbers and the metadata required to judge them. Provider-authoritative values, local estimates, stale cache entries, authentication failures, and unsupported providers must remain distinguishable.
+
+## Question and scope
+
+What data contract can serve account limits consistently across jackin❯ surfaces without implying unsupported precision or expanding into token-price and spend-history UI?
+
+## Method
+
+The model synthesizes patterns from CodexBar, OpenUsage, Tokemon, Brim, MeterBar, and the provider-specific research in [Provider usage APIs](/research/product/desktop/usage-provider-apis/). It separates quota content from cache/provenance metadata so renderers cannot consume one without the other.
+
+## Findings
+
+### Snapshot contract
+
+```rust
+pub struct AccountUsageSnapshot {
+    pub provider: Agent,
+    pub account_label: String,
+    pub plan_label: Option<String>,
+    pub quota: AccountQuota,
+    pub cache: SnapshotCacheMeta,
+}
+
+pub struct AccountQuota {
+    pub window: UsageWindow,
+    pub usage: Option<QuotaUsage>,
+    pub resets_at: Option<SystemTime>,
+}
+
+pub struct QuotaUsage {
+    pub used: UsageAmount,
+    pub limit: Option<UsageAmount>,
+}
+
+pub struct SnapshotCacheMeta {
+    pub fetched_at: SystemTime,
+    pub expires_at: Option<SystemTime>,
+    pub source: UsageSource,
+    pub confidence: UsageConfidence,
+    pub status: UsageSnapshotStatus,
+    pub last_error: Option<UsageRefreshError>,
+}
+```
+
+`UsageWindow` covers provider-supplied session, daily, weekly, monthly, credit, and other named limit windows. `UsageAmount` preserves the provider's unit. Money is valid only when the provider exposes it as a quota cap or remaining credit bound; it is not a token-price calculation.
+
+`confidence` answers how authoritative the value is. `status` answers whether the snapshot is currently usable. The axes stay separate:
+
+- provider-authoritative + fresh: preferred display value;
+- provider-authoritative + stale: trusted origin, expired freshness;
+- local-estimate + fresh: recent fallback, not provider enforcement truth;
+- needs-login, unsupported, or error: no usable amount, with repair/status information.
+
+Adapters should use constructors for valid source/confidence/status combinations rather than assembling arbitrary triples.
+
+### Source and status vocabulary
+
+```rust
+pub enum UsageSource {
+    RuntimeApi,
+    RuntimeCli,
+    LocalLog,
+    BrowserCookie,
+    Manual,
+}
+
+pub enum UsageConfidence {
+    ProviderAuthoritative,
+    LocalEstimate,
+    Fallback,
+}
+
+pub enum UsageSnapshotStatus {
+    Fresh,
+    Stale,
+    NeedsLogin,
+    Unsupported,
+    Error,
+}
+```
+
+Errors are operator-facing diagnostics without secrets. Cached data remains visible as stale when refresh fails; failure must not silently erase the last known value.
+
+### Cache ownership
+
+The host daemon owns one persistent account cache keyed by provider, account identity, source, and window. Each snapshot stores its fetch/expiry times and last refresh error. Provider-specific TTL and backoff prevent every role container from polling independently.
+
+Containers receive state through the daemon/Capsule control channel. A read-only materialized file under `/jackin/run/usage/` is acceptable for runtimes that can only read files if the daemon writes it atomically and embeds timestamps. Containers never write the host cache.
+
+The cache stores normalized limits, reset times, status, source metadata, and opaque account labels. It does not store prompts, completions, raw conversations, browser cookies, bearer tokens, token prices, or computed spend history.
+
+### Limits-only surface contract
+
+Every user-facing usage surface may show:
+
+- provider and account/plan label;
+- remaining or used percentage when the provider supplies comparable used/limit values;
+- reset time or countdown;
+- fresh, stale, needs-login, unsupported, or error state;
+- provider-supplied credit or money cap when it is a quota bound;
+- source/confidence detail where the surface has room.
+
+It must not show token unit prices, cost-per-session estimates, aggregate spend, Today/Yesterday/30-day histories, token histories, trends, sparklines, cost donuts, or model-cost rankings.
+
+For compact surfaces, prioritize the active account and the most constrained usable provider window. Do not compare percentages whose units or semantics differ. Broken auth and unusably stale state outrank healthy percentages because they block trustworthy operation.
+
+### Daemon read contract
+
+A narrow API needs account list, refresh request, and focused-account reads. Refresh should return cached state immediately and schedule provider work rather than blocking the UI. Every response includes freshness, confidence, status, and last error.
+
+The same normalized state feeds Desktop, `jackin console`, Capsule, and CLI. No surface owns a separate provider connector or a different interpretation of the window.
+
+## Implications for jackin❯
+
+- Keep quota numbers coupled to provenance and lifecycle metadata.
+- Centralize provider polling and backoff in the daemon.
+- Preserve provider window semantics rather than forcing every limit into one universal unit.
+- Make repair explicit when it requires credentials or host-state changes.
+- Enforce the limits-only rule at the shared model and renderer boundaries.
+
+## Limitations and unknowns
+
+Providers expose different window names, reset semantics, and authentication paths. Some endpoints are undocumented or change without notice. The normalized model cannot make an indirect estimate authoritative; it can only label it honestly.
+
+## Sources
+
+- [CodexBar](https://github.com/steipete/CodexBar) and [provider documentation](https://github.com/steipete/CodexBar/tree/main/docs)
+- [OpenUsage](https://github.com/robinebers/openusage) and [plugin documentation](https://github.com/robinebers/openusage/tree/main/docs)
+- [Tokemon](https://github.com/richyparr/tokemon)
+- [Brim](https://getbrim.tech/)
+- [MeterBar](https://github.com/shipshitdev/meterbar.app)
+
+## Related work
+
+- [Sources and attribution](/research/agents/telemetry/token-cost-telemetry/02-sources-and-attribution/)
+- [Provider usage APIs](/research/product/desktop/usage-provider-apis/)
+- [Capsule usage overlay](/reference/capsule/)

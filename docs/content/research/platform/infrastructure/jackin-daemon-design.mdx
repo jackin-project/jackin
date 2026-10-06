@@ -1,0 +1,89 @@
+---
+title: "jackin❯ daemon design"
+description: Defines ownership boundaries, lifecycle choices, protocol options, and security questions for a per-user host daemon.
+---
+
+## Summary
+
+A per-user daemon should own shared host coordination behind a local versioned socket while keeping privileged actions explicit.
+This design defines the foundation; the [jackin❯ daemon roadmap item](/roadmap/jackin-daemon/) owns delivery.
+
+## Current design
+
+The selected daemon foundation is:
+
+- **Lifecycle:** `jackin daemon serve` is the foreground process. `jackin daemon install` writes a per-user launchd LaunchAgent on macOS or a systemd user unit on Linux; `start`, `stop`, `restart`, `status`, and `logs` are thin lifecycle wrappers. CLI auto-start is fallback-only and must tell the operator when no user-service manager is available. The daemon stops at operator logout and is never a system service.
+- **Version skew:** every socket request carries a protocol version and daemon build id. Mismatches fail closed with a restart hint; no best-effort mixed-version mode.
+- **Install:** Homebrew may suggest `jackin daemon install`, but package post-install must not silently write LaunchAgents/systemd units. Non-interactive CI/container environments leave the daemon disabled.
+- **Control socket:** the daemon listens only on `~/.jackin/run/jackin-daemon.sock` under a `0700` directory. The wire format is newline-delimited JSON with `{ id, protocol_version, type, ... }`, one request and one response per connection for v1. Long-lived event streams require a separate explicit request type.
+- **Authentication and security:** same-UID filesystem permissions are necessary but not sufficient for sensitive adapters. Read-only/status adapters may use same-UID socket auth. Any adapter that returns secrets or invokes host actions must add per-request operator approval and an action-specific allowlist. The daemon never listens on TCP and never runs as root.
+- **Secrets and logs:** the daemon uses the same redaction discipline as launch diagnostics for any credential-carrying adapter. Tokens are not persisted in daemon-owned storage; feature stores own their at-rest format. Credential adapters require core dumps to be disabled where the platform supports it.
+- **Host daemon vs Capsule daemon:** the host daemon is per-operator-user and cross-container. The existing `jackin-capsule` daemon remains the in-container per-instance control plane that owns PTYs, panes, and runtime status. The host daemon consumes Capsule snapshots/events through existing socket/fallback channels; it does not replace Capsule or move PTY authority to the host.
+
+The spike prototype lives behind the `jackin-runtime` `daemon-spike` feature in
+<RepoFile path="crates/jackin-runtime/src/reactive_daemon.rs" />. It proves the
+control message shape with a one-connection Unix listener and a narrow
+adapter: `attention.snapshot` consumes pane states from the existing runtime
+status authority and emits notifications on `blocked` / `done` transitions only.
+This is intentionally not user-wired and not a daemon lifecycle implementation.
+
+`live-auth-sync` and `host-bridge` expose credentials or host actions and therefore require the production lifecycle, socket, redaction, and authorization contract. They are not suitable proofs of the daemon's minimal base shape.
+
+## Research question
+
+jackin❯ has been a short-lived CLI / TUI from day one: every command (`jackin console`, `jackin load`, `jackin workspace …`, `jackin config …`) runs to completion and exits. Reconcilers that need to keep state warm, react to host events, or hold a per-host singleton currently piggy-back on the next command boundary, which is the wrong shape for a growing class of features.
+
+A handful of these features have already accumulated:
+
+- **Keep-awake reconciler.** When a workspace opts into `keep_awake = true`, jackin❯ spawns `caffeinate -imsu` while any role from a keep-awake workspace is running. Today the reconciler runs at every CLI command boundary — leaning on the operator to type a `jackin` command often enough to keep the lock alive, and tearing down + respawning the lock on each invocation. Works in practice, but is structurally a stand-in for a long-running watcher.
+- **Live bidirectional auth sync** ([roadmap item](/roadmap/live-auth-sync/)). Needs to watch the host's token stores (Keychain notifications on macOS, inotify on Linux, periodic `gh auth token` polls), reconcile a flock-protected shared store, and push updates into running containers within seconds — without waiting for the operator to type a command. There is no way to do this from a CLI that exits after each command.
+- **Container event watcher.** Surfaces launch failures, OOM kills, and agent process exits without requiring an open `jackin console` session.
+- **Cross-session notifications.** Notify the operator when an agent in a backgrounded session needs attention, such as sensitive-mount confirmation, authentication, or a network-policy violation.
+
+The pattern: each new feature that wants to **react to events instead of waiting for the next command** independently invents its own "what if jackin❯ had a daemon" workaround. That doesn't scale.
+
+The jackin❯ daemon is a first-class foundation whose lifecycle, installation, security posture, and CLI surface are shared by reactive adapters. The [jackin❯ desktop Agent Hub](/research/product/desktop/agent-hub/) consumes this contract rather than inventing a parallel macOS service boundary.
+
+## What the daemon owns
+
+The daemon is the long-running, per-operator-user, per-host process that holds anything jackin❯ needs to:
+
+1. **Watch host state.** Filesystem inotify, macOS Keychain notifications, periodic polls — for any host source jackin❯ reacts to.
+2. **Watch container state.** Docker events stream (`docker events`) for launch failures, exits, OOM kills.
+3. **Push reactive updates** into running containers via the existing bind-mount channels (no new container-side privilege).
+4. **Hold cross-process locks** that have to outlive any one CLI invocation (the live-auth-sync shared store flock, future "only one `jackin load` at a time per role class" mutex, etc.).
+5. **Reconcile per-host singleton state.** Today's keep-awake `caffeinate` lock is the obvious example — only one caffeinate process per host, regardless of how many `jackin` invocations want it alive.
+6. **Run periodic tasks** the operator opted into — credential refresh, session timeout warnings, garbage-collect on dead containers.
+
+Anything that fits this shape belongs in the daemon. One-shot container launch, config edits, and git operations stay on the CLI or TUI.
+
+## What the daemon does NOT do
+
+To keep the surface manageable and the security posture reviewable:
+
+- It does **not** replace the CLI / TUI. `jackin console`, `jackin load`, `jackin workspace`, `jackin config` continue to be short-lived processes the operator types. The daemon is a back-end the CLI / TUI can talk to over a control socket.
+- It does **not** introduce a network surface. The daemon listens on a Unix domain socket scoped to the operator's user account, never on TCP.
+- It does **not** run as root. Same UID as the operator who launched it.
+- It does **not** survive operator logout. Lifecycle is tied to the operator's session (launchd LaunchAgent on macOS, systemd user unit on Linux), not a system-level service.
+- It does **not** hold credentials in persistent storage of its own. Anything the daemon needs at rest lives in the per-feature shared store (e.g. `~/.jackin/auth-shared/<axis>/` for live auth sync), not in a daemon-owned database.
+
+## Why this is one item, not many
+
+Each of the dependent features (live auth sync, keep-awake migration, container event watcher) could in theory ship its own narrow "we need a daemon for this" PR. That would produce three different daemon shapes, three different lifecycle stories, three different security postures — operationally awful.
+
+The daemon's lifecycle, installation, control socket, security model, and logs form one reusable base. Each reactive feature plugs into that contract.
+
+## Design boundaries
+
+The daemon core owns lifecycle, installation, a versioned control socket, log redaction, and the small discovery/event API required by Desktop. Keep-awake reconciliation, live authentication sync, and container-event watchers remain adapters against that stable core rather than independent daemon implementations. Roadmap pages own delivery order and status.
+
+## Related work
+
+- [jackin❯ daemon](/roadmap/jackin-daemon/) — the roadmap item this design proposal backs.
+- [Live bidirectional auth sync](/roadmap/live-auth-sync/) — reactive authentication adapter hosted by the daemon.
+- [Agent attention prompts](/roadmap/agent-attention-prompts/) — host-side OS notifications when an agent waits on operator input. Plugs into this daemon.
+- [Host bridge — secrets and approved host actions](/roadmap/host-bridge/) — operator-mediated channel for agents to request secrets or invoke host commands. Plugs into this daemon and uses the same approval surface (TouchID / polkit / password) the daemon hosts.
+- [jackin❯ desktop Agent Hub](/research/product/desktop/agent-hub/) — native macOS status bar and desktop companion that consumes daemon state for workspaces, sessions, GitHub PRs, account status, notifications, and approved host actions.
+- <RepoFile path="crates/jackin-host/src/caffeinate.rs">crates/jackin-host/src/caffeinate.rs</RepoFile> — current per-command keep-awake reconciler and daemon-adapter candidate.
+- [Reliable Claude authentication strategy](/research/agents/authentication/claude-auth-strategy/) — concurrent-session token-drift concerns the live-auth-sync feature ultimately answers, so the daemon hosts the answer.
+- [Credential source pattern](/roadmap/credential-source-pattern/) — unified credential resolver whose per-axis adapter shape must accommodate the daemon.

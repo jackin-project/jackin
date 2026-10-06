@@ -1,0 +1,27 @@
+• Model selection is disabled until startup completes.
+
+• Model selection is disabled until startup completes.
+
+• Model selection is disabled until startup completes.
+
+╭────────────────────────────────────────────────────╮
+│ >_ OpenAI Codex (v0.142.5)                         │
+│                                                    │
+│ model:       gpt-5.5   /model to change            │
+│ directory:   /Users/donbeave/…/holla-project/holla │
+│ permissions: YOLO mode                             │
+╰────────────────────────────────────────────────────╯
+
+  Tip: GPT-5.5 is now available in Codex. It's our strongest agentic coding model yet, built to reason through large codebases, check assumptions
+  with tools, and keep going until the work is done.
+
+  Learn more: https://openai.com/index/introducing-gpt-5-5/
+
+• You have 4 usage limit resets available. Run /usage to use one.
+
+• Model changed to gpt-5.3-codex-spark low
+
+
+› Find and fix a bug in @filename
+
+  gpt-5.3-codex-spark low · /Users/donbeave/Projects/tailrocks/holla-project/holla

@@ -1,0 +1,130 @@
+---
+title: "Agent orchestration containment benchmarks"
+description: "Evaluates Hazmat and Docker Sandboxes as containment, recovery, network, credential, and operator-visibility benchmarks."
+---
+
+## Summary
+
+Hazmat provides the strongest explicit containment discipline; Docker Sandboxes provides the strongest commercial microVM, private-Docker, network, and credential benchmark.
+
+## Question and scope
+
+Which Hazmat and Docker Sandboxes concepts transfer to jackin❯, and where do their platform or product assumptions conflict with jackin❯?
+
+## Method
+
+The analysis uses the primary Hazmat and Docker sources cataloged in [Open questions and sources](/research/agents/orchestration/program-research/04-open-questions-and-sources/#sources).
+
+## Findings
+
+Hazmat is not a jackin❯ replacement. It is a containment-first launcher that
+treats "what can the agent reach?" as the product question. That makes it a
+high-signal reference for jackin❯ security and trust surface.
+
+### Hazmat strengths
+
+1. **The session contract is first-class.** A launch is not just "agent
+   started"; it prints the selected mode, read-write project, read-only
+   extensions, service access, snapshot state, and integration-derived
+   behavior. The operator can also preview with `hazmat explain`.
+2. **Docker is treated as a boundary change.** Hazmat does not punch a hole
+   from native containment into the host Docker daemon. Private-daemon Docker
+   workflows move to a Docker Sandbox/microVM tier; shared-daemon workflows are
+   either code-only or pushed to a full-VM answer.
+3. **Stack integrations are constrained.** Integrations can add read-only
+   toolchain/cache paths, snapshot excludes, safe env selectors, warnings, and
+   command hints. They cannot widen write scope, inject credentials, change
+   network policy, or execute arbitrary hooks.
+4. **Credential delivery is modeled as capability delivery.** Credentials live
+   in a host-owned store and are materialized or brokered only for the selected
+   harness/session. Hazmat is explicit about residual MCP/env inheritance risk.
+5. **Recovery and proof boundaries are honest.** The TLA+ verification page
+   names exactly which setup, seatbelt, backup/restore, and launch invariants
+   are governed. The proof found ordering bugs, which is exactly the kind of
+   failure mode jackin❯ should care about.
+
+### Hazmat limits for jackin❯
+
+- It is **macOS-native and intentionally platform-specific**. jackin❯ needs the
+  same operator concepts across macOS, Linux, WSL, servers, and eventually
+  Kubernetes.
+- It is **single-operator/single-agent-user shaped**. jackin❯ product value is
+  many roles, many agents, many concurrent instances, and per-instance state.
+- It does not provide a **fleet operations plane** comparable to multicode's
+  live table, task queue, GitHub polling, or remote bridge.
+- Its strongest no-VM path depends on **macOS user isolation and seatbelt**.
+  That is useful inspiration, not a portable backend.
+
+### Design implications from Hazmat
+
+| Candidate | jackin❯-shaped version | Roadmap item |
+|---|---|---|
+| Session contract / `explain` | Preview a fully resolved launch boundary before side effects; print the same contract at launch | [Session contract and explain mode](/roadmap/session-contract-explain-mode/) |
+| Stack integrations | Optional, non-executable workspace hints for read-only toolchain/cache mounts, safe env selectors, warnings, and excludes | [Stack integration contracts](/roadmap/stack-integration-contracts/) |
+| Docker tier decision | Treat host Docker daemon access as a policy boundary, not a convenience default | [Selectable sandbox backends](/research/platform/security/sandbox-backends/), [network egress policy](/roadmap/network-egress-policy/) |
+| Snapshot/rollback | Pre-session snapshots for dirty/non-git/long-autonomy work, with opt-in restore and visible host-side effects | [Session snapshot and rollback](/roadmap/session-snapshot-rollback/) |
+| Proof/governance boundary | Model launch/finalization ordering where host-side effects become complex | [Architecture decision records](/reference/adrs/), [runtime/launch behavioral spec](/reference/developer-reference/specs/runtime-launch/) |
+
+### Docker Sandboxes benchmark
+
+Docker Sandboxes is the benchmark because it solves several hard problems at
+the same time: VM boundary, private Docker daemon, scoped workspace, network
+policy, and credential injection. jackin❯ should use it as a comparison bar,
+not as an assumption that every backend can match immediately.
+
+#### Docker Sandboxes strengths
+
+1. **Private Docker is the default inside the boundary.** The agent can run
+   Docker without touching the host daemon.
+2. **Network is host-mediated.** HTTP/HTTPS traffic goes through a host proxy,
+   non-HTTP protocols are blocked, and policy is domain-based.
+3. **Credentials do not enter the VM.** The host proxy injects auth headers.
+   That is materially stronger than env vars or mounted secret files.
+4. **Branch mode is operator-friendly.** `--branch` creates worktrees under
+   `.sbx/`, keeping agent changes out of the main working tree while Git still
+   works inside the sandbox.
+5. **The dashboard makes state legible.** `sbx` shows live sandbox status,
+   CPU/RAM use, port mappings, and network governance rules. The important
+   borrow is not the card UI; it is one operator overview for runtime, ports,
+   policy, and cleanup.
+6. **Ports and host services are explicit.** Host-to-sandbox services require
+   published port mappings, and sandbox-to-host service access goes through a
+   named host alias plus policy. jackin❯ needs equivalent explicitness for
+   dev servers, databases, and local model runners.
+7. **The security docs are blunt about remaining risk.** Workspace changes are
+   live on the host in direct mode; hooks and generated files still matter.
+
+#### Where jackin❯ should differ
+
+- jackin❯ should keep **role repositories** as the unit of runtime
+  distribution. Docker Sandboxes templates are useful, but they are not a
+  replacement for jackin❯ roles.
+- jackin❯ should preserve **mount destination control**. Docker Sandboxes'
+  same-absolute-path passthrough is elegant for worktrees, but jackin❯
+  `dst`-based workspace model is more explicit and portable.
+- jackin❯ should treat Docker Sandboxes' credential proxy as a **long-term
+  target**, not a first-phase promise. The current container credential work
+  already documents why env injection is weaker.
+- jackin❯ should make **backend differences visible**. A `dind` session, an
+  OrbStack isolated-machine session, and a future Docker Sandboxes-style
+  microVM session should not pretend to have identical risk.
+
+
+## Implications for jackin❯
+
+Keep role repositories and explicit mount destinations, treat Docker access as a privilege boundary, expose service/network/credential effects in a launch contract, and retain backend-specific risk language.
+
+## Limitations and unknowns
+
+Both products are volatile and platform-specific. Their current security behavior must be revalidated before claiming parity or adopting an enforcement model.
+
+## Sources
+
+- [Hazmat and Docker primary sources](/research/agents/orchestration/program-research/04-open-questions-and-sources/#sources)
+- [Dossier method](/research/agents/orchestration/program-research/#method-and-evidence)
+
+## Related work
+
+- [Decision and benefit matrices](/research/agents/orchestration/program-research/01-decision-and-benefit-matrices/)
+- [Fleet and recovery comparison](/research/agents/orchestration/program-research/03-fleet-and-recovery-comparison/)
+

@@ -1,0 +1,36 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+# boltffi packaging for jackin❯ desktop. Driven exclusively by
+# `cargo xtask desktop bindings|xcframework` (mise `desktop-bindings` /
+# `desktop-xcframework`) from the repo root — the xtask flow pins
+# MACOSX_DEPLOYMENT_TARGET and the desktop-release cargo profile and invokes
+# boltffi with this crate as the working directory. Never invoke boltffi
+# directly. All output paths below are relative to this crate directory.
+
+[package]
+name = "jackin-usage"
+crate = "jackin-usage-ffi"
+
+[targets.apple]
+# macOS arm64 only: jackin❯ desktop ships no iOS or simulator slices.
+include_macos = true
+ios_architectures = []
+simulator_architectures = []
+macos_architectures = ["arm64"]
+
+[targets.apple.xcframework]
+# boltffi derives the FFI module as `{name}FFI` → `JackinUsageFFI` for both the
+# generated Swift `import` and the xcframework modulemap. `output` is the
+# PARENT directory; boltffi creates `{name}.xcframework` inside it.
+name = "JackinUsage"
+output = "../../target/xcframework"
+
+[targets.apple.spm]
+# Binary-only package; Swift sources land beside our own Package.swift, which
+# is handwritten (native/Package.swift) and must not be overwritten.
+layout = "split"
+skip_package_swift = true
+
+[targets.apple.swift]
+output = "../../native/Sources/JackinUsageBindings"

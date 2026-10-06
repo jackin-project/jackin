@@ -1,0 +1,13 @@
+{
+  "title": "Isolation",
+  "defaultOpen": false,
+  "pages": [
+    "index",
+    "smolvm-backend",
+    "orbstack-isolated-machines",
+    "apple-container-backend",
+    "apple-container-1-0-landscape",
+    "ephemeral-mount-modes",
+    "source-branch-policy-isolated-mounts"
+  ]
+}

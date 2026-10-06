@@ -1,0 +1,12 @@
+{
+  "title": "Agents",
+  "defaultOpen": false,
+  "pages": [
+    "index",
+    "orchestration",
+    "runtimes",
+    "authentication",
+    "telemetry",
+    "session-capture"
+  ]
+}

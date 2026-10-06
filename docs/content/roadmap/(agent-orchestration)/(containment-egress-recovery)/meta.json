@@ -1,0 +1,8 @@
+{
+  "title": "Containment \u2014 Egress & recovery",
+  "defaultOpen": false,
+  "pages": [
+    "network-egress-policy",
+    "session-snapshot-rollback"
+  ]
+}

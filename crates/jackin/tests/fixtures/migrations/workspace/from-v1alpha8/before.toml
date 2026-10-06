@@ -1,0 +1,5 @@
+version = "v1alpha8"
+workdir = "/workspace/project"
+accounts = ["personal"]
+[account_bindings]
+claude = "personal"

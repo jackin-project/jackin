@@ -1,0 +1,12 @@
+{
+  "title": "Operator surface",
+  "defaultOpen": false,
+  "pages": [
+    "operator-cli-hygiene",
+    "pr-verification",
+    "clipboard-image-bridge",
+    "jackin-join-and-debug-bundle",
+    "asciinema-session-recording",
+    "native-macos-usage-menu-bar"
+  ]
+}

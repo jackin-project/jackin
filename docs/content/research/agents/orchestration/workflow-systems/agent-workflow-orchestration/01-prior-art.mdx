@@ -1,0 +1,90 @@
+---
+title: "01 — Workflow-orchestration prior art"
+description: "Compares local orchestrators, coding-agent workbenches, workflow engines, control protocols, and shared-memory systems."
+---
+
+## Summary
+
+The market strongly validates visible execution, durable task state, provider mixing, review gates, and issue or PR visibility. It does not yet supply a drop-in runtime that preserves jackin❯ Capsule sessions, isolation, and host-side policy.
+
+## Question and scope
+
+Which external systems should jackin❯ reuse, adapt, benchmark, or avoid when designing agent workflows?
+
+The scope excludes SaaS-only systems as runtime dependencies. Commercial products remain useful UX evidence.
+
+## Method
+
+Projects were compared by execution substrate, session visibility, branch/worktree ownership, workflow semantics, human gates, GitHub lifecycle, provider breadth, local-first operation, and compatibility with jackin❯ host-mutation rules. Maturity and license require revalidation before dependency use.
+
+## Findings
+
+### Workflow engines and coding-agent orchestrators
+
+| Project | Useful evidence | Current stance |
+|---|---|---|
+| [Conductor](https://github.com/microsoft/conductor) | Deterministic YAML graphs, first-match routing, scripts, parallelism, human gates, dry runs | Graph-semantics reference; possible adapter after stable jackin❯ APIs |
+| [Contrabass](https://github.com/junhoyeo/contrabass) | Issue-driven plan/execute/verify flow, worktrees, worker liveness | Hands-on benchmark; duplicates execution surfaces |
+| [agtx](https://github.com/fynnfluegge/agtx) | Local board, artifacts, phase transitions, MCP, multi-agent plugins | Task/artifact reference or MCP peer |
+| [Optio](https://optio.host/) | Ticket-to-PR pipeline, self-healing CI/review, queue, dashboard | Architecture benchmark; too infrastructure-heavy for the local substrate |
+| [Sandcastle](https://github.com/mattpocock/sandcastle) | Library runner, sandbox providers, branch strategies, hooks, logs | Reuse candidate only if host hooks and cross-language boundary fit policy |
+| [OpenClaw Code Agent](https://github.com/goldmar/openclaw-code-agent) | Plan approval, persistence, suspend/resume/fork, explicit goal loops, action buttons | Intervention-state reference |
+| [Switchboard](https://www.switchboard-oss.net/) | Recurring local agent workflows | Later queue/daemon reference |
+| [Ruah](https://www.ruah.sh/) and [Bernstein](https://bernstein.run/) | DAGs, file claims, merge ordering, audit and governance | Research references pending source/license audit |
+| [RuFlo](https://github.com/ruvnet/ruflo) | Broad swarm/MCP surface and dashboard demand | Avoid as dependency without a narrow verified feature |
+
+### Local workbenches and execution substrates
+
+| Project | Useful evidence | Current stance |
+|---|---|---|
+| [Vibe Kanban](https://vibe-kb.com/) | Local task board, worktree-per-task, diff review, alerts, agent breadth | Benchmark before building a competing board |
+| [Handler.dev](https://handler.dev/) | Container/Firecracker canvas, terminal per sandbox, workspace forks | Isolation and forkable-workspace benchmark |
+| [Helmor](https://github.com/dohooo/helmor) | Desktop planning, execution, review, test, merge, parallel comparison | UX benchmark |
+| [Orca](https://www.onorca.dev/docs) | Worktree, terminal, browser, and diff per task | UX benchmark for parallel visible sessions |
+| [Sculptor](https://github.com/imbue-ai/sculptor) | Visible agents in isolated Docker containers, pairing sync | Closest substrate comparison; possible future adapter |
+| [Emdash](https://github.com/generalaction/emdash) | Issue intake, worktree, agent, diff, PR, CI, merge gates, broad agent support | Strongest `roadmap-to-pr` hands-on benchmark |
+| [workmux](https://github.com/raine/workmux), [worktrunk](https://github.com/max-sixty/worktrunk), [par](https://github.com/coplane/par) | Worktree/session naming and cleanup ergonomics | Low-level references only |
+
+### Review, terminal, and protocol surfaces
+
+| Project | Useful evidence | Current stance |
+|---|---|---|
+| [MCO](https://github.com/mco-org/mco) / [Hive](https://hivehq.dev/) | Multi-provider review, consensus, deduplication, SARIF/Markdown, ACP | Optional review adapter after branch state is authoritative |
+| [Forge MCP](https://forgemcp.dev/) and [terminal-mcp](https://github.com/ianks/terminal-mcp) | Persistent PTY create/read/wait/send APIs | API-shape reference; jackin❯ should back its own surface with Capsule |
+| [ACP](https://agentclientprotocol.com/get-started/introduction) | Structured JSON-RPC agent transport | Watch and interoperate; do not invent an incompatible provider transport |
+| [GitHub Agentic Workflows](https://github.github.io/gh-aw/introduction/overview/) and [third-party agents](https://docs.github.com/en/copilot/concepts/agents/about-third-party-coding-agents) | Permission narrowing, safe outputs, GitHub-native issues/PRs/comments | Visibility/security reference, not local execution substrate |
+
+### Shared memory
+
+| Project | Useful evidence | Current stance |
+|---|---|---|
+| [OpenMemory / Mem0](https://mem0.ai/openmemory) | Project-scoped memory over MCP | Backend/API-shape reference |
+| [Letta shared memory](https://docs.letta.com/guides/core-concepts/memory/shared-memory) | Shared blocks, read-only policy, concurrent updates | Strong model for workflow-scoped briefs |
+| [Zep / Graphiti](https://arxiv.org/abs/2501.13956) | Temporal knowledge-graph memory | Future retrieval candidate after simpler local memory proves useful |
+
+### Dependency verdict
+
+No reviewed project currently qualifies as the authoritative workflow runtime dependency. MCO/Hive is the clearest optional review adapter. Conductor and ACP are plausible future interoperability surfaces. Workbenches should be benchmarked because they may own the operator UI better, while jackin❯ remains the isolation/session provider.
+
+A dependency verdict should change if an external orchestrator provides a stable interface for externally supplied sandbox/session providers, preserves Capsule-owned visibility, avoids silent host mutation, and supports typed gates and durable evidence.
+
+## Implications for jackin❯
+
+- Keep the run/session API substrate-neutral so workbenches can drive jackin❯ later.
+- Borrow deterministic graph, gate, artifact, and intervention concepts without inheriting host-native tmux/worktree ownership.
+- Benchmark current workbenches before building a dashboard or task board.
+- Require a concrete, narrow feature plus license/security review before adding an orchestration dependency.
+
+## Limitations and unknowns
+
+This is a source-and-product-surface comparison, not a uniform hands-on benchmark. Project maturity, licenses, APIs, and commercial availability can change quickly.
+
+## Sources
+
+Primary project and product links are embedded in the comparison tables.
+
+## Related work
+
+- [Design constraints](/research/agents/orchestration/workflow-systems/agent-workflow-orchestration/02-design-constraints/)
+- [Terminal observation and automation](/research/agents/orchestration/terminal-observation/terminal-observation-automation/)
+- [Persistent storage and workflow memory](/research/agents/orchestration/memory/)

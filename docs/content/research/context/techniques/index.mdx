@@ -1,0 +1,92 @@
+---
+title: "Token-optimization techniques"
+description: "Measured techniques for reducing coding-agent token use while preserving task quality, with evidence, limits, and adoption guidance."
+---
+
+**Research state:** Needs refresh
+
+**Verification cutoff:** 2026-08-12. Revalidate provider models, prices, quotas, and cache behavior after this date.
+
+This dossier evaluates coding-agent token-efficiency techniques. Every external claim has a source in its chapter, every local number names its method, and every recommendation remains subject to the [validation harness](/research/context/techniques/16-validation-harness/). Research brief: <RepoFile path="prompts/research/context-techniques.md" />.
+
+## Research question
+
+Which context, caching, retrieval, output, routing, infrastructure, and governance techniques reduce coding-agent resource use without weakening task quality?
+
+The dossier distinguishes API-priced work from subscription-quota work. It also treats latency, operator time, and quality risk as separate decision axes rather than reducing every choice to token price.
+
+## Headline findings
+
+- **A defensible 10× reduction at equal quality is not supported.** The modeled ceiling is about **2.4–2.5×** with validated techniques, or **5–6.2×** if a lower-tier-main-plus-advisor routing pattern passes the workload-specific harness. Frontier-model thinking and genuinely required cache reads remain binding floors.
+- In the measured heavy session, dollar share was **32% cache reads, 29% cache writes, about 20% thinking, 17% visible output, and 2% uncached input**. Cache reads dominate token volume; output and cache writes dominate dollars. A separate session was more output-heavy, so the exact split is workload-specific.
+- Existing defaults already provide much of the available input-side reduction: prompt caching measured **86.3%**, tool schemas can defer, and edit-style diffs avoid full rewrites.
+- Concise output helps, but its reach is bounded. Caveman ultra reduced visible prose by **58.5%** in the local sample, while tool-heavy sessions exposed a much smaller total-session ceiling.
+- Strong high-confidence levers are context architecture, tool deferral, context editing, effort control, model pinning for delegated work, cache-prefix stability, and edit-over-rewrite behavior.
+- Subscription users need a quota model as well as a dollar model. Prefix stability, context-window pressure, and request volume can matter more than API-price savings when a usage window is the binding constraint.
+- Images, screenshots, and PDFs have distinct token economics. Measured high-resolution image costs differed by about **3.0–3.1×** across model families; PDFs cost roughly **2×** equivalent text in the tested samples.
+- Cache-compression and semantic-cache mechanisms can help self-hosted fleets, but most do not reduce hosted-provider billed tokens and can introduce correctness or isolation risks.
+
+## Method and evidence
+
+- Provider behavior and prices come from the primary sources recorded in each chapter's verification ledger.
+- Local token counts use the checked-in scripts under [measurement tools](/research/context/techniques/tools/) and the provider token-counting endpoint.
+- Cost conclusions compose savings per token class; they do not multiply unrelated headline percentages.
+- Quality claims are bounded by the paired-task [validation harness](/research/context/techniques/16-validation-harness/), objective checkers, canaries, latency measurements, and rollback criteria.
+- Current tool versions and their evidence boundaries live in the separate [token-optimization tools dossier](/research/context/tools/).
+
+## Limitations and open questions
+
+- Local session decomposition is environment-specific and does not establish a universal workload distribution.
+- The exact subscription-cap denominator and cache-read weighting are unpublished; community estimates remain indirect evidence.
+- The effort-to-thinking-share curve needs measurements across multiple effort levels on the same tasks.
+- Model-specific tokenizer, price, quota, and feature claims require revalidation at the chapter cutoff before implementation.
+- Modeled stack totals remain estimates until reproduced on representative jackin❯ tasks with the validation harness.
+
+## How to read
+
+### Orientation and measurement
+
+- [00 — Executive summary](/research/context/techniques/00-executive-summary/) gives the current verdict, strongest techniques, and rejected claims.
+- [01 — Economics and measurement](/research/context/techniques/01-economics-and-measurement/) defines token classes, prices, cache multipliers, and the modeled workload.
+- [02 — Baseline audit](/research/context/techniques/02-baseline-audit/) records the local environment and measurement baseline.
+- [03 — Prior art and market scan](/research/context/techniques/03-prior-art-and-market-scan/) compares published approaches and evidence quality.
+
+### Core techniques
+
+- [04 — Style and language compression](/research/context/techniques/04-style-and-language-compression/)
+- [05 — Tokenizer effects and data formats](/research/context/techniques/05-tokenizer-arbitrage/)
+- [06 — Context architecture](/research/context/techniques/06-context-architecture/)
+- [07 — Prompt caching](/research/context/techniques/07-caching-exploitation/)
+- [08 — Retrieval, memory, and state](/research/context/techniques/08-retrieval-memory-and-state/)
+- [09 — Output discipline](/research/context/techniques/09-output-discipline/)
+- [10 — Model routing and delegation](/research/context/techniques/10-model-routing-and-delegation/)
+- [11 — Multi-agent protocols](/research/context/techniques/11-multi-agent-protocols/)
+- [12 — Provider-native features](/research/context/techniques/12-provider-features/)
+- [13 — Gateway and self-hosted infrastructure](/research/context/techniques/13-infrastructure-level/)
+- [14 — Frontier mechanisms](/research/context/techniques/14-frontier-ideas/)
+
+### Decision and validation
+
+- [15 — Composed stacks](/research/context/techniques/15-composed-stacks/) combines techniques with per-class arithmetic.
+- [16 — Validation harness](/research/context/techniques/16-validation-harness/) defines the no-quality-loss proof protocol.
+- [17 — Adoption sequence](/research/context/techniques/17-adoption-roadmap/) orders automatic and operator-dependent changes.
+
+### Additional decision axes
+
+- [18 — Coverage and gap map](/research/context/techniques/18-extension-overview/)
+- [19 — Subscription and quota economics](/research/context/techniques/19-subscription-and-quota-economics/)
+- [20 — Multimodal token economics](/research/context/techniques/20-multimodal-token-economics/)
+- [21 — Latency and human-time economics](/research/context/techniques/21-latency-and-time-economics/)
+- [22 — Fleet and multi-tenant cache economics](/research/context/techniques/22-fleet-and-multitenant-cache/)
+- [23 — Cross-agent portability](/research/context/techniques/23-cross-agent-portability/)
+- [24 — Literature and market evidence map](/research/context/techniques/24-fresh-literature-and-market-delta/)
+- [25 — Optimization governance and online quality](/research/context/techniques/25-meta-cost-governance-and-online-quality/)
+- [26 — Frontier mechanisms for unresolved gaps](/research/context/techniques/26-extension-frontier/)
+- [27 — Current verdict and stack updates](/research/context/techniques/27-extension-stacks-and-verdict/)
+- [28 — Provider-sensitive claim verification](/research/context/techniques/28-drift-delta/)
+
+## Related work
+
+- [Token-optimization tools](/research/context/tools/) compares current external tools, versions, reach, and evidence.
+- [jackin❯ context engine](/research/context/engine/) turns validated mechanisms into a native subsystem design.
+- [Measurement tools](/research/context/techniques/tools/) reproduce token counts and session-cost calculations.

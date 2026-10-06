@@ -1,0 +1,8 @@
+# not: blocked
+
+Previous turn transcript:
+Claude needs your permission to run a command.
+Press enter to select, esc to cancel.
+
+✻ Thinking…
+esc to interrupt

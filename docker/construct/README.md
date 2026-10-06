@@ -1,0 +1,46 @@
+# Construct Image
+
+This directory contains the source for `projectjackin/construct:trixie` — the shared base Docker image that every [jackin](https://github.com/jackin-project/jackin) agent starts from.
+
+The construct is the foundation layer providing system tools, shell environment, and container infrastructure that all roles inherit — one shared base image so every role starts from the same baseline.
+
+For full details — including what's installed, how it is built, the image layer architecture, and how to extend it — see the [Construct Image](https://jackin.tailrocks.com/developing/construct-image/) documentation.
+
+## Files
+
+| File | Purpose |
+|---|---|
+| `Dockerfile` | Builds the construct image on Debian Trixie with core tools (git, Docker CLI, Buildx, Compose, mise, ripgrep, fd, fzf, GitHub CLI, zsh, fish, starship) and security tools (tirith, shellfirm) |
+| `prebuilt/` | Ignored staging directory where CI/local build helpers place the pinned `shellfirm` binary before Docker Buildx reads the construct context. |
+| `zshrc` | zsh configuration — sources oh-my-zsh (with `ZSH_THEME=""` so Starship owns the prompt), enables auto-title, sets up mise shims and security tool hooks. Default shell for the `agent` user. |
+| `fish-config.fish` | fish configuration — opt-in alternative shell. Initialises Starship and replicates zsh's OSC 0/2 + OSC 7 title hooks so pane border titles work identically. |
+| `starship.toml` | Shared prompt config for zsh and fish; renders the `j❯` sigil as the canonical green block with a white chevron and prefixes the active `JACKIN_AGENT` when present. |
+| `versions.env` | Pinned versions for mise and security tools (`tirith`, `shellfirm`) used as Docker build-args |
+
+The runtime entrypoint source that launches the selected agent is at [`docker/runtime/entrypoint.sh`](../runtime/entrypoint.sh). jackin copies it into derived images at `/jackin/runtime/entrypoint.sh`; it delegates deterministic setup to `jackin-capsule runtime-setup`, then keeps the shell-native work of sourcing role hooks and `exec`-ing the selected agent.
+
+## Image Layer Architecture
+
+```
+┌─────────────────────────────────┐
+│  Derived Layer (jackin-managed) │  Claude Code, entrypoint, user mapping
+├─────────────────────────────────┤
+│  Agent Layer (your Dockerfile)  │  Rust, Node, Python, custom tools
+├─────────────────────────────────┤
+│  Construct (this image)         │  Debian, git, Docker CLI, mise, zsh
+└─────────────────────────────────┘
+```
+
+Agent repos build on top of the construct. jackin then generates a derived layer on top of that. See [Architecture](https://jackin.tailrocks.com/reference/architecture/) for the full picture.
+
+## Building
+
+Construct image builds are defined by the repo-root `docker-bake.hcl` file and driven by the `construct-*` mise tasks, which delegate to the `jackin-xtask` crate.
+
+The supported local validation flow, architecture-specific debugging commands, advanced publish rehearsal workflow, CI behavior, and published tags are documented on the [Construct Image](https://jackin.tailrocks.com/developing/construct-image/) page.
+
+## Related
+
+- [Creating Agents](https://jackin.tailrocks.com/developing/creating-agents/) — how to build agent repos on top of the construct
+- [jackin-agent-smith](https://github.com/jackin-project/jackin-agent-smith) — default agent (example of extending the construct)
+- [jackin-the-architect](https://github.com/jackin-project/jackin-the-architect) — Rust development agent (another example)

@@ -1,0 +1,132 @@
+---
+title: "03 — Delivery, lifecycle, and concurrency"
+description: Defines memory APIs, daemon-global quota storage, database lifecycle, concurrency ownership, trimming, and unresolved storage policy.
+---
+
+## Summary
+
+Host-owned APIs resolve and audit memory without exposing storage files to agents. Per-instance state and daemon-global account quota use separate ownership and concurrency models.
+
+## Question and scope
+
+How should persistent state be delivered, migrated, shared, trimmed, and protected across host processes and containerized agents?
+
+## Method
+
+The analysis applies the storage model to Capsule, daemon, telemetry, workflow, migration, instance-lifecycle, and multi-agent concurrency boundaries.
+
+## Findings
+
+### Memory delivery and external backends
+
+jackin❯ should expose the memory layer through a narrow internal API:
+
+```text
+memory.resolve(scope, workflow, role, agent, run) -> MemoryBrief
+memory.propose(scope, kind, title, body, provenance) -> pending item
+memory.append_run_summary(run, session, body) -> memory item
+memory.hide/supersede(id, reason) -> operator action
+```
+
+jackin❯ can also expose an MCP server with equivalent operations so agents can query or propose memories during a session. The MCP server must enforce the same scope, read policy, write policy, and audit rules as the host CLI; it must not become arbitrary file access to the operator's host. External systems such as OpenMemory/Mem0, Letta, or Zep/Graphiti can become optional backends behind the same API only when they preserve the same local policy model.
+
+### Daemon-global account cache
+
+Provider account quota snapshots do **not** belong in each per-instance
+database. The [Token & Cost Telemetry](/research/agents/telemetry/token-cost-telemetry/)
+plan makes the host daemon the single owner of provider refresh, then fans
+read-only account state out to Desktop, `jackin console`, Capsule, and CLI
+surfaces. The daemon-global cache keeps that state from diverging across role
+containers.
+
+**Location and lifecycle.** The DB lives at `~/.jackin/data/daemon/accounts.db` —
+outside any `~/.jackin/data/<container>/` tree so it survives `jackin purge`
+on individual instances. The daemon creates and
+migrates this file on first start; CLI / `jackin console` / Capsule do not
+write to it, and the daemon process is the single writer. CLI tools and the
+console open the file read-only. WAL mode handles the daemon-write /
+multi-reader-process pattern
+(this table's concurrency model is **different** from the per-instance
+tables described in the "Concurrency model" section below — those assume
+single-process single-writer; the daemon-global cache assumes single-writer
+across **all** host processes, enforced by the daemon's per-operator-user
+singleton).
+
+`jackin usage <instance> accounts --sync-host-cache` performs explicit,
+operator-triggered synchronization from one selected Capsule daemon. Automatic
+provider refresh belongs exclusively to the host daemon.
+
+```sql
+CREATE TABLE account_usage_snapshots (
+    id INTEGER PRIMARY KEY,
+    provider TEXT NOT NULL,
+    account_key_hash TEXT NOT NULL,
+    account_label TEXT NOT NULL,
+    source TEXT NOT NULL,
+    confidence TEXT NOT NULL,
+    window_kind TEXT NOT NULL,
+    used_amount INTEGER,
+    used_unit TEXT,
+    limit_amount INTEGER,
+    limit_unit TEXT,
+    resets_at INTEGER,
+    fetched_at INTEGER NOT NULL,
+    expires_at INTEGER,                  -- nullable: not every provider returns an expiry
+    status TEXT NOT NULL,
+    last_error TEXT,
+    UNIQUE(provider, account_key_hash, source, window_kind)
+);
+```
+
+### Lifecycle
+
+- **Created on first instance load.** If the file doesn't exist, run
+  the migration suite and set `_meta.schema_version`.
+- **Migrated on subsequent loads.** If `_meta.schema_version` < current,
+  run pending migrations.
+- **Kept with the data dir.** The DB lives under the same
+  `~/.jackin/data/<container>/` tree as the instance manifest and durable agent
+  home, so normal restore and purge flows treat it as part of the instance.
+- **Deleted with `purge`.** Standard data-dir teardown.
+
+### Concurrency model
+
+Single writer (the running `jackin` process for that instance), many
+readers. Console subscribers may read concurrently. SQLite's WAL mode
+handles this; turn it on at DB creation time. No multi-writer scenarios
+exist because each instance has at most one running jackin❯
+process.
+
+Memory introduces a second concurrency question: multiple agents inside one Capsule-managed container may read the same memory brief and propose new memory during the same run. should serialize writes through the workflow runner or daemon-owned storage handle, not let each in-container agent open the database directly. Agents submit proposals through the control/MCP surface; the host-side storage owner stamps provenance and writes the row. This keeps the database private to jackin❯ and prevents an agent from rewriting durable memory with ordinary filesystem access.
+
+### Trimming
+
+Tables with rolling-window semantics (`status_log`, `usage_samples`,
+`tool_history`) get trimmed on every Nth insert (cheap, bounded), not
+on a background timer. Counts above are starting points; tune after
+observing real footprint.
+
+## Implications for jackin❯
+
+Keep storage host-owned: agents use narrow control or MCP operations, instance state follows instance lifecycle, and account quota state remains daemon-global with one writer.
+
+## Limitations and unknowns
+
+- **Turso production posture.** Turso's SQLite-compatible Rust engine remains pre-1.0 and labeled beta. The storage ADR must cover build cost, migration tooling, multi-process behaviour, backup/export shape, and the rationale for using Turso with operator data.
+- **Schema in code vs schema in `.sql` files.** Diesel-style embedded
+  migrations are clean but add a new toolchain dependency. An in-code migration list avoids an additional toolchain dependency for the current table count.
+- **Workspace memory across many instances.** Per-instance DBs are purge-friendly, but workspace memory must survive instance purge and serve new containers. The storage ADR must select a workspace-level database or another single durable authority while the API remains workspace-scoped.
+- **Memory retrieval semantics.** Explicit scope filtering and operator-curated titles/kinds are the baseline. Keyword, embedding, or graph retrieval requires representative memory data and measured quality.
+- **Agent write authority.** Run summaries and review findings may use workflow-append policy; operator preferences and project facts remain operator-only until the operator accepts a proposal.
+
+
+## Sources
+
+- [Memory requirements and prior art](/research/agents/orchestration/memory/01-requirements-and-prior-art/)
+- [Storage and memory data model](/research/agents/orchestration/memory/02-storage-and-memory-model/)
+
+## Related work
+
+- [Persistent storage and memory overview](/research/agents/orchestration/memory/)
+- [Token and cost telemetry](/research/agents/telemetry/token-cost-telemetry/)
+- [Host bridge](/roadmap/host-bridge/)

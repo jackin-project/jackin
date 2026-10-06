@@ -1,0 +1,6 @@
+{
+  "public": ".output/public",
+  "cleanUrls": true,
+  "trailingSlash": true,
+  "rewrites": [{ "source": "**", "destination": "/404.html" }]
+}

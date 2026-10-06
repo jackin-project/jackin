@@ -1,0 +1,9 @@
+{
+  "title": "OrbStack isolated machines",
+  "defaultOpen": false,
+  "pages": [
+    "index",
+    "01-architecture-and-security",
+    "02-cli-and-compatibility"
+  ]
+}

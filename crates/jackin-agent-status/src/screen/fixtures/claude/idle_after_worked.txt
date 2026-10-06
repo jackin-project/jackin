@@ -1,0 +1,17 @@
+∴ The user just said "Hi!!!". Caveman mode active. Need respond caveman style. No task. Just greeting. Keep ultra.
+
+● Hi. What work?
+
+✻ Worked for 8s
+
+
+
+
+
+
+  ⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · U…
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  [CAVEMAN:ULTRA]
+  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents

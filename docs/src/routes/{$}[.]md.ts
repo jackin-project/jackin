@@ -1,0 +1,20 @@
+import { getLLMText, markdownPathToSlugs, source } from '@/lib/source'
+import { createFileRoute, notFound } from '@tanstack/react-router'
+
+export const Route = createFileRoute('/{$}.md')({
+  server: {
+    handlers: {
+      GET: async ({ params }) => {
+        const slugs = markdownPathToSlugs(params._splat?.split('/').filter(Boolean) ?? [])
+        const page = source.getPage(slugs)
+        if (!page) throw notFound()
+
+        return new Response(await getLLMText(page), {
+          headers: {
+            'Content-Type': 'text/markdown; charset=utf-8',
+          },
+        })
+      },
+    },
+  },
+})

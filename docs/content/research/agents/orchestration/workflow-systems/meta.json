@@ -1,0 +1,9 @@
+{
+  "title": "Workflow systems",
+  "defaultOpen": false,
+  "pages": [
+    "index",
+    "agent-workflow-orchestration",
+    "task-source-abstraction-design"
+  ]
+}

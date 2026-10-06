@@ -1,0 +1,9 @@
+{
+  "title": "Isolation architecture",
+  "defaultOpen": false,
+  "pages": [
+    "index",
+    "agent-isolation-architecture",
+    "session-contract-design"
+  ]
+}

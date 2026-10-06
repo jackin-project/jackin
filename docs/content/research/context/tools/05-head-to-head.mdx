@@ -1,0 +1,76 @@
+---
+title: "05 — Six-tool comparison"
+description: "Boundary-based comparison and build, embed, adapt, or bundle decisions for the six current optimizers."
+---
+
+## Summary
+
+Cutoff: **2026-09-23 UTC**. There is no defensible universal winner. Headroom offers the most directly useful Rust transform surface; LeanCTX offers a preview Rust retrieval facade; LemonCrow offers an integrated runtime worth evaluating; RTK specializes in commands; Caveman and Ponytail offer different instruction-level interventions. Release identity is fixed in [08 — Register](/research/context/tools/08-current-release-register/).
+
+## Question and scope
+
+Which component solves each part of Jackin's token problem, and which integration form preserves ownership and correctness?
+
+## Method
+
+Compare interception reach, effect on behavior, recovery, cache risk, dependencies, licensing, and available APIs. Require exact treatment matching before transferring any outcome claim. A preference for Rust is relevant to packaging and maintenance, not a substitute for task evidence.
+
+## Findings
+
+### Capability matrix
+
+| Axis | Caveman | RTK | LeanCTX | Ponytail | Headroom | LemonCrow |
+|---|---|---|---|---|---|---|
+| Primary intervention | Narration skill plus separate input stack | Command output | Retrieval/context runtime | Implementation choices | Typed input transforms/proxy | Integrated retrieval/tools/runtime |
+| Prevent unnecessary work | Policy-dependent | No | Retrieval/reuse | Direct objective | Not its primary scope | Search/read cycle reduction |
+| Reduce shell observations | Engine/integration-dependent | Main scope | Shell path | Indirect only | At a routed result/request seam | Own Bash tool / integration |
+| Progressive source retrieval | Separate input surfaces | Not automatic native-tool coverage | Core capability | No | Optional source shaping | Core capability |
+| Provider interception required | No for skill; input path varies | No | No for MCP | No | No for library; yes for proxy | No for local tool integration |
+| Recovery | Engine-specific references | Current recall/tee modes | Archive / exact reads | Not applicable | CCR / selected originals | Spill / targeted reads |
+| Rust embedding | No verified Rust engine API | CLI, no verified library target | Preview lean-ctx-embed | Not a Rust runtime | Public headroom-core source APIs | Python, use process boundary |
+| Initial Jackin role | Optional narration | Qualified command arm | Read-only backend | Adapted policy | Selected transform worker | Read-only comparator |
+
+Sources: the current [Caveman](/research/context/tools/01-caveman-design/), [RTK](/research/context/tools/03-rtk-design/), [LeanCTX](/research/context/tools/04-leanctx-design/), [Ponytail](/research/context/tools/09-ponytail-design/), [Headroom](/research/context/tools/02-headroom-design/), and [LemonCrow](/research/context/tools/10-lemoncrow-design/) source reviews.
+
+### Build, embed, adapt, or bundle
+
+| Capability | Preferred first move | When to build or extract |
+|---|---|---|
+| Configuration, compatibility, evidence, isolation | Build in Jackin, extending existing components | These contracts depend on Jackin's host and capsule model |
+| Structured transforms | Source-pin selected headroom-core APIs in an isolated worker | Upstream cannot meet a demonstrated feature, fidelity, or deployment boundary |
+| Shell filters | Evaluate RTK executable and request a pure-filter upstream API | Only selected licensed kernels, with copied regression fixtures and provenance |
+| Repository retrieval | Native exact tools versus restricted LeanCTX and LemonCrow arms | A backend fails measured recall, freshness, isolation, or host integration requirements |
+| Narration and reuse policy | Small role-specific assets or adapted instructions | Native delivery is simpler than installing another runtime |
+| Provider proxy | Optional independent experiment | Only when tool-boundary reach is insufficient and cache/auth conformance passes |
+
+Embedding all three Rust-capable packages is not automatically viable. RTK depends on bundled `rusqlite` 0.31 and Headroom on 0.40 in their reviewed manifests; packages linking incompatible native SQLite bindings may conflict in one dependency graph. Run a resolver/build spike rather than assuming different Rust packages always coexist. Process separation avoids that link boundary but introduces lifecycle costs. [RTK manifest](https://github.com/rtk-ai/rtk/blob/v0.49.0/Cargo.toml), [Headroom manifest](https://github.com/headroomlabs-ai/headroom/blob/v0.38.0/crates/headroom-core/Cargo.toml).
+
+### Best fit by actual waste
+
+If routine narration dominates, compare a minimal native brevity policy with Caveman's skill. If redundant implementation dominates, compare a restrained reuse-first policy with Ponytail. Do not optimize line count instead of requirement coverage.
+
+If large structured command results dominate, test qualified RTK families or selected Headroom transforms. If repeated repository exploration dominates, prioritize exact selection and compare LeanCTX with LemonCrow. If already-selected observations remain too large, evaluate compression next. Broad provider compression is a different boundary and should not be the starting assumption.
+
+### Evidence is not additive
+
+A full LemonCrow result includes its tools and persona; it cannot qualify a read-only Jackin backend. A Ponytail result cannot qualify a rewritten policy. A Headroom proxy result cannot qualify a direct Rust transform. Percentages from these configurations must never be added together to forecast a combined stack.
+
+## Implications for jackin❯
+
+The recommended target is **automatic, compatibility-qualified selection**, not an empty abstraction and not unconditional compression. Package reviewed components with Jackin; enable only transformations that satisfy a recorded host/version/content contract. Keep raw operation available and explain every bypass or disabled component.
+
+Retain native agent execution, editing, approvals, and authentication by default. Use replaceable backends rather than rebuilding entire products. The [implementation plan](/research/context/tools/11-jackin-integration/) gives concrete responsibilities and gates.
+
+## Limitations and unknowns
+
+The comparison does not establish that any candidate is fastest, cheapest, or safe for every task. API presence was inspected, not compiled. Independent current-release accepted-task evidence remains missing; [07 — Evidence](/research/context/tools/07-evidence-and-claims/) defines how to close that gap.
+
+## Sources
+
+Per-tool pages contain tagged source and release evidence. The matrix's recommendations are deductions from those boundaries, not measurements.
+
+## Related work
+
+- [Composition](/research/context/tools/06-combining/)
+- [Release register](/research/context/tools/08-current-release-register/)
+- [Engine reuse matrix](/research/context/engine/09-reuse-decision-matrix/)

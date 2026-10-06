@@ -1,0 +1,79 @@
+---
+title: "OrbStack isolated-machine CLI and compatibility"
+description: "Records the verified OrbStack isolated-machine CLI, mount, image-transfer, Docker, networking, and attach constraints."
+---
+
+## Summary
+
+OrbStack 2.2 exposes the core provisioning, resource, network-isolation, SSH-agent, and Docker controls needed for automation, while mount enforcement, file transfer, and terminal behavior remain unverified.
+
+## Question and scope
+
+Which isolated-machine operations are documented and automatable, and where would a backend depend on workarounds or unverified behavior?
+
+The verification cutoff is OrbStack 2.2, observed 2026-06-10.
+
+## Method
+
+The review used the [machine command documentation](https://docs.orbstack.dev/machines/commands), [cloud-init documentation](https://docs.orbstack.dev/machines/cloud-init), [file-sharing documentation](https://docs.orbstack.dev/machines/file-sharing), [networking documentation](https://docs.orbstack.dev/machines/network), [settings](https://docs.orbstack.dev/settings), release notes, and issue tracker.
+
+## Findings
+
+### Current CLI surface
+
+| Capability | Current evidence | Backend consequence |
+|---|---|---|
+| Create isolated machine | `orb create --isolated`; selective `--mount` syntax appears in issue [#2409](https://github.com/orbstack/orbstack/issues/2409) | Provisioning is scriptable. |
+| Cloud-init | `orb create -c/--user-data` is documented | Base daemon and package setup can be declarative. |
+| Execute command | `orb -m <name> <cmd>` is documented | Non-interactive control exists. |
+| Read-only selective mount | No documented suffix or flag | Treat share-layer read-only enforcement as unavailable until verified. |
+| Host/machine network blocking | `--isolate-network` is available | Provisioning can deny the machine's host-network access. |
+| SSH-agent forwarding | `--forward-ssh-agent` is opt-in | Provisioning can make credential exposure explicit. |
+| Per-machine resources | OrbStack 2.2 provides CPU, memory, and disk limits per machine | Capsule resource policy can map to machine limits once exact CLI forms are validated. |
+| Disable update checks | Maintainer says no plan in issue [#577](https://github.com/orbstack/orbstack/issues/577) | Backend behavior can move independently of repository pins. |
+| Push/pull files | Issue [#2469](https://github.com/orbstack/orbstack/issues/2469) documents a failure; current behavior is not verified | Image and artifact transfer remain an empirical question. |
+| PTY, resize, detach | Undocumented | Interactive attach remains a blocking empirical question. |
+
+### Image and machine provisioning
+
+A private Docker engine inside the machine requires a base distro, daemon installation, storage, and image delivery. Cloud-init can provision packages and services, and OrbStack 2.2 fixes Docker inside isolated machines. Current `orb push`/`pull` behavior and repeated image-launch behavior still need direct validation.
+
+### Mount transport
+
+Normal OrbStack machines expose macOS paths automatically. Isolated machines intentionally do not. Selective shares can restore chosen paths, but read-only enforcement was not documented at the cutoff. This makes source, worktree, credential, and artifact mounts a policy gap rather than a solved backend feature.
+
+Copying a workspace into machine storage would strengthen separation but introduces synchronization and dirty-worktree semantics. That is a different product model and belongs in roadmap design, not in this evidence chapter.
+
+### Docker and networking
+
+Running Docker inside the isolated machine preserves Compose and Testcontainers in principle. It also requires a persistent daemon data directory, port routing back to macOS, network policy, and lifecycle ownership. OrbStack's normal machine networking exposes services through localhost and `*.orb.local`; the interaction with `--isolate-network` needs verification.
+
+The private daemon remains on the same shared OrbStack kernel. It improves daemon and filesystem separation but does not change the kernel-isolation conclusion.
+
+### Attach and lifecycle
+
+`orb -m` proves command execution, not terminal equivalence. PTY allocation, raw input, SIGWINCH, signal delivery, detach, reconnect, exit status, and cleanup behavior are not established by the cited documentation.
+
+## Implications for jackin❯
+
+OrbStack isolated machines can provide an automatable productivity and filesystem boundary, but their shared kernel does not satisfy a per-workload kernel-isolation requirement. A backend evaluation must still validate terminal, transfer, mount, networking, and cleanup behavior.
+
+## Limitations and unknowns
+
+The study did not run `orb create --help` or a full interactive backend on an installed 2.2 host. Exact resource-limit syntax, transfer behavior, read-only mounts, and terminal semantics remain unknown.
+
+## Sources
+
+- [Machine commands](https://docs.orbstack.dev/machines/commands)
+- [Cloud-init](https://docs.orbstack.dev/machines/cloud-init)
+- [Machine networking](https://docs.orbstack.dev/machines/network)
+- [OrbStack settings](https://docs.orbstack.dev/settings)
+- [OrbStack release notes](https://docs.orbstack.dev/release-notes)
+- [Isolated-machine mount syntax](https://github.com/orbstack/orbstack/issues/2409)
+- [Broken isolated-machine push/pull](https://github.com/orbstack/orbstack/issues/2469)
+
+## Related work
+
+- [Architecture and security](/research/platform/isolation/orbstack-isolated-machines/01-architecture-and-security/)
+- [smolvm architecture and compatibility](/research/platform/isolation/smolvm-backend/01-architecture-and-compatibility/)
+- [Docker runtime hardening contract](/roadmap/docker-runtime-hardening-contract/)

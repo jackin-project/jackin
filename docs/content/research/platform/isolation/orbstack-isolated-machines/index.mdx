@@ -1,0 +1,48 @@
+---
+title: "OrbStack isolated machines"
+description: "Evaluates OrbStack isolated machines against jackin❯ kernel-isolation, automation, and macOS ARM requirements."
+---
+
+**Research state:** Current
+
+Verification cutoff: 2026-06-10. This dossier incorporates OrbStack 2.2 capabilities recorded in the [Apple Container 1.0 landscape](/research/platform/isolation/apple-container-1-0-landscape/).
+
+## Research question
+
+Can an OrbStack isolated machine provide a stronger jackin❯ backend while preserving private Docker workflows, automation, mounts, networking, and interactive lifecycle behavior?
+
+## Headline findings
+
+- OrbStack machines share OrbStack's Linux kernel. “Isolated” removes automatic host-filesystem integration and adds namespace separation; it does not create a hypervisor boundary per workload.
+- The current jackin❯ audience already runs Docker inside OrbStack's outer Linux VM. Adding an isolated machine creates another namespace layer inside the same kernel, so it does not close the kernel-escape gap.
+- OrbStack 2.2 provides per-machine CPU, memory, and disk limits, `--isolate-network`, opt-in `--forward-ssh-agent`, and working Docker in isolated machines.
+- File transfer, persistent storage, port forwarding, read-only mount enforcement, interactive attach, and cleanup still require empirical validation.
+- OrbStack isolated machines remain useful for reducing accidental host-file exposure. They should not be described as microVMs or selected when the requirement is a separate workload kernel.
+
+## Method and evidence
+
+The review used OrbStack architecture, machine, file-sharing, networking, settings, release-note, and issue-tracker evidence. [Architecture and security](/research/platform/isolation/orbstack-isolated-machines/01-architecture-and-security/) explains the boundary. [CLI and compatibility](/research/platform/isolation/orbstack-isolated-machines/02-cli-and-compatibility/) records the verified and unknown automation surfaces.
+
+No complete jackin❯ backend prototype or interactive attach test was performed.
+
+## Limitations and open questions
+
+- Can read-only selective mounts be enforced through a stable CLI contract?
+- What are the exact stable CLI forms for per-machine CPU, memory, and disk limits?
+- Does file transfer work reliably for isolated machines?
+- Does `orb -m` provide correct PTY allocation, resize propagation, signals, detach, and exit status?
+- Can private Docker storage and image distribution be made deterministic without weakening isolation?
+
+## How to read
+
+| Page | Purpose |
+|---|---|
+| [Architecture and security](/research/platform/isolation/orbstack-isolated-machines/01-architecture-and-security/) | Shared-kernel model, threat-boundary implications, and the reason for deferral. |
+| [CLI and compatibility](/research/platform/isolation/orbstack-isolated-machines/02-cli-and-compatibility/) | Verified CLI surface, mounts, image transfer, Docker, networking, and attach constraints. |
+
+## Related work
+
+- [smolvm backend](/research/platform/isolation/smolvm-backend/)
+- [Apple Container backend](/research/platform/isolation/apple-container-backend/)
+- [Agent isolation architecture](/research/platform/security/isolation-architecture/)
+- [Docker runtime hardening contract](/roadmap/docker-runtime-hardening-contract/)

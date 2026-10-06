@@ -1,0 +1,2139 @@
+/* Docs chrome — one identity, two palettes.
+
+   All --jk-* design tokens are scoped to [data-theme='dark'] and
+   [data-theme='light']. Every downstream rule uses those tokens, so
+   surfaces/text/borders auto-adapt to the active theme. Dark is the
+   fallback (matches our default-dark stance) and also the identity
+   anchor (landing palette). Light inverts surface/text while keeping
+   the green accent so the product reads as one site in either mode. */
+
+:root {
+  /* Fumadocs's gray ramp — surface grays for chrome, not text. Mapped
+     to Radix tokens from tempo-tokens.css so light-dark() handles both
+     modes. Overridden inside [data-theme='dark'] for finer control. */
+  --sl-color-gray-1: var(--color-gray2);
+  --sl-color-gray-2: var(--color-gray3);
+  --sl-color-gray-3: var(--color-gray5);
+  --sl-color-gray-4: var(--color-gray7);
+  --sl-color-gray-5: var(--color-gray9);
+  --sl-color-gray-6: var(--color-gray10);
+  --sl-color-gray-7: var(--color-gray11);
+
+  /* Fonts — injected via src/components/chrome/root route. */
+  --sl-font: 'Inter', system-ui, sans-serif;
+  --sl-font-mono: 'JetBrains Mono', 'SF Mono', monospace;
+  --sl-font-system-mono: 'JetBrains Mono', 'SF Mono', monospace;
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', monospace;
+
+  /* Layout dimensions — keep navigation compact so documentation owns the page. */
+  --sl-sidebar-width: 15.25rem;
+  --sl-content-width: 56rem;
+  --sl-nav-height: 3.5rem;
+
+  /* Brand accent — theme-aware so dark mode can keep the bright
+     phosphor green while light mode uses a juicy-but-usable mid-green.
+     Per-theme values live in the [data-theme='*'] blocks below; this
+     fallback matches the dark-mode default for pre-theme-set renders. */
+  --jk-brand:      #5cf07a;
+  --jk-brand-muted: #1d9e75;
+
+  /* Logo lockup: the mark is always a phosphor-green block with black
+     letters and a white chevron, on every surface and in both themes.
+     Square corners only — terminals cannot round, so neither do we. */
+  --jk-logo-block:   #00ff41;
+  --jk-logo-ink:     #0a0a0a;
+  --jk-logo-chevron: #ffffff;
+
+  /* Fallback --jk-* tokens (dark). Ensures tokens resolve before
+     data-theme gets applied to <html>. */
+  --jk-bg:         #0a0a0a;
+  --jk-bg-deep:    #050505;
+  --jk-panel:      #0f1110;
+  --jk-text:       #f4f7f5;
+  --jk-prose:      #dce4e0;
+  --jk-text-dim:   #9ca8a1;
+  --jk-text-ghost: #5e6a64;
+  --jk-accent:     #5cf07a;
+  --jk-accent-dim: #1d9e75;
+  --jk-ui:         rgba(244, 247, 245, 0.1);
+  --jk-ui-strong:  rgba(244, 247, 245, 0.22);
+  --jk-ui-subtle:  rgba(244, 247, 245, 0.05);
+  --jk-code-bg:    #050505;
+  --jk-code-radius: 6px;
+  --jk-code-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    inset 0 0 0 1px rgba(92, 138, 111, 0.2),
+    0 1px 1px rgba(0, 0, 0, 0.04),
+    0 16px 34px rgba(0, 0, 0, 0.26),
+    0 5px 14px rgba(0, 0, 0, 0.18);
+  --jk-sidebar-hover-bg: rgba(244, 247, 245, 0.055);
+  --jk-sidebar-hover-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06),
+    0 1px 1px rgba(0, 0, 0, 0.04);
+
+  --color-fd-background: var(--jk-bg);
+  --color-fd-foreground: var(--jk-text);
+  --color-fd-muted: var(--jk-panel);
+  --color-fd-muted-foreground: var(--jk-text-dim);
+  --color-fd-card: var(--jk-panel);
+  --color-fd-card-foreground: var(--jk-text);
+  --color-fd-popover: var(--jk-panel);
+  --color-fd-popover-foreground: var(--jk-text);
+  --color-fd-primary: var(--jk-accent);
+  --color-fd-primary-foreground: var(--jk-bg);
+  --color-fd-secondary: var(--jk-bg-deep);
+  --color-fd-secondary-foreground: var(--jk-text);
+  --color-fd-accent: var(--jk-panel);
+  --color-fd-accent-foreground: var(--jk-text);
+  --color-fd-border: var(--jk-ui);
+  --color-fd-ring: var(--jk-accent);
+  --fd-layout-width: 96rem;
+  --fd-sidebar-width: 15.25rem;
+  --jk-docs-rail-width: 216px;
+  --jk-docs-collapsed-rail-width: 10rem;
+}
+
+/* ==========================================================================
+   Dark mode — landing identity
+   ========================================================================== */
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --jk-bg:         #0a0a0a;
+  --jk-bg-deep:    #050505;
+  --jk-panel:      #0f1110;
+  --jk-text:       #f4f7f5;
+  --jk-prose:      #dce4e0;
+  --jk-text-dim:   #9ca8a1;
+  --jk-text-ghost: #5e6a64;
+  --jk-accent:     #5cf07a;
+  --jk-accent-dim: #1d9e75;
+  --jk-brand:      #5cf07a;   /* canonical bright chevron green */
+  --jk-brand-muted: #1d9e75;
+  --jk-ui:         rgba(244, 247, 245, 0.1);
+  --jk-ui-strong:  rgba(244, 247, 245, 0.22);
+  --jk-ui-subtle:  rgba(244, 247, 245, 0.05);
+
+  --sl-color-bg: var(--jk-bg);
+  --sl-color-bg-nav: var(--jk-bg);
+  --sl-color-bg-sidebar: var(--jk-bg);
+  --sl-color-black: var(--jk-bg-deep);
+  --sl-color-white: var(--jk-text);
+  --sl-color-text: var(--jk-text);
+  --sl-color-text-invert: var(--jk-bg);
+
+  --sl-color-gray-1: #121413;
+  --sl-color-gray-2: #1a1c1b;
+  --sl-color-gray-3: #2a2d2c;
+  --sl-color-gray-4: #3a3e3c;
+  --sl-color-gray-5: var(--jk-text-ghost);
+  --sl-color-gray-6: var(--jk-text-dim);
+  --sl-color-gray-7: var(--jk-text);
+
+  --sl-color-hairline: var(--jk-ui);
+  --sl-color-hairline-light: var(--jk-ui-subtle);
+  --sl-color-hairline-shade: var(--jk-ui-strong);
+
+  --sl-color-bg-inline-code: var(--jk-panel);
+
+  --sl-color-accent-low:  rgba(92, 240, 122, 0.15);
+  --sl-color-accent:      var(--jk-accent);
+  --sl-color-accent-high: var(--jk-accent);
+  --sl-color-text-accent: var(--jk-accent);
+
+  --color-fd-background: var(--jk-bg);
+  --color-fd-foreground: var(--jk-text);
+  --color-fd-muted: var(--jk-panel);
+  --color-fd-muted-foreground: var(--jk-text-dim);
+  --color-fd-card: var(--jk-panel);
+  --color-fd-card-foreground: var(--jk-text);
+  --color-fd-popover: var(--jk-panel);
+  --color-fd-popover-foreground: var(--jk-text);
+  --color-fd-primary: var(--jk-accent);
+  --color-fd-primary-foreground: var(--jk-bg);
+  --color-fd-secondary: var(--jk-bg-deep);
+  --color-fd-secondary-foreground: var(--jk-text);
+  --color-fd-accent: var(--jk-panel);
+  --color-fd-accent-foreground: var(--jk-text);
+  --color-fd-border: var(--jk-ui);
+  --color-fd-ring: var(--jk-accent);
+
+  /* Expressive-code frame — code blocks stay terminal-dark in both
+     modes; the custom frame rule below provides the visible depth. */
+  --ec-brdRad: var(--jk-code-radius);
+  --ec-brdCol: transparent;
+  --ec-frm-edActTabIndBtmCol: transparent;
+  --ec-frm-edActTabIndTopCol: transparent;
+  --ec-frm-edTabBarBrdBtmCol: transparent;
+  --ec-frm-edTabsMrgInlStart: 0;
+  --ec-frm-edTabsMrgBlkStart: 0;
+  --ec-frm-trmTtbBrdBtmCol: transparent;
+  --ec-frm-inlBrdCol: transparent;
+  --ec-frm-frameBoxShdCssVal: none;
+}
+
+/* ==========================================================================
+   Light mode — inverted surfaces, darker green accent for contrast
+   ========================================================================== */
+
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  --jk-bg:         #ffffff;
+  --jk-bg-deep:    #e8eaee;   /* recessed state (active toggle, pressed badge) — neutral */
+  --jk-panel:      #f4f5f7;   /* lifted surface (cards, pills, modals) — neutral grey */
+  --jk-text:       #15181c;
+  --jk-prose:      #262b30;
+  --jk-text-dim:   #535a61;
+  --jk-text-ghost: #828b93;
+  --jk-accent:     #0b774e;   /* AA on white (~5:1): links, active, borders, icons */
+  --jk-accent-dim: #0a5e3d;
+  --jk-brand:      #0b774e;   /* light = accent. Phosphor #5cf07a is dark-mode only;
+                                 no light surface renders it, so this resolves to
+                                 the AA accent (fixes TOC active, tabs, diagrams). */
+  --jk-brand-muted: #0b774e;
+  --jk-ui:         rgba(17, 24, 39, 0.1);   /* one neutral border family */
+  --jk-ui-strong:  rgba(17, 24, 39, 0.2);
+  --jk-ui-subtle:  rgba(17, 24, 39, 0.05);
+  --jk-code-bg:    #070807;
+  --jk-code-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 0 0 1px rgba(17, 24, 39, 0.14),
+    0 1px 1px rgba(0, 0, 0, 0.04),
+    0 16px 34px rgba(17, 24, 39, 0.12),
+    0 5px 14px rgba(17, 24, 39, 0.08);
+  --jk-sidebar-hover-bg: rgba(17, 24, 39, 0.05);
+  --jk-sidebar-hover-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.72),
+    0 1px 1px rgba(0, 0, 0, 0.04);
+
+  --sl-color-bg: var(--jk-bg);
+  --sl-color-bg-nav: var(--jk-bg);
+  --sl-color-bg-sidebar: var(--jk-bg);
+  --sl-color-black: var(--jk-bg);
+  --sl-color-white: var(--jk-text);
+  --sl-color-text: var(--jk-text);
+  --sl-color-text-invert: var(--jk-bg);
+
+  --sl-color-hairline: var(--jk-ui);
+  --sl-color-hairline-light: var(--jk-ui-subtle);
+  --sl-color-hairline-shade: var(--jk-ui-strong);
+
+  --sl-color-bg-inline-code: var(--jk-panel);
+
+  --sl-color-accent-low:  rgba(11, 119, 78, 0.14);
+  --sl-color-accent:      var(--jk-accent);
+  --sl-color-accent-high: var(--jk-accent);
+  --sl-color-text-accent: var(--jk-accent);
+
+  --color-fd-background: var(--jk-bg);
+  --color-fd-foreground: var(--jk-text);
+  --color-fd-muted: var(--jk-panel);
+  --color-fd-muted-foreground: var(--jk-text-dim);
+  --color-fd-card: var(--jk-panel);
+  --color-fd-card-foreground: var(--jk-text);
+  --color-fd-popover: #fbfbfc;
+  --color-fd-popover-foreground: var(--jk-text);
+  --color-fd-primary: var(--jk-accent);
+  --color-fd-primary-foreground: var(--jk-bg);
+  --color-fd-secondary: var(--jk-bg-deep);
+  --color-fd-secondary-foreground: var(--jk-text);
+  --color-fd-accent: var(--jk-panel);
+  --color-fd-accent-foreground: var(--jk-text);
+  --color-fd-border: var(--jk-ui);
+  --color-fd-ring: var(--jk-accent);
+
+  /* Light-mode expressive-code frame — the surface is still dark
+     (--jk-code-bg) so snippets read like terminal output. */
+  --ec-brdRad: var(--jk-code-radius);
+  --ec-brdCol: transparent;
+  --ec-frm-edActTabIndBtmCol: transparent;
+  --ec-frm-edActTabIndTopCol: transparent;
+  --ec-frm-edTabBarBrdBtmCol: transparent;
+  --ec-frm-edTabsMrgInlStart: 0;
+  --ec-frm-edTabsMrgBlkStart: 0;
+  --ec-frm-trmTtbBrdBtmCol: transparent;
+  --ec-frm-inlBrdCol: transparent;
+  --ec-frm-frameBoxShdCssVal: none;
+}
+
+body {
+  min-height: 100vh;
+  font-family: var(--sl-font);
+  font-weight: 400;
+  font-synthesis-weight: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  color: var(--jk-text);
+  background: var(--jk-bg);
+}
+
+/* Canonical brand lockup is a single inline SVG (see BrandMark.tsx) so every
+   placement — header, sidebar, mobile nav, landing, footer — is pixel-identical
+   and scales by the element's font-size. The wrapper only handles layout; the
+   green block, letters, and chevron all live inside the SVG. */
+.jk-brand-mark,
+.jk-site-title,
+.jk-sidebar-wordmark {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+  user-select: none;
+}
+
+.jk-brand-mark__svg-wrap {
+  display: inline-flex;
+}
+
+.jk-brand-mark__svg {
+  display: block;
+  height: 1.5em;
+  width: auto;
+}
+
+/* Variant switch: white-word mark on dark surfaces (default), dark-word mark on
+   white chrome in light mode. The hero canvas stays dark in light mode, so its
+   logo (.landing-logo) keeps the white-word variant. */
+.jk-brand-mark__svg--onlight {
+  display: none;
+}
+:root[data-theme='light'] .jk-brand-mark__svg--ondark {
+  display: none;
+}
+:root[data-theme='light'] .jk-brand-mark__svg--onlight {
+  display: block;
+}
+:root[data-theme='light'] .landing-logo .jk-brand-mark__svg--ondark {
+  display: block;
+}
+:root[data-theme='light'] .landing-logo .jk-brand-mark__svg--onlight {
+  display: none;
+}
+
+/* Lockup = mark with the "by tailrocks" byline stacked beneath it. */
+.jk-brand-mark--lockup {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.45em;
+}
+
+.jk-site-title {
+  font-size: 1.5rem;
+}
+
+.jk-brand-mark__byline {
+  font-family: var(--sl-font-mono);
+  font-size: 0.2em;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--jk-text-dim);
+  letter-spacing: 0;
+}
+
+.jk-social-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--jk-text-dim);
+  padding: 0.5rem;
+  margin: -0.5rem;
+  transition: color 0.15s;
+}
+
+.jk-social-link:hover {
+  color: var(--jk-brand);
+}
+
+.jk-sidebar-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  width: 100%;
+}
+
+.jk-sidebar-footer .jk-social-link {
+  margin-inline-end: -0.125rem;
+}
+
+.jk-theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  padding: 2px;
+  border: 1px solid var(--jk-ui);
+  border-radius: 0;
+  background: var(--jk-panel);
+}
+
+.jk-theme-toggle button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--jk-text-ghost);
+  cursor: pointer;
+  transition: color 0.15s, background-color 0.15s;
+}
+
+.jk-theme-toggle button:hover {
+  color: var(--jk-text);
+}
+
+.jk-theme-toggle button[aria-pressed='true'] {
+  color: var(--jk-accent);
+  background: color-mix(in srgb, var(--jk-accent) 16%, transparent);
+}
+
+.jk-page-title {
+  margin: 0;
+}
+
+.jk-page-description {
+  margin: 0.15rem 0 0 !important;
+}
+
+.jk-page-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.875rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--jk-ui);
+}
+
+/* Page-action buttons (Copy Markdown / Open) use the green accent like the rest. */
+.jk-page-actions button {
+  border-color: color-mix(in srgb, var(--jk-accent) 35%, transparent);
+  background: color-mix(in srgb, var(--jk-accent) 8%, transparent);
+  color: var(--jk-accent);
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.2s, color 0.15s;
+}
+.jk-page-actions button svg {
+  color: var(--jk-accent) !important;
+}
+.jk-page-actions button:hover,
+.jk-page-actions button:focus-visible,
+.jk-page-actions button[data-state='open'] {
+  background: color-mix(in srgb, var(--jk-accent) 16%, transparent);
+  border-color: var(--jk-accent);
+  color: var(--jk-accent);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--jk-accent) 22%, transparent);
+}
+
+.jk-page-footer {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+}
+
+.jk-page-footer > a:only-child.text-end {
+  grid-column: 2;
+}
+
+.jk-page-footer > a {
+  border: 0;
+  background: var(--jk-panel);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    inset 0 0 0 1px var(--jk-ui),
+    0 1px 1px rgba(0, 0, 0, 0.04);
+}
+
+.jk-page-footer > a:hover,
+.jk-page-footer > a:focus-visible {
+  background: var(--jk-sidebar-hover-bg);
+  box-shadow: inset 0 0 0 1px var(--jk-accent), 0 4px 16px color-mix(in srgb, var(--jk-accent) 18%, transparent);
+}
+/* Light: hover tints the panel green (a lift, not a wash to lighter grey) so both
+   cards hover identically and consistently with the green secondary-button tier. */
+:root[data-theme='light'] .jk-page-footer > a:hover,
+:root[data-theme='light'] .jk-page-footer > a:focus-visible {
+  background: color-mix(in srgb, var(--jk-accent) 6%, var(--jk-panel));
+  box-shadow:
+    inset 0 0 0 1px var(--jk-accent),
+    0 4px 14px color-mix(in srgb, var(--jk-accent) 12%, transparent);
+}
+
+:root[data-theme='light'] .jk-page-footer > a {
+  background: var(--jk-panel);
+  box-shadow:
+    inset 0 0 0 1px var(--jk-ui-strong),
+    0 1px 2px rgba(17, 24, 39, 0.04);
+}
+
+@media (max-width: 640px) {
+  .jk-page-footer {
+    grid-template-columns: 1fr !important;
+  }
+
+  .jk-page-footer > a:only-child.text-end {
+    grid-column: 1;
+  }
+}
+
+
+:root[data-theme='light'] [data-radix-popper-content-wrapper] > [data-side][data-align] {
+  border-color: rgba(17, 24, 39, 0.12);
+  background: rgba(247, 248, 246, 0.92);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 1px 1px rgba(0, 0, 0, 0.04),
+    0 18px 42px rgba(17, 24, 39, 0.12);
+  color: #1f2421;
+}
+
+:root[data-theme='light'] [data-radix-popper-content-wrapper] > [data-side][data-align] a:hover {
+  background: var(--jk-panel);
+  color: #111513;
+}
+
+:root[data-theme='dark'] [data-radix-popper-content-wrapper] > [data-side][data-align] {
+  border-color: rgba(244, 247, 245, 0.1);
+  background: rgba(15, 17, 16, 0.94);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    0 1px 1px rgba(0, 0, 0, 0.04),
+    0 18px 42px rgba(0, 0, 0, 0.34);
+  color: var(--jk-text);
+}
+
+:root[data-theme='dark'] [data-radix-popper-content-wrapper] > [data-side][data-align] a:hover {
+  background: rgba(244, 247, 245, 0.08);
+  color: var(--jk-text);
+}
+
+#nd-page :is(h1, h2, h3, h4) {
+  font-family: var(--sl-font);
+  letter-spacing: -0.02em;
+  font-weight: 700;
+}
+
+#nd-page h1 {
+  font-size: 2.75rem;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+
+#nd-page h2 {
+  color: color-mix(in oklab, var(--jk-accent) 40%, var(--jk-text));
+}
+
+#nd-page :not(pre) > code {
+  border: 1px solid var(--jk-ui);
+  background: var(--jk-panel);
+  color: var(--jk-accent);
+  border-radius: 0;
+  padding: 0.12em 0.35em;
+}
+
+#nd-page table {
+  width: 100%;
+  border: 1px solid var(--jk-ui);
+  border-radius: 0;
+  border-collapse: separate;
+  border-spacing: 0;
+  overflow: hidden;
+}
+
+#nd-page th {
+  background: var(--jk-panel);
+  color: var(--jk-text);
+}
+
+#nd-page :is(th, td) {
+  border-bottom: 1px solid var(--jk-ui-subtle);
+  padding: 0.65rem 0.85rem;
+}
+
+.jk-arch,
+.jk-layers {
+  margin: 1.5rem 0 2rem;
+  color: var(--jk-text);
+}
+
+.jk-arch-panel {
+  background: var(--jk-bg-deep);
+  border: 1px solid var(--jk-ui);
+  border-radius: 0;
+  overflow: hidden;
+}
+
+.jk-arch-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px;
+  background: var(--jk-panel);
+  border-bottom: 1px solid var(--jk-ui);
+}
+
+.jk-arch-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 0;
+  background: var(--jk-ui-strong);
+}
+
+.jk-arch-dot:first-child {
+  background: color-mix(in srgb, var(--jk-brand) 60%, var(--jk-text-ghost));
+}
+
+.jk-arch-title,
+.jk-layer-owner,
+.jk-arch-chip,
+.jk-arch-sub-label--mono,
+.jk-arch-link-label {
+  font-family: var(--sl-font-system-mono);
+}
+
+.jk-arch-title {
+  margin-left: auto;
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--jk-text-ghost);
+}
+
+.jk-arch-body {
+  padding: 22px 24px;
+}
+
+.jk-arch-section-label {
+  margin: 0 0 12px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--jk-text-dim);
+}
+
+.jk-arch-row,
+.jk-arch-sub-label,
+.jk-layer-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.jk-arch-sub {
+  position: relative;
+  padding-left: 20px;
+  margin-top: 14px;
+}
+
+.jk-arch-sub::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 4px;
+  bottom: 4px;
+  width: 1px;
+  background: var(--jk-ui);
+}
+
+.jk-arch-sub-label {
+  margin-bottom: 10px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--jk-text);
+}
+
+.jk-arch-sub-label--mono,
+.jk-arch-link {
+  color: var(--jk-brand);
+}
+
+.jk-arch-note,
+.jk-layer-owner {
+  color: var(--jk-text-ghost);
+  font-size: 0.8rem;
+}
+
+.jk-arch-chip {
+  padding: 4px 12px;
+  background: var(--jk-panel);
+  border: 1px solid var(--jk-ui);
+  border-radius: 0;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.jk-arch-chip--accent {
+  color: var(--jk-brand);
+  border-color: color-mix(in srgb, var(--jk-brand) 50%, var(--jk-ui));
+}
+
+.jk-arch-pair {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: stretch;
+  gap: 14px;
+}
+
+.jk-arch-service,
+.jk-layer {
+  background: var(--jk-panel);
+  border: 1px solid var(--jk-ui);
+}
+
+.jk-arch-service {
+  padding: 14px 16px;
+  border-radius: 0;
+  margin: 0;
+}
+
+.jk-arch-service-name,
+.jk-layer-title {
+  margin: 0 0 4px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--jk-text);
+}
+
+.jk-arch-service-role,
+.jk-arch-mount span,
+.jk-layer-items {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--jk-text-dim);
+}
+
+.jk-arch-link {
+  align-self: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.jk-arch-rule {
+  border: 0;
+  height: 1px;
+  background: var(--jk-ui);
+  margin: 22px 0;
+}
+
+.jk-arch-mounts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px 28px;
+}
+
+.jk-arch-mount {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.jk-arch-mount code {
+  color: var(--jk-brand);
+  background: transparent;
+  padding: 0;
+  font-size: 0.84rem;
+}
+
+.jk-layers-stack {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.25));
+}
+
+.jk-layer {
+  position: relative;
+  padding: 18px 22px 18px 26px;
+}
+
+.jk-layer + .jk-layer {
+  margin-top: -1px;
+}
+
+.jk-layer:first-child {
+  border-radius: 0;
+}
+
+.jk-layer:last-child {
+  border-radius: 0;
+}
+
+.jk-layer::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+}
+
+.jk-layer--derived::before {
+  background: var(--jk-brand);
+}
+
+.jk-layer--agent::before {
+  background: color-mix(in srgb, var(--jk-brand) 35%, var(--jk-text-ghost));
+}
+
+.jk-layer--base::before {
+  background: var(--jk-text-ghost);
+}
+
+.jk-layer-title-row {
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.jk-layer-items {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  column-gap: 24px;
+  row-gap: 4px;
+}
+
+.jk-layer-items li {
+  position: relative;
+  padding-left: 14px;
+}
+
+.jk-layer-items li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.6em;
+  width: 6px;
+  height: 1px;
+  background: var(--jk-text-ghost);
+}
+
+.jk-layer--derived .jk-layer-owner,
+.jk-layer--derived .jk-layer-items li::before {
+  color: var(--jk-brand);
+  background: var(--jk-brand);
+}
+
+/* ==========================================================================
+   Dotted grid backdrop — dark mode only
+   ========================================================================== */
+
+:root[data-theme='dark'] body {
+  background-color: var(--jk-bg);
+  background-image: radial-gradient(rgba(244,247,245,0.025) 1px, transparent 1px);
+  background-size: 28px 28px;
+  background-attachment: fixed;
+}
+
+/* ==========================================================================
+   Initial-load transition suppression — stops CSS transitions on
+   sidebar / TOC / pagination elements from animating color changes
+   when the initial data-theme flip happens in head. Class added by
+   chrome/root route, removed two animation frames after DOMReady.
+   ========================================================================== */
+
+html.theme-init,
+html.theme-init *,
+html.theme-init *::before,
+html.theme-init *::after {
+  transition: none !important;
+}
+
+/* ==========================================================================
+   Theme-change cross-fade — uses the View Transitions API.
+   chrome/ThemeToggle.tsx calls document.startViewTransition() around
+   the data-theme flip. The browser snapshots the page pre/post and
+   animates between them, which avoids the per-property transition bugs
+   on inherited colors (child elements previously snapped abruptly when
+   their parent's color transition ended).
+   ========================================================================== */
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 320ms;
+  animation-timing-function: ease;
+}
+
+/* Cross-fade instead of the default slide */
+::view-transition-old(root) {
+  animation-name: jk-theme-fade-out;
+}
+::view-transition-new(root) {
+  animation-name: jk-theme-fade-in;
+}
+
+@keyframes jk-theme-fade-out {
+  to { opacity: 0; }
+}
+
+@keyframes jk-theme-fade-in {
+  from { opacity: 0; }
+}
+
+/* ==========================================================================
+   Typography — landing-matched weight + tracking on headings
+   ========================================================================== */
+
+.sl-markdown-content {
+  color: var(--jk-prose);
+  font-weight: 400;
+}
+
+.sl-markdown-content :is(p, li, blockquote, td):not(:where(.not-content *)) {
+  font-weight: 400;
+}
+
+.sl-markdown-content :is(h1, h2, h3, h4) {
+  font-family: var(--sl-font);
+  letter-spacing: -0.02em;
+  font-weight: 700;
+}
+
+.sl-markdown-content h1 {
+  font-size: 2.75rem;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+
+/* h2 — muted green blend. Auto-works in both modes because --jk-text
+   flips (white in dark → dark in light) and text-accent flips too. */
+.sl-markdown-content h2 {
+  font-size: 2rem;
+  line-height: 1.2;
+  color: color-mix(in oklab, var(--sl-color-text-accent) 40%, var(--jk-text));
+}
+
+.sl-markdown-content h3 {
+  font-size: 1.375rem;
+  line-height: 1.3;
+}
+
+.sl-markdown-content h4 {
+  font-size: 1.125rem;
+  line-height: 1.4;
+}
+
+/* ==========================================================================
+   Lists — Tailwind's preflight (from @import 'tailwindcss') strips
+   list-style/padding from ul/ol globally. Restore them inside prose so
+   bullet/number markers reappear and items don't run into surrounding
+   paragraphs as continuous text.
+   ========================================================================== */
+
+.sl-markdown-content :is(ul, ol):not(:where(.not-content *, .sl-steps, .sl-steps *)) {
+  list-style: revert;
+  padding-inline-start: 1.5rem;
+  margin-block: 1rem;
+}
+
+.sl-markdown-content :is(ul, ol):not(:where(.not-content *, .sl-steps, .sl-steps *)) :is(ul, ol) {
+  margin-block: 0.25rem;
+}
+
+.sl-markdown-content li:not(:where(.not-content *, .sl-steps > li)) {
+  margin-block: 0.35rem;
+  padding-inline-start: 0.25rem;
+}
+
+.sl-markdown-content li:not(:where(.sl-steps > li))::marker {
+  /* Ordered-list numbers + unordered bullets use the body text color so
+     they read as part of the flow — white in dark, black in light. */
+  color: var(--jk-prose);
+}
+
+/* <Steps> number badge — solid filled circle for a bolder structural
+   marker. Inverted per theme: white fill + dark number in dark mode,
+   near-black fill + white number in light mode. High contrast, plain,
+   and distinct from the brand-green accent system. */
+.sl-markdown-content .sl-steps > li::before {
+  color: var(--jk-bg);
+  background-color: var(--jk-text);
+  box-shadow: none;
+  font-weight: 700;
+}
+
+/* ==========================================================================
+   Tables — Fumadocs defaults to rows separated only by a full-weight
+   grey border from --sl-color-gray-5 with no cell padding on the first
+   column. In our palette the border renders heavy and the missing
+   left padding floats the first column out against the body text.
+   Replace with a bordered, hairline-ruled table with a subtle header bg.
+   ========================================================================== */
+
+.sl-markdown-content table:not(:where(.not-content *)) {
+  /* Fumadocs defaults the table to display: block + overflow: auto for
+     responsive scrolling, but that breaks the table layout — thead/tbody
+     shrink to content width instead of filling the available row space.
+     Force display: table so children behave as table-header-group /
+     table-row-group and width: 100% actually stretches them. */
+  display: table;
+  width: 100%;
+  table-layout: auto;
+  border: 1px solid color-mix(in srgb, var(--jk-text) 13%, transparent);
+  border-radius: 0;
+  border-collapse: separate;
+  border-spacing: 0;
+  overflow: hidden;
+  margin-block: 1.25rem;
+}
+
+.sl-markdown-content :is(th, td):not(:where(.not-content *)) {
+  border-bottom: 1px solid var(--jk-ui);
+  padding: 0.6rem 1rem;
+  vertical-align: top;
+}
+
+/* Override Fumadocs's zero first/last inline-padding — we want even
+   gutters inside the bordered table. */
+.sl-markdown-content :is(th:first-child, td:first-child):not(:where(.not-content *)) {
+  padding-inline-start: 1rem;
+}
+.sl-markdown-content :is(th:last-child, td:last-child):not(:where(.not-content *)) {
+  padding-inline-end: 1rem;
+}
+
+/* Drop the bottom border on the last row so it doesn't double with
+   the outer table border. */
+.sl-markdown-content tr:last-child :is(th, td):not(:where(.not-content *)) {
+  border-bottom: 0;
+}
+
+.sl-markdown-content thead:not(:where(.not-content *)) {
+  background: color-mix(in srgb, var(--jk-text) 7%, var(--jk-panel));
+}
+
+.sl-markdown-content th:not(:where(.not-content *)) {
+  color: var(--jk-text);
+  border-bottom-color: color-mix(in srgb, var(--jk-text) 18%, transparent);
+  font-size: 0.75rem;
+  font-weight: 750;
+  letter-spacing: 0.06em;
+  text-align: start;
+  text-transform: uppercase;
+}
+
+:root[data-theme='light'] .sl-markdown-content table:not(:where(.not-content *)) {
+  background: #ffffff;
+  border-color: var(--jk-ui);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.78),
+    0 1px 1px rgba(17, 24, 39, 0.03);
+}
+
+:root[data-theme='light'] .sl-markdown-content table :is(th, td):not(:where(.not-content *)) {
+  border-bottom-color: var(--jk-ui);
+}
+
+:root[data-theme='light'] .sl-markdown-content thead:not(:where(.not-content *)) {
+  background: var(--jk-panel);
+}
+
+:root[data-theme='light'] .sl-markdown-content th:not(:where(.not-content *)) {
+  border-bottom-color: var(--jk-ui-strong);
+  color: var(--jk-prose);
+}
+
+.sl-markdown-content td:not(:where(.not-content *)) {
+  color: var(--jk-prose);
+  font-size: 0.9375rem;
+}
+
+/* ==========================================================================
+   Inline code — panel chip, monospace
+   ========================================================================== */
+
+.sl-markdown-content :not(a, h1, h2, h3, h4, h5, h6) > code:not(:where(.not-content *)) {
+  color: var(--jk-text);
+  background: var(--jk-panel);
+  border: 1px solid var(--jk-ui);
+  border-radius: 0;
+  padding: 0.125em 0.4em;
+  font-size: 0.875em;
+  font-family: var(--sl-font-mono);
+}
+
+.sl-markdown-content a > code {
+  color: var(--sl-color-text-accent) !important;
+}
+
+/* ==========================================================================
+   Early-development warning — visible, but quiet enough for doc flow.
+   ========================================================================== */
+
+.jk-early-development-notice {
+  display: block;
+  background: #2a1a07;
+  border: 0;
+  border-radius: 0;
+  color: #fff7ed;
+  padding: 18px 20px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    inset 0 0 0 1px rgba(251, 191, 36, 0.13),
+    0 16px 36px rgba(0, 0, 0, 0.18);
+}
+
+.jk-early-development-notice-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  color: #fbbf24;
+  font-family: var(--sl-font-mono);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.jk-early-development-notice p {
+  margin: 0;
+  color: #f4d6a5;
+  font-size: 16px;
+  line-height: 1.55;
+}
+
+.jk-early-development-notice strong {
+  color: #fff8e7;
+}
+
+:root[data-theme='light'] .jk-early-development-notice {
+  background: color-mix(in srgb, #d97706 9%, var(--jk-bg));
+  color: #2f1d05;
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, #d97706 28%, transparent),
+    0 1px 2px rgba(17, 24, 39, 0.04);
+}
+
+:root[data-theme='light'] .jk-early-development-notice-label {
+  color: #8a4b05;
+}
+
+:root[data-theme='light'] .jk-early-development-notice p {
+  color: #4a2b06;
+}
+
+:root[data-theme='light'] .jk-early-development-notice strong {
+  color: #241104;
+}
+
+/* ==========================================================================
+   Sidebar — Fumadocs page tree text, hover state, and active pill.
+   ========================================================================== */
+
+@media (min-width: 768px) {
+  #nd-docs-layout {
+    --fd-sidebar-width: 15.25rem !important;
+  }
+
+  [data-sidebar-placeholder] {
+    --fd-sidebar-width: 15.25rem !important;
+  }
+
+  #nd-page {
+    max-width: 980px;
+  }
+
+  #nd-docs-layout[data-sidebar-collapsed='true'] #nd-page {
+    max-width: 1180px;
+  }
+}
+
+@media (min-width: 1280px) {
+  #nd-docs-layout {
+    --fd-toc-width: var(--jk-docs-rail-width) !important;
+  }
+
+  #nd-toc,
+  #nd-toc-placeholder {
+    --fd-toc-width: var(--jk-docs-rail-width) !important;
+  }
+
+  #nd-docs-layout[data-sidebar-collapsed='true'] {
+    --fd-layout-width: 105rem !important;
+    --fd-toc-width: var(--jk-docs-collapsed-rail-width) !important;
+  }
+
+  #nd-docs-layout[data-sidebar-collapsed='true'] #nd-toc,
+  #nd-docs-layout[data-sidebar-collapsed='true'] #nd-toc-placeholder {
+    --fd-toc-width: var(--jk-docs-collapsed-rail-width) !important;
+  }
+
+  #nd-docs-layout[data-sidebar-collapsed='true'] [data-sidebar-placeholder] {
+    --fd-sidebar-width: var(--jk-docs-collapsed-rail-width) !important;
+    width: var(--jk-docs-collapsed-rail-width) !important;
+    flex-basis: var(--jk-docs-collapsed-rail-width) !important;
+  }
+}
+
+@media (min-width: 1536px) {
+  #nd-docs-layout[data-sidebar-collapsed='true'] {
+    --fd-layout-width: 105rem;
+  }
+}
+
+/* Match the layout's sidebar column (15.25rem, set on #nd-docs-layout). When
+   this was 18rem the sidebar *content* was wider than its column, overflowing ~44px
+   off the left edge and clipping the logo + nav labels (worse as the window
+   narrows). Keep both in lockstep. */
+#nd-sidebar:not([data-collapsed='true']) {
+  --fd-sidebar-width: 15.25rem;
+}
+
+#nd-sidebar[data-collapsed='true'][data-hovered='true'] {
+  --fd-sidebar-width: 15.25rem;
+}
+
+#nd-sidebar:not([data-collapsed='true']) > div:first-child,
+#nd-sidebar:not([data-collapsed='true']) > div:last-child {
+  padding-inline-start: 0 !important;
+  padding-inline-end: 0.375rem !important;
+}
+
+#nd-sidebar:not([data-collapsed='true']) [data-radix-scroll-area-viewport] {
+  /* Small left gutter so nav rows + their hover blocks aren't flush against the
+     screen edge (combined with the per-level insets below, top-level rows align
+     with the 16px header/search gutter). */
+  padding-inline-start: 0.5rem !important;
+  padding-inline-end: 0.375rem !important;
+}
+
+#nd-sidebar[data-collapsed='true'] > div:first-child,
+#nd-sidebar[data-collapsed='true'] > div:last-child,
+#nd-sidebar[data-collapsed='true'] [data-radix-scroll-area-viewport] {
+  padding-inline-start: 1.25rem !important;
+}
+
+#nd-sidebar a[data-active],
+#nd-sidebar button[data-state] {
+  color: var(--jk-text-dim);
+  border-radius: 0;
+  padding-block: 0.35rem !important;
+  transition: color 0.12s, background-color 0.12s, box-shadow 0.12s;
+}
+
+#nd-sidebar [class~='gap-0.5'] {
+  gap: 0.125rem !important;
+}
+
+#nd-sidebar [class~='pt-0.5'] {
+  padding-top: 0.125rem !important;
+}
+
+#nd-sidebar [class~='mt-6'] {
+  margin-top: 1rem !important;
+}
+
+#nd-sidebar:not([data-collapsed='true']) :is(a, button, p)[style*='calc(2 * var(--spacing))'] {
+  padding-inline-start: 0.5rem !important;
+}
+
+#nd-sidebar:not([data-collapsed='true']) :is(a, button, p)[style*='calc(5 * var(--spacing))'] {
+  padding-inline-start: 1rem !important;
+}
+
+#nd-sidebar:not([data-collapsed='true']) :is(a, button, p)[style*='calc(8 * var(--spacing))'] {
+  padding-inline-start: 1.5rem !important;
+}
+
+#nd-sidebar:not([data-collapsed='true']) :is(a, button, p)[style*='calc(11 * var(--spacing))'] {
+  padding-inline-start: 2rem !important;
+}
+
+#nd-sidebar:not([data-collapsed='true']) [class*='before:inset-s-2.5']::before {
+  inset-inline-start: 0.5rem !important;
+}
+
+/* Hover is a faint green wash — a lighter version of the active item's green
+   wash — so the whole sidebar shares one brand/green language. fumadocs'
+   hover:bg-fd-accent (= the sidebar surface in light) is overridden here. Same
+   concept in both themes; --jk-accent adapts (#5cf07a dark, #0b774e light). */
+#nd-sidebar a:hover,
+#nd-sidebar a:focus-visible,
+#nd-sidebar a[data-active]:hover,
+#nd-sidebar a[data-active]:focus-visible,
+#nd-sidebar button[data-state]:hover,
+#nd-sidebar button[data-state]:focus-visible {
+  color: var(--jk-text);
+  background-color: color-mix(in srgb, var(--jk-accent) 8%, transparent);
+  box-shadow: none;
+}
+
+/* Section ancestor (the folder-index leaf fumadocs flags `aria-current`
+   while you browse a child): only the true current page gets the wash + bar,
+   so the ancestor stays quiet — a faint brand text tint, no background, no
+   bar — to mark "you're in this section" without reading as a 2nd selection. */
+#nd-sidebar a:is([data-status='active'], [aria-current='page']):not([data-active='true']) {
+  color: color-mix(in oklab, var(--jk-brand) 45%, var(--jk-text-dim));
+  font-weight: 400;
+}
+
+#nd-sidebar a:is([data-status='active'], [aria-current='page']):not([data-active='true']):hover,
+#nd-sidebar a:is([data-status='active'], [aria-current='page']):not([data-active='true']):focus {
+  color: color-mix(in oklab, var(--jk-brand) 70%, var(--jk-text));
+  background-color: var(--jk-sidebar-hover-bg);
+}
+
+/* Selected page: quiet brand treatment (green text, faint green wash, thin
+   accent bar) — matches the status-active style instead of the old heavy
+   solid-fill pill. Font family/weight left as-is on purpose. */
+#nd-sidebar a[data-active='true'],
+#nd-sidebar a[data-active='true']:hover,
+#nd-sidebar a[data-active='true']:focus {
+  color: color-mix(in oklab, var(--jk-brand) 76%, var(--jk-text));
+  background-color: color-mix(in srgb, var(--jk-brand) 12%, transparent);
+  box-shadow: none;
+  font-weight: 400;
+}
+
+:root[data-theme='light'] #nd-sidebar a[data-active='true'],
+:root[data-theme='light'] #nd-sidebar a[data-active='true']:hover,
+:root[data-theme='light'] #nd-sidebar a[data-active='true']:focus {
+  color: var(--jk-brand-muted);
+}
+
+/* The active left bar is left to fumadocs' own per-item rule
+   (data-[active=true]:before:*, positioned per indent via before:inset-s-2.5 →
+   remapped to 0.5rem above). A single fixed-inset bar here mispositioned it on
+   top-level items (e.g. the "Overview" root index), so it's not overridden. */
+
+/* ==========================================================================
+   Mobile menu footer (social icons + theme toggle + language select).
+   Fumadocs draws a 1px top border via .mobile-preferences { border-top:
+   ... var(--sl-color-gray-6) } which reads as a stray line hanging at
+   the bottom of the menu. Dropped in both themes — the sidebar's last
+   item already provides enough visual closure.
+   ========================================================================== */
+
+.mobile-preferences {
+  border-top: 0 !important;
+}
+
+/* ==========================================================================
+   Right-rail outline — follows Fumadocs's own quiet TOC pattern:
+   visible list icon, muted label, grey spine, accent only on active branch.
+   ========================================================================== */
+
+#nd-toc {
+  --jk-toc-wordmark-size: clamp(48px, 4.4vw, 64px);
+  width: 90% !important;
+  padding-inline-end: 0.625rem !important;
+}
+
+#nd-toc h3 {
+  font-family: var(--sl-font);
+  font-size: 0.8125rem;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--jk-text-ghost);
+  font-weight: 500;
+  margin-bottom: 0.85rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+#nd-toc h3 svg {
+  display: block;
+  width: 0.875rem;
+  height: 0.875rem;
+  color: var(--jk-text-ghost);
+  opacity: 0.8;
+}
+
+#nd-toc a {
+  border-radius: 0;
+  background: transparent;
+  color: var(--jk-text-dim);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  position: relative;
+  z-index: 1;
+  transition: color 0.12s, background-color 0.12s;
+  padding-block: 0.285rem;
+  padding-inline: 0.75rem 0.5rem;
+}
+
+#nd-toc a[class*='ps-3'] {
+  padding-inline-start: 0.75rem;
+}
+
+#nd-toc a[class*='ps-6'] {
+  margin-inline-start: 0.75rem;
+  padding-inline-start: 0.75rem;
+}
+
+#nd-toc a[class*='ps-8'] {
+  margin-inline-start: 0.75rem;
+  padding-inline-start: 1.3rem;
+}
+
+#nd-toc a:hover {
+  color: var(--jk-text);
+  background: color-mix(in srgb, var(--jk-brand) 6%, transparent);
+}
+
+#nd-toc a[data-active='true'] {
+  color: var(--jk-brand);
+  background: transparent;
+  font-weight: 600;
+}
+
+#nd-toc [class*='border-s'] {
+  position: relative;
+  z-index: 1;
+  border-inline-start-width: 0;
+  border-inline-start-color: transparent;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+#nd-toc div.relative > .absolute.inset-y-0 {
+  display: block;
+  pointer-events: none;
+  inset-inline-start: 0 !important;
+  width: 100% !important;
+  border-radius: 0;
+  background: rgba(255, 255, 255, 0.075) !important;
+  box-shadow: 0 1px 2px color-mix(in srgb, #000 4%, transparent);
+  clip-path: polygon(
+    0 calc(var(--track-top, 0px) - 0.3125rem),
+    100% calc(var(--track-top, 0px) - 0.3125rem),
+    100% calc(var(--track-bottom, 0px) + 0.3125rem),
+    0 calc(var(--track-bottom, 0px) + 0.3125rem)
+  ) !important;
+  opacity: 0.92;
+  z-index: 0;
+}
+
+:root[data-theme='light'] #nd-toc div.relative > .absolute.inset-y-0 {
+  background: color-mix(in srgb, #dfe7f0 64%, #ffffff) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.72),
+    0 1px 2px rgba(17, 24, 39, 0.04);
+}
+
+#nd-toc a[class*='ps-6'],
+#nd-toc a[class*='ps-8'] {
+  border-inline-start: 1px solid color-mix(in srgb, var(--jk-text) 13%, transparent);
+  border-radius: 0;
+}
+
+#nd-toc a[class*='ps-6']:hover,
+#nd-toc a[class*='ps-8']:hover {
+  border-inline-start-color: color-mix(in srgb, var(--jk-text) 24%, transparent);
+}
+
+#nd-toc a[class*='ps-6'][data-active='true'],
+#nd-toc a[class*='ps-8'][data-active='true'] {
+  border-inline-start-color: color-mix(in srgb, var(--jk-brand) 72%, var(--jk-ui));
+}
+
+#nd-toc [class*='border-s']:has(a[data-active='true']) {
+  border-inline-start-width: 0;
+  border-inline-start-color: transparent;
+}
+
+#nd-toc [class*='border-s']:has(a:hover) {
+  border-inline-start-color: transparent;
+}
+
+/* Decorative wordmark at the foot of the TOC rail. Uses the generated asset
+   (public/brand/jackin-wordmark.svg) so it's the same mark as everywhere else —
+   never a hand-typed glyph. */
+#nd-toc::after {
+  content: "";
+  display: block;
+  margin-top: auto;
+  margin-bottom: 1rem;
+  width: 100%;
+  height: var(--jk-toc-wordmark-size);
+  background: url("/brand/jackin-wordmark.svg") left bottom / auto 100% no-repeat;
+  pointer-events: none;
+  user-select: none;
+}
+/* Light mode: use the dark-word variant so the watermark isn't an invisible
+   white word on white. */
+:root[data-theme='light'] #nd-toc::after {
+  background-image: url("/brand/jackin-wordmark-onlight.svg");
+}
+
+/* ==========================================================================
+   Header / top nav
+   ========================================================================== */
+
+header.header {
+  border-bottom: 1px solid var(--sl-color-hairline);
+  backdrop-filter: blur(10px);
+  background: color-mix(in oklab, var(--sl-color-bg-nav) 85%, transparent);
+}
+
+/* ==========================================================================
+   Site title — wordmark styles live in chrome/SiteTitle.tsx
+   ========================================================================== */
+
+.site-title {
+  font-family: var(--sl-font-mono);
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--sl-color-white);
+}
+
+/* ==========================================================================
+   Body links — green with underline-on-hover
+   ========================================================================== */
+
+:is(.sl-markdown-content, .prose) a:not(.sl-anchor-link, :where(.not-content *, .not-prose *)) {
+  color: var(--sl-color-text-accent);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.1s;
+}
+
+:is(.sl-markdown-content, .prose) a:not(.sl-anchor-link, :where(.not-content *, .not-prose *)):hover {
+  border-bottom-color: var(--sl-color-text-accent);
+}
+
+:is(.sl-markdown-content, .prose) a:is([href^='http://'], [href^='https://']):not(
+  .sl-anchor-link,
+  [href^='https://jackin.tailrocks.com'],
+  [href^='http://jackin.tailrocks.com'],
+  :where(.not-content *, .not-prose *)
+)::after {
+  content: '';
+  display: inline-block;
+  width: 0.82em;
+  height: 0.82em;
+  margin-inline-start: 0.22em;
+  vertical-align: -0.08em;
+  background-color: currentColor;
+  opacity: 0.78;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.25' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 3h6v6'/%3E%3Cpath d='M10 14 21 3'/%3E%3Cpath d='M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+:is(.sl-markdown-content, .prose) a:is([href^='http://'], [href^='https://']):not(
+  .sl-anchor-link,
+  [href^='https://jackin.tailrocks.com'],
+  [href^='http://jackin.tailrocks.com'],
+  :where(.not-content *, .not-prose *)
+):hover::after {
+  opacity: 1;
+}
+
+/* Heading anchor-link icon */
+.sl-markdown-content .sl-heading-wrapper {
+  --sl-anchor-icon-gap: 12px;
+}
+
+.sl-markdown-content a.sl-anchor-link {
+  border-bottom: 0;
+  text-decoration: none;
+  color: var(--jk-text-ghost);
+  transition: color 0.1s;
+}
+
+.sl-markdown-content a.sl-anchor-link:hover,
+.sl-markdown-content a.sl-anchor-link:focus {
+  color: var(--sl-color-text-accent);
+}
+
+/* ==========================================================================
+   MDX <Tabs> — Fumadocs's default inactive tab text resolves through
+   --sl-color-gray-3 which we remap to a dark surface gray, so it read
+   too dim on both themes. Override with landing-tone dim/bright text
+   and a subtle hairline bottom border; active tab carries the 2px
+   green underline via --sl-tab-color-border.
+   ========================================================================== */
+
+/* Tab underline architecture:
+   - Grey baseline is a border-bottom on [role='tablist']. Because the
+     tablist itself scrolls, the border spans the full tab row and
+     appears under every tab at every horizontal scroll position.
+   - Green active indicator is a pseudo-element on the active <a>,
+     positioned at bottom: -2px so it overlaps the tablist's border-bottom
+     exactly. z-index ordering paints the green on top.
+
+   Earlier attempts using .tablist-wrapper::after rendered the grey line
+   at the wrapper's visible width only — when tabs overflowed and user
+   scrolled, the rightmost tabs ended up past the line. */
+.sl-markdown-content [data-orientation='horizontal']:has(> [role='tablist']) {
+  border: 0;
+  background: color-mix(in srgb, var(--jk-brand) 5%, var(--jk-panel));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    inset 0 0 0 1px color-mix(in srgb, var(--jk-brand) 14%, transparent),
+    0 1px 1px rgba(0, 0, 0, 0.04);
+}
+
+:root[data-theme='light'] .sl-markdown-content [data-orientation='horizontal']:has(> [role='tablist']) {
+  background: color-mix(in srgb, var(--jk-brand) 7%, var(--jk-bg));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.88),
+    inset 0 0 0 1px color-mix(in srgb, var(--jk-brand) 18%, transparent),
+    0 1px 1px rgba(0, 0, 0, 0.04),
+    0 12px 26px color-mix(in srgb, var(--jk-brand) 9%, transparent);
+}
+
+.sl-markdown-content [role='tablist'] {
+  gap: 0.35rem;
+  border-bottom: 0;
+  padding-block: 0.5rem;
+}
+
+:root[data-theme='light'] .sl-markdown-content [role='tablist'] {
+  border-bottom-color: transparent;
+}
+
+.sl-markdown-content .tab > [role='tab'] {
+  --sl-tab-color-border: transparent;
+  color: var(--jk-text-dim);
+  transition: color 0.15s, background-color 0.15s, box-shadow 0.15s;
+  /* Single-line labels; long labels scroll horizontally via
+     .tablist-wrapper rather than wrapping and creating a staircase
+     underline. */
+  white-space: nowrap;
+  padding: 0.45rem 0.85rem;
+  font-size: 0.875rem;
+  position: relative;
+  border-radius: 0;
+  border-bottom: 0;
+  box-shadow: none;
+}
+
+.sl-markdown-content .tab > [role='tab']:hover {
+  color: var(--jk-text);
+  background: color-mix(in srgb, var(--jk-brand) 8%, transparent);
+}
+
+.sl-markdown-content .tab > [role='tab'][aria-selected='true'] {
+  color: var(--sl-color-text-invert);
+  background: var(--jk-accent);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.13),
+    0 1px 1px rgba(0, 0, 0, 0.04);
+  font-weight: 600;
+}
+
+:root[data-theme='light'] .sl-markdown-content .tab > [role='tab'][aria-selected='true'] {
+  color: #ffffff;
+}
+
+/* Green indicator overlaps the tablist's border-bottom exactly — tab
+   bottom sits at tablist content-box bottom; ::after at bottom: -2px
+   reaches into the border-bottom area. z-index paints green over grey. */
+.sl-markdown-content .tab > [role='tab'][aria-selected='true']::after {
+  display: none;
+}
+
+/* ==========================================================================
+   Tabs in chip form — activated only when the tablist would overflow
+   its container (see the inline ResizeObserver script in root route
+   which toggles [data-overflow] on .tablist-wrapper). Horizontal
+   scrolling tabs hide labels off-screen and make the active indicator
+   hard to spot; chips keep every label visible at every width.
+   ========================================================================== */
+
+.sl-markdown-content .tablist-wrapper[data-overflow] {
+  overflow: visible;
+  border-bottom: 0;
+}
+
+.sl-markdown-content .tablist-wrapper[data-overflow] [role='tablist'] {
+  flex-wrap: wrap;
+  gap: 6px;
+  border-bottom: 0;
+}
+
+.sl-markdown-content .tablist-wrapper[data-overflow] .tab > [role='tab'] {
+  border: 1px solid var(--jk-ui-strong);
+  border-radius: 0;
+  background: var(--jk-panel);
+  padding: 0.35rem 0.875rem;
+  font-size: 0.8125rem;
+  transition: color 0.15s, border-color 0.15s, background-color 0.15s;
+  white-space: normal;
+}
+
+.sl-markdown-content .tablist-wrapper[data-overflow] .tab > [role='tab']:hover {
+  border-color: var(--jk-text-dim);
+  color: var(--jk-text);
+}
+
+.sl-markdown-content .tablist-wrapper[data-overflow] .tab > [role='tab'][aria-selected='true'] {
+  background: var(--jk-brand);
+  border-color: var(--jk-brand);
+  color: var(--jk-bg);
+}
+
+/* No underline on chip form — the fill communicates active state. */
+.sl-markdown-content .tablist-wrapper[data-overflow] .tab > [role='tab'][aria-selected='true']::after {
+  display: none;
+}
+
+/* Hide the scrollbar on the tablist wrapper — it's a minor scroll axis
+   and the scrollbar chrome fights the clean underline look. Users can
+   still swipe/scroll horizontally on touch; desktop shift-wheels.
+   No mask-image fade — it always-clips the last tab even when content
+   fits, which made short tab rows look truncated on mobile. */
+.sl-markdown-content .tablist-wrapper {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  -webkit-overflow-scrolling: touch;
+  position: relative;
+}
+.sl-markdown-content .tablist-wrapper::-webkit-scrollbar {
+  display: none;
+}
+
+/* ==========================================================================
+   Code blocks — terminal-dark panel, no chrome or tab bar
+   ========================================================================== */
+
+.expressive-code .frame {
+  box-shadow: var(--jk-code-shadow);
+  border: 0 !important;
+  border-radius: 0;
+  overflow: hidden;
+  /* Code blocks keep a dark surface in BOTH page modes:
+     - Dark mode: slightly deeper than the page (recessed feel)
+     - Light mode: high-contrast dark block against the white page
+     A stacked inset/outer shadow keeps the edge sharp without a gray
+     border. */
+  background: var(--jk-code-bg);
+  color-scheme: dark;
+}
+
+.expressive-code .frame pre {
+  background: var(--jk-code-bg) !important;
+  color-scheme: dark;
+}
+
+.expressive-code .frame .header {
+  display: none;
+}
+
+.expressive-code .frame pre {
+  border: 0 !important;
+  border-radius: 0;
+}
+
+.expressive-code .frame pre code {
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0;
+}
+
+.sl-markdown-content figure.shiki,
+#nd-page figure.shiki {
+  background: var(--jk-code-bg) !important;
+  border: 0 !important;
+  border-radius: 0;
+  box-shadow: var(--jk-code-shadow) !important;
+  color-scheme: dark;
+}
+
+.sl-markdown-content figure.shiki > div[role='region'].fd-scroll-container,
+#nd-page figure.shiki > div[role='region'].fd-scroll-container {
+  background: transparent !important;
+  box-shadow: none !important;
+  border: 0 !important;
+  border-radius: 0;
+}
+
+.sl-markdown-content figure.shiki button,
+#nd-page figure.shiki button {
+  background: rgba(244, 247, 245, 0.09);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.12),
+    0 1px 1px rgba(0, 0, 0, 0.04);
+  color: rgba(244, 247, 245, 0.78);
+}
+
+.sl-markdown-content figure.shiki button:hover,
+#nd-page figure.shiki button:hover,
+.sl-markdown-content figure.shiki button[data-checked],
+#nd-page figure.shiki button[data-checked] {
+  background: rgba(244, 247, 245, 0.14);
+  color: var(--jk-accent);
+}
+
+.sl-markdown-content pre:not(:where(.expressive-code *)),
+#nd-page pre:not(:where(.expressive-code *)) {
+  background: var(--jk-code-bg) !important;
+  border: 0 !important;
+  border-radius: 0;
+  box-shadow: var(--jk-code-shadow);
+  color-scheme: dark;
+  overflow: auto;
+}
+
+.sl-markdown-content div[role='region'].fd-scroll-container:has(> pre):not(:where(figure.shiki *)),
+#nd-page div[role='region'].fd-scroll-container:has(> pre):not(:where(figure.shiki *)) {
+  background: var(--jk-code-bg) !important;
+  border: 0 !important;
+  border-radius: 0;
+  box-shadow: var(--jk-code-shadow);
+  color-scheme: dark;
+}
+
+.sl-markdown-content div[role='region'].fd-scroll-container:has(> pre):not(:where(figure.shiki *)) > pre,
+#nd-page div[role='region'].fd-scroll-container:has(> pre):not(:where(figure.shiki *)) > pre,
+.sl-markdown-content figure.shiki > div[role='region'].fd-scroll-container > pre,
+#nd-page figure.shiki > div[role='region'].fd-scroll-container > pre {
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0;
+  box-shadow: none;
+  margin: 0;
+}
+
+.sl-markdown-content pre:not(:where(.expressive-code *)) code,
+#nd-page pre:not(:where(.expressive-code *)) code {
+  background: transparent !important;
+  border: 0 !important;
+  color: inherit;
+}
+
+/* Copy button — expressive-code calculates its top offset (--button-spacing)
+   to clear the editor/terminal header. We hide that header (display: none)
+   so the calculated offset leaves the button floating below its intended
+   spot. Pin it to the top-right corner of the code frame directly. */
+.expressive-code .copy {
+  inset-block-start: 0.5rem;
+  inset-inline-end: 0.5rem;
+}
+
+/* Phone viewports: expressive-code's default 2rem (32px) copy button is
+   visually oversized relative to the 14px-ish code text on narrow
+   screens. Scale down proportionally on <=30rem (iPhone portrait) so the
+   icon reads as a secondary affordance, not a primary control. */
+@media (max-width: 30rem) {
+  .expressive-code .copy button {
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 0;
+  }
+  /* The icon itself is drawn via mask-image with a `margin` inset from
+     the button edges. Scale that inset down with the button so the icon
+     stays proportionally about half the button's width. */
+  .expressive-code .copy button::after {
+    margin: 0.3rem;
+  }
+}
+
+/* ==========================================================================
+   Asides
+   ========================================================================== */
+
+.jk-aside {
+  --callout-color: var(--jk-accent) !important;
+  --jk-aside-color: var(--jk-accent);
+  position: relative;
+  overflow: hidden;
+  gap: 12px;
+  align-items: center;
+  border: 0;
+  border-radius: 0;
+  background: color-mix(in srgb, var(--jk-aside-color) 7%, var(--jk-panel));
+  padding: 14px 16px !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 1px 1px rgba(0, 0, 0, 0.04),
+    0 12px 26px rgba(0, 0, 0, 0.12);
+}
+
+.jk-aside > [role='none'] {
+  display: none;
+}
+
+.jk-aside svg {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 5px;
+  border-radius: 0;
+  background: color-mix(in srgb, var(--jk-aside-color) 14%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--jk-aside-color) 28%, transparent),
+    0 1px 1px rgba(0, 0, 0, 0.04);
+  color: var(--jk-aside-color);
+  fill: color-mix(in srgb, var(--jk-aside-color) 18%, transparent);
+}
+
+.jk-aside :is(p, li) {
+  color: var(--jk-text-dim);
+}
+
+.jk-aside strong {
+  color: var(--jk-text);
+}
+
+.jk-aside--tip {
+  --callout-color: var(--jk-accent) !important;
+  --jk-aside-color: var(--jk-accent);
+}
+
+.jk-aside--caution,
+.jk-aside--warning {
+  --callout-color: #f59e0b !important;
+  --jk-aside-color: #f59e0b;
+}
+
+.jk-aside--danger {
+  --callout-color: #ff5e7a !important;
+  --jk-aside-color: #ff5e7a;
+}
+
+:root[data-theme='light'] .jk-aside {
+  background: color-mix(in srgb, var(--jk-aside-color) 7%, var(--jk-bg));
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--jk-aside-color) 22%, transparent),
+    0 1px 2px rgba(17, 24, 39, 0.04);
+}
+
+:root[data-theme='light'] .jk-aside svg {
+  background: color-mix(in srgb, var(--jk-aside-color) 16%, var(--jk-bg));
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--jk-aside-color) 28%, transparent),
+    0 1px 1px rgba(0, 0, 0, 0.04);
+}
+
+/* ==========================================================================
+   Mobile menu toggle — keep the close-X icon high-contrast when expanded.
+
+   Fumadocs's MobileMenuToggle swaps the button bg to --sl-color-gray-2
+   (mid-grey) when the menu is open while keeping the icon at
+   --sl-color-black. On the dark theme that produces a dark X on a
+   mid-grey pill — visually it reads as disabled/invisible.
+
+   Override: keep the resting bg (--sl-color-white, which is the inverted
+   foreground token on dark theme and a dark surface on light theme) so
+   the high-contrast icon color stays readable in both states. The
+   "expanded" visual feedback is carried by Fumadocs's box-shadow: none
+   transition, which we keep untouched.
+   ========================================================================== */
+
+.social-icons a {
+  color: var(--jk-text);
+}
+
+.social-icons a:hover,
+.social-icons a:focus {
+  color: var(--sl-color-text-accent);
+}
+
+/* Hide the vertical separator Fumadocs draws after the social icons
+   block (Fumadocs header injects .social-icons::after with a 1px border). */
+.social-icons::after {
+  display: none;
+}
+
+/* ==========================================================================
+   Top-nav search — panel pill with green hover
+   ========================================================================== */
+
+site-search button[data-open-modal] {
+  color: var(--jk-text-dim);
+}
+
+@media (min-width: 50rem) {
+  site-search button[data-open-modal] {
+    background-color: var(--jk-panel);
+    border: 1px solid var(--jk-ui);
+    border-radius: 0;
+    transition: border-color 0.15s, color 0.15s;
+  }
+
+  site-search button[data-open-modal]:hover {
+    border-color: var(--jk-accent);
+    color: var(--jk-text);
+  }
+}
+
+site-search button > kbd {
+  background-color: var(--jk-bg-deep);
+  border: 1px solid var(--jk-ui);
+  color: var(--jk-text-dim);
+  font-family: var(--sl-font-mono);
+}
+
+site-search dialog {
+  background-color: var(--jk-panel);
+  border: 1px solid var(--jk-ui);
+}
+
+/* ==========================================================================
+   Theme toggle styling lives in chrome/ThemeToggle.tsx (scoped)
+   ========================================================================== */
+
+/* ==========================================================================
+   Pagination cards
+   ========================================================================== */
+
+@media (min-width: 640px) {
+  .pagination-links:has(> a:only-child) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .pagination-links > a:only-child.text-end {
+    grid-column-start: 2;
+  }
+}
+
+.pagination-links a {
+  /* 2px --jk-ui-strong — visible at equal weight in both themes. The
+     earlier 1px --jk-ui read fine in dark but near-invisible in light
+     (black-alpha 0.08 on near-white bg). Same width across modes for
+     consistency. */
+  border: 2px solid var(--jk-ui-strong);
+  border-radius: 0;
+  background: var(--jk-panel);
+  color: var(--jk-text-dim);
+  transition: border-color 0.15s, color 0.15s, transform 0.15s, box-shadow 0.2s;
+}
+
+.pagination-links a:hover {
+  border-color: var(--jk-accent);
+  color: var(--jk-text);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--jk-accent) 18%, transparent);
+}
+
+.pagination-links a .link-title {
+  color: var(--jk-text);
+  font-size: 1.125rem;
+  font-weight: 600;
+  transition: color 0.15s;
+}
+
+.pagination-links a:hover .link-title {
+  color: var(--jk-brand);
+}
+
+.pagination-links a > span:not(.link-title) {
+  font-family: var(--sl-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--jk-text-ghost);
+}
+
+.pagination-links a svg {
+  color: var(--jk-text-ghost);
+  transition: color 0.15s;
+}
+
+.pagination-links a:hover svg {
+  color: var(--jk-brand);
+}
+
+/* Inline brand name for "jackin❯" in prose — auto-wrapped by the
+   `rehype-jk` plugin (docs/scripts/rehype-jk.ts). The loud green block is
+   reserved for the actual logo lockup (.jk-brand-mark in the sidebar,
+   landing, splash). In running text that block repeats dozens of times and
+   turns the page into highlighter soup, so here the mark is quiet: it reads
+   as plain text, just set in semibold with a muted-green chevron as the only
+   brand accent — enough to mark the name without fighting the prose. */
+.jk-name {
+  display: inline;
+  font-family: inherit;
+  color: inherit;
+  background: none;
+  padding: 0;
+  border-radius: 0;
+  font-weight: 600;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.jk-name:hover {
+  text-decoration: none;
+}
+
+.jk-name__text {
+  color: inherit;
+}
+
+.jk-name__chevron {
+  /* The chevron is always the canonical brand green — one identical chevron color
+     everywhere (logo + inline mark), in both themes. */
+  color: #5cf07a;
+  font-weight: inherit;
+}
+
+/* Don't double-bold inside headings, which are already heavy. */
+:where(h1, h2, h3, h4, h5, h6) .jk-name {
+  font-weight: inherit;
+}
+
+/* ── Doc-root switcher (Fumadocs sidebar-tabs dropdown trigger) ──────────
+   The default trigger is a heavy bordered box, and fumadocs never forces
+   `size-full` on the trigger icon, so the 24px lucide glyph overflows its
+   20px slot. Restyle into a quiet brand-tinted control and size the icon to
+   its slot. Scoped to the tabs trigger; search triggers are excluded. */
+#nd-sidebar button[aria-haspopup="dialog"]:not([data-search]):not([data-search-full]) {
+  gap: 0.5rem;
+  padding: 0.4rem 0.55rem;
+  border-radius: 0.625rem;
+  border-color: color-mix(in srgb, var(--jk-accent) 35%, transparent);
+  background: color-mix(in srgb, var(--jk-accent) 8%, transparent);
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.2s ease;
+}
+
+#nd-sidebar button[aria-haspopup="dialog"]:not([data-search]):not([data-search-full]):hover,
+#nd-sidebar button[aria-haspopup="dialog"]:not([data-search]):not([data-search-full])[data-state="open"] {
+  background: color-mix(in srgb, var(--jk-accent) 16%, transparent);
+  border-color: var(--jk-accent);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--jk-accent) 22%, transparent);
+}
+
+/* Icon slot: fixed compact square, brand-green glyph that fills it. */
+#nd-sidebar button[aria-haspopup="dialog"]:not([data-search]):not([data-search-full]) > div:first-child {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.15rem;
+  height: 1.15rem;
+  color: var(--jk-accent);
+}
+
+#nd-sidebar button[aria-haspopup="dialog"]:not([data-search]):not([data-search-full]) > div:first-child svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* Title sits a touch stronger; up/down chevrons pick up the brand tint. */
+#nd-sidebar button[aria-haspopup="dialog"]:not([data-search]):not([data-search-full]) p {
+  font-weight: 600;
+}
+
+#nd-sidebar button[aria-haspopup="dialog"]:not([data-search]):not([data-search-full]) > svg:last-child {
+  color: var(--jk-accent);
+  opacity: 0.65;
+}
+
+/* The dropdown panel's option tiles share the same oversized-icon bug and
+   should match the trigger: compact brand-green glyph, tidy hover. */
+[data-radix-popper-content-wrapper] [role="dialog"] a[href] > div:first-child {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  color: var(--jk-brand);
+}
+
+[data-radix-popper-content-wrapper] [role="dialog"] a[href] > div:first-child svg {
+  width: 100%;
+  height: 100%;
+}
+
+[data-radix-popper-content-wrapper] [role="dialog"] a[href]:hover {
+  background: color-mix(in srgb, var(--jk-brand) 12%, transparent);
+}

@@ -1,0 +1,81 @@
+---
+title: "OrbStack isolated-machine architecture and security"
+description: "Explains OrbStack's shared-kernel boundary and why isolated machines do not provide per-workload kernel isolation."
+---
+
+## Summary
+
+OrbStack isolated machines improve filesystem and namespace separation but share the same Linux kernel as other OrbStack machines. They do not add the per-workload kernel boundary required to contain a guest-kernel escape.
+
+## Question and scope
+
+What security boundary does an OrbStack isolated machine actually add for a jackin❯ operator already using OrbStack as the Docker engine?
+
+## Method
+
+The review used OrbStack's [architecture](https://docs.orbstack.dev/architecture), [machine documentation](https://docs.orbstack.dev/machines/), [file-sharing documentation](https://docs.orbstack.dev/machines/file-sharing), and [release notes](https://docs.orbstack.dev/release-notes), plus issue evidence for relevant compatibility limits.
+
+## Findings
+
+### Existing boundary
+
+For the current macOS ARM audience, the baseline is:
+
+```text
+macOS → OrbStack Linux VM → Docker daemon → role container
+```
+
+An OrbStack isolated machine changes the inner layout to:
+
+```text
+macOS → OrbStack Linux VM → isolated-machine namespaces → private Docker → role container
+```
+
+The outer macOS-to-Linux hypervisor boundary already exists. The new layer shares the OrbStack VM kernel, so it does not reduce the consequence of exploiting that kernel.
+
+### Meaning of “isolated”
+
+OrbStack documents a lightweight Linux VM with a shared kernel. Machines behave like Linux systems but are not independent VMs in the strict sense. Isolated machines disable automatic macOS filesystem integration and can use selective shares. Their strongest clear benefit is preventing broad implicit host-file exposure.
+
+Product language should call this an **OrbStack isolated machine**, not a microVM. The latter would imply a kernel boundary the product does not provide.
+
+### Threat-model consequence
+
+Namespace isolation can limit process, filesystem, and resource visibility. It does not remove the shared kernel as an attack surface. This matters for jackin❯ because private Docker commonly requires a privileged daemon and exercises kernel networking, overlay filesystems, and container runtime code.
+
+The relevant decision is not whether namespaces are useful. It is whether they satisfy the stated requirement. They do not satisfy a requirement for a distinct kernel per untrusted workload.
+
+### Alternatives that provide a kernel boundary
+
+- [Docker Sandboxes](https://docs.docker.com/ai/sandboxes/) uses a dedicated microVM per sandbox and supplies a private Docker daemon plus policy surfaces.
+- [smolvm](/research/platform/isolation/smolvm-backend/) uses libkrun and Hypervisor.framework on macOS to provide a workload kernel.
+- [Apple Container](/research/platform/isolation/apple-container-backend/) uses a lightweight VM per container on Apple Silicon.
+- gVisor is not a viable current substitute on this platform: OrbStack issue [#2362](https://github.com/orbstack/orbstack/issues/2362) records an OrbStack macOS ARM failure, and Claude Code issue [#35454](https://github.com/anthropics/claude-code/issues/35454) records a hang under gVisor on macOS ARM.
+
+### Current decision
+
+Defer OrbStack isolated machines as a kernel-isolation backend. Reconsider if OrbStack documents a distinct hypervisor boundary per isolated machine or if the product requirement changes to filesystem/namespace isolation rather than kernel isolation.
+
+## Implications for jackin❯
+
+- Describe the boundary precisely in operator-facing summaries.
+- Keep Docker hardening as the improvement path for the existing shared-kernel backend.
+- Evaluate smolvm and Apple Container when a separate workload kernel is required.
+- Do not translate convenient machine semantics into stronger security claims.
+
+## Limitations and unknowns
+
+This conclusion is scoped to OrbStack's documented shared-kernel architecture and the current macOS ARM audience. It does not evaluate a future hypervisor-backed OrbStack product or non-OrbStack host configurations.
+
+## Sources
+
+- [OrbStack architecture](https://docs.orbstack.dev/architecture)
+- [OrbStack Linux machines](https://docs.orbstack.dev/machines/)
+- [OrbStack file sharing](https://docs.orbstack.dev/machines/file-sharing)
+- [OrbStack release notes](https://docs.orbstack.dev/release-notes)
+
+## Related work
+
+- [CLI and compatibility](/research/platform/isolation/orbstack-isolated-machines/02-cli-and-compatibility/)
+- [smolvm alternatives and decision](/research/platform/isolation/smolvm-backend/02-alternatives-and-decision/)
+- [Agent isolation architecture](/research/platform/security/isolation-architecture/)

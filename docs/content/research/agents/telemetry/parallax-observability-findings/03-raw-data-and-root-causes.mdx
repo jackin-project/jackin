@@ -1,0 +1,313 @@
+---
+title: "Parallax raw data and root causes"
+description: "Quantifies telemetry volume, error-classification gaps, span storms, sensitive payload risk, and their code-level causes."
+---
+
+## Summary
+
+Measured logs and traces show a debug firehose, weak error semantics, high-cardinality bodies, dependency span storms, and sensitive payload exposure caused by unstructured export boundaries.
+
+## Question and scope
+
+Which stored-signal patterns make Parallax hard to use, and which code structures enable those patterns?
+
+## Method
+
+Counts come from the Parallax CLI and aggregate SQL listed in the [dossier method](/research/agents/telemetry/parallax-observability-findings/#method-and-evidence), with code inspection used to connect symptoms to export paths.
+
+## Findings
+
+### Log volume
+
+Query:
+
+```sql
+SELECT severity_text, COUNT(*) AS logs, COUNT(DISTINCT trace_id) AS traces,
+       COUNT(DISTINCT `parallax.run.id`) AS runs
+FROM opentelemetry_logs
+GROUP BY severity_text
+ORDER BY logs DESC;
+```
+
+Result:
+
+| severity | logs | traces | runs |
+|---|---:|---:|---:|
+| DEBUG | 968,593 | 2,815 | 34 |
+| INFO | 8,977 | 137 | 34 |
+| WARN | 4 | 4 | 4 |
+| ERROR | 1 | 1 | 1 |
+
+Interpretation: `--debug` turns telemetry into a firehose. Backend UX becomes dominated by debug internals, not user-relevant lifecycle and failure events.
+
+### Local storage impact
+
+`parallax doctor` reported:
+
+| data | size |
+|---|---:|
+| data dir | 2.91 GiB |
+| spool logs.ndjson | 1.65 GiB |
+| spool traces.ndjson | 273.1 MiB |
+| spool metrics.ndjson | 118.6 MiB |
+| engine data | 431.5 MiB |
+
+Interpretation: logs are not only unreadable in the UI; they dominate local telemetry storage. Reducing default debug log volume is a correctness and operability requirement, not only presentation polish.
+
+### Debug firehose categories
+
+Queries:
+
+```sql
+SELECT COUNT(*) AS logs
+FROM opentelemetry_logs
+WHERE body LIKE '%[jackin debug cockpit-dialog-mouse]%';
+```
+
+Result: `21,611` logs.
+
+```sql
+SELECT COUNT(*) AS logs
+FROM opentelemetry_logs
+WHERE body LIKE '%session feed_pty bytes%'
+   OR body LIKE '%send-bytes:%'
+   OR body LIKE '%frame-geom:%'
+   OR body LIKE '%pane scroll frame:%';
+```
+
+Result: `242,689` logs.
+
+Interpretation: UI interaction, terminal byte, and frame-render internals should not be default OTel logs. They should become metrics, sampled debug artifacts, or deep-debug logs behind a separate explicit flag.
+
+### Error detection gap
+
+Query:
+
+```sql
+SELECT severity_text, COUNT(*) AS logs
+FROM opentelemetry_logs
+WHERE lower(body) LIKE '%error%'
+   OR lower(body) LIKE '%failed%'
+   OR lower(body) LIKE '%panic%'
+GROUP BY severity_text
+ORDER BY logs DESC;
+```
+
+Result:
+
+| severity | logs |
+|---|---:|
+| DEBUG | 1,594 |
+| INFO | 91 |
+| ERROR | 1 |
+
+Span status query:
+
+```sql
+SELECT span_status_code, COUNT(*) AS spans, COUNT(DISTINCT trace_id) AS traces
+FROM opentelemetry_traces
+GROUP BY span_status_code
+ORDER BY spans DESC;
+```
+
+Result:
+
+| status | spans | traces |
+|---|---:|---:|
+| STATUS_CODE_UNSET | 135,119 | 6,904 |
+| STATUS_CODE_ERROR | 2 | 1 |
+
+Only two error spans existed, both from BuildKit/buildx. This supports the operator's observation: jackin❯ is not sending or flagging many errors in a way Parallax can classify.
+
+Follow-up query including EOF:
+
+```sql
+SELECT severity_text, COUNT(*) AS logs
+FROM opentelemetry_logs
+WHERE lower(body) LIKE '%error%'
+   OR lower(body) LIKE '%failed%'
+   OR lower(body) LIKE '%panic%'
+   OR lower(body) LIKE '%eof%'
+GROUP BY severity_text
+ORDER BY logs DESC;
+```
+
+Result:
+
+| severity | logs |
+|---|---:|
+| DEBUG | 1,594 |
+| INFO | 162 |
+| ERROR | 1 |
+
+Interpretation: many bodies contain failure language but are not typed outcomes. Some may be expected shutdown noise, but that is exactly why jackin❯ must emit explicit `event.outcome`, `error.type`, and `expected=true|false` fields instead of relying on body text.
+
+### Prefixes are in the body
+
+Query:
+
+```sql
+SELECT severity_text, scope_name, `parallax.run.id`, substring(body,1,120) AS body
+FROM opentelemetry_logs
+WHERE body LIKE '%[jackin debug%'
+ORDER BY timestamp DESC
+LIMIT 20;
+```
+
+Representative rows:
+
+| severity | scope | body |
+|---|---|---|
+| DEBUG | `jackin_diagnostics::jsonl` | `[jackin debug docker] ps --filter label=...` |
+| DEBUG | `jackin_diagnostics::jsonl` | `[jackin debug docker] network rm jk-...-net` |
+| DEBUG | `jackin_diagnostics::jsonl` | `[jackin debug isolation] finalize: container=... preserved ...` |
+| DEBUG | `jackin_diagnostics::jsonl` | `[jackin debug attach] host attach using attach-proxy ...` |
+
+Interpretation: category is present only as text. Backend cannot group without parsing `body`.
+
+### Span storms
+
+Aggregate query:
+
+```sql
+SELECT service_name, span_name, COUNT(*) AS spans, COUNT(DISTINCT trace_id) AS traces
+FROM opentelemetry_traces
+GROUP BY service_name, span_name
+ORDER BY traces DESC, spans DESC
+LIMIT 30;
+```
+
+Representative rows:
+
+| service | span_name | spans | traces |
+|---|---|---:|---:|
+| jackin❯ | `normal_step` | 3,413 | 3,054 |
+| jackin❯ | `emit_insn` | 109,579 | 1,358 |
+| jackin❯ | `translate` | 1,462 | 1,358 |
+| jackin❯ | `begin_read_tx` | 1,192 | 1,135 |
+| jackin❯ | `end_read_tx` | 1,623 | 1,130 |
+
+Trace inspection of `usage:refresh_accounts` showed hundreds of micro-spans like `emit_insn`, `read_page_no_cache`, `find_frame`, and `translate`. These are storage-engine internals, not jackin❯ workflow spans.
+
+Desired shape:
+
+- Keep `usage:refresh_accounts` as one trace or span.
+- Store internal DB timings as metrics or span events:
+  - `db.statement.count`
+  - `db.rows_read`
+  - `db.write.count`
+  - `usage.accounts.refreshed`
+  - `usage.provider`
+  - `duration_ms`
+- Do not export storage-engine internals unless a dedicated deep-debug mode is explicitly enabled.
+
+### Sensitive payload risk
+
+The live `parallax logs` sample contained Docker inspect JSON with environment arrays and token-shaped values. The run detail and evidence bundle also included host paths, generated Dockerfile content, image layer arrays, API-key variable names, auth paths, and provider URLs. Even if some values are local/test tokens, the telemetry path must treat them as secrets.
+
+Required rule:
+
+- Never export raw environment arrays, Docker inspect payloads, command output, provider auth paths, or config blobs as log bodies or attributes without redaction.
+- Redact by key (`*_TOKEN`, `*_KEY`, `*_SECRET`, `GH_TOKEN`, provider API keys, auth JSON paths where necessary) and by value pattern.
+- Replace large payloads with typed summaries:
+  - `container.id`
+  - `container.name`
+  - `container.state`
+  - `container.exit_code`
+  - `mount.count`
+  - `env.count`
+  - `image.id`
+  - `network.name`
+- Store raw artifacts only in local diagnostics files with explicit retention and access rules, not in OTel.
+
+### Root-cause analysis
+
+### Console formatting is reused for backend logs
+
+<RepoFile path="crates/jackin-diagnostics/src/logging.rs" />:
+
+- `format_debug_line(category, message)` returns `[jackin debug {category}] {message}`.
+- `emit_debug_line(category, message)` passes that formatted line to `active_debug(category, &line)`.
+- The OTel log bridge exports the resulting body.
+
+This is the enabling condition for duplicated prefixes in Parallax.
+
+Structural fix:
+
+- Preserve console formatting only at the terminal/file rendering boundary.
+- Emit structured fields before formatting:
+  - `event.name`
+  - `log.category`
+  - `jackin.component`
+  - `jackin.operation`
+  - `jackin.stage`
+  - `diagnostic.tier=debug|compact`
+  - `message`
+- Backend log body should be concise human text without bracket prefixes.
+
+### JSONL diagnostics become OTel log records with weak semantics
+
+<RepoFile path="crates/jackin-diagnostics/src/observability.rs" /> bridges marked JSONL events (`jackin_jsonl=true`) into run diagnostics. `emit_jsonl_event` / `emit_jsonl_error` attach a few fields, but most semantic meaning stays in `kind`, `stage`, `detail`, and free-text `message`.
+
+Structural fix:
+
+- Promote stable diagnostics fields into OTel attributes.
+- Reserve `body` for concise description.
+- Encode errors with OTel conventions:
+  - log severity `ERROR`
+  - `event.name=exception` or domain error event name
+  - `exception.type`
+  - `exception.message`
+  - `exception.stacktrace` when available
+  - `error.type`
+  - `error.fingerprint`
+  - active span status `ERROR`
+
+### Launch-stage spans reuse one name
+
+<RepoFile path="crates/jackin-diagnostics/src/run.rs" /> creates spans with:
+
+```rust
+tracing::info_span!("launch_stage", stage = stage)
+```
+
+This makes the waterfall show many identical `launch_stage` rows.
+
+Structural fix:
+
+- Use stable operation names:
+  - `launch.stage`
+  - or specific names like `launch.build_derived_image`.
+- If one generic span name is kept, set `otel.name` to include normalized stage:
+  - `otel.name = "launch.stage"`
+  - `jackin.stage = "derived_image"`
+  - UI/backend can display `launch.stage derived_image`.
+
+### External and dependency instrumentation leaks into product traces
+
+The `emit_insn`/storage spans likely come from dependency tracing exposed under the broad tracing filter. They do not explain jackin❯ behavior at the operator level.
+
+Structural fix:
+
+- Tighten OTel export filters to jackin-owned targets for normal debug.
+- Add separate opt-in `JACKIN_OTEL_INTERNAL=1` for dependency/storage internals.
+- Prefer metrics/events for high-cardinality hot loops.
+
+
+## Implications for jackin❯
+
+Separate console formatting from backend records, make domain failures typed, summarize or artifact-route large payloads, and replace hot-loop spans with bounded metrics or span events.
+
+## Limitations and unknowns
+
+The measurements are a cutoff snapshot rather than a current production baseline. Re-run the documented queries before setting volume budgets or confirming that a category remains dominant.
+
+## Sources
+
+- [Dossier method and evidence inventory](/research/agents/telemetry/parallax-observability-findings/#method-and-evidence)
+- [Tracing and instrumentation](/research/agents/telemetry/parallax-observability-findings/01-tracing-and-instrumentation/)
+
+## Related work
+
+- [Parallax UI evidence](/research/agents/telemetry/parallax-observability-findings/02-parallax-ui-evidence/)
+- [Signal contract and verification](/research/agents/telemetry/parallax-observability-findings/04-signal-contract-and-verification/)

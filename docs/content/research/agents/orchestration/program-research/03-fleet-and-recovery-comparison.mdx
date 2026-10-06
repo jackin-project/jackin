@@ -1,0 +1,83 @@
+---
+title: "Agent orchestration fleet and recovery comparison"
+description: "Preserves the durable multicode fleet strengths and the containment and recovery comparison across adjacent systems."
+---
+
+## Summary
+
+multicode demonstrates a strong fleet control plane, while Hazmat and Docker Sandboxes clarify the containment, credential, network, service, and recovery boundaries that fleet scale must not obscure.
+
+## Question and scope
+
+Which comparative strengths constrain the current containment, fleet, and recovery design?
+
+## Method
+
+This chapter retains qualitative findings and comparison dimensions from the products cataloged in the [source chapter](/research/agents/orchestration/program-research/04-open-questions-and-sources/#sources).
+
+## Findings
+
+### Multicode strengths
+
+1. **Live observability of the agent.** multicode derives status and resource
+   columns from runtime state and displays them as the main operator surface.
+2. **Per-workspace persistent SQLite.** A small store underpins GitHub status,
+   custom links, and telemetry.
+3. **The tag protocol.** `<multicode:issue>`, `<multicode:pr>`, and
+   `<multicode:repo>` turn agent output into structured operator state without
+   making the agent runtime itself part of the orchestrator.
+4. **Resource limits as config.** Memory, CPU, and file descriptor limits are
+   declared near isolation config instead of being hidden in launch scripts.
+5. **Operator extension points.** Editor launchers, review tools, and custom
+   hotkeys make the TUI an operator surface rather than a fixed dashboard.
+
+### jackin❯ differentiators
+
+- **Cross-platform Docker substrate** instead of Linux-only `bwrap`.
+- **Per-instance multi-runtime** instead of one provider assumption.
+- **Role repos as distribution units** instead of ad-hoc skill/config mounts.
+- **CLI-first with `jackin console` as the simplified front** instead of a
+  TUI-only product.
+- **Toolchain-neutral orchestration** instead of Micronaut/Java defaults baked
+  into the orchestrator.
+- **Security boundary honesty.** multicode's README is explicit that its
+  isolation is for safety and convenience, not security. jackin❯ docs should
+  preserve that kind of bluntness for every backend: `dind` is useful, but it
+  is not a microVM; microVM is stronger, but still has workspace and credential
+  policy caveats.
+
+### Containment and recovery comparison
+
+Hazmat and Docker Sandboxes provide complementary containment and recovery evidence without defining jackin❯'s product shape.
+
+| Concern | Hazmat | Docker Sandboxes | jackin❯ direction |
+|---|---|---|---|
+| Boundary explanation | Session contract plus `hazmat explain` | Security model docs and sandbox policy output | [Session contract and explain mode](/roadmap/session-contract-explain-mode/) |
+| Strong local isolation | macOS user + seatbelt + `pf`; VM tier for hardest cases | Per-sandbox microVM | [Selectable sandbox backends](/research/platform/security/sandbox-backends/) |
+| Docker workflows | Private-daemon tier only; shared daemon rejected in containment | Private Docker Engine inside VM | Keep DinD explicit, add microVM/private-daemon backend, reject silent host socket exposure |
+| Network policy | `pf` plus DNS blocklist; exact-domain caveats documented | Host-side proxy, deny-by-default, non-HTTP blocked | [Network egress policy](/roadmap/network-egress-policy/) |
+| Service ports | Service access appears in session contract | `sbx ports` publishes host-to-sandbox traffic; host services use policy-approved alias | Add service access and port mappings to session contract + network policy |
+| Credential delivery | Host-owned secret store, materialized/brokered per harness | Host proxy injects credentials; values stay outside VM | [Container credential exposure](/research/platform/security/credential-exposure/container-credential-exposure/) and [host bridge](/roadmap/host-bridge/) |
+| Stack ergonomics | Integration manifests with strict "cannot widen trust" rules | Templates/kits and agent-specific setup | [Stack integration contracts](/roadmap/stack-integration-contracts/) plus role repos |
+| Recovery | Pre-session snapshots, restore, formal backup invariants | Persistent VM state; `sbx rm` cleanup | [Session snapshot and rollback](/roadmap/session-snapshot-rollback/) plus disk/state budgets |
+| Parallel Git work | Not the main product focus | Direct mode plus `.sbx/` branch worktrees | [Per-mount isolation](/guides/workspaces/#per-mount-isolation) with jackin-owned worktree/clone modes |
+| Proof / governance | TLA+ for setup, policy, backup, launch invariants | Product security docs | ADRs and behavioral specs for host-side effects |
+
+
+## Implications for jackin❯
+
+Combine live fleet visibility with explicit containment contracts. Preserve CLI-first operation, role repositories, runtime neutrality, and honest per-backend risk descriptions.
+
+## Limitations and unknowns
+
+Current jackin❯ delivery commitments belong to linked roadmap and reference pages, not this comparative chapter.
+
+## Sources
+
+- [Complete source catalog](/research/agents/orchestration/program-research/04-open-questions-and-sources/#sources)
+- [Dossier method](/research/agents/orchestration/program-research/#method-and-evidence)
+
+## Related work
+
+- [Decision and benefit matrices](/research/agents/orchestration/program-research/01-decision-and-benefit-matrices/)
+- [Containment benchmarks](/research/agents/orchestration/program-research/02-containment-benchmarks/)

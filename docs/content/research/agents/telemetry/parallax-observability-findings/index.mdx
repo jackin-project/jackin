@@ -1,0 +1,113 @@
+---
+title: "Parallax observability findings"
+description: "Analyzes live telemetry to identify unstructured signal, missing instrumentation, and a safer layered observability contract."
+---
+
+**Research state:** Needs refresh
+
+## Summary
+
+The observed telemetry is too unstructured for reliable diagnosis: jackin❯ needs governed logs first, then correlated traces and derived issue signals.
+
+## Research question
+
+This page records what is wrong with the current logs/traces/issues shape as seen by an OpenTelemetry-style backend. It is intentionally diagnostic first. Implementation should start with logs, because logs are the highest-volume and most visibly unreadable signal.
+
+Important correction: the goal is not to reduce observability. The goal is to increase trustworthy coverage while reducing unusable payload. jackin❯ needs more complete tracing/logging/metrics around real workflows, slow paths, external calls, process execution, and errors. The current problem is that too much exported signal is unstructured firehose while many important operations are missing typed outcomes, correlation, and duration.
+
+Decision rule for follow-up work: fix what is correct to fix. Do not preserve known-wrong behavior because it is "low value", "marginal", "an edge case", costly, large, or similar to what another system does. The only valid reason to stop short is a proven tool, model, or project capability limit.
+
+Bug rule for follow-up work: every telemetry bug is evidence that the architecture allowed that bug class. Before fixing an individual symptom, identify the enabling structure and prefer the structural fix that prevents the class from recurring. Use symptom patches only when the root fix is proven infeasible or belongs in a separate explicitly named change.
+
+Inputs used:
+
+
+## Headline findings
+
+1. Logs are console-formatted before export. Prefixes like `[jackin debug docker]` and `[jackin-capsule debug]` are embedded in `body`, not exposed as structured fields. That makes Parallax/Kibana-style filtering depend on text search instead of dimensions such as `jackin.log.category`, `jackin.component`, `jackin.operation`, `container.name`, or `stage`.
+
+2. Debug firehose is exported as first-class logs. The Parallax store had `968,593` `DEBUG` logs across `34` runs, versus `8,977` `INFO`, `4` `WARN`, and `1` `ERROR`. This overwhelms useful runtime events.
+
+   `parallax doctor` showed the same cost at rest: `logs.ndjson` spool was `1.65 GiB`, while traces spool was `273.1 MiB` and metrics spool was `118.6 MiB`.
+
+3. Some records include sensitive or excessive payloads. Docker inspect output exported full container JSON, including environment arrays with token-shaped values and very large mount/config payloads. Telemetry must redact and summarize before export.
+
+4. Error visibility is broken. SQL found `1,686` log bodies mentioning `error`, `failed`, or `panic`, but only `1` OTel `ERROR` log and only `2` `STATUS_CODE_ERROR` spans. Both error spans came from `buildx`, not jackin❯. Most jackin❯ failures are plain `INFO`/`DEBUG` bodies or JSONL diagnostics events, so Parallax cannot reliably group them as issues.
+
+   Updated query including `eof` found `1,757` error-like log bodies: `1,594` `DEBUG`, `162` `INFO`, and `1` `ERROR`. Example from run detail: `attach client: socket read failed: early eof` is `INFO`, not `ERROR`.
+
+5. Issue grouping fingerprints runtime noise. The Issues page showed 14 open issues, mostly the same capsule attach failure split by container name, user id, run id, branch/path, and command text. Each had one event. This defeats issue grouping.
+
+6. Issue detail bodies are too large and unstructured. A single attach failure page inlined a 40-line capsule debug tail with timestamps, terminal byte dumps, frame metrics, paths, and repeated prefixes into one paragraph. The actual failure is buried.
+
+7. Trace shape is inconsistent. There are many traces with one span or almost no correlation, and other traces with hundreds or thousands of tiny internal spans. Example: `usage:refresh_accounts` had `588`, `1005`, and similar span counts; top aggregate showed `109,579` `emit_insn` spans across `1,358` traces. The latest run detail showed an `18`-trace launch where `usage:refresh_accounts` had `440` spans, while `capsule:tab`, `capsule:session`, and `prewarm_auth_for_agents` were single-span traces.
+
+8. Launch-stage spans are not semantically distinguishable in the UI. The Trace detail page showed 12 waterfall rows all named `launch_stage`; the meaningful `stage=derived image` value appears only in the attributes panel. Operators cannot scan the waterfall.
+
+9. Logs and traces are not consistently correlated. The sample Trace detail page showed `Logs: 0` for a launch trace even when run-level logs existed. Logs often carry run id but not the correct active span/trace context.
+
+10. Run id exists and is useful, but it is not enough. `parallax.run.id` is present on log rows and run pages work, but cross-run grouping, per-run summary, trace linkage, and error grouping need stable semantic fields.
+
+11. High-frequency UI and terminal internals dominate run logs. SQL found `242,689` PTY/render debug rows (`session feed_pty bytes`, `send-bytes`, `frame-geom`, `pane scroll frame`) and `21,611` cockpit mouse rows. The run page for `18bea0c913570db0` showed repeated mouse move rows as newest logs, so useful lifecycle events are pushed below interaction noise.
+
+12. Some run and trace evidence bundles are too raw for operator use. The run bundle includes Docker inspect JSON, full generated Dockerfile text, raw image layer arrays, command URLs, host paths, and debug lines. That data can be useful as an artifact, but it should not be the default log body or issue evidence.
+
+13. Coverage is incomplete in the places most needed for jackin❯ development. Slow external calls, subprocesses, Docker lifecycle steps, agent binary resolution/downloads, credential/provider resolution, capsule attach/session lifecycle, and cleanup need typed spans/logs/metrics. Some of these are visible today as plain text (`held the foreground launch path`, `Building Docker image`, raw URLs), but not as a reliable operation graph.
+
+14. Parallax should support cross-trace navigation as a first-class feature. OpenTelemetry has parent/child spans within one trace and standard `Span Link`s that can reference spans in the same or another trace. It does not define a "child trace id" hierarchy as a separate native concept. Parallax can add `parallax.parent_trace_id`, `parallax.trace.role`, or similar backend navigation attributes, but should also ingest and render standard OTel span links.
+
+15. Observability needs layered verbosity, not one global firehose. Today `--debug` / `JACKIN_DEBUG=1` is a binary switch that enables too many categories at `DEBUG`. jackin❯ should replace that with explicit levels (`info`, `debug`, `trace`) and category filters so normal development gets rich workflow visibility, while byte/frame/keypress internals only appear when explicitly requested.
+
+16. OTLP mode must not reference local diagnostics files. `RunDiagnostics` already treats JSONL files as a fallback sink and does not persist them by default when OTLP export is active. But some UI/capsule surfaces still imply a file location. In OTLP mode the canonical reference is the run id and backend query, not `~/.jackin/data/diagnostics/runs/<run>.jsonl`.
+
+
+## Method and evidence
+
+- Parallax UI pages supplied by the operator: Issues list, Issue detail, Trace detail.
+- Additional operator screenshots/pastes from July 3, 2026:
+  - Runs list with 52 visible runs.
+  - Run detail for `18bea0c913570db0`.
+  - Logs excerpt with `[jackin-capsule debug]` PTY byte dumps.
+  - BuildKit trace detail for `2c2c18b26eee1bb9b8c4692119a5b957`.
+- `parallax logs --since 30d --limit 80`
+- `parallax traces --since 30d --limit 80`
+- `parallax run list`
+- `parallax issue list`
+- `parallax doctor`
+- `parallax sql "SHOW TABLES"`
+- `parallax sql "DESC opentelemetry_logs"`
+- `parallax sql "DESC opentelemetry_traces"`
+- Aggregate SQL over `opentelemetry_logs` and `opentelemetry_traces`.
+- Code inspection of diagnostics/logging/tracing paths.
+- OpenTelemetry primary documentation:
+  - [Tracing API](https://opentelemetry.io/docs/specs/otel/trace/api/)
+  - [Specification overview](https://opentelemetry.io/docs/specs/otel/overview/)
+  - [Traces concepts](https://opentelemetry.io/docs/concepts/signals/traces/)
+  - [Creating links between traces](https://opentelemetry.io/docs/languages/dotnet/traces/links-creation/)
+  - [Logs data model](https://opentelemetry.io/docs/specs/otel/logs/data-model/)
+  - [Exception logs semantic conventions](https://opentelemetry.io/docs/specs/semconv/exceptions/exceptions-logs/)
+- Rust tracing documentation:
+  - [`tracing` crate](https://docs.rs/tracing/latest/tracing/)
+  - [`tracing_subscriber::EnvFilter`](https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html)
+  - [Tokio tracing guide](https://tokio.rs/tokio/topics/tracing)
+
+
+## Limitations and open questions
+
+The evidence cutoff is 2026-07-03, so revalidate telemetry volume, schema, and UI behavior before implementation. The open contract questions are detailed in [Signal contract and verification](/research/agents/telemetry/parallax-observability-findings/04-signal-contract-and-verification/).
+
+## How to read
+
+1. [Tracing and instrumentation](/research/agents/telemetry/parallax-observability-findings/01-tracing-and-instrumentation/) covers OTel relationships, missing coverage, verbosity, and sink behavior.
+2. [Parallax UI evidence](/research/agents/telemetry/parallax-observability-findings/02-parallax-ui-evidence/) records the issues, traces, runs, and build-trace observations.
+3. [Raw data and root causes](/research/agents/telemetry/parallax-observability-findings/03-raw-data-and-root-causes/) quantifies volume, error gaps, sensitive payload risk, and code-level causes.
+4. [Signal contract and verification](/research/agents/telemetry/parallax-observability-findings/04-signal-contract-and-verification/) defines the current signal model, design priorities, verification criteria, and unknowns.
+
+## Sources
+
+Primary OTel and Rust tracing sources are listed under Method and evidence above. Each evidence chapter links back to this inventory and keeps claims adjacent to their observed data.
+
+## Related work
+
+- [Token and cost telemetry](/research/agents/telemetry/token-cost-telemetry/) — complementary telemetry design for usage and quota limits.
+- [Agent telemetry](/research/agents/telemetry/) — category navigation.

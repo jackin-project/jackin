@@ -1,0 +1,39 @@
+---
+title: Run Telemetry
+description: Send governed traces, events, and metrics directly to an OTLP backend
+---
+
+jackin❯ can send traces, structured events, and metrics directly to an OpenTelemetry backend such as Parallax. The backend owns telemetry history; jackin❯ keeps only bounded current-invocation progress in memory and never creates local telemetry or log artifacts.
+
+## Configure delivery
+
+```sh
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4317
+jackin diagnostics validate
+```
+
+jackin❯ uses OTLP/gRPC. `OTEL_EXPORTER_OTLP_ENDPOINT` configures all three signals, while `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`, and `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` can override individual destinations. Leave the protocol unset or set it to `grpc`; another protocol stops startup with [E016](/reference/errors/E016/).
+
+`jackin diagnostics validate` emits one governed marker for each signal and requests a force-flush. It reports a non-zero exit when delivery is disabled, unconfigured, inactive, rejected, or the flush fails. Success requires a new exporter-success observation for traces, logs, and metrics, no new exporter failure or facade rejection, and a successful shared bounded flush. This confirms delivery to the configured OTLP endpoint, not downstream retention or indexing.
+
+Set `OTEL_SDK_DISABLED=true` to disable OpenTelemetry explicitly. With no endpoint, normal product work continues without export or local fallback files.
+
+## Correlate activity
+
+Each command receives a `cli.invocation.id`. Interactive attachments also receive a `session.id`; reconnecting creates a new session and records the preceding session id when known. Use these fields in the backend to group bounded operation traces, lifecycle events, and metrics.
+
+Long-lived processes do not create lifetime spans. Startup, shutdown, commands, UI actions, RPC calls, subprocesses, connections, cycles, and detached jobs are bounded operations. Detached work uses span links instead of pretending the work remained a child of an operation that already ended.
+
+## Detail controls
+
+The default `info` level contains lifecycle, state-transition, outcome, and health signals. `JACKIN_TELEMETRY_LEVEL=debug` enables governed diagnostic detail, and `trace` enables the most detailed allowlisted signals. `JACKIN_TELEMETRY_CATEGORIES` narrows debug categories.
+
+`--debug` controls operator-facing troubleshooting output. It is not a telemetry transport switch and does not create a diagnostics file.
+
+## Privacy and reliability
+
+Telemetry attributes are allowlist-first and schema-validated. Paths, workspace and container names, URLs with queries, raw arguments, credentials, tokens, tab labels, PTY content, rendered frames, input payloads, and mouse coordinates are not telemetry fields. Redaction remains defense in depth, not permission to emit arbitrary content.
+
+Export uses bounded queues and timeouts. An unavailable or slow endpoint can make telemetry incomplete, but it does not block product work or create a local fallback artifact. Point the exporter only at a backend you trust.
+
+For the schema, identity, propagation, current delivery contract, and typed host and Capsule daemon health, see [Application observability](/reference/runtime/diagnostics/).

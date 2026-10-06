@@ -1,0 +1,216 @@
+---
+title: Apple Container 1.0 and the macOS agent-sandbox landscape
+description: Compares Apple Container, Sandboxy, OrbStack, and smolvm to guide the macOS isolation direction.
+---
+
+**Research state:** Current
+
+## Summary
+
+Apple Container remains the primary macOS backend candidate; smolvm is the strongest fallback when required isolation capabilities fail validation.
+**Verification cutoff:** 2026-06-10. Scope covers apple/container 1.0.0, `container machine`, Apple's experimental Sandboxy example, Docker Desktop and Sandboxes, OrbStack, and smolvm. Primary-source claims were checked through this date; items marked *(analysis)* are document reasoning rather than upstream statements.
+
+---
+
+## 1. Executive summary
+
+1. **Apple Container 1.0 and Sandboxy support the four-layer architecture.** Sandboxy runs Claude Code inside a per-session lightweight VM behind a host-side network allowlist proxy with CPU and memory limits plus explicit mounts. It is an experimental example, but it independently demonstrates the VM-boundary, egress, resource, and mount controls required by jackin❯.
+2. **Apple Container 1.0 exposes the policy surface jackin❯ needs to evaluate:** resource limits, reduced and explicit capabilities, read-only mounts/rootfs, tmpfs, SSH forwarding, port and socket publication, internal networks, DNS controls, Rosetta, stop signals, structured inspection, and versioned system configuration.
+3. **`container machine` is not a new isolation tier — it is persistence + host integration on the same per-VM-kernel primitive.** Each machine is its own lightweight VM booted from an OCI image **through the image's `/sbin/init`** (systemd works), with automatic `$HOME` mapping (`rw`/`ro`/`none`) and per-machine `cpus`/`memory`. For jackin❯ it is strategically important for one reason above all: *(analysis)* an init-booted per-session VM can run a stock Docker daemon as a systemd unit — potentially dissolving the rootless-DinD empirical validation gate by replacing "DinD inside a container" with "Docker inside a VM", which is exactly how OrbStack/Colima run Docker today, except per-session with its own kernel.
+4. **OrbStack 2.2 improves isolated-machine controls without changing the architecture.** Per-machine CPU, memory, and disk limits, `--isolate-network`, opt-in `--forward-ssh-agent`, and Docker support are available, but machines still share one Linux kernel inside one VM. OrbStack closes productivity gaps, not the kernel-boundary gap.
+5. **smolvm 1.0.1 is a credible fallback.** The Rust, Apache-2.0 project provides VM fork, elastic memory through virtio-balloon, deny-by-default networking with `--allow-host`, and host-custodied SSH-agent forwarding. Apple Container remains the primary because of platform ownership and its vminitd attach contract; smolvm supplies useful comparison evidence for egress and memory reclaim.
+6. **Installation and DNS behavior are durable constraints**: apple/container is a separate open-source tool installed through a signed `.pkg` or Homebrew, and the sleep/wake DNS hiccup has no upstream fix through 1.0.0. The DNS health check therefore remains load-bearing.
+
+---
+
+## 2. Research question
+
+Which current Apple Container capabilities and constraints determine whether it is a sound per-workload VM backend for jackin❯?
+
+## 3. Current capability inventory
+
+### Runtime and policy surface
+
+Verified against `docs/command-reference.md` at the `1.0.0` tag. The current jackin❯ `AppleContainerSpec` carries only `image`, `env`, read-write `mounts`, and `caps_add` (`crates/jackin-runtime/src/apple_container_client.rs:40-50`), emitted as `run --name <n> -d -e… -v… --cap-add… <image> jackin-capsule` (`apple_container_client.rs:119-148`).
+
+| 1.0 capability | Flag | Current adapter exposure | jackin❯ relevance |
+|---|---|---|---|
+| CPU limit | `--cpus <n>` | ❌ | Declarative resource limits roadmap item; parity with Sandboxy (`--cpus`, default 4) and `machine set cpus=4` |
+| Memory limit | `--memory <size>` (K/M/G/T/P suffix) | ❌ | Same; critical given partial ballooning (§4.3) — an unbounded VM holds peak memory until stopped |
+| Read-only bind mounts | `--mount type=…,source=…,target=…,readonly` | ❌ (bare rw `-v` only) | **Host-enforced `ro` mounts** — the OrbStack roadmap item could only get guest-enforced `:ro`; here the hypervisor host side enforces it |
+| Read-only rootfs | `--read-only` | ❌ | Hardened profile parity with the Docker hardening contract |
+| tmpfs | `--tmpfs` | ❌ | Scratch space under read-only rootfs |
+| Capability drop | `--cap-drop` (+ reduced default set since 0.12.0) | ❌ | Session contract should report the *actual* default cap set, and the hardened profile should `--cap-drop` further |
+| Unix socket publish | **`--publish-socket host_path:container_path`** | ❌ (bind-mounts the whole socket dir) | Publish exactly `host.sock` into the guest instead of mounting `~/.jackin/sockets/<n>/` wholesale — smaller surface, first-class primitive |
+| Port publish | `-p [ip:]host:container[/proto]` | ❌ | Operator reaches agent-started dev servers from macOS without knowing the VM IP |
+| Named networks | `--network <name>[,mtu=…]` | ❌ (default network) | **Per-session networks**; `container network create --internal` = host-only, no internet — the deny-all egress baseline (§6.2) |
+| DNS control | `--dns`, `--dns-domain`, `--dns-option`, `--dns-search` | ❌ | Point guest DNS at a jackin-controlled resolver for egress-policy enforcement/diagnostics |
+| SSH agent | `--ssh` | ❌ | Host-side key custody for git push — complements jackin-exec without exposing key material |
+| Rosetta | `--rosetta` (+ `--arch/--os/--platform`) | ❌ | amd64-only role images on Apple silicon |
+| Stop signal | `--stop-signal` | ❌ | Graceful capsule shutdown contract on `container stop` |
+| Init image | `--init-image` | ❌ | Pin the vminitd image version for reproducible boots |
+| Kernel | `container system kernel set` | ❌ | Pin/upgrade guest kernel fleet-wide |
+
+*(analysis)* These are design requirements, not a delivery schedule. Read-only mounts, resource limits, and narrow socket publication are the highest-value contract elements (§8, §9).
+
+### Current limitations
+
+| Capability or limitation | Current state at 1.0.0 | Evidence |
+|---|---|---|
+| `--privileged` not supported | **Still true** (by design; `--cap-add` is the path; default cap set reduced in 0.12.0) | command reference, 0.12.0 notes |
+| DNS hiccup after macOS sleep/wake | **Unresolved in 1.0.0**; issue #1321 describes an invalid vmnet interface after a system restart and is closed as not planned | release notes, issue #1321 |
+| Multi-container bridge networking rough edges | 1.0.0 includes IPv6, DNS, port forwarding, `host.docker.internal`, host-only networks, network plugins, MTU controls, and an IP-leak fix; current behavior still needs empirical validation | release notes |
+| No health checks | **Still true** — open PR #1504 only reserves a `HealthStatus` enum ("always nil at runtime") | PR #1504, task #440 |
+| Apple Silicon only / macOS 26 required | Still true: README at 1.0.0 verbatim "supported on macOS 26 … We do not support older versions". macOS 15 degrades (no container-to-container networking; single default vmnet network; `container network` unavailable) — irrelevant for jackin❯ (macOS 26+ target) | README, technical-overview.md |
+| Memory ballooning is partial | "memory pages freed to the Linux operating system by processes running in the container's VM are not relinquished to the host"; Apple suggests periodic restarts for memory-intensive workloads | technical-overview.md verbatim |
+| No Docker Engine API | Issue #66 "Expose Docker Engine API" is closed as not planned; community shim **socktainer** v0.12.0 offers partial Engine API v1.51 over `~/.socktainer/container.sock` for macOS 26 arm64 and local experimentation | issue #66, socktainer README |
+| Shell-out is the only stable integration | CLI plus structured output is the supported surface; a versioned XPC API is not yet available | 1.0.0 release notes |
+
+---
+
+## 4. `container machine` — what it actually is
+
+### 4.1 Verified facts
+
+From `docs/container-machine.md` and WWDC26 Session 389:
+
+- **One lightweight VM per machine** on the same Containerization framework — same isolation tier as `container run`; the differences are lifecycle and host integration, not boundary. Apple's framing: "fast and lightweight, like a container, and persistent like a virtual machine."
+- **Boots the image's init system**: "Containers are typically modeled after an application. A container machine is modeled after a Linux environment. It runs the image's init system… Any Linux image that includes `/sbin/init` works"; `systemctl start postgresql` works on systemd images.
+- **Persistent**: rootfs modifications survive across sessions; `machine rm` deletes "including its persistent storage".
+- **Command family**: `container machine create <image> --name <n>` | `run -n <n> [cmd]` (no cmd → interactive shell as a user matching the host account; boots if stopped) | `set-default` | `ls` | `inspect` (JSON) | `stop` | `rm` | `set -n <n> cpus=4 memory=8G` (applies after next stop/start) | `logs`; alias `m`.
+- **Host integration**: macOS `$HOME` auto-mounted at `/Users/<username>` (doc internally inconsistent — quickstart shows `/home/<you>`); home-mount modes **`rw` (default), `ro`, `none`**. First-boot user provisioning script overridable via `/etc/machine/create-user.sh` (env: `CONTAINER_UID/GID/USER/HOME/MACHINE_ID`).
+- **Resources**: memory defaults to **half of host memory**; per-machine `cpus`/`memory` via `machine set`.
+- **Not documented**: extra `-v` volumes for machines, machine networking/IP semantics, port publish, SSH flags. The doc contains **zero occurrences of "agent", "AI", "sandbox", or "isolation"**.
+- Ecosystem signal: the upstream tree includes `examples/container-machine-vscode`, and WWDC26 Session 389 is dedicated to container machines.
+
+### 4.2 Fit analysis for jackin❯ *(analysis)*
+
+**What `container machine` is for, per Apple**: edit-on-Mac/build-in-Linux, macOS tooling against Linux artifacts, real init-supervised services, one environment per distro. It is OrbStack-machines-but-per-VM-kernel — Apple competing for the exact niche OrbStack's isolated machines occupy, with the kernel boundary OrbStack lacks.
+
+**Why it matters for jackin❯ despite not being agent-branded:**
+
+1. **It may remove the rootless-DinD constraint.** `container run` starts a single application process under vminitd, so an inner Docker daemon needs container-style privilege handling. A machine boots **systemd**; a stock `docker-ce` installation can run as a root systemd unit inside the machine's own VM. The VM remains the host boundary, so root inside the guest does not imply a shared-host-kernel privilege grant. Both rootless DinD under `container run --cap-add` and dockerd under systemd in a `container machine` remain empirical compatibility questions.
+2. **Persistence maps to eject/reconnect.** Today's Docker backend keeps stopped containers for reconnect; machines make that a first-party concept with `machine stop` / `machine run` resume and surviving rootfs. Warm reattach gets cheaper than re-launching a `container run` VM.
+3. **The home-mount must be `none` for jackin❯.** Default `rw` `$HOME` mapping conflicts with explicit mounts. Machines document no extra-volume mechanism, so `container run` is currently the only shape that satisfies the jackin❯ mount contract.
+4. **PID-1 behavior is unresolved.** The image init owns the in-VM process tree; the capsule could run as a systemd unit with `machine run -n <n> jackin-capsule` as attach, but that supervision contract is unverified.
+
+**Bottom line**: `container machine` is not the current default because extra mounts and networking semantics are undocumented. Its persistence, init supervision, and per-machine kernel make it a plausible future backend shape once those gaps close.
+
+---
+
+## 5. Sandboxy — Apple's reference agent sandbox, dissected
+
+Apple's `apple/containerization` repository includes the experimental `examples/sandboxy/` agent sandbox. Its README states that it runs AI coding agents in sandboxed Linux environments on Apple silicon. It is an example rather than a supported product, but its design is direct framework evidence.
+
+### 5.1 Mechanism (verified from source)
+
+- **CLI**: `sandboxy run <agent> [args]` with `-w/--workspace` (default cwd), `--cpus` (default 4), `--memory` (default "4g"), `--allow-hosts <h…>`, `--no-network-filter`, `-m host:container[:ro|rw]` (repeatable), `-e KEY[=VALUE]` (host env forwarding), `--name` (persistent instance, resumable conversation), `--rm`, `--ssh-agent`, `-k/--kernel` (auto-download).
+- **Network filtering = host-only vmnet + host-side HTTP CONNECT proxy. No DNS filtering, no vsock magic, no TLS interception.** The workload container attaches to `VmnetNetwork(mode: .VMNET_HOST_MODE)` — **no internet route at all**. A SwiftNIO TCP listener binds to the host-only gateway IP on the macOS host; guests are steered to it via injected `HTTP_PROXY`/`HTTPS_PROXY` (+ `GLOBAL_AGENT_*` and a `NODE_OPTIONS` preload of npm `global-agent`, because Claude Code is a Node app). HTTPS filtering uses the plaintext hostname in the CONNECT request — source comment: "the client sends a CONNECT request with the target hostname in plaintext before TLS begins, so we can filter without any certificate interception." Disallowed host → 403. Wildcards: `*.example.com` matches the bare domain and subdomains; empty list = deny all. **Fail-closed property**: tools that ignore proxy env vars get nothing — there is no route to bypass to.
+- **Install-phase split**: agent `installCommands` (apt/npm) run on a default NAT vmnet network with full internet; afterwards the container is **recreated** on the host-only network with the rootfs `clonefile`'d. Build-time open, run-time filtered.
+- **Built-in claude agent definition** (the only built-in; user JSON overrides at `~/.config/sandboxy/agents/`): `baseImage docker.io/library/node:22`; installs `git gh ripgrep jq…` + `@anthropic-ai/claude-code` + `global-agent`; `launchCommand: ["claude", "--dangerously-skip-permissions"]`; env `ANTHROPIC_API_KEY` forwarded from host, `IS_SANDBOX=1`; mounts `~/.claude → /root/.claude` (rw); `allowedHosts`: `*.anthropic.com, *.claude.com, npm.org, *.npmjs.org, *.github.com, *.githubusercontent.com, *.pypi.org, *.pythonhosted.org`.
+- **Attach**: `container.exec` with `terminal = true`, host stdin/stdout, raw mode, SIGWINCH → `agentProcess.resize` — same contract jackin❯ gets via `container exec -it`.
+- **Persistence**: rootfs snapshot on exit; `--name` resumes (sub-second warm starts claimed via cached kernel/init/rootfs).
+- **vmnet requires macOS 26** (`#available(macOS 26, *)`); MTU lowered to 1400 to avoid PMTU black holes.
+- **Not exposed in apple/container CLI**: code search confirms no `allowed-hosts`/network-filter flags exist in the CLI repo. Closest primitive: `container network create --internal` ("Restrict to host-only network") — the building block without the proxy.
+
+### 5.2 Design implications for jackin❯ *(analysis)*
+
+| Sandboxy technique | jackin❯ translation | Effort |
+|---|---|---|
+| Host-only network + host-side CONNECT proxy + proxy env steering | Layer 4 can compose an internal per-session network with a host-side CONNECT proxy, launch-time proxy variables, a workspace allowlist, and governed diagnostics. Proxy-ignoring tools fail closed because the guest has no direct route. | Medium architectural complexity |
+| Install-phase NAT → runtime host-only recreation | Image build and pull remain host-side; role setup requires an explicit network policy distinct from the runtime allowlist. | Medium architectural complexity |
+| Per-agent `allowedHosts` defaults (claude → anthropic.com, npmjs, github…) | Role manifests / agent definitions ship default egress allowlists per agent runtime; workspace config extends. jackin❯ already has the layering model (config → workspace → role) | Low (schema + docs; lands with egress item) |
+| `--cpus 4` / `--memory 4g` defaults | Adopt as `AppleContainerSpec` defaults (configurable); Apple chose the same defaults twice (Sandboxy 4/4g, smolvm 4/8GiB) — sane agent-workload envelope | Low |
+| `~/.claude` rw mount for agent state | jackin❯ already does credential/agent-state mounts better (per-agent `/jackin/<agent>/` mounts + auth sync modes); no change | — |
+| Env-var credential forwarding (`-e ANTHROPIC_API_KEY`) | **jackin❯ is ahead**: jackin-exec's on-demand picker + host.sock resolution + output redaction is strictly stronger than Sandboxy's launch-time env injection (which any process in the VM can `printenv`). Keep jackin-exec; cite Sandboxy as the weaker baseline in the roadmap comparison | — |
+| Rootfs `clonefile` snapshot + `--name` resume | Mirrors `container machine` persistence; reinforces §5.2 trajectory | — |
+
+**Strategic read:** Sandboxy supplies direct evidence for per-session VMs, allowlisted egress, resource caps, explicit mounts, and persistent sessions. Its host-side proxy is the strongest available reference for the egress layer. jackin❯ still owns the operator experience, roles, multi-agent orchestration, and credential mediation.
+
+---
+
+## 6. The landscape — latest versions only (June 10, 2026)
+
+Current macOS-first comparison at the verification cutoff: **Docker Desktop 4.77.0** (2026-06-08) + **Docker Sandboxes** (standalone `sbx` CLI, GA, paid), **OrbStack 2.2.1** (2026-06-04), **apple/container 1.0.0** `container run`, **`container machine`** (1.0.0), **smolvm 1.0.1** (2026-06-05).
+
+### 6.1 Security / isolation
+
+| | Docker Desktop 4.77 | Docker Sandboxes (`sbx`) | OrbStack 2.2.1 isolated machines | apple/container 1.0.0 (`run`) | `container machine` (1.0.0) | smolvm 1.0.1 |
+|---|---|---|---|---|---|---|
+| Kernel boundary | One shared Linux VM for all containers | **VM per sandbox** (dedicated kernel) | One shared VM/kernel (7.0.11) for all machines; namespaces per machine | **VM per container** (Virtualization.framework) | **VM per machine** | **VM per workload** (libkrun on Hypervisor.framework) |
+| Kernel-CVE blast radius | All containers + VM | One sandbox | All machines + Docker | One container | One machine | One workload |
+| Privileged/DinD story | `--privileged` DinD (current jackin❯ risk) | Private Docker daemon per sandbox, built-in | Docker supported inside isolated machines (shared kernel beneath) | `--privileged` unsupported; `--cap-add` with reduced default set; rootless DinD unvalidated (empirical validation) | *(analysis)* stock dockerd under systemd inside the machine VM — no outer-container privilege question; unvalidated (empirical validation) | Docker-in-VM documented recipe (Alpine + ext4 + virtio-net) |
+| Network policy | None native (ECI = Business tier, hardening not egress) | **Host-side proxy; Open/Balanced/Locked-Down policies; org-managed** | `--isolate-network` blocks host/machines; no domain allowlist | `network create --internal` (host-only) primitive; **no allowlist proxy in CLI** (Sandboxy demos one on the framework) | Networking undocumented | **Deny-by-default; `--net` opt-in; `--allow-host <h>` per-host allowlist, first-class CLI** |
+| Credential posture | Env vars in container | **Host-side credential proxy** (key "never exposed inside the sandbox"); OS-keychain secrets | Opt-in `--forward-ssh-agent`; everything else manual | jackin-exec provides host-side resolution on top | same | `--ssh-agent` — "Private keys never enter the guest — the hypervisor enforces this" |
+| Host FS exposure | Bind mounts | Explicit workspace mount, same path | **Selective mounts** (`--mount`), no Mac FS by default; ro flag undocumented | Explicit `-v`/`--mount` incl. **`readonly`**; `--read-only` rootfs | `$HOME` auto-mapped **rw by default** (`ro`/`none` available); no extra volumes documented | Explicit volume mounts |
+| Supply chain / audit | Proprietary VMM | Proprietary VMM | Proprietary (closed-source core) | **Open source (Apache-2.0), Apple-maintained** | same | Open source (Apache-2.0) |
+
+### 6.2 Performance
+
+| | Docker Desktop | Docker Sandboxes | OrbStack 2.2.1 | apple/container 1.0.0 | `container machine` | smolvm 1.0.1 |
+|---|---|---|---|---|---|---|
+| Cold start | VM already running; container ~instant | microVM per sandbox (sub-second class, unbenchmarked) | Machine create seconds; container instant | **Sub-second VM** (Apple, WWDC26) — PR empirical validation budget under 5s to capsule-ready | Sub-second class + first-boot init | **Under 200 ms claimed** (self-reported) |
+| Memory model | Static VM allocation | Per-sandbox VM | One VM, dynamic, very efficient (OrbStack's strength) | Per-VM; allocates as app needs **but freed guest pages not returned to host** (partial ballooning; Apple suggests restarts) | Defaults to **half of host memory** — must set `machine set memory=` | **Elastic virtio-balloon — host reclaims unused guest memory automatically**; idle vCPUs sleep |
+| Warm resume | n/a | sandbox persists | machine persists | `container stop`/`start` | **First-class persistence**; snapshot/resume | **VM fork: checkpoint/restore + CoW clones** — fastest possible "new session from warm template" |
+| FS sharing | VirtioFS/gRPC-FUSE | virtio-fs class | Very fast (custom, OrbStack's benchmark win) | virtio-fs | virtio-fs | virtio-fs |
+| x86 on ARM | Rosetta | Rosetta-class | Rosetta (fast) | **`--rosetta` flag** | undocumented | Rosetta noted in docs (unverified detail) |
+| Per-workload limits | cgroup flags | sandbox config | **Per-machine CPU/memory/disk** | **`--cpus`/`--memory`** | **`machine set cpus= memory=`** | `--cpus`/`--mem` (defaults 4/8GiB) |
+
+*(analysis)* Performance ranking for the jackin❯ "many parallel agent sessions on one Mac" shape: smolvm's elastic memory + fork is the theoretical best; apple/container is second with sub-second starts but needs explicit `--memory` caps + a restart-hygiene policy because of partial ballooning; OrbStack remains the most memory-efficient *shared*-kernel option (one VM amortized) — its efficiency is the flip side of the boundary jackin❯ is leaving it for.
+
+### 6.3 Productivity / integration (for jackin❯ as the orchestrator)
+
+| | Docker Desktop | Docker Sandboxes | OrbStack 2.2.1 | apple/container 1.0.0 | `container machine` | smolvm 1.0.1 |
+|---|---|---|---|---|---|---|
+| Programmatic surface | **bollard (full typed Rust API)** — today's backend | `sbx` CLI; `--output json` on some cmds; **no events API** (Rivet reverse-engineered an undocumented one) | `orb` CLI, JSON-ish | `container` CLI; **structured JSON/YAML/TOML `ls`/`inspect` (1.0.0)**; versioned XPC API promised | same CLI | CLI + HTTP/OpenAPI over Unix socket (Rust-friendly) |
+| Attach quality | docker exec -it | `sbx exec` | `orb -m` (PTY behavior was undocumented — a deferral reason) | **`container exec -it` over vminitd gRPC/vsock — PTY + SIGWINCH + signals, validated design** | `machine run -n <n>` interactive shell | CLI exec (PTY behavior was a question mark pre-1.0) |
+| Agent-runner fit | jackin❯ builds everything | **Complete agent runner — replaces jackin❯, not a backend** (closed runner, no API, paid) | Backend candidate (deferred) | **Primitive — exactly what jackin❯ needs** | Primitive+persistence | Primitive, agent-marketed |
+| OCI images / role Dockerfiles | ✅ | ✅ | ✅ | ✅ (`container build` exists) | ✅ (machines built **from OCI images**) | ✅ (+ image-index v1.0.0) |
+| Docker-workflow inside (Compose/Testcontainers) | native | private daemon ✅ | supported inside isolated machines | empirical validation gate (rootless DinD) | *(analysis)* systemd dockerd — empirical validation | documented recipe, constrained |
+| Install friction (operator) | App + license | `brew install docker/tap/sbx` + **paid subscription** | App; **$8/user/mo commercial** | **One signed pkg / brew; free, open source** | included in same pkg | brew-class install, free |
+| Cost | Free tier exists; ECI = Business $24/u/mo | **Separate paid subscription** | Free personal; $8/u/mo business | **Free** | Free | Free |
+
+### 6.4 Maintenance health / strategic risk
+
+| | Backing | Trajectory | Risk for jackin❯ |
+|---|---|---|---|
+| Docker Sandboxes | Docker Inc. | GA, paid, agent list growing | Product not primitive; no API; subordinates jackin❯ — rejected (roadmap Part 3 stands) |
+| OrbStack | Small commercial (kdrag0n) | 2.2.x active; shared-kernel by design | No kernel boundary — structurally out for Layer 2; remains the recommended *Docker engine* for today's default backend |
+| apple/container | **Apple, platform vendor** | 1.0.0 stable; WWDC session; machine + Sandboxy momentum; versioned API promised | Lowest long-term risk; macOS-26+ only (fine); closed Virtualization.framework underneath (can't extend devices) |
+| smolvm | smol-machines org (new, ~6 mo old) | 1.0.1; 54 releases in 6 months; ~3.7k stars; self-reported benchmarks only | Young/bus-factor; but Apache-2.0, Rust, agent-focused, and a credible fallback with features Apple lacks |
+
+### 6.5 Verdict: Apple Container vs OrbStack (and the rest) — explicit answer
+
+**Apple Container is the strongest jackin❯ Layer 2 backend.** OrbStack 2.2 improves productivity isolation but retains a shared kernel. apple/container 1.0.0 provides a per-container VM, sub-second start, structured CLI output, capability controls, host-enforced read-only mounts, internal networks, and vminitd gRPC/vsock attach. Docker Sandboxes remains a useful benchmark rather than an integrable backend because its runner is closed, paid, and lacks an API. smolvm remains a credible fallback with elastic memory, CLI-native egress allowlists, and VM fork support; those capabilities inform the jackin❯ design without displacing Apple Container as the primary backend.
+
+---
+
+## 7. Design implications
+
+- Parse structured 1.0 output with typed data rather than substring heuristics.
+- Preserve host-enforced read-only mounts, explicit resource envelopes, narrow socket publication, and per-session networks in the backend contract.
+- Treat rootless Docker-in-container and machine-mode Docker as separate empirical compatibility paths.
+- Keep egress policy, credential brokerage, attach semantics, and lifecycle cleanup visible as independent constraints.
+- Roadmap owns implementation order and delivery status.
+
+## 8. Limitations and open questions
+
+1. `--publish-socket` semantics under stop/start/reconnect (and whether it predates 1.0.0) — empirical validation.
+2. `container machine` networking/IP/port semantics + extra-volume support — undocumented upstream; blocks machine-mode V2.
+3. Whether vminitd remains PID 1 in machine mode (image `/sbin/init` as child) or hands off — affects capsule supervision design; empirical validation.
+4. Rootless DinD and dockerd-in-machine behavior inside apple/container VMs remain an empirical gate.
+5. smolvm performance figures are vendor-self-reported; no third-party benchmarks exist for any contender (incl. apple/container virtio-fs throughput) — empirical validation measures locally.
+6. Docker Sandboxes pricing specifics and macOS hypervisor framework — not published.
+7. macOS 27 "Golden Gate" details are press-reported (MacRumors et al.); apple/container's macOS 27 posture unstated (README pins macOS 26 support).
+8. A minority of quoted text was reproduced through a fetch summarizer; load-bearing version, flag, and Sandboxy-mechanism claims were checked against upstream API responses or source files.
+
+## 9. Sources
+
+- github.com/apple/container — releases API (0.8.0…1.0.0), `docs/container-machine.md`, `docs/technical-overview.md`, `docs/command-reference.md` (tag 1.0.0), PR #1662, PR #1674, issue #66, issue #1321, PR #1504
+- github.com/apple/containerization — README, releases API, tag 0.33.4, PR #607 (`examples/sandboxy/`: `RunAgentCommand.swift`, `HostProxy.swift`, `AgentDefinition.swift`, README)
+- developer.apple.com/videos/play/wwdc2026/389/ — "Discover container machines"
+- docs.orbstack.dev/release-notes, docs.orbstack.dev/machines/isolated, orbstack.dev/pricing, github.com/orbstack/orbstack#2469
+- docs.docker.com/desktop/release-notes, docs.docker.com/ai/sandboxes/ (+ get-started/agents/CLI ref), docker.com Sandboxes launch blog
+- github.com/smol-machines/smolvm (+ releases v1.0.0/v1.0.1), smolmachines.com
+- github.com/socktainer/socktainer
+- Backend foundation sources: <RepoFile path="crates/jackin-runtime/src/runtime/apple_container.rs" />, <RepoFile path="crates/jackin-runtime/src/apple_container_client.rs" />, <RepoFile path="crates/jackin-runtime/src/exec_host.rs" />, `crates/jackin-capsule/src/{exec,mcp_server}.rs`, and <RepoFile path="scripts/phase0-apple-container.sh" />.

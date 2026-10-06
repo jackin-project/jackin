@@ -1,0 +1,24 @@
+---
+title: "TUI Design"
+description: "Canonical design rules for the jackin❯ terminal UI. Read before implementing any TUI change."
+---
+
+This section is the **canonical record of every binding TUI design decision** — architecture, navigation, chrome rules, dialogs, component reuse, and visual design. When a new decision is made, add it to the relevant page immediately.
+
+If a proposed implementation conflicts with a rule here, fix the implementation, not the rule (or open a discussion to amend the rule first). Violations are bugs and must be fixed before a PR lands.
+
+Every PR review that touches a TUI surface must verify the diff against these pages before producing review output.
+
+Render paths never block: filesystem, Docker, network, sleeps, and subprocess capture report into typed state from background tasks or explicit `spawn_blocking` boundaries; views only read state and paint.
+
+Frame dispatch follows one policy on every surface, though the carrier differs: one `Terminal::draw` per tick that runs the view render plus a frame-scoped overlay closure (modal backdrops, debug chrome) against the same in-progress frame. The host console owns its dispatch surface-side: `jackin-console` frames pace through the upstream `Presenter` + `FrameClock` runtime (<RepoFile path="crates/jackin-console/src/tui/runtime.rs">crates/jackin-console/src/tui/runtime.rs</RepoFile>) with the console run loop keeping terminal ownership. Launch progress (`jackin-launch` `RichRenderer::render` via `LaunchViewView`) and the capsule compositor (`jackin-capsule` daemon compositor via `CapsuleView`) still implement the jackin❯-owned `jackin_tui::runtime::View<Model>` contract and render through the product-owned `drive_frame` adapter until their own modernization phases; short-lived launch dialogs and prompts use `drive_render`, the closure adapter over the same one-draw policy. TermRock owns its optional closure runner and neutral frame-time contract; jackin❯ keeps its existing surface schedulers, subscriptions, effects, terminal ownership, and out-of-frame OSC 8 post-passes.
+
+## Pages
+
+- **[Architecture](/reference/tui/architecture)** — Elm Architecture layers, source code locations, boundary rules, single/multi-screen layouts, and the typed effects flow between TUI and non-TUI code.
+- **[Navigation & Input](/reference/tui/navigation)** — Key binding roles, W3C Tabs pattern, navigation hints, focusability rules, hover-scroll, scrollable blocks, and debug output constraints.
+- **[Chrome & Surfaces](/reference/tui/chrome)** — Bottom chrome layout, status bar rules, brand chrome, focus-visible borders, launch progress surface, and alternate screen continuity.
+- **[Dialogs & Modals](/reference/tui/dialogs)** — Modal sizing, confirmation layout, sub-dialog stacking, wizard flows, error surface rules, hints/footer bar, and settings/editor parity.
+- **[Component Reuse & Catalog](/reference/tui/components)** — Hard reuse rule, the full reusable component catalog, and shared interaction patterns.
+- **[Visual Design](/reference/tui/visual-design)** — PHOSPHOR color palette, border colors, left sidebar, and tab bar specifications.
+- **[TermRock catalog](https://github.com/tailrocks/termrock/tree/main/docs)** — Generated previews and usage documentation for every neutral shared component.

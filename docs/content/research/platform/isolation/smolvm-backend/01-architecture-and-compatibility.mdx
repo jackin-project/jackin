@@ -1,0 +1,89 @@
+---
+title: "smolvm architecture and compatibility"
+description: "Verified smolvm runtime internals, packaging, networking, Docker compatibility, and jackin❯ integration constraints."
+---
+
+## Summary
+
+smolvm supplies a real VM-per-workload boundary and OCI input, but its agent-owned boot path, nested-Docker requirements, network model, distribution artifacts, and unsupported Rust-library surface require explicit compatibility testing.
+
+## Question and scope
+
+What does smolvm actually execute, expose, and package, and which differences from the current Docker backend constrain a jackin❯ integration?
+
+The cutoff is 2026-06-10 and covers smolvm 1.0.1. The evidence is source inspection, not a completed local backend prototype.
+
+## Method
+
+The review used the upstream [smolvm repository](https://github.com/smol-machines/smolvm), its current source tree, the [smol machines documentation](https://www.smolmachines.com/), libkrun sources, and the shipped Docker-in-VM example. Claims below link to the exact upstream artifact.
+
+## Findings
+
+### Runtime and process model
+
+`smolvm-agent` runs as PID 1. It mounts essential filesystems, opens a vsock listener on port 6000, and starts the OCI image entrypoint as a child under embedded `crun`; the image entrypoint is not PID 1. See [`smolvm-agent/src/main.rs`](https://github.com/smol-machines/smolvm/blob/main/crates/smolvm-agent/src/main.rs) and [`oci.rs`](https://github.com/smol-machines/smolvm/blob/main/crates/smolvm-agent/src/oci.rs).
+
+This is compatible in shape with a supervisor-owned capsule, but changes signal, reaping, init, shutdown, and entrypoint assumptions. Those behaviors need workload tests rather than inference.
+
+### Integration surfaces
+
+The workspace exposes a `smolvm` library target in [Cargo.toml](https://github.com/smol-machines/smolvm/blob/main/Cargo.toml), but it is not published on crates.io or presented as a supported Rust SDK. The upstream SDK directory ships a Node N-API binding; see [`sdks/README.md`](https://github.com/smol-machines/smolvm/blob/main/sdks/README.md).
+
+The server is axum HTTP. It defaults to a Unix socket under `$XDG_RUNTIME_DIR` and can listen on loopback TCP. Routes cover machines, exec, logs, images, and files. An OpenAPI 3.1 description can be exported. See [`serve.rs`](https://github.com/smol-machines/smolvm/blob/main/src/cli/serve.rs), [`api/mod.rs`](https://github.com/smol-machines/smolvm/blob/main/src/api/mod.rs), and [`openapi.rs`](https://github.com/smol-machines/smolvm/blob/main/src/cli/openapi.rs).
+
+The stable choices are therefore CLI subprocess or local HTTP API. Direct Rust-library embedding would couple jackin❯ to an unpublished internal API.
+
+### Docker inside the VM
+
+[PR #272](https://github.com/smol-machines/smolvm/pull/272) added kernel and overlay changes used by the [Docker-in-VM example](https://github.com/smol-machines/smolvm/blob/main/examples/docker-in-vm/docker.smolfile). The demonstrated recipe supports Docker pull, run, build, bridge networking, and host networking, with two critical constraints:
+
+- `/var/lib/docker` must be bind-mounted to ext4. ramfs lacks file-handle support required by nested overlay2.
+- The VM must use `--net-backend virtio-net`; TSI alone is insufficient for Docker bridge networking.
+
+The example uses bare Alpine plus `dockerd`, not an arbitrary jackin❯ role image. Compose, Testcontainers, BuildKit, sibling-container access, bind mounts, port publication, and daemon cleanup remain unverified.
+
+### Networking and credentials
+
+smolvm 1.0.1 documents deny-by-default networking with explicit `--allow-host` access and host-custodied SSH-agent forwarding. libkrun TSI handles socket syscalls for INET and Unix sockets, not TLS or HTTP semantics. It cannot inject authorization into HTTPS traffic because the VMM sees encrypted application bytes. A credential proxy would require a cooperating guest proxy and trust design; see the [libkrun README](https://github.com/containers/libkrun/blob/main/README.md).
+
+This is materially different from Docker Sandboxes' documented credential-proxy surface. Do not treat TSI as an equivalent security mechanism.
+
+### Resource efficiency
+
+smolvm 1.0.1 supports VM fork and elastic memory through virtio-balloon. These features improve the viability of concurrent per-workload VMs without changing the kernel-boundary or integration conclusions.
+
+### Packaging and signing
+
+smolvm bundles prebuilt libkrun and libkrunfw libraries in its release layout. Upstream libkrunfw does not offer a stable binary artifact URL. macOS execution requires the `com.apple.security.hypervisor` entitlement; the authoritative key is in the [libkrun entitlement file](https://github.com/containers/libkrun/blob/main/hvf-entitlements.plist).
+
+The `.smolmachine` format is a zstd-compressed tar with a JSON manifest and binary footer. It can contain the agent rootfs, OCI layers, platform libkrun artifacts, and optional storage/snapshot data; see [`smolvm-pack/src/format.rs`](https://github.com/smol-machines/smolvm/blob/main/crates/smolvm-pack/src/format.rs). Distribution must account for license, provenance, code signing, architecture, and update policy.
+
+### Architecture support
+
+Apple Silicon can run x86_64 guests through host Rosetta integration. smolvm mounts the host runtime and registers it through `binfmt_misc`; Linux has no equivalent fallback. See [`src/vm/rosetta.rs`](https://github.com/smol-machines/smolvm/blob/main/src/vm/rosetta.rs). This expands image compatibility but adds a host prerequisite and another behavior to surface in the launch contract.
+
+## Implications for jackin❯
+
+- Treat CLI or the local HTTP API as the stable boundary until upstream supports a Rust SDK.
+- Model the backend as VM lifecycle plus a guest supervisor, not as a transparent Docker-engine replacement.
+- Make Docker data storage, virtio networking, and cleanup explicit compatibility gates.
+- Keep credential resolution host-owned; do not infer a credential proxy from TSI.
+- Include entitlement, codesigning, bundled native libraries, Rosetta, and artifact provenance in the distribution decision.
+
+## Limitations and unknowns
+
+The study does not prove startup time, memory use, PTY behavior, cancellation, crash cleanup, volume semantics, Docker workflow parity, or production signing in jackin❯. Upstream source and release packaging can change; revalidate before reuse.
+
+## Sources
+
+- [smolvm repository](https://github.com/smol-machines/smolvm)
+- [smol machines documentation](https://www.smolmachines.com/)
+- [libkrun README](https://github.com/containers/libkrun/blob/main/README.md)
+- [Docker-in-VM pull request](https://github.com/smol-machines/smolvm/pull/272)
+- [Docker-in-VM example](https://github.com/smol-machines/smolvm/blob/main/examples/docker-in-vm/docker.smolfile)
+
+## Related work
+
+- [smolvm decision](/research/platform/isolation/smolvm-backend/02-alternatives-and-decision/)
+- [Apple Container backend](/research/platform/isolation/apple-container-backend/)
+- [Docker runtime hardening contract](/roadmap/docker-runtime-hardening-contract/)

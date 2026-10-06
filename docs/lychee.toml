@@ -1,0 +1,123 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+# Shared lychee configuration for generated docs link checks.
+#
+# Local PR check:
+#   cd docs
+#   bun run check:links:fresh
+
+# Cache is enabled locally. CI records a successful semantic link contract so
+# unchanged generated sites do not repeat the multi-minute external scan.
+cache = true
+
+# 429 is accepted to keep CI useful under external rate limits. GitHub requests
+# are also throttled below to make a 429 less likely.
+accept = ["100..=103", "200..=299", "429"]
+exclude = [
+  # ampcode.com is browser-visible but intermittently fails HTTP/2 negotiation
+  # for automated clients on GitHub-hosted runners.
+  "https://ampcode\\.com/",
+  # chatgpt.com returns 403 to all automated clients including lychee.
+  "https://chatgpt\\.com/",
+  # These OpenAI pages are browser-visible but return 403 to automated clients.
+  "https://openai\\.com/index/introducing-gpt-5-3-codex-spark/",
+  "https://help\\.openai\\.com/en/articles/9793128-about-chatgpt-pro-tiers",
+  # GitHub issue-list links are remapped to the API during static docs checks;
+  # the API endpoint can return 403 from GitHub Actions even for public repos.
+  "https://api\\.github\\.com/repos/jackin-project/jackin/issues",
+  # External GitHub blob/tree references are browser-visible source citations.
+  # The package script remaps them to the Contents API so lychee can validate
+  # paths, but broad docs scans regularly trip GitHub's secondary 403 limit.
+  "https://api\\.github\\.com/repos/[^/]+/[^/]+/contents/",
+  # Research pages cite GitHub API evidence for external repositories. Those
+  # endpoints can return 403 from Actions even for public repos.
+  "https://api\\.github\\.com/repos/",
+  # Public user repository listings are also rate-limited with 403 in Actions.
+  "https://api\\.github\\.com/users/[^/]+/repos",
+  # ACM DOI pages are public in browsers/search but return 403 to lychee in CI.
+  "https://dl\\.acm\\.org/doi/10\\.1145/3735636",
+  # Milvus pages below loop through redirects infinitely (verified locally:
+  # 302 → 302 → … hitting max-redirects with no final destination).
+  "https://milvus\\.io/blog/claude-context-vs-claude-code-complete-code-context-solution-for-ai-coding-assistants\\.md",
+  "https://milvus\\.io/blog/claude-context-reduce-claude-code-token-usage\\.md",
+  "https://milvus\\.io/docs/overview\\.md",
+  # grok.com/supergrok returns 403 to all automated clients.
+  "https://grok\\.com/supergrok",
+  # Medium returns 403 to all automated clients for this page.
+  "https://paul-hackenberger\\.medium\\.com/the-ultimate-token-saving-stack-rtk-caveman-and-tokensave-163badadd9ec",
+  # These cited research sources reject or time out for automated clients.
+  "https://git\\.joshthomas\\.dev/mirrors/claude-code-sandbox/src/commit/b44cf1a84e0bab3f5f2ded8a871cbdc43ce50249/docs/lift-and-shift-credentials\\.md",
+  "https://winbuzzer\\.com/2026/02/24/openai-chatgpt-pro-lite-100-dollar-plan-found-checkout-code-xcxwbn/",
+  "https://pranoti\\.thesciencetalk\\.com/perspectives/claude-5-hour-session-limit-how-it-works/",
+  # xygeni.io returns 403 to automated clients for this browser-visible page.
+  "https://xygeni\\.io/blog/dockerfile-secrets-why-layers-keep-your-sensitive-data-forever/",
+  # InfoQ returns 405/captcha to automated clients for this browser-visible page.
+  "https://www\\.infoq\\.com/news/2025/11/toon-reduce-llm-cost-tokens/",
+  # handler.dev is a browser-visible research reference, but CI lychee
+  # intermittently fails to connect to the site.
+  "https://handler\\.dev/",
+  # vibe-kb.com is a browser-visible research reference, but intermittently
+  # times out from GitHub-hosted runners.
+  "https://vibe-kb\\.com/",
+  # nngroup.com (Nielsen Norman Group) returns 403 to automated clients; the
+  # article is browser-visible. Cited from docs/reference/tui/navigation.mdx.
+  "https://www\\.nngroup\\.com/",
+  # code.visualstudio.com is browser-visible but its WAF intermittently returns
+  # 403 to automated clients (lychee). Cited from research/watchlist.mdx.
+  "https://code\\.visualstudio\\.com/",
+  # code.claude.com is browser-visible, but redirects automated clients to
+  # dns.google where the documentation path returns 404.
+  "https://code\\.claude\\.com/",
+  # Qdrant's public benchmark is browser-visible but repeatedly times out from
+  # GitHub Actions and can consume the full link-check retry budget by itself.
+  "https://qdrant\\.tech/benchmarks/",
+  # wezterm.org is browser-visible but CI lychee intermittently fails to connect
+  # to it. Cited from reference/tui and capsule terminal-model docs.
+  "https://wezterm\\.org/",
+  # xtermjs.org is browser-visible but CI lychee fails to connect to it.
+  # Cited from roadmap/clipboard-image-bridge.
+  "https://xtermjs\\.org/",
+  # Reddit returns 403 to automated clients for this curated Clippy lint list.
+  "https://www\\.reddit\\.com/r/rust/comments/1rxbygj/curated_list_of_clippy_lints_worth_adding_to_the/",
+  # Upstream moved these files (verified 404 via gh api contents on 2026-09-12):
+  # nguyenphutrong/quotio moved GLMQuotaFetcher.swift; xai-org/grok-build moved
+  # crates/codegen/xai-grok-shell/src/auth/model.rs. Keep the citations as
+  # historical evidence; exclude until the new upstream paths are known.
+  "https://raw\\.githubusercontent\\.com/nguyenphutrong/quotio/HEAD/Quotio/Services/GLMQuotaFetcher\\.swift",
+  "https://github\\.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-shell/src/auth/model\\.rs",
+]
+exclude_all_private = true
+exclude_path = ["(^|/)404\\.html$"]
+
+# `format` controls the final report shape. `mode` controls terminal display.
+format = "compact"
+index_files = ["index.html"]
+# Lychee defaults to 128. Keep that throughput for the generated site: it
+# contains thousands of repeated local links, while per-host limits below
+# independently protect remote services.
+max_concurrency = 128
+max_redirects = 10
+
+# A semantic successful-result artifact handles reuse across runs. Keep a small
+# in-run retry budget for transient failures without turning one slow host into
+# a multi-minute pipeline.
+max_retries = 2
+mode = "plain"
+no_progress = true
+retry_wait_time = 1
+timeout = 10
+user_agent = "jackin-docs-link-checker"
+
+include_mail = true
+scheme = ["https", "http", "file", "mailto"]
+
+[hosts."github.com"]
+concurrency = 16
+request_interval = "50ms"
+
+# blob→API remaps hit api.github.com; retain a tighter host-specific limit so
+# the broader global concurrency does not trigger GitHub's secondary limit.
+[hosts."api.github.com"]
+concurrency = 8
+request_interval = "100ms"

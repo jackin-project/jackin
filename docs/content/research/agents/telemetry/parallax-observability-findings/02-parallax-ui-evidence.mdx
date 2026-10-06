@@ -1,0 +1,193 @@
+---
+title: "Parallax UI evidence"
+description: "Records how issues, traces, runs, and build traces expose grouping, correlation, naming, and evidence-density problems."
+---
+
+## Summary
+
+Parallax exposes useful run and trace navigation, but unstable issue fingerprints, generic span names, weak log correlation, and oversized evidence bodies obscure failures.
+
+## Question and scope
+
+What do the observed Issues, Trace, Runs, and Build Trace surfaces reveal about the telemetry contract jackin❯ sends to Parallax?
+
+## Method
+
+The evidence comes from operator-supplied Parallax screenshots and command output at the dossier cutoff; the complete input inventory is in the [dossier method](/research/agents/telemetry/parallax-observability-findings/#method-and-evidence).
+
+## Findings
+
+### Issues list
+
+Observed page: `Issues`.
+
+Problems:
+
+- Titles are raw technical payloads, not normalized symptoms. Examples included full `docker exec ... /jackin/runtime/jackin-capsule` command lines and BuildKit shell commands.
+- The same attach failure appeared as many separate issues because dynamic values are part of the title/fingerprint:
+  - `jk-qfrehkbv-holla-thearchitect`
+  - `jk-p45np22c-holla-thearchitect`
+  - `jk-xb9cw69q-jackin-thearchitect`
+  - `--user 501:0`, `--user 501:20`, or no `--user`
+- Tags shown in rows were low-value (`detail:<none>`, `jackin_jsonl:true`) instead of operational facets (`operation=attach`, `component=host`, `failure.kind=attach_error`, `agent=claude`, `runtime=docker`).
+- All repeated attach failures had `EVENTS=1`, so the list reads like many unique incidents instead of one recurring incident.
+- KPI cards duplicate visible counts (`14 loaded`, `14 open`, `14 events`) without explaining root causes or dominant failure classes.
+
+Desired shape:
+
+- Issue title: `Capsule attach failed`
+- Fingerprint fields: `service.name`, `jackin.component`, `error.type`, `jackin.operation`, normalized failure code.
+- Dynamic data as attributes only: `container.name`, `run.id`, `user.uid`, command argv, log artifact path.
+- Row facets: `operation=attach`, `runtime=docker`, `agent=claude`, `stage=attach`, `run_count=N`, `last_run=<id>`.
+
+### Issue detail
+
+Observed page: `log_error: capsule attach failed ...`.
+
+Problems:
+
+- H1 is a full variable command string, so the page title itself is unreadable.
+- Latest event body contains:
+  - actual failure line,
+  - capsule log path,
+  - `last 40 capsule log lines`,
+  - repeated `[jackin-capsule debug]` prefixes,
+  - terminal byte dumps,
+  - render/frame telemetry,
+  - paths and dynamic branch/container names.
+- Tags include `detail=<none>` and `jackin_jsonl=true`, which are implementation markers, not triage data.
+- Occurrence row repeats the whole giant body; no separation of summary, cause, evidence, and artifact links.
+- The page links one trace, but there is no structured "what failed, where, why, what run, what stage, what command" section.
+
+Desired shape:
+
+- Summary: `Capsule attach failed while connecting host to capsule socket`.
+- Cause fields:
+  - `error.type=attach_error`
+  - `jackin.operation=capsule.attach`
+  - `jackin.stage=attach`
+  - `command.name=docker`
+  - `process.exit_code` or `signal` when known
+  - `container.name`
+  - `container.state`
+- Evidence:
+  - first failure line,
+  - last meaningful capsule log events after filtering debug firehose,
+  - link to full artifact/run bundle,
+  - redacted command argv.
+- Raw debug tail should be a downloadable/expandable artifact, not the issue body.
+
+### Trace detail
+
+Observed page: `launch_stage` trace.
+
+Problems:
+
+- Waterfall rows all have the same visible name: `launch_stage`.
+- The meaningful stage name (`derived image`) is hidden under attributes.
+- The trace duration card says `123118.4ms`, but the selected row has `99849.528ms`; the UI does not explain which stage consumed the run.
+- `Logs: 0` on a launch trace conflicts with run-level logs for the same run. This means logs were not emitted inside the span context or were exported without the active trace/span linkage.
+- Many tiny rows with `0.02ms`/`0.06ms` are visually present but operationally meaningless.
+
+Desired shape:
+
+- Span name should be operation-specific, such as:
+  - `launch.plan`
+  - `launch.prepare_workspace`
+  - `launch.build_derived_image`
+  - `launch.create_container`
+  - `launch.attach_capsule`
+- Attributes should carry facets: `jackin.stage`, `jackin.role`, `container.name`, `image.name`, `cache.hit`.
+- Waterfall label should render `operation + stage`, not just the generic operation.
+- Logs emitted during a launch stage must inherit the active span context.
+
+### Runs list
+
+Observed page: `Runs`.
+
+Problems:
+
+- The page had `52` visible runs: `48` finished wrapper runs, `2` observed-only telemetry runs, and `10` failed exits.
+- Most rows had the same command text: `jackin --debug`. That makes the table useful for chronology but not for diagnosis.
+- Failed runs only show `exit 1`; the row does not show top issue, failing stage, last error, or dominant error type.
+- Observed-only rows show span/log counts such as `14387 span(s) · 0 log(s)`, which is strong evidence of uncorrelated traces without enough run context.
+- The status summary says failures exist, but the first-screen list does not explain what failed or whether failures share a cause.
+
+Desired shape:
+
+- Add columns/facets for `workflow`, `role`, `agent`, `workspace`, `top_error.type`, `top_issue`, and `failed_stage`.
+- Show `exit 1 · capsule attach failed` instead of only `exit 1`.
+- Group repeated `jackin --debug` rows by role/workflow where useful, while preserving exact run ids.
+- Treat observed-only runs with many spans and zero logs as telemetry-health warnings.
+
+### Run detail
+
+Observed page: run `18bea0c913570db0`.
+
+Problems:
+
+- Header showed `finished`, `exit 0`, `18 trace(s)`, `0 error(s)`, and `200 log(s)`, but logs included `attach client: socket read failed: early eof`.
+- The newest logs were repeated mouse movement/debug rows, both prefixed and unprefixed:
+  - `[jackin debug cockpit-dialog-mouse] kind=Moved ...`
+  - `kind=Moved ...`
+- Trace list mixed jackin❯ workflow traces, BuildKit traces, provider probes, capsule session traces, and one-span helper traces without a hierarchy.
+- The evidence bundle inlined raw Docker inspect output and generated Dockerfile content. This makes the run bundle hard to skim and creates redaction risk.
+- `No grouped issues inside this run` is technically true for this sample, but the page still contains failure-like signals. The UI cannot distinguish expected EOF/noise from actionable errors because jackin❯ does not send typed outcomes.
+
+Desired shape:
+
+- Run summary should show lifecycle phases with status:
+  - `role.resolve`
+  - `credentials.resolve`
+  - `agent_binaries.prepare`
+  - `image.build`
+  - `container.create`
+  - `capsule.attach`
+  - `agent.session`
+- Expected terminal/session shutdown should be `event.outcome=success|expected_close`, not body text containing `failed`/`eof`.
+- Debug interaction rows should be sampled, counted, or moved to metrics/artifacts.
+- Raw large artifacts should be linked from the bundle, with summarized structured rows in the default view.
+
+### Build trace detail
+
+Observed page: trace `2c2c18b26eee1bb9b8c4692119a5b957`, root `build /var/folders/.../.tmpJxRImQ/context`.
+
+Problems:
+
+- The trace is a useful BuildKit subtrace, but it is presented as a peer trace to jackin❯ launch instead of a linked child of the launch/image-build workflow.
+- The root name includes a host temp path, which is dynamic and noisy.
+- `Logs: 0` despite the same run having image build logs such as `Building Docker image` and `derived image build source selected`.
+- Waterfall rows are BuildKit RPC names (`moby.buildkit.v1.Control/Status`, `LLBBridge/Solve`) with no jackin❯ semantic wrapper like `launch.build_derived_image`.
+- The trace is dominated by two long BuildKit spans (`Control/Solve`, `Control/Status`) but the page does not surface the jackin❯ reason for the build: cache miss, capsule version change, recipe hash change, rebuild flag, etc.
+
+Desired shape:
+
+- Parent launch trace span: `launch.build_derived_image`.
+- Linked BuildKit subtrace:
+  - `linked.trace_id=<buildx trace>`
+  - `jackin.parent_trace_id=<launch trace>`
+  - `jackin.operation=image.build`
+  - `build.reason=capsule_version_changed`
+  - `image.name`, `image.recipe.version`, `image.recipe.hash`
+- Root name should be stable: `buildx.build_image`, with temp context path as redacted attribute or local artifact reference.
+- Logs emitted by jackin❯ around the build should correlate to the parent span and, when possible, to the BuildKit linked trace.
+
+
+## Implications for jackin❯
+
+Emit stable issue dimensions, meaningful operation names, correlated logs, bounded evidence, and explicit linked-trace relationships so the UI can present workflow state without parsing raw bodies.
+
+## Limitations and unknowns
+
+The screenshots represent the UI and stored data at the 2026-07-03 cutoff. Current Parallax grouping and navigation behavior must be revalidated before treating UI gaps as backend limitations.
+
+## Sources
+
+- [Dossier method and evidence inventory](/research/agents/telemetry/parallax-observability-findings/#method-and-evidence)
+- [Raw data and root causes](/research/agents/telemetry/parallax-observability-findings/03-raw-data-and-root-causes/)
+
+## Related work
+
+- [Tracing and instrumentation](/research/agents/telemetry/parallax-observability-findings/01-tracing-and-instrumentation/)
+- [Signal contract and verification](/research/agents/telemetry/parallax-observability-findings/04-signal-contract-and-verification/)
+

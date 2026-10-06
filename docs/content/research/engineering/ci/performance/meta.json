@@ -1,0 +1,9 @@
+{
+  "title": "Performance",
+  "defaultOpen": false,
+  "pages": [
+    "index",
+    "ci-performance-analysis",
+    "ci-speed-roadmap"
+  ]
+}

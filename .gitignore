@@ -1,0 +1,38 @@
+# macOS
+.DS_Store
+
+# Rust
+/target/
+
+# Native macOS menu-bar local build products (source + Generated bindings are tracked)
+/native/dist/
+/native/.build/
+/native/Design/Prototypes/UnifiedAgentUsage/.build/
+/native/DerivedData/
+/native/JackinDesktop.xcodeproj/
+/native/JackinDesktop.xcworkspace/
+
+# Claude Code
+.worktrees/
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+.idea/
+
+# Temporary files
+/tmp/
+.lycheecache
+docs/.lycheecache
+
+# Superpowers implementation plans — local engineering artefacts only,
+# not part of the public docs surface. Specs under docs/superpowers/specs/
+# are intentionally tracked.
+docs/superpowers/plans/
+.claude/worktrees/
+
+.claude/
+
+PR-576-review.md
+
+# Generated crate docs pages (see docs/scripts/gen-crate-pages.ts)
+docs/content/reference/crates/*.mdx
+.termrock/

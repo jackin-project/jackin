@@ -1,0 +1,117 @@
+---
+title: "Agent orchestration program"
+description: "Synthesizes external orchestrator evidence into a terminal-first, isolated operating model for agent fleets."
+---
+
+**Research state:** Needs refresh
+
+## Summary
+
+Synthesizes external orchestrator research into a terminal-first, isolated operating model for agent fleets.
+
+This synthesis combines fleet-operations and containment/recovery evidence; linked roadmap items own implementation commitments and status.
+
+
+## Research question
+
+Make jackin❯ the canonical, terminal-first orchestrator for engineers who run
+autonomous coding agents in real working environments: local terminals, SSH
+sessions, disposable servers, Kubernetes debug pods, and long-running isolated
+workspaces. The product target is not a consumer desktop app. It is the
+operator surface for experienced engineers who want agents at full speed but
+do not want that speed pointed directly at their host account, production
+credentials, or shared Docker daemon.
+
+Which ideas from adjacent orchestrators improve jackin❯'s terminal-first fleet model without weakening isolation, runtime neutrality, explicit contracts, or recovery? Full external-product dossiers live under [/research/](/research/).
+
+Adjacent tools that inform the plan:
+
+- `multicode` is the strongest reference for **fleet operations**: many
+  parallel workspaces, live status, GitHub link state, persistent task state,
+  resource telemetry, remote operation, and custom operator tools.
+- Hazmat is the strongest reference for **local containment discipline**:
+  explicit session contracts, tiered threat decisions, macOS user isolation,
+  seatbelt policies, `pf` firewalling, credential-deny rules, stack
+  integrations that cannot widen trust, and rollback-oriented design.
+- Docker Sandboxes is the strongest commercial benchmark for **microVM
+  sandboxing**: per-sandbox VM boundary, private Docker daemon, scoped
+  workspace sharing, host-side network policy, and credential proxying.
+- [Herdr](https://github.com/ogulcancelik/herdr) is the strongest reference for **terminal-multiplexer UX for multi-agent workflows**: agent status (Blocked / Working / Done / Idle), foreground-process ownership, screen heuristics, semantic integration reports, workspace-level status roll-up, notification suppression when the operator is already looking, sound escalation as opt-in, and blocking `wait` semantics on a Unix socket API. Its architecture (bare host processes, AGPL-3.0) rules out embedding, but its UX decisions directly inform the [agent runtime status authority](/roadmap/agent-runtime-status/), [agent attention prompts](/roadmap/agent-attention-prompts/), and the daemon socket design. See [jackin❯ Capsule control plane](/roadmap/jackin-capsule/) for the in-container multiplexer plan that applies these concepts to the Capsule model.
+- [cellshot](https://github.com/kitlangton/cellshot) and adjacent terminal recorder/test tools are the strongest reference for **agentic terminal observation and automation**: structured terminal frames, visible-text waits, input injection, artifact bundles, and replayable traces. They directly inform [Terminal observation and automation](/research/agents/orchestration/terminal-observation/terminal-observation-automation/), which makes Capsule sessions script-addressable — Playwright-like control for jackin❯ instances, tabs, prompts, waits, and captures — without treating Docker logs or screenshots as the API.
+- [Orca](https://github.com/stablyai/orca) is the strongest reference for **desktop-native UX for multi-agent workflows**: worktree-per-task visual orchestration, WebGL multi-pane terminals, diff-annotation-to-agent feedback loops, embedded Chromium per worktree for live UI inspection, and 30+ pre-configured agent runtimes at zero config. Its isolation model (host-native worktrees, agents run as host user) is the opposite of the jackin❯ model, making it a useful UX benchmark without being a viable architecture borrow. See [Orca ADE research](/research/agents/orchestration/orca-ade/) for the full evaluation.
+- Conductor, Claude devcontainers, Trail of Bits' devcontainer, and private
+  internal tools remain useful comparison points, but they are not the center
+  of this program.
+
+The program keeps two ideas separate:
+
+1. **Fleet operations**: how the operator coordinates many agents and tasks.
+2. **Containment and recovery**: what an autonomous agent can reach, how that
+   boundary is explained, and how the operator recovers when the agent does
+   something destructive.
+
+That wider scope makes this a cross-product synthesis rather than a multicode-specific comparison.
+
+
+## jackin❯ values used for evaluation
+
+Every borrowed idea has to survive these filters:
+
+| Value | What it means for roadmap decisions |
+|---|---|
+| Terminal-first | The CLI and `jackin console` are primary surfaces. Desktop-only workflows are comparison material, not the center. |
+| Isolation before convenience | No hidden host mutation, host socket exposure, or credential widening just to make an agent feel seamless. |
+| Runtime-neutral agents | Claude, Codex, Amp, Kimi, OpenCode, Gemini, and future runtimes should plug into the same operator model. |
+| Role repos over ad-hoc setup | Toolchains belong in roles where possible. Project-local hints may improve ergonomics, but they must not become policy escapes. |
+| Explicit contracts | Before launch, the operator should be able to see mounts, credentials, network, Docker access, host-side effects, and recovery posture. |
+| Real engineering environments | The model must eventually work for SSH, servers, Kubernetes, and repos with serious Docker/Compose needs. |
+
+
+## Headline findings
+
+1. **A launch contract is the common substrate.** Hazmat proves that a visible
+   session contract turns security posture into product UX. In jackin❯, the same
+   contract also unlocks safer stack integrations, network policies, snapshot
+   previews, and backend comparisons.
+2. **Live status and persistence drive fleet work.** Status, durable storage, and tags are prerequisites for queues, telemetry, link tracking, and remote operation.
+3. **Docker is not a binary; it is a privilege boundary.** Hazmat's shared
+   daemon refusal and Docker Sandboxes' private-daemon model both point to the
+   same rule: host Docker socket access should never be an accidental
+   convenience path.
+4. **Role repos and integration hints solve different problems.** Roles define
+   the agent environment. Integrations can make local stacks easier without
+   becoming executable project policy or credential delivery.
+5. **Backend-neutral does not mean risk-neutral.** A Docker container, rootless
+   DinD, OrbStack isolated machine, Docker Sandboxes microVM, SSH remote host,
+   and Kubernetes pod all need one user-facing abstraction, but their risk
+   profiles must be printed honestly.
+6. **Service access is part of the boundary.** Ports, host aliases, and local
+   service reachability are not small UX extras. They decide whether an agent
+   can hit databases, dev servers, model runners, or cloud emulators, so they
+   belong in the same contract as mounts and credentials.
+
+
+## Method and evidence
+
+The comparison uses primary project documentation, public source repositories, operator-surface analysis, and local jackin❯ architecture references. **Verification cutoff:** 2026-05-22. Product capabilities are volatile and need revalidation before implementation decisions.
+
+## Limitations and open questions
+
+Open design questions and scope boundaries are consolidated in [Open questions and sources](/research/agents/orchestration/program-research/04-open-questions-and-sources/). Roadmap pages own sequencing, status, and implementation commitments.
+
+## How to read
+
+1. [Decision and benefit matrices](/research/agents/orchestration/program-research/01-decision-and-benefit-matrices/) compares borrowable ideas, operator benefits, and ideas to decline.
+2. [Containment benchmarks](/research/agents/orchestration/program-research/02-containment-benchmarks/) evaluates Hazmat and Docker Sandboxes.
+3. [Fleet and recovery comparison](/research/agents/orchestration/program-research/03-fleet-and-recovery-comparison/) preserves the durable multicode, containment, and recovery findings.
+4. [Open questions and sources](/research/agents/orchestration/program-research/04-open-questions-and-sources/) records unresolved design choices, scope boundaries, related work, and primary sources.
+
+## Sources
+
+The complete primary-source catalog is in [Open questions and sources](/research/agents/orchestration/program-research/04-open-questions-and-sources/#sources).
+
+## Related work
+
+- [Agent orchestration](/research/agents/orchestration/) — category navigation.
+- [Research Watchlist](/research/watchlist/) — volatile cross-project evidence.
+

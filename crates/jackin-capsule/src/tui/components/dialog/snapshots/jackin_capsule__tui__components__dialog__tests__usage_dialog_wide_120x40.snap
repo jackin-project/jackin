@@ -1,0 +1,26 @@
+---
+source: crates/jackin-capsule/src/tui/components/dialog/tests.rs
+assertion_line: 2029
+expression: "render_usage_dialog_snapshot(120, 40, UsageDialogTab::Provider)"
+---
+
+
+
+                 ┌ Usage ─────────────────────────────────────────────────────────────────────────────┐
+                 │         Overview   OpenAI   Anthropic   Amp   xAI   Z.AI   Kimi   MiniMax          │
+                 │                   ────────                                                         │
+                 │────────────────────────────────────────────────────────────────────────────────────│
+                 │  OpenAI                                                        alexey@example.com  │
+                 │  Updated now                                                                       │
+                 │────────────────────────────────────────────────────────────────────────────────────│
+                 │  Plan Pro 20x                                                                      │
+                 │                                                                                    │
+                 │  Session                                                                           │
+                 │  ███████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  │
+                 │  37% left                                                            Resets 15:07  │
+                 │  10% in reserve                                                 Lasts until reset  │
+                 │────────────────────────────────────────────────────────────────────────────────────│
+                 │  Credits                                                                           │
+                 │  ACP billing unavailable                                                           │
+                 │                                                                                    │
+                 └────────────────────────────────────────────────────────────────────────────────────┘

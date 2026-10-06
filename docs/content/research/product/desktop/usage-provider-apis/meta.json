@@ -1,0 +1,18 @@
+{
+  "title": "Usage provider APIs",
+  "defaultOpen": false,
+  "pages": [
+    "index",
+    "01-current-coverage",
+    "02-codex-api",
+    "03-claude-api",
+    "04-amp-api",
+    "05-grok-api",
+    "06-zai-minimax-kimi-apis",
+    "07-runout-projection",
+    "08-codex-followups",
+    "09-claude-followups",
+    "10-provenance-and-misc",
+    "11-amp-daily-followup"
+  ]
+}

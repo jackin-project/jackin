@@ -1,0 +1,77 @@
+---
+title: "jackin❯ Context Engine — design spec"
+description: "A measured, reuse-first context-engine design with explicit host, recovery, isolation, and outcome boundaries."
+---
+
+**Research state:** Incomplete
+
+External-tool research cutoff: **2026-09-23 UTC**. The [six-tool dossier](/research/context/tools/) and [current release register](/research/context/tools/08-current-release-register/) cover Caveman, RTK, LeanCTX, Ponytail, Headroom, and LemonCrow. The [Jackin integration strategy](/research/context/tools/11-jackin-integration/) and [reuse matrix](/research/context/engine/09-reuse-decision-matrix/) govern current dependency choices. This is still a design, not implemented or benchmark-qualified behavior.
+
+## Research question
+
+What should Jackin own, reuse, and automatically activate to reduce resource consumption per accepted task without weakening correctness, recovery, cache behavior, or capsule isolation?
+
+## Headline findings
+
+### Thesis
+
+Build the narrow Jackin-specific control and evidence contracts. Reuse appropriate upstream implementations behind replaceable boundaries. Do not adopt six global installers, make a complete external runtime mandatory, or rewrite a usable Rust library merely because its product also has a Python wrapper.
+
+The current recommendation is a selected `headroom-core` transform spike, restricted LeanCTX and LemonCrow retrieval comparisons, qualified RTK command filtering, and restrained instruction assets inspired by Ponytail and Caveman. These are architecture candidates, not a performance ranking. [Current comparison](/research/context/tools/05-head-to-head/).
+
+### What capsule ownership actually provides
+
+Jackin can generate capsule-local configuration, package immutable artifacts, supervise workers, scope state, and connect observations to usage records. It cannot infer complete model-bound traffic merely from a PTY or container. A native agent tool that does not pass through a proven hook or MCP route remains outside the optimization boundary.
+
+Therefore every capability needs an explicit activation probe. Changing terminal display is not changing model input. Adding MCP tools does not make native tools disappear. An installed hook is not proof that its output replacement was accepted. [Host-specific implementation plan](/research/context/tools/11-jackin-integration/).
+
+### Layers and responsibilities
+
+| Layer | Responsibility | Boundary rule |
+|---|---|---|
+| Measurement | Usage receipts, estimates, accepted outcomes, activation and recovery evidence | Keep actual provider fields separate from counterfactual estimates |
+| Retrieval | Exact search, symbols, outlines, bounded source ranges | Preserve source freshness and native edit prerequisites |
+| Observations | Selected typed reductions and recovery handles | Execute once; preserve observed original; do not blindly rewrite commands |
+| Instructions | Role-aware narration and reuse-first policy | Never reduce requirement coverage or repository testing standards |
+| State | Scoped artifacts, context epochs, index and exposure identity | Shared source data is not shared model memory |
+| Optional provider path | Protocol-specific request compression | Separate auth/cache/streaming qualification; disabled by default |
+
+The detailed feature-layer pages below remain design sketches. Their proposed defaults, economic examples, and candidate dependencies are not automatically approved by this refresh. Use the current integration plan and reuse matrix for implementation decisions; no universal token multiplier, quota conversion, or whole-boundary coverage claim follows from a single session's measurements.
+
+## Method and evidence
+
+The current dossier inspected live releases and selected tagged implementation files, checked independent-study eligibility, and reconciled source/API changes. It did not run a six-way paid benchmark or build the upstream packages. No independent current-release accepted-task proof was established for a universal default.
+
+Current RTK includes recall and structural diff-parser corrections. LemonCrow publishes its engine source and bounds advisory-state locking. LeanCTX's current preview facade is `lean-ctx-embed`. Headroom exposes Rust transforms. These facts update integration feasibility, not outcome qualification. [Evidence ledger](/research/context/tools/07-evidence-and-claims/).
+
+### Default enablement
+
+Target an `auto` profile that installs reviewed assets and selects only host/version/content combinations with qualification records. Keep an `off` path and raw verifier lane. Initial measurement and restrained instruction delivery are followed by build, host, fidelity, accepted-task, and rollback gates before larger reductions activate.
+
+Keep the selected model, reasoning effort, native execution, editing, approvals, and provider authentication unchanged by default. Model routing is a separate intervention and must not masquerade as compression savings. A configured raw fallback may skip a failed optional transform, never an authorization or path-integrity check.
+
+## Limitations and open questions
+
+The remaining decisions require executable proof: dependency resolution on Jackin targets, real host result replacement, recovery after compaction/resume, concurrent worktree isolation, native read-before-edit behavior, and net benefit after schema, indexing, recovery, and extra-turn costs. Public APIs and released fixes are narrower evidence than those tests.
+
+## How to read
+
+| Page | Contents |
+|---|---|
+| [Goals and non-goals](/research/context/engine/01-goals-and-non-goals/) | Objectives and evidence bars. |
+| [Architecture](/research/context/engine/02-architecture/) | Proposed structure and integration boundaries. |
+| [Observation pipeline](/research/context/engine/03-observation-pipeline/) | Reduction and recovery mechanisms to qualify. |
+| [Retrieval](/research/context/engine/04-retrieval-layer/) | Source-selection design alternatives. |
+| [Output and prompt](/research/context/engine/05-output-and-prompt-layer/) | Instruction-policy design. |
+| [Routing and fleet](/research/context/engine/06-routing-and-fleet-economics/) | Separate model/fleet experiments, not default compression. |
+| [Memory and state](/research/context/engine/07-memory-and-state/) | Artifact and handoff design. |
+| [Measurement](/research/context/engine/08-measurement-and-verification/) | Usage and harness requirements. |
+| [Current reuse matrix](/research/context/engine/09-reuse-decision-matrix/) | Current build/embed/adapt/bundle choices. |
+| [Rollout](/research/context/engine/10-rollout-and-validation/) | Rollout sketch; apply current qualification requirements. |
+| [Current integration plan](/research/context/tools/11-jackin-integration/) | Concrete host adapters, reuse choices, and completion gates. |
+
+## Related work
+
+- [Token-optimization tools](/research/context/tools/)
+- [Current evidence protocol](/research/context/tools/07-evidence-and-claims/)
+- [Token-optimization techniques](/research/context/techniques/)

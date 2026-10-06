@@ -1,0 +1,20 @@
+---
+title: "Architecture Decision Records"
+description: "Architectural decisions made during jackin❯ development, with context, rationale, and consequences."
+---
+
+Architecture Decision Records (ADRs) document significant design choices — what was decided, why, what alternatives were considered, and what the trade-offs are.
+
+## Active ADRs
+
+- **[ADR-001: Single-crate vs Cargo workspace](/reference/adrs/adr-001-single-crate-vs-workspace)** — why jackin❯ started as a single crate, the threshold that triggered workspace adoption, and the current workspace structure.
+- **[ADR-002: Latest stable Rust toolchain policy](/reference/adrs/adr-002-rust-toolchain)** — how the only supported toolchain is pinned via `rust-toolchain.toml` and advanced with stable Rust releases.
+- **[ADR-003: Ratatui as the TUI rendering library](/reference/adrs/adr-003-ratatui)** — why ratatui over tui-rs, raw ANSI, or cursive, and how it is used across all three TUI surfaces.
+- **[ADR-004: Capsule pane-body rendering mechanism](/reference/adrs/adr-004-pane-body-rendering)** — why the capsule renders pane bodies through a custom cell widget rather than tui-term.
+- **[ADR-005: Capsule single render path](/reference/adrs/adr-005-capsule-single-render-path)** — why every capsule frame is one `Terminal::draw` written by one `ClientWriter` inside `?2026` brackets, and how derived rendering replaced the repaint tiers.
+- **[ADR-006: EditorState owns concrete workspace config](/reference/adrs/adr-006-editor-state-workspace-config)** — why the editor state concretizes workspace config while keeping the remaining generic test seams.
+- **[ADR-007: Container backend lifecycle trait](/reference/adrs/adr-007-container-backend-lifecycle)** — why persisted instance lifecycle commands dispatch through a backend trait while launch remains backend-specific.
+- **[ADR-008: Launch never reconnects to a live instance](/reference/adrs/adr-008-launch-never-reconnects-live-instance)** — why launch creates or restores dead instances but never silently attaches to a healthy live one.
+- **[ADR-009: Role hooks are the role author's domain](/reference/adrs/adr-009-role-hooks-authors-domain)** — why role hooks run exactly as authored and startup-speed policy stays in role documentation.
+- **[ADR-010: Cleanup requires explicit operator approval](/reference/adrs/adr-010-cleanup-explicit-operator-approval)** — why dirty or unpushed isolated work is preserved unless the operator explicitly deletes or discards it.
+- **[ADR-011: Native macOS agent-usage menu bar](/reference/adrs/adr-011-native-macos-usage-menu-bar)** — Rust owns probes/views via boltffi; Swift is display-only; host credential roots and hard `Agent::ALL` / `UsageSurface` scope.

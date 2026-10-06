@@ -1,0 +1,54 @@
+---
+title: "Agent workflow orchestration"
+description: "Designs a durable workflow substrate for visible agent sessions, gates, handoffs, verification, recovery, and operator intervention."
+---
+
+**Research state:** Incomplete
+
+**Verification cutoff:** 2026-08-12. Candidate maturity, licenses, and public APIs require revalidation after this date.
+
+## Research question
+
+How should jackin❯ coordinate a roadmap item through implementation, verification, independent review, fixes, and operator approval while keeping every agent session visible and interruptible?
+
+## Headline findings
+
+- jackin❯ should own the execution substrate and durable run model because Capsule sessions, isolated workspaces, role environments, and host-mutation policy are core constraints rather than interchangeable runner details.
+- External products converge on durable task state, provider mixing, visible execution, issue or PR integration, and human gates. None reviewed combines those properties with Capsule-owned PTYs and jackin❯ isolation closely enough to become the authoritative runtime dependency.
+- The durable contract is a deterministic run ledger, not an LLM manager. Agent prose is evidence, never the transition authority; verification commands, runtime state, artifacts, GitHub state, and operator decisions advance the run.
+- Operator intervention is normal workflow state. Attach, prompt, pause, manual Git changes, and cancellation must be recorded rather than treated as exceptional corruption.
+- GitHub is the durable audit surface; Capsule remains the live execution surface. The reporter must stay compact and must never merge without explicit operator authority.
+- A generic workflow language, background queue, dashboard, and autonomous review loops should not define the initial contract. Their delivery and sequencing belong to Roadmap.
+
+## Method and evidence
+
+The research compared local orchestrators, coding-agent workbenches, workflow engines, terminal control systems, memory systems, and GitHub-native agent workflows. [Prior art](/research/agents/orchestration/workflow-systems/agent-workflow-orchestration/01-prior-art/) records the sources and reusable ideas. [Design constraints](/research/agents/orchestration/workflow-systems/agent-workflow-orchestration/02-design-constraints/) defines the run model, evidence rules, control boundaries, GitHub behavior, and operator-intervention contract.
+
+The comparison is architectural. Hands-on parity tests across the candidate workbenches remain incomplete, so dependency conclusions should be revisited if a candidate exposes a stable external session-provider API that preserves Capsule visibility and policy.
+
+## Limitations and open questions
+
+- Should work begin from a tracking issue, a draft PR, or a branch with check-run visibility?
+- Which evidence is required in addition to agent runtime `done` before a phase becomes review-ready?
+- Should direct operator input always pause the run, or can policy permit verification-then-continue?
+- How should workflow memory be selected, inspected, versioned, and proposed for promotion?
+- Which agent-review adapters provide independent value without hiding sessions or duplicating branch ownership?
+- Where should future declarative profiles live, and how should operator, workspace, and role precedence work?
+
+## How to read
+
+| Page | Purpose |
+|---|---|
+| [01 — Prior art](/research/agents/orchestration/workflow-systems/agent-workflow-orchestration/01-prior-art/) | External systems, reusable patterns, and dependency verdicts. |
+| [02 — Design constraints](/research/agents/orchestration/workflow-systems/agent-workflow-orchestration/02-design-constraints/) | Durable objects, state transitions, evidence, Capsule APIs, GitHub reporting, intervention, memory, and adapters. |
+
+## Related work
+
+- [Agent orchestration program](/research/agents/orchestration/program-research/)
+- [Task source abstraction](/research/agents/orchestration/workflow-systems/task-source-abstraction-design/)
+- [Persistent storage and workflow memory](/research/agents/orchestration/memory/)
+- [Agent runtime status authority](/roadmap/agent-runtime-status/)
+- [Autonomous task queue](/roadmap/autonomous-task-queue/)
+- [GitHub link tracking](/roadmap/github-link-tracking/)
+- [Console agent session control](/roadmap/console-agent-session-control/)
+- [jackin❯ daemon](/roadmap/jackin-daemon/)

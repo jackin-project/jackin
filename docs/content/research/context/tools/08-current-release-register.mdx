@@ -1,0 +1,56 @@
+---
+title: "08 — Current release register"
+description: "The September 23, 2026 six-tool release baseline, component identities, and source-verification boundaries."
+---
+
+## Summary
+
+Authoritative research cutoff: **2026-09-23 UTC**. The comparison fixes six products to the stable GitHub releases below. Release metadata was retrieved through the live repository API; cached search and release-page results were not used to select versions.
+
+## Question and scope
+
+Which exact releases define the comparison, and what does verification establish?
+
+## Method
+
+Check release objects, publication dates, and selected tagged source. Keep product, binary, crate, SDK, and host versions separate. This is a research baseline, not an automatically updating dependency lockfile. Unreviewed adjacent products are outside this refresh; no stale adoption leaderboard is retained.
+
+## Findings
+
+| Tool | Reviewed stable release | Published, UTC | Component distinction |
+|---|---|---|---|
+| Caveman | [v2.7.0](https://github.com/JuliusBrussee/caveman/releases/tag/v2.7.0) | 2026-09-15 | Release names bin-v1.1.7; some npm publications are marked pending |
+| RTK | [v0.49.0](https://github.com/rtk-ai/rtk/releases/tag/v0.49.0) | 2026-09-11 | CLI package, not a verified library target |
+| LeanCTX | [v3.10.2](https://github.com/yvgude/lean-ctx/releases/tag/v3.10.2) | 2026-09-16 | Engine 3.10.2; unpublished lean-ctx-embed facade 0.1.0 |
+| Ponytail | [v4.10.0](https://github.com/DietrichGebert/ponytail/releases/tag/v4.10.0) | 2026-09-14 | Skill/plugin assets and host adapters, not a Rust engine |
+| Headroom | [v0.38.0](https://github.com/headroomlabs-ai/headroom/releases/tag/v0.38.0) | 2026-09-21 | Product 0.38.0; source headroom-core crate 0.1.0 |
+| LemonCrow | [v0.7.4](https://github.com/lemoncrow-lab/lemoncrow/releases/tag/v0.7.4) | 2026-09-14 | Python runtime with source engine and packaged distributions |
+
+Release API entry points: [Caveman](https://api.github.com/repos/JuliusBrussee/caveman/releases), [RTK](https://api.github.com/repos/rtk-ai/rtk/releases/latest), [LeanCTX](https://api.github.com/repos/yvgude/lean-ctx/releases/latest), [Ponytail](https://api.github.com/repos/DietrichGebert/ponytail/releases/latest), [Headroom](https://api.github.com/repos/headroomlabs-ai/headroom/releases/latest), and [LemonCrow](https://api.github.com/repos/lemoncrow-lab/lemoncrow/releases/latest). These discovery URLs are mutable; the per-row release and design-page source links identify the reviewed snapshot.
+
+### Current implementation facts that matter
+
+- RTK's release contains content-addressed recall and structural diff-parser corrections. Do not describe it as raw-rerun-only or apply the superseded prefix-parser verdict to it. [Tagged changelog](https://github.com/rtk-ai/rtk/blob/v0.49.0/CHANGELOG.md).
+- LeanCTX's current embedding facade is `lean-ctx-embed`, preview and unpublished. [Tagged manifest](https://github.com/yvgude/lean-ctx/blob/v3.10.2/rust/crates/lean-ctx-embed/Cargo.toml).
+- Headroom has public Rust transform exports. Source reuse is a real option; published stable SDK support and build portability remain separate checks. [Tagged exports](https://github.com/headroomlabs-ai/headroom/blob/v0.38.0/crates/headroom-core/src/transforms/mod.rs).
+- LemonCrow's tagged tree includes its engine source and bounded advisory-state lock. [Engine package](https://github.com/lemoncrow-lab/lemoncrow/blob/v0.7.4/src/lemoncrow/pro/__init__.py), [lock implementation](https://github.com/lemoncrow-lab/lemoncrow/blob/v0.7.4/src/lemoncrow/gateway/adapters/mcp/smart_state.py).
+- Caveman's skill/client and engine licenses differ. [License map](https://github.com/JuliusBrussee/caveman/blob/v2.7.0/LICENSING.md).
+- Ponytail's full policy includes testing/minimal-diff preferences that must not override Jackin's requirements. [Current policy](https://github.com/DietrichGebert/ponytail/blob/v4.10.0/AGENTS.md).
+
+## Implications for jackin❯
+
+Pin the selected repository commit, binary digest, dependency lock, configuration hash, agent version, and provider/auth path during qualification. Resolve a tag to its commit before building; do not use an unchecked moving branch or `/latest` during capsule startup. A changed component invalidates only the affected qualification records, but never inherits a prior performance percentage automatically.
+
+## Limitations and unknowns
+
+This review establishes release identity and selected source behavior, not complete builds, signatures, network behavior, or task outcomes. No six-way paid benchmark was executed. All six currently lack a release-matched independent accepted-task result established by this review. GitHub stars and download counts are deliberately excluded from ranking.
+
+## Sources
+
+Release records and tagged source references are inline. [07 — Evidence](/research/context/tools/07-evidence-and-claims/) records why plausible-looking studies may not qualify.
+
+## Related work
+
+- [Tools dossier](/research/context/tools/)
+- [Six-tool comparison](/research/context/tools/05-head-to-head/)
+- [Jackin integration](/research/context/tools/11-jackin-integration/)

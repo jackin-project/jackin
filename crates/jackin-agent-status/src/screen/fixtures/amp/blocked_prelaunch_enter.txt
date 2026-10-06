@@ -1,0 +1,51 @@
+jackin❯   Amp                                                                                                                                                  ☰Menu
+          ━━━━━━━
+┌ Amp ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│+ /jackin/runtime/jackin-capsule runtime-setup                                                                                                                        │
+│[entrypoint] running container init...                                                                                                                                │
+│[entrypoint] GitHub CLI authenticated (host: github.com)                                                                                                              │
+│[entrypoint] git trailer hook installed (agent: amp, active: coauthor_trailer dco)                                                                                    │
+│+ export JACKIN_STATUS_SOCKET=/jackin/run/jackin.sock                                                                                                                 │
+│+ JACKIN_STATUS_SOCKET=/jackin/run/jackin.sock                                                                                                                        │
+│+ export JACKIN_STATUS_SOURCE=hook-amp-1                                                                                                                              │
+│+ JACKIN_STATUS_SOURCE=hook-amp-1                                                                                                                                     │
+│+ export JACKIN_AGENT_RUNTIME=amp                                                                                                                                     │
+│+ JACKIN_AGENT_RUNTIME=amp                                                                                                                                            │
+│+ JACKIN_EXEC_SYSTEM_PROMPT=                                                                                                                                          │
+│+ '[' -n '' ']'                                                                                                                                                       │
+│+ case "${JACKIN_AGENT:?JACKIN_AGENT must be set}" in                                                                                                                 │
+│+ LAUNCH=(amp --dangerously-allow-all)                                                                                                                                │
+│+ '[' -x /jackin/runtime/hooks/setup-once.sh ']'                                                                                                                      │
+│+ '[' -x /jackin/runtime/hooks/source.sh ']'                                                                                                                          │
+│+ '[' -x /jackin/runtime/hooks/preflight.sh ']'                                                                                                                       │
+│+ run_hook preflight /jackin/runtime/hooks/preflight.sh '' /home/agent                                                                                                │
+│+ local label=preflight path=/jackin/runtime/hooks/preflight.sh tail= hook_cwd=/home/agent                                                                            │
+│+ echo '[entrypoint] running preflight hook...'                                                                                                                       │
+│[entrypoint] running preflight hook...                                                                                                                                │
+│+ local rc=0                                                                                                                                                          │
+│+ '[' -n /home/agent ']'                                                                                                                                              │
+│+ cd /home/agent                                                                                                                                                      │
+│+ /jackin/runtime/hooks/preflight.sh                                                                                                                                  │
+│[architect-preflight] configuring Context7 MCP (native) for amp                                                                                                       │
+│Added amp.mcpServers.headroom to /home/agent/.config/amp/settings.json                                                                                                │
+│+ '[' 0 -ne 0 ']'                                                                                                                                                     │
+│+ '[' 1 = 1 ']'                                                                                                                                                       │
+│+ '[' -t 0 ']'                                                                                                                                                        │
+│+ set +x                                                                                                                                                              │
+│                                                                                                                                                                      │
+│[entrypoint] Setup complete. Press Enter to launch amp...                                                                                                             │
+│                                                                                                                                                                      │
+│                                                                                                                                                                      │
+│                                                                                                                                                                      │
+│                                                                                                                                                                      │
+│                                                                                                                                                                      │
+│                                                                                                                                                                      │
+│                                                                                                                                                                      │
+│                                                                                                                                                                      │
+│                                                                                                                                                                      │
+│                                                                                                                                                                      │
+│                                                                                                                                                                      │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+                                               Ctrl-\ menu   Alt+Shift+↑↓←→ resize pane   click focus pane   Ctrl-Q quit
+
+                                                                                                                                           refreshing  0tpf37cm  799e1e

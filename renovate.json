@@ -1,0 +1,89 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:best-practices"
+  ],
+  "ignorePaths": [
+    "crates/jackin-lints/rust-toolchain"
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^docker\\/construct\\/versions\\.env$/"
+      ],
+      "matchStrings": [
+        "TIRITH_VERSION=(?<currentValue>\\S+)"
+      ],
+      "depNameTemplate": "sheeki03/tirith",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v?(?<version>.*)$"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^docker\\/construct\\/versions\\.env$/"
+      ],
+      "matchStrings": [
+        "SHELLFIRM_VERSION=(?<currentValue>\\S+)"
+      ],
+      "depNameTemplate": "shellfirm",
+      "datasourceTemplate": "crate"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^docker\\/construct\\/versions\\.env$/"
+      ],
+      "matchStrings": [
+        "MISE_VERSION=(?<currentValue>\\S+)"
+      ],
+      "depNameTemplate": "jdx/mise",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v?(?<version>.*)$"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^rust-toolchain\\.toml$/"
+      ],
+      "matchStrings": [
+        "channel = \"(?<currentValue>\\d+\\.\\d+\\.\\d+)\""
+      ],
+      "depNameTemplate": "rust-lang/rust",
+      "datasourceTemplate": "github-tags",
+      "extractVersionTemplate": "^(?<version>\\d+\\.\\d+\\.\\d+)$"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^crates\\/jackin-runtime\\/src\\/runtime\\/docker_profile\\.rs$/"
+      ],
+      "matchStrings": [
+        "DIND_PRIVILEGED_IMAGE: &str = \"docker:(?<currentValue>\\d+-dind)\""
+      ],
+      "depNameTemplate": "docker",
+      "datasourceTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^crates\\/jackin-runtime\\/src\\/runtime\\/docker_profile\\.rs$/"
+      ],
+      "matchStrings": [
+        "DIND_ROOTLESS_IMAGE: &str = \"docker:(?<currentValue>\\d+-dind-rootless)\""
+      ],
+      "depNameTemplate": "docker",
+      "datasourceTemplate": "docker"
+    }
+  ],
+  "prHourlyLimit": 4,
+  "prConcurrentLimit": 4,
+  "branchConcurrentLimit": 4,
+  "commitBody": "Signed-off-by: Renovate Bot <renovate@whitesourcesoftware.com>",
+  "recreateWhen": "always",
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["at any time"]
+  }
+}

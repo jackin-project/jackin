@@ -1,0 +1,30 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "jackin-protocol"
+version = "0.6.4"
+edition.workspace = true
+rust-version.workspace = true
+authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
+description = "Shared wire-format types for jackin❯'s host CLI ↔ in-container multiplexer control channel."
+homepage = "https://jackin.tailrocks.com/"
+repository.workspace = true
+license.workspace = true
+readme = "README.md"
+publish = false
+
+[lib]
+name = "jackin_protocol"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+jackin-core = { workspace = true }
+jackin-telemetry = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["io-util", "net", "rt", "time"] }
+
+[lints]
+workspace = true

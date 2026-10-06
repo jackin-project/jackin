@@ -1,0 +1,8 @@
+{
+  "title": "Desktop verification",
+  "defaultOpen": false,
+  "pages": [
+    "index",
+    "commands"
+  ]
+}

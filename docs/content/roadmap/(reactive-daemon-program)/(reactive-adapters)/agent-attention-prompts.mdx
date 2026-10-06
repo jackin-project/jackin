@@ -1,0 +1,40 @@
+---
+title: "Agent Attention Prompts"
+---
+
+**Status**: Partially implemented
+
+**Current state**: The first adapter foundation is shipped; the production [jackin❯ daemon](/roadmap/jackin-daemon/) accepts one-way attention snapshots, de-duplicates `blocked` / unseen `done` transitions, and can dispatch macOS/Linux notifications when started with `JACKIN_ATTENTION=1`. Per-container event subscription, click-to-focus, `jackin-attention` MCP enrichment, and the console Notifications tab remain unbuilt.
+
+## Shipped baseline
+
+The [Agent Runtime Status Authority](/roadmap/agent-runtime-status/) is implemented and already produces the effective `blocked` / derived `done` / `idle` / `working` / `unknown` transitions this feature needs; this item does not have to invent its own waiting-detection heuristic. MCP registration also already has a working pattern to extend: <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" /> auto-registers the `tirith` / `shellfirm` MCP servers into each agent's config at container launch, and a future `jackin-attention` server would register through the same code path.
+
+The production implementation in <RepoFile path="crates/jackin-runtime/src/host_daemon.rs" /> accepts an `attention_snapshot` control request carrying pane states and emits notifications on `blocked` / `done` transitions only. Notifications are muted unless `JACKIN_ATTENTION=1` is set on the daemon process; muted mode still records the transition state so repeated snapshots do not spam later.
+
+Everything else — per-container event subscription, click-to-focus, and the console Notifications tab — is unbuilt.
+
+## Remaining work
+
+1. **`jackin-attention` MCP server** (optional enrichment, not the state source): `attention.note(reason, urgency?)` / `attention.clear()`, baked into the construct image, auto-registered per runtime via the existing `runtime_setup.rs` pattern.
+2. **Daemon adapter**: subscribe to per-container control-channel `blocked` / `done` transitions, track sound-escalation timers, hold per-workspace mute state.
+3. **OS notification dispatch**: macOS Notification Center (`osascript` / `UserNotifications`, sound via `afplay` / `NSSound`) and Linux `notify-send` / libnotify in the same phase; Windows out of scope until jackin❯ supports Windows hosts.
+4. **Click-to-focus**: Ghostty first, matching the [Desktop Agent Hub](/research/product/desktop/agent-hub/) v1 contract; other terminals get a notification with no click action until their adapters are added.
+5. **`Notifications` tab** in `jackin console` workspace editor: `attention.enabled`, `attention.urgency_filter`, `attention.sound_escalation_after`, `attention.click_action`, `attention.mute_until`, resolved with the same most-specific-wins precedence (global / workspace / workspace×role×agent) the rest of jackin❯ already uses. No per-role overrides in v1.
+
+## Out of scope
+
+- Independent PTY-idle inference in the notification adapter — state comes only from the runtime status authority.
+- Sound files beyond a single default; urgency-based sound differentiation.
+- Cross-terminal click-to-focus matrix beyond Ghostty.
+- Windows support.
+- Remote/cross-host notification delivery (revisit once remote-agent work lands).
+
+## Related work
+
+- [jackin❯ daemon](/roadmap/jackin-daemon/) — must ship phase 1 before this adapter can be built.
+- [Live bidirectional auth sync](/roadmap/live-auth-sync/) — sibling adapter on the same daemon.
+- [jackin❯ desktop Agent Hub](/research/product/desktop/agent-hub/) — owns the first Ghostty click-to-focus UX.
+- [Agent runtime status authority](/roadmap/agent-runtime-status/) — canonical state source this item consumes.
+- Research: [Agent attention prompts: design exploration](/research/agents/orchestration/agent-attention-prompts-design/) — full UX narrative, MCP contract alternatives, and open design questions behind this item.
+- <RepoFile path="crates/jackin-runtime/src/reactive_daemon.rs">crates/jackin-runtime/src/reactive_daemon.rs</RepoFile> — feature-gated spike adapter.

@@ -1,0 +1,47 @@
+---
+title: "Agent isolation architecture"
+description: "Defines a four-layer security model spanning hardened runtimes, VM boundaries, on-demand credentials, and egress controls."
+---
+
+**Research state:** Needs refresh
+
+## Summary
+
+The current design combines hardened container execution, a per-session VM boundary, on-demand credential delivery, process-level sandboxing, and network egress policy. Each layer closes a risk the others cannot.
+
+## Research question
+
+How should jackin❯ contain semi-trusted agents and untrusted project code without exposing the host kernel, raw credentials, unrelated files, or unrestricted network access?
+
+## Headline findings
+
+- Shared-kernel containers cannot structurally contain kernel-escape vulnerabilities; a per-workload VM boundary limits a successful escape to one session.
+- VM isolation does not prevent an agent from reading credentials intentionally placed inside that VM, so credentials require an independent on-demand delivery contract.
+- VM and credential boundaries do not constrain individual subprocess filesystem or network access; process sandboxing and session egress policy remain separate layers.
+- Apple Container is a buildable OCI/VM primitive, while Docker Sandboxes is a complete agent-running product. jackin❯ needs the primitive to preserve roles, runtimes, lifecycle, and operator UX.
+- The design targets a trusted operator running semi-trusted agents against potentially untrusted code on macOS ARM; it does not claim hosted multi-tenant or audited compliance guarantees.
+
+## Method and evidence
+
+The dossier combines vulnerability evidence, upstream platform documentation and issues, comparative architecture analysis, and local code/config inspection. **Verification cutoff:** 2026-07-01. Revalidate volatile versions, CVE disposition, and platform limitations before implementation decisions.
+
+## Limitations and open questions
+
+Apple Container Docker-in-VM compatibility, interactive lifecycle behavior, credential approval UX, network enforcement, and process-sandbox compatibility require empirical verification. [Layer contracts and open questions](/research/platform/security/isolation-architecture/agent-isolation-architecture/03-layer-contracts-and-open-questions/) records the constraints.
+
+## How to read
+
+1. [Threat and platform evidence](/research/platform/security/isolation-architecture/agent-isolation-architecture/01-threat-and-platform-evidence/) explains the independent kernel, credential, subprocess, and egress risks.
+2. [Four-layer model](/research/platform/security/isolation-architecture/agent-isolation-architecture/02-four-layer-model/) defines threat coverage and compares Apple Container with Docker Sandboxes.
+3. [Layer contracts and open questions](/research/platform/security/isolation-architecture/agent-isolation-architecture/03-layer-contracts-and-open-questions/) records residual risks, validation gates, threat scope, code touchpoints, and related work.
+
+## Sources
+
+Primary external sources remain adjacent to claims in the evidence chapters. Related local dossiers and roadmap owners are listed in the final chapter.
+
+## Related work
+
+- [Isolation architecture](/research/platform/security/isolation-architecture/) — category navigation.
+- [Selectable sandbox backends](/research/platform/security/sandbox-backends/) — backend comparison.
+- [Container credential exposure](/research/platform/security/credential-exposure/container-credential-exposure/) — credential threat analysis.
+

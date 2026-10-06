@@ -1,0 +1,22 @@
+{
+  "root": true,
+  "title": "Roadmap",
+  "description": "In-progress, planned, and brainstormed work on jackin❯.",
+  "icon": "Route",
+  "defaultOpen": false,
+  "pages": [
+    "index",
+    "in-progress",
+    "planned",
+    "ideas",
+    "(agent-orchestration)",
+    "(reactive-daemon-program)",
+    "(agent-runtimes-authentication)",
+    "(isolation-security)",
+    "(infrastructure)",
+    "(operator-surface)",
+    "(documentation-tooling)",
+    "(configuration-ergonomics)",
+    "(product-direction)"
+  ]
+}

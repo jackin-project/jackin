@@ -1,0 +1,33 @@
+/* Small first-screen overrides layered after the main landing stylesheet. */
+.landing-hero-stage > .landing-theme-toggle {
+  position: absolute;
+  right: 40px;
+  bottom: 40px;
+  z-index: 4;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.32);
+}
+
+@media (max-width: 720px) {
+  nav.landing-topnav {
+    padding: 18px 20px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 18px;
+  }
+
+  .landing-nav-right {
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .landing-star {
+    padding: 7px 10px;
+    font-size: 10px;
+  }
+
+  .landing-hero-stage > .landing-theme-toggle {
+    right: 20px;
+    bottom: 24px;
+  }
+}

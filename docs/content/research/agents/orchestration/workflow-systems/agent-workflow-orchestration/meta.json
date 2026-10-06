@@ -1,0 +1,9 @@
+{
+  "title": "Agent workflow orchestration",
+  "defaultOpen": false,
+  "pages": [
+    "index",
+    "01-prior-art",
+    "02-design-constraints"
+  ]
+}

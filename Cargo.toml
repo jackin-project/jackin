@@ -1,0 +1,335 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+[workspace]
+members = [
+    "crates/jackin",
+    "crates/jackin-agent-status",
+    "crates/jackin-build-meta",
+    "crates/jackin-brand",
+    "crates/jackin-capsule",
+    "crates/jackin-config",
+    "crates/jackin-console",
+    "crates/jackin-oppicker",
+    "crates/jackin-core",
+    "crates/jackin-dev",
+    "crates/jackin-diagnostics",
+    "crates/jackin-docker",
+    "crates/jackin-env",
+    "crates/jackin-host",
+    "crates/jackin-image",
+    "crates/jackin-manifest",
+    "crates/jackin-omp-store",
+    "crates/jackin-process",
+    "crates/jackin-process-directory",
+    "crates/jackin-protocol",
+    "crates/jackin-launch",
+    "crates/jackin-runtime",
+    "crates/jackin-telemetry",
+    "crates/jackin-tui",
+    "crates/jackin-xtask",
+    "crates/jackin-pr-trailers",
+    "crates/jackin-usage",
+    "crates/jackin-usage-ffi",
+    "crates/jackin-isolation",
+    "crates/jackin-instance",
+    "crates/jackin-test-support",
+    "crates/jackin-otlp-testbed",
+]
+exclude = ["crates/jackin-lints"]
+resolver = "3"
+
+[workspace.package]
+version = "0.6.4"
+edition = "2024"
+rust-version = "1.97"
+license = "Apache-2.0"
+repository = "https://github.com/jackin-project/jackin"
+
+[workspace.dependencies]
+anyhow = "1.0"
+assert_cmd = "=2.2.2"
+base64 = "0.22"
+chrono = { version = "0.4", default-features = false }
+clap = "4.5"
+clap_mangen = "0.3"
+criterion = "=0.8.2"
+crossterm = "0.29"
+dhat = "=0.3.3"
+dialoguer = "0.12"
+directories = "6.0"
+dockerfile-parser-rs = "3.3.0"
+fast-down = "5.0"
+filetime = "=0.2.29"
+flate2 = "1.1"
+fs4 = "1.1.0"
+futures-util = "0.3"
+hyper-util = { version = "0.1", features = ["tokio"] }
+hex = "0.4"
+httpdate = "1"
+icu_collator = "2.2"
+icu_locale = "2.2"
+insta = "=1.48.0"
+jackin-build-meta = { version = "0.6.4", path = "crates/jackin-build-meta" }
+jackin-brand = { version = "0.6.4", path = "crates/jackin-brand" }
+jackin-agent-status = { version = "0.6.4", path = "crates/jackin-agent-status" }
+jackin-config = { version = "0.6.4", path = "crates/jackin-config" }
+jackin-console = { version = "0.6.4", path = "crates/jackin-console" }
+jackin-oppicker = { version = "0.6.4", path = "crates/jackin-oppicker" }
+jackin-core = { version = "0.6.4", path = "crates/jackin-core" }
+jackin-diagnostics = { version = "0.6.4", path = "crates/jackin-diagnostics" }
+jackin-docker = { version = "0.6.4", path = "crates/jackin-docker" }
+jackin-env = { version = "0.6.4", path = "crates/jackin-env" }
+jackin-host = { version = "0.6.4", path = "crates/jackin-host" }
+jackin-image = { version = "0.6.4", path = "crates/jackin-image" }
+jackin-instance = { version = "0.6.4", path = "crates/jackin-instance" }
+jackin-isolation = { version = "0.6.4", path = "crates/jackin-isolation" }
+jackin-launch = { version = "0.6.4", path = "crates/jackin-launch" }
+jackin-manifest = { version = "0.6.4", path = "crates/jackin-manifest" }
+jackin-omp-store = { version = "0.6.4", path = "crates/jackin-omp-store" }
+jackin-otlp-testbed = { version = "0.6.4", path = "crates/jackin-otlp-testbed" }
+jackin-process = { version = "0.6.4", path = "crates/jackin-process" }
+jackin-process-directory = { version = "0.6.4", path = "crates/jackin-process-directory" }
+jackin-protocol = { version = "0.6.4", path = "crates/jackin-protocol" }
+jackin-runtime = { version = "0.6.4", path = "crates/jackin-runtime" }
+jackin-telemetry = { version = "0.6.4", path = "crates/jackin-telemetry" }
+jackin-tui = { version = "0.6.4", path = "crates/jackin-tui" }
+jackin-test-support = { version = "0.6.4", path = "crates/jackin-test-support" }
+jackin-usage = { version = "0.6.4", path = "crates/jackin-usage" }
+nix = "0.31"
+rustix = { version = "=1.1.4", features = ["fs"] }
+opentelemetry_sdk = "0.32"
+opentelemetry-semantic-conventions = { version = "=0.32.1", default-features = false }
+opentelemetry = "0.32"
+opentelemetry-appender-tracing = "0.32"
+opentelemetry-otlp = { version = "0.32", default-features = false, features = ["trace", "logs", "metrics", "grpc-tonic", "gzip-tonic", "tls-ring", "tls-roots", "experimental-grpc-retry"] }
+opentelemetry-proto = { version = "0.32", default-features = false, features = ["gen-tonic", "trace", "logs", "metrics"] }
+owo-colors = "4"
+portable-pty = "0.9"
+predicates = "=3.1.4"
+proptest = "1.9"
+proc-macro2 = { version = "1", features = ["span-locations"] }
+procfs = "0.18"
+quick-xml = "0.41.0"
+rand = "0.10"
+rcgen = "0.14.8"
+ratatui = "0.30"
+# The owned terminal model (vte → DamageGrid → snapshots/damage). Extracted
+# from crates/jackin-term; pinned to the termpane v0.1.0 tag.
+termpane = { version = "0.1.0", git = "https://github.com/tailrocks/termpane.git", tag = "v0.1.0" }
+# Enable the full public feature matrix TermRock ships: Crossterm session/input
+# adapters plus serde for persistable widget state (DialogScroll, ListState, …).
+# Pin latest reviewed TermRock main; follow migrations sequentially (currently through 0331).
+termrock = { version = "=0.11.0", git = "https://github.com/tailrocks/termrock.git", rev = "1ac0d0793b8cfd9edc61ced241e2b2ecb89162b4", features = ["crossterm", "serde"] }
+termrock-raster = { version = "=0.11.0", git = "https://github.com/tailrocks/termrock.git", rev = "1ac0d0793b8cfd9edc61ced241e2b2ecb89162b4" }
+regex = "1"
+reqwest = { version = "0.13", default-features = false }
+rustls = { version = "0.23", default-features = false }
+rustls-native-certs = "0.8"
+rustls-pki-types = "1"
+rusqlite = { version = "=0.40.2", default-features = false, features = ["bundled", "backup", "hooks", "limits"] }
+security-framework = "3.7"
+semver = "1"
+serde = "1.0"
+# Exact pin from workspace virtualization (#713); no recovered bug citation.
+# Candidate for caret "1" in a dedicated lockfile-refresh PR.
+serde_json = "=1.0.151"
+serde_yaml_ng = "0.10.0"
+sha2 = "0.11"
+syn = { version = "2", features = ["full", "visit"] }
+tabled = "0.21.0"
+tar = "0.4"
+tempfile = "=3.27.0"
+thiserror = "2.0"
+# Renovate exact pin (#394 → workspace #713); keep it at the newest stable
+# release and validate every runtime target before advancing the pin.
+tokio = { version = "=1.53.1", default-features = false }
+tokio-util = "0.7"
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
+# Exact pin from workspace virtualization (#713); no recovered bug citation.
+# Candidate for caret "1" in a dedicated lockfile-refresh PR.
+toml = "=1.1.4"
+toml_edit = "0.25"
+tracing = "0.1"
+tracing-opentelemetry = "0.33"
+tower = "0.5.3"
+tracing-subscriber = "0.3"
+tonic = { version = "0.14.1", default-features = false, features = ["transport", "router", "codegen", "gzip"] }
+# Pre-release API churn; revisit at first stable 0.7 (or next pre.N after
+# re-running the usage-store suite against the boundary module only).
+turso = { version = "=0.7.2", default-features = false }
+unicode-width = "0.2"
+url = "2"
+uuid = { version = "1", features = ["v4"] }
+zeroize = { version = "=1.9.0", default-features = false, features = ["alloc"] }
+zip = { version = "6.0.0", default-features = false, features = ["deflate"] }
+x509-cert = { version = "0.3", default-features = false }
+
+[workspace.lints.rust]
+rust_2024_compatibility = { level = "deny", priority = -1 }
+future_incompatible = { level = "deny", priority = -1 }
+rust_2018_idioms = { level = "deny", priority = -1 }
+nonstandard_style = { level = "deny", priority = -1 }
+unused = { level = "deny", priority = -1 }
+unused_imports = "deny"
+unused_variables = "deny"
+unused_must_use = "deny"
+dead_code = "deny"
+unreachable_pub = "deny"
+unsafe_op_in_unsafe_fn = "deny"
+unsafe_attr_outside_unsafe = "deny"
+missing_unsafe_on_extern = "deny"
+never_type_fallback_flowing_into_unsafe = "deny"
+unsafe_code = "forbid"
+unused_qualifications = "deny"
+unused_lifetimes = "deny"
+redundant_lifetimes = "deny"
+trivial_casts = "deny"
+trivial_numeric_casts = "deny"
+unnameable_types = "deny"
+unit_bindings = "deny"
+macro_use_extern_crate = "deny"
+meta_variable_misuse = "deny"
+single_use_lifetimes = "deny"
+let_underscore_drop = "deny"
+missing_debug_implementations = "deny"
+async_fn_in_trait = "allow"
+
+[workspace.lints.rustdoc]
+broken_intra_doc_links = "allow"
+private_intra_doc_links = "allow"
+redundant_explicit_links = "allow"
+unescaped_backticks = "allow"
+invalid_html_tags = "allow"
+bare_urls = "allow"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+cargo = { level = "warn", priority = -1 }
+# Bare-allow floor is 0 (ratchet bare-allow-per-crate); deny allows without reason.
+# Prefer #[expect] so suppressions self-retire when the lint stops firing
+# (census: docs/content/reference/developer-reference/lint-policy.mdx).
+allow_attributes_without_reason = "deny"
+allow_attributes = "deny"
+dbg_macro = "deny"
+let_underscore_future = "deny"
+let_underscore_must_use = "deny"
+unused_result_ok = "deny"
+assertions_on_result_states = "deny"
+await_holding_lock = "deny"
+await_holding_refcell_ref = "deny"
+mod_module_files = "deny"
+todo = "deny"
+unimplemented = "deny"
+undocumented_unsafe_blocks = "deny"
+multiple_unsafe_ops_per_block = "deny"
+mem_forget = "deny"
+disallowed_methods = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+exit = "warn"
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+manual_assert = "deny"
+manual_let_else = "warn"
+match_bool = "warn"
+# allow census: docs/content/reference/developer-reference/lint-policy.mdx
+needless_pass_by_value = "allow"
+trivially_copy_pass_by_ref = "warn"
+large_enum_variant = "warn"
+large_futures = "allow"
+result_large_err = "warn"
+clone_on_ref_ptr = "warn"
+rc_buffer = "warn"
+str_to_string = "warn"
+return_self_not_must_use = "warn"
+redundant_feature_names = "allow"
+struct_excessive_bools = "warn"
+fn_params_excessive_bools = "warn"
+too_many_lines = "warn"
+cognitive_complexity = "warn"
+excessive_nesting = "warn"
+implicit_hasher = "allow"
+similar_names = "allow"
+assigning_clones = "allow"
+match_same_arms = "allow"
+drop_non_drop = "allow"
+format_push_string = "allow"
+no_effect_underscore_binding = "allow"
+items_after_statements = "allow"
+unnecessary_wraps = "allow"
+# promoted 2026-07-12 after residual fix (0 hits).
+unused_self = "warn"
+option_option = "allow"
+verbose_bit_mask = "allow"
+unreadable_literal = "allow"
+unnecessary_debug_formatting = "allow"
+# promoted 2026-07-12 after residual fix (0 hits).
+unused_async = "warn"
+float_cmp = "deny"
+struct_field_names = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+must_use_candidate = "allow"
+module_name_repetitions = "allow"
+future_not_send = "allow"
+cast_possible_truncation = "allow"
+cast_possible_wrap = "allow"
+cast_sign_loss = "deny"
+cast_precision_loss = "allow"
+float_cmp_const = "deny"
+lossy_float_literal = "deny"
+invalid_upcast_comparisons = "deny"
+expl_impl_clone_on_copy = "deny"
+iter_not_returning_iterator = "deny"
+infallible_try_from = "deny"
+rc_mutex = "deny"
+debug_assert_with_mut_call = "deny"
+cargo_common_metadata = "allow"
+multiple_crate_versions = "allow"
+
+[profile.dev]
+# Line tables only: ~30-50% smaller artifacts, faster link, stack traces still work.
+debug = 1
+
+[profile.release]
+lto = "thin"
+strip = "symbols"
+
+# Symbol-rich capsule build for triage. Select with:
+#   cargo run --bin build-jackin-capsule -- --profile debug
+# Produces a ~10x larger binary; backtraces resolve to function + file:line.
+# Use RUST_BACKTRACE=full when launching to get the richest trace.
+[profile.capsule-debug]
+inherits = "release"
+strip = false
+debug = "line-tables-only"
+
+# Desktop static library release lane: symbol-rich for archived triage
+# artifacts. Selected by `cargo xtask desktop` (XCFramework, bindings, app
+# build); release CI archives the unstripped Rust static library and the app
+# dSYM beside the published bytes. The CLI/capsule release profile is
+# deliberately not weakened.
+[profile.desktop-release]
+inherits = "release"
+lto = "thin"
+codegen-units = 1
+strip = false
+debug = "line-tables-only"
+
+[workspace.metadata.dylint]
+libraries = [
+    { path = "crates/jackin-lints" },
+]
+
+# arrayref 0.3.10 on crates.io is a malicious publish (pulls the proc-macro1
+# typosquat whose build.rs downloads and executes a remote payload); 0.3.9
+# was yanked. Pin the ecosystem to a vendored copy of the known-good 0.3.9
+# (checksum-verified against the pre-attack lockfile:
+# 76a2e8124351fda1ef8aaaa3bbd7ebbcb486bbcd4225aca0aa0d84bb2db8fecb).
+# Transitive via tiny-skia <- termrock-raster. Remove once a trustworthy
+# upstream resolution exists.
+[patch.crates-io]
+arrayref = { path = "vendor/arrayref" }

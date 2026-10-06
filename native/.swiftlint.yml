@@ -1,0 +1,107 @@
+included:
+  - Sources
+  - Tests
+  - UITests
+  - Scripts
+
+excluded:
+  - .build
+  - DerivedData
+  # Generated boltffi Swift — generator-owned, never linted.
+  - Sources/JackinUsageBindings
+
+analyzer_rules:
+  - unused_declaration
+  - unused_import
+
+opt_in_rules:
+  - array_init
+  - attributes
+  - closure_end_indentation
+  - closure_spacing
+  - collection_alignment
+  - contains_over_filter_count
+  - contains_over_filter_is_empty
+  - contains_over_first_not_nil
+  - convenience_type
+  - discouraged_object_literal
+  - empty_collection_literal
+  - empty_count
+  - empty_string
+  - enum_case_associated_values_count
+  - explicit_init
+  - fallthrough
+  - fatal_error_message
+  - first_where
+  - flatmap_over_map_reduce
+  - force_unwrapping
+  - identical_operands
+  - implicitly_unwrapped_optional
+  - joined_default_parameter
+  - last_where
+  - legacy_multiple
+  - literal_expression_end_indentation
+  - lower_acl_than_parent
+  - modifier_order
+  - multiline_arguments
+  - multiline_parameters
+  - operator_usage_whitespace
+  - overridden_super_call
+  - prefer_self_type_over_type_of_self
+  - private_action
+  - private_outlet
+  - prohibited_super_call
+  - redundant_nil_coalescing
+  - redundant_type_annotation
+  - sorted_first_last
+  - static_operator
+  - toggle_bool
+  - unavailable_function
+  - unneeded_parentheses_in_closure_argument
+  - untyped_error_in_catch
+  - vertical_parameter_alignment_on_call
+  - yoda_condition
+
+disabled_rules:
+  # Formatter-owned: swift-format's checked-in configuration rewrites exactly
+  # what these rules demand, so enabling them makes the two tools fight.
+  # Keep disabled while .swift-format owns the same surface.
+  - closure_parameter_position
+  - opening_brace
+  # Conflicts with .swift-format "lineBreakBetweenDeclarationAttributes": false.
+  - attributes
+  # Conflicts with .swift-format "multiElementCollectionTrailingCommas": true
+  # (swift-format adds the commas this rule forbids).
+  - trailing_comma
+
+force_cast: error
+force_try: error
+force_unwrapping: error
+implicitly_unwrapped_optional:
+  severity: error
+  mode: all
+
+identifier_name:
+  min_length:
+    warning: 2
+  excluded:
+    - id
+    - x
+    - y
+
+nesting:
+  type_level: 2
+
+custom_rules:
+  hardcoded_corner_radius:
+    name: Hard-coded corner radius
+    regex: "(?:cornerRadius|cornerRadii)\\s*[:=(]\\s*[0-9]"
+    message: Derive the radius concentrically from the containing system surface.
+    severity: warning
+    excluded: ".*Tests.*"
+
+  vision_only_glass_api:
+    name: visionOS-only glass API
+    regex: glassBackgroundEffect
+    message: glassBackgroundEffect is visionOS-only and unavailable on macOS.
+    severity: error

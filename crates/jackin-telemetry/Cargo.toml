@@ -1,0 +1,35 @@
+[package]
+name = "jackin-telemetry"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Governed OpenTelemetry schema and instrumentation facade for jackin."
+readme = "README.md"
+publish = false
+
+[dependencies]
+opentelemetry.workspace = true
+opentelemetry-semantic-conventions = { workspace = true, features = ["semconv_experimental"] }
+tracing.workspace = true
+tracing-opentelemetry.workspace = true
+tokio = { workspace = true, features = ["rt", "macros"] }
+uuid = { workspace = true }
+
+[dev-dependencies]
+criterion.workspace = true
+dhat.workspace = true
+opentelemetry_sdk = { workspace = true, features = ["testing", "trace"] }
+tracing-subscriber.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread"] }
+
+[[bench]]
+name = "disabled_fast_path"
+harness = false
+
+[[test]]
+name = "disabled_alloc"
+
+[lints]
+workspace = true

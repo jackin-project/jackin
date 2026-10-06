@@ -1,0 +1,139 @@
+---
+title: "Agent isolation four-layer model"
+description: "Maps threats to independent controls and compares Apple Container as a VM primitive with Docker Sandboxes as a product."
+---
+
+## Summary
+
+The model composes runtime hardening, a per-session VM, on-demand credentials, process sandboxing, and egress policy instead of treating any single boundary as complete.
+
+## Question and scope
+
+How do the isolation layers divide responsibility, and why is Apple Container a better substrate for jackin❯ than Docker Sandboxes?
+
+## Method
+
+This synthesis applies the threat evidence from [Threat and platform evidence](/research/platform/security/isolation-architecture/agent-isolation-architecture/01-threat-and-platform-evidence/) to the platform capabilities recorded at the dossier cutoff.
+
+## Findings
+
+The architecture uses four independent, complementary isolation layers. Each layer closes a gap the others cannot. All four are needed for the complete picture.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  Layer 4: Network Egress Policy                                  │
+│  (per session, domain allowlist, enforcement-quality reporting)  │
+├─────────────────────────────────────────────────────────────────┤
+│  Layer 3: jackin-exec Credential Injection                       │
+│  (per command, secrets never in agent context)                   │
+├─────────────────────────────────────────────────────────────────┤
+│  Layer 2: Apple Container VM Boundary                            │
+│  (per session, own kernel via Virtualization.framework)          │
+├─────────────────────────────────────────────────────────────────┤
+│  Layer 1: Docker Hardening Contract                              │
+│  (per session, rootless DinD, capability policy, read-only root) │
+├─────────────────────────────────────────────────────────────────┤
+│  Cross-layer: Process-Level Sandboxing (zerobox)                 │
+│  (per operation, filesystem + network + env restriction)         │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Threat coverage
+
+| Threat | Without any layer | Layer 1 (Docker hardening) | Layer 2 (Apple Container VM) | Layer 3 (jackin-exec) | Cross-layer (zerobox) | Layer 4 (egress policy) |
+|---|---|---|---|---|---|---|
+| DinD `--privileged` → kernel access | ❌ open | ✅ rootless DinD eliminates | ✅ own kernel, --privileged blocked by design | — | — | — |
+| Kernel escape via CVE | ❌ open → reaches OrbStack VM kernel → all sessions | Partial (fewer caps, hardened profile) | ✅ kernel escape reaches only this VM | — | — | — |
+| One session reaching another session's state | ❌ shared OrbStack VM kernel | Partial | ✅ separate kernel per session | — | — | — |
+| Agent reads raw API key / SSH key | ❌ env var visible | ❌ | ❌ | ✅ jackin-exec never injects to env | ❌ | — |
+| Agent's tool call reads unintended file | ❌ | ❌ | ❌ | — | ✅ per-op filesystem policy | — |
+| Agent's tool call calls unintended endpoint | Partial (per-agent network) | Partial (profile reporting) | — | — | ✅ per-op network allowlist | ✅ session-level allowlist |
+| Agent exhausts CPU/memory/PIDs | ❌ | ✅ resource limits in `hardened` profile | — | — | — | — |
+| Agent exfiltrates data over network | ❌ | Partial (reporting only) | — | — | Partial (per-op deny) | ✅ session allowlist enforced |
+| Mutable root filesystem | ❌ | ✅ read-only root in `hardened` profile | — | — | — | — |
+
+### Cost and granularity
+
+```
+Overhead    Granularity       Layer
+─────────────────────────────────────────────────────────────────
+< 10 ms     per operation     Process sandbox (zerobox + jackin-exec)
+100–500 ms  per session       Container hardening (Docker profiles)
+< 1 s       per session       Apple Container VM boundary
+```
+
+---
+
+### Analysis
+
+This comparison matters because Docker Sandboxes and Apple Container appear to address the same problem. They do not. Understanding the difference is essential for understanding why jackin❯ builds on Apple Container instead of integrating with Docker Sandboxes.
+
+### Docker Sandboxes
+
+Docker Sandboxes (launched January 2026) is a **complete agent runner**. It runs Claude Code, Codex CLI, GitHub Copilot CLI, and other supported agents in a dedicated microVM. Each sandbox has:
+
+- A dedicated VM via a proprietary VMM (Hypervisor.framework on macOS)
+- A built-in private Docker daemon
+- A host-side credential proxy (secrets never enter the sandbox)
+- A host-side network policy proxy (domain allowlist, raw TCP/UDP blocked)
+- Explicit workspace mounts (same absolute host path)
+
+Docker Sandboxes is designed to answer: "run this agent for me, safely." The operator hands the agent to Docker, and Docker manages the isolation, credentials, and network policy.
+
+### Apple Container
+
+Apple Container (`apple/container`, macOS 26 Tahoe) is a **VM primitive**. It runs any OCI container image in its own VM via Virtualization.framework. It provides:
+
+- A VM per container with its own kernel
+- An OCI-compatible run/exec/stop/rm/ps CLI
+- A structured gRPC/vsock API via `vminitd` for I/O streaming and signal forwarding
+- Per-container IP address via vmnet
+
+Apple Container is designed to answer: "here is a VM primitive, build on it." jackin❯ builds its own credential proxy (jackin-exec), network policy (egress policy), session model, role system, and TUI on top of this primitive.
+
+### Why jackin❯ needs a primitive
+
+jackin❯ is itself an orchestration layer. It manages roles, workspaces, session reconnect, TUI, multiple agent runtimes, and operator UX. Integrating with Docker Sandboxes would mean jackin❯ becomes subordinate to Docker's product decisions — operators would use Docker Sandboxes to run agents, and jackin❯ would have no role.
+
+More concretely: Docker Sandboxes CLI at the verification cutoff has no events stream, no `--format json`, no per-sandbox stdout/log hooks. It is intentionally designed as an agent runner, not a backend API. It cannot serve as the programmatic substrate for jackin❯s lifecycle management.
+
+### Capability comparison
+
+| Capability | Docker Sandboxes | jackin❯ + Apple Container (full stack) |
+|---|---|---|
+| VM per session (own kernel) | ✅ proprietary VMM | ✅ Virtualization.framework |
+| Private Docker daemon (no `--privileged`) | ✅ built-in | ✅ rootless DinD inside VM (requires Docker hardening) |
+| Credentials never in sandbox | ✅ host-side credential proxy (built-in) | ✅ jackin-exec (jackin❯ builds this) |
+| Network domain allowlist | ✅ host-side proxy (built-in) | ✅ egress policy (jackin❯ builds this) |
+| Per-operation filesystem/network policy | ❌ | ✅ zerobox (jackin❯ builds this) |
+| TUI-native operator approval UI | ❌ | ✅ jackin❯ owns the terminal |
+| Role system (Dockerfile-based) | ❌ fixed agent runners | ✅ full role authoring |
+| Session reconnect / eject / purge | ❌ | ✅ |
+| Multiple agent runtimes (Claude, Codex, Amp, Kimi, OpenCode) | 7 fixed | ✅ unlimited |
+| Workspace-aware behavior | ❌ | ✅ |
+| Operator-controlled secret bindings | ❌ | ✅ jackin-exec workspace bindings |
+| macOS 26 install friction | Requires Docker Desktop | First-party signed package or Homebrew install; no bundled daemon license |
+| Open source (VM layer) | ❌ proprietary VMM | ✅ `apple/container` (open source) |
+
+**The proposed jackin❯ + Apple Container stack targets the same security outcomes while preserving jackin❯'s operator experience.** Docker Sandboxes is the benchmark for what the security story should look like; Apple Container is the primitive jackin❯ uses to build that story on its own terms.
+
+---
+
+
+## Implications for jackin❯
+
+Build on a primitive that preserves jackin❯ lifecycle and role ownership, while treating Docker Sandboxes as a benchmark for private Docker, credential, network, and operator-visibility outcomes.
+
+## Limitations and unknowns
+
+The target capability table describes the composed design, not a statement that every control is currently implemented. Roadmap and reference pages own delivery state.
+
+## Sources
+
+- [Threat and platform evidence](/research/platform/security/isolation-architecture/agent-isolation-architecture/01-threat-and-platform-evidence/)
+- [Layer contracts and open questions](/research/platform/security/isolation-architecture/agent-isolation-architecture/03-layer-contracts-and-open-questions/)
+
+## Related work
+
+- [Apple Container backend](/research/platform/isolation/apple-container-backend/)
+- [Docker runtime hardening contract](/roadmap/docker-runtime-hardening-contract/)
