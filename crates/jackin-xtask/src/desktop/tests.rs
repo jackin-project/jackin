@@ -513,26 +513,31 @@ fn cadence_tasks_define_the_canonical_graph() {
 }
 
 #[test]
-fn cargo_wrapper_routes_native_commands_through_mbx() {
+fn mise_native_rust_option_routes_cargo_through_mbx() {
     let mise = repo_text("mise.toml");
+    let rust_toolchain = repo_text("rust-toolchain.toml");
     assert!(
-        mise.contains("[wrappers.cargo]\ncommand = \"mbx\"\nenv = { MBX_CARGO_SHIM_MODE = \"1\" }"),
-        "all Cargo calls must use MBX's transparent Mise shim"
+        mise.contains("rust = { version = \"1.99.0\", mr_boxington = true }"),
+        "Mise's Rust backend must route Cargo through MBX natively"
+    );
+    assert!(
+        rust_toolchain.contains("channel = \"1.99.0\""),
+        "the Mise and rustup Rust pins must stay aligned"
     );
     assert!(
         mise.contains("mr-boxington = \"1.22.0\""),
-        "the transparent wrapper must resolve the locked MBX tool"
+        "the native integration must resolve the locked MBX tool"
     );
     assert!(
         mise.contains("idiomatic_version_file_enable_tools = [\"rust\"]"),
-        "rust-toolchain.toml remains the single Rust version source"
+        "rust-toolchain.toml remains aligned with the Mise Rust pin"
     );
 
     let desktop_ci = task_block(&mise, "desktop-ci");
     assert!(desktop_ci.contains("cargo xtask desktop test-swift --jobs 2"));
     assert!(
         !desktop_ci.contains("mbx build"),
-        "do not nest explicit MBX builds inside the transparent Cargo wrapper"
+        "do not nest explicit MBX builds inside Mise's native Cargo integration"
     );
 }
 

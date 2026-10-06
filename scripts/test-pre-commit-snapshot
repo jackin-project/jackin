@@ -15,7 +15,7 @@ git -C "$fixture" init -q
 git -C "$fixture" config user.name "Jackin hook fixture"
 git -C "$fixture" config user.email "jackin-hook-fixture@example.invalid"
 git -C "$fixture" config core.fileMode true
-printf '%s\n' '[toolchain]' 'channel = "1.97.1"' > "$fixture/rust-toolchain.toml"
+printf '%s\n' '[toolchain]' 'channel = "1.99.0"' > "$fixture/rust-toolchain.toml"
 printf '%s\n' 'ignored*' target > "$fixture/.gitignore"
 printf '%s\n' base > "$fixture/partial.txt"
 printf '%s\n' base > "$fixture/deleted.txt"
@@ -106,7 +106,7 @@ cat > "$TOOLCHAIN_FIXTURE/rustup" <<'EOF'
 set -eu
 test "$1" = which
 test "$2" = --toolchain
-test "$3" = 1.97.1
+test "$3" = 1.99.0
 printf "%s\n" "$TOOLCHAIN_FIXTURE/$4"
 EOF
 for name in cargo rustc rustdoc clippy-driver rustfmt; do
@@ -122,7 +122,7 @@ fi
 case "$name" in
     clippy-driver) printf "%s\n" 'clippy 0.1.97 (abcdef0123 2026-07-14)' ;;
     rustfmt) printf "%s\n" 'rustfmt 1.9.0-stable (abcdef0123 2026-07-14)' ;;
-    *) printf "%s\n" "$name 1.97.1" 'release: 1.97.1' 'commit-hash: abcdef0123456789' ;;
+    *) printf "%s\n" "$name 1.99.0" 'release: 1.99.0' 'commit-hash: abcdef0123456789' ;;
 esac
 EOF
     chmod +x "$TOOLCHAIN_FIXTURE/$name"
