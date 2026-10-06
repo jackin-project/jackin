@@ -28,7 +28,16 @@ impl PendingExecReply {
         }
     }
 
-    pub(super) fn spawn<F>(self, future: F)
+    pub(super) fn cancel(self) {
+        if let Some(operation) = self.operation {
+            operation.complete(
+                jackin_telemetry::schema::enums::OutcomeValue::Cancellation,
+                None,
+            );
+        }
+    }
+
+    pub(super) fn spawn<F>(mut self, future: F)
     where
         F: Future<Output = ServerMsg> + Send + 'static,
     {
@@ -45,7 +54,20 @@ impl PendingExecReply {
                 &jackin_telemetry::operation::PROCESS_COMMAND,
                 &attrs,
                 async move {
-                    let reply = future.await;
+                    // Cancellation wins before the command future's first poll,
+                    // including closure between approval and task scheduling.
+                    // Dropping a running future also drops its owned process group.
+                    let reply = tokio::select! {
+                        biased;
+                        () = self.reply_tx.closed() => {
+                            self.cancel();
+                            return jackin_telemetry::spawn::DetachedCompletion {
+                                outcome: jackin_telemetry::schema::enums::OutcomeValue::Cancellation,
+                                error_type: None,
+                            };
+                        }
+                        reply = future => reply,
+                    };
                     let (outcome, error_type) = process_exec_reply_outcome(&reply);
                     self.send_with_outcome(reply, outcome, error_type);
                     jackin_telemetry::spawn::DetachedCompletion {
@@ -131,3 +153,6 @@ fn process_exec_reply_outcome(
         ),
     }
 }
+
+#[cfg(test)]
+mod tests;
