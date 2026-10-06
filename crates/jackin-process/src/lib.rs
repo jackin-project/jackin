@@ -12,6 +12,7 @@ use std::process::Stdio;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
+use tokio::io::AsyncReadExt;
 
 /// Default maximum bytes retained per stream by `exec_async` and `exec_sync`.
 pub const DEFAULT_CAPTURE_LIMIT: usize = 16 * 1024 * 1024;
@@ -47,7 +48,7 @@ impl RetryPolicy {
     }
 }
 
-/// Subprocess request (ordinary bytes + timing knobs only).
+/// Subprocess request for byte streams, routing, timing, and optional bounded capture.
 #[derive(Debug, Clone)]
 pub struct ExecRequest {
     /// Program path or name on `PATH`.
@@ -73,10 +74,17 @@ pub struct ExecRequest {
     /// Kill after this duration. `None` = wait indefinitely (capsule probe
     /// semantic: no read timeout).
     pub timeout: Option<Duration>,
+<<<<<<< 0aa821a088e1bacf3d4d85a4c9faaa67faa85132
     /// Maximum captured stdout bytes. `None` uses [`DEFAULT_CAPTURE_LIMIT`].
     pub stdout_limit: Option<usize>,
     /// Maximum captured stderr bytes. `None` uses [`DEFAULT_CAPTURE_LIMIT`].
     pub stderr_limit: Option<usize>,
+=======
+    /// Maximum captured stdout bytes, if bounded capture is requested.
+    stdout_limit: Option<usize>,
+    /// Maximum captured stderr bytes, if bounded capture is requested.
+    stderr_limit: Option<usize>,
+>>>>>>> 2990df17e25f30afca84804d9c402abc1ce00231
     /// Retry policy on non-success exit (not applied on timeout).
     pub retry: RetryPolicy,
 }
@@ -172,11 +180,21 @@ impl ExecRequest {
         self
     }
 
+<<<<<<< 0aa821a088e1bacf3d4d85a4c9faaa67faa85132
     /// Bound each captured output stream independently.
     #[must_use]
     pub fn output_limits(mut self, stdout: usize, stderr: usize) -> Self {
         self.stdout_limit = Some(stdout);
         self.stderr_limit = Some(stderr);
+=======
+    /// Capture stdout and stderr with independent byte limits.
+    #[must_use]
+    pub fn output_limits(mut self, stdout_bytes: usize, stderr_bytes: usize) -> Self {
+        self.stdout_mode = StdioMode::Capture;
+        self.stderr_mode = StdioMode::Capture;
+        self.stdout_limit = Some(stdout_bytes);
+        self.stderr_limit = Some(stderr_bytes);
+>>>>>>> 2990df17e25f30afca84804d9c402abc1ce00231
         self
     }
 
@@ -236,13 +254,21 @@ pub async fn exec_async(request: &ExecRequest) -> Result<ExecResult> {
 /// Spawn an async child using the same request model without waiting for it.
 ///
 /// Retry and timeout apply only to `exec_*`; lifecycle callers own waiting,
+<<<<<<< 0aa821a088e1bacf3d4d85a4c9faaa67faa85132
 /// cancellation, and retries after this function returns. Pipe readers and
 /// their byte limits belong to the caller; explicit capture limits are rejected
 /// because this function cannot enforce them. Default exec limits do not apply.
+=======
+/// cancellation, and retries after this function returns. Bounded output is
+/// rejected because this API cannot own the pipe readers needed to enforce it.
+>>>>>>> 2990df17e25f30afca84804d9c402abc1ce00231
 pub fn spawn_async(request: &ExecRequest) -> Result<tokio::process::Child> {
     validate_request(request, true)?;
     if request.stdin.is_some() {
         bail!("spawn_async does not write request stdin bytes; use exec_async or a captured stdin");
+    }
+    if request.stdout_limit.is_some() || request.stderr_limit.is_some() {
+        bail!("spawn_async cannot enforce output limits; use exec_async");
     }
     let mut command = tokio::process::Command::new(&request.program);
     configure_async_command(&mut command, request);
@@ -259,6 +285,9 @@ pub fn spawn_sync(request: &ExecRequest) -> Result<std::process::Child> {
     validate_request(request, true)?;
     if request.stdin.is_some() {
         bail!("spawn_sync does not write request stdin bytes; use exec_sync or a captured stdin");
+    }
+    if request.stdout_limit.is_some() || request.stderr_limit.is_some() {
+        bail!("spawn_sync cannot enforce output limits; use exec_sync");
     }
     let mut command = std::process::Command::new(&request.program);
     configure_sync_command(&mut command, request);
@@ -408,6 +437,7 @@ async fn run_once_async(request: &ExecRequest) -> Result<ExecResult> {
     use tokio::io::AsyncWriteExt;
     validate_request(request, false)?;
     let started = Instant::now();
+<<<<<<< 0aa821a088e1bacf3d4d85a4c9faaa67faa85132
     let deadline = request
         .timeout
         .map(|timeout| {
@@ -417,6 +447,18 @@ async fn run_once_async(request: &ExecRequest) -> Result<ExecResult> {
                 .context("process timeout exceeds clock range")
         })
         .transpose()?;
+=======
+    let bounded_output = request.stdout_limit.is_some() || request.stderr_limit.is_some();
+    if bounded_output
+        && (request.stdout_limit.is_none()
+            || request.stderr_limit.is_none()
+            || request.stdout_mode != StdioMode::Capture
+            || request.stderr_mode != StdioMode::Capture)
+    {
+        bail!("bounded output requires captured stdout and stderr with both limits configured");
+    }
+
+>>>>>>> 2990df17e25f30afca84804d9c402abc1ce00231
     let mut cmd = tokio::process::Command::new(&request.program);
     configure_async_command(&mut cmd, request);
     cmd.kill_on_drop(true);
@@ -428,6 +470,7 @@ async fn run_once_async(request: &ExecRequest) -> Result<ExecResult> {
     if request.stdin.is_some() {
         cmd.stdin(Stdio::piped());
     }
+<<<<<<< 0aa821a088e1bacf3d4d85a4c9faaa67faa85132
     let mut owned = OwnedChild::new(
         cmd.spawn()
             .with_context(|| format!("spawning {}", display_request(request)))?,
@@ -487,6 +530,114 @@ async fn run_once_async(request: &ExecRequest) -> Result<ExecResult> {
         }
         Some(Ok(((), stdout, stderr, status))) => {
             owned.disarm();
+=======
+
+    let mut child = cmd
+        .spawn()
+        .with_context(|| format!("spawning {}", display_request(request)))?;
+
+    let stdin_task = if let Some(bytes) = &request.stdin {
+        use tokio::io::AsyncWriteExt;
+        let Some(mut stdin) = child.stdin.take() else {
+            let cleanup = kill_and_reap(&mut child).await;
+            cleanup.context("cleaning up child without requested stdin pipe")?;
+            bail!("child has no stdin pipe for requested input");
+        };
+        let bytes = bytes.clone();
+        Some(tokio::spawn(async move {
+            stdin
+                .write_all(&bytes)
+                .await
+                .context("writing stdin to child")
+        }))
+    } else {
+        None
+    };
+
+    if bounded_output {
+        return run_limited_output(child, request, started, stdin_task).await;
+    }
+    run_unbounded_output(child, request, started, stdin_task).await
+}
+
+enum UnboundedOutputResult {
+    Complete(Result<(std::process::ExitStatus, Vec<u8>, Vec<u8>)>),
+    TimedOut,
+}
+
+async fn run_unbounded_output(
+    mut child: tokio::process::Child,
+    request: &ExecRequest,
+    started: Instant,
+    stdin_task: Option<tokio::task::JoinHandle<Result<()>>>,
+) -> Result<ExecResult> {
+    // Match wait_with_output: close an unused piped stdin before waiting.
+    if stdin_task.is_none() {
+        drop(child.stdin.take());
+    }
+    let stdout_task = child
+        .stdout
+        .take()
+        .map(|stdout| tokio::spawn(async move { read_output(stdout, "stdout").await }));
+    let stderr_task = child
+        .stderr
+        .take()
+        .map(|stderr| tokio::spawn(async move { read_output(stderr, "stderr").await }));
+    let stdout_abort = stdout_task
+        .as_ref()
+        .map(tokio::task::JoinHandle::abort_handle);
+    let stderr_abort = stderr_task
+        .as_ref()
+        .map(tokio::task::JoinHandle::abort_handle);
+    let stdin_abort = stdin_task
+        .as_ref()
+        .map(tokio::task::JoinHandle::abort_handle);
+
+    let selected = {
+        let complete = async {
+            let status = child.wait().await.context("waiting on child")?;
+            let stdout = join_output_reader(stdout_task, "stdout").await?;
+            let stderr = join_output_reader(stderr_task, "stderr").await?;
+            if let Some(task) = stdin_task {
+                task.await.context("joining stdin writer")??;
+            }
+            Ok::<_, anyhow::Error>((status, stdout, stderr))
+        };
+        tokio::pin!(complete);
+        if let Some(timeout) = request.timeout {
+            let remaining = timeout.saturating_sub(started.elapsed());
+            tokio::select! {
+                result = &mut complete => UnboundedOutputResult::Complete(result),
+                () = tokio::time::sleep(remaining) => UnboundedOutputResult::TimedOut,
+            }
+        } else {
+            UnboundedOutputResult::Complete(complete.await)
+        }
+    };
+
+    match selected {
+        UnboundedOutputResult::Complete(result) => {
+            let (status, stdout, stderr) = match result {
+                Ok(result) => result,
+                Err(error) => {
+                    if let Some(abort) = stdout_abort {
+                        abort.abort();
+                    }
+                    if let Some(abort) = stderr_abort {
+                        abort.abort();
+                    }
+                    if let Some(abort) = stdin_abort {
+                        abort.abort();
+                    }
+                    return match kill_and_reap(&mut child).await {
+                        Ok(()) => Err(error),
+                        Err(cleanup) => Err(anyhow::anyhow!(
+                            "{error:#}; cleaning up child after output failure also failed: {cleanup:#}"
+                        )),
+                    };
+                }
+            };
+>>>>>>> 2990df17e25f30afca84804d9c402abc1ce00231
             Ok(ExecResult {
                 code: status.code(),
                 success: status.success(),
@@ -496,6 +647,240 @@ async fn run_once_async(request: &ExecRequest) -> Result<ExecResult> {
                 timed_out: false,
             })
         }
+<<<<<<< 0aa821a088e1bacf3d4d85a4c9faaa67faa85132
+=======
+        UnboundedOutputResult::TimedOut => {
+            let cleanup = kill_and_reap(&mut child).await;
+            if let Some(abort) = stdout_abort {
+                abort.abort();
+            }
+            if let Some(abort) = stderr_abort {
+                abort.abort();
+            }
+            if let Some(abort) = stdin_abort {
+                abort.abort();
+            }
+            cleanup.context("cleaning up timed-out child")?;
+            Ok(ExecResult {
+                code: None,
+                success: false,
+                stdout: Vec::new(),
+                stderr: Vec::new(),
+                duration: started.elapsed(),
+                timed_out: true,
+            })
+        }
+    }
+}
+
+async fn read_output<R>(mut reader: R, stream: &'static str) -> Result<Vec<u8>>
+where
+    R: tokio::io::AsyncRead + Unpin,
+{
+    let mut output = Vec::new();
+    reader
+        .read_to_end(&mut output)
+        .await
+        .with_context(|| format!("reading subprocess {stream}"))?;
+    Ok(output)
+}
+
+async fn join_output_reader(
+    task: Option<tokio::task::JoinHandle<Result<Vec<u8>>>>,
+    stream: &'static str,
+) -> Result<Vec<u8>> {
+    match task {
+        Some(task) => task
+            .await
+            .with_context(|| format!("joining {stream} reader"))?,
+        None => Ok(Vec::new()),
+    }
+}
+
+enum LimitedOutputResult {
+    Complete(Result<(std::process::ExitStatus, Vec<u8>, Vec<u8>)>),
+    OutputIssue(LimitedOutputIssue),
+    TimedOut,
+}
+
+enum LimitedOutputIssue {
+    ExceededLimit,
+    ReadError(String),
+}
+
+async fn run_limited_output(
+    mut child: tokio::process::Child,
+    request: &ExecRequest,
+    started: Instant,
+    stdin_task: Option<tokio::task::JoinHandle<Result<()>>>,
+) -> Result<ExecResult> {
+    let Some(stdout) = child.stdout.take() else {
+        let cleanup = kill_and_reap(&mut child).await;
+        if let Some(task) = &stdin_task {
+            task.abort();
+        }
+        cleanup.context("cleaning up child without limited stdout pipe")?;
+        bail!("limited output capture has no stdout pipe");
+    };
+    let Some(stderr) = child.stderr.take() else {
+        let cleanup = kill_and_reap(&mut child).await;
+        if let Some(task) = &stdin_task {
+            task.abort();
+        }
+        cleanup.context("cleaning up child without limited stderr pipe")?;
+        bail!("limited output capture has no stderr pipe");
+    };
+    let (issue_tx, mut issue_rx) = tokio::sync::mpsc::unbounded_channel();
+    let stdout_limit = request
+        .stdout_limit
+        .context("bounded capture has no stdout byte limit")?;
+    let stderr_limit = request
+        .stderr_limit
+        .context("bounded capture has no stderr byte limit")?;
+    let stdout_task = tokio::spawn(read_limited_output(stdout, stdout_limit, issue_tx.clone()));
+    let stderr_task = tokio::spawn(read_limited_output(stderr, stderr_limit, issue_tx));
+    let stdout_abort = stdout_task.abort_handle();
+    let stderr_abort = stderr_task.abort_handle();
+    let stdin_abort = stdin_task
+        .as_ref()
+        .map(tokio::task::JoinHandle::abort_handle);
+
+    let selected = {
+        let complete = async {
+            let status = child
+                .wait()
+                .await
+                .context("waiting on limited-output child")?;
+            let stdout = stdout_task.await.context("joining stdout reader")??;
+            let stderr = stderr_task.await.context("joining stderr reader")??;
+            if let Some(task) = stdin_task {
+                task.await.context("joining stdin writer")??;
+            }
+            Ok::<_, anyhow::Error>((status, stdout, stderr))
+        };
+        tokio::pin!(complete);
+        if let Some(timeout) = request.timeout {
+            let remaining = timeout.saturating_sub(started.elapsed());
+            tokio::select! {
+                result = &mut complete => LimitedOutputResult::Complete(result),
+                Some(issue) = issue_rx.recv() => LimitedOutputResult::OutputIssue(issue),
+                () = tokio::time::sleep(remaining) => LimitedOutputResult::TimedOut,
+            }
+        } else {
+            tokio::select! {
+                result = &mut complete => LimitedOutputResult::Complete(result),
+                Some(issue) = issue_rx.recv() => LimitedOutputResult::OutputIssue(issue),
+            }
+        }
+    };
+
+    match selected {
+        LimitedOutputResult::Complete(result) => {
+            let (status, stdout, stderr) = match result {
+                Ok(result) => result,
+                Err(error) => {
+                    stdout_abort.abort();
+                    stderr_abort.abort();
+                    if let Some(abort) = stdin_abort {
+                        abort.abort();
+                    }
+                    return match kill_and_reap(&mut child).await {
+                        Ok(()) => Err(error),
+                        Err(cleanup) => Err(anyhow::anyhow!(
+                            "{error:#}; cleaning up child after output failure also failed: {cleanup:#}"
+                        )),
+                    };
+                }
+            };
+            Ok(ExecResult {
+                code: status.code(),
+                success: status.success(),
+                stdout,
+                stderr,
+                duration: started.elapsed(),
+                timed_out: false,
+            })
+        }
+        LimitedOutputResult::OutputIssue(issue) => {
+            let cleanup = kill_and_reap(&mut child).await;
+            stdout_abort.abort();
+            stderr_abort.abort();
+            if let Some(abort) = stdin_abort {
+                abort.abort();
+            }
+            cleanup.context("cleaning up child after limited-output failure")?;
+            match issue {
+                LimitedOutputIssue::ExceededLimit => {
+                    bail!("subprocess output exceeded its configured byte limit")
+                }
+                LimitedOutputIssue::ReadError(message) => bail!("{message}"),
+            }
+        }
+        LimitedOutputResult::TimedOut => {
+            let cleanup = kill_and_reap(&mut child).await;
+            stdout_abort.abort();
+            stderr_abort.abort();
+            if let Some(abort) = stdin_abort {
+                abort.abort();
+            }
+            cleanup.context("cleaning up timed-out child")?;
+            Ok(ExecResult {
+                code: None,
+                success: false,
+                stdout: Vec::new(),
+                stderr: Vec::new(),
+                duration: started.elapsed(),
+                timed_out: true,
+            })
+        }
+    }
+}
+
+async fn kill_and_reap(child: &mut tokio::process::Child) -> Result<()> {
+    match child.kill().await {
+        Ok(()) => Ok(()),
+        Err(kill_error) => match child.try_wait() {
+            Ok(Some(_)) => Ok(()),
+            Ok(None) => Err(anyhow::anyhow!(
+                "child remains live after cleanup kill failed: {kill_error}"
+            )),
+            Err(wait_error) => Err(anyhow::anyhow!(
+                "cleanup kill failed: {kill_error}; checking child afterward also failed: {wait_error}"
+            )),
+        },
+    }
+}
+
+async fn read_limited_output<R>(
+    mut reader: R,
+    limit: usize,
+    issue_tx: tokio::sync::mpsc::UnboundedSender<LimitedOutputIssue>,
+) -> Result<Vec<u8>>
+where
+    R: tokio::io::AsyncRead + Unpin,
+{
+    let mut output = Vec::with_capacity(limit.min(64 * 1024));
+    let mut buffer = [0_u8; 8192];
+    loop {
+        let remaining = limit.saturating_sub(output.len());
+        let read_limit = remaining.saturating_add(1).min(buffer.len());
+        let count = match reader.read(&mut buffer[..read_limit]).await {
+            Ok(count) => count,
+            Err(error) => {
+                let message = format!("reading subprocess output: {error}");
+                let _send_result = issue_tx.send(LimitedOutputIssue::ReadError(message.clone()));
+                bail!("{message}");
+            }
+        };
+        if count == 0 {
+            return Ok(output);
+        }
+        if count > remaining {
+            let _send_result = issue_tx.send(LimitedOutputIssue::ExceededLimit);
+            bail!("subprocess output exceeded {limit} bytes");
+        }
+        output.extend_from_slice(&buffer[..count]);
+>>>>>>> 2990df17e25f30afca84804d9c402abc1ce00231
     }
 }
 
