@@ -11,7 +11,7 @@ use tempfile::TempDir;
 
 fn sample_record() -> IsolationRecord {
     IsolationRecord {
-        workspace: "jackin".into(),
+        workspace_name: Some(jackin_core::WorkspaceName::parse("jackin").unwrap()),
         mount_dst: "/workspace/jackin".into(),
         original_src: "/home/u/projects/jackin".into(),
         isolation: MountIsolation::Worktree,
@@ -40,11 +40,11 @@ fn write_then_read_roundtrip_preserves_record() {
 }
 
 #[test]
-fn write_emits_version_1_envelope() {
+fn write_emits_version_2_envelope() {
     let dir = TempDir::new().unwrap();
     write_records(dir.path(), &[sample_record()]).unwrap();
     let raw = std::fs::read_to_string(isolation_file_path(dir.path())).unwrap();
-    assert!(raw.contains("\"version\": 1"));
+    assert!(raw.contains("\"version\": 2"));
     assert!(raw.contains("\"records\""));
 }
 
@@ -137,7 +137,7 @@ fn list_records_for_workspace_walks_all_container_dirs() {
     let c = data.path().join("jk-b2c3d4e5-docwriter");
     std::fs::create_dir_all(&c).unwrap();
     let mut rec_c = sample_record();
-    rec_c.workspace = "docs".into();
+    rec_c.workspace_name = Some(wn("docs"));
     rec_c.container_name = "jk-b2c3d4e5-docwriter".into();
     write_records(&c, &[rec_c]).unwrap();
 
@@ -157,6 +157,16 @@ fn list_records_for_workspace_returns_empty_when_data_dir_missing() {
 }
 
 #[test]
+fn list_records_for_workspace_propagates_invalid_parent_state() {
+    let dir = TempDir::new().unwrap();
+    let invalid_parent = dir.path().join("regular-file");
+    std::fs::write(&invalid_parent, b"not a directory").unwrap();
+    let error = list_records_for_workspace(&invalid_parent.join("data"), &wn("jackin"))
+        .expect_err("invalid parent is unknown inventory, not absent inventory");
+    assert!(error.to_string().contains("read data dir"));
+}
+
+#[test]
 fn list_records_for_workspace_ignores_non_jackin_dirs() {
     let data = TempDir::new().unwrap();
     let other = data.path().join("not-a-jackin-capsule");
@@ -166,4 +176,321 @@ fn list_records_for_workspace_ignores_non_jackin_dirs() {
     write_records(&other, &[rec]).unwrap();
     let result = list_records_for_workspace(data.path(), &wn("jackin")).unwrap();
     assert!(result.is_empty());
+}
+
+fn write_v1_fixture(state_dir: &Path, workspace_name: Option<&str>, label: &str) -> Vec<u8> {
+    use jackin_instance::manifest::{DockerResources, InstanceManifest, NewInstanceManifest};
+    let container = state_dir.file_name().unwrap().to_str().unwrap();
+    let manifest = InstanceManifest::new(NewInstanceManifest {
+        container_base: container,
+        workspace_name,
+        workspace_label: label,
+        workdir: "/workspace",
+        host_workdir_fingerprint: "sha256:test",
+        role_key: "role",
+        role_display_name: "Role",
+        agent_runtime: jackin_core::Agent::Claude,
+        role_source_git: "https://example.invalid/role.git",
+        role_source_ref: None,
+        image_tag: "image",
+        docker: DockerResources::from_container_name(container),
+        role_git_sha: None,
+        base_image_ref: None,
+        base_image_digest: None,
+        supported_agents: vec![],
+    });
+    manifest.write(state_dir).unwrap();
+    let mut record = serde_json::to_value(sample_record()).unwrap();
+    record.as_object_mut().unwrap().remove("workspace_name");
+    record["workspace"] = label.into();
+    record["container_name"] = container.into();
+    let bytes =
+        serde_json::to_vec(&serde_json::json!({"version": 1, "records": [record]})).unwrap();
+    std::fs::write(isolation_file_path(state_dir), &bytes).unwrap();
+    bytes
+}
+
+#[test]
+fn v1_identity_migrates_from_independent_manifest_without_config() {
+    for identity in [Some("saved-stem"), None] {
+        let temp = TempDir::new().unwrap();
+        let state = temp.path().join("jk-a1b2c3d4-role");
+        std::fs::create_dir_all(&state).unwrap();
+        let original = write_v1_fixture(&state, identity, "/display/label");
+        let records = read_records(&state).unwrap();
+        assert_eq!(
+            records[0]
+                .workspace_name
+                .as_ref()
+                .map(WorkspaceName::as_str),
+            identity
+        );
+        assert_eq!(
+            std::fs::read(isolation_file_path(&state)).unwrap(),
+            original
+        );
+        assert_eq!(migrate_records(&state).unwrap(), records);
+        let raw: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(isolation_file_path(&state)).unwrap()).unwrap();
+        assert_eq!(raw["version"], 2);
+        assert!(raw["records"][0].get("workspace").is_none());
+        assert_eq!(read_records(&state).unwrap(), records);
+    }
+}
+
+#[test]
+fn readonly_inventory_preserves_admitted_historical_sibling_when_later_state_is_invalid() {
+    let temp = TempDir::new().unwrap();
+    let good = temp.path().join("jk-a1b2c3d4-role");
+    let bad = temp.path().join("jk-b1b2c3d4-role");
+    std::fs::create_dir_all(&good).unwrap();
+    std::fs::create_dir_all(bad.join(".jackin")).unwrap();
+    let original = write_v1_fixture(&good, Some("saved-stem"), "/display/label");
+    let invalid = b"invalid later state";
+    std::fs::write(isolation_file_path(&bad), invalid).unwrap();
+    let manifest_bytes = std::fs::read(good.join(".jackin/instance.json")).unwrap();
+    let names_before = std::fs::read_dir(good.join(".jackin"))
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        read_records(&good).unwrap()[0].workspace_name,
+        Some(wn("saved-stem"))
+    );
+    let _error = list_records_for_workspace(temp.path(), &wn("saved-stem")).unwrap_err();
+    assert_eq!(std::fs::read(isolation_file_path(&good)).unwrap(), original);
+    assert_eq!(std::fs::read(isolation_file_path(&bad)).unwrap(), invalid);
+    assert_eq!(
+        std::fs::read(good.join(".jackin/instance.json")).unwrap(),
+        manifest_bytes
+    );
+    let names = std::fs::read_dir(good.join(".jackin"))
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(names, names_before);
+}
+
+#[test]
+fn historical_mutation_rejects_changed_manifest_before_publication() {
+    let temp = TempDir::new().unwrap();
+    let state = temp.path().join("jk-a1b2c3d4-role");
+    std::fs::create_dir_all(&state).unwrap();
+    let original = write_v1_fixture(&state, Some("saved-stem"), "/display/label");
+    let error = mutate_records(&state, false, |records| {
+        std::fs::write(state.join(".jackin/instance.json"), b"changed manifest").unwrap();
+        records.clear();
+        true
+    })
+    .expect_err("identity witness must cover final mutation publication");
+    assert!(format!("{error:#}").contains("manifest changed"));
+    assert_eq!(
+        std::fs::read(isolation_file_path(&state)).unwrap(),
+        original
+    );
+}
+
+#[test]
+fn ambiguous_v1_identity_preserves_original_bytes() {
+    for corruption in [
+        "missing-manifest",
+        "different-label",
+        "different-container",
+        "invalid-stem",
+    ] {
+        let temp = TempDir::new().unwrap();
+        let state = temp.path().join("jk-a1b2c3d4-role");
+        std::fs::create_dir_all(&state).unwrap();
+        let original = write_v1_fixture(&state, Some("saved-stem"), "other-workspace");
+        let manifest_path = state.join(".jackin/instance.json");
+        if corruption == "missing-manifest" {
+            std::fs::remove_file(&manifest_path).unwrap();
+        } else {
+            let mut manifest: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(&manifest_path).unwrap()).unwrap();
+            match corruption {
+                "different-label" => manifest["workspace_label"] = "different".into(),
+                "different-container" => manifest["container_base"] = "jk-other".into(),
+                "invalid-stem" => manifest["workspace_name"] = "/display/label".into(),
+                _ => unreachable!(),
+            }
+            std::fs::write(&manifest_path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+        }
+        let error = read_records(&state).unwrap_err();
+        assert!(matches!(error.downcast_ref::<crate::IsolationError>(),
+            Some(crate::IsolationError::IdentityRecoveryRequired { path }) if *path == isolation_file_path(&state)));
+        assert!(
+            error
+                .to_string()
+                .contains("preserve this state and rebuild")
+        );
+        assert_eq!(
+            std::fs::read(isolation_file_path(&state)).unwrap(),
+            original
+        );
+    }
+}
+
+#[test]
+fn duplicate_historical_identities_and_versions_preserve_original_bytes() {
+    for replacement in [
+        ("\"version\":1", "\"version\":1,\"version\":2"),
+        (
+            "\"workspace\":\"label\"",
+            "\"workspace\":\"label\",\"workspace\":\"other\"",
+        ),
+        (
+            "\"container_name\":\"jk-a1b2c3d4-role\"",
+            "\"container_name\":\"jk-a1b2c3d4-role\",\"container_name\":\"jk-other\"",
+        ),
+    ] {
+        let temp = TempDir::new().unwrap();
+        let state = temp.path().join("jk-a1b2c3d4-role");
+        std::fs::create_dir_all(&state).unwrap();
+        let original = write_v1_fixture(&state, Some("saved-stem"), "label");
+        let original = String::from_utf8(original).unwrap();
+        assert!(original.contains(replacement.0));
+        let ambiguous = original.replace(replacement.0, replacement.1).into_bytes();
+        std::fs::write(isolation_file_path(&state), &ambiguous).unwrap();
+        let _error = read_records(&state).unwrap_err();
+        assert_eq!(
+            std::fs::read(isolation_file_path(&state)).unwrap(),
+            ambiguous
+        );
+    }
+}
+
+#[test]
+fn v2_missing_identity_and_path_identity_are_rejected() {
+    let temp = TempDir::new().unwrap();
+    for identity in [
+        None,
+        Some(serde_json::Value::String("/display/label".into())),
+    ] {
+        let mut record = serde_json::to_value(sample_record()).unwrap();
+        record.as_object_mut().unwrap().remove("workspace_name");
+        if let Some(identity) = identity {
+            record["workspace_name"] = identity;
+        }
+        let bytes =
+            serde_json::to_vec(&serde_json::json!({"version": 2, "records": [record]})).unwrap();
+        std::fs::create_dir_all(temp.path().join(".jackin")).unwrap();
+        std::fs::write(isolation_file_path(temp.path()), &bytes).unwrap();
+        let _error = read_records(temp.path()).unwrap_err();
+        assert_eq!(
+            std::fs::read(isolation_file_path(temp.path())).unwrap(),
+            bytes
+        );
+    }
+}
+
+#[test]
+fn historical_mixed_batch_cannot_migrate_another_instances_record() {
+    let temp = TempDir::new().unwrap();
+    let state = temp.path().join("jk-a1b2c3d4-role");
+    std::fs::create_dir_all(&state).unwrap();
+    let original = write_v1_fixture(&state, Some("saved-stem"), "label");
+    let mut file: serde_json::Value = serde_json::from_slice(&original).unwrap();
+    let mut foreign = file["records"][0].clone();
+    foreign["container_name"] = "jk-foreign".into();
+    file["records"].as_array_mut().unwrap().push(foreign);
+    let bytes = serde_json::to_vec(&file).unwrap();
+    std::fs::write(isolation_file_path(&state), &bytes).unwrap();
+    let _read_error = read_records(&state).unwrap_err();
+    let _migrate_error = migrate_records(&state).unwrap_err();
+    assert_eq!(std::fs::read(isolation_file_path(&state)).unwrap(), bytes);
+}
+
+#[cfg(unix)]
+#[test]
+fn historical_symlink_source_cannot_redirect_recovery() {
+    let temp = TempDir::new().unwrap();
+    let state = temp.path().join("jk-a1b2c3d4-role");
+    std::fs::create_dir_all(&state).unwrap();
+    let original = write_v1_fixture(&state, Some("saved-stem"), "label");
+    let canary = temp.path().join("outside-isolation.json");
+    std::fs::write(&canary, &original).unwrap();
+    let source = isolation_file_path(&state);
+    std::fs::remove_file(&source).unwrap();
+    std::os::unix::fs::symlink(&canary, &source).unwrap();
+    let _error = read_records(&state).unwrap_err();
+    assert!(
+        std::fs::symlink_metadata(&source)
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+    assert_eq!(std::fs::read(&canary).unwrap(), original);
+}
+
+#[test]
+fn cooperating_mutation_holds_lock_through_read_modify_write() {
+    let temp = TempDir::new().unwrap();
+    let state = temp.path().join("jk-a1b2c3d4-role");
+    write_records(&state, &[sample_record()]).unwrap();
+    let (read_ready, wait_read) = std::sync::mpsc::channel();
+    let (continue_write, wait_continue) = std::sync::mpsc::channel();
+    let first_state = state.clone();
+    let first = std::thread::spawn(move || {
+        mutate_records(&first_state, false, |records| {
+            read_ready.send(()).unwrap();
+            wait_continue.recv().unwrap();
+            let mut addition = sample_record();
+            addition.mount_dst = "/workspace/first".into();
+            records.push(addition);
+            true
+        })
+    });
+    wait_read
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .unwrap();
+    let mut second = sample_record();
+    second.mount_dst = "/workspace/second".into();
+    let error = upsert_record(&state, second.clone()).unwrap_err();
+    assert!(error.to_string().contains("state busy"));
+    continue_write.send(()).unwrap();
+    first.join().unwrap().unwrap();
+    upsert_record(&state, second).unwrap();
+    let records = read_records(&state).unwrap();
+    assert_eq!(records.len(), 3);
+    assert!(
+        records
+            .iter()
+            .any(|record| record.mount_dst == "/workspace/first")
+    );
+    assert!(
+        records
+            .iter()
+            .any(|record| record.mount_dst == "/workspace/second")
+    );
+}
+
+#[test]
+fn reading_fresh_state_directory_creates_no_metadata() {
+    let temp = TempDir::new().unwrap();
+    std::fs::create_dir(temp.path().join(".jackin")).unwrap();
+    assert!(read_records(temp.path()).unwrap().is_empty());
+    assert_eq!(
+        std::fs::read_dir(temp.path().join(".jackin"))
+            .unwrap()
+            .count(),
+        0
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn v2_state_reads_succeed_without_write_permission() {
+    use std::os::unix::fs::PermissionsExt;
+    let temp = TempDir::new().unwrap();
+    write_records(temp.path(), &[sample_record()]).unwrap();
+    let file = isolation_file_path(temp.path());
+    let directory = temp.path().join(".jackin");
+    std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o400)).unwrap();
+    std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o500)).unwrap();
+    let result = read_records(temp.path());
+    std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o700)).unwrap();
+    std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o600)).unwrap();
+    assert_eq!(result.unwrap(), vec![sample_record()]);
+    assert_eq!(std::fs::read_dir(directory).unwrap().count(), 1);
 }

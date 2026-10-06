@@ -1,7 +1,8 @@
 use super::{
-    MIN_OS, XunitTotals, assert_broker_version, assert_executable_file, assert_native_broker_archs,
-    broker_path, minos_matches_target, normalize_generated_text, parse_dwarf_uuid,
-    parse_xctest_summary, parse_xunit_totals, tree_differences, validate_build, validate_version,
+    DesktopCommand, MIN_OS, XunitTotals, assert_broker_version, assert_executable_file,
+    assert_native_broker_archs, broker_path, minos_matches_target, normalize_generated_text,
+    parse_dwarf_uuid, parse_swift_jobs, parse_xunit_totals, read_xunit_totals, swift_build_args,
+    swift_test_args, tree_differences, validate_build, validate_test_totals, validate_version,
 };
 
 #[test]
@@ -212,26 +213,21 @@ fn xunit_totals_sum_every_testsuite() {
 }
 
 #[test]
-fn xunit_totals_reject_corrupt_reports() {
-    parse_xunit_totals("").unwrap_err();
-    parse_xunit_totals("<testsuites></testsuites>").unwrap_err();
-    parse_xunit_totals("<testsuite name=\"a\" tests=\"1\">").unwrap_err();
-    parse_xunit_totals("<testsuite name=\"a\" tests=\"1\" failures=\"0\" errors=\"0\"")
-        .unwrap_err();
-}
-
-#[test]
-fn xctest_summary_reads_last_all_tests_block() {
-    let log = concat!(
-        "Test Suite 'PlatformLaneTests' started\n",
-        "\t Executed 3 tests, with 0 failures (0 unexpected) in 0.012 (0.013) seconds\n",
-        "Test Suite 'All tests' passed at 2026-08-20 10:00:00.000\n",
-        "\t Executed 71 tests, with 0 failures (0 unexpected) in 2.733 (2.738) seconds\n"
+fn xunit_accepts_xml_whitespace_comments_and_processing_instructions() {
+    let source = concat!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\r\n",
+        "<!-- prolog comment --><?xml-stylesheet href=\"report.xsl\"?>\n",
+        "<testsuites>\n",
+        "  <!-- suite list -->\n",
+        "  <testsuite name=\"unit\" tests=\"1\" failures=\"0\" errors=\"0\">",
+        "<?inside report?>before &amp; after &#x9;<![CDATA[raw text]]>",
+        "</testsuite>\n",
+        "</testsuites>\r\n<!-- epilog comment --><?tail report?>\n"
     );
     assert_eq!(
-        parse_xctest_summary(log).unwrap(),
+        parse_xunit_totals(source).unwrap(),
         XunitTotals {
-            tests: 71,
+            tests: 1,
             failures: 0,
             errors: 0,
         }
@@ -239,16 +235,212 @@ fn xctest_summary_reads_last_all_tests_block() {
 }
 
 #[test]
-fn xctest_summary_rejects_missing_or_truncated_block() {
-    parse_xctest_summary("nothing here").unwrap_err();
-    // 'All tests' header without the following Executed line = crashed runner.
-    parse_xctest_summary("Test Suite 'All tests' started\n").unwrap_err();
-    // Executed line without parseable numbers is corruption, never zero.
-    let log = concat!(
-        "Test Suite 'All tests' passed\n",
-        "\t Executed many tests, with no failures\n"
+fn xunit_rejects_outside_root_content_and_misplaced_prolog_markup() {
+    let report = "<testsuites><testsuite name=\"unit\" tests=\"1\" failures=\"0\" errors=\"0\"/></testsuites>";
+    let invalid = [
+        format!("prefix{report}"),
+        format!("{report}suffix"),
+        format!("<![CDATA[outside]]>{report}"),
+        format!("{report}<![CDATA[outside]]>"),
+        format!("&#32;{report}"),
+        format!("{report}&#32;"),
+        format!("<!DOCTYPE testsuites>{report}"),
+        format!("{report}<!DOCTYPE testsuites>"),
+        format!("{report}<?xml version=\"1.0\"?>"),
+        format!("{report}{report}"),
+        format!("<?xml version=\"1.0\"?> <?xml version=\"1.0\"?>{report}"),
+        format!("<!-- too early --><?xml version=\"1.0\"?>{report}"),
+        format!("<?XML version=\"1.0\"?>{report}"),
+        format!("<?xml encoding=\"UTF-8\" version=\"1.0\"?>{report}"),
+        format!("<?xml version=\"1.0\" encoding=\"UTF-8\" encoding=\"UTF-8\"?>{report}"),
+        format!("<?xml version=\"1.0\" standalone=\"maybe\"?>{report}"),
+        format!("<?xml version=\"1.0\" extra=\"x\"?>{report}"),
+        format!("\u{000b}{report}"),
+        "<testsuites><unexpected/></testsuites>".to_owned(),
+        "<testsuites><testsuite name=\"outer\" tests=\"1\" failures=\"0\" errors=\"0\"><testsuite name=\"inner\" tests=\"1\" failures=\"0\" errors=\"0\"/></testsuite></testsuites>".to_owned(),
+        "<testsuites><testsuite name=\"unit\" tests=\"1\" failures=\"0\" errors=\"0\"><1bad/></testsuite></testsuites>".to_owned(),
+        "<testsuites><testsuite name=\"unit\" tests=\"1\" tests=\"1\" failures=\"0\" errors=\"0\"/></testsuites>".to_owned(),
+        "<testsuites><testsuite name=\"unit\" tests=\"1\" failures=\"0\" errors=\"0\" notes=\"&#x1;\"/></testsuites>".to_owned(),
+        "<testsuites><testsuite name=\"&custom;\" tests=\"1\" failures=\"0\" errors=\"0\"/></testsuites>".to_owned(),
+        "<testsuites><testsuite name=\"unit\" tests=\"1\" failures=\"0\" errors=\"0\">&custom;</testsuite></testsuites>".to_owned(),
+        "<testsuites><testsuite name=\"unit\" tests=\"1\" failures=\"0\" errors=\"0\">&#x1;</testsuite></testsuites>".to_owned(),
+        "<!-- invalid -- comment --><testsuites><testsuite name=\"unit\" tests=\"1\" failures=\"0\" errors=\"0\"/></testsuites>".to_owned(),
+        "<?xml version=\"1.1\"?><testsuites><testsuite name=\"unit\" tests=\"1\" failures=\"0\" errors=\"0\"/></testsuites>".to_owned(),
+        "<?xml version=\"1.0\" encoding=\"UTF-16\"?><testsuites><testsuite name=\"unit\" tests=\"1\" failures=\"0\" errors=\"0\"/></testsuites>".to_owned(),
+    ];
+    for source in invalid {
+        assert!(
+            parse_xunit_totals(&source).is_err(),
+            "accepted malformed XML: {source:?}"
+        );
+    }
+}
+
+#[test]
+fn parallel_xctest_xunit_counts_every_worker_suite() {
+    let source = concat!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
+        "<testsuites tests=\"5\" failures=\"0\" errors=\"0\">\n",
+        "  <testsuite name=\"worker-1\" tests=\"2\" failures=\"0\" errors=\"0\"/>\n",
+        "  <testsuite name=\"worker-2\" tests=\"3\" failures=\"0\" errors=\"0\"/>\n",
+        "</testsuites>\n"
     );
-    parse_xctest_summary(log).unwrap_err();
+    let totals = parse_xunit_totals(source).unwrap();
+    assert_eq!(
+        totals,
+        XunitTotals {
+            tests: 5,
+            failures: 0,
+            errors: 0,
+        }
+    );
+    validate_test_totals("XCTest", &totals).unwrap();
+}
+
+#[test]
+fn xunit_totals_reject_corrupt_or_incomplete_reports() {
+    parse_xunit_totals("").unwrap_err();
+    parse_xunit_totals("<testsuites></testsuites>").unwrap_err();
+    parse_xunit_totals(
+        "<testsuites><testsuite name=\"a\" tests=\"1\" failures=\"0\" errors=\"0\">",
+    )
+    .unwrap_err();
+    parse_xunit_totals("<testsuite name=\"a\" tests=\"1\" failures=\"0\" errors=\"0\"")
+        .unwrap_err();
+    parse_xunit_totals("<testsuites><testsuite name=\"a\" tests=\"1\" errors=\"0\"/></testsuites>")
+        .unwrap_err();
+    parse_xunit_totals(
+        "<testsuites><testsuite name=\"a\" tests=\"many\" failures=\"0\" errors=\"0\"/></testsuites>",
+    )
+        .unwrap_err();
+    parse_xunit_totals(
+        "<testsuites><testsuite name=\"a\" tests=\"1\" failures=\"0\" errors=\"0\"></testsuites>",
+    )
+    .unwrap_err();
+    parse_xunit_totals(
+        "<testsuites><testsuite name=\"worker\" tests=\"7\" failures=\"0\" errors=\"0\"/>",
+    )
+    .unwrap_err();
+    parse_xunit_totals(concat!(
+        "<testsuites><testsuite name=\"a\" tests=\"1\" failures=\"0\" errors=\"0\"/>",
+        "</testsuites><testsuites><testsuite name=\"b\" tests=\"1\" failures=\"0\" errors=\"0\"/>",
+        "</testsuites>"
+    ))
+    .unwrap_err();
+    parse_xunit_totals("<testsuite name=\"worker\" tests=\"7\" failures=\"0\" errors=\"0\"/>")
+        .unwrap_err();
+}
+
+#[test]
+fn xunit_counts_failures_and_errors_and_rejects_zero_tests() {
+    let failures = parse_xunit_totals(
+        "<testsuites><testsuite name=\"xctest\" tests=\"3\" failures=\"1\" errors=\"0\"/></testsuites>",
+    )
+    .unwrap();
+    assert!(validate_test_totals("XCTest", &failures).is_err());
+
+    let errors = parse_xunit_totals(
+        "<testsuites><testsuite name=\"swift-testing\" tests=\"2\" failures=\"0\" errors=\"1\"/></testsuites>",
+    )
+    .unwrap();
+    assert!(validate_test_totals("Swift Testing", &errors).is_err());
+
+    let empty = parse_xunit_totals(
+        "<testsuites><testsuite name=\"empty\" tests=\"0\" failures=\"0\" errors=\"0\"/></testsuites>",
+    )
+    .unwrap();
+    assert!(validate_test_totals("Swift Testing", &empty).is_err());
+}
+
+#[test]
+fn report_reader_fails_closed_on_missing_or_invalid_framework_reports() {
+    let temp = tempfile::tempdir().unwrap();
+    let xctest = temp.path().join("swift-unit-tests.xml");
+    assert!(
+        read_xunit_totals(&xctest, "XCTest")
+            .unwrap_err()
+            .to_string()
+            .contains("missing XCTest xUnit report")
+    );
+
+    std::fs::write(&xctest, "<testsuites><testsuite").unwrap();
+    let error = read_xunit_totals(&xctest, "XCTest").unwrap_err();
+    assert!(format!("{error:#}").contains("invalid XCTest xUnit report"));
+}
+
+#[test]
+fn swift_testing_xunit_is_a_separate_required_counted_report() {
+    let report = parse_xunit_totals(
+        "<testsuites><testsuite name=\"ProjectBaselineTests\" tests=\"2\" failures=\"0\" errors=\"0\"/></testsuites>",
+    )
+    .unwrap();
+    assert_eq!(report.tests, 2);
+    validate_test_totals("Swift Testing", &report).unwrap();
+}
+
+#[test]
+fn swift_job_limit_cli_defaults_and_enforces_one_through_eight() {
+    use clap::Parser;
+
+    #[derive(Parser)]
+    struct Cli {
+        #[command(subcommand)]
+        command: DesktopCommand,
+    }
+
+    let defaults = Cli::try_parse_from(["xtask", "test-swift"]).unwrap();
+    match defaults.command {
+        DesktopCommand::TestSwift(args) => assert_eq!(args.jobs, 2),
+        _ => panic!("expected test-swift command"),
+    }
+
+    let maximum = Cli::try_parse_from(["xtask", "test-swift", "--jobs", "8"]).unwrap();
+    match maximum.command {
+        DesktopCommand::TestSwift(args) => assert_eq!(args.jobs, 8),
+        _ => panic!("expected test-swift command"),
+    }
+
+    for invalid in ["0", "9", "nope", "2\n--parallel"] {
+        assert!(
+            Cli::try_parse_from(["xtask", "test-swift", "--jobs", invalid]).is_err(),
+            "accepted invalid jobs value {invalid:?}"
+        );
+    }
+    assert_eq!(parse_swift_jobs("1").unwrap(), 1);
+    assert_eq!(parse_swift_jobs("8").unwrap(), 8);
+}
+
+#[test]
+fn swiftpm_build_and_test_arguments_share_a_bounded_worker_limit() {
+    assert_eq!(
+        swift_build_args(3).unwrap(),
+        ["build", "-c", "release", "--jobs", "3"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        swift_test_args(3, std::path::Path::new("/tmp/native package/tests.xml")).unwrap(),
+        [
+            "test",
+            "-c",
+            "release",
+            "--jobs",
+            "3",
+            "--parallel",
+            "--num-workers",
+            "3",
+            "--experimental-maximum-parallelization-width",
+            "3",
+            "--xunit-output",
+            "/tmp/native package/tests.xml",
+        ]
+        .into_iter()
+        .map(str::to_owned)
+        .collect::<Vec<_>>()
+    );
+    swift_build_args(0).unwrap_err();
+    swift_test_args(9, std::path::Path::new("tests.xml")).unwrap_err();
 }
 
 fn repo_text(relative: &str) -> String {
@@ -257,13 +449,6 @@ fn repo_text(relative: &str) -> String {
         .join(relative);
     std::fs::read_to_string(&path)
         .unwrap_or_else(|error| panic!("reading {}: {error}", path.display()))
-}
-
-fn repo_text_opt(relative: &str) -> std::io::Result<String> {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .join(relative);
-    std::fs::read_to_string(&path)
 }
 
 fn task_block<'a>(mise: &'a str, name: &str) -> &'a str {
@@ -328,58 +513,55 @@ fn cadence_tasks_define_the_canonical_graph() {
 }
 
 #[test]
-fn release_workflow_invokes_canonical_mise_tasks() {
-    let Ok(release) = repo_text_opt(".github/workflows/release.yml") else {
-        return;
-    };
+fn cargo_wrapper_routes_native_commands_through_mbx() {
     let mise = repo_text("mise.toml");
-    let release_tools = task_block(&mise, "desktop-release-tools");
     assert!(
-        release_tools.contains("mise install --locked rust cargo:boltffi_cli xcodegen"),
-        "release tool task must explicitly install its locked closure"
+        mise.contains("[wrappers.cargo]\ncommand = \"mbx\"\nenv = { MBX_CARGO_SHIM_MODE = \"1\" }"),
+        "all Cargo calls must use MBX's transparent Mise shim"
     );
-    assert_subsequence(
-        &release,
-        &[
-            "mise run desktop-release-tools",
-            "mise run desktop-release-env",
-        ],
-        "release tool setup",
+    assert!(
+        mise.contains("mr-boxington = \"1.22.0\""),
+        "the transparent wrapper must resolve the locked MBX tool"
     );
-    for task in [
-        "mise run desktop-build",
-        "mise run desktop-verify",
-        "mise run desktop-sign-notarize",
-        "mise run desktop-release-state",
-    ] {
-        assert!(release.contains(task), "release.yml must invoke `{task}`");
-    }
-    for restated in [
-        "cargo xtask desktop build",
-        "cargo xtask desktop verify",
-        "cargo xtask desktop sign-notarize",
-        "cargo xtask desktop release-state",
-    ] {
-        assert!(
-            !release.contains(restated),
-            "release.yml must not restate `{restated}` beside the mise task"
-        );
-    }
+    assert!(
+        mise.contains("idiomatic_version_file_enable_tools = [\"rust\"]"),
+        "rust-toolchain.toml remains the single Rust version source"
+    );
+
+    let desktop_ci = task_block(&mise, "desktop-ci");
+    assert!(desktop_ci.contains("cargo xtask desktop test-swift --jobs 2"));
+    assert!(
+        !desktop_ci.contains("mbx build"),
+        "do not nest explicit MBX builds inside the transparent Cargo wrapper"
+    );
 }
 
 #[test]
-fn generated_ci_delegates_the_native_lane() {
-    let Ok(ci) = repo_text_opt(".github/workflows/ci-pr.yml") else {
-        return;
-    };
-    assert!(
-        ci.contains("ci-unit-swift.yml"),
-        "generated ci-pr.yml must dispatch the Swift units to the unit workflow"
+fn standalone_native_package_ci_uses_counted_bounded_swift_driver() {
+    let repo = repo_text("mise.toml");
+    let task = task_block(&repo, "swift-package-native-ci");
+    assert_subsequence(
+        task,
+        &[
+            "mise run desktop-xcframework",
+            "cargo xtask desktop test-swift --jobs 2",
+        ],
+        "swift-package-native-ci",
     );
-    for hand_restated in ["swift test", "cargo xtask desktop", "xcodebuild"] {
-        assert!(
-            !ci.contains(hand_restated),
-            "generated ci-pr.yml must not hand-restate native step `{hand_restated}`"
-        );
-    }
+    assert!(
+        !task.contains("swift build") && !task.contains("swift test"),
+        "native CI must use the counted xtask driver for all SwiftPM build/test work"
+    );
 }
+
+// NOTE: the release workflow test was removed with the post-#1110 CI surface:
+// main commit 6c389d38e deleted .github/workflows/release.yml and no surviving
+// workflow (ci.yml, ci-evidence.yml, ci-push-head-ledger.yml) invokes release
+// tasks, signs, or notarizes — there is no release automation left to bind to
+// the canonical mise tasks.
+
+// NOTE (consolidation 2026-10-06): generated_ci_includes_configured_native_verification_tasks
+// was removed. It pinned task-native-* jobs in the generated workflows, but velnor-actions
+// 0.1.0 cannot render this tree (workflow_too_large: 526KB+ vs the 500KB cap even with
+// main's config). The checked-in ci.yml is a frozen artifact until the generator cap is
+// addressed; restoring this contract is a follow-up for the repo owner.

@@ -9,6 +9,8 @@
 
 use std::collections::BTreeMap;
 
+use crate::OpSection;
+
 /// Sentinel for the "no `--account` flag" case so map keys can stay
 /// `String` instead of `Option<String>`.
 pub const DEFAULT_ACCOUNT_KEY: &str = "";
@@ -23,6 +25,7 @@ pub struct OpCache<Account, Vault, Item, Field> {
     vaults: BTreeMap<String, Vec<Vault>>,
     items: BTreeMap<(String, String), Vec<Item>>,
     fields: BTreeMap<(String, String, String), Vec<Field>>,
+    sections: BTreeMap<(String, String, String), Vec<OpSection>>,
 }
 
 fn account_key(account: Option<&str>) -> String {
@@ -36,6 +39,7 @@ impl<Account, Vault, Item, Field> Default for OpCache<Account, Vault, Item, Fiel
             vaults: BTreeMap::new(),
             items: BTreeMap::new(),
             fields: BTreeMap::new(),
+            sections: BTreeMap::new(),
         }
     }
 }
@@ -134,13 +138,50 @@ where
         );
     }
 
+    /// Cloned section metadata for (`account`, `vault_id`, `item_id`).
+    #[must_use]
+    pub fn get_sections(
+        &self,
+        account: Option<&str>,
+        vault_id: &str,
+        item_id: &str,
+    ) -> Option<Vec<OpSection>> {
+        self.sections
+            .get(&(
+                account_key(account),
+                vault_id.to_owned(),
+                item_id.to_owned(),
+            ))
+            .cloned()
+    }
+
+    /// Cache section metadata under (`account`, `vault_id`, `item_id`).
+    pub fn put_sections(
+        &mut self,
+        account: Option<&str>,
+        vault_id: &str,
+        item_id: &str,
+        sections: Vec<OpSection>,
+    ) {
+        self.sections.insert(
+            (
+                account_key(account),
+                vault_id.to_owned(),
+                item_id.to_owned(),
+            ),
+            sections,
+        );
+    }
+
     /// Drop fields cached for (`account`, `vault_id`, `item_id`).
     pub fn invalidate_fields(&mut self, account: Option<&str>, vault_id: &str, item_id: &str) {
-        self.fields.remove(&(
+        let key = (
             account_key(account),
             vault_id.to_owned(),
             item_id.to_owned(),
-        ));
+        );
+        self.fields.remove(&key);
+        self.sections.remove(&key);
     }
 }
 

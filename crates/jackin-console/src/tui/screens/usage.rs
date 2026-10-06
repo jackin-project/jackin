@@ -550,7 +550,7 @@ impl UsageScreenState {
         self.generated_at_epoch = snapshot.generated_at_epoch;
         self.projection_issues = snapshot.projection_issues;
         self.last_refresh_at = Some(now);
-        self.refresh_due = false;
+        self.consume_refresh_intent();
         // A refresh replaces the list: old offsets are meaningless and a
         // stale deep offset would blank the panes until the operator
         // scrolled back (same rule as `reanchor_after_view_change`).
@@ -592,7 +592,7 @@ impl UsageScreenState {
     pub fn apply_refresh_error(&mut self, notice: String, now: Instant) {
         self.notice = Some(notice);
         self.last_refresh_at = Some(now);
-        self.refresh_due = false;
+        self.consume_refresh_intent();
     }
 
     #[must_use]
@@ -629,19 +629,25 @@ impl UsageScreenState {
     /// [`Self::begin_refresh`].
     pub fn next_refresh_plan_if_due(&mut self, now: Instant) -> Option<UsageRefreshRequest> {
         if self.refresh_in_flight() {
-            self.refresh_due = false;
+            self.consume_refresh_intent();
             return None;
         }
         if !self.refresh_due && !self.heartbeat_due(now) {
             return None;
         }
         self.refresh_generation = self.refresh_generation.wrapping_add(1);
-        self.refresh_due = false;
-        let force = std::mem::take(&mut self.force_refresh_pending);
+        let force = self.consume_refresh_intent();
         Some(UsageRefreshRequest {
             generation: self.refresh_generation,
             force,
         })
+    }
+
+    // Joining, dispatching, and adopting a completed cycle all consume the
+    // pending request together. A force bit never survives a cleared due bit.
+    fn consume_refresh_intent(&mut self) -> bool {
+        self.refresh_due = false;
+        std::mem::take(&mut self.force_refresh_pending)
     }
 
     pub fn begin_refresh(&mut self, rx: BlockingSubscription<(u64, UsageRefreshOutcome)>) {

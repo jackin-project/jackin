@@ -56,6 +56,14 @@ pub enum OperatorEnvError {
         /// Vault name or id that was not found.
         vault: String,
     },
+    /// Multiple vaults share the requested display name.
+    #[error("{count} vaults named {vault:?}; disambiguate with a vault ID")]
+    AmbiguousVault {
+        /// Number of vaults with the requested name.
+        count: usize,
+        /// Ambiguous vault name.
+        vault: String,
+    },
     /// Item name/id missing from the given vault.
     #[error("item {item:?} not found in vault {vault:?}")]
     ItemNotFound {
@@ -75,6 +83,36 @@ pub enum OperatorEnvError {
         vault: String,
         /// Human-readable disambiguation hints.
         suggestions: String,
+    },
+    /// Multiple sections share the requested display label.
+    #[error("{count} sections named {section:?} in item {item:?}; disambiguate with a section ID")]
+    AmbiguousSection {
+        /// Number of sections with the requested label.
+        count: usize,
+        /// Ambiguous section label.
+        section: String,
+        /// Item that was searched.
+        item: String,
+    },
+    /// A sectioned field's reference could not be mapped to a known section ID.
+    #[error("section {section:?} for field {field:?} in item {item:?} has no matching section ID")]
+    SectionIdentityUnavailable {
+        /// Section segment returned by 1Password.
+        section: String,
+        /// Field whose section could not be identified.
+        field: String,
+        /// Item that was searched.
+        item: String,
+    },
+    /// Multiple fields share the requested display label.
+    #[error("{count} fields match {field:?} in item {item:?}; disambiguate with a field ID")]
+    AmbiguousField {
+        /// Number of fields matching the request.
+        count: usize,
+        /// Ambiguous field label or id.
+        field: String,
+        /// Item that was searched.
+        item: String,
     },
     /// Field label/id missing from the item.
     #[error("field {field:?} not found in item {item:?}")]
@@ -272,184 +310,355 @@ pub fn resolve_op_uri_to_ref(
     op: &dyn OpStructRunner,
     account: Option<&str>,
 ) -> anyhow::Result<OpRef> {
-    // Port errors from OpStructRunner stay as raw anyhow; validation failures
-    // are typed sources so pickers can downcast without substring matching.
+    let parsed = parse_op_uri(input)?;
+    let vault = resolve_vault(op, parsed.vault, account)?;
+    let (items, item) = resolve_item(op, &vault, &parsed, account)?;
+    let detail = op.item_get(&item.id, &vault.id, account)?;
+    let field = resolve_field(&detail, &item, &parsed)?;
+    build_resolved_op_ref(&vault, &items, &item, field, &detail, &parsed, account)
+}
+
+struct ParsedOpUri<'a> {
+    vault: &'a str,
+    item: &'a str,
+    subtitle: Option<&'a str>,
+    section: Option<&'a str>,
+    field: &'a str,
+    query: Option<&'a str>,
+}
+
+fn parse_op_uri(input: &str) -> anyhow::Result<ParsedOpUri<'_>> {
     if !input.starts_with("op://") {
         return Err(anyhow::Error::new(OperatorEnvError::NotOpRef));
     }
     if input.contains("${") {
         return Err(anyhow::Error::new(OperatorEnvError::ShellVarInRef));
     }
-
-    // Peel off optional `?attribute=...` / `?attr=...` / `?ssh-format=...` suffix.
     let (path_part, query) = input
-        .find('?')
-        .map_or((input, None), |i| (&input[..i], Some(&input[i..])));
+        .split_once('?')
+        .map_or((input, None), |(path, query)| (path, Some(query)));
     let Some(body) = path_part.strip_prefix("op://") else {
         return Err(anyhow::Error::new(OperatorEnvError::NotOpRef));
     };
-    let segs: Vec<&str> = body.split('/').collect();
-    let (vault_seg, item_seg, section_seg, field_seg) = match segs.as_slice() {
-        [v, i, f] => (*v, *i, None::<&str>, *f),
-        [v, i, s, f] => (*v, *i, Some(*s), *f),
+    let segments: Vec<&str> = body.split('/').collect();
+    let (vault, item_segment, section, field) = match segments.as_slice() {
+        [vault, item, field] => (*vault, *item, None, *field),
+        [vault, item, section, field] => (*vault, *item, Some(*section), *field),
         _ => {
             return Err(anyhow::Error::new(OperatorEnvError::MalformedRef {
-                segment_count: segs.len(),
+                segment_count: segments.len(),
             }));
         }
     };
+    let subtitle_parts = item_segment
+        .strip_suffix(']')
+        .and_then(|without_close| without_close.rsplit_once('['));
+    let (item, subtitle) = subtitle_parts.map_or((item_segment, None), |(name, subtitle)| {
+        (name, Some(subtitle))
+    });
+    Ok(ParsedOpUri {
+        vault,
+        item,
+        subtitle,
+        section,
+        field,
+        query,
+    })
+}
 
-    // Item segment may carry [subtitle] filter — a display extension from jackin❯.
-    // Nested condition makes map_or awkward; allow the if-let pattern here.
-    #[expect(
-        clippy::option_if_let_else,
-        reason = "documented residual allow; prefer expect when site is lint-true"
-    )]
-    let (item_name, subtitle_filter): (&str, Option<&str>) = if let Some(open) = item_seg.rfind('[')
-    {
-        if item_seg.ends_with(']') && open < item_seg.len() - 1 {
-            (
-                &item_seg[..open],
-                Some(&item_seg[open + 1..item_seg.len() - 1]),
-            )
-        } else {
-            (item_seg, None)
-        }
-    } else {
-        (item_seg, None)
-    };
-
-    // Resolve vault by name (case-insensitive) or UUID.
+fn resolve_vault(
+    op: &dyn OpStructRunner,
+    vault_segment: &str,
+    account: Option<&str>,
+) -> anyhow::Result<jackin_core::OpVault> {
     let vaults = op.vault_list(account)?;
-    let vault = vaults
+    let exact_ids: Vec<_> = vaults
         .iter()
-        .find(|v| v.name.eq_ignore_ascii_case(vault_seg) || v.id == vault_seg)
-        .ok_or_else(|| {
-            anyhow::Error::new(OperatorEnvError::VaultNotFound {
-                vault: vault_seg.to_owned(),
-            })
-        })?;
+        .filter(|vault| vault.id == vault_segment)
+        .collect();
+    if exact_ids.len() == 1 {
+        return Ok(exact_ids[0].clone());
+    }
+    if exact_ids.len() > 1 {
+        return Err(anyhow::anyhow!(
+            "1Password returned {} vaults with ID {vault_segment:?}",
+            exact_ids.len()
+        ));
+    }
 
-    // Resolve items in this vault, then filter by name (case-insensitive) or
-    // UUID, and by subtitle filter when present.
-    let items = op.item_list(&vault.id, account)?;
-    let mut matches: Vec<&OpItem> = items
+    let names: Vec<_> = vaults
         .iter()
-        .filter(|i| {
-            let name_match = i.name.eq_ignore_ascii_case(item_name) || i.id == item_name;
-            let subtitle_match = match subtitle_filter {
-                None => true,
-                // `#<prefix>` → match against item ID prefix (from disambig suggestion).
-                Some(s) if s.starts_with('#') => i.id.starts_with(&s[1..]),
-                Some(s) => i.subtitle.eq_ignore_ascii_case(s),
+        .filter(|vault| vault.name.eq_ignore_ascii_case(vault_segment))
+        .collect();
+    match names.as_slice() {
+        [vault] => Ok((*vault).clone()),
+        [] => Err(anyhow::Error::new(OperatorEnvError::VaultNotFound {
+            vault: vault_segment.to_owned(),
+        })),
+        _ => Err(anyhow::Error::new(OperatorEnvError::AmbiguousVault {
+            count: names.len(),
+            vault: vault_segment.to_owned(),
+        })),
+    }
+}
+
+fn resolve_item(
+    op: &dyn OpStructRunner,
+    vault: &jackin_core::OpVault,
+    parsed: &ParsedOpUri<'_>,
+    account: Option<&str>,
+) -> anyhow::Result<(Vec<OpItem>, OpItem)> {
+    let items = op.item_list(&vault.id, account)?;
+    let exact_id_exists = items.iter().any(|item| item.id == parsed.item);
+    let matches: Vec<&OpItem> = items
+        .iter()
+        .filter(|item| {
+            let identifier_match = if exact_id_exists {
+                item.id == parsed.item
+            } else {
+                item.name.eq_ignore_ascii_case(parsed.item)
             };
-            name_match && subtitle_match
+            let subtitle_match = match parsed.subtitle {
+                None => true,
+                Some(subtitle) if subtitle.starts_with('#') => subtitle
+                    .strip_prefix('#')
+                    .is_some_and(|prefix| item.id.starts_with(prefix)),
+                Some(subtitle) => item.subtitle.eq_ignore_ascii_case(subtitle),
+            };
+            identifier_match && subtitle_match
         })
         .collect();
-
     if matches.is_empty() {
-        let suffix = subtitle_filter
-            .map(|s| format!("[{s}]"))
+        let suffix = parsed
+            .subtitle
+            .map(|subtitle| format!("[{subtitle}]"))
             .unwrap_or_default();
         return Err(anyhow::Error::new(OperatorEnvError::ItemNotFound {
-            item: format!("{item_name}{suffix}"),
+            item: format!("{}{suffix}", parsed.item),
             vault: vault.name.clone(),
         }));
     }
     if matches.len() > 1 {
         let suggestions: Vec<String> = matches
             .iter()
-            .map(|i| {
-                let label = if i.subtitle.is_empty() {
-                    let id_prefix: String = i.id.chars().take(8).collect();
-                    format!("{}[#{}]", i.name, id_prefix)
+            .map(|item| {
+                let label = if item.subtitle.is_empty() {
+                    let id_prefix: String = item.id.chars().take(8).collect();
+                    format!("{}[#{}]", item.name, id_prefix)
                 } else {
-                    format!("{}[{}]", i.name, i.subtitle)
+                    format!("{}[{}]", item.name, item.subtitle)
                 };
-                let section_part = section_seg.map(|s| format!("/{s}")).unwrap_or_default();
-                let q = query.unwrap_or("");
-                format!("  op://{}/{label}{section_part}/{field_seg}{q}", vault.name)
+                let section_part = parsed
+                    .section
+                    .map(|section| format!("/{section}"))
+                    .unwrap_or_default();
+                let query = parsed
+                    .query
+                    .map(|query| format!("?{query}"))
+                    .unwrap_or_default();
+                format!(
+                    "  op://{}/{label}{section_part}/{}{query}",
+                    vault.name, parsed.field
+                )
             })
             .collect();
         return Err(anyhow::Error::new(OperatorEnvError::AmbiguousItem {
             count: matches.len(),
-            item: item_name.to_owned(),
+            item: parsed.item.to_owned(),
             vault: vault.name.clone(),
             suggestions: suggestions.join("\n"),
         }));
     }
-    let Some(item) = matches.pop() else {
+    let Some(item) = matches.first() else {
         return Err(anyhow::Error::new(OperatorEnvError::ItemNotFound {
-            item: item_name.to_owned(),
+            item: parsed.item.to_owned(),
             vault: vault.name.clone(),
         }));
     };
+    let item = (*item).clone();
+    Ok((items, item))
+}
 
-    // Resolve field by label (case-insensitive) or UUID.
-    let fields = op.item_get(&item.id, &vault.id, account)?;
-    let field = fields
+fn resolve_field<'a>(
+    detail: &'a jackin_core::OpItemDetail<jackin_core::OpField>,
+    item: &OpItem,
+    parsed: &ParsedOpUri<'_>,
+) -> anyhow::Result<&'a jackin_core::OpField> {
+    let exact_id_exists = detail.fields.iter().any(|field| field.id == parsed.field);
+    let mut matches: Vec<_> = detail
+        .fields
         .iter()
-        .find(|f| f.label.eq_ignore_ascii_case(field_seg) || f.id == field_seg)
-        .ok_or_else(|| {
-            anyhow::Error::new(OperatorEnvError::FieldNotFound {
-                field: field_seg.to_owned(),
+        .filter(|field| {
+            if exact_id_exists {
+                field.id == parsed.field
+            } else {
+                field.label.eq_ignore_ascii_case(parsed.field)
+            }
+        })
+        .collect();
+
+    if let Some(requested_section) = parsed.section {
+        let Some(requested_section_id) = resolve_section_id(requested_section, detail, item)?
+        else {
+            matches.clear();
+            return Err(anyhow::Error::new(OperatorEnvError::FieldNotFound {
+                field: parsed.field.to_owned(),
                 item: item.name.clone(),
-            })
-        })?;
+            }));
+        };
+        let mut section_matches = Vec::new();
+        for field in matches {
+            if resolve_field_section_id(field, detail, item)?.as_deref()
+                == Some(requested_section_id.as_str())
+            {
+                section_matches.push(field);
+            }
+        }
+        matches = section_matches;
+    }
 
-    // Compute ambiguity for path snapshot (same rule as picker).
-    let item_name_collides = items.iter().any(|i| i.id != item.id && i.name == item.name);
-    let safe_to_embed = !item.name.contains('[') && !item.name.contains(']');
-    let item_segment = if item_name_collides && safe_to_embed && !item.subtitle.is_empty() {
-        format!("{}[{}]", item.name, item.subtitle)
+    match matches.as_slice() {
+        [field] => Ok(*field),
+        [] => Err(anyhow::Error::new(OperatorEnvError::FieldNotFound {
+            field: parsed.field.to_owned(),
+            item: item.name.clone(),
+        })),
+        _ => Err(anyhow::Error::new(OperatorEnvError::AmbiguousField {
+            count: matches.len(),
+            field: parsed.field.to_owned(),
+            item: item.name.clone(),
+        })),
+    }
+}
+
+/// Resolve a requested section ID or human label against authoritative item
+/// metadata. Exact IDs win over labels, even when an ID equals another label.
+fn resolve_section_id(
+    segment: &str,
+    detail: &jackin_core::OpItemDetail<jackin_core::OpField>,
+    item: &OpItem,
+) -> anyhow::Result<Option<String>> {
+    if detail.sections.iter().any(|section| section.id == segment) {
+        return Ok(Some(segment.to_owned()));
+    }
+
+    let mut section_ids: Vec<String> = Vec::new();
+    for section in detail
+        .sections
+        .iter()
+        .filter(|section| section.label.eq_ignore_ascii_case(segment))
+    {
+        if !section_ids.contains(&section.id) {
+            section_ids.push(section.id.clone());
+        }
+    }
+    match section_ids.as_slice() {
+        [section_id] => Ok(Some(section_id.clone())),
+        [] => Ok(None),
+        _ => Err(anyhow::Error::new(OperatorEnvError::AmbiguousSection {
+            count: section_ids.len(),
+            section: segment.to_owned(),
+            item: item.name.clone(),
+        })),
+    }
+}
+
+/// Return a field's opaque section identity. If the CLI omitted `section.id`,
+/// map its reference segment through the item's authoritative section list.
+fn resolve_field_section_id(
+    field: &jackin_core::OpField,
+    detail: &jackin_core::OpItemDetail<jackin_core::OpField>,
+    item: &OpItem,
+) -> anyhow::Result<Option<String>> {
+    if let Some(section_id) = field.section_id.as_deref() {
+        return Ok(Some(section_id.to_owned()));
+    }
+    let Some(section_segment) =
+        parse_op_reference(&field.reference).and_then(|parts| parts.section)
+    else {
+        return Ok(None);
+    };
+    resolve_section_id(&section_segment, detail, item)?.map_or_else(
+        || {
+            Err(anyhow::Error::new(
+                OperatorEnvError::SectionIdentityUnavailable {
+                    section: section_segment,
+                    field: field.label.clone(),
+                    item: item.name.clone(),
+                },
+            ))
+        },
+        |section_id| Ok(Some(section_id)),
+    )
+}
+
+fn build_resolved_op_ref(
+    vault: &jackin_core::OpVault,
+    items: &[OpItem],
+    item: &OpItem,
+    field: &jackin_core::OpField,
+    detail: &jackin_core::OpItemDetail<jackin_core::OpField>,
+    parsed: &ParsedOpUri<'_>,
+    account: Option<&str>,
+) -> anyhow::Result<OpRef> {
+    let item_name_collides = items
+        .iter()
+        .any(|other| other.id != item.id && other.name == item.name);
+    let item_segment = if item_name_collides && !item.subtitle.is_empty() {
+        format!(
+            "{}[{}]",
+            jackin_core::encode_op_breadcrumb_segment(&item.name),
+            jackin_core::encode_op_breadcrumb_segment(&item.subtitle)
+        )
     } else {
-        item.name.clone()
+        jackin_core::encode_op_breadcrumb_segment(&item.name)
     };
-
-    // Use field.reference (1Password's canonical emission) as the authoritative
-    // source for the section segment, mirroring build_op_ref_on_commit.
-    let section_from_field = parse_op_reference(&field.reference).and_then(|p| p.section);
-
-    let canonical_section = match (section_seg, section_from_field) {
-        // field.reference has a section: use canonical (1Password) form
-        // regardless of whether the user also typed a section. This covers:
-        //   - (Some(_), Some(s)): both present → prefer field.reference's form.
-        //   - (None, Some(s)): 3-segment input but field lives in a section;
-        //     pick it up so the result matches the picker's output.
-        (_, Some(s)) => Some(s),
-        // User typed a section but the field's reference has none — should not
-        // happen for sectioned fields; trust the user input as a fallback.
-        (Some(user_s), None) => Some(user_s.to_owned()),
-        // No section anywhere: 3-segment URI.
-        (None, None) => None,
-    };
-
-    // Mirror picker's empty-label fallback: use field.id when label is empty.
+    let section_id = resolve_field_section_id(field, detail, item)?;
+    let section_id = section_id.as_deref();
+    let section_label = section_id
+        .and_then(|section_id| {
+            detail
+                .sections
+                .iter()
+                .find(|section| section.id == section_id)
+        })
+        .map(|section| section.label.as_str())
+        .filter(|label| !label.is_empty())
+        .or(section_id);
     let field_label = if field.label.is_empty() {
         field.id.as_str()
     } else {
         field.label.as_str()
     };
 
-    let q_suffix = query.unwrap_or("");
-    let (op_uri, display_path) = canonical_section.as_deref().map_or_else(
-        || {
-            (
-                format!("op://{}/{}/{}{q_suffix}", vault.id, item.id, field.id),
-                format!("{}/{}/{}{q_suffix}", vault.name, item_segment, field_label),
-            )
-        },
-        |s| {
-            (
-                format!("op://{}/{}/{}/{}{q_suffix}", vault.id, item.id, s, field.id),
-                format!(
-                    "{}/{}/{}/{}{q_suffix}",
-                    vault.name, item_segment, s, field_label
-                ),
-            )
-        },
+    anyhow::ensure!(
+        jackin_core::is_valid_op_reference_path_component(&vault.id)
+            && jackin_core::is_valid_op_reference_path_component(&item.id)
+            && jackin_core::is_valid_op_reference_path_component(&field.id),
+        "1Password returned an ID that cannot be represented as one `op://` path component"
     );
-
+    let op_uri = jackin_core::build_op_reference(&vault.id, &item.id, section_id, &field.id)
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "1Password returned an ID that cannot be represented in an `op://` reference"
+            )
+        })?;
+    let query_suffix = parsed
+        .query
+        .map(|query| format!("?{query}"))
+        .unwrap_or_default();
+    let op_uri = format!("{op_uri}{query_suffix}");
+    let mut display_path = format!(
+        "{}/{}/",
+        jackin_core::encode_op_breadcrumb_segment(&vault.name),
+        item_segment
+    );
+    if let Some(section) = section_label.or(section_id) {
+        display_path.push_str(&jackin_core::encode_op_breadcrumb_segment(section));
+        display_path.push('/');
+    }
+    display_path.push_str(&jackin_core::encode_op_breadcrumb_segment(field_label));
+    display_path.push_str(&query_suffix);
     Ok(OpRef {
         op: op_uri,
         path: display_path,
@@ -552,7 +761,7 @@ pub fn lookup_operator_env_raw(
 ) -> Option<String> {
     build_attributed_layers(config, role_selector, workspace_name)
         .remove(key)
-        .map(|(_, value)| value.as_display_str().to_owned())
+        .map(|(_, value)| value.as_display_str().clone())
 }
 
 /// Look up the winning typed declaration for one operator-env key.

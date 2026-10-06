@@ -24,9 +24,11 @@ pub enum CleanupStatus {
 
 /// One isolated mount entry persisted inside the container state directory.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct IsolationRecord {
-    /// Workspace name this mount belongs to.
-    pub workspace: String,
+    /// Saved config-file stem; ad-hoc mounts have no saved workspace identity.
+    #[serde(deserialize_with = "deserialize_workspace_identity")]
+    pub workspace_name: Option<crate::WorkspaceName>,
     /// Container-side mount destination path.
     pub mount_dst: String,
     /// Host path that was isolated (original workspace `src`).
@@ -62,4 +64,14 @@ pub struct DriftDetection {
     pub running_containers: Vec<String>,
     /// Isolation records on stopped containers that would be invalidated by the edit.
     pub stopped_records: Vec<IsolationRecord>,
+}
+
+// Missing identity is corrupt state; explicit null identifies an ad-hoc mount.
+fn deserialize_workspace_identity<'de, D>(
+    deserializer: D,
+) -> Result<Option<crate::WorkspaceName>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Option::<crate::WorkspaceName>::deserialize(deserializer)
 }

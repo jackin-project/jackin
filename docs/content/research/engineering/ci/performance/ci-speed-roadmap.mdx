@@ -1,13 +1,15 @@
 ---
 title: "CI/CD speed evidence and design constraints"
-description: Identifies current CI bottlenecks, cache constraints, lane-parity requirements, and safe wall-clock reduction strategies.
+description: Preserves historical CI measurements and design constraints, with the current generated Rust verification boundary.
 ---
 
 **Research state:** Reference
 
 ## Summary
 
-Current CI uses one job per affected crate, selected from the Cargo metadata reverse-dependency closure. Each job owns its applicable tests, checks, lint, benchmarks, powerset, fuzzing, and Docker coverage.
+Current <RepoFile path=".github/workflows/ci.yml" /> has a plan job, a required aggregator, actionlint, and Rust crate jobs using MBX and nextest. <RepoFile path=".velnor/config.toml" /> excludes docs, native, Docker, and fuzz paths from discovery. The workflow has no docs, construct, Docker E2E, preview, release, scheduled hygiene, or selectable self-hosted lane.
+
+The measurements and older workflow designs below are historical evidence. References to their controls, caches, lane inputs, and publication paths describe the measured pipeline or a proposed design; they do not establish current coverage. Restoring those capabilities requires generator work under <RepoFile path=".github/AGENTS.md" />, followed by regeneration and verification.
 
 The measured baseline supports affected-crate selection, direct crate execution, post-admission preview builds, and an optional warm persistent-runner path; current workflow state belongs in CI configuration and contributor references.
 
@@ -17,7 +19,7 @@ Optimization work should remove repeated setup and compilation while preserving 
 
 ## Research question
 
-PR feedback, main-branch confidence, preview publishing, and tagged releases all need faster wall-clock results without dropping coverage. jackin❯ already has many good CI primitives -- path filters, PR cancellation, aggregator jobs, `Swatinem/rust-cache`, `cargo-nextest`, Docker Buildx layer caches, Bun download caching, pinned mise tools, and split workflows -- but the run triggered by commit [`4c8b94bd05f84a62a04f9f235e2d846f14d04366`](https://github.com/jackin-project/jackin/commit/4c8b94bd05f84a62a04f9f235e2d846f14d04366) shows that broad Rust/runtime changes still produce a long post-merge feedback loop: roughly 12.5 minutes to green `CI`, then roughly 8.5 more minutes before preview artifacts publish.
+PR feedback, main-branch confidence, preview publishing, and tagged releases all need faster wall-clock results without dropping coverage. The measured historical pipeline had many CI primitives -- path filters, PR cancellation, aggregator jobs, `Swatinem/rust-cache`, `cargo-nextest`, Docker Buildx layer caches, Bun download caching, pinned mise tools, and split workflows -- but the run triggered by commit [`4c8b94bd05f84a62a04f9f235e2d846f14d04366`](https://github.com/jackin-project/jackin/commit/4c8b94bd05f84a62a04f9f235e2d846f14d04366) shows that broad Rust/runtime changes still produce a long post-merge feedback loop: roughly 12.5 minutes to green `CI`, then roughly 8.5 more minutes before preview artifacts publish.
 
 The governing design is staged signal: cheap deterministic checks report quickly, expensive checks start as early as their real prerequisites allow, full coverage still runs before merge or publishing, and every cache has measured hit/miss behavior rather than folklore.
 
@@ -25,9 +27,9 @@ The governing design is staged signal: cheap deterministic checks report quickly
 
 Change-aware CI means docs-only changes do not build Rust binaries, workflow-only changes do not run unrelated Docker E2E, and construct-image changes do not force unrelated docs deployment work. Rust changes run the affected test/build surface plus cross-cutting gates they can invalidate. An uncertain dependency graph selects the broader safe set.
 
-## Current change-impact routing
+## Historical routing design
 
-The pipeline derives a compact run plan from changed paths and workflow inputs:
+The older pipeline design assigned the following work to change classes. This is a coverage target, not the current generated task inventory:
 
 | Change class | Required work |
 | --- | --- |
@@ -39,7 +41,7 @@ The pipeline derives a compact run plan from changed paths and workflow inputs:
 | Preview/release build logic change | preview/release archive build rehearsal, signing/SBOM/attestation checks, publish mutation only after CI gates |
 | Unknown or cross-cutting change | broader safe set, then refine classifiers once the run shows which work was actually needed |
 
-## Current evidence
+## Historical measured evidence
 
 Commit [`4c8b94bd05f84a62a04f9f235e2d846f14d04366`](https://github.com/jackin-project/jackin/commit/4c8b94bd05f84a62a04f9f235e2d846f14d04366) supplies the broad-change baseline below: Rust runtime/image/launch code, docs, workflow files, and `docker/construct` inputs activated every mainline path filter. All measured runs succeeded.
 
@@ -52,25 +54,26 @@ Commit [`4c8b94bd05f84a62a04f9f235e2d846f14d04366`](https://github.com/jackin-pr
 | `Renovate` | [`27937532547`](https://github.com/jackin-project/jackin/actions/runs/27937532547) | `push` to `main` | 3m 40s | self-hosted Renovate 3m 30s; not part of branch protection but consumes Actions capacity after every main push |
 | `Renovate Validate` | [`27937532557`](https://github.com/jackin-project/jackin/actions/runs/27937532557) | `push` to `main` | 11s | no meaningful speed issue |
 
-Within `CI`, the fastest checks already return early: `changes` 5s, `actionlint` 13s, `fmt` 24s, `schema-check` 33s. The slow path is structural. Docker E2E belongs in the reusable nextest workflow without a serialized cache-seeding gate, allowing it to run beside crate jobs once its construct image is available.
+Within the measured historical `CI` run, the fastest checks returned early: `changes` 5s, `actionlint` 13s, `fmt` 24s, `schema-check` 33s. The slow path is structural. Docker E2E belongs in the reusable nextest workflow without a serialized cache-seeding gate, allowing it to run beside crate jobs once its construct image is available.
 
-The inherited CI matrix split item also called out the real Docker boundary directly: <RepoFile path="crates/jackin/tests/dind_e2e.rs">crates/jackin/tests/dind_e2e.rs</RepoFile> is now 1323 LOC and exercises real `docker run`, PTY, runtime launch, and `jackin-capsule` handoff behavior. That should stay a named `docker-e2e` failure surface instead of being buried inside a general package-test lane. It should still belong to the nextest test system, though: the current command is already `cargo nextest run -p jackin --features e2e --profile docker-e2e`, so the better architecture is a dedicated nextest Docker lane inside the reusable nextest workflow, not an unrelated top-level CI job.
+The inherited CI matrix split item also called out the real Docker boundary directly: <RepoFile path="crates/jackin/tests/dind_e2e.rs">crates/jackin/tests/dind_e2e.rs</RepoFile> exercises real `docker run`, PTY, runtime launch, and `jackin-capsule` handoff behavior. That should stay a named `docker-e2e` failure surface instead of being buried inside a general package-test lane. It should still belong to the nextest test system, though: the recorded command was `cargo nextest run -p jackin --features e2e --profile docker-e2e`, so the better architecture is a dedicated nextest Docker lane inside the reusable nextest workflow, not an unrelated top-level CI job.
 
-## Current controls
+## Current controls and coverage gaps
 
-- In-job path classification and affected-scope selection in <RepoFile path=".github/workflows/ci-pr.yml">.github/workflows/ci-pr.yml</RepoFile> prevent unrelated jobs from doing full work. (The standalone `docs.yml`, `construct.yml`, and `preview.yml` workflows were consolidated into the generated PR workflow in the velnor-workflow regeneration.)
-- PR workflow concurrency cancels stale PR runs while preserving non-cancelled release serialization.
-- Rust jobs restore `~/.rustup`, mise-managed tool caches, and `Swatinem/rust-cache` target/cargo caches; the reusable nextest workflow centralizes the expensive test-binary build and shares it with package jobs.
-- Construct builds use Buildx with registry cache for published main builds and GitHub Actions cache scopes for PR/rehearsal builds.
-- Construct builds stage the pinned `shellfirm` binary before Docker Buildx runs, so the construct Dockerfile no longer carries a Rust toolchain or from-source `shellfirm` compile stage.
-- Docs jobs cache Bun's download cache and lychee's link cache, and they separate repo-link checks from full site build/link checks.
-- `CARGO_INCREMENTAL=0` is already set on the main compile-heavy CI/preview/release paths, which is compatible with compiler-output caching via `sccache`.
+The current <RepoFile path=".github/workflows/ci.yml">.github/workflows/ci.yml</RepoFile> runs PR, main-push, and merge-group validation on `ubuntu-26.04`, with per-crate Rust jobs, actionlint, a plan job, and a required aggregator. Rust compilation uses MBX; source caches and MBX object caches are distinct. <RepoFile path=".velnor/config.toml">.velnor/config.toml</RepoFile> excludes docs, native, and Docker discovery, so this workflow does not establish docs, construct-image, desktop, preview, or signed-release lanes.
 
-## Findings
+The measured controls and lane recommendations elsewhere on this page describe the earlier fleet recorded in source snapshot `81a26f7e8511b2f19c9ba5a59a85b3ef0bbc804a`: the former `ci-pr.yml`, `ci-main.yml`, and `release.yml`, reusable nextest target caching, Buildx construct caches, and Bun/lychee docs caches. Preserve those measurements as historical evidence; remeasure the current generated graph before treating them as present controls.
+
+- <RepoFile path=".github/workflows/ci.yml" /> plans Rust tasks and skips covered tasks within crate jobs; PR concurrency cancels stale PR runs.
+- Rust jobs use pinned mise tools, Cargo-source caches, and MBX object restoration. They execute per-crate formatting, clippy, build, nextest, and applicable Rust documentation tasks.
+- The only publication job publishes the Velnor verification baseline after successful main CI. It does not publish product binaries or construct images.
+- The historical Swatinem/reusable-nextest cache arrangement, construct Buildx jobs, docs Bun/lychee jobs, release serialization, and preview signing paths have no equivalent jobs in this generated workflow.
+
+## Historical findings and proposed constraints
 
 ### Independent critical lanes set the floor
 
-The measured baseline had two roughly twelve-minute critical lanes, proving that optimizing only lint or only tests cannot reduce total wall clock. The current workflow expands the affected-crate and reverse-dependent set into one job per crate, preserving attribution without testing unaffected crates.
+The measured baseline had two roughly twelve-minute critical lanes, proving that optimizing only lint or only tests cannot reduce total wall clock. The current workflow retains separate Rust crate jobs, but the broader historical coverage must not be inferred from that shared shape.
 
 ### Lint and check jobs serialize behind a cache they do not share
 
@@ -78,17 +81,17 @@ The measured baseline had two roughly twelve-minute critical lanes, proving that
 
 ### Critical-path sequencing beats more matrix fan-out
 
-Separate check, clippy, MSRV, fuzz, benchmark, and Docker jobs duplicate crate compilation when they do not share target state. The current ownership model executes applicable checks inside each crate job; run `27999009032` is evidence that direct crate execution beats a cold serialized cache-seeding gate.
+Separate check, clippy, MSRV, fuzz, benchmark, and Docker jobs duplicate crate compilation when they do not share target state. The older ownership model executed applicable checks inside each crate job; run `27999009032` is evidence that direct crate execution beats a cold serialized cache-seeding gate.
 
-The matrix should preserve attribution as well as speed: lint/check, deterministic package tests, integration-heavy runtime tests, Docker E2E, capsule, MSRV, validator, dependency policy, and audit stay distinguishable in GitHub checks. Archive fan-out is currently unsuitable because checkout-local tests fail from an archive, while prepared-target artifact download and extraction measured slower than semantic-cache restoration. Reconsider archives only after those tests are archive-safe and an equivalent run proves lower wall clock.
+The matrix should preserve attribution as well as speed: lint/check, deterministic package tests, integration-heavy runtime tests, Docker E2E, capsule, MSRV, validator, dependency policy, and audit stay distinguishable in GitHub checks. The historical archive experiment was unsuitable because checkout-local tests fail from an archive, while prepared-target artifact download and extraction measured slower than semantic-cache restoration. Reconsider archives only after those tests are archive-safe and an equivalent run proves lower wall clock.
 
-Combining packages would erase useful attribution. Graph selection instead removes unaffected crate jobs while keeping every selected crate independent; Docker E2E remains conditional work inside the `jackin` job and reuses its exact target state.
+Combining packages would erase useful attribution. Graph selection instead removes unaffected crate jobs while keeping every selected crate independent. The older design placed conditional Docker E2E work inside the `jackin` job to reuse its target state; the current generated job has no Docker E2E task.
 
 ### Main-to-preview admission control
 
-The preview workflow starts from the exact
-successful `CI` `workflow_run`. It removes polling, preserves source-SHA and
-ancestry checks, and treats preview as lower-priority post-admission work.
+The historical preview workflow started from the exact
+successful `CI` `workflow_run`. It removed polling, preserved source-SHA and
+ancestry checks, and treated preview as lower-priority post-admission work.
 
 Building preview archives inside the `CI` DAG would remove cross-workflow event
 latency, but it would also return release-profile compilation to the required
@@ -98,47 +101,47 @@ capacity makes that contention impossible.
 
 ### Release and preview should share one build implementation
 
-Preview and release build all targets from Linux with `cargo-zigbuild` plus a cached macOS SDK and shared target-scoped archive cache keys. The remaining durable cleanup is one composite/reusable "build signed archive" path, with release adding only tag/version and publishing gates.
+The historical preview and release workflows built all targets from Linux with `cargo-zigbuild` plus a cached macOS SDK and shared target-scoped archive cache keys. The remaining durable cleanup is one composite/reusable "build signed archive" path, with release adding only tag/version and publishing gates.
 
-The Linux cross-build path leaves a single native-macOS build-and-test in the scheduled hygiene lane for parity, so macOS-specific regressions remain visible off the critical path. Preview and release archive jobs share `Swatinem/rust-cache` keys by archive target.
+The historical Linux cross-build path left a single native-macOS build-and-test in the scheduled hygiene lane for parity, so macOS-specific regressions remain visible off the critical path. The historical preview and release archive jobs shared `Swatinem/rust-cache` keys by archive target.
 
 ### Tool installation cache misses matter on cold revisions
 
 The inspected logs show warm `rustup` caches, but cold <RepoFile path="mise.toml">mise.toml</RepoFile> changes caused cargo-installed tools to build from source: `cargo-audit`, `cargo-deny`, `cargo-shear`, and `codebook-lsp` each paid cold-install cost in at least one job. The `mise-action` internal cache missed too because workflows pin the action SHA but did not pin the mise binary version input; some manual caches only covered `~/.local/share/mise/installs/cargo-*`, so non-cargo tools such as `zig`, `cosign`, and `syft` relied on the action's internal cache. This was correct functionally, but noisy for a speed-critical pipeline.
 
-Every Rust CLI tool in <RepoFile path="mise.toml">mise.toml</RepoFile> uses mise's Cargo backend with `cargo-binstall` available; cargo-binstall falls back to source builds when no compatible runner asset exists, such as `cargo-fuzz` on linux-arm64. Repeated mise and rustup setup across roughly fifteen jobs supports a baked `jackin-ci` image as the deeper deduplication option. Roadmap owns whether and when that operational migration occurs.
+The measured tool setup used mise's Cargo backend with `cargo-binstall` available; cargo-binstall falls back to source builds when no compatible runner asset exists, such as `cargo-fuzz` on linux-arm64. Repeated mise and rustup setup across roughly fifteen jobs supports a baked `jackin-ci` image as the deeper deduplication option. Roadmap owns whether and when that operational migration occurs.
 
-### Docker layer caching is good, and cache-mount risk is lower now
+### Historical Docker layer caching reduced cache-mount risk
 
-Docker Buildx registry and GHA caches are already used. Docker's docs note that `cache-to mode=max` exports more layers than `mode=min`, which matches the current construct cache choice. Because `shellfirm` is staged before Buildx, remaining Docker speed work concerns regular layer-cache behavior rather than Rust cache-mount preservation.
+The retired construct pipeline used Docker Buildx registry and GHA caches. Docker's docs note that `cache-to mode=max` exports more layers than `mode=min`, which matched the historical construct cache choice. That pipeline staged `shellfirm` before Buildx, so its remaining Docker speed work concerned regular layer-cache behavior rather than Rust cache-mount preservation.
 
 ### `sccache` should be adopted, with stats proving each lane
 
-Mozilla `sccache` caches compiler outputs through `RUSTC_WRAPPER` and requires incremental compilation to be disabled for Rust cacheability. Hosted-runner GHA trials showed 0% hits and write errors; removing the wrapper then made Cargo target reuse slower despite successful cache restores. GitHub-hosted jobs therefore keep the wrapper for fingerprint compatibility with `SCCACHE_GHA_ENABLED=off`; Velnor uses local `sccache`, where persistent disk can provide useful hits.
+Mozilla `sccache` caches compiler outputs through `RUSTC_WRAPPER` and requires incremental compilation to be disabled for Rust cacheability. Hosted-runner GHA trials showed 0% hits and write errors; removing the wrapper then made Cargo target reuse slower despite successful cache restores. The older GitHub-hosted jobs therefore kept the wrapper for fingerprint compatibility with `SCCACHE_GHA_ENABLED=off`; the older Velnor lane used local `sccache`. The current generated workflow uses MBX object restoration instead of that wrapper setup.
 
-The GitHub Actions cache backend for `sccache` is not part of the hosted baseline anymore: narrow pilots showed 0% hits and write errors, and the broader fan-out risk remains the same throttling class as Docker GHA cache. Prefer a backend that does not rate-limit -- local disk on a persistent runner, or S3/Redis -- which is also why `sccache` pairs best with the warm-runner lane, where an on-disk `target/` already outperforms a remote compiler cache.
+The historical hosted baseline dropped the GitHub Actions cache backend for `sccache`: narrow pilots showed 0% hits and write errors, and the broader fan-out risk remains the same throttling class as Docker GHA cache. Prefer a backend that does not rate-limit -- local disk on a persistent runner, or S3/Redis -- which is also why `sccache` pairs best with the warm-runner lane, where an on-disk `target/` already outperforms a remote compiler cache.
 
 ### Incremental compilation is a targeted experiment, not a universal switch
 
-Cargo's profile docs say incremental compilation stores reusable state in `target`, only applies to workspace/path dependencies, and can be overridden with `CARGO_INCREMENTAL`; dev/test defaults enable it, release defaults disable it. In this repo the CI jobs force it off to keep caches deterministic and sccache-compatible. Re-enabling it may help same-branch PR reruns if target caches are retained, but it increases cache size and conflicts with sccache. Treat it as an experiment for a narrow nextest lane, not for final release artifacts.
+Cargo's profile docs say incremental compilation stores reusable state in `target`, only applies to workspace/path dependencies, and can be overridden with `CARGO_INCREMENTAL`; dev/test defaults enable it, release defaults disable it. The historical CI jobs forced it off to keep caches deterministic and sccache-compatible; this does not establish the environment of current generated tasks. Re-enabling it may help same-branch PR reruns if target caches are retained, but it increases cache size and conflicts with sccache. Treat it as an experiment for a narrow nextest lane, not for final release artifacts.
 
 ### Persistent warm runners are the only instant path for Rust changes
 
-A cold GitHub-hosted runner starts with an empty `target/` and recompiles the changed crate's dependency closure; cache restore still pays archive transfer, extraction, and post-restore compilation. A persistent runner keeps `target/`, `~/.cargo`, and Docker layers warm and compiles only the affected closure. The `velnor` lane remains an explicit opt-in accelerator through the `lanes` workflow input. GitHub-hosted runners stay the default required trust boundary and cold-run parity gate; Roadmap owns remaining Velnor capability work.
+A cold GitHub-hosted runner starts with an empty `target/` and recompiles the changed crate's dependency closure; cache restore still pays archive transfer, extraction, and post-restore compilation. A persistent runner keeps `target/`, `~/.cargo`, and Docker layers warm and compiles only the affected closure. The older `velnor` lane was an explicit opt-in accelerator through the `lanes` workflow input; that input is absent from the current generated workflow. GitHub-hosted runners stay the default required trust boundary and cold-run parity gate; Roadmap owns remaining Velnor capability work.
 
 ### Dual-runner parity is a hard constraint; velnor speedups ride on top
 
 Every lane must be runnable on both GitHub-hosted runners and the self-hosted `velnor` lane ([tailrocks/velnor](https://github.com/tailrocks/velnor)) when a maintainer explicitly selects `lanes: both`, and a GitHub-hosted run must stay the default and required parity gate -- a green warm-lane run has to imply a green cold-lane run, the same PR/main parity rule the repo already enforces. Velnor may carry heavy optimizations that hosted runners cannot (a warm `target/`, warm `~/.cargo`, warm Docker layers, a local-disk `sccache` backend), but only as an opt-in accelerator on top of a baseline that still passes on hosted runners. The rule for every speedup is therefore: when a capability is missing, improve it in `velnor` itself so the capability exists on that runner, then verify the change still runs on both lanes before it lands. Never fork the pipeline into velnor-only behavior that hosted runners cannot reproduce, and never drop a job to hosted-only just to avoid teaching velnor the capability -- both leave the two lanes out of parity.
 
-The scaffolding already exists: `matrix-setup` emits a `configs` array and compile and per-crate test jobs fan out with `runs-on: ${{ fromJSON(matrix.config.runner) }}`, so `lanes: both` runs the same contracts on both. The `jackin` crate job builds a changed construct image in its own lane before Docker E2E, while preview and release archive artifacts remain lane-scoped so manual `lanes: both` rehearsals can require both lanes and mutation jobs consume only GitHub-hosted artifacts. The current gaps to close before Velnor is useful as an optional parity lane are concrete: Docker E2E and construct builds assume a working Docker daemon; the construct workflow builds arm64 natively on `ubuntu-24.04-arm`, so Velnor needs an arm path or that leg stays hosted-only; and persistent state on Velnor must be protected from cross-run poisoning. Each gap is a fix to make Velnor compatible, not a reason to make it default.
+The older scaffolding used this shape: `matrix-setup` emitted a `configs` array and compile and per-crate test jobs fanned out with `runs-on: ${{ fromJSON(matrix.config.runner) }}`, so `lanes: both` ran the same contracts on both. The historical `jackin` crate job built a changed construct image in its own lane before Docker E2E, while preview and release archive artifacts remained lane-scoped so manual `lanes: both` rehearsals can require both lanes and mutation jobs consume only GitHub-hosted artifacts. The historical design identified these gaps for an optional parity lane: Docker E2E and construct builds assume a working Docker daemon; the construct workflow builds arm64 natively on `ubuntu-24.04-arm`, so Velnor needs an arm path or that leg stays hosted-only; and persistent state on Velnor must be protected from cross-run poisoning. Each gap is a fix to make Velnor compatible, not a reason to make it default.
 
 ### Non-critical workflows compete for the runner pool on every push
 
-Every push to `main` fires `CI`, `Construct Image`, `Docs`, and `Renovate` concurrently, then `Publish Homebrew Preview` after `CI`. `Renovate` took 3m30s on the analyzed run and is not a branch-protection check, yet it consumes Actions concurrency on every push; when the account's concurrent-runner pool is saturated, critical-path jobs queue behind work that does not gate anything. Moving `Renovate` to a cron schedule instead of a push trigger frees that capacity for the jobs that actually gate merge and publish. Queue time does not show up in per-job durations but is real in wall clock.
+In the measured historical pipeline, every push to `main` fired `CI`, `Construct Image`, `Docs`, and `Renovate` concurrently, then `Publish Homebrew Preview` after `CI`. `Renovate` took 3m30s on the analyzed run and is not a branch-protection check, yet it consumes Actions concurrency on every push; when the account's concurrent-runner pool is saturated, critical-path jobs queue behind work that does not gate anything. Moving `Renovate` to a cron schedule instead of a push trigger frees that capacity for the jobs that actually gate merge and publish. Queue time does not show up in per-job durations but is real in wall clock.
 
 ### Path filters over-trigger on shared tool config
 
-Small classifiers route <RepoFile path="mise.toml" /> changes: Rust CI turns on only for Rust-relevant entries (`zig` or cargo tooling aliases), and preview turns on only for release-build entries (`zig`, `cargo-zigbuild`, `cosign`, or `syft`).
+The historical classifiers routed mise changes by tool ownership: Rust CI for Rust-relevant entries and preview for release-build entries. Current task selection belongs to the generated plan job, and there is no preview job.
 
 ## Guardrails
 
@@ -148,7 +151,7 @@ Small classifiers route <RepoFile path="mise.toml" /> changes: Rust CI turns on 
 - Keep tool installation through mise or a first-party wrapper that is documented in <RepoFile path="mise.toml">mise.toml</RepoFile>; do not add ad hoc language setup actions to workflow files.
 - Keep cache keys observable. Every new cache must have a documented owner, invalidation input, and expected fallback behavior.
 - Set `timeout-minutes` on every job. Explicit caps across CI, Docs, construct, preview, release, reusable nextest, Renovate, and scheduled hygiene jobs prevent a hung network call or wedged process from reaching the multi-hour default.
-- Do not gate the cheap deterministic jobs in front of the heavy ones to "fail first". `fmt`, `actionlint`, and `schema-check` already run in parallel and return in seconds; serializing the compile-heavy jobs behind them would add their latency to the green path for no green-path benefit. Fast-fail is a red-path optimization -- keep it off the happy path.
+- Do not gate the cheap deterministic jobs in front of the heavy ones to "fail first". The measured historical `fmt`, `actionlint`, and `schema-check` jobs ran in parallel and returned in seconds; serializing the compile-heavy jobs behind them would add their latency to the green path for no green-path benefit. Fast-fail is a red-path optimization -- keep it off the happy path.
 - Keep non-critical workflows off the per-push runner pool. Schedule `Renovate` rather than triggering it on every push so it cannot queue ahead of the jobs that gate merge and publish.
 - Dual-runner parity capability is mandatory. Every job must stay runnable on both GitHub-hosted runners and the self-hosted `velnor` lane when a maintainer explicitly selects `lanes: both`, with the GitHub-hosted run as the default and required parity gate. Velnor may carry heavier optimizations than hosted runners can (warm caches, a local compiler cache), but only as an opt-in accelerator over a baseline that still passes on hosted runners. When Velnor cannot do something a job needs, improve Velnor itself and re-verify both lanes -- do not fork the pipeline or quietly drop the job to hosted-only.
 
@@ -160,16 +163,22 @@ Small classifiers route <RepoFile path="mise.toml" /> changes: Rust CI turns on 
 - Bun documents `bun ci` as equivalent to `bun install --frozen-lockfile` for reproducible CI installs from committed `bun.lock`. [Bun install docs](https://bun.com/docs/pm/cli/install)
 - mise's CI docs recommend pinned tool versions for reproducible CI environments, and `jdx/mise-action` supports install arguments and caching. [mise CI docs](https://mise.jdx.dev/continuous-integration.html), [jdx/mise-action](https://github.com/jdx/mise-action)
 - mise's Cargo backend uses `cargo-binstall` when it is installed; cargo-binstall uses compatible prebuilt binaries when available and owns fallback to source builds. Direct GitHub release matching must not be used for Rust CLI tools unless every supported runner architecture has a matching upstream asset. [mise cargo backend](https://mise.jdx.dev/dev-tools/backends/cargo.html)
-- `Swatinem/rust-cache` supports `shared-key`, `cache-workspace-crates`, and rust-environment hashing, which match the current direct nextest package/Docker fan-out design. [rust-cache README](https://github.com/Swatinem/rust-cache)
+- `Swatinem/rust-cache` supports `shared-key`, `cache-workspace-crates`, and rust-environment hashing, which matched the historical direct nextest package/Docker fan-out design; the current generated workflow uses MBX restoration and has no Docker task. [rust-cache README](https://github.com/Swatinem/rust-cache)
 - cargo-nextest supports build archives, but this repository rejects archive fan-out and test partitioning because every affected crate must remain one attributable job. [nextest archiving](https://nexte.st/docs/ci-features/archiving/)
 - Cargo's profile docs describe incremental compilation, `CARGO_INCREMENTAL`, and default codegen-unit differences; use those as the basis for any incremental-compilation experiment. [Cargo profiles](https://doc.rust-lang.org/cargo/reference/profiles.html)
-- The self-hosted fast lane is powered by the `velnor` project; missing runner capabilities are added there so both lanes stay at parity rather than forking pipeline behavior. [tailrocks/velnor](https://github.com/tailrocks/velnor)
+- The historical self-hosted fast-lane proposal used the `velnor` project; equivalent capability and hosted-runner parity remain requirements for any future restoration. The current generated workflow has no selectable self-hosted lane. [tailrocks/velnor](https://github.com/tailrocks/velnor)
+
+## Historical construct publication contract
+
+The retired construct CI used native `ubuntu-24.04` and `ubuntu-24.04-arm` runners and staged the pinned `shellfirm` binary before Buildx. Its former `docker-docker-construct` unit lived in the deleted `.github/workflows/ci-pr.yml`; broad build-plumbing changes triggered validation, while baked inputs determined publication eligibility. Those inputs included <RepoFile path="docker-bake.hcl" />, <RepoFile path="docker/construct/Dockerfile" />, <RepoFile path="docker/construct/versions.env" />, <RepoFile path="docker/construct/zshrc" />, and <RepoFile path="docker/construct/fish-config.fish" />.
+
+That retired workflow built PR and non-main rehearsals without Docker Hub credentials, used GitHub Actions caches for validation, and published main candidates by platform digest before assembling a multi-platform manifest. It also requested BuildKit provenance and SBOM attestations. These describe the former publication path; the current workflow provides no equivalent automation.
 
 ## Related work
 
-- <RepoFile path=".github/workflows/ci-pr.yml">.github/workflows/ci-pr.yml</RepoFile>
-- <RepoFile path=".github/workflows/ci-main.yml">.github/workflows/ci-main.yml</RepoFile>
-- <RepoFile path=".github/workflows/release.yml">.github/workflows/release.yml</RepoFile>
+- <RepoFile path=".github/workflows/ci.yml" /> — current generated Rust verification; not equivalent to the older complete pipeline.
+- <RepoFile path=".velnor/config.toml" /> — current generation configuration.
+- Historical workflow names: `.github/workflows/ci-pr.yml`, `.github/workflows/ci-main.yml`, and `.github/workflows/release.yml` (deleted).
 - <RepoFile path="docker/construct/Dockerfile">docker/construct/Dockerfile</RepoFile>
 - <RepoFile path=".config/nextest.toml">.config/nextest.toml</RepoFile>
 - <RepoFile path="crates/jackin/tests/dind_e2e.rs">crates/jackin/tests/dind_e2e.rs</RepoFile>

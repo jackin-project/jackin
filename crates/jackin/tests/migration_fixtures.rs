@@ -34,6 +34,9 @@ struct FixtureMeta {
 
 type MigrateFn = fn(&Path) -> anyhow::Result<()>;
 
+#[path = "support/migration_fixture_rebake.rs"]
+mod migration_fixture_rebake;
+
 #[test]
 fn config_fixtures_round_trip_to_current() {
     walk_fixtures("config", |p| {

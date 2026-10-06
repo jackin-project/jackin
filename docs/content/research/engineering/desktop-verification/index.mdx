@@ -1,20 +1,24 @@
 ---
 title: jackin❯ desktop verification tooling
-description: Maps the proven build, binding, native-app, and release gates for jackin❯ desktop.
+description: Maps local desktop verification commands, historical CI evidence, and current hosted coverage gaps.
 ---
 
-Vetted: 2026-07-24 · Informs: jackin-desktop. Single-chapter topic:
-[Proven verification commands](/research/engineering/desktop-verification/commands/) — the proven build/test/verify commands for
-the Desktop stack (all cited `file:line` from this repo; every command is the
-exact one CI runs green today, method: read of <RepoFile path=".github/workflows/ci-pr.yml" /> per-crate units
-+ <RepoFile path="mise.toml" /> + <RepoFile path="TESTING.md" />).
+Vetted: 2026-10-03 (source review; original CI catalog: 2026-07-24) ·
+Informs: jackin-desktop. Single-chapter topic:
+[Proven verification commands](/research/engineering/desktop-verification/commands/)
+records local desktop contracts and their historical CI provenance from source
+snapshot `81a26f7e8511b2f19c9ba5a59a85b3ef0bbc804a`.
+Current <RepoFile path=".github/workflows/ci.yml" /> contains generated Rust
+jobs; <RepoFile path=".velnor/config.toml" /> excludes native, docs, and Docker
+discovery. Bindings, native-app, and release execution remain absent from
+hosted CI.
 
-Conclusions: crates gate = `cargo nextest run -p jackin-usage -p
-jackin-usage-ffi --locked`; bindings drift gate = `cargo xtask desktop
-bindings-check`; app gate =
-`cargo xtask desktop build/verify/test` (mise `desktop-*` wrappers); Swift
-suite = `cargo xtask desktop test` (full Xcode: `cd native && swift test -c
-release`); native system-image goldens pin current stable `macos-26` instead
-of the moving `macos-latest` alias and freeze render inputs; fmt/clippy per
-workspace baseline; release path notarizes via `cargo xtask
-desktop sign-notarize`.
+Conclusions: current Rust tests run per package through `mbx nextest run`;
+local desktop tests combine `jackin-usage` and `jackin-usage-ffi` with `--lib`.
+Bindings drift uses `cargo xtask desktop bindings-check`; app build/verify
+and local test cadences use the `desktop-*` tasks in
+<RepoFile path="mise.toml" />. Counted SwiftPM tests use
+`cargo xtask desktop test-swift`. Native system-image goldens require an
+explicit runner image and frozen render inputs when hosted coverage is added.
+Local release signing uses `cargo xtask desktop sign-notarize`; availability
+of that command does not establish current publication or notarization.

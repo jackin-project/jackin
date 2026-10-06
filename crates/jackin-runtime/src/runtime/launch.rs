@@ -57,7 +57,10 @@ mod image_plan;
 pub use image_plan::{LaunchImagePlan, resolve_launch_image_plan};
 
 mod dry_run;
-pub use dry_run::{DryRunIdentity, resolve_dry_run_identity};
+pub use dry_run::{
+    DryRunIdentity, DryRunModelProjection, resolve_dry_run_identity,
+    resolve_dry_run_model_projection,
+};
 mod programmatic;
 pub use account_identity::{
     account_admission_matches, account_configuration_fingerprint, account_configuration_matches,
@@ -73,8 +76,6 @@ pub use launch_pipeline::launch_phases::{
     GrantPhaseInput, GrantsValidated, ImagePhaseClass, ImagePhaseClassified, classify_image_phase,
     validate_launch_grants,
 };
-
-use super::discovery::list_running_agent_names;
 
 #[cfg(test)]
 use crate::instance::InstanceStatus;
@@ -152,13 +153,13 @@ pub struct LoadOptions {
     /// error (see `LoadOptions::validate_programmatic`), never a prompt.
     pub non_interactive: bool,
 
-    /// Registered account ID selected for this launch. A workspace must allow
-    /// the account; the override applies only to the selected agent.
-    pub account: Option<String>,
+    /// Exclusive account or exact configuration selected for this launch.
+    /// `None` resolves the configured defaults.
+    pub selection: Option<jackin_core::LaunchSelection>,
 
-    /// Exact agent configuration selected for this launch. This takes
-    /// precedence over `account`; callers must not supply both.
-    pub configuration: Option<String>,
+    /// Shared ownership of one construct-entry lease, activated after role start.
+    /// Pending ownership survives preflight errors and asynchronous cancellation.
+    pub entry_claim: Option<std::sync::Arc<crate::runtime::universe::EntryClaim>>,
 
     /// Exact model id for the launched agent, overriding the role manifest's
     /// `[<agent>].model`. Also passed to the in-container Codex role hook so
@@ -180,9 +181,6 @@ pub struct LoadOptions {
     /// Extra bind mounts appended to the resolved workspace's mounts for this
     /// launch only, mirroring repeated `--mount` on the CLI.
     pub extra_mounts: Vec<jackin_config::MountConfig>,
-
-    /// Initial prompt handed to the agent's first session.
-    pub prompt: Option<String>,
 
     /// Slot the launch writes its claimed instance identity into.
     pub identity_sink: Option<IdentitySink>,
@@ -246,7 +244,8 @@ use progress_helpers::{
 
 pub(crate) use mounts::{
     Backend, agent_mounts, apple_agent_mounts, build_workspace_mount_strings,
-    build_workspace_mounts, github_config_mount, resolve_backend,
+    build_workspace_mounts, ensure_apple_provider_authority_not_exposed, github_config_mount,
+    resolve_backend,
 };
 
 #[cfg(test)]

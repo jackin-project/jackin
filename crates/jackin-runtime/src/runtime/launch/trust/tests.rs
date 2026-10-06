@@ -63,6 +63,7 @@ fn codex_state(root: &std::path::Path) -> RoleState {
         auth_outcomes: BTreeMap::new(),
         auth_mount_paths: BTreeSet::new(),
         auth_mount_leases: Vec::new(),
+        provider_config_mounts: Vec::new(),
     }
 }
 

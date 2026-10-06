@@ -11,6 +11,21 @@ jackin config <SUBCOMMAND>
 
 Manage global operator configuration — mounts, agent trust, and agent authentication forwarding.
 
+## Save errors and recovery
+
+If a configuration save is interrupted, a later configuration write attempts to
+finish the pending recovery before making another change. Reading configuration
+alone does not trigger that recovery. If jackin❯ reports a recovery error, stop
+configuration changes and preserve the saved state and recovery artifacts for
+inspection. Deleting them or editing files to silence the error can discard the
+information needed to recover the intended state.
+
+A failed save does not by itself prove that every previous value was restored.
+Inspect a copy of the preserved state before choosing a repair; there is no
+operator recovery command that guarantees repair of missing or altered data.
+See the [configuration internals reference](/reference/runtime/configuration/#publication-and-recovery-journal)
+for the recovery contract and its limits.
+
 ## `config mount`
 
 Manage global mounts that apply to all (or scoped) agent launches.

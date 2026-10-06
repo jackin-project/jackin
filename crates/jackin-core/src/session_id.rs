@@ -10,9 +10,7 @@ use std::fmt;
 /// Wraps the daemon's `u64` session key so attach/protocol/daemon APIs cannot
 /// confuse session ids with other integers. Construction is fallible only for
 /// the zero value (reserved as "unset" in some control paths).
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
 #[serde(transparent)]
 pub struct SessionId(u64);
 
@@ -37,6 +35,16 @@ impl SessionId {
     #[must_use]
     pub const fn get(self) -> u64 {
         self.0
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for SessionId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let raw = <u64 as serde::Deserialize>::deserialize(deserializer)?;
+        Self::new(raw).map_err(serde::de::Error::custom)
     }
 }
 

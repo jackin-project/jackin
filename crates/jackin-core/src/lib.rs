@@ -37,6 +37,7 @@ mod instance;
 mod isolation;
 mod isolation_record;
 mod launch_progress;
+mod launch_selection;
 mod manifest;
 mod op_cache;
 mod op_probe_error;
@@ -45,6 +46,7 @@ mod op_types;
 mod operator_notice;
 mod path_text;
 mod paths;
+mod profile_material;
 mod prompt_result;
 mod reasoning_effort;
 mod runner;
@@ -79,6 +81,7 @@ pub use instance::*;
 pub use isolation::*;
 pub use isolation_record::*;
 pub use launch_progress::*;
+pub use launch_selection::LaunchSelection;
 pub use manifest::*;
 pub use op_cache::*;
 pub use op_probe_error::*;
@@ -89,6 +92,11 @@ pub use operator_notice::{
 };
 pub use path_text::*;
 pub use paths::*;
+pub use profile_material::{
+    ProfileCredentialSourceIdentity, ProfileCredentialSourceMaterial,
+    amp_profile_credential_payload, profile_credential_material_revision,
+    profile_credential_source_identity,
+};
 pub use prompt_result::*;
 pub use reasoning_effort::{ParseReasoningEffortError, ReasoningEffort};
 pub use runner::*;

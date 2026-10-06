@@ -1,4 +1,7 @@
-use std::fs;
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use super::{CiArgs, e2e_selected, parse_capsule_export, step_names, validate_capsule_path};
 
@@ -63,11 +66,68 @@ fn existing_relative_capsule_path_is_resolved_from_the_repository() {
     fs::write(&capsule, "").expect("capsule");
 
     assert_eq!(
-        validate_capsule_path(
-            temp.path(),
-            std::path::Path::new("target/debug/jackin-capsule")
-        )
-        .unwrap(),
+        validate_capsule_path(temp.path(), Path::new("target/debug/jackin-capsule")).unwrap(),
         capsule
     );
 }
+
+fn workspace_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("workspace root")
+        .to_path_buf()
+}
+
+fn workspace_file(path: &str) -> String {
+    fs::read_to_string(workspace_root().join(path)).expect("workspace file")
+}
+
+fn assert_no_sccache_env(text: &str, context: &str) {
+    for line in [
+        "CARGO_INCREMENTAL: \"0\"",
+        "RUSTC_WRAPPER: sccache",
+        "SCCACHE_GHA_ENABLED: \"true\"",
+        "CARGO_INCREMENTAL=0",
+        "RUSTC_WRAPPER=sccache",
+        "SCCACHE_GHA_ENABLED=true",
+    ] {
+        assert!(!text.contains(line), "{context} exports `{line}`");
+    }
+}
+
+/// Post-#1110 CI surface: velnor-actions 0.1.0 `ci.yml` only. The legacy
+/// per-lane workflows were deleted by main commit 6c389d38e, and the two
+/// advisory evidence-observer stubs were dropped by the all-branches
+/// consolidation because the pinned renderer rejects non-generated files.
+const GENERATED_WORKFLOWS: [&str; 1] = [".github/workflows/ci.yml"];
+
+#[test]
+fn sccache_is_absent_from_generated_workflow_environment() {
+    for workflow in GENERATED_WORKFLOWS {
+        let text = workspace_file(workflow);
+        assert_no_sccache_env(&text, workflow);
+    }
+}
+
+#[test]
+fn sccache_is_absent_from_installer_environment() {
+    for workflow in GENERATED_WORKFLOWS {
+        let text = workspace_file(workflow);
+        // velnor-actions emits "Setup Mise" (kept tolerant of "Set up Mise").
+        let setup = ["- name: Set up Mise", "- name: Setup Mise"]
+            .iter()
+            .filter_map(|marker| text.find(marker))
+            .min()
+            .unwrap_or_else(|| panic!("{workflow} has no Mise installer"));
+        assert_no_sccache_env(&text[..setup], &format!("{workflow} installer prefix"));
+    }
+}
+
+// NOTE: the desktop merge/scheduled cadence contract test was removed with the
+// post-#1110 CI surface (main commit 6c389d38e deleted desktop-merge.yml,
+// desktop-scheduled.yml, ci-main.yml, ci-pr.yml, and ci-unit-swift.yml; no
+// surviving workflow invokes desktop tasks, runs macOS, or mentions
+// plan_digest / SELECTION_PLAN_DIGEST / product_transport_ready). The surviving
+// mise task-graph assertions live in
+// desktop::tests::cadence_tasks_define_the_canonical_graph.

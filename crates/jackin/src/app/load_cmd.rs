@@ -40,6 +40,32 @@ pub(crate) fn take_post_console_config(console_owned: AppConfig) -> AppConfig {
     console_owned
 }
 
+/// Resolve the role selector and workspace input from CLI args, prompting when
+/// the target is ambiguous (saved workspace vs directory) or absent entirely.
+fn resolve_load_selector_and_workspace(
+    selector: Option<String>,
+    target: Option<String>,
+    config: &AppConfig,
+    cwd: &std::path::Path,
+) -> Result<(RoleSelector, LoadWorkspaceInput)> {
+    if let Some(sel) = selector {
+        let class = RoleSelector::parse(&sel)?;
+        let input = match target {
+            None => LoadWorkspaceInput::CurrentDir,
+            Some(t) => match classify_target(&t) {
+                TargetKind::Path { src, dst } => LoadWorkspaceInput::Path { src, dst },
+                TargetKind::Name(name) => {
+                    resolve_target_name_with_choice(&name, config, cwd, rich_prelaunch_choice)?
+                }
+            },
+        };
+        Ok((class, input))
+    } else {
+        // No selector — resolve role from workspace context
+        resolve_agent_from_context_with_choice(config, cwd, rich_prelaunch_choice)
+    }
+}
+
 pub(super) async fn handle_load(
     args: LoadArgs,
     config: &mut AppConfig,
@@ -57,6 +83,8 @@ pub(super) async fn handle_load(
         force,
         agent,
         account,
+        model,
+        effort,
         role_branch,
         docker_profile,
         dry_run,
@@ -66,22 +94,8 @@ pub(super) async fn handle_load(
     let docker = connect_docker()?;
     let cwd = std::env::current_dir()?;
 
-    let (class, workspace_input) = if let Some(sel) = selector {
-        let class = RoleSelector::parse(&sel)?;
-        let input = match target {
-            None => LoadWorkspaceInput::CurrentDir,
-            Some(t) => match classify_target(&t) {
-                TargetKind::Path { src, dst } => LoadWorkspaceInput::Path { src, dst },
-                TargetKind::Name(name) => {
-                    resolve_target_name_with_choice(&name, config, &cwd, rich_prelaunch_choice)?
-                }
-            },
-        };
-        (class, input)
-    } else {
-        // No selector — resolve role from workspace context
-        resolve_agent_from_context_with_choice(config, &cwd, rich_prelaunch_choice)?
-    };
+    let (class, workspace_input) =
+        resolve_load_selector_and_workspace(selector, target, config, &cwd)?;
 
     let saved_workspace_name = if let LoadWorkspaceInput::Saved(ref name) = workspace_input {
         Some(name.clone())
@@ -129,6 +143,10 @@ pub(super) async fn handle_load(
             &class.to_string(),
             account.is_some(),
         )?;
+        // The image-plan resolver needs mutable config access. Keep the same
+        // effective account scope for model projection without holding an
+        // immutable borrow of the launch config across that resolution.
+        let projection_config = (*plan_config).clone();
         // The image half of the plan is only knowable after the role manifest
         // is read: `published_image` is a manifest field and the
         // reuse-vs-build decision derives from it. Resolving it here is what
@@ -143,9 +161,19 @@ pub(super) async fn handle_load(
             role_branch.as_deref(),
         )
         .await?;
+        let model_projection = runtime::resolve_dry_run_model_projection(
+            &projection_config,
+            &image_plan.role_models,
+            &identity,
+            selected_agent,
+            model.as_deref(),
+        )?;
         let plan_identity = DryRunPlan {
             agent: selected_agent,
             identity: &identity,
+            model_projection: &model_projection,
+            effort,
+            overrides: DryRunLaunchOverrides::new(model.as_deref(), effort),
         };
         return print_dry_run_plan(
             &class,
@@ -161,14 +189,17 @@ pub(super) async fn handle_load(
     let mut opts = runtime::LoadOptions::for_load(debug, rebuild);
     opts.force = force;
     opts.agent = agent;
-    opts.account = account;
+    opts.selection = account.map(jackin_core::LaunchSelection::Account);
     opts.role_branch = role_branch;
     opts.docker_profile = docker_profile;
+    apply_load_model_effort(&mut opts, model, effort);
     // Pre-launch reconcile: if a previous role in a keep_awake
     // workspace already runs, ensure caffeinate is up before we
     // build/launch (so a long Docker build doesn't see the host
     // sleep). Post-launch reconcile below catches the new role.
-    let entry_claim = play_construct_intro_if_needed(paths, &docker).await;
+    opts.entry_claim = Some(std::sync::Arc::new(
+        play_construct_intro_if_needed(paths, &docker).await,
+    ));
     runtime::reconcile_keep_awake_when_configured(
         paths,
         &docker,
@@ -193,8 +224,10 @@ pub(super) async fn handle_load(
         &class,
         &result,
     );
-    if result.is_err() {
-        runtime::release_entry_if_idle(paths, &docker, &entry_claim).await;
+    if result.is_err()
+        && let Some(claim) = opts.entry_claim.as_deref()
+    {
+        runtime::release_entry_if_idle(&docker, claim).await;
     }
     runtime::reconcile_keep_awake_when_configured(
         paths,
@@ -271,7 +304,7 @@ pub(super) async fn handle_console(
     let mut config = take_post_console_config(console_config);
     let Some(outcome) = outcome else {
         if let Some((docker, claim)) = &console_entry {
-            runtime::release_entry_if_idle(&paths, docker, claim).await;
+            runtime::release_entry_if_idle(docker, claim).await;
         }
         if let Some(error) = startup_error_exit {
             return Err(error);
@@ -334,16 +367,10 @@ async fn dispatch_console_outcome(
             selector,
             workspace,
             agent,
-            account,
-            configuration,
+            selection,
         } => {
             return console_outcome_launch_with_account(
-                selector,
-                workspace,
-                agent,
-                account,
-                configuration,
-                &mut ctx,
+                selector, workspace, agent, selection, &mut ctx,
             )
             .await;
         }
@@ -358,7 +385,7 @@ async fn console_outcome_prewarm(
     screen: console::TerminalSession,
 ) -> Result<()> {
     if let Some((docker, claim)) = ctx.console_entry {
-        runtime::release_entry_if_idle(ctx.paths, docker, claim).await;
+        runtime::release_entry_if_idle(docker, claim).await;
     }
     drop(screen);
     let args = crate::cli::PrewarmArgs {
@@ -389,7 +416,7 @@ async fn console_outcome_instance_action(
     // The action owns the terminal with its own foreground
     // process; hand it back the cooked screen.
     if let Some((docker, claim)) = ctx.console_entry {
-        runtime::release_entry_if_idle(ctx.paths, docker, claim).await;
+        runtime::release_entry_if_idle(docker, claim).await;
     }
     drop(screen);
     handle_console_instance_action(ctx.paths, ctx.config, outcome, ctx.docker, ctx.runner).await
@@ -432,7 +459,7 @@ async fn console_outcome_new_session(
     )
     .await;
     if let Some((docker, claim)) = ctx.console_entry {
-        runtime::release_entry_if_idle(ctx.paths, docker, claim).await;
+        runtime::release_entry_if_idle(docker, claim).await;
     }
     result
 }
@@ -441,15 +468,14 @@ async fn console_outcome_launch_with_account(
     selector: RoleSelector,
     workspace: jackin_config::ResolvedWorkspace,
     agent: jackin_core::Agent,
-    account: Option<String>,
-    configuration: Option<String>,
+    selection: jackin_core::LaunchSelection,
     ctx: &mut ConsoleLaunchCtx<'_>,
 ) -> Result<()> {
     super::emit_mount_heal_notices(&workspace);
     let mut opts = runtime::LoadOptions::for_launch(ctx.debug);
     opts.agent = Some(agent);
-    opts.account = account;
-    opts.configuration = configuration;
+    opts.selection = Some(selection);
+    opts.entry_claim = Some(std::sync::Arc::new(take_console_entry_claim(ctx).await));
     runtime::reconcile_keep_awake_when_configured(
         ctx.paths,
         ctx.docker,
@@ -475,8 +501,8 @@ async fn console_outcome_launch_with_account(
         any_keep_awake_enabled(ctx.config),
     )
     .await;
-    if let Some((docker, claim)) = ctx.console_entry {
-        runtime::release_entry_if_idle(ctx.paths, docker, claim).await;
+    if let Some(claim) = opts.entry_claim.as_deref() {
+        runtime::release_entry_if_idle(ctx.docker, claim).await;
     }
     result
 }
@@ -490,11 +516,7 @@ async fn console_outcome_launch(
     super::emit_mount_heal_notices(&workspace);
     let mut opts = runtime::LoadOptions::for_launch(ctx.debug);
     opts.agent = selected_agent;
-    let entry_claim = if let Some((_entry_docker, claim)) = ctx.console_entry.take() {
-        claim
-    } else {
-        play_construct_intro_if_needed(ctx.paths, ctx.docker).await
-    };
+    opts.entry_claim = Some(std::sync::Arc::new(take_console_entry_claim(ctx).await));
     runtime::reconcile_keep_awake_when_configured(
         ctx.paths,
         ctx.docker,
@@ -513,8 +535,10 @@ async fn console_outcome_launch(
         &class,
         &result,
     );
-    if result.is_err() {
-        runtime::release_entry_if_idle(ctx.paths, ctx.docker, &entry_claim).await;
+    if result.is_err()
+        && let Some(claim) = opts.entry_claim.as_deref()
+    {
+        runtime::release_entry_if_idle(ctx.docker, claim).await;
     }
     runtime::reconcile_keep_awake_when_configured(
         ctx.paths,
@@ -525,6 +549,14 @@ async fn console_outcome_launch(
     .await;
     // Alternate-screen guard drops in the caller after this returns.
     result
+}
+
+async fn take_console_entry_claim(ctx: &mut ConsoleLaunchCtx<'_>) -> runtime::EntryClaim {
+    if let Some((_entry_docker, claim)) = ctx.console_entry.take() {
+        claim
+    } else {
+        play_construct_intro_if_needed(ctx.paths, ctx.docker).await
+    }
 }
 
 fn any_keep_awake_enabled(config: &AppConfig) -> bool {
@@ -542,6 +574,15 @@ fn docker_startup_error(error: &anyhow::Error) -> (String, String) {
             "jackin could not connect to the Docker daemon.\n\nError:\n{detail}\n\nStart Docker or switch to a reachable Docker context, then run jackin again."
         ),
     )
+}
+
+fn apply_load_model_effort(
+    options: &mut runtime::LoadOptions,
+    model: Option<String>,
+    effort: Option<jackin_core::ReasoningEffort>,
+) {
+    options.model = model;
+    options.effort = effort;
 }
 
 fn error_chain_message(error: &anyhow::Error) -> String {
@@ -723,12 +764,13 @@ pub(super) async fn handle_eject(
 ///
 /// Split out from printing so the wire shape is asserted directly, without a
 /// Docker daemon or a captured stdout.
-pub(crate) fn dry_run_plan_json(
+fn dry_run_plan_json(
     class: &RoleSelector,
     workspace: &crate::workspace::ResolvedWorkspace,
     agent_slug: &str,
     role_branch: Option<&str>,
     rebuild: bool,
+    overrides: DryRunLaunchOverrides<'_>,
     image_plan: &runtime::LaunchImagePlan,
 ) -> serde_json::Value {
     let mounts: Vec<serde_json::Value> = workspace
@@ -751,6 +793,8 @@ pub(crate) fn dry_run_plan_json(
             "role_branch": role_branch,
             "agent": agent_slug,
             "rebuild": rebuild,
+            "model_override": overrides.model,
+            "effort": overrides.effort.map(jackin_core::ReasoningEffort::as_str),
             "mounts": mounts,
             "image_decision": image_plan.to_json(),
             "published_image": image_plan.published_image,
@@ -783,11 +827,59 @@ pub(crate) fn apply_dry_run_identity_json(
     );
 }
 
+/// Apply effective model and effort values to the `--dry-run` plan. Model
+/// values come from the launch pipeline's canonical per-instance resolver,
+/// including whitespace normalization and provider-specific `OpenCode` IDs.
+pub(crate) fn apply_dry_run_load_overrides_json(
+    plan: &mut serde_json::Value,
+    selected_agent: jackin_core::Agent,
+    model_projection: &runtime::DryRunModelProjection,
+    effort: Option<jackin_core::ReasoningEffort>,
+) {
+    let data = &mut plan["data"];
+    data["model"] = serde_json::json!(model_projection.model);
+    let effort = effort.map(jackin_core::ReasoningEffort::as_str);
+    data["effort"] = serde_json::json!(effort);
+
+    if let Some(instances) = data["instances"].as_array_mut() {
+        for instance in instances {
+            let applies_to_selected_agent =
+                instance["agent"].as_str() == Some(selected_agent.slug());
+            instance["model"] = instance["config_id"]
+                .as_str()
+                .and_then(|config_id| model_projection.instances.get(config_id))
+                .map_or(serde_json::Value::Null, |model| {
+                    serde_json::Value::String(model.clone())
+                });
+            if applies_to_selected_agent {
+                instance["effort"] = serde_json::json!(effort);
+            } else {
+                instance["effort"] = serde_json::Value::Null;
+            }
+        }
+    }
+}
+
 /// Identity half of the `--dry-run` plan as the printer consumes it: the
 /// committed launch agent plus the canonical runtime identity.
 struct DryRunPlan<'a> {
     agent: jackin_core::Agent,
     identity: &'a runtime::DryRunIdentity,
+    model_projection: &'a runtime::DryRunModelProjection,
+    effort: Option<jackin_core::ReasoningEffort>,
+    overrides: DryRunLaunchOverrides<'a>,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct DryRunLaunchOverrides<'a> {
+    model: Option<&'a str>,
+    effort: Option<jackin_core::ReasoningEffort>,
+}
+
+impl<'a> DryRunLaunchOverrides<'a> {
+    const fn new(model: Option<&'a str>, effort: Option<jackin_core::ReasoningEffort>) -> Self {
+        Self { model, effort }
+    }
 }
 
 /// Print the resolved load plan for `--dry-run` and exit without launching.
@@ -818,9 +910,16 @@ fn print_dry_run_plan(
             agent_slug,
             role_branch,
             rebuild,
+            plan_identity.overrides,
             image_plan,
         );
         apply_dry_run_identity_json(&mut plan, identity);
+        apply_dry_run_load_overrides_json(
+            &mut plan,
+            plan_identity.agent,
+            plan_identity.model_projection,
+            plan_identity.effort,
+        );
         println!("{}", serde_json::to_string_pretty(&plan)?);
     } else {
         println!("Workspace:  {} ({})", workspace.label, workspace.workdir);
@@ -831,14 +930,43 @@ fn print_dry_run_plan(
         println!("Role:       {role_display}");
         println!("Agent:      {agent_slug}");
         println!("Account:    {}", account_id.unwrap_or("none"));
+        let model =
+            plan_identity
+                .model_projection
+                .model
+                .as_deref()
+                .unwrap_or(if instances.is_empty() {
+                    "default"
+                } else {
+                    "per instance"
+                });
+        println!("Model:      {model}");
+        println!(
+            "Effort:     {}",
+            plan_identity
+                .effort
+                .map_or("default", jackin_core::ReasoningEffort::as_str)
+        );
         if !instances.is_empty() {
             println!("Instances ({}):", instances.len());
             for instance in instances {
+                let applies_to_selected_agent = instance.agent == plan_identity.agent;
+                let model = plan_identity
+                    .model_projection
+                    .instances
+                    .get(&instance.config_id)
+                    .map(String::as_str);
+                let effort = applies_to_selected_agent
+                    .then_some(plan_identity.effort)
+                    .flatten()
+                    .map_or("default", jackin_core::ReasoningEffort::as_str);
                 println!(
-                    "  {} [{}] account={} label={}",
+                    "  {} [{}] account={} model={} effort={} label={}",
                     instance.config_id,
                     instance.agent.slug(),
                     instance.account_id,
+                    model.unwrap_or("default"),
+                    effort,
                     instance.label
                 );
             }

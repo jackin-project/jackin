@@ -76,12 +76,74 @@ impl CommandRunner for ScriptedRunner {
     ) -> anyhow::Result<String> {
         self.capture(program, args, cwd).await
     }
+
+    async fn capture_with_options(
+        &mut self,
+        program: &str,
+        args: &[&str],
+        cwd: Option<&Path>,
+        _opts: &RunOptions,
+    ) -> anyhow::Result<String> {
+        // Scripted outputs are pre-pinned by construction; descriptor pinning
+        // is a no-op for the queue.
+        self.capture(program, args, cwd).await
+    }
+}
+
+/// Turn the fixture repo into a real repository with a real worktree plus
+/// registration for `branch`, returning the branch tip. Journaled cleanup
+/// pins these host structures, so the e2e exercises the real flow.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "test fixture shells real git to build journaled-cleanup structures"
+)]
+fn init_repo_with_scratch_worktree(
+    repo: &Path,
+    worktree: &Path,
+    branch: &str,
+) -> anyhow::Result<String> {
+    let git = |args: &[&str]| -> anyhow::Result<()> {
+        let status = std::process::Command::new("git")
+            .arg("-C")
+            .arg(repo)
+            .args(args)
+            .status()?;
+        anyhow::ensure!(status.success(), "git {args:?} failed");
+        Ok(())
+    };
+    git(&["init", "--initial-branch=main"])?;
+    git(&[
+        "-c",
+        "user.name=Fixture",
+        "-c",
+        "user.email=fixture@example.invalid",
+        "commit",
+        "--allow-empty",
+        "-m",
+        "fixture",
+    ])?;
+    let worktree = worktree
+        .to_str()
+        .ok_or_else(|| anyhow::anyhow!("worktree path is not UTF-8"))?;
+    git(&["worktree", "add", "-b", branch, worktree])?;
+    let tip_output = std::process::Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .args(["rev-parse", branch])
+        .output()?;
+    anyhow::ensure!(tip_output.status.success(), "git rev-parse failed");
+    let tip = String::from_utf8(tip_output.stdout)?;
+    let tip = tip.trim().to_owned();
+    anyhow::ensure!(tip.len() == 40, "scratch tip must be a full object id");
+    Ok(tip)
 }
 
 #[tokio::test]
 async fn materialize_then_clean_exit_removes_record_and_branch() {
     let repo = TempDir::new().unwrap();
     std::fs::create_dir_all(repo.path().join(".git")).unwrap();
+    // Journaled cleanup pins and validates the host HEAD on disk.
+    std::fs::write(repo.path().join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
     let data = TempDir::new().unwrap();
     let cdir = data.path().join("jackin-the-architect");
     std::fs::create_dir_all(&cdir).unwrap();
@@ -115,7 +177,7 @@ async fn materialize_then_clean_exit_removes_record_and_branch() {
         &cdir,
         "the-architect",
         "jackin-the-architect",
-        &jackin_core::WorkspaceLabel::parse("jackin").unwrap(),
+        Some(&jackin_core::WorkspaceName::parse("jackin").unwrap()),
         &PreflightContext {
             workspace_label: jackin_core::WorkspaceLabel::parse("jackin").unwrap(),
             force: false,
@@ -192,7 +254,21 @@ async fn materialize_then_clean_exit_removes_record_and_branch() {
     // Finalize a clean exit. Capture queue: status --porcelain (clean),
     // for-each-ref refs/heads/ (single scratch branch parked at base).
     let branches = "jackin/scratch/jackin-the-architect\tdeadbeef\t\t\n";
-    let mut finalize_runner = ScriptedRunner::new(&["", branches]);
+    let wt_path = cdir.join("git/worktree/repo/workspace/jackin/jackin-the-architect");
+    let tip = init_repo_with_scratch_worktree(
+        repo.path(),
+        &wt_path,
+        "jackin/scratch/jackin-the-architect",
+    )
+    .unwrap();
+    let full_ref = format!("refs/heads/jackin/scratch/jackin-the-architect\t{tip}\t\tEND\n");
+
+    // Capture queue: status (clean), short for-each-ref (scratch parked at
+    // base), symbolic-ref (attached), then the journaled inventory: full
+    // for-each-ref, ref format, reinspect, and three post-deletion absence
+    // proofs.
+    let mut finalize_runner =
+        ScriptedRunner::new(&["", branches, "", &full_ref, "files", &full_ref, "", "", ""]);
     let mut prompt = NoPrompt;
     let docker = common::FakeDockerClient::default();
     let dec = finalize_foreground_session(FinalizeContext {
@@ -211,16 +287,19 @@ async fn materialize_then_clean_exit_removes_record_and_branch() {
     .unwrap();
     assert_eq!(dec, FinalizeDecision::Cleaned);
     assert!(read_records(&cdir).unwrap().is_empty());
+    // Journaled cleanup removes via pinned descriptors, not CLI: prove the
+    // worktree, its registration, and the scratch ref are gone from disk.
+    assert!(!wt_path.exists(), "isolated worktree removed");
     assert!(
-        finalize_runner
-            .run_recorded
-            .iter()
-            .any(|c| c.contains("worktree remove --force"))
+        !repo
+            .path()
+            .join(".git/refs/heads/jackin/scratch/jackin-the-architect")
+            .exists(),
+        "scratch branch deleted"
     );
+    let worktrees_dir = repo.path().join(".git/worktrees");
     assert!(
-        finalize_runner
-            .run_recorded
-            .iter()
-            .any(|c| c.contains("branch -D"))
+        !worktrees_dir.exists() || std::fs::read_dir(&worktrees_dir).unwrap().next().is_none(),
+        "worktree registration removed"
     );
 }

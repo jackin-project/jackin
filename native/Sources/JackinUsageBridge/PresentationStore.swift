@@ -187,6 +187,45 @@ public final class PresentationStore: ObservableObject {
         }
     }
 
+    /// Exact Rust-owned account route status for one provider.
+    public enum SelectedAccountRoute: Sendable, Equatable {
+        /// No persisted account choice exists for this provider.
+        case unselected
+        /// The persisted key is retained while cold discovery determines membership.
+        case resolving(accountKey: String)
+        /// The persisted key is present in the current account catalog.
+        case available(accountKey: String)
+        /// Discovery completed without the persisted key; the notice is Rust-owned.
+        case unavailable(accountKey: String, notice: String)
+
+        public init?(dto: SelectedAccountRouteDto) {
+            let accountKey = dto.accountKey
+            let notice = dto.notice
+            switch dto.status {
+            case "unselected" where accountKey == nil && notice == nil:
+                self = .unselected
+            case "resolving" where notice == nil:
+                guard let accountKey, Self.isValidRouteKey(accountKey) else { return nil }
+                self = .resolving(accountKey: accountKey)
+            case "available" where notice == nil:
+                guard let accountKey, Self.isValidRouteKey(accountKey) else { return nil }
+                self = .available(accountKey: accountKey)
+            case "unavailable":
+                guard let accountKey, Self.isValidRouteKey(accountKey),
+                    let notice, !notice.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                else { return nil }
+                self = .unavailable(accountKey: accountKey, notice: notice)
+            default:
+                return nil
+            }
+        }
+
+        private static func isValidRouteKey(_ accountKey: String) -> Bool {
+            !accountKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                && accountKey == accountKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+    }
+
     public struct ProviderGroupRow: Identifiable, Sendable, Equatable {
         public var id: String { surfaceId }
         public let surfaceId: String
@@ -201,6 +240,9 @@ public final class PresentationStore: ObservableObject {
         public let accounts: [AccountRow]
         public let accessibilityLabel: String
         public let lastError: String?
+        /// Rust-owned route is the sole authority for the persisted account choice.
+        /// `nil` means the FFI status/key/notice tuple was malformed.
+        public let selectedAccountRoute: SelectedAccountRoute?
 
         public init(
             surfaceId: String,
@@ -214,7 +256,8 @@ public final class PresentationStore: ObservableObject {
             resetDisplayLabel: String,
             accounts: [AccountRow],
             accessibilityLabel: String,
-            lastError: String?
+            lastError: String?,
+            selectedAccountRoute: SelectedAccountRoute? = .unselected
         ) {
             self.surfaceId = surfaceId
             self.displayLabel = displayLabel
@@ -228,6 +271,7 @@ public final class PresentationStore: ObservableObject {
             self.accounts = accounts
             self.accessibilityLabel = accessibilityLabel
             self.lastError = lastError
+            self.selectedAccountRoute = selectedAccountRoute
         }
     }
 
@@ -676,7 +720,7 @@ public final class PresentationStore: ObservableObject {
             }
             applyFixtureProjection(projection)
             fixtureTerminalProjection = projection
-            usageAccountSelection = accountKey
+            recordUsageAccountSelection(surfaceId: surfaceId, accountKey: accountKey)
             return
         }
         Task { [weak self] in
@@ -684,6 +728,7 @@ public final class PresentationStore: ObservableObject {
             do {
                 try await self.scheduler.setSelectedAccount(
                     surfaceId: surfaceId, accountKey: accountKey)
+                self.recordUsageAccountSelection(surfaceId: surfaceId, accountKey: accountKey)
                 await self.applySnapshots()
             } catch {
                 self.report(error, userMessage: "Account selection could not be saved.")
@@ -711,6 +756,7 @@ public final class PresentationStore: ObservableObject {
         accountProjections: [String: QIFixtureProjection] = [:],
         popoverSelection: String?,
         usageSelection: String?,
+        usageAccountSelection: String? = nil,
         nextRefreshLabel: String = "next update 4m",
         isLoading: Bool = false,
         isRefreshing: Bool = false,
@@ -734,8 +780,8 @@ public final class PresentationStore: ObservableObject {
         overviewExpandedProviderIDs = providerIDs
         self.popoverSelection = popoverSelection
         self.usageSelection = usageSelection
-        usageAccountSelection =
-            accounts.first(where: {
+        self.usageAccountSelection = usageAccountSelection
+            ?? accounts.first(where: {
                 $0.surfaceId == usageSelection && $0.selected
             })?.accountKey
         self.nextRefreshLabel = nextRefreshLabel
@@ -922,7 +968,8 @@ public final class PresentationStore: ObservableObject {
                 resetDisplayLabel: provider.group.resetDisplayLabel,
                 accounts: accountRows,
                 accessibilityLabel: provider.group.accessibilityLabel,
-                lastError: provider.group.emptyState?.lastError
+                lastError: provider.group.emptyState?.lastError,
+                selectedAccountRoute: SelectedAccountRoute(dto: provider.selectedAccountRoute)
             )
         }
         let providerIDs = Set(providerGroups.map(\.surfaceId))
@@ -1116,6 +1163,14 @@ public final class PresentationStore: ObservableObject {
         usageAccountSelection = accountKey
     }
 
+    /// Update the Usage window's navigation context only when the account
+    /// selection still belongs to its active provider. A persisted picker
+    /// write can finish after the user has navigated to another provider.
+    private func recordUsageAccountSelection(surfaceId: String, accountKey: String) {
+        guard usageSelection == surfaceId else { return }
+        usageAccountSelection = accountKey
+    }
+
     private func reconcileSelections() {
         if let usageSelection, !isNavigableSurface(usageSelection) {
             self.usageSelection = nil
@@ -1126,10 +1181,16 @@ public final class PresentationStore: ObservableObject {
                 $0.surfaceId == usageSelection && $0.accountKey == usageAccountSelection
             })
         {
-            self.usageAccountSelection =
-                accounts.first(where: {
-                    $0.surfaceId == usageSelection && $0.selected
-                })?.accountKey
+            let route = providerGroups.first(where: { $0.surfaceId == usageSelection })?.selectedAccountRoute
+                ?? nil
+            if let route, case .unavailable = route {
+                // Keep provider scope so UsageWindowModel can show Rust's fixed
+                // unavailable notice in Overview; discard only the stale UI key.
+                self.usageAccountSelection = nil
+            } else {
+                self.usageSelection = nil
+                self.usageAccountSelection = nil
+            }
         }
         if let popoverSelection,
             !providerGlanceRows.contains(where: { $0.surfaceId == popoverSelection })

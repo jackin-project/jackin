@@ -30,7 +30,6 @@
 use crate::cleanup::force_cleanup_isolated;
 use crate::state::{CleanupStatus, IsolationRecord, read_records, upsert_record};
 use jackin_config::DirtyExitPolicy;
-use jackin_core::JACKIN_STATUS_CMD;
 use jackin_core::PromptContextLine;
 use jackin_core::error_popup;
 use jackin_core::exit_dialog_with_inspect;
@@ -336,8 +335,11 @@ async fn has_jackin_sessions_by_id(
     docker: &impl jackin_docker::docker_client::DockerApi,
     container: &ContainerHandle,
 ) -> bool {
+    let status_command = jackin_core::jackin_status_command(
+        jackin_protocol::capsule_transport::CONTROL_PROTOCOL_MAJOR,
+    );
     match docker
-        .exec_capture_by_id(container, &["sh", "-c", JACKIN_STATUS_CMD])
+        .exec_capture_by_id(container, &["sh", "-c", &status_command])
         .await
     {
         Ok(output) => match jackin_core::parse_session_count(&output) {
@@ -391,11 +393,12 @@ async fn finalize_clean_exit(
                 force_cleanup_isolated(&record, container_state_dir, runner).await?;
             }
             CleanupAssessment::PreservedDirty => {
-                mark_preserved(container_state_dir, &record, CleanupStatus::PreservedDirty)?;
+                let record =
+                    mark_preserved(container_state_dir, &record, CleanupStatus::PreservedDirty)?;
                 preserved_records.push((record, PreservedReason::Dirty));
             }
             CleanupAssessment::PreservedUnpushed => {
-                mark_preserved(
+                let record = mark_preserved(
                     container_state_dir,
                     &record,
                     CleanupStatus::PreservedUnpushed,
@@ -570,10 +573,11 @@ fn mark_preserved(
     container_state_dir: &Path,
     record: &IsolationRecord,
     status: CleanupStatus,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<IsolationRecord> {
     let mut updated = record.clone();
     updated.cleanup_status = status;
-    upsert_record(container_state_dir, updated)
+    upsert_record(container_state_dir, updated.clone())?;
+    Ok(updated)
 }
 
 #[cfg(test)]

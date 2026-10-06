@@ -139,7 +139,7 @@ fn a_role_branch_cannot_be_loaded_without_a_tty() {
 #[test]
 fn a_missing_registered_account_is_a_validation_failure() {
     let mut options = opts();
-    options.account = Some("missing".to_owned());
+    options.selection = Some(jackin_core::LaunchSelection::Account("missing".to_owned()));
     assert_eq!(
         options.validate_programmatic(&trusted_config(), &selector()),
         Err(LoadOptionsError::AccountMissing {
@@ -565,4 +565,79 @@ fn an_agent_without_an_env_model_knob_emits_no_lane_env() {
         lane_agent_env(Agent::Amp, Some("some-model"), Some(ReasoningEffort::Low)).is_empty(),
         "runtimes that take their model on argv must not grow a silent env knob"
     );
+}
+
+#[test]
+fn selected_launch_keeps_only_authorized_global_siblings() {
+    let (mut config, workspace) = two_account_config();
+    config.accounts.insert(
+        "foreign".into(),
+        jackin_config::AccountConfig {
+            enabled: true,
+            name: "Foreign".into(),
+            provider: jackin_config::AiProvider::Anthropic,
+            credential: jackin_config::AccountCredential::ApiKey {
+                value: "test-key".into(),
+                base_url: None,
+                model: None,
+            },
+        },
+    );
+    config.agent_configurations.insert(
+        "claude-foreign".into(),
+        AgentConfiguration {
+            agent: Agent::Claude,
+            account: "foreign".into(),
+            model: None,
+            base_url: None,
+            display_label: None,
+            invoked_via_wrapper: None,
+        },
+    );
+    config
+        .accounts
+        .insert("allowed".into(), config.accounts["foreign"].clone());
+    config
+        .workspaces
+        .get_mut("work")
+        .unwrap()
+        .accounts
+        .push("allowed".into());
+    let mut sibling = config.agent_configurations["claude-foreign"].clone();
+    sibling.account = "allowed".into();
+    config
+        .agent_configurations
+        .insert("claude-allowed".into(), sibling);
+    config.default_launch = Some(vec![
+        "codex-main".into(),
+        "claude-foreign".into(),
+        "claude-allowed".into(),
+        "codex-alt".into(),
+    ]);
+
+    for selected in [
+        with_account_selection(&config, Agent::Codex, Some(&workspace), "codex", "private")
+            .unwrap(),
+        with_configuration_selection(
+            &config,
+            Agent::Codex,
+            Some(&workspace),
+            "codex",
+            "codex-main",
+        )
+        .unwrap(),
+    ] {
+        let instances =
+            jackin_config::resolve_launch(&selected, Some(&workspace), "codex", None, None)
+                .unwrap();
+        assert_eq!(instances.len(), 2);
+        assert_eq!(instances[1].config_id, "claude-allowed");
+        assert_eq!(instances[0].config_id, "codex-main");
+        assert_eq!(
+            selected.workspaces["work"].roles["codex"].default_launch,
+            Some(vec!["codex-main".into(), "claude-allowed".into()])
+        );
+    }
+    assert!(config.workspaces["work"].roles.is_empty());
+    assert_eq!(config.default_launch.as_ref().unwrap().len(), 4);
 }

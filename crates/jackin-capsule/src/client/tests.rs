@@ -123,6 +123,9 @@ async fn attach_proxy_relays_binary_bytes_without_interpreting_frames() {
 
     let server = tokio::spawn(async move {
         let (mut stream, _) = listener.accept().await.unwrap();
+        jackin_protocol::capsule_transport::server_handshake_async(&mut stream)
+            .await
+            .unwrap();
         let mut received = vec![0u8; expected_client_frame.len()];
         stream.read_exact(&mut received).await.unwrap();
         assert_eq!(received, expected_client_frame);
@@ -158,6 +161,9 @@ async fn attach_proxy_exits_when_socket_closes_before_stdin() {
 
     let server = tokio::spawn(async move {
         let (mut stream, _) = listener.accept().await.unwrap();
+        jackin_protocol::capsule_transport::server_handshake_async(&mut stream)
+            .await
+            .unwrap();
         stream.write_all(&server_frame_for_task).await.unwrap();
         stream.shutdown().await.unwrap();
     });

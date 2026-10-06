@@ -75,3 +75,8 @@ reason = "tmpfs mount table for the container runtime profile"
 path = "/etc/sudoers.d:rw,nosuid,nodev,mode=0755"
 file = "crates/jackin-runtime/src/runtime/docker_profile.rs"
 reason = "Docker tmpfs flag string for sudoers.d mount options (host Docker config)"
+
+[[forbidden-roots]]
+path = "/var"
+file = "crates/jackin-isolation/src/state_io.rs"
+reason = "macOS-only immutable system-alias normalization (/var to /private/var); host path handling, not a container path"

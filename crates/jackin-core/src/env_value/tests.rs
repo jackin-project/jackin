@@ -4,7 +4,8 @@ use super::*;
 
 #[test]
 fn op_ref_deserializes_op_uri() {
-    let json = r#"{"op":"op://vault/item/field","path":"Vault/Item/Field"}"#;
+    let json =
+        r#"{"op":"op://vault/item/field","breadcrumb":{"version":1,"value":"Vault/Item/Field"}}"#;
 
     let value = serde_json::from_str::<EnvValue>(json);
 
@@ -19,7 +20,7 @@ fn op_ref_deserializes_op_uri() {
 
 #[test]
 fn op_ref_rejects_non_op_uri() {
-    let json = r#"{"op":"not-op://vault/item/field","path":"Vault/Item/Field"}"#;
+    let json = r#"{"op":"not-op://vault/item/field","breadcrumb":{"version":1,"value":"Vault/Item/Field"}}"#;
 
     let result = serde_json::from_str::<OpRef>(json);
 

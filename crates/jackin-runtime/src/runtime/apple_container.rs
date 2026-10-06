@@ -119,10 +119,13 @@ pub async fn check_dns(container_name: &str) {
     }
 }
 
-/// Wait until `/jackin/run/jackin.sock` is answering status queries inside
-/// the apple/container container.
+/// Wait until `/jackin/run/jackin.sock` negotiates the host's Capsule protocol
+/// major inside the apple/container container.
 pub async fn wait_for_capsule(container_name: &str) -> Result<()> {
-    let check_cmd = "test -S /jackin/run/jackin.sock && /jackin/runtime/jackin-capsule status";
+    let check_cmd = format!(
+        "test -S /jackin/run/jackin.sock && /jackin/runtime/jackin-capsule protocol-check --expected-major {}",
+        jackin_protocol::capsule_transport::CONTROL_PROTOCOL_MAJOR
+    );
     let deadline =
         tokio::time::Instant::now() + tokio::time::Duration::from_millis(ATTACH_MAX_WAIT_MS);
 
@@ -143,7 +146,7 @@ pub async fn wait_for_capsule(container_name: &str) -> Result<()> {
                 container_name,
                 "sh",
                 "-c",
-                check_cmd,
+                &check_cmd,
             ],
         ))
         .await;
@@ -237,6 +240,7 @@ pub struct AppleContainerLaunch<'a> {
     pub resolved_env: &'a jackin_env::ResolvedEnv,
     pub credential_scope: &'a jackin_protocol::usage_broker::UsageCredentialScope,
     pub debug: bool,
+    pub entry_claim: Option<&'a super::universe::EntryClaim>,
 }
 
 fn validate_exec_bindings(bindings: &[jackin_protocol::ExecBinding]) -> Result<()> {
@@ -246,6 +250,39 @@ fn validate_exec_bindings(bindings: &[jackin_protocol::ExecBinding]) -> Result<(
 
     crate::exec_host::ensure_caller_auth_supported()
         .context("apple-container does not support on-demand credential bindings")
+}
+
+async fn activate_started_entry(
+    start_result: Result<()>,
+    entry_claim: Option<&super::universe::EntryClaim>,
+) -> Result<()> {
+    start_result
+        .context("container run failed — required capabilities or image may be unavailable")?;
+    if let Some(claim) = entry_claim {
+        claim
+            .activate()
+            .await
+            .context("activating running launch entry")?;
+    }
+    Ok(())
+}
+
+fn apple_supervisor_env(debug: bool) -> Vec<(String, String)> {
+    // JACKIN_CAPSULE_FORCE_DAEMON=1 enables daemon mode without PID 1 (vminitd
+    // is PID 1 inside apple/container VMs; capsule runs as entrypoint at PID 2+).
+    let mut env: Vec<(String, String)> = vec![
+        ("JACKIN_CAPSULE_FORCE_DAEMON".to_owned(), "1".to_owned()),
+        (
+            // vminitd is PID 1; Capsule entrypoint is launched after it. This
+            // is the Apple launch contract, not a runtime probe of the live PID.
+            jackin_protocol::CAPSULE_SUPERVISOR_PID_ENV.to_owned(),
+            jackin_protocol::APPLE_CAPSULE_SUPERVISOR_PID.to_string(),
+        ),
+    ];
+    if debug {
+        env.push(("JACKIN_TELEMETRY_LEVEL".to_owned(), "debug".to_owned()));
+    }
+    env
 }
 
 /// Full launch path for the `apple-container` backend.
@@ -274,8 +311,13 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
         resolved_env,
         credential_scope,
         debug,
+        entry_claim,
     } = args;
 
+    anyhow::ensure!(
+        state.provider_config_mounts.is_empty(),
+        "generated provider configuration requires read-only file overlays; the apple-container backend rejects single-file bind mounts; use the docker backend"
+    );
     validate_exec_bindings(&capsule_config.exec_bindings)?;
 
     // Probe container CLI availability.
@@ -288,20 +330,7 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
     }
 
     // Build AppleContainerSpec — delegates all arg formatting to the client.
-    // JACKIN_CAPSULE_FORCE_DAEMON=1 enables daemon mode without PID 1 (vminitd
-    // is PID 1 inside apple/container VMs; capsule runs as entrypoint at PID 2+).
-    let mut env: Vec<(String, String)> = vec![
-        ("JACKIN_CAPSULE_FORCE_DAEMON".to_owned(), "1".to_owned()),
-        (
-            // vminitd is PID 1; Capsule entrypoint is launched after it. This
-            // is the Apple launch contract, not a runtime probe of the live PID.
-            jackin_protocol::CAPSULE_SUPERVISOR_PID_ENV.to_owned(),
-            jackin_protocol::APPLE_CAPSULE_SUPERVISOR_PID.to_string(),
-        ),
-    ];
-    if debug {
-        env.push(("JACKIN_TELEMETRY_LEVEL".to_owned(), "debug".to_owned()));
-    }
+    let mut env = apple_supervisor_env(debug);
     let host_env_entries = env_pairs
         .iter()
         .filter(|(key, _)| {
@@ -371,12 +400,14 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
         caps_add: vec![],
     };
 
-    let run_result = crate::apple_container_client::AppleContainerClient::new()
-        .run_container(container_name, &spec)
-        .await;
+    let run_result = with_admitted_final_apple_spec(paths, state, spec, |spec| async move {
+        crate::apple_container_client::AppleContainerClient::new()
+            .run_container(container_name, &spec)
+            .await
+    })?
+    .await;
     drop(host_env_file);
-    run_result
-        .context("container run failed — required capabilities or image may be unavailable")?;
+    activate_started_entry(run_result, entry_claim).await?;
     let _usage_relay_guard =
         crate::usage_relay::start_apple_tunnel(container_name, prepared_usage_relay)
             .context("starting scoped usage stdio tunnel")?;
@@ -455,6 +486,7 @@ pub async fn reconnect(
     paths: &JackinPaths,
     container_name: &str,
     focus_session: Option<u64>,
+    entry_claim: Option<&super::universe::EntryClaim>,
 ) -> Result<()> {
     let running = is_container_running(container_name).await;
 
@@ -470,6 +502,12 @@ pub async fn reconnect(
         }
     }
 
+    if let Some(claim) = entry_claim {
+        claim
+            .activate()
+            .await
+            .context("activating running launch entry")?;
+    }
     wait_for_capsule(container_name).await?;
     let exit_code = attach(container_name, focus_session).await?;
     record_attach_outcome(paths, container_name, exit_code).await;
@@ -570,6 +608,70 @@ mod tests {
     }
 
     #[test]
+    fn generated_provider_config_fails_before_any_runtime_or_authenticated_session_work() {
+        use std::future::Future as _;
+        use std::task::{Context, Poll, Waker};
+        let fixture = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(fixture.path());
+        let state = crate::instance::RoleState {
+            root: fixture.path().join("role"),
+            gh_config_dir: fixture.path().join("role/gh"),
+            gh_provision_outcome: crate::instance::GithubProvisionOutcome::Skipped,
+            agent_runtime: crate::instance::AgentRuntimeState {
+                agent: jackin_core::Agent::Codex,
+                model: None,
+            },
+            auth: crate::instance::ProvisionedAuth::default(),
+            auth_outcomes: std::collections::BTreeMap::default(),
+            auth_mount_paths: std::collections::BTreeSet::default(),
+            auth_mount_leases: Vec::new(),
+            provider_config_mounts: vec![(
+                fixture.path().join("role/provider-config/config.toml"),
+                "/home/agent/.codex/config.toml".into(),
+            )],
+        };
+        let config = jackin_protocol::CapsuleConfig::default();
+        let resolved_env = jackin_env::ResolvedEnv { vars: Vec::new() };
+        let scope = jackin_protocol::usage_broker::UsageCredentialScope::default();
+        let mut future = std::pin::pin!(launch(AppleContainerLaunch {
+            paths: &paths,
+            container_name: "fixture-container",
+            image: "fixture-image",
+            workspace_name: None,
+            workspace_label: "Fixture",
+            workdir: "/workspace",
+            role_key: "fixture",
+            role_display_name: "Fixture",
+            agent: jackin_core::Agent::Codex,
+            role_source_git: "fixture-only",
+            role_source_ref: None,
+            image_tag: "fixture-tag",
+            env_pairs: &[],
+            mounts: &[],
+            host_workdir_fingerprint: "fixture",
+            capsule_config: &config,
+            state: &state,
+            resolved_env: &resolved_env,
+            credential_scope: &scope,
+            debug: false,
+            entry_claim: None,
+        }));
+        let mut context = Context::from_waker(Waker::noop());
+        match future.as_mut().poll(&mut context) {
+            Poll::Ready(Err(error)) => {
+                assert!(format!("{error:#}").contains("requires read-only file overlays"));
+            }
+            result => panic!(
+                "unsupported generated provider config must reject before the first runtime await: {result:?}"
+            ),
+        }
+        assert!(
+            !state.root.exists(),
+            "runtime state or credentials must not be published"
+        );
+    }
+
+    #[test]
     fn empty_exec_bindings_are_supported() {
         validate_exec_bindings(&[]).expect("no credential relay is required");
     }
@@ -590,3 +692,22 @@ mod tests {
         assert!(message.contains("peer authentication is unavailable"));
     }
 }
+
+/// Final complete-spec admission boundary, immediately before Apple creation.
+fn with_admitted_final_apple_spec<T>(
+    paths: &JackinPaths,
+    state: &crate::instance::RoleState,
+    spec: crate::apple_container_client::AppleContainerSpec,
+    submit: impl FnOnce(crate::apple_container_client::AppleContainerSpec) -> T,
+) -> Result<T> {
+    super::launch::ensure_apple_provider_authority_not_exposed(
+        state,
+        &spec.mounts,
+        &[paths.home_dir.join(".jackin-coordination")],
+    )?;
+    Ok(submit(spec))
+}
+
+#[cfg(test)]
+#[path = "apple_container/coordination_tests.rs"]
+mod coordination_tests;

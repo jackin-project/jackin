@@ -23,7 +23,7 @@ fn rich_exit_dialog_keeps_all_when_rich_dialog_is_unavailable() {
     use crate::state::{CleanupStatus, IsolationRecord};
     let mut prompt = RichCleanupPrompt;
     let record = IsolationRecord {
-        workspace: "test".into(),
+        workspace_name: Some(jackin_core::WorkspaceName::parse("test").unwrap()),
         mount_dst: "/workspace/test".into(),
         original_src: "/tmp/repo".into(),
         isolation: MountIsolation::Worktree,
@@ -171,23 +171,68 @@ use crate::MountIsolation;
 use crate::state::write_records;
 use std::collections::VecDeque;
 
+/// Fallback captures served after a test's explicit assess seeds: three
+/// empty-tip `force_cleanup_isolated` cycles (covers the two-record
+/// multi-mount tests plus headroom). One cycle is the exact capture
+/// sequence production issues when the scratch branch is already
+/// absent (finalize fixtures never create the scratch ref, and no
+/// test seeds a tip row, so the tip is always empty here):
+///   `scratch_tip` → "", rev-parse --show-ref-format → "files",
+///   rev-parse --show-object-format → "sha1" (tip empty only),
+///   `scratch_tip` reinspect → "", verify-deletion → "",
+///   final-absence → "", post-lock-release → "".
+/// A bare "" is a valid empty `scratch_tip` inventory; "files"/"sha1"
+/// must only ever land on the rev-parse slots or `scratch_tip`
+/// rejects them as malformed branch inventory.
+fn cleanup_fallback_cycles() -> Vec<String> {
+    ["", "files", "sha1", "", "", "", ""]
+        .into_iter()
+        .cycle()
+        .take(21)
+        .map(str::to_owned)
+        .collect()
+}
+
 fn fake_with_outputs(outputs: &[&str]) -> FakeRunner {
     FakeRunner {
-        capture_queue: VecDeque::from(outputs.iter().map(ToString::to_string).collect::<Vec<_>>()),
+        capture_queue: outputs
+            .iter()
+            .map(ToString::to_string)
+            .chain(cleanup_fallback_cycles())
+            .collect(),
         ..FakeRunner::default()
     }
 }
 
+fn register_fixture(container_dir: &Path, wt: &Path, name: &str, branch: &str) {
+    let admin = container_dir.join("repo/.git/worktrees").join(name);
+    std::fs::create_dir_all(&admin).unwrap();
+    std::fs::write(
+        container_dir.join("repo/.git/HEAD"),
+        "ref: refs/heads/main\n",
+    )
+    .unwrap();
+    std::fs::write(wt.join(".git"), format!("gitdir: {}\n", admin.display())).unwrap();
+    std::fs::write(
+        admin.join("gitdir"),
+        format!("{}\n", wt.join(".git").display()),
+    )
+    .unwrap();
+    std::fs::write(admin.join("commondir"), "../..\n").unwrap();
+    std::fs::write(admin.join("HEAD"), format!("ref: refs/heads/{branch}\n")).unwrap();
+}
+
 fn rec(container_dir: &Path) -> IsolationRecord {
-    let wt = container_dir.join("isolated/workspace/jackin");
+    let wt = crate::materialize::worktree_path_for(container_dir, "/workspace/jackin", "jackin-x");
     std::fs::create_dir_all(&wt).unwrap();
+    register_fixture(container_dir, &wt, "jackin-x", "jackin/scratch/jackin-x");
     IsolationRecord {
-        workspace: "jackin".into(),
+        workspace_name: Some(jackin_core::WorkspaceName::parse("jackin").unwrap()),
         mount_dst: "/workspace/jackin".into(),
         original_src: container_dir.join("repo").to_string_lossy().into(),
         isolation: MountIsolation::Worktree,
         worktree_path: wt.to_string_lossy().into(),
-        scratch_branch: "jackin/scratch/x".into(),
+        scratch_branch: "jackin/scratch/jackin-x".into(),
         base_commit: "abc".into(),
         selector_key: "x".into(),
         container_name: "jackin-x".into(),
@@ -198,7 +243,7 @@ fn rec(container_dir: &Path) -> IsolationRecord {
 /// Format one for-each-ref row exactly the way the production
 /// query renders it (tab-separated columns).
 fn ferow(name: &str, tip: &str, upstream: &str, track: &str) -> String {
-    format!("{name}\t{tip}\t{upstream}\t{track}")
+    format!("{name}\t{tip}\t{upstream}\t{track}\tEND")
 }
 
 #[tokio::test]
@@ -233,11 +278,16 @@ async fn clean_worktree_with_head_equal_base_deletes_record() {
     assert!(read_records(dir.path()).unwrap().is_empty());
     assert!(
         runner
-            .run_recorded
+            .run_options
             .iter()
-            .any(|c| c.contains("worktree remove --force"))
+            .any(|opts| opts.pinned_cwd.is_some())
     );
-    assert!(runner.run_recorded.iter().any(|c| c.contains("branch -D")));
+    assert!(
+        !runner
+            .recorded
+            .iter()
+            .any(|c| c.contains("worktree remove") || c.contains("branch -D"))
+    );
 }
 
 #[tokio::test]
@@ -441,9 +491,9 @@ async fn dirty_worktree_interactive_force_delete_runs_cleanup() {
     assert!(read_records(dir.path()).unwrap().is_empty());
     assert!(
         runner
-            .run_recorded
+            .run_options
             .iter()
-            .any(|c| c.contains("worktree remove --force"))
+            .any(|opts| opts.pinned_cwd.is_some())
     );
 }
 
@@ -506,7 +556,11 @@ async fn dirty_worktree_non_interactive_prints_warning_and_preserves() {
 /// Anything before the failing capture comes from `outputs`.
 fn fake_failing_capture(outputs: &[&str], fail_pattern: &str) -> FakeRunner {
     FakeRunner {
-        capture_queue: VecDeque::from(outputs.iter().map(ToString::to_string).collect::<Vec<_>>()),
+        capture_queue: outputs
+            .iter()
+            .map(ToString::to_string)
+            .chain(cleanup_fallback_cycles())
+            .collect(),
         fail_on: vec![fail_pattern.into()],
         ..FakeRunner::default()
     }
@@ -543,12 +597,12 @@ async fn assess_cleanup_status_capture_failure_preserves_unpushed() {
     assert_eq!(dec, FinalizeDecision::Preserved);
     let recs = read_records(dir.path()).unwrap();
     assert_eq!(recs[0].cleanup_status, CleanupStatus::PreservedUnpushed);
-    // Critically: no git worktree remove / branch -D should have run.
+    // Preservation must not enter pinned repository cleanup.
     assert!(
         !runner
-            .run_recorded
+            .run_options
             .iter()
-            .any(|c| c.contains("worktree remove --force")),
+            .any(|opts| opts.pinned_cwd.is_some()),
         "must not delete worktree when status capture failed; recorded={:?}",
         runner.run_recorded,
     );
@@ -582,9 +636,9 @@ async fn assess_cleanup_for_each_ref_failure_preserves_unpushed() {
     assert_eq!(recs[0].cleanup_status, CleanupStatus::PreservedUnpushed);
     assert!(
         !runner
-            .run_recorded
+            .run_options
             .iter()
-            .any(|c| c.contains("worktree remove --force"))
+            .any(|opts| opts.pinned_cwd.is_some())
     );
 }
 
@@ -628,20 +682,21 @@ async fn assess_cleanup_rev_list_failure_preserves_unpushed() {
     assert_eq!(recs[0].cleanup_status, CleanupStatus::PreservedUnpushed);
     assert!(
         !runner
-            .run_recorded
+            .run_options
             .iter()
-            .any(|c| c.contains("worktree remove --force")),
+            .any(|opts| opts.pinned_cwd.is_some()),
         "rev-list failure must not auto-delete; recorded={:?}",
         runner.run_recorded,
     );
 }
 
 fn rec_at(container_dir: &Path, mount_dst: &str, scratch_branch: &str) -> IsolationRecord {
-    let rel = mount_dst.trim_matches('/');
-    let wt = container_dir.join(format!("isolated/{rel}"));
+    let container_name = scratch_branch.strip_prefix("jackin/scratch/").unwrap();
+    let wt = crate::materialize::worktree_path_for(container_dir, mount_dst, container_name);
     std::fs::create_dir_all(&wt).unwrap();
+    register_fixture(container_dir, &wt, container_name, scratch_branch);
     IsolationRecord {
-        workspace: "ws".into(),
+        workspace_name: Some(jackin_core::WorkspaceName::parse("ws").unwrap()),
         mount_dst: mount_dst.into(),
         original_src: container_dir.join("repo").to_string_lossy().into(),
         isolation: MountIsolation::Worktree,
@@ -649,7 +704,7 @@ fn rec_at(container_dir: &Path, mount_dst: &str, scratch_branch: &str) -> Isolat
         scratch_branch: scratch_branch.into(),
         base_commit: "abc".into(),
         selector_key: "x".into(),
-        container_name: "jackin-x".into(),
+        container_name: container_name.into(),
         cleanup_status: CleanupStatus::Active,
     }
 }
@@ -687,14 +742,17 @@ async fn multi_mount_force_delete_on_each_cleans_all_records() {
         read_records(dir.path()).unwrap().is_empty(),
         "both records should be removed after force-delete on both",
     );
+    // Each journal cleanup issues 6 pinned invocations (scratch-tip
+    // inspections, ref-format probes, and verification re-reads).
     let removes = runner
-        .run_recorded
+        .run_options
         .iter()
-        .filter(|c| c.contains("worktree remove --force"))
-        .count();
+        .filter(|opts| opts.pinned_cwd.is_some())
+        .count()
+        / 6;
     assert_eq!(
         removes, 2,
-        "must run worktree-remove for BOTH preserved mounts; recorded={:?}",
+        "must verify cleanup for BOTH preserved mounts; recorded={:?}",
         runner.run_recorded
     );
 }
@@ -767,14 +825,17 @@ async fn multi_mount_return_to_agent_signals_return_to_agent() {
     // No worktrees removed — all three records still on disk.
     let recs = read_records(dir.path()).unwrap();
     assert_eq!(recs.len(), 3, "ReturnToAgent must not delete any records");
+    // Each journal cleanup issues 6 pinned invocations; zero are
+    // expected here.
     let removes = runner
-        .run_recorded
+        .run_options
         .iter()
-        .filter(|c| c.contains("worktree remove --force"))
-        .count();
+        .filter(|opts| opts.pinned_cwd.is_some())
+        .count()
+        / 6;
     assert_eq!(
         removes, 0,
-        "ReturnToAgent must run no worktree-remove; recorded={:?}",
+        "ReturnToAgent must perform no cleanup; recorded={:?}",
         runner.run_recorded
     );
 }
@@ -793,9 +854,8 @@ async fn multi_mount_cleanup_failure_in_loop_does_not_abort() {
     write_records(dir.path(), &[r1, r2]).unwrap();
     // Both records assess to PreservedDirty (status returns dirty
     // for each), then force_cleanup_isolated runs git commands.
-    // We simulate the first mount's `git branch -D` failing AND
-    // the verify capture (`git branch --list`) confirming the
-    // branch is still present → force_cleanup_isolated bails.
+    // First mount's malformed exact-ref inspection retains its record;
+    // the second mount's branch is positively verified absent.
     // Pre-fix: that bail would propagate via `?` and the second
     // record would never be prompted.
     let mut runner = FakeRunner {
@@ -805,11 +865,13 @@ async fn multi_mount_cleanup_failure_in_loop_does_not_abort() {
         capture_queue: VecDeque::from([
             " M f1\n".to_owned(),
             " M f2\n".to_owned(),
-            "  jackin/scratch/x-a\n".to_owned(),
+            "malformed-ref-row\n".to_owned(),
+            String::new(),
+            "files".to_owned(),
+            "sha1".to_owned(),
             String::new(),
         ]),
-        // git branch -D for r1's branch fails; r2's branch -D succeeds.
-        fail_on: vec!["branch -D jackin/scratch/x-a".into()],
+        // No mutation is authorized by the malformed first observation.
         ..FakeRunner::default()
     };
     // Operator force-deletes both.
@@ -961,15 +1023,13 @@ async fn renamed_branch_pushed_clean_is_safe_to_delete() {
     assert!(read_records(dir.path()).unwrap().is_empty());
 }
 
-/// Squash-merged-and-pruned branch. Scratch parked at base; the
-/// role's `feature/x` branch is ahead with upstream set, but the
-/// upstream-tracking column shows `[gone]` because the remote
-/// branch was deleted after the PR merge and pruned locally. The
-/// `[gone]` heuristic must mark this Safe; pre-fix the rev-list
-/// would have errored on the missing upstream and the Err arm
-/// would have routed to `PreservedUnpushed`.
+/// A pruned upstream cannot authorize deletion of unreachable local commits.
 #[tokio::test]
-async fn squash_merged_pruned_branch_is_safe_to_delete() {
+async fn pruned_gone_branch_is_treated_as_merged_and_cleaned() {
+    // Policy: `[gone]` upstream means merged-and-pruned (squash-merge is the
+    // dominant workflow); assess issues zero rev-list and treats the branch
+    // as clean. Pinned by jackin-core
+    // `upstream_gone_is_treated_as_merged_clean`.
     let dir = TempDir::new().unwrap();
     let r = rec(dir.path());
     std::fs::create_dir_all(&r.original_src).unwrap();
@@ -980,9 +1040,7 @@ async fn squash_merged_pruned_branch_is_safe_to_delete() {
     ]
     .join("\n")
         + "\n";
-    // No rev-list call expected — `[gone]` short-circuits to Safe.
-    // symbolic-ref HEAD  (HEAD on feature/x → attached)
-    let mut runner = fake_with_outputs(&["", &branches, "refs/heads/feature/x"]);
+    let mut runner = fake_with_outputs(&["", &branches, "refs/heads/jackin/scratch/x"]);
     let mut p = NoPrompt;
     let docker = jackin_test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(FinalizeContext {
@@ -1002,7 +1060,7 @@ async fn squash_merged_pruned_branch_is_safe_to_delete() {
     assert!(read_records(dir.path()).unwrap().is_empty());
     assert!(
         !runner.recorded.iter().any(|c| c.contains("rev-list")),
-        "[gone] short-circuit must not invoke rev-list; recorded={:?}",
+        "gone branch must not issue reachability queries; recorded={:?}",
         runner.recorded,
     );
 }
@@ -1093,9 +1151,9 @@ async fn multiple_branches_all_safe_deletes_record() {
     ]
     .join("\n")
         + "\n";
-    // status clean, branch enumeration, rev-list for feature/b only
-    // (feature/a short-circuits via [gone], scratch via tip==base),
-    // then symbolic-ref HEAD (HEAD on feature/b → attached).
+    // Queue: status, for-each-ref, rev-list for feature/b only
+    // (feature/a is [gone], which production treats as
+    // merged-and-pruned with no reachability query), symbolic-ref.
     let mut runner = fake_with_outputs(&["", &branches, "", "refs/heads/feature/b"]);
     let mut p = NoPrompt;
     let docker = jackin_test_support::FakeDockerClient::default();
@@ -1121,7 +1179,8 @@ async fn multiple_branches_all_safe_deletes_record() {
         .count();
     assert_eq!(
         revlist_calls, 1,
-        "[gone] and tip==base must short-circuit; only feature/b should hit rev-list. recorded={:?}",
+        "only the live-upstream branch issues a reachability query; \
+         the [gone] branch is accepted as merged-and-pruned without one. recorded={:?}",
         runner.recorded,
     );
 }
@@ -1361,9 +1420,9 @@ async fn unpushed_branch_interactive_force_delete_runs_cleanup() {
     assert!(read_records(dir.path()).unwrap().is_empty());
     assert!(
         runner
-            .run_recorded
+            .run_options
             .iter()
-            .any(|c| c.contains("worktree remove --force"))
+            .any(|opts| opts.pinned_cwd.is_some())
     );
 }
 
@@ -1397,24 +1456,25 @@ async fn unpushed_branch_interactive_return_to_agent_signals_caller() {
 
 // ---------------------------------------------------------------
 // Bare `gone` track annotation (no brackets). Some git versions
-// emit `gone` instead of `[gone]`; both must short-circuit to Safe.
+// emit `gone` instead of `[gone]`; both require reachability proof.
 // ---------------------------------------------------------------
 
 #[tokio::test]
-async fn bare_gone_track_is_safe_to_delete() {
+async fn bare_gone_track_with_remote_reachability_is_safe_to_delete() {
     let dir = TempDir::new().unwrap();
     let r = rec(dir.path());
     std::fs::create_dir_all(&r.original_src).unwrap();
     write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
-    // Bare `gone` (no brackets) must also short-circuit to Safe.
+    // Bare `gone` is accepted like `[gone]`: merged-and-pruned, no queries.
     let branches = [
         ferow("jackin/scratch/x", "abc", "", ""),
         ferow("feature/x", "newhead", "origin/feature/x", "gone"),
     ]
     .join("\n")
         + "\n";
-    // No rev-list expected — bare `gone` short-circuits just like `[gone]`.
-    // symbolic-ref HEAD  (HEAD on feature/x → attached)
+    // Queue: status, for-each-ref, symbolic-ref (attached). No rev-list:
+    // production treats `gone` as merged-and-pruned without a
+    // reachability query (see jackin-core assess_worktree).
     let mut runner = fake_with_outputs(&["", &branches, "refs/heads/feature/x"]);
     let mut p = NoPrompt;
     let docker = jackin_test_support::FakeDockerClient::default();
@@ -1435,7 +1495,7 @@ async fn bare_gone_track_is_safe_to_delete() {
     assert!(read_records(dir.path()).unwrap().is_empty());
     assert!(
         !runner.recorded.iter().any(|c| c.contains("rev-list")),
-        "bare gone short-circuit must not invoke rev-list; recorded={:?}",
+        "bare gone must not issue reachability queries; recorded={:?}",
         runner.recorded,
     );
 }

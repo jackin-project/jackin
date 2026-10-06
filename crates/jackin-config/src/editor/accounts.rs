@@ -290,7 +290,7 @@ fn prune_empty_role_overrides(doc: &mut DocumentMut) -> ConfigResult<()> {
         return Ok(());
     };
     for (name, value) in workspace.roles {
-        if value == crate::WorkspaceRoleOverride::default() {
+        if value.is_default() {
             roles.remove(&name);
         }
     }

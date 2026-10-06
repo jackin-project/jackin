@@ -482,6 +482,9 @@ fn empty_endpoint_disables_export() {
 
 #[test]
 fn disabled_configuration_creates_no_runtime_and_shutdown_is_idempotent() {
+    let _lock = crate::DIAGNOSTICS_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let before = runtime_creation_count();
     let env = |_key: &str| None;
     assert_eq!(super::super::config::resolve_otlp_config(&env), Ok(None));
@@ -1476,9 +1479,64 @@ fn governed_event_level_gates_are_exact_and_do_not_infer_span_state() {
 }
 
 #[test]
+fn in_memory_layers_hold_global_telemetry_lock_until_export_drop() {
+    use std::sync::{TryLockError, mpsc};
+    use std::time::Duration;
+
+    let (export, subscriber) = super::test_layers(false, "first");
+    let (contended_tx, contended_rx) = mpsc::channel();
+    let (attempt_tx, attempt_rx) = mpsc::channel();
+    let (acquired_tx, acquired_rx) = mpsc::channel();
+    let worker = std::thread::spawn(move || {
+        // Directly observe contention before announcing readiness: a scheduled
+        // worker or an elapsed timeout alone does not prove ownership.
+        assert!(matches!(
+            crate::DIAGNOSTICS_TEST_LOCK.try_lock(),
+            Err(TryLockError::WouldBlock)
+        ));
+        contended_tx.send(()).expect("announce lock contention");
+        attempt_rx.recv().expect("begin exporter admission");
+        assert!(matches!(
+            crate::DIAGNOSTICS_TEST_LOCK.try_lock(),
+            Err(TryLockError::WouldBlock)
+        ));
+        contended_tx
+            .send(())
+            .expect("announce exporter lifetime contention");
+        let (next_export, next_subscriber) = super::test_layers(false, "second");
+        acquired_tx.send(()).expect("announce exporter admission");
+        drop(next_subscriber);
+        drop(next_export);
+    });
+
+    contended_rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("worker must observe the held exporter lock");
+    drop(subscriber);
+    assert!(matches!(
+        crate::DIAGNOSTICS_TEST_LOCK.try_lock(),
+        Err(TryLockError::WouldBlock)
+    ));
+    attempt_tx.send(()).expect("begin waiting exporter");
+    contended_rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("worker must observe contention after subscriber destruction");
+    assert!(matches!(
+        acquired_rx.try_recv(),
+        Err(mpsc::TryRecvError::Empty)
+    ));
+
+    drop(export);
+    acquired_rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("export destruction must admit the waiting exporter");
+    worker.join().expect("exporter contention worker");
+}
+
+#[test]
 fn governed_unknown_names_and_forged_severity_are_rejected() {
-    let before = jackin_telemetry::facade_health();
     let (export, subscriber) = super::test_layers_at("trace", "unused");
+    let before = jackin_telemetry::facade_health();
     tracing::subscriber::with_default(subscriber, || {
         tracing::event!(
             name: "unknown.governed.event",
@@ -1811,6 +1869,9 @@ fn assert_raw_metric_batch_rejected(
     use opentelemetry::metrics::MeterProvider as _;
     use opentelemetry_sdk::metrics::{InMemoryMetricExporter, PeriodicReader, SdkMeterProvider};
 
+    let _lock = crate::DIAGNOSTICS_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let before = jackin_telemetry::facade_health().by_signal_reason
         [jackin_telemetry::Signal::Metric as usize][reason as usize];
     let exporter = InMemoryMetricExporter::default();
@@ -1913,6 +1974,9 @@ fn governed_raw_meter_rejects_every_metric_contract_class() {
 
 #[test]
 fn rejected_metric_collection_is_not_reported_as_exported() {
+    let _lock = crate::DIAGNOSTICS_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let facade_before = jackin_telemetry::facade_health();
     let export_before = crate::telemetry_health_snapshot();
     let result =
