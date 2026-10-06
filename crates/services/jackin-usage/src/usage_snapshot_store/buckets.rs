@@ -1,5 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
+
+#![cfg(test)]
 //! Bucket ordering and label mapping.
 
 use std::collections::HashMap;
@@ -8,7 +10,6 @@ use jackin_protocol::control::{UsageConfidence, UsageSnapshotStatus, UsageSource
 
 use super::StoredAccountUsageSnapshot;
 
-#[cfg(test)]
 pub(crate) fn usage_bucket_order(provider: &str, label: &str) -> usize {
     let provider = normalize_provider_label(provider);
     let order: &[&str] = if provider_matches("openai", &provider)
@@ -51,7 +52,6 @@ pub(crate) fn usage_bucket_order(provider: &str, label: &str) -> usize {
         .unwrap_or(order.len())
 }
 
-#[cfg(test)]
 pub(crate) fn select_provider_rows(
     rows: Vec<StoredAccountUsageSnapshot>,
     focused_provider: Option<&str>,
@@ -70,7 +70,6 @@ pub(crate) fn select_provider_rows(
     Some((provider, matches))
 }
 
-#[cfg(test)]
 pub(crate) fn provider_matches(needle: &str, provider: &str) -> bool {
     if needle.trim().is_empty() {
         return false;
@@ -89,7 +88,6 @@ pub(crate) fn provider_matches(needle: &str, provider: &str) -> bool {
         || (needle.contains("glm") && provider.contains("zai"))
 }
 
-#[cfg(test)]
 pub(crate) fn normalize_provider_label(value: &str) -> String {
     value
         .chars()
@@ -98,7 +96,6 @@ pub(crate) fn normalize_provider_label(value: &str) -> String {
         .to_ascii_lowercase()
 }
 
-#[cfg(test)]
 pub(crate) fn usage_provider_tabs_from_rows(
     rows: &[StoredAccountUsageSnapshot],
 ) -> Vec<jackin_protocol::control::UsageProviderTab> {
@@ -141,7 +138,6 @@ pub(crate) fn usage_provider_tabs_from_rows(
     tabs
 }
 
-#[cfg(test)]
 pub(crate) fn tab_status_label(
     row: &StoredAccountUsageSnapshot,
     rows: &[StoredAccountUsageSnapshot],
@@ -160,7 +156,6 @@ pub(crate) fn tab_status_label(
         .unwrap_or_else(|| row.view_status.clone())
 }
 
-#[cfg(test)]
 pub(crate) fn usage_status_from_label(label: &str) -> UsageSnapshotStatus {
     match label {
         "fresh" => UsageSnapshotStatus::Fresh,
@@ -173,7 +168,6 @@ pub(crate) fn usage_status_from_label(label: &str) -> UsageSnapshotStatus {
     }
 }
 
-#[cfg(test)]
 pub(crate) fn usage_source_from_label(label: &str) -> UsageSource {
     match label {
         "provider_api" => UsageSource::ProviderApi,
@@ -184,7 +178,6 @@ pub(crate) fn usage_source_from_label(label: &str) -> UsageSource {
     }
 }
 
-#[cfg(test)]
 pub(crate) fn usage_confidence_from_label(label: &str) -> UsageConfidence {
     match label {
         "authoritative" => UsageConfidence::Authoritative,
@@ -194,7 +187,6 @@ pub(crate) fn usage_confidence_from_label(label: &str) -> UsageConfidence {
     }
 }
 
-#[cfg(test)]
 pub(crate) fn lifecycle_status_bar_label(status: UsageSnapshotStatus) -> String {
     match status {
         UsageSnapshotStatus::Fresh => "usage cached",

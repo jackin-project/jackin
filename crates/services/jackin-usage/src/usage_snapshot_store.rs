@@ -8,7 +8,6 @@
 //! not by opening this database. The schema mirrors the roadmap V1 account
 //! snapshot shape so the later host-daemon store can reuse the same rows.
 
-#[cfg(test)]
 mod buckets;
 mod read;
 mod schema;
