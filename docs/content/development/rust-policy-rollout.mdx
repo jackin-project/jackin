@@ -8,15 +8,19 @@ description: "Violation inventory and sequenced migration plan for rust-reposito
 - `main` SHA at slice start: `868ce53519234f879d26a8bd2dffaa30fae2d729`
   (identical to the Phase 1 audit SHA: focused re-diff is empty, no
   audit deltas to reconcile).
-- Policy: `tailrocks/rust-repository-policy` `v0.1.0`, tarball sha256
-  `4d6efd5ec023aabb53aca10d564b28bcf70c8197717d5bdc4e2e5e8da71afa1c`
-  (verified before install).
+- Policy: `tailrocks/rust-repository-policy` `v0.1.1`, tarball sha256
+  `3aeb63a996df1f453b07e1647282ff7005b84306a02ce2d8bea63e6c66b424d5`
+  (verified before install; re-pinned from v0.1.0 `4d6efd5e...` in
+  slice 5, tree otherwise untouched).
 - Install: release materialized to `.cache/rust-policy/` (gitignored,
   re-materialized in CI before `alint check`); adapter `.alint.yml`
   extends `profiles/rust-strict-v1.yml` plus the one trust-gated
   `policy-gaps` command rule; `schemas/renovate.schema.json` vendored
-  to the repo root per the install contract; helper
-  `rust-repository-policy` v0.1.0 on `PATH`.
+  to the repo root per the install contract (v0.1.1 copy
+  byte-identical to v0.1.0: no re-vendor); helper
+  `rust-repository-policy` from the v0.1.1 artifact on `PATH`
+  (self-reports `0.1.0`: identify by artifact, macos-arm64 sha256
+  `ab562dc25c93129f2910d2b8c3fbfa69a12877a4224f6ff8e2ccc9073f347ad8`).
 - Tool pins: alint `0.17.0`, helper at release tag, profile
   `rust-strict-v1` (36 native rules + `policy-gaps` = 37 loaded).
 - Branch: `rust-policy-rollout`. This slice commits install + inventory
@@ -374,3 +378,65 @@ passes.
   nextest,check.log}` vs `/tmp/jackin-s4-after-{alint,gaps,
   metadata,nextest}.txt`, per-package nextest counts in
   `/tmp/jackin-s4-before-nextest-bypkg.txt`.
+
+## Slice 5: re-pin to policy v0.1.1 (2026-10-06)
+
+- Base: `6cf5d922` (slice 4 grouped moves). Clone:
+  `/tmp/jackin-v011`, branch `rust-policy-rollout`, pushed, NOT
+  merged to `main`.
+- Forward: verify the v0.1.1 tarball sha256, materialize to
+  gitignored `.cache/rust-policy/`, run the v0.1.1 helper from the
+  artifact (`PATH` override at `.cache/rust-policy-path/`; the
+  shared on-`PATH` helper stays v0.1.0 until the rollout lands).
+  `.alint.yml` needs no edit (extends path unchanged, still 37
+  rules); vendored `renovate.schema.json` is byte-identical across
+  the two releases (no re-vendor). This slice commits the doc
+  re-pin + re-baselined counts only. No compliance fixes yet.
+  Rollback: revert the commit, re-materialize v0.1.0.
+- v0.1.1 delta (diffed artifact-to-artifact on this tree):
+  `tests-no-test-files-in-src` exempts canonical `src/**/tests.rs`
+  + `src/**/tests/**`; `size-lib-main-150` covers exactly the S7
+  150-set (`**/src/lib.rs`, `**/src/main.rs`, `**/src/bin/*.rs`,
+  `**/src/bin/*/main.rs`, `**/src/**/tests.rs`,
+  `**/tests/main.rs`, `**/tests/cases.rs`); helper exempts
+  canonical case files from `GAP-TEST-001` and plain-`mod` case
+  splits from `GAP-TEST-002` (`#[path]` splits keep firing with a
+  canonical-path correction).
+
+### Verify (same tree, v0.1.0 -> v0.1.1)
+
+- Env: rustup-direct cargo/rustc 1.98.1, nextest 0.9.143,
+  alint 0.17.0, helper from the v0.1.1 artifact (self-reports
+  0.1.0, macos-arm64 sha256 `ab562dc2...47ad8`).
+- Install gate: `alint validate-config .alint.yml` green (37
+  rules: the new include/exclude map form parses);
+  `policy-gaps` 199 == direct `check-gaps` 199 (reconciles).
+- `alint check`: 1101 -> 864 findings, 13 failing / 24 passing
+  both sides. `tests-no-test-files-in-src` 463 -> 11 (452
+  canonical `tests.rs`/`tests/` suites exempt; the 11 survivors
+  are `test_support`/`*_tests` helpers slated for S6 moves).
+  `size-lib-main-150` 14 -> 241 (+227 `src/**/tests.rs` indexes
+  now in the S7 150-set; the 14 entries/bins are the same files
+  as v0.1.0; zero `tests/main.rs`/`tests/cases.rs` findings).
+  `size-file-400` 368, `tests-dir-present` 23,
+  `cargo-workspace-inherit-*` 1/1/1 (lints), `cargo-no-patch`,
+  `docs-root-only-allowed` 15, `ci-build-runs-on`,
+  `toolchain-*` all unchanged.
+- `check-gaps`: 211 -> 199. `GAP-TEST-001` 147 -> 136 (11
+  findings inside canonical `tests/<case>.rs` files gone:
+  usage-ffi `bridge/tests/selected_account_route.rs` x1,
+  runtime `account_config/tests/bounds.rs` x10).
+  `GAP-TEST-002` 5 -> 4 (usage-ffi plain-`mod` split clean;
+  runtime `#[path]` split re-fires with the canonical-path
+  correction). `GAP-TEST-003` 33, `GAP-SIZE-001` 15,
+  `GAP-SIZE-002` 7, `GAP-INHERIT-001` 1, `GAP-INV-001`,
+  `GAP-DEPS-004`, `GAP-CI-001` unchanged.
+- Canonical S6 form (probed from the now-clean usage-ffi
+  split): production `src/<m>.rs` ends with exactly
+  `#[cfg(test)] mod tests;` (a single `cfg(test,...)` gate such
+  as `all(test, unix)` is accepted); suite at
+  `src/<m>/tests.rs` with `use super::*;`; case splits as plain
+  `mod <case>;` resolving to `src/<m>/tests/<case>.rs` (any
+  `#[path]` trips `GAP-TEST-002`).
+- Raw outputs: `/tmp/jackin-v011-{alint,gaps,gaps-010,
+  inventory}.txt`, parser `/tmp/parse-v011.py`.
