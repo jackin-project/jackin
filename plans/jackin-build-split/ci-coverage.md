@@ -16,7 +16,7 @@
 
 ## Velnor PR #55
 
-Status: MERGED; merge-commit CI PASS; current-main CI NOT RUN.
+Status: MERGED; post-merge verification is IN PROGRESS.
 
 The [PR](https://github.com/tailrocks/velnor-new/pull/55) targeted `7fb8367d7daa67f13ccaa7c76caae47d55d6262b`. Earlier checks below are historical snapshots.
 
@@ -44,9 +44,9 @@ The corrected source expects one, ten, and forty crates to succeed and 100 crate
 
 The owner also reports an unpushed local sync merge with the same tree. Its full SHA was not supplied. At `2026-10-05 03:32:27Z`, run `37259299811` had 17 checks passed, 2 in progress, and 0 failed. The orchestrator remained pending at that observation. The run had no P13 result then.
 
-The GitHub API reported PR #55 closed and merged at head `f17ebbc992da8549197f63d2aaaf1c317ed57426`, using merge commit `3ec6f32b5bafa5fa34ce9aa22afd7cfe2e797132`. Run `37260546503` completed with conclusion `success`; its `Required` job also succeeded. This supersedes the earlier running snapshot. Post-merge workflow run `37261457091` completed successfully at merge commit `3ec6f32b5bafa5fa34ce9aa22afd7cfe2e797132`. Its job query returned 20 jobs, all successful. A later `git ls-remote` check found Velnor main at `1856b5b9f47569515c8fa00657a2c8dde6aada9f`; CI at that newer head is NOT RUN.
+The GitHub API reported PR #55 closed and merged at head `f17ebbc992da8549197f63d2aaaf1c317ed57426`, using merge commit `3ec6f32b5bafa5fa34ce9aa22afd7cfe2e797132`. Run `37260546503` completed with conclusion `success`; its `Required` job also succeeded. This supersedes the earlier running snapshot. The Velnor main branch currently points to merge commit `3ec6f32b5bafa5fa34ce9aa22afd7cfe2e797132`. Post-merge workflow run `37261457091` is in progress. Its check-runs response contained 18 checks: 17 completed successfully and `Rust / velnor-actions-orchestrator` remained in progress. Post-merge verification remains IN PROGRESS.
 
-Sol's Velnor security source review passed at PR head `6baa3a1f729d45a764fd4250d1300cf17fa196e6` against main `6180ccebc7eff8b8f40f988eea2cf948bb235c9d`. The review records fixes for typed-job Mise environment true/unset behavior, a workflow-wide byte guard, UTF-8 accounting, and no-partial/in-place tests. It rejects the untrusted-cache-writer allegation because cache saves remain push-only. The later merge and successful PR run are recorded above. The source review remains bounded to `6baa3a1`. The successful run verifies the merge commit only; checks at the later main SHA remain NOT RUN.
+Sol's Velnor security source review passed at PR head `6baa3a1f729d45a764fd4250d1300cf17fa196e6` against main `6180ccebc7eff8b8f40f988eea2cf948bb235c9d`. The review records fixes for typed-job Mise environment true/unset behavior, a workflow-wide byte guard, UTF-8 accounting, and no-partial/in-place tests. It rejects the untrusted-cache-writer allegation because cache saves remain push-only. The later merge and successful PR run are recorded above. The source review remains bounded to `6baa3a1`; post-merge main verification is IN PROGRESS.
 
 ### Separate optional Rust setup-factoring proposal
 
@@ -65,47 +65,6 @@ The current workflow inventory has no separate release, macOS Swift, Docker, Bun
 The generator coverage review is still active. Recheck after upstream fixes merge. Confirm which jobs belong in the required CI surface before changing generated files.
 
 Do not claim generated workflow parity. Compare generator source, configuration, output, and current checks after refs are fetched.
-
-## Velnor PR #59
-
-Status: MERGED on a later main snapshot; permission source review PASS; Jackin generation remains separately gated.
-
-The [PR](https://github.com/tailrocks/velnor-new/pull/59) is `fix/required-actions-read-scope`. Earlier snapshots at head `81e65fee08edc3b73839d9ff810cb7da6a170a65` and base `1856b5b9f47569515c8fa00657a2c8dde6aada9f` are superseded. A later snapshot reported PR head `dccf0fbe04a43cd0b04791663a6c9fe619687a62`, base `c8a891bfb9e9a692e328732dc950e918c182fc78`, and Velnor main `7ccc7617253343d6e59feb1727b068a0cc0e937e`. The PR was merged by that main snapshot. GitHub reported 19 completed checks successful.
-
-Exact Sol source review at PR head `dccf0fbe` and tree `d073b2c4008202705935fb062ff615e8d00f67f3` passed against base `c8a891b`. The review covered only the permission-scope change: workflow defaults do not grant Actions access, while Plan and Required receive the reviewed read scope. It did not re-review unrelated imported runner changes. The 19 successful checks are the reported Velnor snapshot; they do not establish current Jackin generation, role validation, or runtime acceptance.
-
-## Velnor PR #65
-
-Status: SOURCE PASS; generated-workflow CI and execution remain NOT PASS.
-
-The publisher source at `ff41745394712604bddf94b6a4e9f1069100789e` received exact Sol source review PASS. CI run `37275543333` built the helper through Mise and MBX and uploaded its preseed artifact, but failed the generated-workflow comparison. Required then failed, and Rust jobs were skipped. No successful generator or Rust-test result is recorded. The artifact remains unexecuted: the security review found the isolated workspace and cleared environment do not constrain filesystem, socket, or network access. PR #65 remains draft and unmerged; no release or publication occurred.
-
-These Velnor snapshots do not validate the Jackin fixture rebake or source tests. The current Jackin migration fixture archive and pending execution gates are recorded in [reviews](reviews.md#current-migration-source-and-fixture-checkpoint).
-
-## Current Jackin consumer check
-
-Consumer source review PASS at `07f5ce7efe38c6c608fb975013df43e770d92b2b`. It pins Architect PR head `7db69b62f598a0971809ee4a006ad3f5477d0996` and manifest SHA-256 `b38e506587c98137d0a1a88247fb68afc9f9f215c8104c838df251933a917ae5`. The source review covers the immutable manifest fixture and CI contract. Tests remain NOT RUN.
-
-Task-order fix `41265a7550dda498c2e32126a9e68d4733215da5` sorts configured workflow tasks by ID. The release manifest still pins Velnor `0.1.0`. Its three configured tasks do not appear in generated `.github/workflows/ci.yml`.
-
-Jackin run `37262862647` at `41265a7550dda498c2e32126a9e68d4733215da5` failed. Actionlint passed. Plan failed during generated-file checking because pinned Velnor rejected `.velnor/config.toml` field `tasks` as unknown. Required then failed because the Plan artifact was missing. Rust jobs were skipped. No test or build result is available from this run.
-
-### PR #1112 exact-head gate snapshot
-
-Read-only refresh at `2026-10-05 08:48:25Z` found PR #1112 open, draft, and blocked. Base is `0aa821a088e1bacf3d4d85a4c9faaa67faa85132`; head is `f4902db386e029a4a481b13767f7a29b5351af49`. The source under review is unchanged at `17b2b1be6a58a0e34af6d8308df915d110f4a785`; the later task-branch commits only update plan records. Run `37285807560` completed on the exact PR head.
-
-| Check | Result | Evidence |
-|---|---|---|
-| Actionlint | PASS | Run `37285807560`. |
-| Plan | FAIL | Velnor `0.1.0` rejects `.velnor/config.toml` field `tasks` as `unknown_config_field`; the generated-file step cannot run. |
-| Required | FAIL | The Plan artifact is absent after Plan failed. |
-| Rust crate jobs | NOT RUN | Every `Rust / *` job was skipped. No source test result exists for this run. |
-| Publish baseline | SKIPPED | Not run after the failed required path. |
-| DCO | ACTION REQUIRED | The current check rollup does not satisfy DCO. |
-
-The exact source has not passed Cargo tests, Clippy, generated migration-golden checks, or a complete schema check. Those are NOT RUN, not test failures. The source-review passes recorded in the branch matrix do not replace these gates.
-
-PR #1112 can proceed as soon as its own source, generated workflow, feedback, and required checks pass. It need not wait for separate live Architect-role testing, host account discovery, or the post-integration performance baseline. Record those follow-ups after the merge without treating them as PR-specific check results.
 
 ## Task invocation gate
 
