@@ -32,7 +32,7 @@ Primary API/license evidence: [Headroom manifest](https://github.com/headroomlab
 
 ### What Jackin should own
 
-Own operator configuration, qualification records, typed result envelopes, artifact completeness/provenance, raw recovery, session/context-epoch exposure state, isolation, worker lifecycle, and actual-versus-estimated usage. Extend the existing workspace rather than duplicating execution, provider, or telemetry infrastructure. <RepoFile path="Cargo.toml">Workspace components</RepoFile> and <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs">capsule-local setup</RepoFile> anchor this plan.
+Own operator configuration, qualification records, typed result envelopes, artifact completeness/provenance, raw recovery, session/context-epoch exposure state, isolation, worker lifecycle, and actual-versus-estimated usage. Extend the existing workspace rather than duplicating execution, provider, or telemetry infrastructure. <RepoFile path="Cargo.toml">Workspace components</RepoFile> and <RepoFile path="crates/apps/jackin-capsule/src/runtime_setup.rs">capsule-local setup</RepoFile> anchor this plan.
 
 No whole-product rewrite is presently justified by the inspected evidence. Headroom already supplies relevant Rust source; LeanCTX supplies an experimental facade; LemonCrow can be evaluated as a process. A working sidecar can be better than a forced Rust port if accepted-task behavior is superior.
 

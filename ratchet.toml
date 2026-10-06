@@ -18,13 +18,13 @@ provider = "file_lines_production"
 cap = 1850
 mode = "enforce"
 [[family.entry]]
-key = "crates/jackin-diagnostics/src/observability.rs"
+key = "crates/services/jackin-diagnostics/src/observability.rs"
 bound = 2012
 [[family.entry]]
-key = "crates/jackin-xtask/src/telemetry_registry.rs"
+key = "crates/tools/jackin-xtask/src/telemetry_registry.rs"
 bound = 2012
 [[family.entry]]
-key = "crates/jackin-usage/src/host.rs"
+key = "crates/services/jackin-usage/src/host.rs"
 bound = 1930
 
 [[family]]
@@ -485,97 +485,97 @@ bound = 1026
 key = "CLAUDE.md"
 bound = 1026
 [[family.entry]]
-key = "crates/jackin-agent-status/README.md"
+key = "crates/services/jackin-agent-status/README.md"
 bound = 2129
 [[family.entry]]
-key = "crates/jackin-brand/README.md"
+key = "crates/core/jackin-brand/README.md"
 bound = 965
 [[family.entry]]
-key = "crates/jackin-build-meta/README.md"
+key = "crates/core/jackin-build-meta/README.md"
 bound = 628
 [[family.entry]]
-key = "crates/jackin-capsule/README.md"
-bound = 6339
+key = "crates/apps/jackin-capsule/README.md"
+bound = 6342
 [[family.entry]]
-key = "crates/jackin-config/README.md"
+key = "crates/core/jackin-config/README.md"
 bound = 2229
 [[family.entry]]
-key = "crates/jackin-oppicker/README.md"
+key = "crates/adapters/jackin-oppicker/README.md"
 bound = 1575
 [[family.entry]]
-key = "crates/jackin-console/README.md"
+key = "crates/ui/jackin-console/README.md"
 bound = 2779
 [[family.entry]]
-key = "crates/jackin-core/README.md"
-bound = 5618
+key = "crates/core/jackin-core/README.md"
+bound = 5624
 [[family.entry]]
-key = "crates/jackin-dev/README.md"
+key = "crates/tools/jackin-dev/README.md"
 bound = 1199
 [[family.entry]]
-key = "crates/jackin-diagnostics/README.md"
+key = "crates/services/jackin-diagnostics/README.md"
 bound = 2137
 [[family.entry]]
-key = "crates/jackin-docker/README.md"
+key = "crates/adapters/jackin-docker/README.md"
 bound = 1864
 [[family.entry]]
-key = "crates/jackin-env/README.md"
+key = "crates/core/jackin-env/README.md"
 bound = 3051
 [[family.entry]]
-key = "crates/jackin-host/README.md"
+key = "crates/services/jackin-host/README.md"
 bound = 1999
 [[family.entry]]
-key = "crates/jackin-image/README.md"
+key = "crates/adapters/jackin-image/README.md"
 bound = 2988
 [[family.entry]]
-key = "crates/jackin-instance/README.md"
+key = "crates/services/jackin-instance/README.md"
 bound = 2007
 [[family.entry]]
-key = "crates/jackin-isolation/README.md"
+key = "crates/services/jackin-isolation/README.md"
 bound = 2171
 [[family.entry]]
-key = "crates/jackin-launch/README.md"
+key = "crates/ui/jackin-launch/README.md"
 bound = 1937
 [[family.entry]]
-key = "crates/jackin-lints/README.md"
-bound = 2038
+key = "crates/tools/jackin-lints/README.md"
+bound = 2050
 [[family.entry]]
-key = "crates/jackin-manifest/README.md"
+key = "crates/core/jackin-manifest/README.md"
 bound = 1797
 [[family.entry]]
-key = "crates/jackin-pr-trailers/README.md"
+key = "crates/tools/jackin-pr-trailers/README.md"
 bound = 1882
 [[family.entry]]
-key = "crates/jackin-process/README.md"
+key = "crates/core/jackin-process/README.md"
 bound = 780
 [[family.entry]]
-key = "crates/jackin-otlp-testbed/README.md"
+key = "crates/testing/jackin-otlp-testbed/README.md"
 bound = 1122
 [[family.entry]]
-key = "crates/jackin-protocol/README.md"
+key = "crates/core/jackin-protocol/README.md"
 bound = 2500
 [[family.entry]]
-key = "crates/jackin-runtime/README.md"
+key = "crates/services/jackin-runtime/README.md"
 bound = 3545
 [[family.entry]]
-key = "crates/jackin-telemetry/README.md"
+key = "crates/services/jackin-telemetry/README.md"
 bound = 2149
 [[family.entry]]
-key = "crates/jackin-test-support/README.md"
-bound = 2633
+key = "crates/testing/jackin-test-support/README.md"
+bound = 2647
 [[family.entry]]
-key = "crates/jackin-tui/README.md"
+key = "crates/ui/jackin-tui/README.md"
 bound = 1826
 [[family.entry]]
-key = "crates/jackin-usage/README.md"
+key = "crates/services/jackin-usage/README.md"
 bound = 6514
 [[family.entry]]
-key = "crates/jackin-usage-ffi/README.md"
+key = "crates/adapters/jackin-usage-ffi/README.md"
 bound = 3078
 [[family.entry]]
-key = "crates/jackin-xtask/README.md"
+key = "crates/tools/jackin-xtask/README.md"
 bound = 6112
 [[family.entry]]
-key = "crates/jackin/README.md"
+key = "crates/apps/jackin/README.md"
 bound = 2860
 
 [[family]]

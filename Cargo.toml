@@ -3,40 +3,40 @@
 
 [workspace]
 members = [
-    "crates/jackin",
-    "crates/jackin-agent-status",
-    "crates/jackin-build-meta",
-    "crates/jackin-brand",
-    "crates/jackin-capsule",
-    "crates/jackin-config",
-    "crates/jackin-console",
-    "crates/jackin-oppicker",
-    "crates/jackin-core",
-    "crates/jackin-dev",
-    "crates/jackin-diagnostics",
-    "crates/jackin-docker",
-    "crates/jackin-env",
-    "crates/jackin-host",
-    "crates/jackin-image",
-    "crates/jackin-manifest",
-    "crates/jackin-omp-store",
-    "crates/jackin-process",
-    "crates/jackin-process-directory",
-    "crates/jackin-protocol",
-    "crates/jackin-launch",
-    "crates/jackin-runtime",
-    "crates/jackin-telemetry",
-    "crates/jackin-tui",
-    "crates/jackin-xtask",
-    "crates/jackin-pr-trailers",
-    "crates/jackin-usage",
-    "crates/jackin-usage-ffi",
-    "crates/jackin-isolation",
-    "crates/jackin-instance",
-    "crates/jackin-test-support",
-    "crates/jackin-otlp-testbed",
+    "crates/adapters/jackin-docker",
+    "crates/adapters/jackin-image",
+    "crates/adapters/jackin-omp-store",
+    "crates/adapters/jackin-oppicker",
+    "crates/adapters/jackin-usage-ffi",
+    "crates/apps/jackin",
+    "crates/apps/jackin-capsule",
+    "crates/core/jackin-brand",
+    "crates/core/jackin-build-meta",
+    "crates/core/jackin-config",
+    "crates/core/jackin-core",
+    "crates/core/jackin-env",
+    "crates/core/jackin-manifest",
+    "crates/core/jackin-process",
+    "crates/core/jackin-process-directory",
+    "crates/core/jackin-protocol",
+    "crates/services/jackin-agent-status",
+    "crates/services/jackin-diagnostics",
+    "crates/services/jackin-host",
+    "crates/services/jackin-instance",
+    "crates/services/jackin-isolation",
+    "crates/services/jackin-runtime",
+    "crates/services/jackin-telemetry",
+    "crates/services/jackin-usage",
+    "crates/testing/jackin-otlp-testbed",
+    "crates/testing/jackin-test-support",
+    "crates/tools/jackin-dev",
+    "crates/tools/jackin-pr-trailers",
+    "crates/tools/jackin-xtask",
+    "crates/ui/jackin-console",
+    "crates/ui/jackin-launch",
+    "crates/ui/jackin-tui",
 ]
-exclude = ["crates/jackin-lints"]
+exclude = ["crates/tools/jackin-lints"]
 resolver = "3"
 
 [workspace.package]
@@ -70,32 +70,32 @@ httpdate = "1"
 icu_collator = "2.2"
 icu_locale = "2.2"
 insta = "=1.48.0"
-jackin-build-meta = { version = "0.6.4", path = "crates/jackin-build-meta" }
-jackin-brand = { version = "0.6.4", path = "crates/jackin-brand" }
-jackin-agent-status = { version = "0.6.4", path = "crates/jackin-agent-status" }
-jackin-config = { version = "0.6.4", path = "crates/jackin-config" }
-jackin-console = { version = "0.6.4", path = "crates/jackin-console" }
-jackin-oppicker = { version = "0.6.4", path = "crates/jackin-oppicker" }
-jackin-core = { version = "0.6.4", path = "crates/jackin-core" }
-jackin-diagnostics = { version = "0.6.4", path = "crates/jackin-diagnostics" }
-jackin-docker = { version = "0.6.4", path = "crates/jackin-docker" }
-jackin-env = { version = "0.6.4", path = "crates/jackin-env" }
-jackin-host = { version = "0.6.4", path = "crates/jackin-host" }
-jackin-image = { version = "0.6.4", path = "crates/jackin-image" }
-jackin-instance = { version = "0.6.4", path = "crates/jackin-instance" }
-jackin-isolation = { version = "0.6.4", path = "crates/jackin-isolation" }
-jackin-launch = { version = "0.6.4", path = "crates/jackin-launch" }
-jackin-manifest = { version = "0.6.4", path = "crates/jackin-manifest" }
-jackin-omp-store = { version = "0.6.4", path = "crates/jackin-omp-store" }
-jackin-otlp-testbed = { version = "0.6.4", path = "crates/jackin-otlp-testbed" }
-jackin-process = { version = "0.6.4", path = "crates/jackin-process" }
-jackin-process-directory = { version = "0.6.4", path = "crates/jackin-process-directory" }
-jackin-protocol = { version = "0.6.4", path = "crates/jackin-protocol" }
-jackin-runtime = { version = "0.6.4", path = "crates/jackin-runtime" }
-jackin-telemetry = { version = "0.6.4", path = "crates/jackin-telemetry" }
-jackin-tui = { version = "0.6.4", path = "crates/jackin-tui" }
-jackin-test-support = { version = "0.6.4", path = "crates/jackin-test-support" }
-jackin-usage = { version = "0.6.4", path = "crates/jackin-usage" }
+jackin-build-meta = { version = "0.6.4", path = "crates/core/jackin-build-meta" }
+jackin-brand = { version = "0.6.4", path = "crates/core/jackin-brand" }
+jackin-agent-status = { version = "0.6.4", path = "crates/services/jackin-agent-status" }
+jackin-config = { version = "0.6.4", path = "crates/core/jackin-config" }
+jackin-console = { version = "0.6.4", path = "crates/ui/jackin-console" }
+jackin-oppicker = { version = "0.6.4", path = "crates/adapters/jackin-oppicker" }
+jackin-core = { version = "0.6.4", path = "crates/core/jackin-core" }
+jackin-diagnostics = { version = "0.6.4", path = "crates/services/jackin-diagnostics" }
+jackin-docker = { version = "0.6.4", path = "crates/adapters/jackin-docker" }
+jackin-env = { version = "0.6.4", path = "crates/core/jackin-env" }
+jackin-host = { version = "0.6.4", path = "crates/services/jackin-host" }
+jackin-image = { version = "0.6.4", path = "crates/adapters/jackin-image" }
+jackin-instance = { version = "0.6.4", path = "crates/services/jackin-instance" }
+jackin-isolation = { version = "0.6.4", path = "crates/services/jackin-isolation" }
+jackin-launch = { version = "0.6.4", path = "crates/ui/jackin-launch" }
+jackin-manifest = { version = "0.6.4", path = "crates/core/jackin-manifest" }
+jackin-omp-store = { version = "0.6.4", path = "crates/adapters/jackin-omp-store" }
+jackin-otlp-testbed = { version = "0.6.4", path = "crates/testing/jackin-otlp-testbed" }
+jackin-process = { version = "0.6.4", path = "crates/core/jackin-process" }
+jackin-process-directory = { version = "0.6.4", path = "crates/core/jackin-process-directory" }
+jackin-protocol = { version = "0.6.4", path = "crates/core/jackin-protocol" }
+jackin-runtime = { version = "0.6.4", path = "crates/services/jackin-runtime" }
+jackin-telemetry = { version = "0.6.4", path = "crates/services/jackin-telemetry" }
+jackin-tui = { version = "0.6.4", path = "crates/ui/jackin-tui" }
+jackin-test-support = { version = "0.6.4", path = "crates/testing/jackin-test-support" }
+jackin-usage = { version = "0.6.4", path = "crates/services/jackin-usage" }
 nix = "0.31"
 rustix = { version = "=1.1.4", features = ["fs"] }
 opentelemetry_sdk = "0.32"
@@ -322,7 +322,7 @@ debug = "line-tables-only"
 
 [workspace.metadata.dylint]
 libraries = [
-    { path = "crates/jackin-lints" },
+    { path = "crates/tools/jackin-lints" },
 ]
 
 # arrayref 0.3.10 on crates.io is a malicious publish (pulls the proc-macro1

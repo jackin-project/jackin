@@ -35,7 +35,7 @@ Two distinct concerns plumbed through the same console panel:
 
 ### Per-agent sampling
 
-Use the Docker stats API (`docker stats --no-stream`, or a new typed stats endpoint added to the `DockerApi` trait in <RepoFile path="crates/jackin-core/src/docker.rs" /> — no such endpoint exists yet; today's trait covers container/network/image lifecycle only, not stats). Sample every 2 seconds while the console is open; pause sampling when the panel is collapsed.
+Use the Docker stats API (`docker stats --no-stream`, or a new typed stats endpoint added to the `DockerApi` trait in <RepoFile path="crates/core/jackin-core/src/docker.rs" /> — no such endpoint exists yet; today's trait covers container/network/image lifecycle only, not stats). Sample every 2 seconds while the console is open; pause sampling when the panel is collapsed.
 
 Fields per agent:
 
@@ -48,7 +48,7 @@ Fields per agent:
 
 ### Machine sampling
 
-Cross-platform — the `sysinfo` crate is already a workspace dependency (used today for OTLP process-metric sampling in <RepoFile path="crates/jackin-diagnostics/src/observability.rs" />), so reuse it for CPU/RAM here rather than adding a second dependency. For the data-dir disk usage, walk `~/.jackin/data/` once on console open and after instance lifecycle changes such as load, hardline recovery, clean exit, or purge; also show free disk for the filesystem containing the jackin❯ data directory. Do not poll disk usage on every render.
+Cross-platform — the `sysinfo` crate is already a workspace dependency (used today for OTLP process-metric sampling in <RepoFile path="crates/services/jackin-diagnostics/src/observability.rs" />), so reuse it for CPU/RAM here rather than adding a second dependency. For the data-dir disk usage, walk `~/.jackin/data/` once on console open and after instance lifecycle changes such as load, hardline recovery, clean exit, or purge; also show free disk for the filesystem containing the jackin❯ data directory. Do not poll disk usage on every render.
 
 ### Console rendering
 
@@ -79,5 +79,5 @@ A new optional panel (toggled with a keystroke, e.g. `t` for "telemetry") that s
 ## Related work
 
 - New module (e.g. `src/console/panels/resources.rs`) — panel rendering + sampling loop, does not exist yet
-- <RepoFile path="crates/jackin/src/console/adapter.rs" /> — keybinding wiring
-- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> — plausible home for a sampling adapter trait, moving into per-backend modules over time
+- <RepoFile path="crates/apps/jackin/src/console/adapter.rs" /> — keybinding wiring
+- <RepoFile path="crates/services/jackin-runtime/src/runtime/launch.rs" /> — plausible home for a sampling adapter trait, moving into per-backend modules over time

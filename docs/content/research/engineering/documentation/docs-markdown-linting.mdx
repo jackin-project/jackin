@@ -13,7 +13,7 @@ This study preserves why rumdl was selected and which alternatives were rejected
 
 ## Research question
 
-The docs site under `docs/content/` has automated gates for structural breakage (the Fumadocs build), broken links (lychee), code-span references to real repo files (`cargo xtask docs repo-links`), and roadmap sidebar completeness (`cargo xtask roadmap audit`). The Rust implementation lives in <RepoFile path="crates/jackin-xtask/src/docs.rs">crates/jackin-xtask/src/docs.rs</RepoFile>. Nothing gates mechanical markdown style — heading hierarchy, code-fence languages, list-marker consistency, line-length policy, emphasis-marker mixing. Each PR's MDX looks fine in isolation; the corpus drifts across contributors and sessions without a deterministic check.
+The docs site under `docs/content/` has automated gates for structural breakage (the Fumadocs build), broken links (lychee), code-span references to real repo files (`cargo xtask docs repo-links`), and roadmap sidebar completeness (`cargo xtask roadmap audit`). The Rust implementation lives in <RepoFile path="crates/tools/jackin-xtask/src/docs.rs">crates/tools/jackin-xtask/src/docs.rs</RepoFile>. Nothing gates mechanical markdown style — heading hierarchy, code-fence languages, list-marker consistency, line-length policy, emphasis-marker mixing. Each PR's MDX looks fine in isolation; the corpus drifts across contributors and sessions without a deterministic check.
 
 ## Why it matters
 

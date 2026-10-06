@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "workspaces": [
+    {
+      "path": "fuzz/jackin-config",
+      "kind": "cargo-fuzz",
+      "toolchain": "inherit:rust-toolchain.toml",
+      "lock": "fuzz/jackin-config/Cargo.lock",
+      "gates": ["cargo xtask ci-fuzz --package jackin-config"]
+    },
+    {
+      "path": "fuzz/jackin-env",
+      "kind": "cargo-fuzz",
+      "toolchain": "inherit:rust-toolchain.toml",
+      "lock": "fuzz/jackin-env/Cargo.lock",
+      "gates": ["cargo xtask ci-fuzz --package jackin-env"]
+    },
+    {
+      "path": "fuzz/jackin-manifest",
+      "kind": "cargo-fuzz",
+      "toolchain": "inherit:rust-toolchain.toml",
+      "lock": "fuzz/jackin-manifest/Cargo.lock",
+      "gates": ["cargo xtask ci-fuzz --package jackin-manifest"]
+    },
+    {
+      "path": "fuzz/jackin-protocol",
+      "kind": "cargo-fuzz",
+      "toolchain": "inherit:rust-toolchain.toml",
+      "lock": "fuzz/jackin-protocol/Cargo.lock",
+      "gates": ["cargo xtask ci-fuzz --package jackin-protocol"]
+    }
+  ]
+}

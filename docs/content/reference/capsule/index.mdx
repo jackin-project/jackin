@@ -85,7 +85,7 @@ Two protocols share the same socket. The first byte sent by a client selects whi
 
 Both channels cap a single payload at 4 MiB. The control channel rejects malformed JSON and unknown structural shapes. Unknown tagged message variants decode as `Unknown` so a newer peer can fail fast instead of hanging on a read. The attach channel rejects unknown tags, truncated payloads, and oversized lengths.
 
-The authoritative control-channel wire types live in <RepoFile path="crates/jackin-protocol/src/control.rs">crates/jackin-protocol/src/control.rs</RepoFile> so the host CLI and the in-container binary share the same serde schema without making `jackin` depend on `jackin-capsule`'s PTY and terminal stack. The attach-channel frame codec lives in <RepoFile path="crates/jackin-protocol/src/attach.rs">crates/jackin-protocol/src/attach.rs</RepoFile> because both the host attach client and the in-container Capsule daemon need the same binary framing.
+The authoritative control-channel wire types live in <RepoFile path="crates/core/jackin-protocol/src/control.rs">crates/core/jackin-protocol/src/control.rs</RepoFile> so the host CLI and the in-container binary share the same serde schema without making `jackin` depend on `jackin-capsule`'s PTY and terminal stack. The attach-channel frame codec lives in <RepoFile path="crates/core/jackin-protocol/src/attach.rs">crates/core/jackin-protocol/src/attach.rs</RepoFile> because both the host attach client and the in-container Capsule daemon need the same binary framing.
 
 Current control messages:
 
@@ -104,7 +104,7 @@ Current control messages:
 | `{"type":"usage_refresh_focused"}` | `{"type":"usage_focused","usage":{...}}` | Capsule overlay refresh action; provider refresh is queued through the scoped relay for the host broker |
 | `{"type":"usage_account_list"}` | `{"type":"usage_accounts","membership":{"state":"current","projection":...}}` | `jackin-capsule usage accounts`; `membership` is `current`, `unavailable`, or `revoked`, not a quota-row list |
 
-`SessionInfo` carries `id`, `label`, optional `agent`, public `state`, and `active`. `TabSnapshot` carries render-order tabs, each tab's focused pane id, and one `PaneSnapshot` per pane leaf. `PaneSnapshot` carries `session_id`, label, optional agent slug, public state, and an `AgentStatusReport` when the daemon has evidence. The report exposes the raw detector state, source, confidence, detected agent, foreground pgid, visible-screen booleans, `process_exited`, `foreground_returned_to_shell`, `stale_report`, `subagents_active`, and revision fields. The public states are `working`, `blocked`, `done`, `idle`, and `unknown`; `stuck` is a diagnostic overlay exposed in `status explain`, not a replacement state. Raw detector states are `unknown`, `working`, `blocked`, and `idle`; `done` is derived when raw idle returns after work and the pane has not yet been acknowledged by focus or attach. The authority is implemented by <RepoFile path="crates/jackin-agent-status/src/lib.rs" />, with the evidence snapshot in <RepoFile path="crates/jackin-agent-status/src/evidence.rs" />, arbitration in <RepoFile path="crates/jackin-agent-status/src/arbitrate.rs" />, debounce/watchdog policy in <RepoFile path="crates/jackin-agent-status/src/policy.rs" />, and rule-pack engine in <RepoFile path="crates/jackin-agent-status/src/rules.rs" />. Capsule's <RepoFile path="crates/jackin-capsule/src/agent_status.rs" /> re-exports the pure crate and keeps reporter installers. Rule packs load from embedded fallbacks, then `/jackin/runtime/agent-status/packs/`, then the operator override directory selected by `JACKIN_STATUS_PACK_DIR` or `$HOME/.jackin/agent-status/packs/`. The detection crate also models a signed bundle source for future org-published pack updates: a bundle must verify signer identity and signature before any pack TOML is parsed, and rejected or malformed bundles keep the embedded floor live.
+`SessionInfo` carries `id`, `label`, optional `agent`, public `state`, and `active`. `TabSnapshot` carries render-order tabs, each tab's focused pane id, and one `PaneSnapshot` per pane leaf. `PaneSnapshot` carries `session_id`, label, optional agent slug, public state, and an `AgentStatusReport` when the daemon has evidence. The report exposes the raw detector state, source, confidence, detected agent, foreground pgid, visible-screen booleans, `process_exited`, `foreground_returned_to_shell`, `stale_report`, `subagents_active`, and revision fields. The public states are `working`, `blocked`, `done`, `idle`, and `unknown`; `stuck` is a diagnostic overlay exposed in `status explain`, not a replacement state. Raw detector states are `unknown`, `working`, `blocked`, and `idle`; `done` is derived when raw idle returns after work and the pane has not yet been acknowledged by focus or attach. The authority is implemented by <RepoFile path="crates/services/jackin-agent-status/src/lib.rs" />, with the evidence snapshot in <RepoFile path="crates/services/jackin-agent-status/src/evidence.rs" />, arbitration in <RepoFile path="crates/services/jackin-agent-status/src/arbitrate.rs" />, debounce/watchdog policy in <RepoFile path="crates/services/jackin-agent-status/src/policy.rs" />, and rule-pack engine in <RepoFile path="crates/services/jackin-agent-status/src/rules.rs" />. Capsule's <RepoFile path="crates/apps/jackin-capsule/src/agent_status.rs" /> re-exports the pure crate and keeps reporter installers. Rule packs load from embedded fallbacks, then `/jackin/runtime/agent-status/packs/`, then the operator override directory selected by `JACKIN_STATUS_PACK_DIR` or `$HOME/.jackin/agent-status/packs/`. The detection crate also models a signed bundle source for future org-published pack updates: a bundle must verify signer identity and signature before any pack TOML is parsed, and rejected or malformed bundles keep the embedded floor live.
 
 `EventsSubscribe` keeps the control connection open after the initial request and sends length-prefixed `ServerMsg` frames. The live event stream includes `AgentStateChanged` for per-session effective-state transitions, `SessionSpawned`, `SessionExited`, `TokenUsageChanged`, and `WorkspaceStatusChanged`. `WorkspaceStatusChanged` is emitted when the daemon's aggregate status snapshot changes; it carries the rolled-up `effective` status plus `session_count`, `blocked_count`, `done_count`, and `working_count`. The roll-up precedence is `blocked > done > working > idle > unknown`, matching the status authority contract used by console badges and future host-daemon consumers.
 
@@ -225,7 +225,7 @@ host:
   -> render console preview / pane picker
 ```
 
-On Docker Desktop, the host cannot open the Linux VM's Unix socket path directly even though the parent directory is bind-mounted. In that case <RepoFile path="crates/jackin-runtime/src/runtime/snapshot.rs" /> falls back to `docker exec ... /jackin/runtime/jackin-capsule snapshot`; the in-container client still speaks the same control protocol to the same daemon socket, then prints the JSON response for the host to read.
+On Docker Desktop, the host cannot open the Linux VM's Unix socket path directly even though the parent directory is bind-mounted. In that case <RepoFile path="crates/services/jackin-runtime/src/runtime/snapshot.rs" /> falls back to `docker exec ... /jackin/runtime/jackin-capsule snapshot`; the in-container client still speaks the same control protocol to the same daemon socket, then prints the JSON response for the host to read.
 
 ### Failure and Security Boundaries
 
@@ -271,13 +271,13 @@ Each pane owns one PTY and one `DamageGrid` (from the [termpane](https://github.
 
 ### Dirty-output renderer
 
-`jackin-capsule` uses an internal dirty-row layer over the termpane `DamageGrid`. The decision follows the Zellij model: keep per-pane terminal state, track changed visible lines, and serialize only the changed pane body rows when the rest of the frame is still valid. Focused live pane-only updates encode borrowed `GridPatch` rows directly through <RepoFile path="crates/jackin-capsule/src/tui/socket_backend.rs" />; full redraws, scrollback views, dialogs, selection, and chrome still render through Ratatui widgets. Zellij's `OutputBuffer` / `changed_lines` design was the primary reference; tmux's grid/screen/redraw split was the baseline for separating pane content from status bar and pane chrome.
+`jackin-capsule` uses an internal dirty-row layer over the termpane `DamageGrid`. The decision follows the Zellij model: keep per-pane terminal state, track changed visible lines, and serialize only the changed pane body rows when the rest of the frame is still valid. Focused live pane-only updates encode borrowed `GridPatch` rows directly through <RepoFile path="crates/apps/jackin-capsule/src/tui/socket_backend.rs" />; full redraws, scrollback views, dialogs, selection, and chrome still render through Ratatui widgets. Zellij's `OutputBuffer` / `changed_lines` design was the primary reference; tmux's grid/screen/redraw split was the baseline for separating pane content from status bar and pane chrome.
 
 The terminal engine is termpane's owned `DamageGrid`, which records dirty rows at mutation time (`DirtyTracker`) instead of diffing whole screens, emits typed OSC/CSI passthrough events directly, and keeps primary, alternate, and scrollback rows in a shared daemon `RowArena`. There is no alternate terminal model in `jackin-capsule`: no feature flag, fallback path, source-policy exception, or dependency remains for the retired external parser. The [Capsule Terminal Model](/reference/capsule/terminal-model/) page records why the old `vt100` fork was retired and how `termpane` differs.
 
 The shipped layer is `DamageGrid` dirty tracking plus `SocketBackend` patch encoding. PTY output marks only that pane dirty. The render ticker coalesces bursts at roughly 30 fps; when the focused live pane is the only dirty surface, the compositor drains `dirty_spans()`, borrows a `GridPatch`, and emits cursor moves plus ANSI for changed rows only. The status bar, dialogs, selection overlay, layout, and full-frame lifecycle stay separate and use the Ratatui frame path.
 
-Full-frame redraws are still intentional and named in <RepoFile path="crates/jackin-capsule/src/daemon.rs" />: first attach, resize, tab switch, layout change, split/close, zoom/unzoom, scrollback browsing, pane clear, dialog/palette/confirm overlays, selection repaint, focus/style changes, session exit, cache miss, and unsafe partial cases all take the full path. At `JACKIN_TELEMETRY_LEVEL=debug`, each render logs its kind (`full` or `partial`), reason, dirty pane count, rows emitted, bytes emitted, and duration in microseconds so regressions can be compared against the old full-pane path from logs.
+Full-frame redraws are still intentional and named in <RepoFile path="crates/apps/jackin-capsule/src/daemon.rs" />: first attach, resize, tab switch, layout change, split/close, zoom/unzoom, scrollback browsing, pane clear, dialog/palette/confirm overlays, selection repaint, focus/style changes, session exit, cache miss, and unsafe partial cases all take the full path. At `JACKIN_TELEMETRY_LEVEL=debug`, each render logs its kind (`full` or `partial`), reason, dirty pane count, rows emitted, bytes emitted, and duration in microseconds so regressions can be compared against the old full-pane path from logs.
 
 ### Status bar
 
@@ -356,11 +356,11 @@ The policy is read once per session at spawn time; an agent that exports the env
 
 ## Distribution and versioning
 
-`jackin-capsule` is versioned identically to the `jackin` CLI — both use the same <RepoFile path="crates/jackin/build.rs" /> logic that produces `{cargo_pkg_version}+{7-char-git-sha}`. The host CLI's version string and the binary's `--version` output always match.
+`jackin-capsule` is versioned identically to the `jackin` CLI — both use the same <RepoFile path="crates/apps/jackin/build.rs" /> logic that produces `{cargo_pkg_version}+{7-char-git-sha}`. The host CLI's version string and the binary's `--version` output always match.
 
 ### How jackin❯ acquires the binary
 
-`ensure_available` in <RepoFile path="crates/jackin-image/src/capsule_binary.rs" /> resolves the binary in priority order:
+`ensure_available` in <RepoFile path="crates/adapters/jackin-image/src/capsule_binary.rs" /> resolves the binary in priority order:
 
 1. **`JACKIN_CAPSULE_BIN=/path/to/binary` (env var set)** — jackin❯ uses that path directly. No cache lookup, no download. The binary can come from anywhere: a local build, a CI artifact, a closed-source build. jackin❯ validates only that the file exists and is executable.
 
@@ -374,7 +374,7 @@ jackin❯ itself has no knowledge of how to build `jackin-capsule` from source. 
 
 ### Building for local development
 
-Use the `build-jackin-capsule` binary (defined in <RepoFile path="crates/jackin/src/bin/build_jackin_capsule/main.rs" />) to compile `jackin-capsule` for Linux and populate the cache. It uses `cargo-zigbuild` with Zig as the linker — no Docker required — and targets a glibc 2.17 floor to match CI:
+Use the `build-jackin-capsule` binary (defined in <RepoFile path="crates/apps/jackin/src/bin/build_jackin_capsule/main.rs" />) to compile `jackin-capsule` for Linux and populate the cache. It uses `cargo-zigbuild` with Zig as the linker — no Docker required — and targets a glibc 2.17 floor to match CI:
 
 - `arm64` → `aarch64-unknown-linux-gnu.2.17`
 - `amd64` → `x86_64-unknown-linux-gnu.2.17`
@@ -414,19 +414,19 @@ First build takes 2–3 minutes; subsequent builds are incremental via cargo's d
 
 ### Derived image build
 
-<RepoFile path="crates/jackin-image/src/derived_image.rs" /> copies the resolved binary into the Docker build context so `docker build` does not need network access at image-build time. The `COPY .jackin-runtime/jackin-capsule /jackin/runtime/jackin-capsule` instruction is emitted only when the binary path is available; when it is not (e.g. in unit tests), the instruction is omitted and the image falls back to whatever `/jackin/runtime/jackin-capsule` the base image provides.
+<RepoFile path="crates/adapters/jackin-image/src/derived_image.rs" /> copies the resolved binary into the Docker build context so `docker build` does not need network access at image-build time. The `COPY .jackin-runtime/jackin-capsule /jackin/runtime/jackin-capsule` instruction is emitted only when the binary path is available; when it is not (e.g. in unit tests), the instruction is omitted and the image falls back to whatever `/jackin/runtime/jackin-capsule` the base image provides.
 
 ## Relationship to the rest of jackin❯
 
 | Component | Relationship |
 |---|---|
-| <RepoFile path="crates/jackin-image/src/capsule_binary.rs" /> | Resolves the binary path: `JACKIN_CAPSULE_BIN` override → cache hit → download from GitHub Releases |
-| <RepoFile path="crates/jackin/src/bin/build_jackin_capsule/main.rs" /> | Developer tool: `cargo run --bin build-jackin-capsule` — builds via `cargo-zigbuild` and populates the cache |
-| <RepoFile path="crates/jackin-image/src/derived_image.rs" /> | Copies binary into derived image build context |
-| <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" /> | Implements `jackin-capsule runtime-setup`, the Rust replacement for deterministic entrypoint shell setup |
-| <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> | Adds the per-instance socket directory mount to `docker run`; connects via `docker exec jackin-capsule` |
-| <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs" /> | Queries socket for session list; spawns new sessions via `jackin-capsule new` |
-| <RepoFile path="crates/jackin-isolation/src/finalize.rs" /> | Queries socket to detect live sessions before cleanup |
+| <RepoFile path="crates/adapters/jackin-image/src/capsule_binary.rs" /> | Resolves the binary path: `JACKIN_CAPSULE_BIN` override → cache hit → download from GitHub Releases |
+| <RepoFile path="crates/apps/jackin/src/bin/build_jackin_capsule/main.rs" /> | Developer tool: `cargo run --bin build-jackin-capsule` — builds via `cargo-zigbuild` and populates the cache |
+| <RepoFile path="crates/adapters/jackin-image/src/derived_image.rs" /> | Copies binary into derived image build context |
+| <RepoFile path="crates/apps/jackin-capsule/src/runtime_setup.rs" /> | Implements `jackin-capsule runtime-setup`, the Rust replacement for deterministic entrypoint shell setup |
+| <RepoFile path="crates/services/jackin-runtime/src/runtime/launch.rs" /> | Adds the per-instance socket directory mount to `docker run`; connects via `docker exec jackin-capsule` |
+| <RepoFile path="crates/services/jackin-runtime/src/runtime/attach.rs" /> | Queries socket for session list; spawns new sessions via `jackin-capsule new` |
+| <RepoFile path="crates/services/jackin-isolation/src/finalize.rs" /> | Queries socket to detect live sessions before cleanup |
 | [Agent runtime status authority roadmap item](/roadmap/agent-runtime-status/) | Design record and regression checklist for the shipped in-container state authority |
 | [jackin❯ daemon roadmap item](/roadmap/jackin-daemon/) | The daemon will subscribe to each container's socket and maintain a cross-instance session index |
 | [Multiplexer Design Rules](/reference/capsule/multiplexer-design-rules/) | Passthrough contract, input routing rules, verification checklist |

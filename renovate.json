@@ -4,7 +4,7 @@
     "config:best-practices"
   ],
   "ignorePaths": [
-    "crates/jackin-lints/rust-toolchain"
+    "crates/tools/jackin-lints/rust-toolchain"
   ],
   "customManagers": [
     {
@@ -57,7 +57,7 @@
     {
       "customType": "regex",
       "managerFilePatterns": [
-        "/^crates\\/jackin-runtime\\/src\\/runtime\\/docker_profile\\.rs$/"
+        "/^crates\\/services\\/jackin-runtime\\/src\\/runtime\\/docker_profile\\.rs$/"
       ],
       "matchStrings": [
         "DIND_PRIVILEGED_IMAGE: &str = \"docker:(?<currentValue>\\d+-dind)\""
@@ -68,7 +68,7 @@
     {
       "customType": "regex",
       "managerFilePatterns": [
-        "/^crates\\/jackin-runtime\\/src\\/runtime\\/docker_profile\\.rs$/"
+        "/^crates\\/services\\/jackin-runtime\\/src\\/runtime\\/docker_profile\\.rs$/"
       ],
       "matchStrings": [
         "DIND_ROOTLESS_IMAGE: &str = \"docker:(?<currentValue>\\d+-dind-rootless)\""

@@ -21,13 +21,14 @@ exclude = [
   "docs/**",
   "docker/**",
   "**/fuzz/**",
-  "crates/jackin-lints/**",
+  "fuzz/**",
+  "crates/tools/jackin-lints/**",
   "vendor/**",
-  "crates/jackin-brand/**",
-  "crates/jackin-build-meta/**",
-  "crates/jackin-oppicker/**",
-  "crates/jackin-pr-trailers/**",
-  "crates/jackin-omp-store/**"
+  "crates/core/jackin-brand/**",
+  "crates/core/jackin-build-meta/**",
+  "crates/adapters/jackin-oppicker/**",
+  "crates/tools/jackin-pr-trailers/**",
+  "crates/adapters/jackin-omp-store/**"
 ]
 
 [stacks.rust]

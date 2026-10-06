@@ -33,11 +33,11 @@
 //     flags (--locked --profile test --all-targets --all-features
 //     -p <pkg> -- -D warnings, cf. .github/ci/project.toml per-unit
 //     commands) instead of CI's workspace-wide `cargo clippy` (cf. the
-//     lint partition in crates/jackin-xtask/src/ci.rs). The closure
+//     lint partition in crates/tools/jackin-xtask/src/ci.rs). The closure
 //     (changed members + reverse dependents + detached fuzz/arrayref
 //     packages + cross-crate file inputs, widened to workspace when
 //     unprovable) is implemented in
-//     crates/jackin-xtask/src/clippy_affected.rs and proven by its tests.
+//     crates/tools/jackin-xtask/src/clippy_affected.rs and proven by its tests.
 //     Full workspace Clippy stays in CI / `mise run lint`.
 //   - `hk check --all` runs the clippy step scoped by `git status`, not
 //     literally over every file; on a clean tree it skips green.
@@ -91,7 +91,7 @@ steps {
   // Re-add only after the debt is green AND a CI job enforces it; see
   // plans/cicd-reliability/FAILURE_LEDGER.md (xtask-gate coverage gap).
   ["actionlint"] {
-    // Tightened to *.yml: CI (crates/jackin-xtask/src/ci.rs) lints *.yml
+    // Tightened to *.yml: CI (crates/tools/jackin-xtask/src/ci.rs) lints *.yml
     // only, while the hk builtin also matches *.yaml.
     glob = ".github/workflows/*.yml"
     check = "actionlint {{files}}"

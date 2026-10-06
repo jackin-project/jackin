@@ -8,9 +8,9 @@ title: "Idle Runtime Cleanup Hooks"
 
 ## Shipped baseline
 
-Capsule already exits cleanly when the last session ends: reconnect finalization marks the instance `CleanExited` and calls `eject_role` (<RepoFile path="crates/jackin-runtime/src/runtime/attach.rs">crates/jackin-runtime/src/runtime/attach.rs</RepoFile>), which lets the host cleanup path tear down the role container, DinD sidecar, cert volume, and network. Instance manifests already record these backend resources.
+Capsule already exits cleanly when the last session ends: reconnect finalization marks the instance `CleanExited` and calls `eject_role` (<RepoFile path="crates/services/jackin-runtime/src/runtime/attach.rs">crates/services/jackin-runtime/src/runtime/attach.rs</RepoFile>), which lets the host cleanup path tear down the role container, DinD sidecar, cert volume, and network. Instance manifests already record these backend resources.
 
-Agent status reporting is also shipped: Capsule tracks per-session status (`Working`, `Blocked`, `Done`, `Idle`, `Unknown`) and includes it as `agent_status_report` on control-protocol panes (<RepoFile path="crates/jackin-protocol/src/control.rs">crates/jackin-protocol/src/control.rs</RepoFile>, <RepoFile path="crates/jackin-capsule/src/daemon/multiplexer_utils.rs">crates/jackin-capsule/src/daemon/multiplexer_utils.rs</RepoFile>). A host process can already query a running container's session inventory and status through the Capsule control socket.
+Agent status reporting is also shipped: Capsule tracks per-session status (`Working`, `Blocked`, `Done`, `Idle`, `Unknown`) and includes it as `agent_status_report` on control-protocol panes (<RepoFile path="crates/core/jackin-protocol/src/control.rs">crates/core/jackin-protocol/src/control.rs</RepoFile>, <RepoFile path="crates/apps/jackin-capsule/src/daemon/multiplexer_utils.rs">crates/apps/jackin-capsule/src/daemon/multiplexer_utils.rs</RepoFile>). A host process can already query a running container's session inventory and status through the Capsule control socket.
 
 None of that adds up to idle-hook cleanup: there is no role-declared idle-command schema, no operator opt-in, no time-based trigger/re-arm supervisor, no restart/recycle semantics, and no cleanup history. This is an unbuilt feature, not a partial one.
 

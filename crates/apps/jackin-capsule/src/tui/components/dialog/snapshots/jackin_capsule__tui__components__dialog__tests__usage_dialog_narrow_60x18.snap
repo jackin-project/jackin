@@ -1,0 +1,19 @@
+---
+source: crates/apps/jackin-capsule/src/tui/components/dialog/tests.rs
+assertion_line: 2013
+expression: "render_usage_dialog_snapshot(60, 18, UsageDialogTab::Provider)"
+---
+
+
+
+  ┌ Usage: OpenAI ───────────────────────────────────────┐
+  │ Overview   OpenAI   Anthropic   Amp   xAI   Z.AI   › │
+  │           ────────                                   │
+  │                                                      │
+  │  OpenAI                          alexey@example.com  │
+  │  Updated now                                         │
+  │──────────────────────────────────────────────────────│
+  │  Plan Pro 20x                                        │
+  │  Session  37% left · Resets 15:07                    │
+  │  Credits  unsupported                                │
+  └──────────────────────────────────────────────────────┘

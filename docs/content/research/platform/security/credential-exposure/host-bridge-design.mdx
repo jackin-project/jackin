@@ -130,7 +130,7 @@ This feature widens the attack surface jackin❯ presents to a malicious agent, 
 
 ## How the agent expresses requests
 
-Same shape as [agent attention prompts](/roadmap/agent-attention-prompts/): a jackin❯-bundled MCP server, auto-registered at container launch, exposes the `secret.*` and `host.*` tool families. The agent runtime's tool-use loop calls these tools when the agent decides it needs a secret or a host command; jackin❯ bundles the MCP server, registers it in each agent's MCP config — extending the registration pattern <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" /> uses today for the Claude runtime's `tirith` / `shellfirm` to every supported runtime — and never asks the operator to wire it manually.
+Same shape as [agent attention prompts](/roadmap/agent-attention-prompts/): a jackin❯-bundled MCP server, auto-registered at container launch, exposes the `secret.*` and `host.*` tool families. The agent runtime's tool-use loop calls these tools when the agent decides it needs a secret or a host command; jackin❯ bundles the MCP server, registers it in each agent's MCP config — extending the registration pattern <RepoFile path="crates/apps/jackin-capsule/src/runtime_setup.rs" /> uses today for the Claude runtime's `tirith` / `shellfirm` to every supported runtime — and never asks the operator to wire it manually.
 
 Tool surface:
 
@@ -206,4 +206,4 @@ The mechanism is also the right escape valve for the *"help, I forgot to set up 
 - [Agent attention prompts](/roadmap/agent-attention-prompts/) — sibling MCP-server feature using the same auto-registration pattern; both flow through the daemon.
 - [jackin❯ desktop Agent Hub](/research/product/desktop/agent-hub/) — native macOS surface for host-bridge approvals and audit entries while daemon policy and execution remain the source of truth.
 - [Container credential exposure — beyond env injection](/research/platform/security/credential-exposure/container-credential-exposure/) — captures the broader trade-off between today's `docker run -e` env injection and the daemon-mediated `secret.request` flow this item proposes; together they replace env-resident tokens with on-demand handles.
-- <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" /> — current MCP-registration pattern for `tirith` / `shellfirm`. The bridge MCP server registers through the same code path.
+- <RepoFile path="crates/apps/jackin-capsule/src/runtime_setup.rs" /> — current MCP-registration pattern for `tirith` / `shellfirm`. The bridge MCP server registers through the same code path.

@@ -43,7 +43,7 @@ Example: a role might call the binary to add `--model` overrides or remove `--da
 
 ### 3. Move launch dispatch to Rust
 
-Move final launch argv construction out of bash into a Rust surface. Bash remains only the hook-compatible wrapper that can source `source.sh` before `exec`. The `AgentRuntime` trait already exists (<RepoFile path="crates/jackin-core/src/agent/runtime.rs">crates/jackin-core/src/agent/runtime.rs</RepoFile>), so this item can add a launch-argv method to that adapter surface instead of first waiting for trait extraction.
+Move final launch argv construction out of bash into a Rust surface. Bash remains only the hook-compatible wrapper that can source `source.sh` before `exec`. The `AgentRuntime` trait already exists (<RepoFile path="crates/core/jackin-core/src/agent/runtime.rs">crates/core/jackin-core/src/agent/runtime.rs</RepoFile>), so this item can add a launch-argv method to that adapter surface instead of first waiting for trait extraction.
 
 ## Non-goals
 

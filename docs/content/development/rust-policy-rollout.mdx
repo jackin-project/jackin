@@ -215,3 +215,162 @@ passes.
   `GAP-DEPS-001` before declaring green.
 - Clears: `GAP-INV-001`, `GAP-DEPS-004`, `GAP-CI-001` (then the
   newly surfaced set).
+
+## Slice 4: grouped S4 moves (2026-10-06)
+
+- Base: `40edca21` (slices 2-3 landed: versions + `rustix`
+  centralized, unsafe opt-outs narrowed, workspace lints inherited).
+  Clone: `/tmp/jackin-groups`, branch `rust-policy-rollout`, pushed,
+  NOT merged to `main`.
+- Forward: `git mv` all 33 manifests to `crates/<group>/<package>`
+  (only the 7 contract groups) + 4 fuzz harnesses to top-level
+  `fuzz/<pkg>/`; rewrite every affected path reference; one commit.
+  Rollback: revert the commit (pure move + path rewrite, no behavior
+  change). Expand/migrate/verify/contract per group move: new paths
+  registered in `members` alongside code fixes, `cargo metadata`
+  package set compared before/after, gates re-run, old paths dropped
+  by the move itself (no leftover flat dirs: `crates/` holds only
+  the 7 group dirs afterwards).
+- Assumption (flagged): the S4 responsibility table text was not
+  reachable from this slice (no copy in policy v0.1.0, the rollout
+  record, or memory); group assignment below follows the contract
+  group names and each crate's documented responsibility. Likewise
+  `policy/auxiliary-workspaces.json` is a proposed registry schema
+  for the auxiliary-workspace contract fields (path, kind,
+  toolchain, lock, gates); the step-10 registries slice may fold it
+  into the canonical registry set.
+
+### Group map + justification
+
+- `apps` (shipped deployables): `jackin` (host CLI, 4 bins),
+  `jackin-capsule` (in-container PID 1 control plane, bin + lib).
+- `core` (foundational shared libraries): `jackin-core`,
+  `jackin-config`, `jackin-env`, `jackin-manifest`,
+  `jackin-protocol`, `jackin-brand` (T0 dependency-free identity
+  tokens), `jackin-build-meta` (shared build helpers),
+  `jackin-process` (shared subprocess transport),
+  `jackin-process-directory` (child workdir descriptor boundary).
+- `services` (runtime subsystems): `jackin-runtime`,
+  `jackin-host` (host-side L2 integration), `jackin-usage`,
+  `jackin-telemetry`, `jackin-diagnostics`, `jackin-instance`,
+  `jackin-agent-status`, `jackin-isolation`.
+- `adapters` (external-system integrations): `jackin-docker`,
+  `jackin-image` (derived-image/docker build context),
+  `jackin-usage-ffi` (boltffi facade for the macOS app),
+  `jackin-oppicker` (1Password picker planning),
+  `jackin-omp-store` (external credential-database snapshots).
+- `ui` (user interfaces): `jackin-console` (operator console),
+  `jackin-tui` (shared product presentation),
+  `jackin-launch` (launch-progress TUI).
+- `tools` (dev/repo tooling): `jackin-xtask`, `jackin-dev` (local
+  PR-verification tool, same family as `pr-trailers`),
+  `jackin-pr-trailers`, `jackin-lints` (excluded dylint workspace).
+- `testing` (test support): `jackin-test-support`,
+  `jackin-otlp-testbed`.
+
+### Fuzz placement (auxiliary-workspace contract)
+
+- `crates/jackin-{config,env,manifest,protocol}/fuzz/` (silently
+  nested `[workspace]`s) moved to top-level `fuzz/<pkg>/`
+  (cargo-fuzz canonical shape, outside all `crates/`-scoped
+  rules). Each keeps its own `[workspace]` + committed
+  `Cargo.lock`; path deps repointed to
+  `../../crates/core/jackin-*`.
+- Registered in `policy/auxiliary-workspaces.json`: path,
+  kind `cargo-fuzz`, toolchain `inherit:rust-toolchain.toml`
+  (stable; a `decode_frames` release build was verified on
+  1.98.1 from the new layout), lock path, gate
+  `cargo xtask ci-fuzz --package <pkg>`.
+- `ci-fuzz` contract directories repointed to `fuzz/<pkg>/`;
+  cargo-fuzz needs a parent manifest, so the gate now runs
+  `cargo fuzz run --fuzz-dir <dir>` from the repo root (proven
+  by `fuzz list` + a full target build) instead of entering the
+  harness dir. No CI fuzz jobs exist (unchanged); `.velnor`
+  keeps `**/fuzz/**` plus explicit `fuzz/**`.
+- `[patch.crates-io] arrayref` + `vendor/arrayref` untouched
+  (waits on upstream per step 5); dylint library path updated to
+  `crates/tools/jackin-lints`.
+
+### References updated
+
+- Root `Cargo.toml`: sorted explicit 32-member list, all
+  `[workspace.dependencies]` paths, dylint path. `Cargo.lock`
+  byte-identical (moves change no package set).
+- `crates/**`: every `crates/jackin-*` literal, cross-crate
+  `include_str!/bytes!` chains (depth-corrected, not just group
+  insertion), `CARGO_MANIFEST_DIR` root derivations (+1 level),
+  xtask walkers that assumed flat layout (`test_layout`,
+  `ratchet` surface/curated/agent-doc/complexity-key,
+  `headers`, `container_paths_gate` turso, `readme_freshness`
+  parsers, `brand` prose collection, `health` agent-docs +
+  `crate_name_from_path`, `affected_crates` root,
+  `source_policy` module index, `docs` map-check via cargo
+  metadata manifest dirs, `specs` citation resolver via a new
+  `fs_util::crate_dir` helper, `ci_fuzz`, `desktop` FFI dir,
+  `dev` capsule path deps, telemetry `collect_source_files`
+  exclusions, census regenerated via the gate itself).
+- `.velnor/config.toml` discovery excludes (grouped),
+  `.github/workflows/ci.yml` task IDs + `--manifest-path`
+  (mechanical rewrite of the frozen artifact; generator still
+  capped, no regen possible), `docs/**` path refs (docs site
+  routes `/reference/crates/<name>/` deliberately NOT
+  rewritten), `docs/scripts/gen-crate-pages.*` (group-aware
+  two-level walk, `crateDir` threading, tests updated 14/14
+  green, 32 pages regenerate).
+- Move-collateral root files (kept minimal, disclosed):
+  `ratchet.toml` (34 path keys regrouped + 4 README byte
+  budgets raised for path-growth content: capsule 6339->6342,
+  core 5618->5624, test-support 2633->2647, lints 2038->2050),
+  `renovate.json` (lints ignorePath + 2 runtime file patterns),
+  `container-path-allowlist.toml` (15 paths),
+  `code-health-baseline.toml` (94 `crates_*` keys),
+  `REUSE.toml`/`hk.pkl` (comments only).
+- Deliberately NOT touched: `.alint.yml`, root `*.md` docs,
+  `plans/`, `research/`, `roadmap/`, `native/`,
+  `security-review/` (stale flat `crates/jackin-*` refs remain
+  for their owning slices).
+
+### Verify (before -> after, same flags/env)
+
+- Env: rustup-direct cargo/rustc 1.98.1, nextest 0.9.143,
+  alint 0.17.0, helper v0.1.0; policy release materialized to
+  gitignored `.cache/rust-policy`.
+- `cargo metadata --locked`: resolves; 32 workspace packages,
+  identical name set. Each `fuzz/<pkg>/` + `jackin-lints`
+  `metadata --locked` resolves independently.
+- `cargo check --locked --workspace --all-targets`: green.
+  `cargo clippy --locked --workspace --all-targets`: clean
+  (one pre-existing `proc-macro-error2` future-compat note).
+  `cargo fmt --all --check`: clean.
+- `cargo nextest list --workspace --all-targets`: 7270 ->
+  7270 unique test IDs, byte-identical sorted diff (no lost
+  tests).
+- `alint check`: 717 -> 1101 findings, 13 failing rules both
+  sides. `layout-no-flat-crate-manifest` 33 -> 0 (required,
+  met); `layout-no-deep-crate-manifest` stays 0.
+  Predicted blind-to-live surfacing at depth 2:
+  `tests-no-test-files-in-src` 0 -> 463,
+  `tests-dir-present` 60 pseudo-package noise -> 23 real
+  crates lacking `tests/`. `cargo-workspace-inherit-*` 4/4/4
+  (fuzz) -> 1/1/1 (`jackin-lints` only: excluded workspace,
+  cannot inherit; needs a later-slice exemption/registry).
+  `size-file-400` 368 and `size-lib-main-150` 14: identical
+  file sets modulo paths. `cargo-no-patch`,
+  `docs-root-only-allowed`, `ci-build-runs-on`,
+  `toolchain-*` unchanged.
+- `check-gaps`: 211 -> 211, identical per-gap counts
+  (TEST-001 147, TEST-003 33, SIZE-001 15, SIZE-002 7,
+  TEST-002 5, INHERIT-001 1 jackin-dev, INV/DEPS/CI-001 1
+  each); finding paths regrouped.
+- Repo gates vs untouched base worktree (`40edca21`):
+  identical verdicts everywhere (`arch --strict`, `specs`,
+  `health`, `telemetry-registry`, `agents`, `agent-links`
+  green; `ratchet` 108 = 108 rows modulo paths/order,
+  `files` 14 = 14 same set, `headers`, `container-paths`,
+  `suppressions`, `map-check`, `repo-links`, `brand`,
+  `site-links` fail identically = pre-existing debt, zero new
+  rows).
+- Raw outputs: `/tmp/jackin-s4-before-{alint,gaps,metadata,
+  nextest,check.log}` vs `/tmp/jackin-s4-after-{alint,gaps,
+  metadata,nextest}.txt`, per-package nextest counts in
+  `/tmp/jackin-s4-before-nextest-bypkg.txt`.

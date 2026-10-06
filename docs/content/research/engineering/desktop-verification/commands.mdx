@@ -22,12 +22,12 @@ Vetted: 2026-10-03 (source contracts; no fresh execution claim)
 
 ### Crates tests
 - Current generated Rust CI invokes each package separately:
-  `mbx nextest run --profile ci --locked --offline --manifest-path crates/jackin-usage/Cargo.toml --package jackin-usage --no-tests fail`
+  `mbx nextest run --profile ci --locked --offline --manifest-path crates/services/jackin-usage/Cargo.toml --package jackin-usage --no-tests fail`
   and the corresponding `jackin-usage-ffi` invocation —
   <RepoFile path=".github/workflows/ci.yml" /> (confidence: HIGH).
 - Local desktop testing runs
   `cargo nextest run -p jackin-usage -p jackin-usage-ffi --lib` through
-  <RepoFile path="crates/jackin-xtask/src/desktop.rs" />. The July 24 catalog's
+  <RepoFile path="crates/tools/jackin-xtask/src/desktop.rs" />. The July 24 catalog's
   combined `--locked` command came from retired PR CI; it is not today's
   generated invocation (confidence: HIGH).
 - General runner and filters: `cargo nextest run`, `-E 'test(name)'`,
@@ -55,7 +55,7 @@ Vetted: 2026-10-03 (source contracts; no fresh execution claim)
 - `cargo xtask desktop test` (mise `desktop-test`, <RepoFile path="mise.toml" />)
   requires macOS, runs the two Rust library suites, then five pure Swift
   harnesses. Counted SwiftPM tests use `cargo xtask desktop test-swift` —
-  <RepoFile path="crates/jackin-xtask/src/desktop.rs" /> (confidence: HIGH).
+  <RepoFile path="crates/tools/jackin-xtask/src/desktop.rs" /> (confidence: HIGH).
 - **Snapshot runner stability:** The July 24 catalog recorded macOS 26 GA
   under explicit `macos-26` labels and a June 2026 transition schedule for
   the moving `macos-latest` alias. That is historical runner evidence; confirm

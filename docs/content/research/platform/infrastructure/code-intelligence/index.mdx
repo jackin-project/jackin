@@ -83,7 +83,7 @@ The copies must remain content-identical. Amp's global path is `~/.config/amp/AG
 
 ## Implications for jackin❯
 
-- The role `Dockerfile`, `preflight` hook, and default-home seeding are sufficient extension points; <RepoFile path="crates/jackin-image/src/derived_image.rs">derived-image ownership</RepoFile> does not need a new core feature.
+- The role `Dockerfile`, `preflight` hook, and default-home seeding are sufficient extension points; <RepoFile path="crates/adapters/jackin-image/src/derived_image.rs">derived-image ownership</RepoFile> does not need a new core feature.
 - CLI tools stay on `PATH` for every runtime without per-turn schemas. Resident indexes use MCP only where a warm index supplies distinct value.
 - Native LSP wiring and existing runtime state remain independent from the added lexical and relationship layers.
 - Tool routing is a role instruction contract, not behavior duplicated in each runtime configuration.
