@@ -4,10 +4,11 @@
 //! Tracks how long the operator has been "in the construct".
 //!
 //! The span runs from the launch that brought the first container up to the
-//! exit of the last one. A single marker file under the data dir holds the
-//! start instant; the exit ritual reads and clears it to show elapsed time.
+//! exit of the last one. A marker in the permanent coordination namespace
+//! holds the start instant; the exit ritual clears it to show elapsed time.
 
-use std::path::PathBuf;
+use std::io::{Read as _, Write as _};
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -19,17 +20,140 @@ const FORCE_BOUNDARY_INTRO_ENV: &str = "JACKIN_FORCE_BOUNDARY_INTRO";
 const FORCE_BOUNDARY_OUTRO_ENV: &str = "JACKIN_FORCE_BOUNDARY_OUTRO";
 
 static CLAIM_COUNTER: AtomicU64 = AtomicU64::new(0);
+const ENTRY_OBSERVATION_ATTEMPTS: usize = 8;
+const EXIT_OBSERVATION_ATTEMPTS: usize = 3;
 
-fn marker_path(paths: &JackinPaths) -> PathBuf {
-    paths.data_dir.join("universe-since")
+// Never unlink this file: replacing its inode would split concurrent locks.
+fn boundary_lock(authority: &Path) -> std::io::Result<std::fs::File> {
+    let file = super::coordination::open_in_namespace(authority, "universe-lock")?;
+    file.lock()?;
+    Ok(file)
 }
 
-fn pending_dir(paths: &JackinPaths) -> PathBuf {
-    paths.data_dir.join("universe-pending")
+async fn boundary_work<T: Send + 'static>(
+    authority: &Path,
+    action: impl FnOnce(&Path) -> std::io::Result<T> + Send + 'static,
+) -> std::io::Result<T> {
+    let authority = authority.to_owned();
+    blocking_work(move || action(&authority)).await
 }
 
-fn pending_path(paths: &JackinPaths, token: &str) -> PathBuf {
-    pending_dir(paths).join(token)
+async fn universe_authority(paths: &JackinPaths) -> std::io::Result<PathBuf> {
+    let paths = paths.clone();
+    blocking_work(move || super::coordination::universe_dir(&paths)).await
+}
+
+async fn blocking_work<T: Send + 'static>(
+    action: impl FnOnce() -> std::io::Result<T> + Send + 'static,
+) -> std::io::Result<T> {
+    let dispatcher = tracing::dispatcher::get_default(Clone::clone);
+    let span = tracing::Span::current();
+    tokio::task::spawn_blocking(move || {
+        tracing::dispatcher::with_default(&dispatcher, || {
+            let _span = span.enter();
+            action()
+        })
+    })
+    .await
+    .map_err(std::io::Error::other)?
+}
+
+fn generation(authority: &Path) -> std::io::Result<Option<String>> {
+    state_read(authority, "universe-generation")?
+        .map(|value| String::from_utf8(value).map_err(std::io::Error::other))
+        .transpose()
+}
+
+fn advance_generation(authority: &Path) -> std::io::Result<String> {
+    let value = claim_token();
+    state_write(authority, "universe-generation", value.as_bytes())?;
+    Ok(value)
+}
+
+#[cfg(test)]
+fn marker_path(authority: &Path) -> PathBuf {
+    authority.join("universe-since")
+}
+
+fn pending_dir(authority: &Path) -> PathBuf {
+    authority.join("universe-pending")
+}
+
+fn pending_path(authority: &Path, token: &str) -> PathBuf {
+    pending_dir(authority).join(token)
+}
+
+fn state_read(directory: &Path, key: &str) -> std::io::Result<Option<Vec<u8>>> {
+    let mut file = match super::coordination::open_state_in_namespace(directory, key, false) {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    let mut value = Vec::new();
+    file.read_to_end(&mut value)?;
+    Ok(Some(value))
+}
+
+fn state_write(directory: &Path, key: &str, value: &[u8]) -> std::io::Result<()> {
+    let mut file = super::coordination::open_state_in_namespace(directory, key, true)?;
+    // The shared opener validates the owned private regular inode before
+    // truncation; an existing symlink/nonregular file cannot redirect writes.
+    file.set_len(0)?;
+    file.write_all(value)
+}
+
+fn pending_exists(path: &Path) -> std::io::Result<bool> {
+    let Some((directory, key)) = path.parent().zip(path.file_name()) else {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "invalid pending claim",
+        ));
+    };
+    let key = key.to_str().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "invalid pending claim key",
+        )
+    })?;
+    match super::coordination::open_state_in_namespace(directory, key, false) {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(error),
+    }
+}
+
+fn state_remove(directory: &Path, key: &str) -> std::io::Result<()> {
+    let _file = super::coordination::open_state_in_namespace(directory, key, false)?;
+    let parent = super::coordination::open_directory_in_namespace(directory, false)?;
+    #[cfg(unix)]
+    {
+        nix::unistd::unlinkat(&parent, key, nix::unistd::UnlinkatFlags::NoRemoveDir)?;
+        Ok(())
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = parent;
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "private state removal requires Unix",
+        ))
+    }
+}
+
+fn pending_remove(path: &Path) -> std::io::Result<()> {
+    let directory = path.parent().ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid pending claim")
+    })?;
+    let key = path
+        .file_name()
+        .and_then(|key| key.to_str())
+        .ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "invalid pending claim key",
+            )
+        })?;
+    state_remove(directory, key)
 }
 
 fn now_millis() -> u128 {
@@ -84,17 +208,34 @@ pub enum StartKind {
 ///
 /// Pending claims cover the short window before a role container exists. They
 /// prevent concurrent launches from both playing the two-screen intro, and let
-/// an early failed launch release only its own pending entry.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// an early failed launch release only its own pending entry. The claim owns
+/// its pending file and holds an advisory lease on it until activation or early
+/// release. Process death drops the lease so the next boundary operation can
+/// reclaim the orphaned token.
+#[derive(Debug)]
 pub struct EntryClaim {
     kind: StartKind,
-    token: Option<String>,
+    pending_file: Option<PathBuf>,
+    pending_lease: std::sync::Mutex<Option<std::fs::File>>,
 }
+
+impl PartialEq for EntryClaim {
+    fn eq(&self, other: &Self) -> bool {
+        self.kind == other.kind && self.pending_file == other.pending_file
+    }
+}
+
+impl Eq for EntryClaim {}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum ExitClaim {
     Missing,
     Claimed { elapsed: Option<Duration> },
+}
+
+enum ExitClaimAttempt {
+    Reobserve,
+    Complete(ExitClaim),
 }
 
 impl EntryClaim {
@@ -105,21 +246,131 @@ impl EntryClaim {
 
     #[must_use]
     const fn none(kind: StartKind) -> Self {
-        Self { kind, token: None }
+        Self {
+            kind,
+            pending_file: None,
+            pending_lease: std::sync::Mutex::new(None),
+        }
     }
 
-    async fn release_if_idle(&self, paths: &JackinPaths, docker: &impl DockerApi) {
-        let Some(token) = self.token.as_deref() else {
+    fn release_pending_lease(&self) {
+        if let Ok(mut lease) = self.pending_lease.lock() {
+            drop(lease.take());
+        }
+    }
+
+    /// Hand the launch boundary from this pending lease to its live container.
+    /// Call only after the role container has started or is already running.
+    pub async fn activate(&self) -> std::io::Result<()> {
+        let Some(pending_file) = self.pending_file.as_ref() else {
+            return Ok(());
+        };
+        let authority = pending_file
+            .parent()
+            .and_then(Path::parent)
+            .ok_or_else(|| {
+                std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid entry claim path")
+            })?;
+        let pending_file = pending_file.clone();
+        let result = boundary_work(authority, move |authority| {
+            let _lock = boundary_lock(authority)?;
+            if !pending_exists(&pending_file)? {
+                return Ok(());
+            }
+            advance_generation(authority)?;
+            match pending_remove(&pending_file) {
+                Ok(()) => Ok(()),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                Err(error) => Err(error),
+            }
+        })
+        .await;
+        if result.is_ok() {
+            self.release_pending_lease();
+        }
+        result
+    }
+
+    async fn release_if_idle(&self, docker: &impl DockerApi) {
+        let Some(pending_file) = self.pending_file.as_ref() else {
             return;
         };
-        drop(std::fs::remove_file(pending_path(paths, token)));
+        let Some(authority) = pending_file.parent().and_then(Path::parent) else {
+            return;
+        };
+        let pending_file = pending_file.clone();
+        let observed_generation = boundary_work(authority, move |authority| {
+            let _lock = boundary_lock(authority)?;
+            if !pending_exists(&pending_file)? {
+                return Ok(None);
+            }
+            let generation = advance_generation(authority)?;
+            drop(pending_remove(&pending_file));
+            Ok(Some(generation))
+        })
+        .await;
+        let observed_generation = match observed_generation {
+            Ok(Some(generation)) => {
+                self.release_pending_lease();
+                generation
+            }
+            Ok(None) => {
+                self.release_pending_lease();
+                return;
+            }
+            Err(_) => return,
+        };
 
         let Ok(running) = super::discovery::list_running_agent_names(docker).await else {
             return;
         };
-        if running.is_empty() && !has_pending_claims(paths) {
-            drop(std::fs::remove_file(marker_path(paths)));
-            remove_empty_pending_dir(paths);
+        if running.is_empty() {
+            drop(
+                boundary_work(authority, move |authority| {
+                    release_marker_if_unchanged(authority, &observed_generation);
+                    Ok(())
+                })
+                .await,
+            );
+        }
+    }
+}
+
+fn release_marker_if_unchanged(authority: &Path, observed_generation: &str) {
+    let Ok(_lock) = boundary_lock(authority) else {
+        return;
+    };
+    if generation(authority).ok().flatten().as_deref() != Some(observed_generation) {
+        return;
+    }
+    match prune_stale_pending_claims(authority) {
+        Ok(true) | Err(_) => return,
+        Ok(false) => {}
+    }
+    if !has_pending_claims(authority) && advance_generation(authority).is_ok() {
+        drop(state_remove(authority, "universe-since"));
+        remove_empty_pending_dir(authority);
+    }
+}
+
+impl Drop for EntryClaim {
+    fn drop(&mut self) {
+        if let Some(pending_file) = self.pending_file.as_ref() {
+            // The shared marker needs asynchronous Docker proof before removal.
+            // Scope cleanup to this launch's owned pending file.
+            if let Some(authority) = pending_file.parent().and_then(Path::parent) {
+                let Ok(_lock) = boundary_lock(authority) else {
+                    return;
+                };
+                if !pending_exists(pending_file).unwrap_or(false) {
+                    return;
+                }
+                // Invalidate Docker observations before removing a pending
+                // launch. Activated or explicitly released leases are inert.
+                if advance_generation(authority).is_ok() {
+                    drop(pending_remove(pending_file));
+                }
+            }
         }
     }
 }
@@ -129,71 +380,239 @@ impl EntryClaim {
 /// A fresh launch is one where Docker reports no running role containers and
 /// no pending claim exists for an already-starting launch.
 pub async fn claim_entry(paths: &JackinPaths, docker: &impl DockerApi) -> EntryClaim {
-    let Ok(names) = super::discovery::list_running_agent_names(docker).await else {
+    let Ok(authority) = universe_authority(paths).await else {
         return EntryClaim::none(StartKind::ResumeExisting);
     };
-    if !names.is_empty() {
-        mark_start(paths, StartKind::ResumeExisting);
-        return EntryClaim::none(StartKind::ResumeExisting);
+    for _ in 0..ENTRY_OBSERVATION_ATTEMPTS {
+        let Ok(observed_generation) = boundary_work(&authority, |authority| {
+            let _lock = boundary_lock(authority)?;
+            generation(authority)
+        })
+        .await
+        else {
+            return EntryClaim::none(StartKind::ResumeExisting);
+        };
+        let Ok(names) = super::discovery::list_running_agent_names(docker).await else {
+            return EntryClaim::none(StartKind::ResumeExisting);
+        };
+        match boundary_work(&authority, move |authority| {
+            let _lock = boundary_lock(authority)?;
+            if generation(authority)? != observed_generation {
+                return Ok(None);
+            }
+            advance_generation(authority)?;
+            register_pending_entry_locked(authority, names.is_empty())
+        })
+        .await
+        {
+            Ok(Some(claim)) => return claim,
+            Ok(None) => {}
+            Err(_) => return EntryClaim::none(StartKind::ResumeExisting),
+        }
     }
+    // Churn prevents a trustworthy empty-Docker observation, but this launch
+    // still needs its own pending lease until an actual role container exists.
+    boundary_work(&authority, |authority| {
+        let _lock = boundary_lock(authority)?;
+        advance_generation(authority)?;
+        register_pending_entry_locked(authority, false)?.ok_or_else(|| {
+            std::io::Error::other("nonfresh pending registration did not return a claim")
+        })
+    })
+    .await
+    .unwrap_or_else(|_| EntryClaim::none(StartKind::ResumeExisting))
+}
 
+fn register_pending_entry_locked(
+    authority: &Path,
+    allow_fresh: bool,
+) -> std::io::Result<Option<EntryClaim>> {
+    if prune_stale_pending_claims(authority)? && allow_fresh {
+        return Ok(None);
+    }
     let token = claim_token();
-    let wrote_claim = write_pending_claim(paths, &token);
-    let pending_count = count_pending_claims(paths).unwrap_or(usize::MAX);
-    let kind = if wrote_claim && pending_count <= 1 {
+    let pending_lease = write_pending_claim(authority, &token);
+    let pending_count = count_pending_claims(authority).unwrap_or(usize::MAX);
+    let kind = if allow_fresh && pending_lease.is_some() && pending_count <= 1 {
         StartKind::FreshConstruct
     } else {
         StartKind::ResumeExisting
     };
-    mark_start(paths, kind);
-    EntryClaim {
-        kind,
-        token: wrote_claim.then_some(token),
+    if let Err(error) = mark_start_locked(authority, kind) {
+        if pending_lease.is_some() {
+            drop(state_remove(&pending_dir(authority), &token));
+        }
+        return Err(error);
     }
+    Ok(Some(EntryClaim {
+        kind,
+        pending_file: pending_lease
+            .as_ref()
+            .map(|_| pending_path(authority, &token)),
+        pending_lease: std::sync::Mutex::new(pending_lease),
+    }))
 }
 
 /// Record the construct's start instant. A `FreshConstruct` launch (re)writes
 /// the marker to now; a `ResumeExisting` launch only writes it if absent, so an
 /// ongoing session keeps its original start.
-pub(super) fn mark_start(paths: &JackinPaths, kind: StartKind) {
-    let file = marker_path(paths);
-    if kind == StartKind::ResumeExisting && file.exists() {
+pub(super) async fn mark_start(paths: &JackinPaths, kind: StartKind) {
+    let Ok(authority) = universe_authority(paths).await else {
         return;
+    };
+    drop(
+        boundary_work(&authority, move |authority| {
+            let _lock = boundary_lock(authority)?;
+            advance_generation(authority)?;
+            mark_start_locked(authority, kind)?;
+            Ok(())
+        })
+        .await,
+    );
+}
+
+fn mark_start_locked(authority: &Path, kind: StartKind) -> std::io::Result<()> {
+    if kind == StartKind::ResumeExisting && state_read(authority, "universe-since")?.is_some() {
+        return Ok(());
     }
-    drop(std::fs::write(&file, now_millis().to_string()));
+    state_write(
+        authority,
+        "universe-since",
+        now_millis().to_string().as_bytes(),
+    )
 }
 
-pub async fn release_entry_if_idle(
-    paths: &JackinPaths,
-    docker: &impl DockerApi,
-    claim: &EntryClaim,
-) {
-    claim.release_if_idle(paths, docker).await;
+pub async fn release_entry_if_idle(docker: &impl DockerApi, claim: &EntryClaim) {
+    claim.release_if_idle(docker).await;
 }
 
-fn write_pending_claim(paths: &JackinPaths, token: &str) -> bool {
-    let dir = pending_dir(paths);
-    if std::fs::create_dir_all(&dir).is_err() {
-        return false;
+fn write_pending_claim(authority: &Path, token: &str) -> Option<std::fs::File> {
+    let dir = pending_dir(authority);
+    let Ok(parent) = super::coordination::open_directory_in_namespace(&dir, true) else {
+        return None;
+    };
+    #[cfg(unix)]
+    {
+        use nix::fcntl::{OFlag, openat};
+        let flags = OFlag::O_WRONLY
+            | OFlag::O_CREAT
+            | OFlag::O_EXCL
+            | OFlag::O_NOFOLLOW
+            | OFlag::O_CLOEXEC
+            | OFlag::O_NONBLOCK;
+        let Ok(fd) = openat(
+            &parent,
+            token,
+            flags,
+            nix::sys::stat::Mode::from_bits_truncate(0o600),
+        ) else {
+            return None;
+        };
+        let mut file = std::fs::File::from(fd);
+        if file.lock().is_err() {
+            let _ignored_unlink_result =
+                nix::unistd::unlinkat(&parent, token, nix::unistd::UnlinkatFlags::NoRemoveDir);
+            return None;
+        }
+        if file.write_all(now_millis().to_string().as_bytes()).is_err() {
+            let _ignored_unlink_result =
+                nix::unistd::unlinkat(&parent, token, nix::unistd::UnlinkatFlags::NoRemoveDir);
+            return None;
+        }
+        Some(file)
     }
-    std::fs::write(pending_path(paths, token), now_millis().to_string()).is_ok()
-}
-
-fn count_pending_claims(paths: &JackinPaths) -> Option<usize> {
-    let dir = pending_dir(paths);
-    if !dir.exists() {
-        return Some(0);
+    #[cfg(not(unix))]
+    {
+        let _ = (parent, token);
+        None
     }
-    Some(std::fs::read_dir(dir).ok()?.filter_map(Result::ok).count())
 }
 
-fn has_pending_claims(paths: &JackinPaths) -> bool {
-    count_pending_claims(paths).is_none_or(|count| count > 0)
+/// Reclaim tokens whose owning process no longer holds its advisory lease.
+/// Call only while holding the permanent boundary lock.
+fn prune_stale_pending_claims(authority: &Path) -> std::io::Result<bool> {
+    let directory = pending_dir(authority);
+    let parent = match super::coordination::open_directory_in_namespace(&directory, false) {
+        Ok(parent) => parent,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error),
+    };
+    #[cfg(unix)]
+    {
+        let mut reclaimed = false;
+        let mut entries = nix::dir::Dir::from_fd(parent.try_clone()?.into())?;
+        for entry in entries.iter() {
+            let entry = entry?;
+            let bytes = entry.file_name().to_bytes();
+            if matches!(bytes, b"." | b"..") {
+                continue;
+            }
+            let key = std::str::from_utf8(bytes).map_err(std::io::Error::other)?;
+            let file = match super::coordination::open_state_in_namespace(&directory, key, false) {
+                Ok(file) => file,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(error) => return Err(error),
+            };
+            match file.try_lock() {
+                Ok(()) => {
+                    if !reclaimed {
+                        advance_generation(authority)?;
+                        reclaimed = true;
+                    }
+                    nix::unistd::unlinkat(&parent, key, nix::unistd::UnlinkatFlags::NoRemoveDir)?;
+                }
+                Err(std::fs::TryLockError::WouldBlock) => {}
+                Err(std::fs::TryLockError::Error(error)) => return Err(error),
+            }
+        }
+        Ok(reclaimed)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = parent;
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "pending claim recovery requires Unix file locks",
+        ))
+    }
 }
 
-fn remove_empty_pending_dir(paths: &JackinPaths) {
-    if !has_pending_claims(paths) {
-        drop(std::fs::remove_dir(pending_dir(paths)));
+fn count_pending_claims(authority: &Path) -> Option<usize> {
+    let dir = pending_dir(authority);
+    let parent = match super::coordination::open_directory_in_namespace(&dir, false) {
+        Ok(parent) => parent,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Some(0),
+        Err(_) => return None,
+    };
+    #[cfg(unix)]
+    {
+        let mut entries = nix::dir::Dir::from_fd(parent.into()).ok()?;
+        entries.iter().try_fold(0, |count, entry| {
+            let entry = entry.ok()?;
+            Some(count + usize::from(!matches!(entry.file_name().to_bytes(), b"." | b"..")))
+        })
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = parent;
+        None
+    }
+}
+
+fn has_pending_claims(authority: &Path) -> bool {
+    count_pending_claims(authority).is_none_or(|count| count > 0)
+}
+
+fn remove_empty_pending_dir(authority: &Path) {
+    if !has_pending_claims(authority) {
+        #[cfg(unix)]
+        if let Ok(parent) = super::coordination::open_directory_in_namespace(authority, false) {
+            let _ignored_unlink_result = nix::unistd::unlinkat(
+                &parent,
+                "universe-pending",
+                nix::unistd::UnlinkatFlags::RemoveDir,
+            );
+        }
     }
 }
 
@@ -207,33 +626,123 @@ fn record_exit_claim_recovery() {
 /// it is the one that may render the rich outro. A malformed marker still
 /// grants the claim, but omits the elapsed line from the caption.
 #[must_use]
+#[cfg(test)]
 pub(super) fn take_exit_claim(paths: &JackinPaths) -> ExitClaim {
-    let file = marker_path(paths);
-    // The rename is the claim, not the read: `rename` is atomic on POSIX, so
-    // when parallel exits race only one can move the marker away — the losers
-    // see ENOENT and bow out. A read-then-remove would let every racer observe
-    // the marker first and render a duplicate outro.
-    let claimed = file.with_file_name(format!("universe-since.claim.{}", std::process::id()));
-    if let Err(error) = std::fs::rename(&file, &claimed) {
-        // NotFound is the normal "no marker / already claimed" path. Any other
-        // errno (e.g. a permissions drift on the data dir) is unexpected and
-        // would silently suppress the outro, so leave a breadcrumb under
-        // telemetry to tell the two cases apart.
-        if error.kind() != std::io::ErrorKind::NotFound {
-            record_exit_claim_recovery();
-        }
+    let Ok(authority) = super::coordination::universe_dir(paths) else {
+        record_exit_claim_recovery();
         return ExitClaim::Missing;
+    };
+    let Ok(_lock) = boundary_lock(&authority) else {
+        record_exit_claim_recovery();
+        return ExitClaim::Missing;
+    };
+    match take_exit_claim_locked(&authority) {
+        ExitClaimAttempt::Reobserve => ExitClaim::Missing,
+        ExitClaimAttempt::Complete(claim) => claim,
     }
-    let content = std::fs::read_to_string(&claimed).unwrap_or_default();
-    drop(std::fs::remove_file(&claimed));
-    drop(std::fs::remove_dir_all(pending_dir(paths)));
-    let elapsed = content
+}
+
+/// Observe Docker and claim the exit only if no launch changed the boundary
+/// while the Docker request was in flight. The file lock never crosses await.
+pub(super) async fn observe_exit(
+    paths: &JackinPaths,
+    docker: &impl DockerApi,
+) -> anyhow::Result<(Vec<String>, ExitClaim)> {
+    let authority = universe_authority(paths).await.ok();
+    for _ in 0..EXIT_OBSERVATION_ATTEMPTS {
+        let observed_generation = if let Some(authority) = authority.as_ref() {
+            boundary_work(authority, |authority| {
+                let _lock = boundary_lock(authority)?;
+                generation(authority)
+            })
+            .await
+        } else {
+            Err(std::io::Error::other(
+                "unavailable universe coordination authority",
+            ))
+        };
+        let running = super::discovery::list_running_agent_names(docker).await?;
+        if !running.is_empty() {
+            return Ok((running, ExitClaim::Missing));
+        }
+        let attempt = match (observed_generation, authority.as_ref()) {
+            (Ok(observed), Some(authority)) => {
+                boundary_work(authority, move |authority| {
+                    Ok(take_exit_claim_if_unchanged(authority, observed.as_deref()))
+                })
+                .await
+            }
+            _ => Err(std::io::Error::other(
+                "unavailable universe coordination observation",
+            )),
+        };
+        match attempt {
+            Ok(ExitClaimAttempt::Reobserve) => {}
+            Ok(ExitClaimAttempt::Complete(claim)) => return Ok((running, claim)),
+            Err(_) => {
+                record_exit_claim_recovery();
+                return Ok((running, ExitClaim::Missing));
+            }
+        }
+    }
+    record_exit_claim_recovery();
+    Ok((Vec::new(), ExitClaim::Missing))
+}
+
+fn take_exit_claim_if_unchanged(authority: &Path, observed: Option<&str>) -> ExitClaimAttempt {
+    let Ok(_lock) = boundary_lock(authority) else {
+        record_exit_claim_recovery();
+        return ExitClaimAttempt::Complete(ExitClaim::Missing);
+    };
+    match generation(authority) {
+        Ok(current) if current.as_deref() == observed => take_exit_claim_locked(authority),
+        Ok(_) => ExitClaimAttempt::Complete(ExitClaim::Missing),
+        Err(_) => {
+            record_exit_claim_recovery();
+            ExitClaimAttempt::Complete(ExitClaim::Missing)
+        }
+    }
+}
+
+fn take_exit_claim_locked(authority: &Path) -> ExitClaimAttempt {
+    match prune_stale_pending_claims(authority) {
+        Ok(true) => return ExitClaimAttempt::Reobserve,
+        Ok(false) => {}
+        Err(_) => {
+            record_exit_claim_recovery();
+            return ExitClaimAttempt::Complete(ExitClaim::Missing);
+        }
+    }
+    if has_pending_claims(authority) {
+        return ExitClaimAttempt::Complete(ExitClaim::Missing);
+    }
+    if advance_generation(authority).is_err() {
+        record_exit_claim_recovery();
+        return ExitClaimAttempt::Complete(ExitClaim::Missing);
+    }
+    // Every exit holds the same permanent lock. Read and unlink the validated
+    // marker via its pinned directory; exactly one exit can consume it.
+    let content = match state_read(authority, "universe-since") {
+        Ok(Some(content)) => content,
+        Ok(None) => return ExitClaimAttempt::Complete(ExitClaim::Missing),
+        Err(_) => {
+            record_exit_claim_recovery();
+            return ExitClaimAttempt::Complete(ExitClaim::Missing);
+        }
+    };
+    if state_remove(authority, "universe-since").is_err() {
+        record_exit_claim_recovery();
+        return ExitClaimAttempt::Complete(ExitClaim::Missing);
+    }
+    remove_empty_pending_dir(authority);
+    let elapsed = String::from_utf8(content)
+        .unwrap_or_default()
         .trim()
         .parse::<u128>()
         .ok()
         .and_then(|started| now_millis().checked_sub(started))
         .map(|elapsed_ms| Duration::from_millis(u64::try_from(elapsed_ms).unwrap_or(u64::MAX)));
-    ExitClaim::Claimed { elapsed }
+    ExitClaimAttempt::Complete(ExitClaim::Claimed { elapsed })
 }
 
 #[cfg(test)]

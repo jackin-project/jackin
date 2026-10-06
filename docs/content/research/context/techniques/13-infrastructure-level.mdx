@@ -248,7 +248,7 @@ Confidence note: all dollar arithmetic rests on one locally measured session mix
 | 13 | LMCache MoE ~13x TTFT (0.29s vs 3.98s; p99 1.30 vs 13.55); Momento >50% cold-start | vendor blogs blog.lmcache.ai and gomomento.com; vendor-reported | |
 | 14 | Semantic cache 61.6-68.8% hit, 92.5-97.3% positive-hit, consumer-QA categories | https://arxiv.org/abs/2411.05276 (search digest; tables not independently read) | |
 | 15 | LiteLLM cache features (7 backends, threshold 0.8, TTL, `x-litellm-cache-key`); NO published hit rates | https://docs.litellm.ai/docs/proxy/caching; absence claim | |
-| 16 | LLMLingua up to 20x; GSM8K 77.33 vs 78.85; BBH 7x; 1.7-5.7x latency; LLMLingua-2 2-5x / 1.6-2.9x / 3-6x | https://llmlingua.com/llmlingua.html | |
+| 16 | LLMLingua up to 20x; GSM8K 77.33 vs 78.85; BBH 7x; 1.7-5.7x latency; LLMLingua-2 2-5x / 1.6-2.9x / 3-6x | [LLMLingua (EMNLP 2023)](https://aclanthology.org/2023.emnlp-main.825/); [LLMLingua-2 (Findings ACL 2024)](https://aclanthology.org/2024.findings-acl.57/); [official Microsoft repo](https://github.com/microsoft/LLMLingua); project page failed link check (2026-10-04: connection closed unexpectedly; URL `https://llmlingua.com/llmlingua.html`) | |
 | 17 | ~10% compression ceiling for code generation | ACM TOSEM https://dl.acm.org/doi/10.1145/3735636 (search digest) | |
 | 18 | "Adds latency without quality benefits for code generation"; 1.4x on LongBench LCC; >1.3x speedups only on non-optimized stacks; overhead negates gains on vLLM/commercial APIs | https://arxiv.org/html/2604.02985 | |
 | 19 | RCT: pre-registered, Claude Sonnet 4.5, 59-61 runs/arm (~358), r=0.5 → −27.9% cost, r=0.2 → +1.8% cost, 1.03x output expansion, recency-weighted −23.5% | https://arxiv.org/abs/2603.23525 (refetched) | |

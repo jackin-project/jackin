@@ -124,4 +124,8 @@ pub enum IsolationError {
         path: PathBuf,
         expected: u32,
     },
+    #[error(
+        "isolation identity at {path} requires recovery; preserve this state and rebuild the instance from its recorded workspace if recovery is unavailable"
+    )]
+    IdentityRecoveryRequired { path: PathBuf },
 }

@@ -16,9 +16,9 @@ use crate::{
     field_label_commit_selection, field_stage_back_plan, field_stage_commit_plan,
     field_stage_refresh_plan, filter_reset_selection_for_stage, item_stage_back_plan,
     item_stage_commit_plan, item_stage_refresh_plan, new_item_name_commit_plan,
-    new_section_name_commit_plan, section_header_collapse_target, section_name_input_state,
-    section_stage_back_plan, section_stage_commit_plan, vault_stage_back_plan,
-    vault_stage_commit_plan, vault_stage_refresh_plan,
+    new_section_name_commit_plan, recoverable_load_error_state, section_header_collapse_target,
+    section_name_input_state, section_stage_back_plan, section_stage_commit_plan,
+    vault_stage_back_plan, vault_stage_commit_plan, vault_stage_refresh_plan,
 };
 
 use crate::first_selection;
@@ -283,6 +283,7 @@ impl OpPickerState {
                 self.filter_buf.clear();
                 if plan.clear_fields {
                     self.fields.clear();
+                    self.sections.clear();
                 }
                 if plan.clear_collapsed_sections {
                     self.collapsed_sections.clear();
@@ -339,6 +340,7 @@ impl OpPickerState {
         }
         if plan.clear_fields {
             self.fields.clear();
+            self.sections.clear();
         }
         if plan.clear_collapsed_sections {
             self.collapsed_sections.clear();
@@ -362,6 +364,7 @@ impl OpPickerState {
                 let plan = field_stage_refresh_plan(&self.mode);
                 if plan.clear_fields {
                     self.fields.clear();
+                    self.sections.clear();
                 }
                 if plan.reset_field_list {
                     self.field_list_state = collection_state_for_count(0);
@@ -390,24 +393,24 @@ impl OpPickerState {
             KeyCode::Left => {
                 let cur = self.field_list_state.active().copied().unwrap_or(0);
                 let rows = self.build_field_display_rows();
-                if let Some((name, collapsed)) = section_header_collapse_target(
+                if let Some((section_id, collapsed)) = section_header_collapse_target(
                     rows.get(cur),
                     &self.collapsed_sections,
                     SectionCollapseIntent::Collapse,
                 ) {
-                    self.set_section_collapsed(name, collapsed);
+                    self.set_section_collapsed(section_id, collapsed);
                 }
                 ModalOutcome::Continue
             }
             KeyCode::Right => {
                 let cur = self.field_list_state.active().copied().unwrap_or(0);
                 let rows = self.build_field_display_rows();
-                if let Some((name, collapsed)) = section_header_collapse_target(
+                if let Some((section_id, collapsed)) = section_header_collapse_target(
                     rows.get(cur),
                     &self.collapsed_sections,
                     SectionCollapseIntent::Expand,
                 ) {
-                    self.set_section_collapsed(name, collapsed);
+                    self.set_section_collapsed(section_id, collapsed);
                 }
                 ModalOutcome::Continue
             }
@@ -423,15 +426,25 @@ impl OpPickerState {
                 match field_stage_commit_plan(
                     rows.get(cur),
                     &self.collapsed_sections,
-                    self.selected_section.as_deref(),
+                    self.selected_section.as_ref(),
                 ) {
-                    FieldStageCommitPlan::ToggleSection { name, collapsed } => {
-                        self.set_section_collapsed(name, collapsed);
+                    FieldStageCommitPlan::ToggleSection {
+                        section_id,
+                        collapsed,
+                    } => {
+                        self.set_section_collapsed(section_id, collapsed);
                     }
                     FieldStageCommitPlan::ExistingField { field_idx } => {
-                        if let Some(field) = visible.get(field_idx) {
-                            return ModalOutcome::Commit(self.commit_existing_field(field));
-                        }
+                        let Some(selection) = visible
+                            .get(field_idx)
+                            .and_then(|field| self.commit_existing_field(field))
+                        else {
+                            self.load_state = recoverable_load_error_state(
+                                "1Password returned an identifier that cannot be used in a secret reference. Refresh and try again.",
+                            );
+                            return ModalOutcome::Continue;
+                        };
+                        return ModalOutcome::Commit(selection);
                     }
                     FieldStageCommitPlan::NewField {
                         pending_section,
@@ -536,11 +549,11 @@ impl OpPickerState {
     /// the field selection so it never dangles past the new row count.
     /// All three entry points (Enter toggle, Left collapse, Right expand)
     /// route here so the selection clamp stays in lockstep with the rows.
-    fn set_section_collapsed(&mut self, name: String, collapsed: bool) {
+    fn set_section_collapsed(&mut self, section_id: String, collapsed: bool) {
         if collapsed {
-            self.collapsed_sections.insert(name);
+            self.collapsed_sections.insert(section_id);
         } else {
-            self.collapsed_sections.remove(name.as_str());
+            self.collapsed_sections.remove(section_id.as_str());
         }
         let new_len = self.build_field_display_rows().len();
         self.field_list_state.set_active(clamp_selection(
@@ -557,14 +570,15 @@ impl OpPickerState {
         clippy::expect_used,
         reason = "existing-field commit is reachable only after vault and item selections exist"
     )]
-    fn commit_existing_field(&self, field: &OpPickerField) -> OpPickerCoreSelection {
+    fn commit_existing_field(&self, field: &OpPickerField) -> Option<OpPickerCoreSelection> {
         let plan = existing_field_commit_plan(
             &self.mode,
             &field.id,
             &field.label,
             self.selected_section.clone(),
         );
-        existing_field_commit_selection(
+        let reference = self.build_op_ref_on_commit(field)?;
+        Some(existing_field_commit_selection(
             plan,
             ExistingFieldCommitSelectionInput {
                 account: self.selected_account.clone(),
@@ -577,9 +591,9 @@ impl OpPickerState {
                     .clone()
                     .expect("item set before field commit"),
             },
-            || self.build_op_ref_on_commit(field),
+            || reference,
             |id, label| jackin_core::FieldTarget::Existing { id, label },
-        )
+        ))
     }
 
     fn reset_selection_for_filter(&mut self, stage: OpPickerStage) {

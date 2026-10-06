@@ -315,6 +315,10 @@ fn git_pull_program(_opts: &super::LoadOptions) -> std::path::PathBuf {
     std::path::PathBuf::from("git")
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "restore threads exact Docker ownership, account revision, and pending entry leases"
+)]
 async fn restore_current_role_now_with_handle(
     paths: &JackinPaths,
     container: &ContainerHandle,
@@ -323,6 +327,7 @@ async fn restore_current_role_now_with_handle(
     runner: &mut impl CommandRunner,
     steps: &mut super::StepCounter,
     start_first: bool,
+    entry_claim: Option<&crate::runtime::universe::EntryClaim>,
 ) -> anyhow::Result<()> {
     steps.finish_progress();
     let container_name = container.name();
@@ -334,6 +339,7 @@ async fn restore_current_role_now_with_handle(
         runner,
         start_first,
         container,
+        entry_claim,
     )
     .await;
     super::render_exit(paths, docker).await;
@@ -517,6 +523,7 @@ async fn restore_explicit_container(
         runner,
         steps,
         start,
+        opts.entry_claim.as_deref(),
     )
     .await?;
     Ok(true)
@@ -837,35 +844,17 @@ pub(crate) async fn load_role_with(
         .contains_key(workspace.name.as_str())
         .then(|| WorkspaceName::parse(&workspace.name))
         .transpose()?;
-    anyhow::ensure!(
-        opts.account.is_none() || opts.configuration.is_none(),
-        "account and configuration launch selections cannot both be supplied"
-    );
+    validate_explicit_restore_options(paths, opts)?;
     let admission_config = config.clone();
-    let mut account_config =
-        opts.configuration
-            .as_deref()
-            .map(|configuration| {
-                let agent = opts.agent.or(workspace.default_agent).ok_or_else(|| {
-                    anyhow::anyhow!("select an agent when selecting a configuration")
-                })?;
-                super::programmatic::with_configuration_selection(
-                    config,
-                    agent,
-                    selected_workspace.as_ref(),
-                    &selector.key(),
-                    configuration,
-                )
-            })
-            .transpose()?;
-    if account_config.is_none() {
-        account_config =
-            opts.account
-                .as_deref()
-                .map(|id| {
-                    let agent = opts.agent.or(workspace.default_agent).ok_or_else(|| {
-                        anyhow::anyhow!("select an agent when selecting an account")
-                    })?;
+    let mut account_config = opts
+        .selection
+        .as_ref()
+        .map(|selection| {
+            let agent = opts.agent.or(workspace.default_agent).ok_or_else(|| {
+                anyhow::anyhow!("select an agent when selecting an account or configuration")
+            })?;
+            match selection {
+                jackin_core::LaunchSelection::Account(id) => {
                     super::programmatic::with_account_selection(
                         config,
                         agent,
@@ -873,9 +862,19 @@ pub(crate) async fn load_role_with(
                         &selector.key(),
                         id,
                     )
-                })
-                .transpose()?;
-    }
+                }
+                jackin_core::LaunchSelection::Configuration(id) => {
+                    super::programmatic::with_configuration_selection(
+                        config,
+                        agent,
+                        selected_workspace.as_ref(),
+                        &selector.key(),
+                        id,
+                    )
+                }
+            }
+        })
+        .transpose()?;
     let config = account_config.as_mut().unwrap_or(config);
 
     // Pre-launch garbage collection is independent from git identity probes.
@@ -891,7 +890,8 @@ pub(crate) async fn load_role_with(
     crate::runtime::universe::mark_start(
         paths,
         crate::runtime::universe::StartKind::ResumeExisting,
-    );
+    )
+    .await;
 
     // `load_role` receives a `ResolvedWorkspace` (mounts + workdir),
     // not a name. Recover the name by matching workdir, mirroring the
@@ -923,20 +923,13 @@ pub(crate) async fn load_role_with(
     // Typed early current-role scan (launch-speed 008c): reused later so the
     // common path does not re-inspect current-role candidates.
     let mut early_current_scan = super::EarlyCurrentRestoreScan::NotRun;
-    // `--rebuild` is an explicit "force a fresh image" request, so it must not
-    // take the attach/start/recreate fast paths — those short-circuit before
-    // `decide_agent_image` and would silently skip the rebuild. Falling through
-    // routes the launch to the normal pipeline, where `decide_agent_image`
-    // returns `ExplicitRebuild` and the build always runs. Container-name
-    // collisions are handled downstream by `claim_container_name`: a running
-    // session is left intact (a fresh, rebuilt instance is created alongside
-    // it), while a stopped/crashed/missing container is reclaimed and recreated
-    // from the rebuilt image.
+    // A launch option that changes runtime configuration must not take the
+    // attach/start/recreate fast paths. Those return before the option reaches
+    // the new capsule, silently reusing a role with different model, effort,
+    // account, image, environment, mount, or security settings. The same
+    // compatibility predicate guards the later restore decision below.
     let early_restore_container = if opts.restore_container_base.is_none()
-        && opts.role_branch.is_none()
-        && !opts.rebuild
-        && opts.account.is_none()
-        && opts.configuration.is_none()
+        && current_role_reuse_is_compatible(opts)
     {
         if let Some(agent) = selected_agent_before_role {
             let candidate = super::resolve_current_restore_candidate_timed(
@@ -973,6 +966,7 @@ pub(crate) async fn load_role_with(
                         runner,
                         &mut steps,
                         true,
+                        opts.entry_claim.as_deref(),
                     )
                     .await;
                 }
@@ -1048,6 +1042,7 @@ pub(crate) async fn load_role_with(
                         runner,
                         &mut steps,
                         true,
+                        opts.entry_claim.as_deref(),
                     )
                     .await;
                 }
@@ -1252,15 +1247,14 @@ pub(crate) async fn load_role_with(
         early_restore_container
     } else if let Some(container) = opts.restore_container_base.as_ref() {
         Some(container.clone())
-    } else if opts.rebuild || opts.account.is_some() || opts.configuration.is_some() {
-        // `--rebuild` skips the early gate above (it is `&& !opts.rebuild && opts.account.is_none()`), so
-        // a forced rebuild actually falls through to *this* resolution. Without
-        // the same guard here, `resolve_restore_candidate` would still return
-        // a current-role start/recreate decision and `return` straight into the
-        // existing container — silently skipping the build the operator asked
-        // for. Leave `restore_container` `None` so the normal pipeline runs
-        // `decide_agent_image` -> `ExplicitRebuild` and always rebuilds;
-        // `claim_container_name` reconciles any name collision downstream.
+    } else if !current_role_reuse_is_compatible(opts) {
+        // The early scan was skipped because this launch carries an effective
+        // override (rebuild, selection, model, effort, profile, environment,
+        // or mount). Without this matching guard, candidate resolution could
+        // still return a current-role start/recreate decision and silently
+        // discard the caller's launch settings. Leave `restore_container`
+        // `None` so the normal pipeline applies them; container-name collision
+        // handling keeps an already-running session intact.
         None
     } else {
         let restore_candidate = super::resolve_restore_candidate_reusing_early(
@@ -1295,6 +1289,7 @@ pub(crate) async fn load_role_with(
                     runner,
                     &mut steps,
                     true,
+                    opts.entry_claim.as_deref(),
                 )
                 .await;
             }
@@ -1338,6 +1333,7 @@ pub(crate) async fn load_role_with(
                     docker,
                     runner,
                     false,
+                    opts.entry_claim.as_deref(),
                 )
                 .await
                 .map(|()| container);
@@ -1756,6 +1752,144 @@ pub(crate) async fn load_role_with(
     }
 }
 
+/// Whether an existing current-role container can satisfy this launch intent.
+/// Any option that changes the effective runtime, credentials, image, mounts,
+/// or environment must reach the normal launch pipeline so
+/// it cannot be silently dropped by a restore/start fast path.
+fn current_role_reuse_is_compatible(opts: &super::LoadOptions) -> bool {
+    !opts.rebuild
+        && !opts.force
+        && !opts.non_interactive
+        && opts.role_branch.is_none()
+        && opts.selection.is_none()
+        && opts.model.is_none()
+        && opts.effort.is_none()
+        && opts.docker_profile.is_none()
+        && opts.env.is_empty()
+        && opts.on_demand_bindings.is_empty()
+        && opts.extra_mounts.is_empty()
+        && opts.op_runner.is_none()
+        && opts.host_env.is_none()
+        && opts.restore_role_source_git.is_none()
+}
+
+/// Exact-container restore is an attach/start operation, so launch-changing
+/// options cannot be applied to an already existing container. Fail before
+/// inspecting or starting it rather than silently dropping the caller's
+/// requested agent, account, model, effort, image, profile, environment, or
+/// mounts.
+fn validate_explicit_restore_options(
+    paths: &JackinPaths,
+    opts: &super::LoadOptions,
+) -> anyhow::Result<()> {
+    let Some(container) = opts.restore_container_base.as_deref() else {
+        return Ok(());
+    };
+    anyhow::ensure!(
+        !opts.rebuild
+            && !opts.force
+            && !opts.non_interactive
+            && opts.selection.is_none()
+            && opts.docker_profile.is_none()
+            && opts.model.is_none()
+            && opts.effort.is_none()
+            && opts.env.is_empty()
+            && opts.on_demand_bindings.is_empty()
+            && opts.extra_mounts.is_empty(),
+        "an explicit restore container cannot apply rebuild, selection, model, effort, profile, environment, credential, or mount overrides; its selected agent must match the stored instance; start a fresh role instance instead"
+    );
+    if let Some(requested_agent) = opts.agent {
+        let manifest = InstanceManifest::read(&paths.data_dir.join(container))?;
+        let stored_agent = manifest.agent()?;
+        anyhow::ensure!(
+            requested_agent == stored_agent,
+            "explicit restore agent {} does not match stored instance agent {}",
+            requested_agent.slug(),
+            stored_agent.slug(),
+        );
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod restore_reuse_intent_tests {
+    use super::{current_role_reuse_is_compatible, validate_explicit_restore_options};
+    use crate::runtime::launch::LoadOptions;
+    use jackin_core::JackinPaths;
+
+    #[test]
+    fn current_role_reuse_rejects_launch_configuration_overrides() {
+        assert!(current_role_reuse_is_compatible(&LoadOptions::default()));
+
+        let options = LoadOptions {
+            model: Some("gpt-6-luna".to_owned()),
+            ..Default::default()
+        };
+        assert!(!current_role_reuse_is_compatible(&options));
+
+        let options = LoadOptions {
+            effort: Some(jackin_core::ReasoningEffort::Max),
+            ..Default::default()
+        };
+        assert!(!current_role_reuse_is_compatible(&options));
+
+        let options = LoadOptions {
+            selection: Some(jackin_core::LaunchSelection::Account("work".to_owned())),
+            ..Default::default()
+        };
+        assert!(!current_role_reuse_is_compatible(&options));
+
+        let options = LoadOptions {
+            selection: Some(jackin_core::LaunchSelection::Configuration(
+                "codex-work".to_owned(),
+            )),
+            ..Default::default()
+        };
+        assert!(!current_role_reuse_is_compatible(&options));
+
+        let options = LoadOptions {
+            non_interactive: true,
+            ..Default::default()
+        };
+        assert!(!current_role_reuse_is_compatible(&options));
+    }
+
+    #[test]
+    fn exact_restore_rejects_launch_options_it_cannot_apply() {
+        let options = LoadOptions {
+            restore_container_base: Some("jk-existing-role".to_owned()),
+            model: Some("gpt-6-luna".to_owned()),
+            ..LoadOptions::default()
+        };
+        let temp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let error = validate_explicit_restore_options(&paths, &options).unwrap_err();
+        assert!(error.to_string().contains("cannot apply"));
+
+        let options = LoadOptions {
+            restore_container_base: Some("jk-existing-role".to_owned()),
+            effort: Some(jackin_core::ReasoningEffort::Max),
+            ..LoadOptions::default()
+        };
+        assert!(validate_explicit_restore_options(&paths, &options).is_err());
+
+        let options = LoadOptions {
+            restore_container_base: Some("jk-existing-role".to_owned()),
+            selection: Some(jackin_core::LaunchSelection::Account("work".to_owned())),
+            ..LoadOptions::default()
+        };
+        let error = validate_explicit_restore_options(&paths, &options).unwrap_err();
+        assert!(error.to_string().contains("selection"));
+
+        let options = LoadOptions {
+            restore_container_base: Some("jk-existing-role".to_owned()),
+            non_interactive: true,
+            ..LoadOptions::default()
+        };
+        assert!(validate_explicit_restore_options(&paths, &options).is_err());
+    }
+}
+
 pub(crate) fn emit_auth_provision_launch_plan(state: &RoleState, container: &str) {
     if state.auth_outcomes.is_empty() {
         return;
@@ -1790,7 +1924,7 @@ pub(crate) fn manifest_env_timing_detail(skipped: bool, vars: usize) -> String {
     }
 }
 
-/// D9: purge per-instance data, the name-claim lock, and the index row inline on
+/// D9: purge per-instance data and the index row inline on
 /// a clean terminal outcome so no manual prune is needed. If the purge itself
 /// fails, fall back to stamping `CleanExited` so the next prune removes the row.
 /// Shared by the clean-exit and `NotFound` arms.

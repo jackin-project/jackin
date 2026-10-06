@@ -1,0 +1,4 @@
+from_version = "v1alpha10"
+target_version = "v1alpha11"
+target_version_shipped = "2026-10-05"
+summary = "Migrate a workspace OpRef with section, percent, query, account, and on-demand data."

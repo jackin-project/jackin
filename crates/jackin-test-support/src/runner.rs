@@ -135,6 +135,17 @@ impl CommandRunner for FakeRunner {
         Ok(self.capture_queue.pop_front().unwrap_or_default())
     }
 
+    async fn capture_with_options(
+        &mut self,
+        program: &str,
+        args: &[&str],
+        cwd: Option<&std::path::Path>,
+        opts: &RunOptions,
+    ) -> anyhow::Result<String> {
+        self.run_options.push(opts.clone());
+        self.capture(program, args, cwd).await
+    }
+
     async fn capture_secret(
         &mut self,
         program: &str,

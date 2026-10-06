@@ -181,7 +181,7 @@ fn global_binding_honored_with_several_accounts() {
 
     assert_eq!(
         select_launch_account(&config, Some(&ws), ROLE, Agent::Claude, eligible).unwrap(),
-        LaunchAccountSelection::Launch("z-claude".into())
+        LaunchAccountSelection::Launch(jackin_core::LaunchSelection::Account("z-claude".into()))
     );
 }
 
@@ -211,7 +211,7 @@ fn sole_eligible_candidate_launches_without_binding() {
 
     assert_eq!(
         select_launch_account(&config, Some(&ws), ROLE, Agent::Claude, eligible).unwrap(),
-        LaunchAccountSelection::Launch("z-claude".into())
+        LaunchAccountSelection::Launch(jackin_core::LaunchSelection::Account("z-claude".into()))
     );
 }
 
@@ -311,7 +311,7 @@ fn missing_workspace_falls_back_to_global_accounts() {
 
     assert_eq!(
         select_launch_account(&config, None, ROLE, Agent::Claude, eligible).unwrap(),
-        LaunchAccountSelection::Launch("z-claude".into())
+        LaunchAccountSelection::Launch(jackin_core::LaunchSelection::Account("z-claude".into()))
     );
 
     let (config, _) = test_config();
@@ -500,7 +500,7 @@ fn binding_for_other_agent_does_not_leak() {
     let eligible = accounts_for_launch(&config, Some(&ws), Agent::Codex);
     assert_eq!(
         select_launch_account(&config, Some(&ws), ROLE, Agent::Codex, eligible).unwrap(),
-        LaunchAccountSelection::Launch("o-codex".into())
+        LaunchAccountSelection::Launch(jackin_core::LaunchSelection::Account("o-codex".into()))
     );
 }
 
@@ -515,11 +515,15 @@ fn role_default_launch_honored_with_several_accounts() {
 
     assert_eq!(
         select_launch_account(&config, Some(&ws), ROLE, Agent::Claude, eligible).unwrap(),
-        LaunchAccountSelection::Launch("z-claude".into())
+        LaunchAccountSelection::Launch(jackin_core::LaunchSelection::Configuration(
+            "claude-z".into()
+        ))
     );
     assert_eq!(
         select_launch_account(&config, Some(&ws), ROLE, Agent::Claude, Vec::new()).unwrap(),
-        LaunchAccountSelection::Launch("z-claude".into())
+        LaunchAccountSelection::Launch(jackin_core::LaunchSelection::Configuration(
+            "claude-z".into()
+        ))
     );
 }
 
@@ -533,7 +537,9 @@ fn default_launch_scope_precedence_replaces_without_union() {
     let eligible = accounts_for_launch(&config, Some(&ws), Agent::Claude);
     assert_eq!(
         select_launch_account(&config, Some(&ws), ROLE, Agent::Claude, eligible).unwrap(),
-        LaunchAccountSelection::Launch("a-claude".into())
+        LaunchAccountSelection::Launch(jackin_core::LaunchSelection::Configuration(
+            "claude-a".into()
+        ))
     );
 
     // Clearing the role scope falls through to the workspace scope, not a
@@ -547,7 +553,9 @@ fn default_launch_scope_precedence_replaces_without_union() {
     let eligible = accounts_for_launch(&config, Some(&ws), Agent::Claude);
     assert_eq!(
         select_launch_account(&config, Some(&ws), ROLE, Agent::Claude, eligible).unwrap(),
-        LaunchAccountSelection::Launch("z-claude".into())
+        LaunchAccountSelection::Launch(jackin_core::LaunchSelection::Configuration(
+            "claude-z".into()
+        ))
     );
 }
 
@@ -559,7 +567,9 @@ fn global_default_filters_unauthorized_candidates() {
 
     assert_eq!(
         select_launch_account(&config, Some(&ws), ROLE, Agent::Claude, eligible).unwrap(),
-        LaunchAccountSelection::Launch("a-claude".into())
+        LaunchAccountSelection::Launch(jackin_core::LaunchSelection::Configuration(
+            "claude-a".into()
+        ))
     );
 
     // A global default that filters down to nothing admits nothing for
@@ -699,7 +709,9 @@ fn defaults_override_bindings_without_fallback() {
     // The binding points elsewhere, but the admitted set wins.
     assert_eq!(
         select_launch_account(&config, Some(&ws), ROLE, Agent::Claude, eligible).unwrap(),
-        LaunchAccountSelection::Launch("z-claude".into())
+        LaunchAccountSelection::Launch(jackin_core::LaunchSelection::Configuration(
+            "claude-z".into()
+        ))
     );
 
     // An invalid binding is ignored entirely while a valid default
@@ -708,7 +720,9 @@ fn defaults_override_bindings_without_fallback() {
     let eligible = accounts_for_launch(&config, Some(&ws), Agent::Claude);
     assert_eq!(
         select_launch_account(&config, Some(&ws), ROLE, Agent::Claude, eligible).unwrap(),
-        LaunchAccountSelection::Launch("z-claude".into())
+        LaunchAccountSelection::Launch(jackin_core::LaunchSelection::Configuration(
+            "claude-z".into()
+        ))
     );
 }
 
@@ -738,6 +752,8 @@ fn ad_hoc_default_launch_resolves_without_workspace() {
 
     assert_eq!(
         select_launch_account(&config, None, ROLE, Agent::Claude, eligible).unwrap(),
-        LaunchAccountSelection::Launch("z-claude".into())
+        LaunchAccountSelection::Launch(jackin_core::LaunchSelection::Configuration(
+            "claude-z".into()
+        ))
     );
 }

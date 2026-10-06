@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 # SPDX-License-Identifier: Apache-2.0
 
-version = "v1alpha10"
+version = "v1alpha11"
 workdir = "/workspace/prod"
 
 [[mounts]]
@@ -9,8 +9,8 @@ src = "/home/operator/projects/prod"
 dst = "/workspace/prod"
 
 [env]
-CLAUDE_CODE_OAUTH_TOKEN = { op = "op://v/i/f", path = "Vault/Item/Field" , account = "ACCT123" }
+CLAUDE_CODE_OAUTH_TOKEN = { op = "op://v/i/f", account = "ACCT123", breadcrumb = { version = 1, value = "Vault/Item/Field" } }
 PLAIN_ENV = "literal-value"
 
 [roles."org/agent".env]
-ROLE_TOKEN = { op = "op://rv/ri/rf", path = "RVault/RItem/RField" , account = "ACCT123" }
+ROLE_TOKEN = { op = "op://rv/ri/rf", account = "ACCT123", breadcrumb = { version = 1, value = "RVault/RItem/RField" } }

@@ -71,7 +71,7 @@ rustls-pki-types = { workspace = true }
 # `rt-multi-thread` powers the dedicated telemetry runtime (see
 # `observability::otlp::otel_runtime`); `Handle::metrics()` feeds the tokio
 # runtime gauges from the app's handle, captured at subscriber init.
-tokio = { workspace = true, features = ["rt", "rt-multi-thread"] }
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "process"] }
 tokio-rustls = { workspace = true }
 tonic = { workspace = true }
 tower = { workspace = true }

@@ -36,7 +36,7 @@ fn manifest_for(container: &str) -> InstanceManifest {
 
 fn record_with(container: &str, worktree_path: &str, status: CleanupStatus) -> IsolationRecord {
     IsolationRecord {
-        workspace: "ws".to_owned(),
+        workspace_name: Some(jackin_core::WorkspaceName::parse("ws").unwrap()),
         mount_dst: "/ws".to_owned(),
         original_src: "/host/ws".to_owned(),
         isolation: MountIsolation::Worktree,
@@ -65,7 +65,9 @@ fn is_dirty_for(status: CleanupStatus) -> bool {
     )
     .unwrap();
 
-    launch_candidate_for_manifest(&paths, &manifest_for(container), "label".to_owned()).is_dirty
+    launch_candidate_for_manifest(&paths, &manifest_for(container), |_| "label".to_owned())
+        .unwrap()
+        .is_dirty
 }
 
 #[test]
@@ -92,11 +94,50 @@ fn launch_candidate_is_not_dirty_with_no_records() {
     std::fs::create_dir_all(paths.data_dir.join(container)).unwrap();
 
     let candidate =
-        launch_candidate_for_manifest(&paths, &manifest_for(container), "label".to_owned());
+        launch_candidate_for_manifest(&paths, &manifest_for(container), |_| "label".to_owned())
+            .unwrap();
     assert!(
         !candidate.is_dirty,
         "no isolation records → clean candidate"
     );
     assert!(candidate.inspect.is_empty());
     assert_eq!(candidate.label, "label");
+}
+
+#[test]
+fn corrupt_isolation_cannot_become_clean_restore_candidate() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let container = "jk-a1b2c3d4-agentsmith";
+    let state = paths.data_dir.join(container).join(".jackin");
+    std::fs::create_dir_all(&state).unwrap();
+    let records = state.join("isolation.json");
+    std::fs::write(&records, b"{").unwrap();
+    let error =
+        launch_candidate_for_manifest(&paths, &manifest_for(container), |_| "label".to_owned())
+            .unwrap_err();
+    assert!(format!("{error:#}").contains("cannot establish restore isolation state"));
+    assert_eq!(std::fs::read(&records).unwrap(), b"{");
+}
+
+#[test]
+fn corrupt_related_isolation_aborts_before_restore_dialog_or_status_mutation() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let manifest = manifest_for("jk-a1b2c3d4-agentsmith");
+    let state = paths.data_dir.join(&manifest.container_base);
+    manifest.write(&state).unwrap();
+    let original = std::fs::read(state.join(".jackin/instance.json")).unwrap();
+    std::fs::write(state.join(".jackin/isolation.json"), b"{").unwrap();
+    let related = RelatedRestoreCandidate {
+        manifest,
+        docker_state: ContainerState::NotFound,
+    };
+    let error = present_restore_choice(None, &paths, "ws", "other-role", Vec::new(), &[related])
+        .unwrap_err();
+    assert!(format!("{error:#}").contains("cannot establish restore isolation state"));
+    assert_eq!(
+        std::fs::read(state.join(".jackin/instance.json")).unwrap(),
+        original
+    );
 }

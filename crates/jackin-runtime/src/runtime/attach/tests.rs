@@ -29,6 +29,25 @@ fn test_container_handle(name: &str) -> ContainerHandle {
     ContainerHandle::new(name, format!("{name}-id")).unwrap()
 }
 
+fn spawn_capsule_preface_ack(
+    listener: std::os::unix::net::UnixListener,
+) -> std::thread::JoinHandle<()> {
+    std::thread::spawn(move || {
+        let (stream, _) = listener.accept().unwrap();
+        stream.set_nonblocking(true).unwrap();
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(async move {
+                let mut stream = tokio::net::UnixStream::from_std(stream).unwrap();
+                jackin_protocol::capsule_transport::server_handshake_async(&mut stream)
+                    .await
+                    .unwrap();
+            });
+    })
+}
+
 type ScheduledConfigRotation = (String, PathBuf, Vec<u8>);
 
 fn config_rotation_slot() -> &'static Mutex<Vec<ScheduledConfigRotation>> {
@@ -302,11 +321,13 @@ fn host_attach_transport_surfaces_over_sun_len_socket_path() {
 fn host_attach_transport_uses_direct_socket_when_connect_succeeds() {
     let (_tmp, paths) = short_test_paths();
     let socket_path = ensure_socket_parent(&paths, "jk-agent-smith");
-    let _listener = std::os::unix::net::UnixListener::bind(&socket_path).unwrap();
+    let listener = std::os::unix::net::UnixListener::bind(&socket_path).unwrap();
+    let server = spawn_capsule_preface_ack(listener);
 
     let plan = select_host_attach_transport(&paths, "jk-agent-smith");
 
     assert_eq!(plan, HostAttachTransportPlan::DirectSocket { socket_path });
+    server.join().unwrap();
 }
 
 #[test]
@@ -354,7 +375,8 @@ fn insert_run_as_user_is_noop_when_absent() {
 async fn wait_for_capsule_daemon_uses_direct_socket_without_exec() {
     let (_tmp, paths) = short_test_paths();
     let socket_path = ensure_socket_parent(&paths, "jk-agent-smith");
-    let _listener = std::os::unix::net::UnixListener::bind(&socket_path).unwrap();
+    let listener = std::os::unix::net::UnixListener::bind(&socket_path).unwrap();
+    let server = spawn_capsule_preface_ack(listener);
     let docker = FakeDockerClient {
         fail_with: vec![("docker exec".to_owned(), "unexpected exec".to_owned())],
         ..Default::default()
@@ -364,6 +386,7 @@ async fn wait_for_capsule_daemon_uses_direct_socket_without_exec() {
         .await
         .unwrap();
 
+    server.join().unwrap();
     assert!(
         docker.recorded.borrow().is_empty(),
         "direct socket readiness must not spawn docker exec"
@@ -751,6 +774,7 @@ async fn handle_aware_restore_refuses_same_name_replacement_before_start() {
         &mut runner,
         true,
         &original,
+        None,
     )
     .await
     .expect_err("a replaced name must not redirect restore to the replacement");
@@ -2058,4 +2082,138 @@ async fn start_stopped_container_errors_clearly_when_network_missing() {
         err.to_string()
             .contains("run `jackin load` to recreate the instance")
     );
+}
+
+fn pending_entry_count(paths: &JackinPaths) -> usize {
+    std::fs::read_dir(
+        crate::runtime::coordination::universe_dir(paths)
+            .unwrap()
+            .join("universe-pending"),
+    )
+    .map_or(0, Iterator::count)
+}
+
+#[tokio::test]
+async fn restored_start_activates_only_its_entry_before_foreground() {
+    let (_tmp, paths) = test_paths();
+    let container_name = "jk-restore-entry";
+    provision_account_admission(&paths, container_name);
+    let claim_docker = FakeDockerClient::default();
+    let claim = super::super::universe::claim_entry(&paths, &claim_docker).await;
+    let other_claim = super::super::universe::claim_entry(&paths, &claim_docker).await;
+    assert_eq!(pending_entry_count(&paths), 2);
+    let container = ContainerHandle::new(container_name, container_name).unwrap();
+    let docker = FakeDockerClient {
+        inspect_state_by_name: std::cell::RefCell::new(HashMap::from([(
+            container_name.into(),
+            ContainerState::Created,
+        )])),
+        ..Default::default()
+    };
+    let pending_dir = crate::runtime::coordination::universe_dir(&paths)
+        .unwrap()
+        .join("universe-pending");
+    let mut runner = FakeRunner {
+        side_effects: vec![(
+            "jackin-capsule".into(),
+            Box::new(move || {
+                assert_eq!(
+                    std::fs::read_dir(pending_dir).unwrap().count(),
+                    1,
+                    "entry must activate before foreground starts; another lease stays pending"
+                );
+            }),
+        )],
+        ..Default::default()
+    };
+    let admission = super::super::launch::AccountConfigRevision::acquire(&paths).unwrap();
+
+    start_or_reconnect_capsule_client_with_handle_with_lease(
+        &paths,
+        container_name,
+        &admission,
+        &docker,
+        &mut runner,
+        Some(&container),
+        Some(&claim),
+    )
+    .await
+    .expect("restore should activate the entry and foreground attach");
+    assert!(
+        runner.side_effects.is_empty(),
+        "foreground observation must run"
+    );
+    assert!(
+        docker
+            .bound_operations
+            .borrow()
+            .iter()
+            .any(|op| op.starts_with("start:"))
+    );
+    assert_eq!(
+        pending_entry_count(&paths),
+        1,
+        "other launch remains pending"
+    );
+    assert!(
+        crate::runtime::coordination::universe_dir(&paths)
+            .unwrap()
+            .join("universe-since")
+            .exists()
+    );
+    drop(claim);
+    assert_eq!(pending_entry_count(&paths), 1);
+    drop(other_claim);
+    assert_eq!(pending_entry_count(&paths), 0);
+}
+
+#[tokio::test]
+async fn restored_start_failure_keeps_entry_pending_until_owner_drops() {
+    let (_tmp, paths) = test_paths();
+    let container_name = "jk-restore-entry-start-failure";
+    provision_account_admission(&paths, container_name);
+    let claim = super::super::universe::claim_entry(&paths, &FakeDockerClient::default()).await;
+    let container = ContainerHandle::new(container_name, container_name).unwrap();
+    let docker = FakeDockerClient {
+        inspect_state_by_name: std::cell::RefCell::new(HashMap::from([(
+            container_name.into(),
+            ContainerState::Created,
+        )])),
+        inspect_network_queue: std::cell::RefCell::new(VecDeque::from([Some(
+            jackin_docker::docker_client::NetworkRow {
+                name: format!("{container_name}-net"),
+                labels: HashMap::default(),
+            },
+        )])),
+        fail_with: vec![("start_container".into(), "role start failed".into())],
+        ..Default::default()
+    };
+    let mut runner = FakeRunner::default();
+    let admission = super::super::launch::AccountConfigRevision::acquire(&paths).unwrap();
+
+    let error = start_or_reconnect_capsule_client_with_handle_with_lease(
+        &paths,
+        container_name,
+        &admission,
+        &docker,
+        &mut runner,
+        Some(&container),
+        Some(&claim),
+    )
+    .await
+    .expect_err("failed role start must preserve pending lease");
+
+    assert!(
+        format!("{error:#}").contains("role start failed"),
+        "{error:#}"
+    );
+    assert_eq!(pending_entry_count(&paths), 1);
+    assert!(
+        !runner
+            .recorded
+            .iter()
+            .any(|call| call.contains("jackin-capsule"))
+    );
+    drop(claim);
+    assert_eq!(pending_entry_count(&paths), 0);
 }

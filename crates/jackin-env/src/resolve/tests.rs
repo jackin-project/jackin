@@ -79,7 +79,7 @@ impl OpStructRunner for UnusedOpStructRunner {
         _item_id: &str,
         _vault_id: &str,
         _account: Option<&str>,
-    ) -> anyhow::Result<Vec<OpField>> {
+    ) -> anyhow::Result<jackin_core::OpItemDetail<OpField>> {
         unreachable!("literal rejection must happen before provider access")
     }
 }

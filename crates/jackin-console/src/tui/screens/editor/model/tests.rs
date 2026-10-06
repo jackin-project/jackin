@@ -1163,6 +1163,142 @@ fn editor_delete_env_var_removes_empty_role_override() {
 }
 
 #[test]
+fn editor_delete_env_var_preserves_explicit_empty_github_override() {
+    let mut editor = TestEditor::new_edit("alpha".into(), WorkspaceConfig::default());
+    let mut role = WorkspaceRoleOverride::default();
+    role.env
+        .insert("TOKEN".into(), jackin_config::EnvValue::Plain("one".into()));
+    role.github = Some(jackin_config::GithubAuthConfig::default());
+    editor.pending.roles.insert("dev".into(), role);
+
+    editor
+        .delete_env_var(&super::SecretsScopeTag::Role("dev".into()), "TOKEN")
+        .unwrap();
+
+    assert_eq!(
+        editor.pending.roles["dev"].github,
+        Some(jackin_config::GithubAuthConfig::default())
+    );
+}
+
+#[test]
+fn editor_delete_env_var_preserves_configured_github_override() {
+    let mut editor = TestEditor::new_edit("alpha".into(), WorkspaceConfig::default());
+    let mut role = WorkspaceRoleOverride::default();
+    role.env
+        .insert("TOKEN".into(), jackin_config::EnvValue::Plain("one".into()));
+    role.github = Some(jackin_config::GithubAuthConfig {
+        auth_forward: jackin_config::GithubAuthMode::Token,
+        env: std::collections::BTreeMap::from([(
+            "GH_TOKEN".into(),
+            jackin_config::EnvValue::Plain("test".into()),
+        )]),
+    });
+    editor.pending.roles.insert("dev".into(), role);
+
+    editor
+        .delete_env_var(&super::SecretsScopeTag::Role("dev".into()), "TOKEN")
+        .unwrap();
+
+    assert_eq!(
+        editor.pending.roles["dev"].github,
+        Some(jackin_config::GithubAuthConfig {
+            auth_forward: jackin_config::GithubAuthMode::Token,
+            env: std::collections::BTreeMap::from([(
+                "GH_TOKEN".into(),
+                jackin_config::EnvValue::Plain("test".into()),
+            )]),
+        })
+    );
+}
+
+#[test]
+fn editor_delete_env_var_preserves_explicit_empty_default_launch() {
+    let mut editor = TestEditor::new_edit("alpha".into(), WorkspaceConfig::default());
+    let mut role = WorkspaceRoleOverride::default();
+    role.env
+        .insert("TOKEN".into(), jackin_config::EnvValue::Plain("one".into()));
+    role.default_launch = Some(Vec::new());
+    editor.pending.roles.insert("dev".into(), role);
+
+    editor
+        .delete_env_var(&super::SecretsScopeTag::Role("dev".into()), "TOKEN")
+        .unwrap();
+
+    assert_eq!(editor.pending.roles["dev"].default_launch, Some(Vec::new()));
+}
+
+#[test]
+fn editor_delete_env_var_preserves_configured_default_launch() {
+    let mut editor = TestEditor::new_edit("alpha".into(), WorkspaceConfig::default());
+    let mut role = WorkspaceRoleOverride::default();
+    role.env
+        .insert("TOKEN".into(), jackin_config::EnvValue::Plain("one".into()));
+    role.default_launch = Some(vec!["codex-main".into()]);
+    editor.pending.roles.insert("dev".into(), role);
+
+    editor
+        .delete_env_var(&super::SecretsScopeTag::Role("dev".into()), "TOKEN")
+        .unwrap();
+
+    assert_eq!(
+        editor.pending.roles["dev"].default_launch,
+        Some(vec!["codex-main".into()])
+    );
+}
+
+#[test]
+fn editor_delete_env_var_save_diff_preserves_role_github_token() {
+    let github = jackin_config::GithubAuthConfig {
+        auth_forward: jackin_config::GithubAuthMode::Token,
+        env: [(
+            "GH_TOKEN".into(),
+            jackin_config::EnvValue::Plain("test".into()),
+        )]
+        .into(),
+    };
+    let mut role = WorkspaceRoleOverride::default();
+    role.env
+        .insert("TOKEN".into(), jackin_config::EnvValue::Plain("one".into()));
+    role.github = Some(github.clone());
+    let original = WorkspaceConfig {
+        roles: [("dev".into(), role)].into(),
+        ..Default::default()
+    };
+    let mut editor = TestEditor::new_edit("alpha".into(), original.clone());
+
+    editor
+        .delete_env_var(&super::SecretsScopeTag::Role("dev".into()), "TOKEN")
+        .unwrap();
+
+    assert_eq!(
+        editor
+            .pending
+            .roles
+            .get("dev")
+            .and_then(|role| role.github.as_ref()),
+        Some(&github),
+        "deleting the final role env key must retain its GitHub token override"
+    );
+    assert_eq!(
+        crate::services::config_save::workspace_save_diff_plan(
+            &jackin_core::WorkspaceName::parse("alpha").unwrap(),
+            &original,
+            &editor.pending,
+        ),
+        vec![
+            crate::services::config_save::WorkspaceSaveDiffOp::EnvRemove {
+                scope: jackin_config::EnvScope::WorkspaceRole {
+                    workspace: "alpha".into(),
+                    role: "dev".into(),
+                },
+                key: "TOKEN".into(),
+            }
+        ]
+    );
+}
+
+#[test]
 fn editor_secret_text_editability_rejects_op_refs() {
     let mut editor = TestEditor::new_edit("alpha".into(), WorkspaceConfig::default());
     editor

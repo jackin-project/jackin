@@ -3,6 +3,8 @@
 
 # Rust
 /target/
+# crate-relative test/build output (e.g. broker lifecycle fixtures)
+**/target/
 
 # Native macOS menu-bar local build products (source + Generated bindings are tracked)
 /native/dist/

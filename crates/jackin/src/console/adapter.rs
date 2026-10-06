@@ -82,7 +82,7 @@ pub(crate) mod input {
         jackin_core::RoleSelector,
         jackin_core::Agent,
         crate::console::ConsoleInstanceAction,
-        Option<String>,
+        jackin_core::LaunchSelection,
     >;
 
     #[cfg(test)]

@@ -58,7 +58,7 @@ GitHub code search for `"api/monitor/usage/quota/limit"` returns 1 396 files; 22
 
 - openclaw/openclaw — https://raw.githubusercontent.com/openclaw/openclaw/HEAD/src/infra/provider-usage.fetch.zai.ts (line 74)
 - nguyenphutrong/quotio (packaged macOS app; GLM support since 2026-01, issue #77) — https://raw.githubusercontent.com/nguyenphutrong/quotio/HEAD/Quotio/Services/GLMQuotaFetcher.swift (line 136)
-- tddworks/ClaudeBar — https://raw.githubusercontent.com/tddworks/ClaudeBar/HEAD/Sources/Infrastructure/Zai/ZaiUsageProbe.swift (line 98)
+- tddworks/ClaudeBar — its current shared-engine Z.ai config sends `Authorization: Bearer {{token}}` in [`zai.json`](https://github.com/tddworks/ClaudeBar/blob/main/Modules/Providers/Resources/Providers/zai.json). [Migration commit](https://github.com/tddworks/ClaudeBar/commit/9726e1d91e80510de003812a7e15209317568af2) moved Z.ai to the JSON/JavaScript engine and deleted `ZaiUsageProbe`.
 - junhoyeo/tokscale — https://raw.githubusercontent.com/junhoyeo/tokscale/HEAD/crates/tokscale-cli/src/commands/usage/zai.rs (lines 46, 59)
 - tingly-dev/tingly-box — `fetchBearerJSON` — https://raw.githubusercontent.com/tingly-dev/tingly-box/HEAD/ai/quota/fetcher/zai.go
 - tontinton/maki — `ResolvedAuth::bearer(...)` used for `QUOTA_LIMIT_URL` — https://raw.githubusercontent.com/tontinton/maki/HEAD/maki-providers/src/providers/zai/mod.rs (lines 256, 336)

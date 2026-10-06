@@ -4,7 +4,7 @@
 //! `OpStructRunner` and `OpWriteRunner` traits for structured 1Password access.
 
 use jackin_core::{FieldTarget, OpRef};
-use jackin_core::{OpAccount, OpField, OpItem, OpVault};
+use jackin_core::{OpAccount, OpField, OpItem, OpItemDetail, OpVault};
 
 /// Structural `op` queries used by the picker — metadata browser.
 ///
@@ -17,13 +17,13 @@ pub trait OpStructRunner {
     fn vault_list(&self, account: Option<&str>) -> anyhow::Result<Vec<OpVault>>;
     /// List items in a vault (metadata only; no secret field values).
     fn item_list(&self, vault_id: &str, account: Option<&str>) -> anyhow::Result<Vec<OpItem>>;
-    /// List field metadata for an item (ids, labels, types — not values).
+    /// Load item field and section metadata (never field values).
     fn item_get(
         &self,
         item_id: &str,
         vault_id: &str,
         account: Option<&str>,
-    ) -> anyhow::Result<Vec<OpField>>;
+    ) -> anyhow::Result<OpItemDetail<OpField>>;
 }
 
 /// Mutating 1Password operations used by the workspace-token setup orchestrator.
@@ -42,7 +42,7 @@ pub trait OpWriteRunner {
         vault_id: &str,
         target: &FieldTarget,
         value: &str,
-        section: Option<&str>,
+        section: Option<&jackin_core::OpSectionTarget>,
     ) -> anyhow::Result<OpRef>;
 
     /// Delete an item entirely.

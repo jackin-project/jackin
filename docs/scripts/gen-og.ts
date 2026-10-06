@@ -6,7 +6,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { ageToColor, createRainState, tickRain } from '../src/components/landing/rainEngine'
 import { chevron, chevronSvg } from "./brand-geometry"
-import { outlineWord, placeWord } from './brand-outline'
+import { interFont, outlineWord, placeWord } from './brand-outline'
 
 const root = join(import.meta.dirname, '..')
 
@@ -243,6 +243,10 @@ async function generate(width: number, height: number, output: string) {
 const heroWord = outlineWord('jackin', 138, TEXT)
 const heroWordGroup = placeWord(heroWord, Math.round((586 - heroWord.width / 2) * 100) / 100, 338)
 const heroCaret = chevron(138, 842, 314)
+// Keep the banner composition, but use the canonical full-logo Inter face.
+// Outline the byline so SVG consumption cannot substitute a host font.
+const heroByline = outlineWord('by tailrocks', 26, MUTED, interFont)
+const heroBylineGroup = placeWord(heroByline, 626 - heroByline.width / 2, 446)
 const readmeHeroSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-label="jackin❯ by tailrocks">
   <rect width="1280" height="640" fill="${BG}"/>
   <g font-family="JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="22" font-weight="600" text-anchor="middle">
@@ -251,7 +255,7 @@ const readmeHeroSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="1280" heig
   <g font-family="JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" text-anchor="middle">
     ${heroWordGroup}
     <path d="${heroCaret.d}" fill="${CHEVRON}"/>
-    <text x="626" y="446" font-size="26" font-weight="500" fill="${MUTED}">by tailrocks</text>
+    ${heroBylineGroup}
   </g>
 </svg>
 `

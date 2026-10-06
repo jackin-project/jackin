@@ -254,6 +254,39 @@ fn sync_directory(path: &Path) -> std::io::Result<()> {
     std::fs::File::open(path)?.sync_all()
 }
 
+fn is_valid_credential_stage_name(name: &str) -> bool {
+    let Some(suffix) = name.strip_prefix(".credentials-stage-") else {
+        return false;
+    };
+    !suffix.is_empty() && suffix.bytes().all(|byte| byte.is_ascii_alphanumeric())
+}
+
+/// Remove only private, daemon-created staging directories left without a
+/// transaction. Symlinks, non-directories, and malformed names are
+/// deliberately left alone; the active staged directory is preserved.
+fn sweep_orphan_credential_staging(root: &Path, active: Option<&str>) -> anyhow::Result<()> {
+    let mut removed = false;
+    for entry in std::fs::read_dir(root)? {
+        let entry = entry?;
+        let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
+            continue;
+        };
+        if active == Some(name.as_str()) || !is_valid_credential_stage_name(&name) {
+            continue;
+        }
+        let metadata = std::fs::symlink_metadata(entry.path())?;
+        if !metadata.is_dir() || metadata.file_type().is_symlink() {
+            continue;
+        }
+        std::fs::remove_dir_all(entry.path())?;
+        removed = true;
+    }
+    if removed {
+        sync_directory(root)?;
+    }
+    Ok(())
+}
+
 fn credential_transaction_entry(root: &Path, name: &str) -> anyhow::Result<std::path::PathBuf> {
     let path = Path::new(name);
     anyhow::ensure!(
@@ -500,7 +533,14 @@ fn rollback_credential_swap(
 }
 
 fn recover_credential_swap(root: &Path) -> anyhow::Result<()> {
-    let Some(mut transaction) = load_credential_transaction(root)? else {
+    let transaction = load_credential_transaction(root)?;
+    sweep_orphan_credential_staging(
+        root,
+        transaction
+            .as_ref()
+            .and_then(|value| value.staged.as_deref()),
+    )?;
+    let Some(mut transaction) = transaction else {
         return Ok(());
     };
     let directory = root.join("credentials");

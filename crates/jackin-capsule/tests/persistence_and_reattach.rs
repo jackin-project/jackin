@@ -33,6 +33,9 @@ async fn attach_hello_roundtrips_over_socket() {
 
     let server = tokio::spawn(async move {
         let (mut stream, _) = listener.accept().await.unwrap();
+        jackin_protocol::capsule_transport::server_handshake_async(&mut stream)
+            .await
+            .unwrap();
         let mut first = [0u8; 1];
         stream.read_exact(&mut first).await.unwrap();
         // First byte of an attach Hello must be a non-zero tag.
@@ -65,6 +68,9 @@ async fn attach_hello_roundtrips_over_socket() {
     });
 
     let mut client = UnixStream::connect(&sock).await.unwrap();
+    jackin_protocol::capsule_transport::client_handshake_async(&mut client)
+        .await
+        .unwrap();
     let hello = encode_client(ClientFrame::Hello {
         rows: 24,
         cols: 80,
@@ -104,6 +110,9 @@ async fn control_channel_status_roundtrip() {
 
     let server = tokio::spawn(async move {
         let (mut stream, _) = listener.accept().await.unwrap();
+        jackin_protocol::capsule_transport::server_handshake_async(&mut stream)
+            .await
+            .unwrap();
         let mut first = [0u8; 1];
         stream.read_exact(&mut first).await.unwrap();
         // Control channel always starts with `0x00` (high byte of the
@@ -124,6 +133,9 @@ async fn control_channel_status_roundtrip() {
     });
 
     let mut client = UnixStream::connect(&sock).await.unwrap();
+    jackin_protocol::capsule_transport::client_handshake_async(&mut client)
+        .await
+        .unwrap();
     client
         .write_all(&frame(&ControlRequest {
             ctx: TelemetryContext::v1(),
@@ -160,6 +172,9 @@ async fn second_attach_takes_over_first() {
         let mut first_stream: Option<UnixStream> = None;
         for _ in 0..2 {
             let (mut stream, _) = listener.accept().await.unwrap();
+            jackin_protocol::capsule_transport::server_handshake_async(&mut stream)
+                .await
+                .unwrap();
             // Drop the first stream by writing Shutdown to it when the
             // second arrives — mimicking the daemon's takeover path.
             if let Some(mut prev) = first_stream.take() {
@@ -188,9 +203,15 @@ async fn second_attach_takes_over_first() {
         .expect("encode Hello")
     };
     let mut client_a = UnixStream::connect(&sock).await.unwrap();
+    jackin_protocol::capsule_transport::client_handshake_async(&mut client_a)
+        .await
+        .unwrap();
     client_a.write_all(&hello()).await.unwrap();
 
     let mut client_b = UnixStream::connect(&sock).await.unwrap();
+    jackin_protocol::capsule_transport::client_handshake_async(&mut client_b)
+        .await
+        .unwrap();
     client_b.write_all(&hello()).await.unwrap();
 
     // Client A should receive a Shutdown frame. Cap the wait so a

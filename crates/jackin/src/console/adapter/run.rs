@@ -901,8 +901,7 @@ where
         crate::console::adapter::InputOutcome::LaunchWithAccount {
             selector,
             agent,
-            account,
-            configuration,
+            selection,
         } => {
             let Some(input) = take_pending_launch_plan(state) else {
                 return Ok(ConsoleLoopFlow::Exit(None));
@@ -928,8 +927,7 @@ where
                     selector,
                     workspace,
                     agent,
-                    account,
-                    configuration,
+                    selection,
                 },
             )));
         }

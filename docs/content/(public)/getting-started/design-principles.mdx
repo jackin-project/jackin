@@ -109,13 +109,16 @@ Operator configuration lives as plain TOML files you can put under version contr
 equivalents shipping in every other agent runtime — jackin❯
 enables all of them by default.
 
-The reason this is safe: the container, not the in-runtime
-prompt, is the trust boundary. Once you've decided to drop an
-agent into a workspace, in-runtime "are you sure?" prompts add
-friction without changing what the agent can reach. Container
-mounts, the network policy, and the Docker-in-Docker sidecar
-already define the blast radius. The agent gets to move fast
-*inside* that boundary; the boundary itself stays in place.
+The launch boundary comes from the selected backend, configured
+mounts, and effective network and security grants, not from the
+in-runtime prompt. Once you've chosen the workspace and role,
+in-runtime "are you sure?" prompts add friction without changing
+what the agent can reach. The Docker backend uses a role container;
+Docker-in-Docker is available only when the effective profile and
+role grants enable it. Apple Container uses its VM-backed runtime
+boundary. See the [Security Model](/guides/security-model/) for the
+limits of each backend; Docker is not a hypervisor boundary for a
+fully hostile workload.
 
 This is the same reason `git_pull_on_entry`, secret forwarding,
 and persisted state all live at the workspace / role level
@@ -124,16 +127,23 @@ rather than being asked about per-action mid-session.
 ## Container is the trust boundary, not the prompt
 
 A corollary to the previous principle, but worth calling out
-separately: **the security model is the container plus the
-mount and network policy, not how cooperative the agent is.**
+separately: **the security model is the selected runtime backend
+plus the mount and network policy, not how cooperative the agent
+is.**
 
 This shapes the rest of the design:
 
-- Mounts are minimal by default. The agent only sees what you
-  mount.
-- Each agent gets its own Docker-in-Docker sidecar, so any
-  containers it builds or runs cannot escape into your host
-  Docker daemon.
+- Mounts are minimal by default. A Docker role container sees
+  configured host mounts; separate role launches have separate
+  containers, while explicitly shared mounts can expose the same
+  files to more than one role.
+- Runtime processes and tabs within a Docker role share that
+  container's process and filesystem namespaces. When effective
+  grants enable Docker-in-Docker, that role launch gets its own
+  sidecar and network; inner containers still share the host
+  kernel and are not a VM boundary.
+- Apple Container runs workloads inside VMs and has a different
+  runtime boundary.
 - Failures inside the container do not propagate to your host.
   `jackin purge` discards the persisted state cleanly without
   touching the host.

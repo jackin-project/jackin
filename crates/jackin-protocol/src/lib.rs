@@ -22,6 +22,7 @@ use jackin_core::container_paths;
 
 pub mod agent_status;
 pub mod attach;
+pub mod capsule_transport;
 pub mod control;
 pub mod snapshot;
 pub mod telemetry_context;

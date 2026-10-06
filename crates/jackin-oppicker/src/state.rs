@@ -16,10 +16,10 @@ use termrock::interaction::{CollectionItem, CollectionState};
 use crate::{
     FieldDisplayRow, FieldLabelOrigin, OpLoadState, OpPickerAccount, OpPickerCache, OpPickerField,
     OpPickerFieldRef, OpPickerItem, OpPickerItemRef, OpPickerLoadRequest, OpPickerLoadResult,
-    OpPickerMode, OpPickerPendingLoad, OpPickerStage, OpPickerVault, OpPickerVaultRef,
+    OpPickerMode, OpPickerPendingLoad, OpPickerStage, OpPickerVault, OpPickerVaultRef, OpSection,
     build_op_picker_ref, field_display_rows_for_picker, filtered_accounts, filtered_fields,
     filtered_item_choices, filtered_items, filtered_vaults, naming_stage_input_for_stage,
-    section_choices_from_references, selected_account_id,
+    section_label_for_id, selected_account_id,
 };
 
 /// Concrete load-result type for the op picker (all four payload variants
@@ -44,13 +44,14 @@ pub struct OpPickerState {
     pub selected_item: Option<OpPickerItem>,
 
     pub fields: Vec<OpPickerField>,
+    pub sections: Vec<OpSection>,
     pub field_list_state: CollectionState<usize>,
     pub section_list_state: CollectionState<usize>,
     /// The section chosen on the Section stage (Create mode), scoping the
     /// Field stage. `None` = the unsectioned `(root)` choice. Reset to
     /// `None` whenever a fresh item's fields load.
-    pub selected_section: Option<String>,
-    /// Section names currently collapsed in the field picker.
+    pub selected_section: Option<OpSection>,
+    /// Opaque section IDs currently collapsed in the field picker.
     /// Absent => expanded. Cleared whenever a fresh field list loads.
     pub collapsed_sections: HashSet<String>,
 
@@ -66,7 +67,7 @@ pub struct OpPickerState {
     pub section_name_input: TextInputState<'static>,
     /// Captured by the New-section flow, consumed when the final
     /// `OpPickerSelection` is built at commit.
-    pub pending_section: Option<String>,
+    pub pending_section: Option<jackin_core::OpSectionTarget>,
     /// The stage the `FieldLabel` sub-stage was entered from, so its Esc
     /// returns to the right origin (Create mode has three entry points).
     pub field_label_origin: FieldLabelOrigin,
@@ -102,6 +103,7 @@ impl std::fmt::Debug for OpPickerState {
             .field("items", &self.items)
             .field("selected_item", &self.selected_item)
             .field("fields", &self.fields)
+            .field("sections", &self.sections)
             .field("selected_section", &self.selected_section)
             .field("collapsed_sections", &self.collapsed_sections)
             .field("load_state", &self.load_state)
@@ -134,12 +136,19 @@ impl OpPickerState {
         filtered_fields(&self.filter_buf, &self.fields)
     }
 
-    /// Distinct sections present in the loaded fields, in first-appearance
-    /// order, with a leading `None` (`(root)`) entry. Drives the Section
+    /// Existing sections from item metadata, in first-appearance order,
+    /// with a leading `None` (`(root)`) entry. Drives the Section
     /// stage list (Create mode). The render appends a `+ New section`
     /// sentinel after these choices.
-    pub fn section_choices(&self) -> Vec<Option<String>> {
-        section_choices_from_references(self.fields.iter().map(|field| field.reference.as_str()))
+    pub fn section_choices(&self) -> Vec<Option<OpSection>> {
+        let mut choices = vec![None];
+        let mut seen_ids = HashSet::new();
+        for section in &self.sections {
+            if seen_ids.insert(section.id.as_str()) {
+                choices.push(Some(section.clone()));
+            }
+        }
+        choices
     }
 
     /// Build the ordered display rows for the field picker.
@@ -154,7 +163,10 @@ impl OpPickerState {
             &self.mode,
             &self.filter_buf,
             &self.fields,
-            self.selected_section.as_deref(),
+            &self.sections,
+            self.selected_section
+                .as_ref()
+                .map(|section| section.id.as_str()),
             &self.collapsed_sections,
         )
     }
@@ -181,7 +193,7 @@ impl OpPickerState {
         clippy::expect_used,
         reason = "op ref commit is reachable only after vault and item selections exist"
     )]
-    pub fn build_op_ref_on_commit(&self, field: &OpPickerField) -> jackin_core::OpRef {
+    pub fn build_op_ref_on_commit(&self, field: &OpPickerField) -> Option<jackin_core::OpRef> {
         let vault = self
             .selected_vault
             .as_ref()
@@ -210,20 +222,31 @@ impl OpPickerState {
                 id: &field.id,
                 label: &field.label,
                 reference: &field.reference,
+                section_id: field.section_id.as_deref(),
+                section_label: field
+                    .section_id
+                    .as_deref()
+                    .and_then(|section_id| section_label_for_id(section_id, &self.sections)),
             },
             self.fields.iter().map(|field| OpPickerFieldRef {
                 id: &field.id,
                 label: &field.label,
                 reference: &field.reference,
+                section_id: field.section_id.as_deref(),
+                section_label: field
+                    .section_id
+                    .as_deref()
+                    .and_then(|section_id| section_label_for_id(section_id, &self.sections)),
             }),
-        );
+            &self.sections,
+        )?;
 
-        jackin_core::OpRef {
+        Some(jackin_core::OpRef {
             op: built.op,
             path: built.path,
             account: self.selected_account_id(),
             on_demand: false,
-        }
+        })
     }
 
     pub fn selected_account_id(&self) -> Option<String> {

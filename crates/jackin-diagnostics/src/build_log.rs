@@ -10,23 +10,40 @@
 //! cockpit) from the cockpit's view state (which knows nothing about docker).
 
 use std::collections::VecDeque;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Mutex, OnceLock};
+
+use crate::redact;
 
 /// Cap on retained lines. A long `BuildKit` run is bounded so the buffer
 /// cannot grow without limit; the oldest lines drop first.
 const MAX_LINES: usize = 5000;
 
 static ACTIVE: AtomicBool = AtomicBool::new(false);
-static LINES: Mutex<VecDeque<String>> = Mutex::new(VecDeque::new());
+static STATE: OnceLock<Mutex<BuildLogState>> = OnceLock::new();
 #[doc(hidden)]
 pub static TEST_LOCK: Mutex<()> = Mutex::new(());
+
+struct BuildLogState {
+    lines: VecDeque<String>,
+    redactor: redact::StreamRedactor,
+}
+
+fn state() -> &'static Mutex<BuildLogState> {
+    STATE.get_or_init(|| {
+        Mutex::new(BuildLogState {
+            lines: VecDeque::new(),
+            redactor: redact::StreamRedactor::default(),
+        })
+    })
+}
 
 /// Start a fresh capture: drop any prior lines and mark the sink active so the
 /// command runner tees build output here.
 pub fn begin() {
-    if let Ok(mut lines) = LINES.lock() {
-        lines.clear();
+    if let Ok(mut state) = state().lock() {
+        state.lines.clear();
+        state.redactor.reset();
         // Flip the gate while holding the lock so a teeing writer never observes
         // the cleared-but-still-inactive window between reset and activation.
         ACTIVE.store(true, Ordering::Release);
@@ -37,6 +54,11 @@ pub fn begin() {
 /// the finished log after the build completes.
 pub fn end() {
     ACTIVE.store(false, Ordering::Release);
+    if let Ok(mut state) = state().lock() {
+        // `push_line` feeds complete records, so there is no partial byte line
+        // to flush. Reset only the open secret context at the capture boundary.
+        state.redactor.reset();
+    }
 }
 
 #[must_use]
@@ -45,27 +67,37 @@ pub fn is_active() -> bool {
 }
 
 /// Append one output line, dropping the oldest when the cap is reached.
+///
+/// Secret contexts persist across calls until a record closes them or the
+/// capture ends. Callers multiplexing stdout and stderr must first use one
+/// `StreamRedactor` per source stream so this sink never has to guess which
+/// pipe owns an unframed continuation.
 pub fn push_line(line: &str) {
-    if let Ok(mut lines) = LINES.lock() {
-        if lines.len() >= MAX_LINES {
-            lines.pop_front();
+    if let Ok(mut state) = state().lock() {
+        let line = state.redactor.push_complete_text(line);
+        if line.is_empty() {
+            return;
         }
-        lines.push_back(line.to_owned());
+        if state.lines.len() >= MAX_LINES {
+            state.lines.pop_front();
+        }
+        state.lines.push_back(line);
     }
 }
 
 /// Number of retained lines, for scroll math without cloning the buffer.
 #[must_use]
 pub fn len() -> usize {
-    LINES.lock().map_or(0, |lines| lines.len())
+    state().lock().map_or(0, |state| state.lines.len())
 }
 
 /// Snapshot the retained lines for rendering.
 #[must_use]
 pub fn snapshot() -> Vec<String> {
-    LINES
-        .lock()
-        .map_or_else(|_| Vec::new(), |lines| lines.iter().cloned().collect())
+    state().lock().map_or_else(
+        |_| Vec::new(),
+        |state| state.lines.iter().cloned().collect(),
+    )
 }
 
 #[cfg(test)]

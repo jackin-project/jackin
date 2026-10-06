@@ -811,7 +811,7 @@ fn create_op_picker_plan_routes_create_mode_outcomes() {
         account: Some("acct"),
         vault: "vault",
         item_name: "item".to_owned(),
-        section: Some("section".to_owned()),
+        section: Some(jackin_core::OpSectionTarget::NewLabel("section".to_owned())),
         field_label: "field".to_owned(),
     };
     assert_eq!(

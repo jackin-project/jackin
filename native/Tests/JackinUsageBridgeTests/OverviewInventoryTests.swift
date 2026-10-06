@@ -111,4 +111,38 @@ final class OverviewInventoryTests: XCTestCase {
         XCTAssertTrue(row.isProvider)
         XCTAssertNil(row.children)
     }
+
+    func testUnavailableRouteKeepsSiblingVisibleWithoutSelectingIt() {
+        let sibling = account(
+            surface: "codex",
+            key: "sibling",
+            provider: "",
+            account: "work@example.test"
+        )
+        let route = PresentationStore.SelectedAccountRoute.unavailable(
+            accountKey: "removed",
+            notice: "Selected account is no longer available."
+        )
+        let projected = PresentationStore.ProviderGroupRow(
+            surfaceId: "codex",
+            displayLabel: "OpenAI",
+            iconKey: "codex",
+            fallbackGlyph: "?",
+            usageURL: nil,
+            accountColumnLabel: "2 accounts",
+            planOrStatusLabel: "Multiple plans",
+            remainingLabel: "Varies",
+            resetDisplayLabel: "Varies",
+            accounts: [sibling],
+            accessibilityLabel: "OpenAI, 2 accounts",
+            lastError: nil,
+            selectedAccountRoute: route
+        )
+
+        let rows = OverviewInventory.tree(groups: [projected])
+
+        XCTAssertEqual(rows.first?.children?.compactMap(\.accountKey), ["sibling"])
+        XCTAssertFalse(sibling.selected)
+        XCTAssertEqual(projected.selectedAccountRoute, route)
+    }
 }

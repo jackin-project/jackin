@@ -651,3 +651,50 @@ fn failed_admission_drops_lease_and_allows_retry() {
     let retry = AccountConfigRevision::acquire(&paths).unwrap();
     retry.ensure_current(&paths).unwrap();
 }
+
+#[test]
+fn orphan_sweep_removes_only_abandoned_stage_directories() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+    let orphan = root.join(".credentials-stage-Ab12Cd");
+    let active = root.join(".credentials-stage-Xy34Zw");
+    std::fs::create_dir(&orphan).unwrap();
+    std::fs::create_dir(&active).unwrap();
+    std::fs::write(orphan.join("secret"), b"x").unwrap();
+    std::fs::write(root.join(".credentials-stage-NotADir"), b"x").unwrap();
+    std::fs::create_dir(root.join(".credentials-stage-bad_suffix")).unwrap();
+    std::fs::create_dir(root.join("credentials")).unwrap();
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&orphan, root.join(".credentials-stage-LiNk99")).unwrap();
+
+    sweep_orphan_credential_staging(root, Some(".credentials-stage-Xy34Zw")).unwrap();
+
+    assert!(!orphan.exists(), "orphan stage dir must be removed");
+    assert!(active.is_dir(), "active stage dir must be preserved");
+    assert!(
+        root.join(".credentials-stage-NotADir").is_file(),
+        "non-directory must be preserved"
+    );
+    assert!(
+        root.join(".credentials-stage-bad_suffix").is_dir(),
+        "malformed name must be preserved"
+    );
+    assert!(root.join("credentials").is_dir());
+    #[cfg(unix)]
+    assert!(
+        std::fs::symlink_metadata(root.join(".credentials-stage-LiNk99"))
+            .unwrap()
+            .file_type()
+            .is_symlink(),
+        "symlink must be preserved"
+    );
+}
+
+#[test]
+fn orphan_sweep_without_transaction_removes_all_stage_directories() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+    std::fs::create_dir(root.join(".credentials-stage-Aa11Bb")).unwrap();
+    sweep_orphan_credential_staging(root, None).unwrap();
+    assert!(!root.join(".credentials-stage-Aa11Bb").exists());
+}

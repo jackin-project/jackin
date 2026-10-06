@@ -158,6 +158,7 @@ where
                 docker,
                 runner,
                 container,
+                None,
             )
             .await?;
             admission_lease.ensure_current(paths)?;
@@ -416,6 +417,15 @@ where
         supported_agents: supported_agents.to_vec(),
     });
     let container_state = paths.data_dir.join(container_name);
+    // The launch was admitted before `prepare_instance`; migrate any old
+    // isolation envelope while its independent v3 manifest witness is still
+    // on disk. Inspection and restore-candidate reads stay non-mutating.
+    if let Err(error) = crate::isolation::state::migrate_records(&container_state)
+        .context("cannot migrate admitted isolation state before manifest replacement")
+    {
+        cleanup.run(docker).await;
+        return Err(error);
+    }
     let mut instance_manifest = if restoring {
         match InstanceManifest::read_optional(&container_state).with_context(|| {
             format!(
@@ -700,7 +710,7 @@ async fn prepare_role_state(
     jackin_telemetry::spawn::joined_blocking(move || {
         let bindings =
             super::super::super::capsule_setup::instance_auth_bindings(&config, &instances)?;
-        let prepared = RoleState::prepare_for_bindings(
+        let mut prepared = RoleState::prepare_for_bindings(
             &paths,
             &container_name,
             &manifest,
@@ -723,14 +733,15 @@ async fn prepare_role_state(
         let efforts = super::super::super::capsule_setup::resolved_instance_efforts(
             &instances, agent, effort,
         );
-        super::super::super::account_config::configure_accounts(
-            &prepared.0.root,
-            &config,
-            &instances,
-            &prepared.0.auth.slots,
-            &models,
-            &efforts,
-        )?;
+        prepared.0.provider_config_mounts =
+            super::super::super::account_config::configure_accounts(
+                &prepared.0.root,
+                &config,
+                &instances,
+                &prepared.0.auth.slots,
+                &models,
+                &efforts,
+            )?;
         Ok(prepared)
     })
     .await
@@ -1593,7 +1604,7 @@ where
         &prepared.container_state,
         role_key,
         container_name,
-        &workspace_label,
+        environment.workspace_opt.as_ref(),
         &preflight,
         runner,
     );
@@ -1782,6 +1793,7 @@ where
                 resolved_env,
                 credential_scope: &credential_scope,
                 debug: opts.debug,
+                entry_claim: opts.entry_claim.as_deref(),
             },
         )
         .await?;
@@ -1859,6 +1871,7 @@ where
         },
         non_interactive: opts.non_interactive,
         account_revision: &account_revision,
+        entry_claim: opts.entry_claim.as_deref(),
     };
     let launch_result = super::super::super::launch_role_runtime(&ctx, steps, docker, runner).await;
     drop(ctx);

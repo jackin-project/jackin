@@ -3,6 +3,8 @@
 
 //! 1Password vault/item/field picker modal — generic state, input handlers,
 //! and load-execution helpers.
+//!
+//! Behavioral contract: `docs/content/reference/developer-reference/specs/op-picker.mdx`.
 
 pub mod input;
 pub mod load;

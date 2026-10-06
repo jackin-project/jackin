@@ -9,9 +9,7 @@ use std::fmt;
 ///
 /// Schema-preserving transparent string. Rejects empty names and names with
 /// whitespace or path separators so host APIs cannot smuggle path fragments.
-#[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
-)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
 #[serde(transparent)]
 pub struct ContainerId(String);
 
@@ -51,6 +49,16 @@ impl ContainerId {
     #[must_use]
     pub fn into_inner(self) -> String {
         self.0
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for ContainerId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let raw = <String as serde::Deserialize>::deserialize(deserializer)?;
+        Self::parse(&raw).map_err(serde::de::Error::custom)
     }
 }
 

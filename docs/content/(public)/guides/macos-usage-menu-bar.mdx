@@ -35,11 +35,11 @@ Settings (Command-comma) can choose the status-item display mode, percentage and
 
 ## Focused popover
 
-The popover intentionally has no Overview tab or provider tab strip. It keeps the provider you clicked as context and uses native controls for:
+The popover has no tab strip. Provider status items open their clicked provider; the fallback item opens a provider Overview list. It uses native controls for:
 
 - a centered, non-interactive jackin❯ monogram and `jackin❯ desktop` identity row;
 - provider identity and textual status;
-- account selection when multiple accounts are known;
+- account selection when multiple accounts are known or a saved selection needs confirmation;
 - provider details and quota limits;
 - Retry when a global or provider operation fails;
 - Refresh (Command-R);
@@ -59,7 +59,7 @@ Open Usage from the popover or status-item menu. The normal resizable window is 
 - The sidebar uses the full leading structural height.
 - `jackin❯ desktop` stays centered over the detail pane, with Refresh trailing in the same native detail accessory.
 
-The window does not display a redundant `Usage` heading. Closing and reopening preserves a valid destination, account, sidebar state, and frame. If the selected provider disappears or is disabled, the app returns safely to Overview.
+The window does not display a redundant `Usage` heading. Closing and reopening preserves a valid destination, account, sidebar state, and frame. If the selected provider disappears, the app returns safely to Overview. Providers disabled for compact display remain in the full Usage inventory with their account limits and recovery state. If a selected account disappears or an older saved identity needs confirmation, Overview explains that state and keeps recovery reachable. Choose another account explicitly; refreshing never selects a sibling for you. Account changes in another provider keep your current valid destination intact. A refresh failure keeps the inventory and current detail visible, with an error notice and Retry action.
 
 Keyboard commands:
 
@@ -76,7 +76,11 @@ jackin❯ desktop reuses the provider sign-ins already available on the Mac. It 
 
 On a default Claude Code install, macOS may ask for Keychain permission on first read. **Allow** permits that read; **Always Allow** keeps later reads silent. **Deny** disables Claude for that app session without repeatedly prompting or affecting other providers.
 
-Multiple known accounts appear in native account menus. Selecting one updates the same account selection used by the status item, popover, Usage window, and Capsule usage view.
+Multiple known accounts appear in native account menus. The desktop app saves one selection shared by its status item, popover, and Usage window. Capsule keeps its own local account selection. Both surfaces use the host broker's quota data, but selecting an account in one does not change the other surface's selection.
+
+An older unversioned account-selection file requires explicit reselection for its
+saved providers. The app preserves each identity as requiring reselection and does not
+switch to a sibling account on its own.
 
 ## States and accessibility
 

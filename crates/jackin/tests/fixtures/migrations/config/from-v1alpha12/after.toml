@@ -1,0 +1,13 @@
+version = "v1alpha13"
+
+[accounts.personal]
+name = "Personal"
+provider = "anthropic"
+
+[accounts.personal.credential]
+type = "api_key"
+value = { op = "op://vault-fixture/item-fixture/section-fixture/field-fixture?attribute=otp", account = "fixture@example.invalid", on_demand = true , breadcrumb = { version = 1, value = "Ops%252FBlue/Recovery[Fixture%252FWest]/Auth%252FSection/OTP?attribute=otp" } }
+
+[bootstrap]
+version = 1
+fresh_install = false
