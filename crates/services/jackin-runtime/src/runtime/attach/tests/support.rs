@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use crate::instance::InstanceManifest;
+use jackin_core::{ContainerHandle, JackinPaths};
 pub(super) fn test_paths() -> (TempDir, JackinPaths) {
     let dir = TempDir::new().unwrap();
     let paths = JackinPaths::for_tests(dir.path());

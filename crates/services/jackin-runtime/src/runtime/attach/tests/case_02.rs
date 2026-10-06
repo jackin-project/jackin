@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use crate::instance::InstanceManifest;
+use jackin_core::ContainerHandle;
 
 #[tokio::test]
 async fn start_rejects_rotation_after_lifecycle_inspect_before_container_start() {

@@ -1,7 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{FinishLaunch, RuntimeDispatch, finish_launch};
+use super::runtime_dispatch::RuntimeDispatch;
+use super::{FinishLaunch, finish_launch};
 use jackin_config::AppConfig;
 use jackin_core::JackinPaths;
 use jackin_test_support::{FakeDockerClient, FakeRunner};

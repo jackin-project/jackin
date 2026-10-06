@@ -6,7 +6,7 @@
 use super::{RuntimeLaunched, handle_launch_failure};
 use jackin_docker::docker_client::DockerApi;
 
-pub(super) enum RuntimeDispatch {
+pub(crate) enum RuntimeDispatch {
     AppleContainer(String),
     Detached(String),
     Docker {

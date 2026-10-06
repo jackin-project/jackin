@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use crate::instance::{InstanceIndex, InstanceManifest, InstanceStatus};
 
 #[tokio::test]
 async fn hardline_marks_missing_manifest_restore_available() {

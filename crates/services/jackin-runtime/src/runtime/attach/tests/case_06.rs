@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use jackin_core::ContainerHandle;
 
 #[tokio::test]
 async fn restored_start_activates_only_its_entry_before_foreground() {
