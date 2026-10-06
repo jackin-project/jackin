@@ -1,0 +1,217 @@
+---
+title: "Strict Rust policy rollout"
+description: "Violation inventory and sequenced migration plan for rust-repository-policy rust-strict-v1."
+---
+
+## Basis
+
+- `main` SHA at slice start: `868ce53519234f879d26a8bd2dffaa30fae2d729`
+  (identical to the Phase 1 audit SHA: focused re-diff is empty, no
+  audit deltas to reconcile).
+- Policy: `tailrocks/rust-repository-policy` `v0.1.0`, tarball sha256
+  `4d6efd5ec023aabb53aca10d564b28bcf70c8197717d5bdc4e2e5e8da71afa1c`
+  (verified before install).
+- Install: release materialized to `.cache/rust-policy/` (gitignored,
+  re-materialized in CI before `alint check`); adapter `.alint.yml`
+  extends `profiles/rust-strict-v1.yml` plus the one trust-gated
+  `policy-gaps` command rule; `schemas/renovate.schema.json` vendored
+  to the repo root per the install contract; helper
+  `rust-repository-policy` v0.1.0 on `PATH`.
+- Tool pins: alint `0.17.0`, helper at release tag, profile
+  `rust-strict-v1` (36 native rules + `policy-gaps` = 37 loaded).
+- Branch: `rust-policy-rollout`. This slice commits install + inventory
+  + plan only. No compliance fixes yet. Do not merge to `main`.
+- Reproduce: `alint validate-config .alint.yml` (37 rules),
+  `alint check` (native + gaps), `rust-repository-policy check-gaps
+  --root .` (authoritative gap detail; alint renders gap findings with
+  generic text). Fresh clones need `mise trust` (or
+  `MISE_TRUSTED_CONFIG_PATHS`) before either tool runs: both resolve
+  `cargo` through mise shims.
+
+## Violation inventory (748 total, 13 of 37 rules failing)
+
+Native `alint check` exit 1: 748 errors, 24 passing / 13 failing rules.
+`policy-gaps` count (242) reconciles exactly with the direct helper run.
+
+### Native rules
+
+| Rule | Findings | Notes |
+|---|---|---|
+| `size-file-400` | 368 files | Over-400-line `**/*.rs`, worst: console 67, runtime 46, capsule 39, jackin 39, usage 32, xtask 30, config 21. Includes `vendor/arrayref/src/lib.rs`: `vendor/` has no size exclusion. |
+| `tests-dir-present` | 60 | Pre-move noise: with flat layout, `crates/*/*` matches 60 child dirs as pseudo-packages, none with `tests/`. Re-baseline after the S4 move. |
+| `layout-no-flat-crate-manifest` | 33 | 32 members + excluded `jackin-lints`, all at `crates/*/Cargo.toml`. |
+| `docs-root-only-allowed` | 15 | BRANCHING, COMMITS, CONTEXT, CONTRIBUTING, DEFECT_LEDGER, DEPRECATED, ENGINEERING, HOST_AND_CONTAINER, MISROUTED-RECOVERY-MIGRATION, PRERELEASE, PROJECT_STRUCTURE, PULL_REQUESTS, RULES, TESTING, TODO. README/CHANGELOG/AGENTS/CLAUDE stay (allowlisted). |
+| `size-lib-main-150` | 14 | 13 under `crates/` (incl. lints lib, 5 mains) + `vendor/arrayref/src/lib.rs`. |
+| `cargo-workspace-inherit-edition` | 4 | The 4 `fuzz/` manifests only (`crates/{config,env,manifest,protocol}/fuzz/`). Native globs select depth 2, so flat members are invisible until the move. |
+| `cargo-workspace-inherit-license` | 4 | Same 4 fuzz manifests. |
+| `cargo-workspace-inherit-lints` | 4 | Same 4 fuzz manifests. |
+| `toolchain-channel-pinned` | 1 | Channel is `1.97.1`, policy pins `1.98.1`. |
+| `toolchain-mise-parity` | 1 | No `[tools] rust` literal: mise resolves rust via `idiomatic_version_file`. |
+| `ci-build-runs-on` | 1 | Single workflow `.github/workflows/ci.yml` has no `build` job. |
+| `cargo-no-patch` | 1 | `[patch.crates-io] arrayref = { path = "vendor/arrayref" }`: security-motivated vendor (checksum-verified against pre-attack lockfile). Removal waits on a trustworthy upstream resolution. |
+
+Passing (24, no action): all `layout-requires-*` (incl. nextest config,
+renovate, alint entrypoint), `layout-crates-dir`, `layout-github-dir`,
+`layout-root-files`, `layout-no-backup-files`,
+`layout-no-merge-leftovers`, `layout-no-deep-crate-manifest`,
+`cargo-workspace-resolver` (`"3"` string), `tests-only-rust`,
+`tests-no-test-files-in-src`, `docs-dir-present`,
+`toolchain-ci-parity` (no CI toolchain pin: tolerated via
+`allow_missing_target`), `ci-no-pull-request-target`,
+`renovate-config-schema`, `renovate-schema-url`.
+
+### Helper gaps (`policy-gaps`, 242 findings in 95 files)
+
+| Gap | Findings | Notes |
+|---|---|---|
+| `GAP-TEST-001` | 147 | Test impl in production files. Worst files: `capsule/src/process_isolation.rs` (26), `usage/src/host/broker/publish.rs` (13), `runtime/.../coordination.rs` (13), `core/src/profile_material.rs` (11). Canonical fix: `#[cfg(test)] mod tests;` + sibling `tests.rs`. |
+| `GAP-TEST-003` | 33 | Orphan `src/` files (runtime 8, diagnostics 7, jackin 6, capsule 5, console 4, isolation 2, usage 1). Declare the module or delete. |
+| `GAP-INHERIT-001` | 28 | Literal `version` in 28 members; 4 already inherit (otlp-testbed, pr-trailers, telemetry, xtask). `jackin-dev` pins `0.1.52` vs workspace `0.6.4`: needs a version-alignment decision before centralizing. |
+| `GAP-SIZE-001` | 15 | Crates over 6000 code lines: console 80139, runtime 58226, capsule 50606, usage 47706, jackin 36112, xtask 35841, config 23232, telemetry 12634, instance 12563, diagnostics 11368, isolation 10535, launch 8423, image 6764, core 6720, protocol 6326. |
+| `GAP-SIZE-002` | 7 | Crates over 60 files: console 243, capsule 151, jackin 140, xtask 117, runtime 113, usage 84, core 77. |
+| `GAP-TEST-002` | 5 | `#[path]` suites (isolation 1, runtime 2) and child modules inside `tests.rs` (runtime 1, usage-ffi 1). |
+| `GAP-INHERIT-003` | 3 | Literal `[lints]`: capsule, process-directory, usage-ffi. Matches the Phase 1 audit (29 inherit, 3 copies). |
+| `GAP-INHERIT-002` | 1 | `process-directory`: literal `rustix` while the workspace defines it. |
+| `GAP-INV-001` | 1 | `policy/owned-packages.json` absent (authored in a later slice, not vendored). |
+| `GAP-DEPS-004` | 1 | `policy/package-groups.json` absent. |
+| `GAP-CI-001` | 1 | `policy/ci-recipes.json` absent. |
+
+Not firing yet (blocked on the three registries above; expect them to
+surface once registries land): `GAP-CI-002/003`, `GAP-DEPS-001/002/003`,
+`GAP-INV-002/003`.
+
+## Migration discipline (every slice below)
+
+Each step maps readers/writers/ownership before moving anything;
+defines forward plus rollback; sequences expand, migrate, verify, then
+contract; keeps steps idempotent with partial failure observable;
+verifies old and new paths at each transition; and never performs
+destructive contraction implicitly: stop after the requested stage
+passes.
+
+## Sequenced plan
+
+### 1. Manifest centralization
+
+- `version.workspace = true` x28 (decision first: `jackin-dev`
+  `0.1.52` vs workspace `0.6.4`: align versions or keep the outlier
+  with a documented exemption).
+- `rustix.workspace = true` x1 (process-directory).
+- `[lints] workspace = true` x3 (capsule, process-directory, usage-ffi).
+- Centralize-or-exempt the 10 remaining non-workspace deps from the
+  Phase 1 audit (capsule libc; config shell-words; console open;
+  diagnostics sysinfo + rustc_version; docker bollard; image sigstore;
+  usage-ffi boltffi; lints dylint): move into `[workspace.dependencies]`
+  or record the exemption with owner and expiry.
+- Forward: edit member manifests only. Rollback: revert the commit.
+  Verify: `cargo metadata --no-deps` package set unchanged,
+  `cargo check --workspace` green, `GAP-INHERIT-*` at zero.
+  Clears: `GAP-INHERIT-001/002/003`.
+
+### 2. Toolchain alignment
+
+- Bump `rust-toolchain.toml` channel `1.97.1` -> `1.98.1`; add an
+  explicit `[tools] rust = "1.98.1"` pin to `mise.toml` (parity rule
+  keeps the two in sync; the current idiomatic-only resolution is
+  invisible to it). Decide `rust-version` in root `Cargo.toml`
+  (`1.97` today): align MSRV with the channel or document the split.
+- Forward: pin files only. Rollback: revert. Verify: full `cargo
+  check` + nextest suite on the new channel (this is the one step
+  whose blast radius is the whole tree; gate on green CI).
+  Clears: `toolchain-channel-pinned`, `toolchain-mise-parity`.
+
+### 3. Grouped S4 moves (`crates/*` -> `crates/<group>/<package>`)
+
+- Per group, map readers/writers/ownership first: workspace `members`
+  list, CI path filters, docs links, docker contexts, xtask path
+  assumptions, `renovate.json` `ignorePaths` (jackin-lints entry),
+  CODEOWNERS-style path rules. One group per commit; forward is `git
+  mv` + member-list update; rollback is revert of that commit.
+- Expand: register the new path in `members` alongside the old.
+  Migrate: move the directory. Verify: `cargo metadata --no-deps`
+  package set identical, `cargo check --workspace`, layout rules for
+  the moved group green, targeted nextest for the group. Contract:
+  drop the old path (explicit step, never implicit).
+- Move all 33 manifests incl. excluded `jackin-lints`.
+- After the last group, re-run the FULL check: native
+  `cargo-workspace-inherit-*` and `tests-*` rules go blind-to-live at
+  depth 2 and will surface new findings; `tests-dir-present` x60 noise
+  collapses to one finding per real crate lacking `tests/`.
+- Clears: `layout-no-flat-crate-manifest` (re-baselines `tests-*`,
+  `cargo-workspace-inherit-*`).
+
+### 4. Fuzz-crate placement (decision + move)
+
+- The 4 `fuzz/` manifests sit at depth 2 today (12 inherit findings)
+  and cannot move to `crates/<group>/<pkg>/fuzz/` (depth 3 trips
+  `layout-no-deep-crate-manifest`). Recommended: top-level `fuzz/<pkg>/`
+  (cargo-fuzz default shape, outside all `crates/`-scoped rules).
+- Map readers first (CI fuzz jobs, docs, cargo-fuzz invocations);
+  same expand/migrate/verify/contract rhythm as step 3.
+- Clears: `cargo-workspace-inherit-*` x12.
+
+### 5. Patch and vendor removal (waits on upstream)
+
+- `[patch.crates-io] arrayref` + `vendor/arrayref` (1 patch finding, 2
+  size findings) exist for a security reason. Forward only after a
+  trustworthy upstream resolution lands: swap `vendor/arrayref` for
+  the upstream version, verify lockfile + `cargo deny` + full tests,
+  then contract by deleting `vendor/` in an explicit commit.
+  Security signoff required. Clears: `cargo-no-patch`, vendor size
+  findings.
+
+### 6. Test normalization
+
+- `GAP-TEST-001` x147: move each to `tests/` or the sibling `tests.rs`
+  in canonical form (`#[cfg(test)] mod tests;`, private, external,
+  single attribute). Sequence by crate, biggest files first; each file
+  independently verifiable via nextest for its crate.
+- `GAP-TEST-002` x5: drop `#[path]`, inline `tests.rs` child modules.
+- `GAP-TEST-003` x33: declare the module or delete the file (deletion
+  is a contract step: confirm no reader first).
+- Post-move `tests-dir-present` remainder: add a `tests/` dir per
+  crate (no `.gitkeep` strays: `tests-only-rust`).
+- Clears: `GAP-TEST-001/002/003`, `tests-dir-present`.
+
+### 7. Size budgets (long tail, per crate)
+
+- 368 files over 400 lines, 14 `lib.rs`/`main.rs` over 150, 15 crates
+  over 6000 code lines, 7 crates over 60 files. Order: console,
+  runtime, capsule, usage, jackin, xtask, config, then the rest.
+  Per-file splits are idempotent and independently verifiable
+  (`alint check` on the crate + its nextest target). Crate splits
+  follow the step-3 move discipline with ownership mapping.
+- Clears: `size-file-400`, `size-lib-main-150`,
+  `GAP-SIZE-001/002`.
+
+### 8. Docs consolidation
+
+- Move the 15 root markdown files to `docs/` (AGENTS.md, CLAUDE.md,
+  README.md, CHANGELOG.md stay). Map readers first: root README links,
+  docs-site references, scripts that read these paths. Forward: move +
+  fix links; verify: docs build + lychee; no contraction beyond the
+  move itself. Clears: `docs-root-only-allowed`.
+
+### 9. CI conformance + gate
+
+- Add a `build` job on `ubuntu-latest` to every workflow (1 today).
+  Decide the toolchain pin spelling: keep mise-action (currently
+  tolerated by `toolchain-ci-parity` via allow-missing) or add an
+  explicit pin the parity regex sees (dtolnay `toolchain:` or `rustup
+  toolchain install`) for defense in depth.
+- Wire the gate: materialize the pinned policy release into
+  `.cache/rust-policy` (checksum-verified), install the helper, run
+  `alint check` as a required job.
+- Clears: `ci-build-runs-on`.
+
+### 10. Registries + dependency direction
+
+- Author `policy/owned-packages.json` (workspace package names),
+  `policy/package-groups.json` (tool/library/support/ffi/lints per
+  package), `policy/ci-recipes.json` (expected CI job IDs). Verify
+  each against `cargo metadata` / workflow job sets; expect
+  `GAP-CI-002/003`, `GAP-DEPS-001/002/003`, `GAP-INV-002/003` to surface
+  on first landing and sequence a direction-remediation slice for
+  `GAP-DEPS-001` before declaring green.
+- Clears: `GAP-INV-001`, `GAP-DEPS-004`, `GAP-CI-001` (then the
+  newly surfaced set).

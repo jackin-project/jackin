@@ -38,3 +38,6 @@ PR-576-review.md
 # Generated crate docs pages (see docs/scripts/gen-crate-pages.ts)
 docs/content/reference/crates/*.mdx
 .termrock/
+
+# Materialized Rust policy releases (re-run install in CI before alint check)
+.cache/
