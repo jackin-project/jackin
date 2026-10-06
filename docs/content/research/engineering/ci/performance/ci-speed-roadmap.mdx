@@ -7,7 +7,7 @@ description: Preserves historical CI measurements and design constraints, with t
 
 ## Summary
 
-Current <RepoFile path=".github/workflows/ci-pr.yml" /> has a plan job, a required aggregator, actionlint, and Rust crate jobs using MBX and nextest. <RepoFile path=".velnor/config.toml" /> excludes docs, native, Docker, and fuzz paths from discovery. The workflow has no docs, construct, Docker E2E, preview, release, scheduled hygiene, or selectable self-hosted lane.
+Current <RepoFile path=".github/workflows/ci.yml" /> has a plan job, a required aggregator, actionlint, and Rust crate jobs using MBX and nextest. <RepoFile path=".velnor/config.toml" /> excludes docs, native, Docker, and fuzz paths from discovery. The workflow has no docs, construct, Docker E2E, preview, release, scheduled hygiene, or selectable self-hosted lane.
 
 The measurements and older workflow designs below are historical evidence. References to their controls, caches, lane inputs, and publication paths describe the measured pipeline or a proposed design; they do not establish current coverage. Restoring those capabilities requires generator work under <RepoFile path=".github/AGENTS.md" />, followed by regeneration and verification.
 
@@ -60,11 +60,11 @@ The inherited CI matrix split item also called out the real Docker boundary dire
 
 ## Current controls and coverage gaps
 
-The current <RepoFile path=".github/workflows/ci-pr.yml">.github/workflows/ci-pr.yml</RepoFile> runs PR, main-push, and merge-group validation on `ubuntu-26.04`, with per-crate Rust jobs, actionlint, a plan job, and a required aggregator. Rust compilation uses MBX; source caches and MBX object caches are distinct. <RepoFile path=".velnor/config.toml">.velnor/config.toml</RepoFile> excludes docs, native, and Docker discovery, so this workflow does not establish docs, construct-image, desktop, preview, or signed-release lanes.
+The current <RepoFile path=".github/workflows/ci.yml">.github/workflows/ci.yml</RepoFile> runs PR, main-push, and merge-group validation on `ubuntu-26.04`, with per-crate Rust jobs, actionlint, a plan job, and a required aggregator. Rust compilation uses MBX; source caches and MBX object caches are distinct. <RepoFile path=".velnor/config.toml">.velnor/config.toml</RepoFile> excludes docs, native, and Docker discovery, so this workflow does not establish docs, construct-image, desktop, preview, or signed-release lanes.
 
 The measured controls and lane recommendations elsewhere on this page describe the earlier fleet recorded in source snapshot `81a26f7e8511b2f19c9ba5a59a85b3ef0bbc804a`: the former `ci-pr.yml`, `ci-main.yml`, and `release.yml`, reusable nextest target caching, Buildx construct caches, and Bun/lychee docs caches. Preserve those measurements as historical evidence; remeasure the current generated graph before treating them as present controls.
 
-- <RepoFile path=".github/workflows/ci-pr.yml" /> plans Rust tasks and skips covered tasks within crate jobs; PR concurrency cancels stale PR runs.
+- <RepoFile path=".github/workflows/ci.yml" /> plans Rust tasks and skips covered tasks within crate jobs; PR concurrency cancels stale PR runs.
 - Rust jobs use pinned mise tools, Cargo-source caches, and MBX object restoration. They execute per-crate formatting, clippy, build, nextest, and applicable Rust documentation tasks.
 - The only publication job publishes the Velnor verification baseline after successful main CI. It does not publish product binaries or construct images.
 - The historical Swatinem/reusable-nextest cache arrangement, construct Buildx jobs, docs Bun/lychee jobs, release serialization, and preview signing paths have no equivalent jobs in this generated workflow.
@@ -176,7 +176,7 @@ That retired workflow built PR and non-main rehearsals without Docker Hub creden
 
 ## Related work
 
-- <RepoFile path=".github/workflows/ci-pr.yml" /> — current generated Rust verification; not equivalent to the older complete pipeline.
+- <RepoFile path=".github/workflows/ci.yml" /> — current generated Rust verification; not equivalent to the older complete pipeline.
 - <RepoFile path=".velnor/config.toml" /> — current generation configuration.
 - Historical workflow names: `.github/workflows/ci-pr.yml`, `.github/workflows/ci-main.yml`, and `.github/workflows/release.yml` (deleted).
 - <RepoFile path="docker/construct/Dockerfile">docker/construct/Dockerfile</RepoFile>

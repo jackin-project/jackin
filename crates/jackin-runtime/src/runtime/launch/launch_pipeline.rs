@@ -844,6 +844,7 @@ pub(crate) async fn load_role_with(
         .contains_key(workspace.name.as_str())
         .then(|| WorkspaceName::parse(&workspace.name))
         .transpose()?;
+    validate_explicit_restore_options(paths, opts)?;
     let admission_config = config.clone();
     let mut account_config = opts
         .selection
@@ -922,19 +923,15 @@ pub(crate) async fn load_role_with(
     // Typed early current-role scan (launch-speed 008c): reused later so the
     // common path does not re-inspect current-role candidates.
     let mut early_current_scan = super::EarlyCurrentRestoreScan::NotRun;
-    // `--rebuild` is an explicit "force a fresh image" request, so it must not
-    // take the attach/start/recreate fast paths — those short-circuit before
-    // `decide_agent_image` and would silently skip the rebuild. Falling through
-    // routes the launch to the normal pipeline, where `decide_agent_image`
-    // returns `ExplicitRebuild` and the build always runs. Container-name
-    // collisions are handled downstream by `claim_container_name`: a running
-    // session is left intact (a fresh, rebuilt instance is created alongside
-    // it), while a stopped/crashed/missing container is reclaimed and recreated
-    // from the rebuilt image.
+    // A launch option that changes runtime configuration must not take the
+    // attach/start/recreate fast paths. Those return before the option reaches
+    // the new capsule, silently reusing a role with different model, effort,
+    // account, image, environment, mount, or security settings. The same
+    // compatibility predicate guards the later restore decision below.
     let early_restore_container = if opts.restore_container_base.is_none()
         && opts.role_branch.is_none()
         && !opts.rebuild
-        && opts.selection.is_none()
+        && current_role_reuse_is_compatible(opts)
     {
         if let Some(agent) = selected_agent_before_role {
             let candidate = super::resolve_current_restore_candidate_timed(
@@ -1252,7 +1249,7 @@ pub(crate) async fn load_role_with(
         early_restore_container
     } else if let Some(container) = opts.restore_container_base.as_ref() {
         Some(container.clone())
-    } else if opts.rebuild || opts.selection.is_some() {
+    } else if !current_role_reuse_is_compatible(opts) {
         // `--rebuild` skips the early gate above (it is `&& !opts.rebuild && opts.selection.is_none()`), so
         // a forced rebuild actually falls through to *this* resolution. Without
         // the same guard here, `resolve_restore_candidate` would still return
@@ -1755,6 +1752,134 @@ pub(crate) async fn load_role_with(
             super::render_exit(paths, docker).await;
             Err(final_error)
         }
+    }
+}
+
+/// Whether an existing current-role container can satisfy this launch intent.
+/// Any option that changes the effective runtime, credentials, image, mounts,
+/// or environment must reach the normal launch pipeline so
+/// it cannot be silently dropped by a restore/start fast path.
+fn current_role_reuse_is_compatible(opts: &super::LoadOptions) -> bool {
+    !opts.rebuild
+        && !opts.force
+        && !opts.non_interactive
+        && opts.role_branch.is_none()
+        && opts.selection.is_none()
+        && opts.model.is_none()
+        && opts.effort.is_none()
+        && opts.docker_profile.is_none()
+        && opts.env.is_empty()
+        && opts.on_demand_bindings.is_empty()
+        && opts.extra_mounts.is_empty()
+        && opts.op_runner.is_none()
+        && opts.host_env.is_none()
+        && opts.restore_role_source_git.is_none()
+}
+
+/// Exact-container restore is an attach/start operation, so launch-changing
+/// options cannot be applied to an already existing container. Fail before
+/// inspecting or starting it rather than silently dropping the caller's
+/// requested agent, account, model, effort, image, profile, environment, or
+/// mounts.
+fn validate_explicit_restore_options(
+    paths: &JackinPaths,
+    opts: &super::LoadOptions,
+) -> anyhow::Result<()> {
+    let Some(container) = opts.restore_container_base.as_deref() else {
+        return Ok(());
+    };
+    anyhow::ensure!(
+        !opts.rebuild
+            && !opts.force
+            && !opts.non_interactive
+            && opts.selection.is_none()
+            && opts.docker_profile.is_none()
+            && opts.model.is_none()
+            && opts.effort.is_none()
+            && opts.env.is_empty()
+            && opts.on_demand_bindings.is_empty()
+            && opts.extra_mounts.is_empty(),
+        "an explicit restore container cannot apply rebuild, account, configuration, model, effort, profile, environment, credential, or mount overrides; its selected agent must match the stored instance; start a fresh role instance instead"
+    );
+    if let Some(requested_agent) = opts.agent {
+        let manifest = InstanceManifest::read(&paths.data_dir.join(container))?;
+        let stored_agent = manifest.agent()?;
+        anyhow::ensure!(
+            requested_agent == stored_agent,
+            "explicit restore agent {} does not match stored instance agent {}",
+            requested_agent.slug(),
+            stored_agent.slug(),
+        );
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod restore_reuse_intent_tests {
+    use super::{current_role_reuse_is_compatible, validate_explicit_restore_options};
+    use crate::runtime::launch::LoadOptions;
+    use jackin_core::JackinPaths;
+
+    #[test]
+    fn current_role_reuse_rejects_launch_configuration_overrides() {
+        assert!(current_role_reuse_is_compatible(&LoadOptions::default()));
+
+        let mut options = LoadOptions::default();
+        options.model = Some("gpt-6-luna".to_owned());
+        assert!(!current_role_reuse_is_compatible(&options));
+
+        let mut options = LoadOptions::default();
+        options.effort = Some(jackin_core::ReasoningEffort::Max);
+        assert!(!current_role_reuse_is_compatible(&options));
+
+        let mut options = LoadOptions::default();
+        options.selection = Some(jackin_core::LaunchSelection::Account("work".to_owned()));
+        assert!(!current_role_reuse_is_compatible(&options));
+
+        let mut options = LoadOptions::default();
+        options.selection = Some(jackin_core::LaunchSelection::Configuration(
+            "codex-work".to_owned(),
+        ));
+        assert!(!current_role_reuse_is_compatible(&options));
+
+        let mut options = LoadOptions::default();
+        options.non_interactive = true;
+        assert!(!current_role_reuse_is_compatible(&options));
+    }
+
+    #[test]
+    fn exact_restore_rejects_launch_options_it_cannot_apply() {
+        let mut options = LoadOptions {
+            restore_container_base: Some("jk-existing-role".to_owned()),
+            ..LoadOptions::default()
+        };
+        options.model = Some("gpt-6-luna".to_owned());
+        let temp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let error = validate_explicit_restore_options(&paths, &options).unwrap_err();
+        assert!(error.to_string().contains("cannot apply"));
+
+        let mut options = LoadOptions {
+            restore_container_base: Some("jk-existing-role".to_owned()),
+            ..LoadOptions::default()
+        };
+        options.effort = Some(jackin_core::ReasoningEffort::Max);
+        assert!(validate_explicit_restore_options(&paths, &options).is_err());
+
+        let mut options = LoadOptions {
+            restore_container_base: Some("jk-existing-role".to_owned()),
+            ..LoadOptions::default()
+        };
+        options.selection = Some(jackin_core::LaunchSelection::Account("work".to_owned()));
+        let error = validate_explicit_restore_options(&paths, &options).unwrap_err();
+        assert!(error.to_string().contains("account"));
+
+        let mut options = LoadOptions {
+            restore_container_base: Some("jk-existing-role".to_owned()),
+            ..LoadOptions::default()
+        };
+        options.non_interactive = true;
+        assert!(validate_explicit_restore_options(&paths, &options).is_err());
     }
 }
 

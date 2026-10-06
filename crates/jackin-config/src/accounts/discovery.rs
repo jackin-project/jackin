@@ -476,7 +476,7 @@ fn inspect_store_accounts(
                     provider: Some(provider),
                     source_selector: Some(ProfileSelector {
                         entry: account.entry().to_owned(),
-                        profile: account.profile().map(str::to_owned),
+                        profile: Some(account.profile().to_owned()),
                     }),
                     directory: directory.to_path_buf(),
                     evidence: CredentialEvidence::File(directory.join("agent/agent.db")),

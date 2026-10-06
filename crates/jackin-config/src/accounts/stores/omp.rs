@@ -15,8 +15,16 @@ use super::StoreError;
 pub(crate) fn enumerate_omp_credentials(
     source_directory: &Path,
 ) -> Result<Vec<OmpAccount>, StoreError> {
-    let Some(snapshot) = OmpSnapshot::capture_from_directory(source_directory)
-        .map_err(map_omp_error)?
+    // A default `.omp` directory is not itself an account. Only enter the
+    // secure snapshot boundary when the regular database path is present.
+    let database_exists = std::fs::symlink_metadata(source_directory.join("agent/agent.db"))
+        .map(|metadata| metadata.is_file())
+        .unwrap_or(false);
+    if !database_exists {
+        return Ok(Vec::new());
+    }
+    let Some(snapshot) =
+        OmpSnapshot::capture_from_directory(source_directory).map_err(map_omp_error)?
     else {
         return Ok(Vec::new());
     };

@@ -147,7 +147,7 @@ fn section_metadata_round_trips_and_is_invalidated_with_fields() {
         Some("a1"),
         "v1",
         "i1",
-        vec![crate::OpSection {
+        vec![OpSection {
             id: "opaque-section-id".to_owned(),
             label: "Credentials".to_owned(),
         }],
@@ -155,7 +155,7 @@ fn section_metadata_round_trips_and_is_invalidated_with_fields() {
 
     assert_eq!(
         cache.get_sections(Some("a1"), "v1", "i1"),
-        Some(vec![crate::OpSection {
+        Some(vec![OpSection {
             id: "opaque-section-id".to_owned(),
             label: "Credentials".to_owned(),
         }])

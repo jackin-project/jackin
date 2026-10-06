@@ -1945,4 +1945,3 @@ func boltffiEncodeUnexpectedCallbackError(_ error: Error) -> [UInt8] {
     writer.writeString(String(describing: error))
     return [UInt8](writer.finalize())
 }
-

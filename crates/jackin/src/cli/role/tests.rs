@@ -299,6 +299,10 @@ fn load_help_shows_description_and_examples() {
     assert!(help.contains("Examples:"));
     assert!(help.contains("jackin load agent-smith"));
     assert!(help.contains("jackin load agent-smith big-monorepo"));
+    assert!(help.contains("--model"));
+    assert!(help.contains("--effort"));
+    assert!(help.contains("`low`, `medium`"));
+    assert!(help.contains("max"));
 }
 
 #[test]

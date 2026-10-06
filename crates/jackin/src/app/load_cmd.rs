@@ -131,6 +131,10 @@ pub(super) async fn handle_load(
             &class.to_string(),
             account.is_some(),
         )?;
+        // The image-plan resolver needs mutable config access. Keep the same
+        // effective account scope for model projection without holding an
+        // immutable borrow of the launch config across that resolution.
+        let projection_config = (*plan_config).clone();
         // The image half of the plan is only knowable after the role manifest
         // is read: `published_image` is a manifest field and the
         // reuse-vs-build decision derives from it. Resolving it here is what
@@ -145,8 +149,20 @@ pub(super) async fn handle_load(
             role_branch.as_deref(),
         )
         .await?;
-        let plan_identity =
-            dry_run_plan_with_overrides(selected_agent, &identity, model.as_deref(), effort);
+        let model_projection = runtime::resolve_dry_run_model_projection(
+            &projection_config,
+            &image_plan.role_models,
+            &identity,
+            selected_agent,
+            model.as_deref(),
+        )?;
+        let plan_identity = DryRunPlan {
+            agent: selected_agent,
+            identity: &identity,
+            model_projection: &model_projection,
+            effort,
+            overrides: DryRunLaunchOverrides::new(model.as_deref(), effort),
+        };
         return print_dry_run_plan(
             &class,
             &resolved_workspace,
@@ -799,25 +815,47 @@ pub(crate) fn apply_dry_run_identity_json(
     );
 }
 
+/// Apply effective model and effort values to the `--dry-run` plan. Model
+/// values come from the launch pipeline's canonical per-instance resolver,
+/// including whitespace normalization and provider-specific OpenCode IDs.
+pub(crate) fn apply_dry_run_load_overrides_json(
+    plan: &mut serde_json::Value,
+    selected_agent: jackin_core::Agent,
+    model_projection: &runtime::DryRunModelProjection,
+    effort: Option<jackin_core::ReasoningEffort>,
+) {
+    let data = &mut plan["data"];
+    data["model"] = serde_json::json!(model_projection.model);
+    let effort = effort.map(jackin_core::ReasoningEffort::as_str);
+    data["effort"] = serde_json::json!(effort);
+
+    if let Some(instances) = data["instances"].as_array_mut() {
+        for instance in instances {
+            let applies_to_selected_agent =
+                instance["agent"].as_str() == Some(selected_agent.slug());
+            instance["model"] = instance["config_id"]
+                .as_str()
+                .and_then(|config_id| model_projection.instances.get(config_id))
+                .map_or(serde_json::Value::Null, |model| {
+                    serde_json::Value::String(model.clone())
+                });
+            if applies_to_selected_agent {
+                instance["effort"] = serde_json::json!(effort);
+            } else {
+                instance["effort"] = serde_json::Value::Null;
+            }
+        }
+    }
+}
+
 /// Identity half of the `--dry-run` plan as the printer consumes it: the
 /// committed launch agent plus the canonical runtime identity.
 struct DryRunPlan<'a> {
     agent: jackin_core::Agent,
     identity: &'a runtime::DryRunIdentity,
-    overrides: DryRunLaunchOverrides<'a>,
-}
-
-fn dry_run_plan_with_overrides<'a>(
-    agent: jackin_core::Agent,
-    identity: &'a runtime::DryRunIdentity,
-    model: Option<&'a str>,
+    model_projection: &'a runtime::DryRunModelProjection,
     effort: Option<jackin_core::ReasoningEffort>,
-) -> DryRunPlan<'a> {
-    DryRunPlan {
-        agent,
-        identity,
-        overrides: DryRunLaunchOverrides::new(model, effort),
-    }
+    overrides: DryRunLaunchOverrides<'a>,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -864,6 +902,12 @@ fn print_dry_run_plan(
             image_plan,
         );
         apply_dry_run_identity_json(&mut plan, identity);
+        apply_dry_run_load_overrides_json(
+            &mut plan,
+            plan_identity.agent,
+            plan_identity.model_projection,
+            plan_identity.effort,
+        );
         println!("{}", serde_json::to_string_pretty(&plan)?);
     } else {
         println!("Workspace:  {} ({})", workspace.label, workspace.workdir);
@@ -874,20 +918,45 @@ fn print_dry_run_plan(
         println!("Role:       {role_display}");
         println!("Agent:      {agent_slug}");
         println!("Account:    {}", account_id.unwrap_or("none"));
-        if let Some(model) = plan_identity.overrides.model {
-            println!("Model override: {model}");
-        }
-        if let Some(effort) = plan_identity.overrides.effort {
-            println!("Effort:     {effort}");
-        }
+        let model =
+            plan_identity
+                .model_projection
+                .model
+                .as_deref()
+                .unwrap_or(if instances.is_empty() {
+                    "default"
+                } else {
+                    "per instance"
+                });
+        println!("Model:      {model}");
+        println!(
+            "Effort:     {}",
+            plan_identity
+                .effort
+                .map(jackin_core::ReasoningEffort::as_str)
+                .unwrap_or("default")
+        );
         if !instances.is_empty() {
             println!("Instances ({}):", instances.len());
             for instance in instances {
+                let applies_to_selected_agent = instance.agent == plan_identity.agent;
+                let model = plan_identity
+                    .model_projection
+                    .instances
+                    .get(&instance.config_id)
+                    .map(String::as_str);
+                let effort = applies_to_selected_agent
+                    .then_some(plan_identity.effort)
+                    .flatten()
+                    .map(jackin_core::ReasoningEffort::as_str)
+                    .unwrap_or("default");
                 println!(
-                    "  {} [{}] account={} label={}",
+                    "  {} [{}] account={} model={} effort={} label={}",
                     instance.config_id,
                     instance.agent.slug(),
                     instance.account_id,
+                    model.unwrap_or("default"),
+                    effort,
                     instance.label
                 );
             }

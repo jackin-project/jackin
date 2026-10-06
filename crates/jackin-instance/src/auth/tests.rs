@@ -5,8 +5,8 @@
 #[cfg(unix)]
 use super::auth_directory::{
     FailurePoint, TreeEntryKind, classify_tree_entry_for_removal, inject_failure,
-    lock_source_dir_for_test, set_hermes_snapshot_hook,
-    set_source_open_hook, target_lock_key_for_test,
+    lock_source_dir_for_test, set_hermes_snapshot_hook, set_source_open_hook,
+    target_lock_key_for_test,
 };
 use super::{
     Agent, AuthProvisionOutcome, PermissionRepairFailure, RoleState, capture_selected_source,
@@ -16,7 +16,7 @@ use super::{
 use crate::PrepareResolvers;
 use jackin_config::{AiProvider, AuthForwardMode, ProfileSelector};
 use jackin_core::JackinPaths;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tempfile::tempdir;
 
 /// Provisioning derives its per-config-dir Keychain service through the shared
@@ -30,7 +30,7 @@ fn claude_keychain_service_name_matches_claude_scheme() {
     use std::path::Path;
     let home = Path::new("/Users/donbeave");
 
-    let scope = |dir: std::path::PathBuf| {
+    let scope = |dir: PathBuf| {
         jackin_core::claude_keychain_scope(&dir, home, &dir)
             .expect("scope")
             .service
@@ -82,7 +82,7 @@ const OMP_REUSED_UNCOMMITTED_STALE_SUFFIX_WAL: &[u8] =
 fn omp_test_selector() -> ProfileSelector {
     ProfileSelector {
         entry: "openai".to_owned(),
-        profile: Some("work".to_owned()),
+        profile: Some("row:1".to_owned()),
     }
 }
 
@@ -161,7 +161,7 @@ fn assert_omp_sync_rejected(source: &Path, target: &Path, database: &[u8], wal: 
 }
 
 #[cfg(unix)]
-fn sync_omp_source(source: &Path, home: &Path) -> (std::path::PathBuf, Vec<u8>) {
+fn sync_omp_source(source: &Path, home: &Path) -> (PathBuf, Vec<u8>) {
     let target = home.join("role/omp/agent/agent.db");
     std::fs::create_dir_all(target.parent().unwrap()).unwrap();
     let (outcome, mounted) = RoleState::provision_omp_auth_from_source_dir(
@@ -178,7 +178,7 @@ fn sync_omp_source(source: &Path, home: &Path) -> (std::path::PathBuf, Vec<u8>) 
 }
 
 #[cfg(unix)]
-fn private_snapshot_parent(temp: &tempfile::TempDir) -> std::path::PathBuf {
+fn private_snapshot_parent(temp: &tempfile::TempDir) -> PathBuf {
     use std::os::unix::fs::PermissionsExt;
 
     let parent = temp.path().join("private-snapshot-parent");
@@ -267,9 +267,7 @@ fn omp_sync_rejects_checksum_and_joint_salt_checksum_corruption() {
             wal[final_frame + 8] ^= 1;
         }
         wal[final_frame + 16] ^= 1;
-        let target = temp
-            .path()
-            .join(format!("role-{name}/omp/agent/agent.db"));
+        let target = temp.path().join(format!("role-{name}/omp/agent/agent.db"));
         assert_omp_sync_rejected(&source, &target, OMP_CURRENT_DB, &wal);
     }
 }
@@ -322,7 +320,11 @@ fn omp_sync_materializes_schema_and_credentials_from_wal_only_pages() {
 #[test]
 fn omp_sync_rejects_reused_wal_generations_instead_of_falling_back_to_old_state() {
     for (name, database, wal) in [
-        ("stale-committed-tail", OMP_REUSED_STALE_SUFFIX_DB, OMP_REUSED_STALE_SUFFIX_WAL),
+        (
+            "stale-committed-tail",
+            OMP_REUSED_STALE_SUFFIX_DB,
+            OMP_REUSED_STALE_SUFFIX_WAL,
+        ),
         (
             "stale-after-uncommitted-spill",
             OMP_REUSED_UNCOMMITTED_STALE_SUFFIX_DB,
@@ -368,7 +370,7 @@ fn omp_sync_rejects_bad_page_headers_salts_and_file_size_bounds() {
         Some(AiProvider::OpenAi),
         Some(&omp_test_selector()),
     )
-        .expect_err("invalid SQLite page size must be rejected");
+    .expect_err("invalid SQLite page size must be rejected");
     assert_eq!(error.to_string(), "OMP credential source is unavailable");
 
     let frame_size = read_fixture_u32(OMP_CURRENT_WAL, 8) as usize + 24;
@@ -413,7 +415,10 @@ fn omp_sync_rejects_bad_page_headers_salts_and_file_size_bounds() {
             Some(&omp_test_selector()),
         )
         .expect_err("oversized OMP source files must be rejected");
-        assert_eq!(error.to_string(), "OMP credential source exceeds a resource limit");
+        assert_eq!(
+            error.to_string(),
+            "OMP credential source exceeds a resource limit"
+        );
     }
 }
 
@@ -2856,7 +2861,7 @@ fn rejects_symlink_at_credentials_json() {
 
 // Tests for `instance/auth` — amp auth tests.
 
-fn stage_host_secrets(temp: &tempfile::TempDir, content: &str) -> std::path::PathBuf {
+fn stage_host_secrets(temp: &tempfile::TempDir, content: &str) -> PathBuf {
     let host_home = temp.path().join("host_home");
     let amp_dir = host_home.join(".local/share/amp");
     std::fs::create_dir_all(&amp_dir).unwrap();
@@ -3186,7 +3191,7 @@ fn sync_treats_empty_host_secrets_as_host_missing() {
 /// Stage a fake host home with a populated `~/.codex/auth.json` so
 /// the sync-mode tests below have a real source file to copy from.
 /// Returns the host-home root and the auth.json contents written.
-fn stage_host_auth_json(temp: &tempfile::TempDir, tail: &str) -> (std::path::PathBuf, String) {
+fn stage_host_auth_json(temp: &tempfile::TempDir, tail: &str) -> (PathBuf, String) {
     let host_home = temp.path().join("host_home");
     let codex_dir = host_home.join(".codex");
     std::fs::create_dir_all(&codex_dir).unwrap();
@@ -3588,7 +3593,7 @@ use crate::{
 
 /// Stage a fake host home with a populated `~/.config/gh/hosts.yml`
 /// so the file-fallback path can be exercised hermetically.
-fn stage_host_hosts_yml(temp: &tempfile::TempDir, token: &str) -> std::path::PathBuf {
+fn stage_host_hosts_yml(temp: &tempfile::TempDir, token: &str) -> PathBuf {
     let host_home = temp.path().join("host_home");
     let gh_dir = host_home.join(".config/gh");
     std::fs::create_dir_all(&gh_dir).unwrap();
@@ -4033,7 +4038,7 @@ fn stage_host_kimi_dir(
     cred_files: &[(&str, &str)],
     mcp_json: Option<&str>,
     device_id: Option<&str>,
-) -> std::path::PathBuf {
+) -> PathBuf {
     let host_home = temp.path().join("host_home");
     let kimi_dir = host_home.join(".kimi-code");
     std::fs::create_dir_all(&kimi_dir).unwrap();

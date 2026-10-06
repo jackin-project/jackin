@@ -3,7 +3,7 @@
 
 use std::fs;
 use std::path::PathBuf;
-use std::sync::{Arc, Barrier};
+use std::sync::{Arc, Barrier, Mutex};
 use std::thread;
 
 use jackin_protocol::usage_broker::{UsageAccountCapability, UsageCoordinationErrorKind};
@@ -12,6 +12,10 @@ use jackin_usage::host::{
     ProviderCredentialSecretSource, UsageBrokerConfig, UsageDiscoveryScope, discover_usage_sources,
     ensure_usage_broker, ensure_usage_broker_process, validate_usage_sources,
 };
+
+/// These tests launch real scoped brokers; serialize them so one fixture's
+/// teardown cannot race another fixture's leader lease discovery.
+static BROKER_FIXTURE_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Default)]
 struct EmptySecretSource;
@@ -40,6 +44,9 @@ impl ProviderCredentialSecretSource for EmptySecretSource {
 
 #[test]
 fn broker_service_lifecycle() {
+    let _fixture_lock = BROKER_FIXTURE_LOCK
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
     let root = workspace_state_dir();
     let _ignored = fs::remove_dir_all(&root);
     fs::create_dir_all(&root).expect("workspace test state");
@@ -139,6 +146,10 @@ fn client_socket(client: &jackin_usage::host::UsageBrokerClient) -> PathBuf {
 #[test]
 fn broker_detaches_from_activating_session() {
     use nix::unistd::{Pid, getsid};
+
+    let _fixture_lock = BROKER_FIXTURE_LOCK
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
 
     // Sibling of (never a child of) the parallel lifecycle test's root:
     // its start/end `remove_dir_all` would otherwise reap our socket.

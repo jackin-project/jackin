@@ -705,10 +705,7 @@ fn provider_glance_rows_via_bridge_project_rust_rows() {
     assert_eq!(projection.status_bar_glance_rows.len(), 1);
     let provider = &projection.providers[0];
     assert_eq!(provider.group.surface_id, "codex");
-    assert_eq!(
-        provider.selected_account_route.status,
-        "available"
-    );
+    assert_eq!(provider.selected_account_route.status, "available");
     assert_eq!(
         provider.selected_account_route.account_key.as_deref(),
         Some(account.account_key.as_str())
@@ -728,7 +725,6 @@ fn provider_glance_rows_via_bridge_project_rust_rows() {
             .iter()
             .any(|row| row.row_id == "provenance")
     );
-
 }
 
 #[test]

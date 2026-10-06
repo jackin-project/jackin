@@ -2238,11 +2238,6 @@ pub(super) fn refresh_credential_binding(
     binding: &ValidatedCredentialBinding,
     env_resolver: &dyn ProviderCredentialEnvResolver,
 ) -> ProviderCredentialRefreshOutcome {
-    // Typed provider deadlines exist only on the Claude/Codex/OpenRouter HTTP
-    // adapters: those paths cross `ProviderHttpError::HttpStatus`. Amp, Grok,
-    // Kimi, OpenCode, Cursor, and Gemini currently return collector snapshots
-    // or rendered/untyped errors, so this boundary must not infer 429s from
-    // their text. Their non-rate-limit behavior remains unchanged.
     let (view, rate_limit) = match &binding.source {
         ValidatedCredentialSource::Env {
             handle,

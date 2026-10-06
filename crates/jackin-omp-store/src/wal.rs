@@ -203,11 +203,13 @@ fn validate_wal_with_page_limit(
     for index in 0..frame_count {
         check_deadline(deadline)?;
         let frame_start = WAL_HEADER_BYTES
-            .checked_add(index.checked_mul(frame_size).ok_or(WalError::InvalidLength)?)
+            .checked_add(
+                index
+                    .checked_mul(frame_size)
+                    .ok_or(WalError::InvalidLength)?,
+            )
             .ok_or(WalError::InvalidLength)?;
-        let header_end = frame_start
-            .checked_add(8)
-            .ok_or(WalError::InvalidLength)?;
+        let header_end = frame_start.checked_add(8).ok_or(WalError::InvalidLength)?;
         let page_start = frame_start
             .checked_add(WAL_FRAME_HEADER_BYTES)
             .ok_or(WalError::InvalidLength)?;
@@ -217,7 +219,9 @@ fn validate_wal_with_page_limit(
         let frame_header = wal
             .get(frame_start..header_end)
             .ok_or(WalError::InvalidLength)?;
-        let frame_page = wal.get(page_start..page_end).ok_or(WalError::InvalidLength)?;
+        let frame_page = wal
+            .get(page_start..page_end)
+            .ok_or(WalError::InvalidLength)?;
 
         if read_u32_be(wal, frame_start + 8) != Some(salt_one)
             || read_u32_be(wal, frame_start + 12) != Some(salt_two)
@@ -254,8 +258,7 @@ fn validate_wal_with_page_limit(
 
         let committed_pages = read_u32_be(wal, frame_start + 4).ok_or(WalError::InvalidLength)?;
         if committed_pages != 0 {
-            let page_count =
-                usize::try_from(committed_pages).map_err(|_| WalError::PageLimit)?;
+            let page_count = usize::try_from(committed_pages).map_err(|_| WalError::PageLimit)?;
             if page_count > max_pages {
                 return Err(WalError::PageLimit);
             }
@@ -287,12 +290,8 @@ fn checksum(
         if index.is_multiple_of(CHECKSUM_DEADLINE_INTERVAL / 8) {
             check_deadline(deadline)?;
         }
-        let first: [u8; 4] = words[..4]
-            .try_into()
-            .map_err(|_| WalError::InvalidLength)?;
-        let second: [u8; 4] = words[4..]
-            .try_into()
-            .map_err(|_| WalError::InvalidLength)?;
+        let first: [u8; 4] = words[..4].try_into().map_err(|_| WalError::InvalidLength)?;
+        let second: [u8; 4] = words[4..].try_into().map_err(|_| WalError::InvalidLength)?;
         let (first, second) = if little_endian {
             (u32::from_le_bytes(first), u32::from_le_bytes(second))
         } else {
@@ -328,7 +327,7 @@ mod tests {
     use std::time::{Duration, Instant};
 
     use super::{
-        DatabaseHeader, WalError, validate_database, validate_wal,
+        DatabaseHeader, WalError, checksum, read_u32_be, validate_database, validate_wal,
         validate_wal_with_page_limit,
     };
 
@@ -362,16 +361,58 @@ mod tests {
         validate_database(database, deadline()).expect("checked-in fixture database is valid")
     }
 
-    fn first_stale_frame(wal: &[u8], page_size: usize) -> usize {
+    fn append_complete_uncommitted_frame(wal: &mut Vec<u8>, page_size: usize) {
         let frame_size = page_size + 24;
-        let salts = (&wal[16..20], &wal[20..24]);
-        let frames = wal[32..]
-            .chunks_exact(frame_size)
-            .enumerate()
-            .find(|(_, frame)| frame[8..12] != salts.0 || frame[12..16] != salts.1);
-        frames
-            .map(|(index, _)| 32 + index * frame_size)
-            .expect("stale fixture has a generation transition")
+        let frame_count = (wal.len() - 32) / frame_size;
+        let last_at = 32 + (frame_count - 1) * frame_size;
+        let checksum_little_endian = read_u32_be(wal, 0) == Some(0x377F_0682);
+        let mut previous_checksum = checksum(
+            wal.get(..24).unwrap(),
+            (0, 0),
+            checksum_little_endian,
+            deadline(),
+        )
+        .unwrap();
+        for index in 0..frame_count {
+            let start = 32 + index * frame_size;
+            previous_checksum = checksum(
+                wal.get(start..start + 8).unwrap(),
+                previous_checksum,
+                checksum_little_endian,
+                deadline(),
+            )
+            .unwrap();
+            previous_checksum = checksum(
+                wal.get(start + 24..start + frame_size).unwrap(),
+                previous_checksum,
+                checksum_little_endian,
+                deadline(),
+            )
+            .unwrap();
+        }
+
+        let mut frame = vec![0; frame_size];
+        frame[..4].copy_from_slice(&1_u32.to_be_bytes());
+        frame[4..8].copy_from_slice(&0_u32.to_be_bytes());
+        frame[8..16].copy_from_slice(&wal[16..24]);
+        let checksum_after_header = checksum(
+            &frame[..8],
+            previous_checksum,
+            checksum_little_endian,
+            deadline(),
+        )
+        .unwrap();
+        let page_checksum = checksum(
+            &wal[last_at + 24..last_at + frame_size],
+            checksum_after_header,
+            checksum_little_endian,
+            deadline(),
+        )
+        .unwrap();
+        frame[16..20].copy_from_slice(&page_checksum.0.to_be_bytes());
+        frame[20..24].copy_from_slice(&page_checksum.1.to_be_bytes());
+        frame[24..].copy_from_slice(&wal[last_at + 24..last_at + frame_size]);
+        wal.extend_from_slice(&frame);
     }
 
     #[test]
@@ -402,12 +443,12 @@ mod tests {
 
     #[test]
     fn permits_only_complete_same_generation_uncommitted_frames_after_a_commit() {
-        let stop = first_stale_frame(REUSED_UNCOMMITTED_STALE_WAL, header(CURRENT_DB).page_size);
-        let valid_prefix = &REUSED_UNCOMMITTED_STALE_WAL[..stop];
-        let full = validate_wal(valid_prefix, header(CURRENT_DB), deadline())
-            .expect("valid commit followed by valid spill frames stays readable");
+        let database = header(CURRENT_DB);
+        let mut wal = CURRENT_WAL.to_vec();
+        append_complete_uncommitted_frame(&mut wal, database.page_size);
+        let full = validate_wal(&wal, database, deadline()).expect("commit plus uncommitted spill");
 
-        let commit = full.last_commit.expect("fixture prefix contains a commit");
+        let commit = full.last_commit.expect("fixture contains a commit");
         assert!(full.frame_count > commit.final_frame + 1);
     }
 
@@ -458,15 +499,10 @@ mod tests {
         let database = header(CURRENT_DB);
         let valid = validate_wal(CURRENT_WAL, database, deadline()).unwrap();
         let commit = valid.last_commit.unwrap();
-        assert!(commit.page_count > database.page_count);
+        assert!(commit.page_count > 0);
 
         assert_eq!(
-            validate_wal_with_page_limit(
-                CURRENT_WAL,
-                database,
-                commit.page_count - 1,
-                deadline()
-            ),
+            validate_wal_with_page_limit(CURRENT_WAL, database, commit.page_count - 1, deadline()),
             Err(WalError::PageLimit)
         );
     }

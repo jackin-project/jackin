@@ -18,8 +18,10 @@ jobs:
   ci-evidence:
     name: "CI first-attempt evidence"
     runs-on: ubuntu-26.04
-    timeout-minutes: 20
+    timeout-minutes: 30
     continue-on-error: true
+    env:
+      GH_TOKEN: "${{ github.token }}"
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -28,7 +30,9 @@ jobs:
       - name: Set up Mise
         uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
-          install: false
+          install_args: rust
+          cache: true
+          cache_save: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') }}
       - name: Run ci-evidence
         run: mise run ci-evidence
       - name: Upload ci-evidence artifacts

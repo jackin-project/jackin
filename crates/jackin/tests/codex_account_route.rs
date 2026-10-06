@@ -169,6 +169,14 @@ fn explicit_codex_home_keeps_discovery_and_role_selection_on_one_source() -> any
         .args(["--default-agent", "codex"])
         .assert()
         .success();
+    // The fake-only route test needs two registered roles so its account
+    // bindings remain independent. No repository access is required.
+    let config_path = home.join(".config/jackin/config.toml");
+    let mut config_text = fs::read_to_string(&config_path)?;
+    config_text.push_str(
+        "\n[roles.alternate-role]\ngit = \"https://roles.invalid/jackin-alternate-role.git\"\n",
+    );
+    fs::write(&config_path, config_text)?;
     for account in ["default-codex", "codex-second"] {
         command(&home, &explicit_home)?
             .args(["workspace", "account", "assign", "route", account])

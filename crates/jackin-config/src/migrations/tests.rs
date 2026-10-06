@@ -792,7 +792,7 @@ value = { op = "op://vault-id/account-item/api-key", path = "Work/Account/API Ke
         Some("op://vault-id/item-id/section-id/field-id?attribute=username")
     );
     assert_eq!(token["account"].as_str(), Some("work"));
-    assert_eq!(token.get("path"), None);
+    assert!(token.get("path").is_none());
     assert_eq!(token["breadcrumb"]["version"].as_integer(), Some(1));
     assert_eq!(
         token["breadcrumb"]["value"].as_str(),
@@ -846,7 +846,7 @@ path = "Vault/Item/Section/Field"
 
     let error = migrate_workspace_file_if_needed(&path).unwrap_err();
 
-    assert!(error.to_string().contains("ambiguous"));
+    assert!(format!("{error:#}").contains("ambiguous"));
     assert_eq!(std::fs::read_to_string(path).unwrap(), original);
 }
 
@@ -868,7 +868,7 @@ path = "Vault/Item/Section/Field"
 
     let error = migrate_workspace_file_if_needed(&path).unwrap_err();
 
-    assert!(error.to_string().contains("ambiguous"));
+    assert!(format!("{error:#}").contains("ambiguous"));
     assert_eq!(std::fs::read_to_string(path).unwrap(), original);
 }
 
@@ -886,11 +886,7 @@ breadcrumb = { version = 2, value = "Vault/Item/Field" }
 
     let error = migrate_workspace_file_if_needed(&path).unwrap_err();
 
-    assert!(
-        error
-            .to_string()
-            .contains("strict environment-value schema")
-    );
+    assert!(format!("{error:#}").contains("strict environment-value schema"));
     assert_eq!(std::fs::read_to_string(path).unwrap(), original);
 }
 
@@ -908,11 +904,7 @@ breadcrumb = { version = 1, value = "Vault/Item/Field", extra = "x" }
 
     let error = migrate_workspace_file_if_needed(&path).unwrap_err();
 
-    assert!(
-        error
-            .to_string()
-            .contains("strict environment-value schema")
-    );
+    assert!(format!("{error:#}").contains("strict environment-value schema"));
     assert_eq!(std::fs::read_to_string(path).unwrap(), original);
 }
 
@@ -940,9 +932,7 @@ account = 1"#,
         let error = migrate_workspace_file_if_needed(&path).unwrap_err();
 
         assert!(
-            error
-                .to_string()
-                .contains("strict environment-value schema"),
+            format!("{error:#}").contains("strict environment-value schema"),
             "{name}: {error:#}"
         );
         assert_eq!(std::fs::read_to_string(path).unwrap(), original, "{name}");

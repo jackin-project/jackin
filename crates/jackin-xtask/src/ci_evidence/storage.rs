@@ -5,10 +5,15 @@ fn read_evidence(
     window: &TimeWindow,
     runtime: RuntimeIdentity,
 ) -> Result<EvidenceFile> {
-    if !path.is_file() {
-        return Ok(empty_evidence(repository, window, runtime));
-    }
-    let raw: serde_json::Value = read_json(path)?;
+    let bytes = match read_file_no_symlinks(path) {
+        Ok(bytes) => bytes,
+        Err(error) if is_not_found(&error) => {
+            return Ok(empty_evidence(repository, window, runtime));
+        }
+        Err(error) => return Err(error),
+    };
+    let raw: serde_json::Value = serde_json::from_slice(&bytes)
+        .with_context(|| format!("parsing {}", path.display()))?;
     let stored_schema = raw.get("schema").and_then(serde_json::Value::as_u64);
     if stored_schema != Some(u64::from(SCHEMA)) {
         // Schema 5 is a hard migration boundary: discard stale ledgers before
@@ -50,6 +55,11 @@ fn empty_evidence(repository: &str, window: &TimeWindow, runtime: RuntimeIdentit
             event: "local".to_owned(),
             workflow_path: "local".to_owned(),
             run_id: None,
+            run_attempt: None,
+            workflow_ref: None,
+            head_sha: None,
+            workflow_sha: None,
+            artifact_name: None,
         },
         denominator: DenominatorProof {
             source: DenominatorSource::Fixture,

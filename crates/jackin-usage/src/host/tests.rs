@@ -425,12 +425,14 @@ fn selected_account_routes_remain_scoped_to_their_provider() {
     claude_view.account.provider_label = "Anthropic / Claude".to_owned();
     claude_view.account.account_label = "claude@example.com".to_owned();
     let claude = canonical_discovered_account(HostSurfaceId::Claude, "claude@example.com");
-    runtime
-        .discovered_views
-        .insert((HostSurfaceId::Codex, codex.account_key.clone()), codex_view);
-    runtime
-        .discovered_views
-        .insert((HostSurfaceId::Claude, claude.account_key.clone()), claude_view);
+    runtime.discovered_views.insert(
+        (HostSurfaceId::Codex, codex.account_key.clone()),
+        codex_view,
+    );
+    runtime.discovered_views.insert(
+        (HostSurfaceId::Claude, claude.account_key.clone()),
+        claude_view,
+    );
     runtime.discovery = Some(ValidatedUsageDiscovery {
         config_generation: Some("two-provider-generation".to_owned()),
         accounts: vec![codex.clone(), claude.clone()],
@@ -445,7 +447,9 @@ fn selected_account_routes_remain_scoped_to_their_provider() {
         .selected_accounts
         .insert("claude".to_owned(), "removed-claude-account".to_owned());
 
-    let projection = runtime.desktop_projection(3).expect("two-provider projection");
+    let projection = runtime
+        .desktop_projection(3)
+        .expect("two-provider projection");
     let codex_projection = projection
         .providers
         .iter()

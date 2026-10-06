@@ -99,8 +99,7 @@ pub const CAPSULE_CONFIG_FILENAME: &str = "agent.toml";
 pub const CAPSULE_CONFIG_PATH: &str = container_paths::CAPSULE_CONFIG;
 
 /// Launch metadata naming the Capsule supervisor PID for local peer checks.
-pub const CAPSULE_SUPERVISOR_PID_ENV: &str =
-    jackin_core::JACKIN_CAPSULE_SUPERVISOR_PID_ENV_NAME;
+pub const CAPSULE_SUPERVISOR_PID_ENV: &str = "JACKIN_CAPSULE_SUPERVISOR_PID";
 
 /// Apple `container run` starts the Capsule entrypoint after `vminitd`.
 pub const APPLE_CAPSULE_SUPERVISOR_PID: u32 = 2;

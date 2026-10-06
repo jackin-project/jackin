@@ -411,23 +411,61 @@ fn migrate_op_ref_value(table: &mut dyn toml_edit::TableLike) -> crate::ConfigRe
             );
             Ok(())
         }
-        (None, true) => {
-            let Some(reference) = table.get("op").and_then(toml_edit::Item::as_str) else {
-                return Err(ConfigError::msg(format_args!(
-                    "versioned OpRef breadcrumb requires a string `op` URI"
-                )));
-            };
-            if !reference.starts_with("op://") {
-                return Err(ConfigError::msg(format_args!(
-                    "OpRef `op` must start with op://: {reference:?}"
-                )));
-            }
-            Ok(())
-        }
+        (None, true) => Ok(()),
         (None, false) => Err(ConfigError::msg(format_args!(
             "OpRef is missing both legacy `path` and versioned `breadcrumb` fields"
         ))),
+    }?;
+    validate_versioned_op_breadcrumb(table)
+}
+
+/// Validate normalized data before the migration stamps a new schema. A
+/// malformed breadcrumb must not be written successfully and then fail only
+/// when the strict `EnvValue` deserializer reads the file on the next load.
+fn validate_versioned_op_breadcrumb(table: &dyn toml_edit::TableLike) -> crate::ConfigResult<()> {
+    // Use the canonical strict runtime schema here instead of maintaining a
+    // second list of OpRef/breadcrumb keys and value types in the migrator.
+    // This also ensures an unknown key is rejected before the file is stamped
+    // current and later becomes unreadable by EnvValue's deny_unknown_fields.
+    let mut document = DocumentMut::new();
+    for (key, item) in table.iter() {
+        document.as_table_mut().insert(key, item.clone());
     }
+    let decoded: jackin_core::EnvValue = toml_edit::de::from_document(document).map_err(|_| {
+        ConfigError::msg(format_args!(
+            "versioned OpRef does not match the strict environment-value schema"
+        ))
+    })?;
+    let jackin_core::EnvValue::OpRef(op_ref) = decoded else {
+        return Err(ConfigError::msg(format_args!(
+            "versioned OpRef does not match the strict environment-value schema"
+        )));
+    };
+
+    let Some(reference_parts) = jackin_core::parse_op_reference(&op_ref.op) else {
+        return Err(ConfigError::msg(format_args!(
+            "versioned OpRef `op` must be a valid 3/4-segment op:// URI"
+        )));
+    };
+    let Some(path_parts) = jackin_core::parse_op_breadcrumb_path(&op_ref.path) else {
+        return Err(ConfigError::msg(format_args!(
+            "versioned OpRef breadcrumb value is not a valid v1 escaped path"
+        )));
+    };
+    if path_parts.section.is_some() != reference_parts.section.is_some() {
+        return Err(ConfigError::msg(format_args!(
+            "OpRef breadcrumb segment count does not match its op:// URI"
+        )));
+    }
+    if let Some(path_query) = path_parts.attribute_query.as_deref() {
+        let reference_query = op_ref.op.split_once('?').map(|(_, query)| query);
+        if reference_query != path_query.strip_prefix('?') {
+            return Err(ConfigError::msg(format_args!(
+                "OpRef breadcrumb query suffix does not match its op:// URI"
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn for_each_table_like_entry<F>(

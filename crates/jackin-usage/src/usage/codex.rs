@@ -1199,7 +1199,6 @@ pub(crate) fn fetch_codex_oauth_usage(
         &credentials.access_token,
         &headers,
     )
-    .map_err(|error| error.to_string())
 }
 
 /// Body for the `refresh_token` grant. Pure so the request shape is unit-tested
@@ -1330,8 +1329,7 @@ pub(crate) fn fetch_codex_oauth_reset_credits(
         &resolve_codex_reset_credits_url(codex_home),
         &credentials.access_token,
         &headers,
-    )
-    .map_err(|error| error.to_string())?;
+    )?;
     if credits.available_count < 0 {
         return Err(ProviderHttpError::Decode(
             "Codex reset credits invalid available count".to_owned(),

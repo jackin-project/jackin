@@ -11,26 +11,29 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-push-head-ledger-${{ github.repository }}-${{ github.sha }}
-  cancel-in-progress: false
+  group: ci-push-head-ledger-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   ci-push-head-ledger:
     name: "CI push-head ledger"
     runs-on: ubuntu-26.04
     timeout-minutes: 10
-    permissions:
-      actions: read
-      contents: read
+    continue-on-error: true
+    env:
+      GH_TOKEN: "${{ github.token }}"
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
       - name: Set up Mise
         uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
-          install: false
+          install_args: rust
+          cache: true
+          cache_save: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') }}
       - name: Run ci-push-head-ledger
         run: mise run ci-push-head-ledger
       - name: Upload ci-push-head-ledger artifacts

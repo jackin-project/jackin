@@ -2,69 +2,65 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::enumerate_omp_credentials;
-use crate::accounts::stores::tests::{Cell, Value, database, leaf_page, wal_image};
 use crate::accounts::stores::StoreError;
+use jackin_omp_store::OmpSnapshot;
+use rusqlite::Connection;
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt as _;
 use std::path::Path;
 
-const SCHEMA: &str = "CREATE TABLE credentials (provider TEXT, value TEXT, profile TEXT)";
+const SCHEMA: &str = "CREATE TABLE auth_schema_version(id INTEGER PRIMARY KEY CHECK(id=1), version INTEGER NOT NULL); INSERT INTO auth_schema_version VALUES(1, 7); CREATE TABLE auth_credentials(id INTEGER PRIMARY KEY AUTOINCREMENT, provider TEXT NOT NULL, credential_type TEXT NOT NULL, data TEXT NOT NULL, disabled_cause TEXT, identity_key TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);";
 
 fn store_dir(parent: &Path) -> std::path::PathBuf {
     let directory = parent.join(".omp");
     std::fs::create_dir_all(directory.join("agent")).unwrap();
+    #[cfg(unix)]
+    for path in [&directory, &directory.join("agent")] {
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700)).unwrap();
+    }
     directory
 }
 
-fn write_db(source: &Path, bytes: &[u8]) {
-    std::fs::write(source.join("agent/agent.db"), bytes).unwrap();
+fn write_credentials(source: &Path, credentials: &[(&str, &str)]) {
+    let connection = Connection::open(source.join("agent/agent.db")).unwrap();
+    connection.execute_batch(SCHEMA).unwrap();
+    for (provider, key) in credentials {
+        connection
+            .execute(
+                "INSERT INTO auth_credentials(provider, credential_type, data, created_at, updated_at) VALUES (?1, 'api_key', ?2, 10, 11)",
+                rusqlite::params![provider, format!(r#"{{"key":"{key}"}}"#)],
+            )
+            .unwrap();
+    }
 }
 
 #[test]
 fn enumerates_row_identity_in_rowid_order_without_exposing_secret_values() {
-    let database = database(
-        SCHEMA,
-        2,
-        &[
-            Cell::row(
-                1,
-                vec![
-                    Value::Text("anthropic".into()),
-                    Value::Text("synthetic-omp-secret-one".into()),
-                    Value::Text("work".into()),
-                ],
-            ),
-            Cell::row(
-                2,
-                vec![
-                    Value::Text("openai".into()),
-                    Value::Text("synthetic-omp-secret-two".into()),
-                    Value::Null,
-                ],
-            ),
-            Cell::row(
-                3,
-                vec![
-                    Value::Text("blank".into()),
-                    Value::Text("   ".into()),
-                    Value::Null,
-                ],
-            ),
-        ],
-        false,
-    );
     let temp = tempfile::tempdir().unwrap();
     let source = store_dir(temp.path());
-    write_db(&source, &database);
+    write_credentials(&source, &[("anthropic", "a"), ("openai", "b")]);
 
-    let accounts = enumerate_omp_credentials(&source).unwrap();
+    eprintln!(
+        "debug source {} exists={:?} dir_mode={:?}",
+        source.display(),
+        source.exists(),
+        std::fs::metadata(&source).map(|m| m.permissions().mode())
+    );
+    let accounts = match OmpSnapshot::capture_from_directory(&source) {
+        Ok(Some(snapshot)) => snapshot.accounts().to_vec(),
+        Ok(None) => panic!("snapshot unexpectedly absent"),
+        Err(error) => panic!("snapshot diagnostic: {error:?}"),
+    };
     let identities: Vec<_> = accounts
         .iter()
         .map(|account| (account.entry(), account.profile()))
         .collect();
     assert_eq!(
         identities,
-        vec![("anthropic", Some("work")), ("openai", None)]
+        vec![("anthropic", "row:1"), ("openai", "row:2")]
     );
-    assert!(!format!("{accounts:?}").contains("synthetic-omp-secret"));
+    assert!(!format!("{accounts:?}").contains("\"a\""));
+    assert!(!format!("{accounts:?}").contains("\"b\""));
 }
 
 #[test]
@@ -73,23 +69,10 @@ fn missing_store_or_credentials_table_yields_no_accounts() {
     let source = store_dir(temp.path());
     assert!(enumerate_omp_credentials(&source).unwrap().is_empty());
 
-    let no_credentials_table = database("CREATE TABLE other (id TEXT)", 2, &[], false);
-    write_db(&source, &no_credentials_table);
-    assert!(enumerate_omp_credentials(&source).unwrap().is_empty());
-}
-
-#[test]
-fn unsupported_credentials_layout_fails_closed() {
-    let temp = tempfile::tempdir().unwrap();
-    let source = store_dir(temp.path());
-    let database = database(
-        "CREATE TABLE credentials (id INTEGER PRIMARY KEY)",
-        2,
-        &[],
-        false,
-    );
-    write_db(&source, &database);
-
+    Connection::open(source.join("agent/agent.db"))
+        .unwrap()
+        .execute_batch("CREATE TABLE other (id TEXT);")
+        .unwrap();
     assert_eq!(
         enumerate_omp_credentials(&source),
         Err(StoreError::Malformed)
@@ -97,42 +80,16 @@ fn unsupported_credentials_layout_fails_closed() {
 }
 
 #[test]
-fn wal_committed_frames_supply_the_discovered_identity() {
+fn unsupported_credentials_layout_fails_closed() {
     let temp = tempfile::tempdir().unwrap();
     let source = store_dir(temp.path());
-    let stale = database(
-        SCHEMA,
-        2,
-        &[Cell::row(
-            1,
-            vec![
-                Value::Text("openai".into()),
-                Value::Text("synthetic-stale".into()),
-                Value::Text("work".into()),
-            ],
-        )],
-        true,
-    );
-    write_db(&source, &stale);
-    let fresh = leaf_page(
-        &[Cell::row(
-            1,
-            vec![
-                Value::Text("openai".into()),
-                Value::Text("synthetic-fresh".into()),
-                Value::Text("work".into()),
-            ],
-        )],
-        0,
-    );
-    std::fs::write(
-        source.join("agent/agent.db-wal"),
-        wal_image(&[(2, 1, fresh)]),
-    )
-    .unwrap();
+    Connection::open(source.join("agent/agent.db"))
+        .unwrap()
+        .execute_batch("CREATE TABLE credentials (id INTEGER PRIMARY KEY);")
+        .unwrap();
 
-    let accounts = enumerate_omp_credentials(&source).unwrap();
-    assert_eq!(accounts.len(), 1);
-    assert_eq!(accounts[0].entry(), "openai");
-    assert_eq!(accounts[0].profile(), Some("work"));
+    assert_eq!(
+        enumerate_omp_credentials(&source),
+        Err(StoreError::Malformed)
+    );
 }

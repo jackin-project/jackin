@@ -170,6 +170,20 @@ The source archive is `/root/.velnor-work/jackin-migration-17b2b1b/source.tar.gz
 
 The intended focused invocation is `JACKIN_MIGRATION_FIXTURE_OUTPUT_DIR=/work/out/migration-fixtures mise exec --locked -- mbx test --locked --offline -p jackin --test migration_fixtures rebake_migration_fixtures_to_output_dir -- --ignored`. It must run only after the exact sandbox launcher passes independent review. Keep generated output separate until it has a source and byte-level review.
 
+### Exact-source compile correction and Mise wrapper checkpoint
+
+The current task branch includes migration source commit `20cb8f7054ef6322c653b5c92bec7ad8f826d810` and required predecessor-input commit `17b2b1be6a58a0e34af6d8308df915d110f4a785`. The first focused test attempt used that source and stopped during compilation, before tests: `jackin-config/src/migrations.rs` called `toml_edit::de::from_document` while the locked `toml_edit` dependency lacked its `serde` feature, and the qualified `toml_edit::DocumentMut` use violated `unused_qualifications`. This is a compile failure, not a migration-test failure. The exact failed log SHA-256 is `281939521ad9b69fc322f829bfe4f5abc7b211b6cc7a71cef32b544905a13f60`; the execution record SHA-256 is `1b574138267eaa9fd904824698fee0907d9de9fea34e7114d4937f5adaa4e038`.
+
+Commit `b184081fffde49ed57d72b593d1fe8311435446e` enables `toml_edit/serde` for the existing locked dependency and uses the already imported `DocumentMut`. Exact-source Sol review passed. The strict canonical `jackin_core::EnvValue` decode and byte-preserving no-write migration regressions remain in place. This review does not establish compilation or test execution.
+
+Commit `091bbae649ba663ce8a77239938ac31493eb7eda` adds a Mise Cargo command wrapper using `mbx` and `MBX_CARGO_SHIM_MODE=1`, plus a task-contract assertion. Mise 2026.10.1 accepts the wrapper configuration. The independent source review checked the pinned Mise and MBX dispatch paths and passed, with scope limited to source behavior. The added contract assertion does not establish wrapper argv, exit-status, environment, session reuse, or process-cleanup behavior at runtime. The `debian_codex_route` owner is preparing one compiler-free fake-command harness for those behaviors; its runtime result is pending and no second harness is authorized.
+
+The exact current-source archive is `/root/.velnor-work/jackin-source-b184081-20261005/jackin-b184081fffde49ed57d72b593d1fe8311435446e.tar.gz`, SHA-256 `2bcd0b0d77eb81d81aec7e4b4b17974e3de96ad8e369ae1ae4df7ca9d8a0407a`; the matching private execution packet is `source-packet-v2.md`, SHA-256 `ef05a36adfed08d56eb4891ed208fb2cdd11417ca06918602acb1529bfab6ba2`. These bind the focused invocation `mise exec -- mbx test --locked --offline -p jackin-config -p jackin-xtask`. The reviewed source correction has not yet been tested: the b184-bound MBX rebind and wrapper harness require their exact independent source/security reviews before the next run. The failed 17b run is preserved and will not be retried against changed source.
+
+The first current-source MBX 1.22.0 sandbox registration attempt used source `17b2b1be6a58a0e34af6d8308df915d110f4a785` / tree `0e8921d2f01482b4e8b03e68bc9f060216394884` and launcher SHA-256 `da3145114114a6b5dfdb581f7ba5a21f6efd256bf4a639a22076a3b075d059ad`. Its `register-tools` phase stopped with exit 1 at `2026-10-05T10:46:05Z`–`10:46:06Z` on `unsafe Rustup proxy directory`; the launcher used umask `077`, so creating that directory with mode `0755` yielded `0700` and failed its mode check. The private log SHA-256 is `f6c71321f2a202f1c4eb398a081460b612a5dc5f750d0fa2c7402bdc48574d5d`; execution-record SHA-256 is `b95cdca673a0d40c4aac9cc40b86598c8c94c00627ef3f348858ac1a1bfd497e`. Only an empty root-owned proxy directory was created in the task rootfs. No namespace, Rustup, Mise, compiler, or Jackin binary ran, so this is a launcher registration failure, not a source build result.
+
+The v7 candidate's exact launcher/helper/diff hashes are `e3be0d468ef159f1430d781a82333116640d96ee4f5d45c9497f722b2e40c5f8`, `2a330e7cf670917b95d4e4a3745df95bad0f1a24c5964e856b3bb504721ec9f8`, and `e89eeee8d77a3645c19fb415f4c20c7cacd7e755ef789006db988afdf690a355`; its local fixture record SHA-256 is `1707d9c4b2585960576a7d5ae34aa8df7c0f15028e2de163de44cb3166e06e56`. Exact v7 review passed and the harmless temporary fixture passed. The `register-tools` phase then exited 1 at `mise which rustc` (`mise ERROR rustc is not a mise bin`), after Rustup proxy preparation, seven aliases, Rustup Home validation, and Mise version/path checks. It ran 2026-10-05T10:58:20.638714Z–10:58:21.230619Z. The private log SHA-256 is `64832c0f237b8932b36ffc14fa6363138aa1896496c1a146857d6640c3519b0a`; execution JSON SHA-256 is `63e95bc2f121d4fd1169b6b28068f0164eac69dfb8ba42d4c22b32a9f5f35497`. No Cargo compile, test, writer, or binary handoff occurred. The owner is diagnosing Mise bin registration; no unchanged retry is approved.
+
 ## Account snapshot follow-up
 
 Sol source review PASS at Jackin commit `1638522184ef45f0cd51fa5601a5e80c7fd89762`. The change handles stale WAL suffixes after uncommitted current-generation frames and adds a focused fixture and test.
@@ -177,6 +191,24 @@ Sol source review PASS at Jackin commit `1638522184ef45f0cd51fa5601a5e80c7fd8976
 The review leaves a stale-comment follow-up. Cargo tests remain NOT RUN pending MBX activation. This source review does not report test results.
 
 The earlier root-fix plan called for a bounded database and WAL snapshot under a source-directory pin, a committed token for WAL-only state, and provider-and-selector revalidation. Review any provider-heavy dependency before adoption.
+
+### OMP snapshot capture findings at PR #1111
+
+Read-only source research reviewed PR #1111 head `8ca6152972bf157084e06d606a089980837d07c9`, tree `db5a842dfb9030bcef3ad825f31ad701ce9e0f1b`. It used synthetic fixtures and public SQLite documentation only. No credential data, provider access, or tests were used.
+
+Two correctness findings remain open. First, capture reads `agent.db` and `agent.db-wal` but ignores `agent.db-journal`. SQLite hot-journal recovery requires locking, rollback, and synchronization before ordinary reads; raw file capture can preserve partially applied database pages. Second, after a valid WAL prefix, the parser treats simultaneous salt and checksum mismatch as a stale-generation suffix. SQLite salts are not part of the frame checksum input, so those fields do not distinguish a genuine old tail from joint corruption of a current frame. Existing tests mutate salt and checksum separately, not together.
+
+The bounded regression proposal mutates one current frame's salt and checksum together and requires rejection before provisioning. A rollback-mode fixture should contain a real SQLite-generated hot journal and prove either recovery to the pre-transaction canary or fail-closed behavior. A dummy sidecar tests only a conservative presence guard.
+
+The architectural recommendation is to use SQLite's normal recovery and a consistent backup/read transaction, then publish only a complete bounded snapshot. Fail closed on snapshot errors or timeout. This is a design recommendation, not an accepted implementation. Primary references: [SQLite hot journals](https://www.sqlite.org/lockingv3.html#hot_journals), [SQLite atomic commit](https://www.sqlite.org/atomiccommit.html#hot_rollback_journals), [WAL format](https://www.sqlite.org/fileformat.html#walformat), and [SQLite backup API](https://www.sqlite.org/c3ref/backup_finish.html). Exact-head review and implementation tests remain pending.
+
+The owner has prepared a corrected design packet at `/tmp/jackin-pr1111-omp-capture-design-v2.tar`, SHA-256 `1695720b664d89e477a53a1b86b700ea24edc0f7ee49d12bf3c43c9be41ad7b0`, bound to PR head `a64af27dbefdf4d9239ad9e94209cb2416a4dbc4` / tree `5f0286807538305a57bd669c9a6a4a66acc8bbdd`. The producer says it maps current discovery/provisioning consumers, Turso policy and dependency needs, both findings, fixture hashes, ownership, and fail-closed tests. Independent design review is pending; no source change or fixture execution is claimed.
+
+### PR #1111 §12.3 account coverage inventory
+
+The source-only inventory covers the twelve requested scenarios: missing credential source; invalid credential structure; unsupported provider content; duplicate source path; distinct accounts; permission failure; expired credentials; concurrent refresh; persisted account selection after reopen; slow endpoints; stale-cache replacement; and root plus explicit-home source precedence.
+
+The inventory identifies Rust, FFI, and Swift test candidates, but no tests were executed. This is not a PASS for any scenario. Source coverage is partial for native persisted-selection states. The audit also identifies missing proof for a real FFI selection round-trip, token-persistence compare-and-swap, and a deliberately stalled live UI bridge. The task branch's typed unavailable-account route change is separate work at head `25701ee67199857e3b33f49de9e9e2acdcd4b7a7`; its dirty local source is not yet committed, generated bindings are unchanged, and Rust/macOS tests remain NOT RUN.
 
 ## Architect integration review
 
@@ -207,6 +239,18 @@ Post-merge Sonar check run `111612018729` failed at the merge SHA. The reported 
 Jackin consumer source review PASS at `07f5ce7efe38c6c608fb975013df43e770d92b2b`. It updates the immutable role snapshot to manifest SHA-256 `b38e506587c98137d0a1a88247fb68afc9f9f215c8104c838df251933a917ae5`. The subsequent Plan run fails against pinned Velnor `0.1.0`; generated CI still lacks configured task jobs. Consumer tests remain NOT RUN.
 
 Architect image prefix `ad3b0069` predates the merged role content and has no source match. No live Codex profile probe, role request, or role launch ran. Codex environment evidence is synthetic-fixture-only.
+
+### Maintained Architect image installer source review (PR #480)
+
+PR [#480](https://github.com/jackin-project/jackin-the-architect/pull/480) is open and draft at source commit `03482411fd5f1ef55c61bb1e2265f198dca3434b`, tree `57070227c97a4f11ef357dd0a471896fe7ea47aa`, against main `7b72b38fe1d66e35c0931899c53bf3719592bbcc`. Exact Sol source review PASS covers the complete Dockerfile installer update and its maintained npm build-only project. GitHub checks at this head show DCO, Actionlint, Plan, Required, and SonarCloud success; Publish baseline is skipped by its main-only condition.
+
+The build-only package pins `ctx7@0.5.11` and `skills@1.5.22`. Its lock is npm lockfile v3 with 89 dependency entries; all entries have registry integrity metadata, and none declare `hasInstallScript`. The package manifest SHA-256 is `8e4644c137635eee9942e08d36459f4bcfc635182eb834fd9d798f689016c2ae`; lock SHA-256 is `b5f6a5fa0a1432d3f2c1e20327a1d0fa0ab9370fb7f71bbd1ad9b7124890cb6f`. The owner-reported lock-generation record used Node `24.21.0` and npm `11.19.0` with `--package-lock-only --ignore-scripts --no-audit --no-fund`; it reports no `node_modules` directory and no package lifecycle scripts. The recorded `npm` command entrypoint was the Mise Bash wrapper (SHA-256 `0a6f43cb58b81269aad0d3eff77f68b5d06ea7c241c199a63bee8b0dd337effc`); the bundled `lib/node_modules/npm/bin/npm-cli.js` hash was `8e5f6f3429f8cdbe693cdc29904e9d5a7b127a494bd15c804bd54c7403bfcbe7`. Node archive SHA-256 is `6e1db87ef58b8819e5d5402eff1536491b18edd8eb7bee5ef7897876e88dc5ff`.
+
+The `ctx7@0.5.11` registry tarball SHA-256 and SRI match the captured bytes. Its embedded source map matches all 31 source files at upstream tag commit `d304ff2c0880110c0b53c8e1e4d4c664feae1e5e`. The tag is unsigned and npm `gitHead` is null; no signature or registry attestation is claimed. The corrected private audit revision is `installer-source-audit.rev1.md`, SHA-256 `b790c63a6a155d8654bc7f882d93275ecd625c83023c6573a91fe440a685d340`; it preserves the original packet and fixes only the transcribed `skills` SRI. The separate ctx7 supplement is SHA-256 `058063c4ae763a6bad8fcb3c42249bf251a2f97b8223de7c41888005199dc093`. The Node/npm lock provenance packet is SHA-256 `27413ecedb649fdc4f9e5e5cca569a8e33f8f2a98cd981526df41319e071ecf1`.
+
+This is source and lock-generation evidence only. Docker image construction, `npm ci`, CLI invocation, role loading, and role execution remain NOT RUN. The CI success does not establish image behavior.
+
+The PR has since advanced to `54cd3d29f99753487a2ac0373483ebc7047831ac`, tree `18a2c5892b9eef275929a1ad6c3d3d55e3f88037`, with the same base; its only changed path from `0348241` is `Dockerfile`. The exact current-head Sol source review also passed. Run `37298705299` reports DCO, Actionlint, Plan, Required, and SonarCloud SUCCESS, with Publish baseline SKIPPED by its main-only condition. This re-review covers the Dockerfile delta; it does not add image-build or runtime evidence.
 
 ### Velnor PR #59 permissions follow-up
 
@@ -323,3 +367,94 @@ All final reviews are NOT STARTED. Each review requires final commits and comple
 | Runtime performance | `architect_schema_review` (Sol/medium) | `architect_contract` and `debian_codex_route` | NOT STARTED; wait for role restart and host account recheck at final heads. |
 
 See [checklist](checklist.md), [build results](build-results.md), and [Debian results](debian-results.md).
+
+## DCO-signed history replacement
+
+The original task branch `refactor/build-split` remains frozen at `73ea2117b8e584c64dec92242271a86149a53125`; its DCO check reported ACTION REQUIRED. A replacement branch `refactor/build-split-dco` was created from the same main base `0aa821a088e1bacf3d4d85a4c9faaa67faa85132`. It replays the original 60 commits in order with `-x`, adding `-s` only to the 39 Codex-authored commits that lacked a matching sign-off. The 21 commits with valid existing sign-offs retain them. No author identity or original content was rewritten.
+
+Independent Sol review by `model_policy_audit` verified each old/new commit pair's tree, author, date, linear parent, and source-attribution trailer. Every commit tree matches its source, and the replacement final tree `9eebc07e80d91f2d29cc9d975b78a53ca4198b3b` exactly matches old head `73ea2117b8e584c64dec92242271a86149a53125`. The exact private mapping packet is `/root/.velnor-work/jackin-dco-replay-20261005/replay-evidence.md`, SHA-256 `4a027a6e1d354e91229e70959eab93827b809f875214767ad29d3da86585a923`, mode `0400`. The reviewer did not independently witness historical push receipts or pre-replay dirty-file hashes; those remain owner-recorded preservation evidence.
+
+Replacement PR [#1113](https://github.com/jackin-project/jackin/pull/1113) was opened as a draft at head `7b6ea934490b6ef0d867a43def527e29caa3b63f`. Its DCO-2 check passed. Its first run `37289881948` failed Plan because pinned Velnor `0.1.0` rejects the configured `tasks` field; Required failed as a consequence and Rust jobs were skipped. This validates the sign-off remediation only; it does not establish source tests, generated-workflow correctness, or merge readiness. PR #1112 remains open until the replacement destination and its applicable gates are verified.
+
+## Native account-selection fix
+
+The selected native navigation/model change is source-reviewed at commit `e17a5dd5c0ef8a34ed20b1837534b851d38e78d1` (tree `5e07bdacd3cdbf4dc24071f9e5ef88c2be53f595`, parent `f8a1a802cafccbaf07eac1c91741174341fb52bf`). `execution_crosscheck` passed the four-path unit: stale explicit accounts route to Overview instead of silently selecting a sibling, unrelated provider rows do not clear a valid Codex route, and the cross-provider fixture now checks that the removed Claude key is absent while the other Claude account remains.
+
+The reviewer found and the follow-up fixed a false-empty fixture assertion: `.catalogNormal` includes both Claude personal and work accounts. Commit `e17a5dd` now asserts the exact removed row is absent and the sibling remains in both store and provider-group results. This review covers native navigation/model source only; it does not accept the broader PR #1111 Rust `HostUsageRuntime` selection behavior. Swift tests and `swift-format` remain NOT RUN because the available host is Linux without the required Apple toolchain. Exact PR run `37300944505` also had no macOS job; Plan failed before the configured native lint/format tasks could be generated. See [exact-head CI](ci-coverage.md#dco-signed-replacement-pr-1113).
+
+
+## Current migration source and MBX wrapper review
+
+The current task source is `3986dfdd07dcfeb739f09f837d3a3ebdd944cbb9`, tree `50f5bbfc7e89fc66b71356ad12629028abfccea4`, parent `0cf350be6a66fd1316239452a718e890c051ad23`. The exact archive is `/root/.velnor-work/jackin-source-3986dfdd-20261005/source.tar.gz`, SHA-256 `5bb627279152a9e49cdfbbfd31ff6142ef4a30c18f2d8dd6da8a89648cca6563`; packet SHA-256 `e5afbb8c82ba4cc55e83badb48339248eab47215306cb8962d4328fa2c5ce21a`.
+
+Independent source reviews passed the `toml_edit` lock-edge correction at `0cf350be6a66fd1316239452a718e890c051ad23` and the parser correction at `3986dfdd07dcfeb739f09f837d3a3ebdd944cbb9`. The locked versions and checksums are unchanged; `Cargo.lock` SHA-256 is `56ceaf85a8b0740b5f365f1163895c52dddb3bb3aa5a0849387c5c745b400092`. The parser fix accepts pinned Mise `2026.10.1` with its platform suffix and optional prefix, while rejecting wrong or extra-line output. The reviewer verified source fixtures, not the full harness execution.
+
+At the earlier exact source `0cf350be6a66fd1316239452a718e890c051ad23`, locked offline Cargo metadata and fetch passed without compilation. PR run `37312549475` at `3986dfdd` confirms locked source fetching passes in CI. Plan then fails because pinned Velnor `0.1.0` rejects `.velnor/config.toml` field `tasks`; Required fails and Rust jobs are skipped. These results do not pass any test, compile, schema, or migration-golden gate.
+
+The prior focused attempt on source `17b2b1be6a58a0e34af6d8308df915d110f4a785` stopped at compilation before tests. It reported unsupported `toml_edit::de::from_document` and an unused qualified `DocumentMut`; the source fix and lock edges are now reviewed. The new exact-source MBX launcher and wrapper harness remain under review. Do not repeat the failed attempt, run bare Cargo, or write fixture outputs before the new launcher and output path are reviewed.
+
+## MBX registry-install routing finding
+
+At Architect source `a5502dae6100856bb0d5095de3bee1f93805069c`, Dockerfile SHA-256 `880dfc54a3c7e82919f0e738d65bdb852e07ed8b9e04d18648c4c22910a9ef63`, a twelve-tool `mbx install` loop passed registry installs through to plain Cargo. Exact MBX 1.22.0 source `10474d43342ad65df3b02323dd8092d18ab38101` shows that `cargo install` without `--path` uses the passthrough route before scheduler/cache setup. This is a missing-cache-path source defect; no recursion failure was demonstrated.
+
+Velnor/Architect source correction `a3e9f62841359192cd197189bca72c23606f3d3e`, tree `53490dc96068162b8c04afa39473071fdeb61151`, replaces registry installs with locked path installs from checksum-verified crates.io archives. The owner reports shell, static, and archive checks passed; exact Sol re-review and image execution remain pending. No tool install, image build, or Rust compilation is accepted.
+
+## Native build-task capability
+
+The conditional design review accepts a single `macos-26` task that builds the XCFramework and runs native validation on the same runner. The task should pin Xcode 26.6, use the required macOS SDK and Swift toolchain, and set bounded Cargo and Nextest workers. SwiftPM needs a narrow xtask `--jobs` integration.
+
+The Velnor Git owner reserved implementation paths in `/root/.cache/velnor-macos-native-build-task-20261005`, branch `feat/macos-native-build-task-20261005`, based on main `4fffbc22ce159305c62ae039668da2a14e2e3366`. The owner is `velnor_freshness_research`. The task must validate identifiers and bounds, use the same repository checkout, and render successful-required fan-in. It must use pinned MBX without a raw Cargo fallback. Focused tests must cover parsing, runner mapping, bounds, fan-in, and output.
+
+The project-wide `mise install` bootstrap failed independent design review. It could install undeclared Git Cargo tools outside MBX. The owner is implementing an explicit selected-tool resolver using trusted task and lock data. Its current worktree has 38 uncommitted assigned paths and passes `git diff --check`; it has not changed manifests, lockfiles, or `.github/**`. No exact-source review, test, compile, generation, or CI result exists.
+
+## Current task-source review addendum
+
+The task branch `refactor/build-split-dco` is at `d1326491e922d8c536add67042325943a1363597`, tree `b16f2fff00ce1e2c8a6f6e2f4f5bc77e9da38556`. Local and remote refs matched during the 2026-10-05 refresh. These source dispositions apply only to their exact commits.
+
+Commit `3bee4c7217837bc37b928840eb93e717cc2bbfbe` (tree `7fdcfbccdba008b5f042ddfaa73112187660b016`) received exact Sol source review PASS. It validates the complete Swift xUnit root, balanced elements, and legal outside-root events. It rejects misplaced declarations, DTDs, CDATA, and general references. Rust and Swift tests remain NOT RUN.
+
+Commit `b80f991d56c2c13f913bb444f9f05a36b16d37df` received exact Sol source review PASS for diagnostics redactor lifecycle handling. It resets after complete-text-only use and keeps standalone values local. No lint rule was disabled. The compile attempt that exposed the lint used earlier source `45c5e0ae615d762161044018802f69d002985ed6` and stopped before Jackin tests. Output SHA-256 is `d83e132c65716a7f1b4326a035d97a68503856653acb1ea77657d4437394f025`. Tool versions, effective homes, UID, and process inventory were not recorded. No current-head Rust test has passed.
+
+Cleanup commit `89af5edb4026396f97afc72a346e84120bcb0730` (tree `467aeb5269480c2bb650cdcb3518f27657c6a195`) failed exact Sol source review. Its successful worktree-list capture parser treated empty, truncated, or malformed output as proof of absence. That could permit branch deletion without a complete worktree inventory. Follow-up `d1326491e922d8c536add67042325943a1363597` (tree `b16f2fff00ce1e2c8a6f6e2f4f5bc77e9da38556`) replaces the parser and adds failure-preserving fixtures. It changes only `cleanup.rs` and `cleanup/tests.rs`. Exact-source Sol re-review is PASS: the correction validates complete NUL-delimited records, rejects malformed or unknown fields before deletion, compares exact paths, and tests record retention/no later branch deletion. `rustfmt --check` and `git diff --check` passed; tests and compilation remain NOT RUN. The original patch SHA-256 is `9eef6990eb77304667c13a09d655eb1d826fabae438db74b4a6afbe5ef514ded`; original packet SHA-256 is `228bc3cf39658d8faa6b2f8d0a3b2003f1af7ef39a56991f6f7bba0295fb7192`.
+
+Commit `0cd9890607d65b6d4e2264acac9303a8b67b561a` contains formatting-only edits in `crates/jackin-runtime/src/runtime/image/build.rs` and `tests.rs`. Targeted `mise exec --locked --deny-net -- rustfmt --check` and `git diff --check` pass. No compile or test ran for this change.
+
+## PR #1111 exact-source and gate status
+
+The source is PR head `3a28c199f17da335ecd9abd8dd67ebf1aecc0421`, tree `ad74cbc0b3a69283bce851568222be8f688e3641`. The exact archive is `/root/.jackin-pr1111-source-3a28-20261005/jackin-3a28c199f17da335ecd9abd8dd67ebf1aecc0421-v2.tar`, SHA-256 `c30feb03732e78ecd8a6975d0fa23724a1d1a1a9008d2e6debb02aa7577a9d33`, size `38389760` bytes. The packet is `source-packet.md`, SHA-256 `cae32839cfe2969c7099ab282b5e2e629625aec62ef96c12adc49d1a6f8d3041`. Archived file bytes and symlinks were checked against Git objects. This archive is the PR source, not the newer replacement task branch.
+
+Exact Sol review by `execution_crosscheck` calls the source a merge candidate and found no material introduced correctness or security defect in reviewed changes. PR #1111 remains open, draft, and mergeable at that head. Exact run `37176424544` passed Actionlint, Plan, all 27 Rust jobs, Required, and DCO. Publish baseline was skipped. The API returned no review submissions or review threads. It returned one issue comment correcting the project-default model and effort description. The PR body now describes the complete source scope and separates project defaults from effective runtime settings.
+
+The live Usage UI/broker smoke and `docs specs` remain NOT RUN. The generated workflow does not run `docs specs`. Source inspection found that optional reconciliation can launch direct `cargo nextest list`; no evidence proves nested Cargo uses MBX. A candidate MBX command is recorded in [CI coverage](ci-coverage.md#pr-1111-exact-head-and-live-gates). A sanitized empty-home smoke would test the Usage route, background discovery, explicit refresh, and empty broker response. It cannot prove authenticated provider behavior. No account read, provider request, smoke, or docs-spec command ran.
+
+## Architect PR #480 exact image snapshot
+
+PR #480 is open and draft at Dockerfile-only head `818ea17a727ec1ace911be44d78b13995e3f6571`, tree `567569245dfb4c170ba22469aba7ecb5746ed3cc`; exact Sol source review PASS. Required, Actionlint, Plan, DCO, and Sonar pass in run `37322851929`; Publish baseline is skipped. The only reported Sonar finding retains the base-image tag with its digest.
+
+R9 built older source `c2e956b33f6e7b576caf8e0c0a4aa6c7c93113df`, tree `6c078a0575917fd6e2cc2c56656e51ba99e23c9a`. The image build passed in 156.411 seconds. Its probe failed before the MBX fixture or compilation because the copied Caveman plugin had mode `0664`. Runtime log SHA-256 `72d791876ffd21221e5eb8265f0b7ad90456324851f2f9258b3a2efa81ceca35`; build log SHA-256 `2da7de1c1b0ee99992028646a5152c614dc13b06d839678b1eb45f7d49eb581e`.
+
+R10 fixed archive-derived modes and passed its image build in 29.584 seconds. Its runtime probe passed plugin and skill mode/hash checks. Exact reviewed command was `/usr/bin/env -i PATH=/usr/bin:/bin LC_ALL=C /usr/bin/python3 -I -S -B runner.py --execute`; build log SHA-256 `0fbc8f57707927a933051b63205323e053b918f9c627bdea110e962a795a8db9`, image ID `sha256:000d34fb1c75614f04bf359e505ecb978507ef5f0d261003674a746079d7c246`. The explicit MBX compile invocation finished and reported 0 hits, 0 misses, and 1 not looked up; execution of `/tmp/architect-image-probe/target-explicit/debug/architect_mbx_probe_explicit` then failed with permission denied. Cleanup returned zero. This does not establish MBX runtime success. The owner is investigating the executable placement/mount boundary. R10 runtime log SHA-256 `455e30f6ec9c5110d54241be870c2a9ec2153670c7998fbd8ace911513637806`; outcome record SHA-256 `306e3e4e87c3a23d457451494fb4c0db1a6c09806a1b105f0fa8f650f32b9fe0`. R10 packet SHA-256 is `9c39864cc714ea384306527fc1bec36aee08c09d7a265ad89b660fe45506243a`; independent packet disposition is pending.
+
+## Velnor generator freshness and source gates
+
+An owner-reported Velnor main snapshot `098be4ad61e614fa4ddfb30f7e7148e470974597` had successful run `37319085496` and Plan artifact `11349640822`. The coordinator did not independently retrieve its artifact or records. A later read-only `git ls-remote` at `2026-10-05 14:28 UTC` returned main `ccb337ecc66e694bf8cb292af1ff43332389fb97`. No CI or artifact status is recorded for this newer tip.
+
+PR #65 release alignment remains dirty and unreviewed in `/tmp/velnor-g0-provenance-20261005` at `ba6b23171851320e55a86a7f98dafb6dad9fd66d`, tree `9ecb4c7b94983fc9eca14b58654a18d4878026cb`. The owner reports no commit or exact-head Sol review. Separate Velnor acquisition attempt V7 failed after namespace setup when the host rendered requested `hidepid=2` as `hidepid=invisible`; its guard rejected that value. No Rustup, Mise, Cargo, network, or acquisition phase ran. Failure log SHA-256 is `c59075dacd8dfaa26895785e7c6b05c54cd3c22ccc4662bbae66d9aec0bc267a`. This does not establish a Cargo acquisition PASS.
+
+The later V9 namespace attempt is also a failure, despite passing raw source-snapshot checks and completing mount/namespace setup. The sealed rootfs lacks `find`, `sha256sum`, `cut`, and `python3`, although the in-chroot command body needs them. The `find` status is swallowed by command substitution, and the single-quoted `cut -d' '` breaks the `sh -c` argument boundary. The helper, Rustup, Mise, Cargo metadata, fetch, compilation, and generation never ran. V9 log SHA-256 is `96a996c403592bbac060c48e62201f4b071392e395b1b7c5e08ac8fc9d2911ed`; outer, namespace, and helper source hashes are `7d3e4ae04dff400a063ff3b83aebe9a502de8a76765690d7870e55da6771fa10`, `59d14f020a88558578e4abafab674705c46cf4445d3b4f492cc024338f287019`, and `5876a1cfb5a1c6a43182995af93a31cb8729fa4421e3c5466a1afe8cfb9e3f0f`. No acquisition result is accepted. Fix command closure and rootfs inventory through an independently reviewed design before retrying.
+
+Separately, MBX recovery attempt v5 verified the fresh reusable 3986 rootfs clone at `/opt/.jackin-mbx-current-17b2b1b-v5-62dfd1ac/rootfs-clean-3986dfdd-v1`: 70,761 entries, 1,778,244,793 regular bytes. Recovery and verification exited 0. The operation created no source stage or build output; it did not run source tests, account access, or generation. This is rootfs inventory evidence only and does not repair or supersede the V9 acquisition failure.
+
+## Current DCO replacement review
+
+At #1113 head `010444548ed976f415289c53c22da8ab801d9e53`, the DCO-2 check returned ACTION REQUIRED because the last commit has no sign-off trailer. The branch was not rewritten. A separate branch, `refactor/build-split-dco-dco-signed`, replays only that final commit from its exact parent using `git cherry-pick -x -s`.
+
+Replacement `5914945f4d5613ee45837e0d61680c3e6be21258` has parent `25701ee67199857e3b33f49de9e9e2acdcd4b7a7`, tree `7cf828cb012f8dccf0d9b335fc8e59207a69d45d`, and original author and timestamp. The commit message references source `010444548ed976f415289c53c22da8ab801d9e53` and signs off as `Codex <codex@openai.com>`. Independent Sol review verified that the replacement's complete tree matches the original and that its parent/content attribution are exact. This confirms DCO mapping only; it does not approve the implementation behavior.
+
+PR #1114 is the destination for this signed commit. Its DCO check passed, while Plan failed because pinned Velnor `0.1.0` reports `.velnor/config.toml: tasks: unknown_config_field`; Required failed and Rust jobs were skipped. Original PR #1113 remains open with DCO ACTION REQUIRED until #1114 is verified as an acceptable destination. Neither PR is merge-ready.
+
+## Latest PR execution gate review
+
+The 2026-10-05 16:11 UTC refresh found PR #1111 at `a64af27dbefdf4d9239ad9e94209cb2416a4dbc4`. Run `37336793714` succeeded: Plan, Actionlint, Required, DCO, and all 27 Rust package jobs passed; Publish baseline was skipped. These CI results do not resolve the two OMP findings at the preceding WAL/auth source review, nor satisfy the separate live Usage UI/broker or `docs specs` commitments. Those gates remain NOT RUN.
+
+The same refresh found PR #1114 blocked by the Plan configuration error. PR #480's required checks passed, but the R10 image runtime failed after the explicit MBX build invocation because the compiled probe could not execute from `/tmp` (`Permission denied`). Velnor #65's Plan failed ShellCheck parsing for generated workflow lines 57, 69, and 93. See [the exact check table](ci-coverage.md#exact-pr-check-refresh-at-2026-10-05-1611-utc); no successful source review, CI check, or partial build should be described as closure of these runtime or generated-workflow gates.

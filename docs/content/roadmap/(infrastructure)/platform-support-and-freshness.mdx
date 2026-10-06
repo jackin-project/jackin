@@ -8,7 +8,7 @@ title: "Platform Support Policy & Roadmap Freshness"
 
 ## Shipped facts
 
-Only a thin platform note exists today: `getting-started/installation.mdx` states jackin❯ supports macOS and Linux, with Windows via WSL2 called out as "possible but untested." There is no dedicated platform support policy page, declared support tier per platform, or Debian-only base-image rationale. The former `release.yml` account in source snapshot `81a26f7e8511b2f19c9ba5a59a85b3ef0bbc804a` described macOS and Linux binary artifacts; the current <RepoFile path=".github/workflows/ci-pr.yml">.github/workflows/ci-pr.yml</RepoFile> provides Linux Rust validation and no binary release publishing jobs. It establishes no current macOS or Windows artifact coverage. The codebase's `#[cfg(windows)]` and `#[cfg(unix)]` blocks alone do not prove platform support. Roadmap freshness tracking has not started: no frontmatter baseline or hosted freshness check is established.
+Only a thin platform note exists today: `getting-started/installation.mdx` states jackin❯ supports macOS and Linux, with Windows via WSL2 called out as "possible but untested." There is no dedicated platform support policy page, declared support tier per platform, or Debian-only base-image rationale. The former `release.yml` account in source snapshot `81a26f7e8511b2f19c9ba5a59a85b3ef0bbc804a` described macOS and Linux binary artifacts; the current <RepoFile path=".github/workflows/ci.yml">.github/workflows/ci.yml</RepoFile> provides Linux Rust validation and no binary release publishing jobs. It establishes no current macOS or Windows artifact coverage. The codebase's `#[cfg(windows)]` and `#[cfg(unix)]` blocks alone do not prove platform support. Roadmap freshness tracking has not started: no frontmatter baseline or hosted freshness check is established.
 
 ## Remaining work
 
@@ -20,7 +20,7 @@ Only a thin platform note exists today: `getting-started/installation.mdx` state
 ## Related work
 
 - Research: [Platform support policy and roadmap freshness tracking — design rationale](/research/platform/infrastructure/platform-support-and-freshness-policy/) — platform matrix philosophy, Debian rationale, and staleness-check design.
-- <RepoFile path=".velnor/config.toml">.velnor/config.toml</RepoFile> and <RepoFile path=".github/workflows/ci-pr.yml">.github/workflows/ci-pr.yml</RepoFile> — current CI scope; release artifact and native platform coverage remain integration gaps.
+- <RepoFile path=".velnor/config.toml">.velnor/config.toml</RepoFile> and <RepoFile path=".github/workflows/ci.yml">.github/workflows/ci.yml</RepoFile> — current CI scope; release artifact and native platform coverage remain integration gaps.
 - <RepoFile path="crates/jackin-xtask/src/docs.rs">crates/jackin-xtask/src/docs.rs</RepoFile> (roadmap/docs validators)
 - [/research/platform/isolation/smolvm-backend/](/research/platform/isolation/smolvm-backend/) — Linux/KVM support affects platform matrix.
 - [/research/platform/isolation/orbstack-isolated-machines/](/research/platform/isolation/orbstack-isolated-machines/) — macOS-only backend.

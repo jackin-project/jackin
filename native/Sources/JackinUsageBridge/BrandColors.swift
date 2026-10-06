@@ -1,4 +1,3 @@
-// PROBE b6 parity marker — comment-only, no behavior change.
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 

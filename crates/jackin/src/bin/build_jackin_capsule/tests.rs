@@ -252,23 +252,23 @@ fn fd_limited_mise_command_delivers_signal_to_execed_process() {
         std::thread::sleep(std::time::Duration::from_millis(5));
     }
     if !ready_path.exists() {
-        let _ = child.kill();
-        let _ = child.wait();
+        drop(child.kill());
+        drop(child.wait());
         panic!("fake Mise did not start within two seconds");
     }
     let fake_pid_text = match std::fs::read_to_string(pid_path) {
         Ok(text) => text,
         Err(error) => {
-            let _ = child.kill();
-            let _ = child.wait();
+            drop(child.kill());
+            drop(child.wait());
             panic!("fake Mise PID capture failed: {error}");
         }
     };
     let fake_pid = match fake_pid_text.trim().parse::<u32>() {
         Ok(pid) => pid,
         Err(error) => {
-            let _ = child.kill();
-            let _ = child.wait();
+            drop(child.kill());
+            drop(child.wait());
             panic!("fake Mise PID capture was invalid: {error}");
         }
     };
@@ -279,8 +279,8 @@ fn fd_limited_mise_command_delivers_signal_to_execed_process() {
             .arg(fake_pid.to_string())
             .status();
         if !kill_status.is_ok_and(|status| status.success()) {
-            let _ = child.kill();
-            let _ = child.wait();
+            drop(child.kill());
+            drop(child.wait());
             panic!("could not terminate fake Mise process {fake_pid}");
         }
     }

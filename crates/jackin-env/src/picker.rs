@@ -185,15 +185,16 @@ fn target_section_id(
                 "section id {:?} cannot be represented as one `op://` path component; re-open the picker to refresh and retry",
                 target_section.id
             );
-            let section = sections.and_then(|sections| {
-                sections
-                    .iter()
-                    .find(|section| section["id"].as_str() == Some(target_section.id.as_str()))
-            });
+            let matching_sections: Vec<&serde_json::Value> = sections
+                .into_iter()
+                .flatten()
+                .filter(|section| section["id"].as_str() == Some(target_section.id.as_str()))
+                .collect();
             anyhow::ensure!(
-                section.is_some(),
-                "section id {:?} not found; re-open the picker to refresh and retry",
-                target_section.id
+                matching_sections.len() == 1,
+                "section id {:?} matched {} section records; re-open the picker to refresh and retry",
+                target_section.id,
+                matching_sections.len()
             );
             Ok(Some(target_section.id.clone()))
         }
@@ -266,12 +267,18 @@ fn existing_field_section_id(
                 "field id {id:?} has section segment {section_segment:?}, but item section metadata is unavailable; re-open the picker to refresh and retry"
             )
         })?;
-        let exact_id = sections
+        let exact_ids: Vec<&str> = sections
             .iter()
-            .find(|section| section["id"].as_str() == Some(section_segment))
-            .and_then(|section| section["id"].as_str());
-        if let Some(section_id) = exact_id {
-            section_id
+            .filter(|section| section["id"].as_str() == Some(section_segment))
+            .filter_map(|section| section["id"].as_str())
+            .collect();
+        if let [section_id] = exact_ids.as_slice() {
+            *section_id
+        } else if exact_ids.len() > 1 {
+            anyhow::bail!(
+                "field id {id:?} has section segment {section_segment:?} matching {} duplicate section records; re-open the picker to refresh and retry",
+                exact_ids.len()
+            )
         } else {
             let mut matching_ids: Vec<&str> = Vec::new();
             for section in sections.iter().filter(|section| {
@@ -338,6 +345,20 @@ pub(crate) fn apply_field_edit(
     value: &str,
     section: Option<&jackin_core::OpSectionTarget>,
 ) -> anyhow::Result<AppliedFieldEdit> {
+    let fields = item["fields"]
+        .as_array()
+        .ok_or_else(|| anyhow::anyhow!("item has no `fields` array"))?;
+    if let FieldTarget::Existing { id, .. } = target {
+        let matches = fields
+            .iter()
+            .filter(|field| field["id"].as_str() == Some(id))
+            .count();
+        anyhow::ensure!(
+            matches <= 1,
+            "field id {id:?} is ambiguous: {matches} fields have this ID; re-open the picker to refresh and retry"
+        );
+    }
+
     let section_id = if matches!(target, FieldTarget::New { .. }) {
         target_section_id(item, section)?
     } else {
@@ -349,14 +370,20 @@ pub(crate) fn apply_field_edit(
         }
         existing_field_section_id(item, target)?
     };
-    let fields = item["fields"]
-        .as_array_mut()
-        .ok_or_else(|| anyhow::anyhow!("item has no `fields` array"))?;
-
     let label = target.label();
-    let found_index = fields
+    let matching_indices: Vec<usize> = fields
         .iter()
-        .position(|field| matches_field_target(field, target, section_id.as_deref()));
+        .enumerate()
+        .filter_map(|(index, field)| {
+            matches_field_target(field, target, section_id.as_deref()).then_some(index)
+        })
+        .collect();
+    anyhow::ensure!(
+        matching_indices.len() <= 1,
+        "field target {target:?} is ambiguous in section {section_id:?}: {} fields match; re-open the picker to refresh and retry",
+        matching_indices.len()
+    );
+    let found_index = matching_indices.first().copied();
     let existing_field_id = found_index
         .and_then(|index| fields.get(index))
         .and_then(|field| field["id"].as_str())
@@ -371,6 +398,9 @@ pub(crate) fn apply_field_edit(
             "existing field id {field_id:?} cannot be represented as one `op://` path component; re-open the picker to refresh and retry"
         );
     }
+    let fields = item["fields"]
+        .as_array_mut()
+        .ok_or_else(|| anyhow::anyhow!("item has no `fields` array"))?;
     let found = found_index.and_then(|index| fields.get_mut(index));
 
     let mut appended_in_section = false;
@@ -458,24 +488,30 @@ pub(crate) fn resolve_edited_field_ref(
         .as_array()
         .ok_or_else(|| anyhow::anyhow!("updated item has no `fields` array"))?;
 
-    let field = updated_fields
+    let matching_fields: Vec<&serde_json::Value> = updated_fields
         .iter()
-        .find(|field| {
+        .filter(|field| {
             existing_field_id.map_or_else(
                 || matches_field_target(field, target, section_id),
                 |id| field["id"].as_str() == Some(id),
             )
         })
-        .ok_or_else(|| {
-            let labels: Vec<&str> = updated_fields
-                .iter()
-                .filter_map(|f| f["label"].as_str())
-                .collect();
-            anyhow::anyhow!(
-                "`op item edit` returned no field matching {target:?}; \
+        .collect();
+    anyhow::ensure!(
+        matching_fields.len() == 1,
+        "`op item edit` returned {} fields matching {target:?}; expected exactly one",
+        matching_fields.len()
+    );
+    let field = matching_fields.first().copied().ok_or_else(|| {
+        let labels: Vec<&str> = updated_fields
+            .iter()
+            .filter_map(|f| f["label"].as_str())
+            .collect();
+        anyhow::anyhow!(
+            "`op item edit` returned no field matching {target:?}; \
                  observed labels: {labels:?}"
-            )
-        })?;
+        )
+    })?;
 
     // The edit target IDs were validated before the mutating CLI call. Keep
     // those stable identities for existing entities; only a newly generated
@@ -561,3 +597,6 @@ pub(crate) fn resolve_edited_field_ref(
         on_demand: false,
     })
 }
+
+#[cfg(test)]
+mod tests;

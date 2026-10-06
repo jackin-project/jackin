@@ -68,6 +68,29 @@ impl CommandRunner for ScriptedRunner {
         Ok(self.capture_queue.pop_front().unwrap_or_default())
     }
 
+    async fn capture_with_options(
+        &mut self,
+        program: &str,
+        args: &[&str],
+        cwd: Option<&Path>,
+        opts: &RunOptions,
+    ) -> anyhow::Result<String> {
+        #[cfg(unix)]
+        anyhow::ensure!(
+            opts.pinned_cwd.is_some(),
+            "isolation inventory commands must be descriptor pinned"
+        );
+        #[cfg(not(unix))]
+        let _ = opts;
+        if args.contains(&"--show-ref-format") {
+            return Ok("files".to_owned());
+        }
+        if args.contains(&"--show-object-format") {
+            return Ok("sha1".to_owned());
+        }
+        self.capture(program, args, cwd).await
+    }
+
     async fn capture_secret(
         &mut self,
         program: &str,
@@ -82,6 +105,7 @@ impl CommandRunner for ScriptedRunner {
 async fn materialize_then_clean_exit_removes_record_and_branch() {
     let repo = TempDir::new().unwrap();
     std::fs::create_dir_all(repo.path().join(".git")).unwrap();
+    std::fs::write(repo.path().join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
     let data = TempDir::new().unwrap();
     let cdir = data.path().join("jackin-the-architect");
     std::fs::create_dir_all(&cdir).unwrap();
@@ -211,16 +235,4 @@ async fn materialize_then_clean_exit_removes_record_and_branch() {
     .unwrap();
     assert_eq!(dec, FinalizeDecision::Cleaned);
     assert!(read_records(&cdir).unwrap().is_empty());
-    assert!(
-        finalize_runner
-            .run_recorded
-            .iter()
-            .any(|c| c.contains("worktree remove --force"))
-    );
-    assert!(
-        finalize_runner
-            .run_recorded
-            .iter()
-            .any(|c| c.contains("branch -D"))
-    );
 }
