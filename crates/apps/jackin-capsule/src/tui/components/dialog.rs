@@ -331,7 +331,7 @@ impl Dialog {
 mod actions;
 mod click;
 mod filter_keys;
-mod hit_test;
+mod hits;
 mod key_dispatch;
 pub(crate) use actions::{CLOSE_TARGET_ITEMS, SPLIT_DIRECTION_ITEMS};
 pub use actions::{ConfirmKind, DialogAction, EXIT_DIRTY_ROWS, ExitDirtyRow, InspectRow};
