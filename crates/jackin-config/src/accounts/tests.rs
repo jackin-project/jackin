@@ -126,6 +126,44 @@ fn secrets_are_redacted_and_provider_routing_is_explicit() {
 }
 
 #[test]
+fn breadcrumb_migration_preserves_account_source_fingerprint() {
+    let migrated_path = "Vault/Item/Team%252FBlue/Token";
+    let account = AccountConfig {
+        enabled: true,
+        name: "Work".into(),
+        provider: AiProvider::Anthropic,
+        credential: AccountCredential::ApiKey {
+            value: EnvValue::OpRef(jackin_core::OpRef {
+                op: "op://vault-id/item-id/field-id".to_owned(),
+                path: migrated_path.to_owned(),
+                account: Some("work".to_owned()),
+                on_demand: false,
+            }),
+            base_url: None,
+            model: None,
+        },
+    };
+
+    // Prior binaries fingerprinted the literal legacy path bytes. The v1
+    // decoder must restore those exact bytes before hashing so a schema bump
+    // does not resurrect an intentionally removed account source.
+    let mut expected = Sha256::new();
+    hash_component(&mut expected, account.provider.slug());
+    hash_component(&mut expected, "api_key");
+    hash_component(&mut expected, "op_ref");
+    hash_component(&mut expected, "op://vault-id/item-id/field-id");
+    hash_component(&mut expected, "Vault/Item/Team%2FBlue/Token");
+    hash_optional_component(&mut expected, Some("work"));
+    hash_component(&mut expected, "false");
+    hash_optional_component(&mut expected, None);
+
+    assert_eq!(
+        account_source_fingerprint(&account),
+        hex::encode(expected.finalize())
+    );
+}
+
+#[test]
 fn oauth_token_instance_endpoint_is_routed() {
     let account = AccountConfig {
         enabled: true,

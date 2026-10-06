@@ -8,8 +8,6 @@ use ratatui::{
     text::Span,
 };
 
-use crate::tui::op_breadcrumb::parse_path_breadcrumb;
-
 /// Render an `OpRef.path` as `vault / item [subtitle] / section -> field ?query`.
 pub fn push_op_breadcrumb_spans(spans: &mut Vec<Span<'static>>, path: &str) {
     let dim = termrock::style::DesignSystem::default().style(termrock::style::Role::TextMuted);
@@ -24,7 +22,7 @@ pub fn push_op_breadcrumb_spans(spans: &mut Vec<Span<'static>>, path: &str) {
             .fg
             .unwrap_or_default())
         .add_modifier(Modifier::BOLD);
-    let Some(parts) = parse_path_breadcrumb(path) else {
+    let Some(parts) = jackin_core::parse_op_breadcrumb_path(path) else {
         spans.push(Span::styled("<unparseable path - re-pick>", dim));
         return;
     };
