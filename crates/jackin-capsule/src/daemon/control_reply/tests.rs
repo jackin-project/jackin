@@ -14,7 +14,10 @@ struct CompletionDrop(Option<oneshot::Sender<()>>);
 impl Drop for CompletionDrop {
     fn drop(&mut self) {
         if let Some(sender) = self.0.take() {
-            let _ = sender.send(());
+            // A dropped receiver means the waiter is gone; delivery is best-effort.
+            if sender.send(()).is_err() {
+                // Completion needs no delivery.
+            }
         }
     }
 }
