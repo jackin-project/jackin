@@ -5,7 +5,7 @@
 // mise.lock, and in the Pkl URL below).
 //
 // Install once per checkout (idempotent):
-//   mise run hooks-install        # install the repo-owned hook boundary
+//   scripts/hooks-install         # install the repo-owned hook boundary
 // The launcher runs steps through `mise x`, so no shell activation is needed —
 // but Git must find `mise` on Git's runtime PATH. The launcher fails closed
 // when `mise` is unavailable. See CONTRIBUTING.md ("Git hooks") for the
@@ -17,17 +17,16 @@
 // compiler artifacts remain untouched. `hk fix` applies fixes explicitly.
 // Temporary source/build paths are owned and cleaned by the launcher.
 //
-// Single source of truth: every step command below is textually identical
-// to the command CI runs; steps invoke tools directly (never `mise run`)
+// Hook commands are direct tool invocations (never `mise run`)
 // because `mise` itself is not on PATH inside hook steps launched for GUI
-// git. Keep each command in sync with its cited definition:
-//   - fmt/check: `mise run fmt` → `cargo fmt --check` (CI format gate)
-//   - fmt/fix: `mise run fmt-fix` → `cargo fmt`
-//   - clippy: `mise run clippy-affected` → `cargo xtask clippy-affected`
+// git. Keep each command in sync with CI and contributor docs:
+//   - fmt/check: `cargo fmt --check` (CI format gate)
+//   - fmt/fix: `cargo fmt`
+//   - clippy: `cargo xtask clippy-affected`
 //   - xtask-lint: `cargo xtask lint --strict` (CI `ci --only lint` partition)
 //   - actionlint: `cargo xtask ci --only lint` actionlint step (*.yml only)
-//   - swiftlint: `mise run desktop-lint`
-//   - swift-format: `mise run desktop-format-check` / `desktop-format`
+//   - swiftlint: `swiftlint lint --strict` (no --config; preserve nested discovery)
+//   - swift-format: `mise -C native run format-check` / `mise -C native run format`
 // Documented divergences:
 //   - clippy runs per-package over the affected closure with the exact CI
 //     flags (--locked --profile test --all-targets --all-features
@@ -38,7 +37,7 @@
 //     packages + cross-crate file inputs, widened to workspace when
 //     unprovable) is implemented in
 //     crates/jackin-xtask/src/clippy_affected.rs and proven by its tests.
-//     Full workspace Clippy stays in CI / `mise run lint`.
+//     Full workspace Clippy stays in CI (`cargo xtask ci --only lint`).
 //   - `hk check --all` runs the clippy step scoped by `git status`, not
 //     literally over every file; on a clean tree it skips green.
 amends "package://github.com/jdx/hk/releases/download/v2.0.1/hk@2.0.1#/Config.pkl"
@@ -47,7 +46,7 @@ steps {
   ["fmt"] {
     // Everything `cargo fmt --check` can observe: sources, manifests
     // (cargo fmt normalizes them), formatting rules, and the toolchain
-    // that provides rustfmt. Mirrors `mise run fmt` / `mise run fmt-fix`.
+    // that provides rustfmt. Uses the direct Cargo format commands.
     glob = List("**/*.rs", "**/Cargo.toml", "rustfmt.toml", ".rustfmt.toml", "rust-toolchain.toml")
     check = "cargo fmt --check"
     fix = "cargo fmt"
@@ -57,8 +56,7 @@ steps {
     // `cargo xtask clippy-affected` re-derives the exact closure (member
     // reverse-dependents, detached fuzz/arrayref packages, cross-crate
     // file inputs) and skips when nothing relevant changed. Runs after
-    // fmt so diagnostics describe formatted sources. Mirrors
-    // `mise run clippy-affected`.
+    // fmt so diagnostics describe formatted sources.
     glob = "**/*"
     exclude = List(
       "native/**",
@@ -97,7 +95,7 @@ steps {
     check = "actionlint {{files}}"
   }
   ["swiftlint"] {
-    // Mirrors `mise run desktop-lint` (do not pass files: an explicit
+    // Uses the native command directly (do not pass files: an explicit
     // path list would disable SwiftLint's nested-config discovery).
     // Skipped where swiftlint is unavailable (non-macOS). The `|| true`
     // matters: hk's exec() throws on nonzero exit, so a bare
@@ -107,7 +105,7 @@ steps {
     check = "cd native && swiftlint lint --strict"
   }
   ["swift-format"] {
-    // Mirrors `mise run desktop-format-check` / `mise run desktop-format`
+    // Mirrors `mise -C native run format-check` / `mise -C native run format`
     // (excludes generated JackinUsageBindings, like the tasks). Skipped
     // where xcrun is unavailable (non-macOS); nothing here assumes macOS
     // unconditionally.

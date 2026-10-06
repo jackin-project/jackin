@@ -226,7 +226,9 @@ fn sync(args: SyncArgs) -> Result<()> {
     let mut env_lines = env_lines(&paths);
 
     if auto.construct.required {
-        run_checked(command("mise", ["run", "construct-build-local"]).current_dir(&paths.repo))?;
+        run_checked(
+            command("cargo", ["xtask", "construct", "build-local"]).current_dir(&paths.repo),
+        )?;
         let construct_image = local_construct_image_ref(&paths.repo)?;
         env_lines.push(format!("export JACKIN_CONSTRUCT_IMAGE={construct_image}"));
     }
@@ -667,8 +669,6 @@ fn construct_reason(file: &str) -> Option<&'static str> {
         Some("construct image source changed")
     } else if file == "docker-bake.hcl" {
         Some("construct image bake graph changed")
-    } else if file == "mise.toml" {
-        Some("construct-build-local task wiring may have changed")
     } else if file.starts_with("crates/jackin-xtask/src/construct") {
         Some("construct build orchestration changed")
     } else {

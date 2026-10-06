@@ -81,9 +81,10 @@ required pipeline target should finish within one minute. A warm job must not
 update the crates.io index, download an upstream crate, or compile an unchanged
 registry/git dependency. The lane-scoped registry warmup is the sole owner of a
 true cold fetch and builds `jackin-xtask` once for artifact reuse by downstream
-gates. The same artifact carries the pinned Cargo CI tools so fan-out jobs do
-not independently install `nextest`, `deny`, `shear`, `audit`, `fuzz`, `hack`,
-or `sccache`. GitHub and Velnor use the same workflow, commands, cache keys, and
+gates. The same artifact carries pinned Cargo CI tools so fan-out jobs do not
+independently install `nextest`, `deny`, `shear`, `audit`, `fuzz`, or `hack`.
+MBX is the only compiler cache. GitHub and Velnor use the same workflow,
+commands, cache keys, and
 failure policy; Velnor may be faster only because its runner-local state
 persists. The prepared xtask also has a seven-day artifact keyed by its actual
 transitive source inputs, Cargo graph/configuration, toolchain, operating
@@ -163,7 +164,7 @@ latest-target pointer; it does not duplicate the target archive.
 | One CI partition | `cargo xtask ci --only <lint\|policy\|tests\|snapshots\|docs\|powerset>` | inner loop mirroring a CI lane |
 | Scoped feature powerset | `cargo hack check -p jackin -p jackin-diagnostics -p jackin-capsule -p jackin-agent-status -p jackin-runtime --feature-powerset --all-targets --locked` | optional-feature crates (PR gate) |
 | Container/runtime behavior | `cargo xtask ci --e2e` (Docker running) | capsule/runtime PRs |
-| Desktop / native Swift | `mise run desktop-ci` (PR cadence); `mise run desktop-merge` adds `desktop-test-ui` on a logged-in macOS host; `mise run desktop-scheduled` adds `desktop-deadcode` | Desktop UI, bridge, or usage projection changes; PR gate: `swift-package-native` unit |
+| Desktop / native Swift | `mise -C native run ci` (local cadence); `mise -C native run merge` adds UI tests on a logged-in macOS host; `mise -C native run scheduled` adds dead-code analysis | Desktop UI, bridge, or usage projection changes; macOS required |
 | Docs/roadmap | `cargo xtask roadmap audit && cargo xtask docs repo-links && cargo xtask research check` | any docs edit |
 | File-size gate | `cargo xtask lint files` (`--format json\|github`) | structure / split PRs |
 | README freshness (advisory) | `cargo xtask lint readme-freshness --base origin/main` | structural `crates/*/src` A/D/R without README touch |
@@ -237,7 +238,7 @@ Does not apply to:
 CI nextest uses `[profile.ci]` (`.config/nextest.toml`): fixed 2 retries with a 1s delay and `final-status-level = "flaky"`. A pass-on-retry is reported as flaky — never silently absorbed. The matrix is exactly one job per affected crate that requires testing; an input-identical successful result is resolved before matrix expansion and does not consume a runner. It has no shards, multi-crate buckets, older-toolchain lanes, or second jobs for crate-specific clippy, benchmarks, powersets, fuzzing, or Docker tests. The `jackin` job owns its conditional Docker E2E steps. Every crate job uploads `target/nextest/ci/junit.xml` and fails if any flaky test is not listed in the shrink-only quarantine ledger `flaky-tests.toml` (repo root; each `[[test]]` needs `name`, `owner`, `reason`, `since`). Prefer fixing the flake over quarantining.
 
 Native UI tests run outside nextest and require a logged-in macOS session.
-`mise run desktop-test-ui` writes one JUnit report per XCTest under the ignored
+`native/Scripts/run-ui-tests.sh` writes one JUnit report per XCTest under the ignored
 `native/.build/test-results/` tree. The script does not retry failures. If a manual
 rerun proves an XCTest intermittent, review its report under the same
 `flaky-tests.toml` owner/reason/since policy; the current nextest analyzer does not

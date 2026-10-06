@@ -1886,9 +1886,7 @@ pub fn ensure_usage_broker_process(
         .as_ref()
         .ok_or_else(|| UsageCoordinationError {
             kind: UsageCoordinationErrorKind::Unavailable,
-            message:
-                "usage broker executable cannot be located; reinstall the complete jackin package"
-                    .to_owned(),
+            message: "usage broker executable cannot be located; from a source checkout, run `cargo build --bins -p jackin`, or reinstall the complete jackin package".to_owned(),
         })?;
     let mut command = Command::new(executable);
     command
@@ -1915,7 +1913,7 @@ pub fn ensure_usage_broker_process(
     command.spawn().map_err(|error| UsageCoordinationError {
         kind: UsageCoordinationErrorKind::Unavailable,
         message: format!(
-            "cannot start usage broker executable {}: {error}; reinstall the complete jackin package",
+            "cannot start usage broker executable {}: {error}; from a source checkout, run `cargo build --bins -p jackin`, or reinstall the complete jackin package",
             executable.display(),
         ),
     })?;

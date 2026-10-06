@@ -71,8 +71,6 @@ Use the aggregate local CI gate:
 
 ```sh
 cargo xtask ci
-# or
-mise run ci
 ```
 
 For a faster local pass that skips feature-powerset and Docker-backed smoke tests:

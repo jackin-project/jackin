@@ -14,7 +14,6 @@ use crate::cmd;
 mod tests;
 
 const TOOLS: &[&str] = &[
-    "sccache",
     "cargo-nextest",
     "cargo-deny",
     "cargo-shear",

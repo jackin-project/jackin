@@ -9,7 +9,7 @@ Informs: unified-agent-usage
 
 Every surface was executed on macOS against the operator's real
 `~/.config/jackin` and `~/.jackin`, from a clean build of this revision
-(`cargo build --bin jackin`, `mise run desktop-build`). Raw command output, exact
+(`cargo build --bin jackin`, `cargo xtask desktop build --version <version> --build <build>`). Raw command output, exact
 line references, and the executed proof-command results are recorded in
 [05 — Verification ledger](05-verification-ledger.md#post-implementation-execution--2026-08-21).
 The desktop composition gap is not describable in prose and is captured
@@ -32,7 +32,7 @@ severely, and in what order it should be addressed.
 
 The mechanical quality gates are healthy. `cargo clippy --workspace
 --all-targets --all-features --locked -- -D warnings`, `cargo fmt --check`, and
-`mise run desktop-lint` all pass, and every changed `ratchet.toml` bound moved
+`mise -C native run lint` all pass, and every changed `ratchet.toml` bound moved
 down rather than up. No debt was loosened to make a gate pass. The gap is that
 no gate observes the running product.
 

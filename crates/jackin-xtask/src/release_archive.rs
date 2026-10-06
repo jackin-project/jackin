@@ -6,7 +6,6 @@
 use std::env;
 use std::ffi::OsStr;
 use std::fs;
-use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::thread;
 
@@ -40,9 +39,6 @@ pub(crate) struct ReleaseArchivesArgs {
     /// Directory receiving archives and their sidecars.
     #[arg(long, default_value = "dist")]
     output_dir: PathBuf,
-    /// Optional file receiving one complete sccache report for the crate job.
-    #[arg(long)]
-    sccache_stats: Option<PathBuf>,
     /// Emit only the archive and checksum for an internal CI artifact.
     #[arg(long)]
     checksum_only: bool,
@@ -138,9 +134,6 @@ pub(crate) fn run(args: ReleaseArchivesArgs) -> Result<()> {
     }
     for target in targets {
         preserve_cargo_timings(&build_root.join(target.rust), &args.output_dir)?;
-    }
-    if let Some(path) = args.sccache_stats.as_deref() {
-        write_sccache_stats(path)?;
     }
     Ok(())
 }
@@ -358,13 +351,4 @@ fn preserve_cargo_timings(target_dir: &Path, output_dir: &Path) -> Result<()> {
         }
     }
     Ok(())
-}
-
-fn write_sccache_stats(path: &Path) -> Result<()> {
-    let stats = cmd::output(cmd::command("sccache").arg("--show-stats"))?;
-    fs::write(path, &stats).with_context(|| format!("writing {}", path.display()))?;
-    io::stdout()
-        .lock()
-        .write_all(&stats)
-        .context("writing sccache stats to stdout")
 }

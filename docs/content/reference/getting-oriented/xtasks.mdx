@@ -3,7 +3,7 @@ title: Workspace Automation (xtasks)
 description: Every cargo xtask subcommand, what it does, and when a contributor reaches for it
 ---
 
-jackin❯ keeps its workspace automation in a single Rust binary, <RepoFile path="crates/jackin-xtask/src/main.rs">crates/jackin-xtask/src/main.rs</RepoFile>, following the cargo-xtask pattern: all task logic is Rust, subprocesses (`docker`, `git`) are driven through `std::process::Command`, and the project carries no shell task scripts. The cargo alias in <RepoFile path=".cargo/config.toml">.cargo/config.toml</RepoFile> makes `cargo xtask <command>` the direct entrypoint, and the `construct-*` tasks in <RepoFile path="mise.toml">mise.toml</RepoFile> delegate to the same binary so CI and local runs share one implementation.
+jackin❯ keeps repository automation in a single Rust binary, <RepoFile path="crates/jackin-xtask/src/main.rs">crates/jackin-xtask/src/main.rs</RepoFile>, following the cargo-xtask pattern: command logic lives in Rust and subprocesses (`docker`, `git`) are driven through `std::process::Command`. The cargo alias in <RepoFile path=".cargo/config.toml">.cargo/config.toml</RepoFile> makes `cargo xtask <command>` the direct entrypoint. The source-bound preview package producer is a standalone shell script because it coordinates the packaging tools and their handoff files.
 
 <Aside type="note">
 **This page is the canonical inventory of xtask commands.** A PR that adds, removes, or reshapes a subcommand updates this page in the same PR. The declarative image build graph stays in <RepoFile path="docker-bake.hcl">docker-bake.hcl</RepoFile> — the xtask invokes it rather than reimplementing it in flag assembly.
@@ -11,19 +11,19 @@ jackin❯ keeps its workspace automation in a single Rust binary, <RepoFile path
 
 ## Construct image tasks
 
-The `construct` family (source: <RepoFile path="crates/jackin-xtask/src/construct.rs">crates/jackin-xtask/src/construct.rs</RepoFile>) builds and publishes the construct base image. Each has a matching mise task; the role-author-facing build walkthrough lives on [Construct image](/developing/construct-image/).
+The `construct` family (source: <RepoFile path="crates/jackin-xtask/src/construct.rs">crates/jackin-xtask/src/construct.rs</RepoFile>) builds and publishes the construct base image. Run these commands from the repository root; the role-author-facing build walkthrough lives on [Construct image](/developing/construct-image/).
 
-| Command | mise task | What it does |
-| --- | --- | --- |
-| `cargo xtask construct init-buildx` | `construct-init-buildx` | Create and bootstrap the named Buildx builder. |
-| `cargo xtask construct doctor-buildx` | `construct-doctor-buildx` | Inspect the configured Buildx builder and list available builders. |
-| `cargo xtask construct reset-buildx` | `construct-reset-buildx` | Recreate the configured Buildx builder from scratch — the fix when builds fail with a corrupted builder. |
-| `cargo xtask construct build-local` | `construct-build-local` | Build the construct image for the host platform and load it into the local Docker daemon. |
-| `cargo xtask construct build-platform <amd64\|arm64>` | `construct-build-platform <platform>` | Build for one specific platform and load it locally. |
-| `cargo xtask construct push-platform <amd64\|arm64>` | `construct-push-platform <platform>` | Push a single-platform image by digest. CI-only for the canonical registry. |
-| `cargo xtask construct assert-version-unpublished` | `construct-assert-version-unpublished` | Fail when the version in <RepoFile path="docker/construct/versions.env">docker/construct/versions.env</RepoFile> already exists in the registry — the publish-gate guard. |
-| `cargo xtask construct publish-manifest` | `construct-publish-manifest` | Combine per-platform digest pushes into one multi-platform manifest. The current generated CI does not invoke this publication command. |
-| `cargo xtask construct inspect` | `construct-inspect` | Print the resolved Bake configuration without building — dry-run inspection. |
+| Command | What it does |
+| --- | --- |
+| `cargo xtask construct init-buildx` | Create and bootstrap the named Buildx builder. |
+| `cargo xtask construct doctor-buildx` | Inspect the configured Buildx builder and list available builders. |
+| `cargo xtask construct reset-buildx` | Recreate the configured Buildx builder from scratch — the fix when builds fail with a corrupted builder. |
+| `cargo xtask construct build-local` | Build the construct image for the host platform and load it into the local Docker daemon. |
+| `cargo xtask construct build-platform <amd64\|arm64>` | Build for one specific platform and load it locally. |
+| `cargo xtask construct push-platform <amd64\|arm64>` | Push a single-platform image by digest. CI-only for the canonical registry. |
+| `cargo xtask construct assert-version-unpublished` | Fail when the version in <RepoFile path="docker/construct/versions.env">docker/construct/versions.env</RepoFile> already exists in the registry — the publish-gate guard. |
+| `cargo xtask construct publish-manifest` | Combine per-platform digest pushes into one multi-platform manifest. The current generated CI does not invoke this publication command. |
+| `cargo xtask construct inspect` | Print the resolved Bake configuration without building — dry-run inspection. |
 
 ## Pull request verification helpers
 
@@ -73,19 +73,19 @@ The `change`, `research`, and `roadmap` families (source: <RepoFile path="crates
 
 ## Adding a new xtask
 
-Repo-internal automation belongs in this binary, not in shell scripts or one-off `justfile` recipes: add a module under <RepoFile path="crates/jackin-xtask/src/main.rs">crates/jackin-xtask/src/main.rs</RepoFile>, register the subcommand in the `Command` enum, and — when CI or contributors will invoke it routinely — add a delegating mise task. Host-side developer workflows that must be available before a checkout exists belong in `jackin-dev` instead. Update this page in the same PR.
+Repo-internal command logic belongs in this binary, not in one-off shell commands: add a module under <RepoFile path="crates/jackin-xtask/src/main.rs">crates/jackin-xtask/src/main.rs</RepoFile> and register its subcommand in the `Command` enum. Add a mise task only when it meaningfully shortens a repeated multi-step workflow; simple Cargo commands should stay direct. Host-side developer workflows that must be available before a checkout exists belong in `jackin-dev` instead. Update this page in the same PR.
 
 ## Preview package publication
 
-Local preview package preparation and verification use these typed commands:
+Local preview package preparation and verification use these commands:
 
-1. `mise run release-preview-package` builds the source-bound six-payload package.
-2. `mise run verify-preview-package` verifies the handoff and its provenance.
+1. `mise exec --locked -- scripts/release-preview-package` builds the source-bound six-payload package with the pinned tool environment.
+2. `VELNOR_VERIFIED_PACKAGE_DIR=<package-dir> cargo xtask release-verify-package` verifies the handoff and its provenance.
 
 The current generated workflow does not stage or publish the preview package or
 create the Homebrew consumer update PR. Those hosted steps remain an integration
 requirement; the local commands do not establish publication coverage.
 
-`mise run migrate-preview-legacy` invokes the jackin❯-specific,
+`cargo xtask preview migrate-legacy` invokes the jackin❯-specific,
 fingerprint-guarded migration for the known malformed rolling release. This
 explicit command is separate from the current generated CI.

@@ -5,6 +5,12 @@ description: Compares shared compiler-cache backends, deployment topologies, tru
 
 **Research state:** Incomplete
 
+**Compiler-cache policy (2026-10-06):** MBX is the only compiler cache for
+Jackin. Do not install, invoke, or recommend `sccache`, `kache`, or another
+compiler wrapper. The remaining study is to measure MBX's warm and cold
+behavior, cache ownership, storage bounds, and failure handling on GitHub and
+Velnor without changing the backend.
+
 ## Summary
 
 Shared compiler caches can reduce redundant CI work only when cache keys, trust boundaries, and deployment ownership remain explicit.

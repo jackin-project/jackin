@@ -75,19 +75,7 @@ For runtime behavior, see [The Construct Image](https://jackin.tailrocks.com/dev
 
 | Workflow | Triggers |
 |---|---|
-| `ci-pr.yml` | Generated pull-request validation: policy plus affected Bun, Docker, Rust, and Swift units |
-| `ci-main.yml` | Generated `main`-push validation: policy plus affected/full Bun, Docker, Rust, and Swift units |
-| `ci-policy.yml` | Pull-request-target workflow-policy and actionlint validation |
-| `ci-unit-bun.yml` | Reusable Bun unit, including the `docs/` build and test surface |
-| `ci-unit-docker.yml` | Reusable Docker image unit |
-| `ci-unit-rust.yml` | Reusable Rust unit |
-| `ci-unit-swift.yml` | Reusable Swift/Xcode unit |
-| `desktop-merge.yml` | Desktop merge cadence on pushes to `main` and manual dispatch |
-| `desktop-scheduled.yml` | Weekly desktop cadence plus manual dispatch, including the dead-code scan |
-| `maintenance.yml` | Closed-PR cache cleanup and scheduled/manual maintenance |
-| `nightly.yml` | Scheduled nightly validation and manual dispatch |
-| `release.yml` | `v[0-9]*` tag signing and publication; manual dispatch runs release validation only |
-| `renovate-upstream-sources.yml` | Push, pull-request, and manual validation of Renovate upstream sources |
+| `ci.yml` | Checked-in GitHub Actions validation workflow |
 
 ## Code ↔ docs cross-reference
 

@@ -75,36 +75,36 @@ The repository task definitions, not prose aliases, are authoritative. Run throu
 
 | Purpose | Exact command | Proven owner / qualification |
 |---|---|---|
-| Rust formatting | `rtk mise run fmt` | `mise.toml:99-101`; nonmutating. |
-| Unified Rust tests | `rtk mise run test` | `mise.toml:91-93`; invokes fast `cargo xtask ci --only tests`. |
-| Unified Rust lint | `rtk mise run lint` | `mise.toml:95-97`; invokes fast lint gate. |
-| Focused crate tests during iteration | `rtk cargo nextest run -p jackin-usage -p jackin-usage-ffi -p jackin-runtime -p jackin-capsule -p jackin-console -p jackin` | Repository uses nextest in CI; package set corresponds to all changed usage surfaces. Final proof still runs unified tasks. |
-| Generated binding drift | `rtk mise run desktop-bindings-check` | `mise.toml:116-119`; never edit generated Swift manually. |
-| Regenerate native project | `rtk mise run desktop-generate` | `mise.toml:124-126`; writes generated Xcode project as intended. |
-| Swift formatting check | `rtk mise run desktop-format-check` | `mise.toml:134-136`. |
-| SwiftLint | `rtk mise run desktop-lint` | `mise.toml:138-142`. |
-| Native Rust/FFI/parity tests | `rtk mise run desktop-test` | `mise.toml:177-180`. |
-| Native PR graph | `rtk mise run desktop-ci` | `mise.toml:183-196`; bindings, project, formatting, lint, tests, build, Swift tests, app verification. |
-| Native merge graph | `rtk mise run desktop-merge` | `mise.toml:197-203`; adds real-host UI tests. |
-| Native scheduled graph | `rtk mise run desktop-scheduled` | `mise.toml:205-211`; adds dead-code scan. |
-| Prototype build | `rtk mise run desktop-prototype-build` | `mise.toml:227-239`. |
+| Rust formatting | `rtk cargo fmt --check` | Nonmutating workspace check. |
+| Unified Rust tests | `rtk cargo xtask ci --only tests --fast` | Fast tests partition. |
+| Unified Rust lint | `rtk cargo xtask ci --only lint --fast` | Fast lint partition. |
+| Focused crate tests during iteration | `rtk cargo nextest run -p jackin-usage -p jackin-usage-ffi -p jackin-runtime -p jackin-capsule -p jackin-console -p jackin` | Repository uses nextest in CI; package set corresponds to all changed usage surfaces. Final proof still runs the unified tests partition. |
+| Generated binding drift | `rtk mise -C native run ci` (or `rtk cargo xtask desktop bindings-check`) | `native/mise.toml`; never edit generated Swift manually. |
+| Regenerate native project | `xcodegen generate --spec native/project.yml` | `native/mise.toml`; writes generated Xcode project as intended. |
+| Swift formatting check | `rtk mise -C native run format-check` | `native/mise.toml`. |
+| SwiftLint | `rtk mise -C native run lint` | `native/mise.toml`. |
+| Native Rust/FFI/parity tests | `rtk cargo xtask desktop test` | `crates/jackin-xtask/src/desktop.rs`. |
+| Native PR graph | `rtk mise -C native run ci` | `native/mise.toml`; bindings, project, formatting, lint, tests, build, Swift tests, app verification. |
+| Native merge graph | `rtk mise -C native run merge` | `native/mise.toml`; adds real-host UI tests. |
+| Native scheduled graph | `rtk mise -C native run scheduled` | `native/mise.toml`; adds dead-code scan. |
+| Prototype build | `rtk mise -C native run prototype-build` | `native/mise.toml`. |
 | Prototype tests | `rtk swift test --package-path native/Design/Prototypes/UnifiedAgentUsage` | `native/Design/Prototypes/UnifiedAgentUsage/SIGNOFF.md:11-15`. |
-| Prototype scenario | `rtk mise run desktop-prototype -- F02 1000x680 dark` | `mise.toml:267-284`; supports F00–F29 and fixed size/appearance arguments. |
+| Prototype scenario | `rtk mise -C native run prototype-run -- F02 1000x680 dark` | `native/mise.toml`; supports F00–F29 and fixed size/appearance arguments. |
 | Production deterministic captures | `rtk native/Scripts/VisualQA/capture-final-matrix.sh native/dist/JackinDesktop.app` | `native/README.md:137-146`, `native/Scripts/VisualQA/capture-final-matrix.sh:1-12`; requires macOS WindowServer and Screen Recording permission, and temporarily changes app/system presentation state. |
-| Local app build | `rtk mise run desktop-build -- 0.6.0 1` | `mise.toml:152-159`; produces app/dSYM using fixture version/build. |
-| Local fail-closed verify | `rtk mise run desktop-verify -- native/dist/JackinDesktop.app 0.6.0 1` | `mise.toml:160-175`; secret-free for ad-hoc validation. |
-| Release-mode verify | `rtk mise run desktop-verify -- native/dist/JackinDesktop.app 0.6.0 1 --release` | `mise.toml:160-175`; only succeeds for Developer ID signed, notarized, stapled, Gatekeeper-accepted app. |
-| Sign/notarize/staple | `rtk mise run desktop-sign-notarize -- native/dist/JackinDesktop.app <out-zip> <version> <build>` | `mise.toml:300-315`; credential-dependent; secret values never enter plans/docs. |
-| Read-only release/cask reconciliation | `rtk mise run desktop-release-state -- <version> --repo jackin-project/jackin --tap jackin-project/homebrew-tap` | `mise.toml:317-324`, `.github/workflows/release.yml:500-508`; network/auth may be required, no publication write. |
-| Credential bootstrap | `rtk mise run desktop-bootstrap-secrets` | `mise.toml:326-328`; external operator authorization and GitHub/Apple credential material required. |
+| Local app build | `rtk cargo xtask desktop build --version 0.6.0 --build 1` | `crates/jackin-xtask/src/desktop.rs`; produces app/dSYM using fixture version/build. |
+| Local fail-closed verify | `rtk cargo xtask desktop verify native/dist/JackinDesktop.app --version 0.6.0 --build 1` | `crates/jackin-xtask/src/desktop.rs`; secret-free for ad-hoc validation. |
+| Release-mode verify | `rtk cargo xtask desktop verify native/dist/JackinDesktop.app --version 0.6.0 --build 1 --release` | `crates/jackin-xtask/src/desktop.rs`; only succeeds for Developer ID signed, notarized, stapled, Gatekeeper-accepted app. |
+| Sign/notarize/staple | `rtk mise -C native run sign-notarize -- native/dist/JackinDesktop.app <out-zip> <version> <build>` | `native/mise.toml`; credential-dependent; secret values never enter plans/docs. |
+| Read-only release/cask reconciliation | `rtk cargo xtask desktop release-state <version> --repo jackin-project/jackin --tap jackin-project/homebrew-tap` | `crates/jackin-xtask/src/desktop/release_state.rs`; network/auth may be required, no publication write. |
+| Credential bootstrap | `rtk cargo xtask desktop bootstrap-secrets` | `crates/jackin-xtask/src/desktop/bootstrap.rs`; external operator authorization and GitHub/Apple credential material required. |
 
 The desktop capture script currently enumerates light fixtures despite the settled dark-only product contract (`native/Scripts/VisualQA/capture-final-matrix.sh:123-157`). Implementation planning must update the canonical production matrix so dark-only proof cannot silently pass via obsolete light cases, while retaining accessibility contrast/transparency/motion evidence. This is a concrete verification-gap fix, not permission to restore light mode. (confidence: HIGH)
 
 ## Signing, notarization, and publication boundary
 
-Secret-free CI can build, ad-hoc verify, prove release verification rejects the ad-hoc artifact, run offline reconciliation fixtures, and repeat read-only release state. Credentialed publication is restricted to the `release-macos` environment on GitHub-hosted macOS; it imports Developer ID and App Store Connect material, validates certificate/team identity, signs/notarizes/staples, removes temporary credential material, and only then creates checksum, Sigstore bundle, SBOM, provenance attestation, release archive, and symbol archives. — `.github/workflows/release.yml:400-432`, `.github/workflows/release.yml:470-508`, `.github/workflows/release.yml:510-639` (confidence: HIGH)
+Secret-free CI can build, ad-hoc verify, prove release verification rejects the ad-hoc artifact, run offline reconciliation fixtures, and repeat read-only release state. There is no checked-in release workflow. Manual signing/notarization is available through `mise -C native run sign-notarize`; artifact publication, provenance, and Homebrew cask reconciliation require a separately maintained release process. (confidence: HIGH)
 
-Plans may name only these required secret types/locations: the five `release-macos` secret names and the two repository variable names recorded in `native/README.md:166-181`. They must not contain values. Developer ID signing/notarization, first public artifact publication, tap PR creation/merge, and clean-machine Homebrew cask installation remain credential/operator-dependent acceptance work; local ad-hoc success cannot satisfy them. `desktop-release-state` is the read-only preflight/reconciliation seam and release CI is the publication owner. (confidence: HIGH)
+Plans may name only these required secret types/locations: the five `release-macos` secret names and the two repository variable names recorded in `native/README.md:166-181`. They must not contain values. Developer ID signing/notarization, first public artifact publication, tap PR creation/merge, and clean-machine Homebrew cask installation remain credential/operator-dependent acceptance work; local ad-hoc success cannot satisfy them. `cargo xtask desktop release-state` is the read-only preflight/reconciliation command; there is no release CI publication owner. (confidence: HIGH)
 
 ## Planning conclusions
 

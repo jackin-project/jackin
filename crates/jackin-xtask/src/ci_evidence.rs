@@ -46,7 +46,6 @@ const TARGET_REPOSITORY: &str = "jackin-project/jackin";
 const TARGET_REPOSITORY_ID: u64 = 1_197_700_841;
 const WORKFLOW_CONTRACT_PATH: &str = ".github-gen/velnor-workflow.toml";
 const WORKFLOW_STATE_PATH: &str = ".github/ci/.github-actions-generator-state";
-const MISE_PATH: &str = "mise.toml";
 const GENERATED_STATE_SCHEMA: u32 = 2;
 // Velnor 4dec emits ownership-state generator revision 69. This is a
 // checked-in consumer contract: changing it requires regenerating the state

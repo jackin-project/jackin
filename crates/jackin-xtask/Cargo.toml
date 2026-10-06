@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Workspace automation (construct image build/publish) for jackin, invoked via mise tasks."
+description = "Workspace automation (construct image build/publish) for jackin."
 publish = false
 
 [[bin]]

@@ -14,6 +14,7 @@ license.workspace = true
 readme = "README.md"
 publish = false
 build = "build.rs"
+default-run = "jackin"
 
 [[bin]]
 name = "jackin"

@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # boltffi packaging for jackin❯ desktop. Driven exclusively by
-# `cargo xtask desktop bindings|xcframework` (mise `desktop-bindings` /
-# `desktop-xcframework`) from the repo root — the xtask flow pins
+# `cargo xtask desktop bindings|xcframework` from the repo root. Native
+# workflows live in `native/mise.toml`; the xtask flow pins
 # MACOSX_DEPLOYMENT_TARGET and the desktop-release cargo profile and invokes
 # boltffi with this crate as the working directory. Never invoke boltffi
 # directly. All output paths below are relative to this crate directory.

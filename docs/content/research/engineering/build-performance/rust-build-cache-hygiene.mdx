@@ -5,6 +5,11 @@ description: Measures Rust build-cache growth and compares cleanup tools, filesy
 
 **Research state:** Current
 
+**Compiler-cache policy (2026-10-06):** MBX is the only compiler cache for
+Jackin. The alternative-backend analysis below is historical context; do not
+apply its sccache or kache setup instructions. Continue this work using MBX
+while measuring storage ownership, disk bounds, and cleanup safety.
+
 ## Summary
 
 Rust build caches need measured, policy-driven cleanup because filesystem behavior and tool safety differ across environments.
