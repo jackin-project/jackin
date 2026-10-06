@@ -18,8 +18,9 @@ pub use bridge::UsageMenuBarBridge;
 pub use dto::{
     AccountDescriptorDto, DesktopInventoryDto, DesktopProjectionDto, DesktopProviderGroupDto,
     DesktopProviderProjectionDto, DesktopProviderStateDto, DiscoveryDiagnosticDto, MoneyDto,
-    OpenConfig, ProviderGlanceRowDto, QuotaBucketDto, SurfaceDescriptorDto,
-    UsageDetailPresentationDto, UsageDetailRowDto, UsageEventBatchDto, UsageEventDto,
-    UsageIdentityPresentationDto, UsagePresentationLineDto, UsageViewDto,
+    OpenConfig, OverviewRowDto, ProviderGlanceRowDto, QuotaBucketDto, SelectedAccountRouteDto,
+    SurfaceDescriptorDto, UsageDetailPresentationDto, UsageDetailRowDto, UsageEventBatchDto,
+    UsageEventDto, UsageFormatPrefsDto, UsageIdentityPresentationDto, UsagePresentationLineDto,
+    UsageViewDto,
 };
 pub use error::UsageBridgeError;

@@ -12,7 +12,6 @@ use jackin_protocol::control::{
 };
 use jackin_protocol::usage_broker::{UsageAccountCapability, UsageCoordinationErrorKind};
 use jackin_usage::coordinator::{ProviderProbeOutcome, UsageProviderExecutor};
-use jackin_usage::host::HostUsageRuntime;
 use jackin_usage::host::{
     ForwardedUsageAccount, HostProbePolicy, HostRuntimeConfig, UsageBrokerConfig,
     UsageDiscoveryScope, ensure_usage_broker_with_executor, usage_broker_capabilities,
@@ -127,7 +126,7 @@ fn open_runtime_activation_failure_is_error_and_keeps_runtime_closed() {
     let config_root = dir.path().join("config");
     write_account_config(&config_root, "fixture", "anthropic");
     let bridge = UsageMenuBarBridge::create();
-    let host_config = crate::dto::to_host_config(OpenConfig {
+    let host_config = to_host_config(OpenConfig {
         data_dir_override: Some(dir.path().display().to_string()),
         config_root_override: Some(config_root.display().to_string()),
         refresh_floor_secs: 120,
@@ -210,7 +209,8 @@ fn production_rotation_revokes_in_flight_join_and_clears_bridge_phase() {
     let config_root = dir.path().join("config");
     write_account_config(&config_root, "fixture", "anthropic");
     let executor = Arc::new(BlockingBrokerExecutor::new());
-    let broker_executor: Arc<dyn UsageProviderExecutor> = executor.clone();
+    let executor_handle = Arc::clone(&executor);
+    let broker_executor: Arc<dyn UsageProviderExecutor> = executor_handle;
     let broker = ensure_usage_broker_with_executor(
         UsageBrokerConfig::for_data_dir(dir.path().to_owned()),
         broker_executor,
@@ -498,14 +498,12 @@ fn fixture_snapshot_round_trip_via_bridge() {
     bridge
         .set_enabled("codex".to_owned(), false)
         .expect("disable");
-    assert!(bridge.snapshot("codex".to_owned()).is_err());
+    bridge.snapshot("codex".to_owned()).unwrap_err();
     bridge.shutdown().expect("shutdown");
     assert!(matches!(
         bridge.list_surfaces().expect_err("closed"),
         UsageBridgeError::RuntimeUnavailable | UsageBridgeError::Rejected { .. }
     ));
-    // silence unused import warning if any
-    let _ = HostUsageRuntime::new();
 }
 
 #[test]

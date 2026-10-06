@@ -35,7 +35,7 @@ fn disc_source_adapter_caches_identical_declaration_before_second_read() {
 
     assert_eq!(global, scoped);
     assert_eq!(resolver.cached_resolution_count(), 1);
-    let debug = format!("{:?}", global);
+    let debug = format!("{global:?}");
     assert!(!debug.contains("fixture-secret"));
 }
 

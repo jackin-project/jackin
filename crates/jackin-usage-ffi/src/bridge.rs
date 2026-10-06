@@ -34,6 +34,16 @@ pub struct UsageMenuBarBridge {
     joiners: Arc<Mutex<BTreeSet<(UsageAccountCapability, u64)>>>,
 }
 
+// Manual `Debug`: the bridge owns the secret resolver, so field values stay
+// out of `Debug` output (mirrors the resolver's own redacted impl).
+impl std::fmt::Debug for UsageMenuBarBridge {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("UsageMenuBarBridge")
+            .finish_non_exhaustive()
+    }
+}
+
 #[derive(Clone)]
 struct DesktopBroker {
     client: UsageBrokerClient,
@@ -544,11 +554,12 @@ impl UsageMenuBarBridge {
         scope: UsageDiscoveryScope,
         discovery: ValidatedUsageDiscovery,
     ) -> Result<DesktopBroker, UsageCoordinationError> {
+        let resolver = Arc::clone(&self.credential_resolver);
         let handle = jackin_usage::host::ensure_usage_broker(
             config.clone(),
             scope.clone(),
             discovery,
-            self.credential_resolver.clone(),
+            resolver,
         )?;
         Ok(DesktopBroker {
             client: handle.client,
@@ -597,7 +608,7 @@ impl UsageMenuBarBridge {
         }
         let runtime = Arc::clone(&self.inner);
         let lifecycle = Arc::clone(&self.broker_lifecycle);
-        let broker = self.broker.clone();
+        let broker = Arc::clone(&self.broker);
         let joiners = Arc::clone(&self.joiners);
         let name = format!("desktop-usage-join-{}", capability.surface_id);
         let worker_key = key.clone();

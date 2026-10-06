@@ -15,16 +15,8 @@
 //! grant for capsule-wide state, `/tmp`, or shared GitHub CLI credentials.
 
 // Landlock/capability syscalls are the fail-closed isolation boundary; unsafe
-// is confined to this module and reviewed as a security API. Linux-only: no
-// unsafe code remains on other targets, and an unfulfilled expect would fail
-// the build there.
-#![cfg_attr(
-    target_os = "linux",
-    expect(
-        unsafe_code,
-        reason = "fail-closed Landlock/capability isolation boundary"
-    )
-)]
+// is confined to per-site `#[expect]`s inside the Linux-only code below and
+// reviewed as a security API. No unsafe code remains on other targets.
 
 #[cfg(target_os = "linux")]
 use anyhow::Context;
@@ -223,6 +215,7 @@ mod linux {
         program: &str,
         args: &[String],
     ) -> Result<()> {
+        #[expect(unsafe_code, reason = "audited privilege-drop boundary syscall")]
         // SAFETY: `geteuid` has no pointer arguments and only returns the
         // effective uid of the calling process.
         let effective_uid = unsafe { libc::geteuid() };
@@ -688,6 +681,7 @@ mod linux {
     }
 
     pub(super) fn install_landlock(rules: &[Rule]) -> Result<()> {
+        #[expect(unsafe_code, reason = "audited Landlock isolation-boundary syscall")]
         // SAFETY: Landlock's version query is defined as a null attribute
         // pointer with zero size and a version-query flag.
         let abi = unsafe {
@@ -709,6 +703,7 @@ mod linux {
                     0
                 },
         };
+        #[expect(unsafe_code, reason = "audited Landlock isolation-boundary syscall")]
         // SAFETY: `handled` is a valid, initialized ruleset attribute and its
         // size matches the ABI structure passed to the kernel.
         let ruleset = unsafe {
@@ -737,6 +732,7 @@ mod linux {
             }
             let path = CString::new(rule.path.as_os_str().as_encoded_bytes())
                 .with_context(|| format!("invalid isolated path {}", rule.path.display()))?;
+            #[expect(unsafe_code, reason = "audited Landlock isolation-boundary syscall")]
             // SAFETY: `path` is a NUL-terminated path owned for this call;
             // O_PATH|O_CLOEXEC requests only a kernel path handle.
             let parent = unsafe { libc::open(path.as_ptr(), libc::O_PATH | libc::O_CLOEXEC) };
@@ -761,6 +757,7 @@ mod linux {
                 },
                 parent_fd: parent,
             };
+            #[expect(unsafe_code, reason = "audited Landlock isolation-boundary syscall")]
             // SAFETY: `beneath` is a valid path-beneath attribute whose fd is
             // open for the duration of the syscall.
             let result = unsafe {
@@ -780,6 +777,7 @@ mod linux {
                 });
             }
         }
+        #[expect(unsafe_code, reason = "audited Landlock isolation-boundary syscall")]
         // SAFETY: `prctl` changes only the calling process's no-new-privs
         // attribute and receives no pointer arguments.
         if unsafe { libc::prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) } != 0 {
@@ -787,6 +785,7 @@ mod linux {
             return Err(std::io::Error::last_os_error())
                 .context("enable no-new-privileges for Landlock");
         }
+        #[expect(unsafe_code, reason = "audited Landlock isolation-boundary syscall")]
         // SAFETY: `ruleset` is the valid fd returned by Landlock and remains
         // open until this syscall completes.
         let result = unsafe { libc::syscall(libc::SYS_landlock_restrict_self, ruleset, 0u32) };
@@ -811,21 +810,25 @@ mod linux {
             identity.uid > 0 && identity.gid > 0,
             "session identity cannot be root"
         );
+        #[expect(unsafe_code, reason = "audited privilege-drop boundary syscall")]
         // SAFETY: `prctl` changes only this process's keep-caps flag and
         // receives no pointer arguments.
         if unsafe { libc::prctl(PR_SET_KEEPCAPS, 1, 0, 0, 0) } != 0 {
             return Err(std::io::Error::last_os_error()).context("retain session DAC capabilities");
         }
+        #[expect(unsafe_code, reason = "audited privilege-drop boundary syscall")]
         // SAFETY: a zero count with a null group list is the documented way
         // to clear supplementary groups for this process.
         if unsafe { libc::setgroups(0, std::ptr::null()) } != 0 {
             return Err(std::io::Error::last_os_error())
                 .context("clear supervisor supplementary groups");
         }
+        #[expect(unsafe_code, reason = "audited privilege-drop boundary syscall")]
         // SAFETY: all three gid values are the validated non-root session gid.
         if unsafe { libc::setresgid(identity.gid, identity.gid, identity.gid) } != 0 {
             return Err(std::io::Error::last_os_error()).context("drop session gid");
         }
+        #[expect(unsafe_code, reason = "audited privilege-drop boundary syscall")]
         // SAFETY: all three uid values are the validated non-root session uid.
         if unsafe { libc::setresuid(identity.uid, identity.uid, identity.uid) } != 0 {
             return Err(std::io::Error::last_os_error()).context("drop session uid");
@@ -848,12 +851,14 @@ mod linux {
                 inheritable: 0,
             },
         ];
+        #[expect(unsafe_code, reason = "audited privilege-drop boundary syscall")]
         // SAFETY: `header` and the two-element capability data array are
         // initialized to the kernel's documented capset ABI.
         if unsafe { libc::syscall(libc::SYS_capset, &header, data.as_mut_ptr()) } != 0 {
             return Err(std::io::Error::last_os_error()).context("retain session DAC capabilities");
         }
         for capability in [CAP_DAC_OVERRIDE] {
+            #[expect(unsafe_code, reason = "audited privilege-drop boundary syscall")]
             // SAFETY: this raises the one capability just installed in the
             // calling process's ambient set.
             if unsafe { libc::prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_RAISE, capability, 0, 0) } != 0 {
@@ -861,12 +866,14 @@ mod linux {
                     .context("make session DAC boundary capabilities survive exec");
             }
         }
+        #[expect(unsafe_code, reason = "audited privilege-drop boundary syscall")]
         // SAFETY: `geteuid` has no pointer arguments and reports this process.
         let effective_uid = unsafe { libc::geteuid() };
         anyhow::ensure!(
             effective_uid == identity.uid,
             "session uid drop did not stick"
         );
+        #[expect(unsafe_code, reason = "audited privilege-drop boundary syscall")]
         // SAFETY: `getegid` has no pointer arguments and reports this process.
         let effective_gid = unsafe { libc::getegid() };
         anyhow::ensure!(
@@ -885,6 +892,7 @@ mod linux {
         1u32 << CAP_DAC_OVERRIDE
     }
 
+    #[expect(unsafe_code, reason = "audited Landlock isolation-boundary syscall")]
     fn close_fd(fd: libc::c_int) {
         // SAFETY: callers pass file descriptors returned by the kernel and no
         // longer use them after this close.
@@ -1538,6 +1546,7 @@ mod tests {
 
     #[test]
     fn isolated_runtime_setup_can_spawn_git_config_with_null_stdio() {
+        #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
         // SAFETY: the production wrapper starts as root. Non-root test hosts
         // cannot exercise its capability-preserving UID transition.
         if unsafe { libc::geteuid() } != 0 {
@@ -1556,18 +1565,24 @@ mod tests {
 
         let (read_fd, write_fd) = {
             let mut fds = [0; 2];
+            #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
             // SAFETY: `fds` points to two writable integers for pipe output.
-            assert_eq!(unsafe { libc::pipe(fds.as_mut_ptr()) }, 0);
+            let pipe_status = unsafe { libc::pipe(fds.as_mut_ptr()) };
+            assert_eq!(pipe_status, 0);
             (fds[0], fds[1])
         };
+        #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
         // SAFETY: the child immediately enters the isolated probe. This test
         // follows the same fork boundary as the sibling capability probe so a
         // successful Landlock install cannot restrict the test harness.
         let child = unsafe { libc::fork() };
         assert!(child >= 0, "fork runtime setup probe");
         if child == 0 {
+            #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
             // SAFETY: `read_fd` is the unused read end returned by pipe.
-            unsafe { libc::close(read_fd) };
+            unsafe {
+                libc::close(read_fd)
+            };
             let result = (|| -> anyhow::Result<()> {
                 drop_privileges(jackin_protocol::SessionIdentity {
                     uid: 65_534,
@@ -1604,25 +1619,42 @@ mod tests {
                 eprintln!("isolated runtime setup probe failed: {error:#}");
             }
             let status = [u8::from(result.is_ok())];
+            #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
             // SAFETY: `status` points to one initialized byte and `write_fd`
             // is the pipe's valid write end.
-            unsafe { libc::write(write_fd, status.as_ptr().cast(), 1) };
+            unsafe {
+                libc::write(write_fd, status.as_ptr().cast(), 1)
+            };
+            #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
             // SAFETY: `write_fd` is no longer used after reporting the result.
-            unsafe { libc::close(write_fd) };
+            unsafe {
+                libc::close(write_fd)
+            };
+            #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
             // SAFETY: the child must terminate without running parent-side
             // Rust destructors after fork.
-            unsafe { libc::_exit(i32::from(result.is_err())) };
+            unsafe {
+                libc::_exit(i32::from(result.is_err()))
+            };
         }
+        #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
         // SAFETY: the parent owns no use for the pipe's write end.
-        unsafe { libc::close(write_fd) };
+        unsafe {
+            libc::close(write_fd)
+        };
         let mut status = [0u8; 1];
+        #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
         // SAFETY: `status` points to one writable byte and `read_fd` is the
         // pipe's valid read end.
         let bytes_read = unsafe { libc::read(read_fd, status.as_mut_ptr().cast(), 1) };
         assert_eq!(bytes_read, 1);
+        #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
         // SAFETY: `read_fd` is no longer used after receiving the result.
-        unsafe { libc::close(read_fd) };
+        unsafe {
+            libc::close(read_fd)
+        };
         let mut wait_status = 0;
+        #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
         // SAFETY: `wait_status` is writable and `child` is the pid returned by
         // fork.
         let wait_result = unsafe { libc::waitpid(child, &raw mut wait_status, 0) };
@@ -1634,6 +1666,7 @@ mod tests {
 
     #[test]
     fn sibling_home_read_and_write_are_denied_after_uid_drop() {
+        #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
         // SAFETY: `geteuid` has no pointer arguments and reports this test
         // process's effective uid.
         if unsafe { libc::geteuid() } != 0 {
@@ -1669,17 +1702,23 @@ mod tests {
 
         let (read_fd, write_fd) = {
             let mut fds = [0; 2];
+            #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
             // SAFETY: `fds` points to two writable integers for pipe output.
-            assert_eq!(unsafe { libc::pipe(fds.as_mut_ptr()) }, 0);
+            let pipe_status = unsafe { libc::pipe(fds.as_mut_ptr()) };
+            assert_eq!(pipe_status, 0);
             (fds[0], fds[1])
         };
+        #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
         // SAFETY: `fork` is called before any Rust threads are created in the
         // test process and the child immediately enters the isolated probe.
         let child = unsafe { libc::fork() };
         assert!(child >= 0, "fork isolation probe");
         if child == 0 {
+            #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
             // SAFETY: `read_fd` is the unused read end returned by pipe.
-            unsafe { libc::close(read_fd) };
+            unsafe {
+                libc::close(read_fd)
+            };
             let result = (|| -> anyhow::Result<()> {
                 drop_privileges(jackin_protocol::SessionIdentity {
                     uid: 65_534,
@@ -1707,24 +1746,36 @@ mod tests {
                 install_landlock(&rules)?;
                 let own_fd = open(&own_secret, libc::O_RDONLY);
                 anyhow::ensure!(own_fd >= 0, "selected slot read denied");
+                #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
                 // SAFETY: `own_fd` was returned by open and is no longer used.
-                unsafe { libc::close(own_fd) };
+                unsafe {
+                    libc::close(own_fd)
+                };
                 let own_write = open(&own.join("selected-write"), libc::O_WRONLY | libc::O_CREAT);
                 anyhow::ensure!(own_write >= 0, "selected slot write denied");
+                #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
                 // SAFETY: `own_write` was returned by open and is no longer used.
-                unsafe { libc::close(own_write) };
+                unsafe {
+                    libc::close(own_write)
+                };
                 let workspace_write = open(
                     &workspace.join("agent-write"),
                     libc::O_WRONLY | libc::O_CREAT,
                 );
                 anyhow::ensure!(workspace_write >= 0, "workspace write denied");
+                #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
                 // SAFETY: `workspace_write` was returned by open and is no longer used.
-                unsafe { libc::close(workspace_write) };
+                unsafe {
+                    libc::close(workspace_write)
+                };
                 let selected_auth_fd = open(&selected_auth, libc::O_RDONLY);
                 anyhow::ensure!(selected_auth_fd >= 0, "selected auth read denied");
+                #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
                 // SAFETY: `selected_auth_fd` was returned by open and is no
                 // longer used.
-                unsafe { libc::close(selected_auth_fd) };
+                unsafe {
+                    libc::close(selected_auth_fd)
+                };
                 let selected_auth_write = open(&selected_auth, libc::O_WRONLY | libc::O_CREAT);
                 anyhow::ensure!(
                     selected_auth_write < 0,
@@ -1750,25 +1801,42 @@ mod tests {
                 eprintln!("Linux isolation probe failed: {error:#}");
             }
             let status = [u8::from(result.is_ok())];
+            #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
             // SAFETY: `status` points to one initialized byte and write_fd is
             // the pipe's valid write end.
-            unsafe { libc::write(write_fd, status.as_ptr().cast(), 1) };
+            unsafe {
+                libc::write(write_fd, status.as_ptr().cast(), 1)
+            };
+            #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
             // SAFETY: write_fd is no longer used after reporting the result.
-            unsafe { libc::close(write_fd) };
+            unsafe {
+                libc::close(write_fd)
+            };
+            #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
             // SAFETY: the child must terminate without running parent-side
             // Rust destructors after fork.
-            unsafe { libc::_exit(i32::from(result.is_err())) };
+            unsafe {
+                libc::_exit(i32::from(result.is_err()))
+            };
         }
+        #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
         // SAFETY: the parent owns no use for the pipe's write end.
-        unsafe { libc::close(write_fd) };
+        unsafe {
+            libc::close(write_fd)
+        };
         let mut status = [0u8; 1];
+        #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
         // SAFETY: `status` points to one writable byte and `read_fd` is the
         // pipe's valid read end.
         let bytes_read = unsafe { libc::read(read_fd, status.as_mut_ptr().cast(), 1) };
         assert_eq!(bytes_read, 1);
+        #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
         // SAFETY: read_fd is no longer used after receiving the result.
-        unsafe { libc::close(read_fd) };
+        unsafe {
+            libc::close(read_fd)
+        };
         let mut wait_status = 0;
+        #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
         // SAFETY: `wait_status` is writable and `child` is the pid returned by
         // fork.
         let wait_result = unsafe { libc::waitpid(child, &raw mut wait_status, 0) };
@@ -1778,6 +1846,7 @@ mod tests {
         assert_eq!(libc::WEXITSTATUS(wait_status), 0);
     }
 
+    #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
     fn open(path: &Path, flags: libc::c_int) -> libc::c_int {
         let Ok(path) = std::ffi::CString::new(path.to_string_lossy().as_bytes()) else {
             return -1;

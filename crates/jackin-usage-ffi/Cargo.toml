@@ -29,20 +29,5 @@ boltffi = "=0.30.1"
 [dev-dependencies]
 tempfile = { workspace = true }
 
-# Cannot use lints.workspace = true: boltffi scaffolding requires unsafe_code
-# allow, and workspace forbids unsafe. Mirror TableRock-ffi baseline.
-[lints.rust]
-unsafe_code = "allow"
-rust_2018_idioms = { level = "deny", priority = -1 }
-
-[lints.clippy]
-correctness = "deny"
-suspicious = "deny"
-perf = "deny"
-todo = "deny"
-unimplemented = "deny"
-unwrap_used = "deny"
-expect_used = "deny"
-panic = "deny"
-print_stdout = "deny"
-print_stderr = "deny"
+[lints]
+workspace = true

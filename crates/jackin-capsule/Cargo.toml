@@ -96,7 +96,7 @@ opentelemetry-proto = { workspace = true }
 [lints.rust]
 # Mirrors [workspace.lints.rust]: keep in sync when the workspace table
 # changes. Deltas: unsafe_code is deny (not forbid) so the single
-# confinement module (process_isolation.rs, reasoned module-level expect)
+# confinement module (process_isolation.rs, per-site reasoned expects)
 # can opt out; every other module still fails the build on unsafe code.
 rust_2024_compatibility = { level = "deny", priority = -1 }
 future_incompatible = { level = "deny", priority = -1 }
