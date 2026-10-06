@@ -392,7 +392,7 @@ fn auth_source_line_width(label: &str, display: &AuthSourceDisplay, indent: usiz
         AuthSourceDisplay::NotRequired => text_width("not required"),
         AuthSourceDisplay::OpRefPath(path) => {
             text_width("[op] ")
-                + crate::tui::op_breadcrumb::parse_path_breadcrumb(path).map_or_else(
+                + jackin_core::parse_op_breadcrumb_path(path).map_or_else(
                     || text_width("<unparseable path - re-pick>"),
                     |parts| crate::tui::op_breadcrumb::breadcrumb_display_width(&parts),
                 )
@@ -579,9 +579,7 @@ pub fn render_secret_key_line(
     };
     let dim = termrock::style::DesignSystem::default().style(termrock::style::Role::TextMuted);
     let op_breadcrumb = match value {
-        SecretValueDisplay::OpRefPath(path) => {
-            crate::tui::op_breadcrumb::parse_path_breadcrumb(path)
-        }
+        SecretValueDisplay::OpRefPath(path) => jackin_core::parse_op_breadcrumb_path(path),
         SecretValueDisplay::Plain(_) => None,
     };
     let marker = if op_breadcrumb.is_some() {

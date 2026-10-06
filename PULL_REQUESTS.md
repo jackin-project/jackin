@@ -51,6 +51,7 @@ Any PR touching `crates/jackin-capsule/` requires Checkout block to build + expo
 
 1. Checkout block uses `jackin-dev pr sync <PR_NUMBER>`, then sources generated env file. **Must stay in Checkout, before `### User smoke` and `### jackin-capsule smoke`.** Every `jackin console` / `jackin load` after it consumes whichever binary `ensure_available` resolves first — without capsule export first, launches use cached or preview-release binary + silently skip PR's container-side changes.
 2. `### jackin-capsule smoke` uses template's launch + in-container verify checklist. Does not repeat capsule export; Checkout block exports `JACKIN_CAPSULE_BIN` for capsule-affecting PRs.
+3. For usage/quota changes, let the Capsule overlay/refresher run, then execute `jackin usage <instance-or-container> verify --debug` from that prepared checkout environment. Record each scoped provider/account result, including unavailable or failing rows; verify all authorized accounts and available limits against the corresponding host snapshots. A credential file or one passing provider row does not prove the remaining accounts passed.
 
 `jackin-dev pr sync` cannot mutate parent shell directly. It writes `JACKIN_CAPSULE_BIN` into generated `env.sh` only when the PR requires a local capsule; Checkout block must source that file before any smoke command. If PR also needs a local construct image, `jackin-dev` detects construct inputs from the diff and writes `JACKIN_CONSTRUCT_IMAGE` into the same env file.
 
@@ -136,7 +137,7 @@ Three cross-cutting rules apply to every PR review (manual, agent-driven, automa
 
 ### Versioned-schema migration check
 
-Missing or stale fixtures under `tests/fixtures/migrations/` break smooth-migration guarantee for operators upgrading from older versions. When diff touches struct serialized into `config.toml`, `~/.config/jackin/workspaces/<name>.toml`, or `jackin.role.toml`, verify PR ships all five required artifacts: version bump, migration step, new fixture directory, re-baked `after.toml` files for every existing `from_version`, new entry in `schema-versions.mdx` timeline. Full rule lives in [`PRERELEASE.md`](PRERELEASE.md).
+Missing or stale fixtures under `crates/jackin/tests/fixtures/migrations/` break the smooth-migration guarantee for operators upgrading from older versions. When the diff changes a serde representation in `config.toml`, `~/.config/jackin/workspaces/<name>.toml`, or `jackin.role.toml`, apply [`PRERELEASE.md`](PRERELEASE.md): non-additive changes require all five artifacts (version bump, migration step, new fixture directory, re-baked `after.toml` files for every existing `from_version`, and a `schema-versions.mdx` timeline entry). A new optional field with a serde default may retain the version only with regression proof that supported files without it preserve their meaning, authorization, and security defaults, plus proof for files containing it. Rust-only changes without serialization changes need no bump. Any chosen version bump still requires all five artifacts.
 
 ### Accepted-exceptions catalog
 
@@ -146,7 +147,7 @@ Catalog forward-looking backlog — consult on demand when review task calls for
 
 ### Always check the PR against the jackin❯ design principles
 
-Every PR review must explicitly verify change against jackin❯ [design principles](docs/content/getting-started/design-principles.mdx). Read that page before producing review output. If change appears to contradict any principle (most commonly: *never mutate the host machine silently*, *operator-only configuration boundaries*, *container is the trust boundary, not the prompt*), flag loudly in review with specific reference to which principle at risk.
+Every PR review must explicitly verify change against jackin❯ [design principles](<docs/content/(public)/getting-started/design-principles.mdx>). Read that page before producing review output. If change appears to contradict any principle (most commonly: *never mutate the host machine silently*, *operator-only configuration boundaries*, *container is the trust boundary, not the prompt*), flag loudly in review with specific reference to which principle at risk.
 
 Don't silently let principle violation pass because diff small or operator seemed to want shortcut. Operators rely on principles across every feature — quietly-merged exception erodes that contract for every future PR.
 

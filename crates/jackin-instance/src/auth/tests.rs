@@ -5,17 +5,18 @@
 #[cfg(unix)]
 use super::auth_directory::{
     FailurePoint, TreeEntryKind, classify_tree_entry_for_removal, inject_failure,
-    set_hermes_snapshot_hook, set_source_open_hook, target_lock_key_for_test,
+    lock_source_dir_for_test, set_hermes_snapshot_hook, set_source_open_hook,
+    target_lock_key_for_test,
 };
 use super::{
-    Agent, AuthProvisionOutcome, PermissionRepairFailure, RoleState,
+    Agent, AuthProvisionOutcome, PermissionRepairFailure, RoleState, capture_selected_source,
     inject_permission_repair_failure, repair_permissions, validate_sync_source_dir,
     validate_sync_source_dir_for_provider,
 };
 use crate::PrepareResolvers;
 use jackin_config::{AiProvider, AuthForwardMode, ProfileSelector};
 use jackin_core::JackinPaths;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tempfile::tempdir;
 
 /// Provisioning derives its per-config-dir Keychain service through the shared
@@ -29,7 +30,7 @@ fn claude_keychain_service_name_matches_claude_scheme() {
     use std::path::Path;
     let home = Path::new("/Users/donbeave");
 
-    let scope = |dir: std::path::PathBuf| {
+    let scope = |dir: PathBuf| {
         jackin_core::claude_keychain_scope(&dir, home, &dir)
             .expect("scope")
             .service
@@ -47,6 +48,455 @@ fn claude_keychain_service_name_matches_claude_scheme() {
 }
 
 const TEST_CREDENTIALS: &str = r#"{"claudeAiOauth":{"accessToken":"test","refreshToken":"test"}}"#;
+#[cfg(unix)]
+const OMP_TEST_FILE_LIMIT: usize = 8 * 1024 * 1024;
+
+#[cfg(unix)]
+const OMP_CURRENT_DB: &[u8] = include_bytes!("tests/fixtures/omp-real-current.db");
+#[cfg(unix)]
+const OMP_CURRENT_WAL: &[u8] = include_bytes!("tests/fixtures/omp-real-current.db-wal");
+#[cfg(unix)]
+const OMP_REUSED_STALE_SUFFIX_DB: &[u8] =
+    include_bytes!("tests/fixtures/omp-reused-stale-suffix.db");
+#[cfg(unix)]
+const OMP_REUSED_STALE_SUFFIX_WAL: &[u8] =
+    include_bytes!("tests/fixtures/omp-reused-stale-suffix.db-wal");
+#[cfg(unix)]
+const OMP_REUSED_UNCOMMITTED_STALE_SUFFIX_DB: &[u8] =
+    include_bytes!("tests/fixtures/omp-reused-uncommitted-stale-suffix.db");
+#[cfg(unix)]
+const OMP_REUSED_UNCOMMITTED_STALE_SUFFIX_WAL: &[u8] =
+    include_bytes!("tests/fixtures/omp-reused-uncommitted-stale-suffix.db-wal");
+
+#[cfg(unix)]
+fn omp_test_selector() -> ProfileSelector {
+    ProfileSelector {
+        entry: "openai".to_owned(),
+        profile: Some("work".to_owned()),
+    }
+}
+
+#[cfg(unix)]
+fn write_omp_source(source: &Path, database: &[u8], wal: &[u8]) {
+    let agent = source.join("agent");
+    std::fs::create_dir_all(&agent).unwrap();
+    std::fs::write(agent.join("agent.db"), database).unwrap();
+    std::fs::write(agent.join("agent.db-wal"), wal).unwrap();
+}
+
+/// Minimal OMP v7 store layout for success-path sync tests. The checked-in
+/// `omp-real-*` fixtures predate the v7 schema gate, so tests that must
+/// provision go through this synthetic builder instead.
+#[cfg(unix)]
+const OMP_V7_SCHEMA: &str = r"
+CREATE TABLE auth_schema_version (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    version INTEGER NOT NULL
+);
+INSERT INTO auth_schema_version (id, version) VALUES (1, 7);
+CREATE TABLE auth_credentials (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    provider TEXT NOT NULL,
+    credential_type TEXT NOT NULL,
+    data TEXT NOT NULL,
+    disabled_cause TEXT DEFAULT NULL,
+    identity_key TEXT DEFAULT NULL,
+    created_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER)),
+    updated_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER))
+);
+";
+
+#[cfg(unix)]
+fn write_v7_omp_source(source: &Path, setup: &str) -> rusqlite::Connection {
+    let agent = source.join("agent");
+    std::fs::create_dir_all(&agent).unwrap();
+    let connection = rusqlite::Connection::open(agent.join("agent.db")).unwrap();
+    connection
+        .execute_batch(&format!(
+            "PRAGMA journal_mode = WAL;\nPRAGMA wal_autocheckpoint = 0;\n{setup}"
+        ))
+        .unwrap();
+    connection
+}
+
+/// Row-addressed selector matching `OmpSnapshot::select`, which requires
+/// `row:<id>` profiles.
+#[cfg(unix)]
+fn omp_row_selector(entry: &str, id: i64) -> ProfileSelector {
+    ProfileSelector {
+        entry: entry.to_owned(),
+        profile: Some(format!("row:{id}")),
+    }
+}
+
+#[cfg(unix)]
+fn contains_bytes(bytes: &[u8], needle: &[u8]) -> bool {
+    bytes.windows(needle.len()).any(|window| window == needle)
+}
+
+#[cfg(unix)]
+fn read_fixture_u32(bytes: &[u8], offset: usize) -> u32 {
+    u32::from_be_bytes(bytes[offset..offset + 4].try_into().unwrap())
+}
+
+#[cfg(unix)]
+fn omp_test_checksum(bytes: &[u8], mut checksum: (u32, u32), little_endian: bool) -> (u32, u32) {
+    assert!(bytes.len().is_multiple_of(8));
+    for words in bytes.as_chunks::<8>().0 {
+        let first: [u8; 4] = words[..4].try_into().unwrap();
+        let second: [u8; 4] = words[4..].try_into().unwrap();
+        let (first, second) = if little_endian {
+            (u32::from_le_bytes(first), u32::from_le_bytes(second))
+        } else {
+            (u32::from_be_bytes(first), u32::from_be_bytes(second))
+        };
+        checksum.0 = checksum.0.wrapping_add(first).wrapping_add(checksum.1);
+        checksum.1 = checksum.1.wrapping_add(second).wrapping_add(checksum.0);
+    }
+    checksum
+}
+
+#[cfg(unix)]
+fn append_omp_uncommitted_frame(wal: &mut Vec<u8>) {
+    let page_size = read_fixture_u32(wal, 8) as usize;
+    let frame_size = page_size + 24;
+    let frame_count = (wal.len() - 32) / frame_size;
+    assert!(frame_count > 0);
+    let last_at = 32 + (frame_count - 1) * frame_size;
+    let checksum = (
+        read_fixture_u32(wal, last_at + 16),
+        read_fixture_u32(wal, last_at + 20),
+    );
+    let mut frame = vec![0; frame_size];
+    frame[..4].copy_from_slice(&wal[last_at..last_at + 4]);
+    frame[8..16].copy_from_slice(&wal[16..24]);
+    frame[24..].copy_from_slice(&wal[last_at + 24..last_at + 24 + page_size]);
+    let little_endian = read_fixture_u32(wal, 0) == 0x377F_0682;
+    let checksum = omp_test_checksum(&frame[..8], checksum, little_endian);
+    let checksum = omp_test_checksum(&frame[24..], checksum, little_endian);
+    frame[16..20].copy_from_slice(&checksum.0.to_be_bytes());
+    frame[20..24].copy_from_slice(&checksum.1.to_be_bytes());
+    wal.extend(frame);
+}
+
+#[cfg(unix)]
+fn assert_omp_sync_rejected(source: &Path, target: &Path, database: &[u8], wal: &[u8]) {
+    write_omp_source(source, database, wal);
+    std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+    let error = RoleState::provision_omp_auth_from_source_dir(
+        target,
+        AuthForwardMode::Sync,
+        source,
+        Some(AiProvider::OpenAi),
+        Some(&omp_test_selector()),
+    )
+    .expect_err("invalid OMP snapshots must fail closed");
+    assert!(!target.exists(), "invalid source must not be provisioned");
+    assert!(!format!("{error:#}").contains("fixture-"));
+}
+
+#[cfg(unix)]
+fn sync_omp_source(source: &Path, home: &Path) -> (PathBuf, Vec<u8>) {
+    sync_omp_source_as(source, home, &omp_row_selector("openai", 41))
+}
+
+fn sync_omp_source_as(
+    source: &Path,
+    home: &Path,
+    selector: &ProfileSelector,
+) -> (PathBuf, Vec<u8>) {
+    let target = home.join("role/omp/agent/agent.db");
+    std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+    let (outcome, mounted) = RoleState::provision_omp_auth_from_source_dir(
+        &target,
+        AuthForwardMode::Sync,
+        source,
+        Some(AiProvider::OpenAi),
+        Some(selector),
+    )
+    .unwrap();
+    assert_eq!(outcome, AuthProvisionOutcome::Synced);
+    assert_eq!(mounted.as_deref(), Some(target.as_path()));
+    (target.clone(), std::fs::read(target).unwrap())
+}
+
+#[cfg(unix)]
+fn private_snapshot_parent(temp: &tempfile::TempDir) -> PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+
+    let parent = temp.path().join("private-snapshot-parent");
+    std::fs::create_dir_all(&parent).unwrap();
+    std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o700)).unwrap();
+    parent
+}
+
+#[cfg(unix)]
+#[test]
+fn omp_selected_snapshot_and_provision_include_only_committed_wal_state() {
+    let temp = tempdir().unwrap();
+    let source = temp.path().join("omp-source");
+    let _writer = write_v7_omp_source(
+        &source,
+        &format!(
+            "{OMP_V7_SCHEMA}\n\
+             INSERT INTO auth_credentials (id, provider, credential_type, data)\n\
+             VALUES (41, 'openai', 'api_key', '{{\"key\":\"fixture-db-stale-token\"}}');\n\
+             PRAGMA wal_checkpoint(TRUNCATE);\n\
+             UPDATE auth_credentials SET data = '{{\"key\":\"fixture-wal-current-token\"}}' WHERE id = 41;"
+        ),
+    );
+    let source_agent = source.join("agent");
+    let source_db_before = std::fs::read(source_agent.join("agent.db")).unwrap();
+    let source_wal_before = std::fs::read(source_agent.join("agent.db-wal")).unwrap();
+    assert!(contains_bytes(&source_db_before, b"fixture-db-stale-token"));
+    assert!(contains_bytes(
+        &source_wal_before,
+        b"fixture-wal-current-token"
+    ));
+    let snapshot_parent = private_snapshot_parent(&temp);
+    let selector = omp_row_selector("openai", 41);
+
+    let snapshot = capture_selected_source(
+        Agent::Omp,
+        Some(AiProvider::OpenAi),
+        Some(&selector),
+        &source,
+        temp.path(),
+        &snapshot_parent,
+    )
+    .unwrap()
+    .expect("selected OMP source should be captured");
+    let snapshot_db = snapshot.materialized_source_dir().join("agent/agent.db");
+    let snapshot_bytes = std::fs::read(&snapshot_db).unwrap();
+    assert!(contains_bytes(
+        &snapshot_bytes,
+        b"fixture-wal-current-token"
+    ));
+    assert!(!contains_bytes(&snapshot_bytes, b"fixture-db-stale-token"));
+    assert!(!snapshot_db.with_file_name("agent.db-wal").exists());
+    assert_eq!(snapshot.descriptor().selector.as_ref(), Some(&selector));
+
+    let target = temp.path().join("role/omp/agent/agent.db");
+    std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+    let (outcome, mounted) = RoleState::provision_omp_auth_from_source_dir(
+        &target,
+        AuthForwardMode::Sync,
+        &source,
+        Some(AiProvider::OpenAi),
+        Some(&selector),
+    )
+    .unwrap();
+    assert_eq!(outcome, AuthProvisionOutcome::Synced);
+    assert_eq!(mounted.as_deref(), Some(target.as_path()));
+    let provisioned = std::fs::read(&target).unwrap();
+    assert_eq!(provisioned, snapshot_bytes);
+    assert_eq!(
+        std::fs::read(source_agent.join("agent.db")).unwrap(),
+        source_db_before,
+        "snapshotting must not checkpoint or rewrite the source database"
+    );
+    assert_eq!(
+        std::fs::read(source_agent.join("agent.db-wal")).unwrap(),
+        source_wal_before,
+        "snapshotting must not truncate or rewrite the source WAL"
+    );
+    // NOTE: no `-shm` assertion here: the fixture writer is deliberately
+    // held open (dropping it would checkpoint the WAL away), and an open
+    // WAL connection owns a shared-memory file by design.
+}
+
+#[cfg(unix)]
+#[test]
+fn omp_sync_rejects_checksum_and_joint_salt_checksum_corruption() {
+    let temp = tempdir().unwrap();
+    let source = temp.path().join("omp-source");
+    let frame_size = read_fixture_u32(OMP_CURRENT_WAL, 8) as usize + 24;
+    let frame_count = (OMP_CURRENT_WAL.len() - 32) / frame_size;
+    let last_commit = (0..frame_count)
+        .rev()
+        .find(|index| read_fixture_u32(OMP_CURRENT_WAL, 32 + index * frame_size + 4) > 0)
+        .expect("synthetic WAL fixture has a committed frame");
+    let final_frame = 32 + last_commit * frame_size;
+    for (name, corrupt_salt) in [("checksum", false), ("joint", true)] {
+        let mut wal = OMP_CURRENT_WAL.to_vec();
+        if corrupt_salt {
+            wal[final_frame + 8] ^= 1;
+        }
+        wal[final_frame + 16] ^= 1;
+        let target = temp.path().join(format!("role-{name}/omp/agent/agent.db"));
+        assert_omp_sync_rejected(&source, &target, OMP_CURRENT_DB, &wal);
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn omp_sync_supports_little_and_big_endian_wal_checksums() {
+    // Success-path provisioning through a synthetic v7 store. Big-endian
+    // checksum LOGIC is covered at the validator level
+    // (`jackin-omp-store` fixtures), which a little-endian host cannot
+    // regenerate through SQLite itself.
+    let temp = tempdir().unwrap();
+    let source = temp.path().join("omp-source");
+    let _writer = write_v7_omp_source(
+        &source,
+        &format!(
+            "{OMP_V7_SCHEMA}\n\
+             INSERT INTO auth_credentials (id, provider, credential_type, data)\n\
+             VALUES (41, 'openai', 'api_key', '{{\"key\":\"fixture-wal-current-token\"}}');"
+        ),
+    );
+    let (_, materialized) = sync_omp_source(&source, temp.path());
+    assert!(contains_bytes(&materialized, b"fixture-wal-current-token"));
+}
+
+#[cfg(unix)]
+#[test]
+fn omp_sync_materializes_schema_and_credentials_from_wal_only_pages() {
+    let temp = tempdir().unwrap();
+    let source = temp.path().join("omp-source");
+    let _writer = write_v7_omp_source(
+        &source,
+        &format!(
+            "{OMP_V7_SCHEMA}\n\
+             INSERT INTO auth_credentials (id, provider, credential_type, data)\n\
+             VALUES (41, 'openai', 'api_key', '{{\"key\":\"fixture-schema-wal-token\"}}');"
+        ),
+    );
+    // Nothing checkpointed: the main image carries no schema or secret.
+    let main = std::fs::read(source.join("agent/agent.db")).unwrap();
+    assert!(!contains_bytes(&main, b"auth_credentials"));
+    assert!(!contains_bytes(&main, b"fixture-schema-wal-token"));
+    let (target, materialized) = sync_omp_source(&source, temp.path());
+    assert!(contains_bytes(&materialized, b"fixture-schema-wal-token"));
+    let discovered = jackin_config::discover_account_directory(
+        Agent::Omp,
+        target.parent().unwrap().parent().unwrap(),
+        temp.path(),
+    )
+    .unwrap()
+    .expect("WAL-only schema is materialized before account discovery");
+    assert_eq!(discovered.provider, Some(AiProvider::OpenAi));
+    assert_eq!(
+        discovered.source_selector,
+        Some(omp_row_selector("openai", 41))
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn omp_sync_rejects_reused_wal_generations_instead_of_falling_back_to_old_state() {
+    for (name, database, wal) in [
+        (
+            "stale-committed-tail",
+            OMP_REUSED_STALE_SUFFIX_DB,
+            OMP_REUSED_STALE_SUFFIX_WAL,
+        ),
+        (
+            "stale-after-uncommitted-spill",
+            OMP_REUSED_UNCOMMITTED_STALE_SUFFIX_DB,
+            OMP_REUSED_UNCOMMITTED_STALE_SUFFIX_WAL,
+        ),
+    ] {
+        let temp = tempdir().unwrap();
+        let source = temp.path().join("omp-source");
+        let target = temp.path().join(format!("role-{name}/omp/agent/agent.db"));
+        assert_omp_sync_rejected(&source, &target, database, wal);
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn omp_sync_accepts_a_complete_uncommitted_tail_but_rejects_a_partial_frame() {
+    let temp = tempdir().unwrap();
+    let base = temp.path().join("omp-base");
+    let _writer = write_v7_omp_source(
+        &base,
+        &format!(
+            "{OMP_V7_SCHEMA}\n\
+             INSERT INTO auth_credentials (id, provider, credential_type, data)\n\
+             VALUES (41, 'openai', 'api_key', '{{\"key\":\"fixture-wal-current-token\"}}');"
+        ),
+    );
+    let database = std::fs::read(base.join("agent/agent.db")).unwrap();
+    let mut complete = std::fs::read(base.join("agent/agent.db-wal")).unwrap();
+    append_omp_uncommitted_frame(&mut complete);
+    let source = temp.path().join("omp-source");
+    write_omp_source(&source, &database, &complete);
+    let (_, materialized) = sync_omp_source(&source, temp.path());
+    assert!(contains_bytes(&materialized, b"fixture-wal-current-token"));
+
+    let mut partial = complete;
+    partial.extend_from_slice(&[0; 19]);
+    let target = temp.path().join("partial/omp/agent/agent.db");
+    assert_omp_sync_rejected(&source, &target, &database, &partial);
+}
+
+#[cfg(unix)]
+#[test]
+fn omp_sync_rejects_bad_page_headers_salts_and_file_size_bounds() {
+    let temp = tempdir().unwrap();
+    let source = temp.path().join("omp-source");
+    let mut database = OMP_CURRENT_DB.to_vec();
+    database[16..18].copy_from_slice(&0_u16.to_be_bytes());
+    write_omp_source(&source, &database, &[]);
+    let error = RoleState::provision_omp_auth_from_source_dir(
+        &temp.path().join("invalid-db/omp/agent/agent.db"),
+        AuthForwardMode::Sync,
+        &source,
+        Some(AiProvider::OpenAi),
+        Some(&omp_test_selector()),
+    )
+    .expect_err("invalid SQLite page size must be rejected");
+    assert_eq!(error.to_string(), "OMP credential source is unavailable");
+
+    let frame_size = read_fixture_u32(OMP_CURRENT_WAL, 8) as usize + 24;
+    let frame_count = (OMP_CURRENT_WAL.len() - 32) / frame_size;
+    let last_commit = (0..frame_count)
+        .rev()
+        .find(|index| read_fixture_u32(OMP_CURRENT_WAL, 32 + index * frame_size + 4) > 0)
+        .expect("synthetic WAL fixture has a committed frame");
+    let last_frame = 32 + last_commit * frame_size;
+    let mut bad_salt = OMP_CURRENT_WAL.to_vec();
+    bad_salt[last_frame + 8] ^= 1;
+    write_omp_source(&source, OMP_CURRENT_DB, &bad_salt);
+    let error = RoleState::provision_omp_auth_from_source_dir(
+        &temp.path().join("invalid-salt/omp/agent/agent.db"),
+        AuthForwardMode::Sync,
+        &source,
+        Some(AiProvider::OpenAi),
+        Some(&omp_test_selector()),
+    )
+    .expect_err("a mismatched current-generation salt must fail closed");
+    assert_eq!(error.to_string(), "OMP credential source is unavailable");
+
+    for oversized in ["database", "wal"] {
+        let database = if oversized == "database" {
+            vec![0; OMP_TEST_FILE_LIMIT + 1]
+        } else {
+            OMP_CURRENT_DB.to_vec()
+        };
+        let wal = if oversized == "wal" {
+            vec![0; OMP_TEST_FILE_LIMIT + 1]
+        } else {
+            OMP_CURRENT_WAL.to_vec()
+        };
+        write_omp_source(&source, &database, &wal);
+        let error = RoleState::provision_omp_auth_from_source_dir(
+            &temp
+                .path()
+                .join(format!("oversized-{oversized}/omp/agent/agent.db")),
+            AuthForwardMode::Sync,
+            &source,
+            Some(AiProvider::OpenAi),
+            Some(&omp_test_selector()),
+        )
+        .expect_err("oversized OMP source files must be rejected");
+        assert_eq!(
+            error.to_string(),
+            "OMP credential source exceeds a resource limit"
+        );
+    }
+}
 
 #[cfg(unix)]
 #[test]
@@ -97,6 +547,353 @@ fn validate_claude_accepts_file_credentials_rejects_bare_folder() {
         err.to_string().contains("Claude"),
         "msg should name the agent: {err}"
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn selected_snapshot_pins_claude_bytes_and_descriptor_revision() {
+    let temp = tempdir().unwrap();
+    let source = temp.path().join("claude");
+    let target = temp.path().join("role/claude");
+    std::fs::create_dir_all(&source).unwrap();
+    std::fs::write(source.join(".credentials.json"), TEST_CREDENTIALS).unwrap();
+    std::fs::write(source.join(".claude.json"), r#"{"account":"old"}"#).unwrap();
+    let snapshot_parent = private_snapshot_parent(&temp);
+
+    let snapshot = capture_selected_source(
+        Agent::Claude,
+        None,
+        None,
+        &source,
+        temp.path(),
+        &snapshot_parent,
+    )
+    .unwrap()
+    .expect("source snapshot");
+    assert_eq!(snapshot.descriptor().agent, Agent::Claude);
+    assert_eq!(snapshot.descriptor().source_dir, source);
+    assert!(!snapshot.content_revision().is_empty());
+
+    std::fs::write(
+        source.join(".credentials.json"),
+        r#"{"claudeAiOauth":{"accessToken":"new"}}"#,
+    )
+    .unwrap();
+    std::fs::write(source.join(".claude.json"), r#"{"account":"new"}"#).unwrap();
+    std::fs::create_dir_all(&target).unwrap();
+
+    let (outcome, mounted) = RoleState::provision_claude_auth_from_config_dir(
+        &target.join("account.json"),
+        &target.join("credentials.json"),
+        AuthForwardMode::Sync,
+        temp.path(),
+        snapshot.materialized_source_dir(),
+    )
+    .unwrap();
+    assert_eq!(outcome, AuthProvisionOutcome::Synced);
+    assert!(mounted);
+    assert_eq!(
+        std::fs::read_to_string(target.join("credentials.json")).unwrap(),
+        TEST_CREDENTIALS
+    );
+    assert_eq!(
+        std::fs::read_to_string(target.join("account.json")).unwrap(),
+        r#"{"account":"old"}"#
+    );
+}
+
+#[cfg(unix)]
+fn assert_kimi_snapshot_credentials(kimi_target: &Path) {
+    assert_eq!(
+        std::fs::read_to_string(kimi_target.join("config.toml")).unwrap(),
+        "version = \"old\"\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(kimi_target.join("credentials/token")).unwrap(),
+        "old-kimi"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn selected_snapshot_pins_amp_kimi_and_opencode_material() {
+    let temp = tempdir().unwrap();
+    let snapshot_parent = private_snapshot_parent(&temp);
+
+    let amp_source = temp.path().join("amp");
+    std::fs::create_dir_all(&amp_source).unwrap();
+    std::fs::write(amp_source.join("secrets.json"), "{\"token\":\"old-amp\"}").unwrap();
+    let amp_snapshot = capture_selected_source(
+        Agent::Amp,
+        None,
+        None,
+        &amp_source,
+        temp.path(),
+        &snapshot_parent,
+    )
+    .unwrap()
+    .expect("Amp source snapshot");
+    std::fs::write(amp_source.join("secrets.json"), "{\"token\":\"new-amp\"}").unwrap();
+    let amp_target = temp.path().join("role/amp/secrets.json");
+    std::fs::create_dir_all(amp_target.parent().unwrap()).unwrap();
+    let (outcome, mounted) = RoleState::provision_amp_auth_from_source_dir(
+        &amp_target,
+        AuthForwardMode::Sync,
+        amp_snapshot.materialized_source_dir(),
+    )
+    .unwrap();
+    assert_eq!(outcome, AuthProvisionOutcome::Synced);
+    assert_eq!(mounted.as_deref(), Some(amp_target.as_path()));
+    assert_eq!(
+        std::fs::read_to_string(&amp_target).unwrap(),
+        "{\"token\":\"old-amp\"}"
+    );
+
+    let kimi_source = temp.path().join("kimi");
+    std::fs::create_dir_all(kimi_source.join("credentials")).unwrap();
+    std::fs::write(kimi_source.join("config.toml"), "version = \"old\"\n").unwrap();
+    std::fs::write(kimi_source.join("credentials/token"), "old-kimi").unwrap();
+    let kimi_snapshot = capture_selected_source(
+        Agent::Kimi,
+        None,
+        None,
+        &kimi_source,
+        temp.path(),
+        &snapshot_parent,
+    )
+    .unwrap()
+    .expect("Kimi source snapshot");
+    std::fs::write(kimi_source.join("config.toml"), "version = \"new\"\n").unwrap();
+    std::fs::write(kimi_source.join("credentials/token"), "new-kimi").unwrap();
+    let kimi_target = temp.path().join("role/kimi");
+    let (outcome, mounted) = RoleState::provision_kimi_auth_from_source_dir(
+        &kimi_target,
+        AuthForwardMode::Sync,
+        kimi_snapshot.materialized_source_dir(),
+    )
+    .unwrap();
+    assert_eq!(outcome, AuthProvisionOutcome::Synced);
+    assert!(mounted);
+    assert_kimi_snapshot_credentials(&kimi_target);
+
+    let opencode_source = temp.path().join("opencode");
+    std::fs::create_dir_all(&opencode_source).unwrap();
+    std::fs::write(
+        opencode_source.join("auth.json"),
+        r#"{"opencode-go":{"type":"api","key":"old-opencode"}}"#,
+    )
+    .unwrap();
+    let opencode_snapshot = capture_selected_source(
+        Agent::Opencode,
+        Some(AiProvider::Opencode),
+        None,
+        &opencode_source,
+        temp.path(),
+        &snapshot_parent,
+    )
+    .unwrap()
+    .expect("OpenCode source snapshot");
+    std::fs::write(
+        opencode_source.join("auth.json"),
+        r#"{"opencode-go":{"type":"api","key":"new-opencode"}}"#,
+    )
+    .unwrap();
+    let opencode_target = temp.path().join("role/opencode/auth.json");
+    std::fs::create_dir_all(opencode_target.parent().unwrap()).unwrap();
+    let (outcome, mounted) = RoleState::provision_opencode_auth_from_source_dir(
+        &opencode_target,
+        AuthForwardMode::Sync,
+        opencode_snapshot.materialized_source_dir(),
+        Some(AiProvider::Opencode),
+    )
+    .unwrap();
+    assert_eq!(outcome, AuthProvisionOutcome::Synced);
+    assert_eq!(mounted.as_deref(), Some(opencode_target.as_path()));
+    assert!(
+        std::fs::read_to_string(opencode_target)
+            .unwrap()
+            .contains("old-opencode")
+    );
+
+    let hermes_source = temp.path().join("hermes");
+    std::fs::create_dir_all(hermes_source.join("profiles")).unwrap();
+    std::fs::write(
+        hermes_source.join("config.yaml"),
+        "profiles:\n  work:\n    provider: openai\n",
+    )
+    .unwrap();
+    std::fs::write(
+        hermes_source.join("auth.json"),
+        r#"{"openai":{"type":"api","key":"old-hermes"}}"#,
+    )
+    .unwrap();
+    let selector = ProfileSelector {
+        entry: "openai".to_owned(),
+        profile: Some("work".to_owned()),
+    };
+    let hermes_snapshot = capture_selected_source(
+        Agent::Hermes,
+        Some(AiProvider::OpenAi),
+        Some(&selector),
+        &hermes_source,
+        temp.path(),
+        &snapshot_parent,
+    )
+    .unwrap()
+    .expect("Hermes source snapshot");
+    std::fs::write(
+        hermes_source.join("config.yaml"),
+        "profiles:\n  other:\n    provider: anthropic\n",
+    )
+    .unwrap();
+    std::fs::write(
+        hermes_source.join("auth.json"),
+        r#"{"anthropic":{"type":"api","key":"new-hermes"}}"#,
+    )
+    .unwrap();
+    let hermes_target = temp.path().join("role/hermes");
+    let (outcome, mounted) = RoleState::provision_hermes_auth_from_source_dir(
+        &hermes_target,
+        AuthForwardMode::Sync,
+        hermes_snapshot.materialized_source_dir(),
+        Some(AiProvider::OpenAi),
+        Some(&selector),
+    )
+    .unwrap();
+    assert_eq!(outcome, AuthProvisionOutcome::Synced);
+    assert!(mounted);
+    assert!(
+        std::fs::read_to_string(hermes_target.join("auth.json"))
+            .unwrap()
+            .contains("old-hermes")
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn selected_snapshot_rejects_invalid_utf8_and_oversized_credentials() {
+    let temp = tempdir().unwrap();
+    let snapshot_parent = private_snapshot_parent(&temp);
+    let source = temp.path().join("codex");
+    std::fs::create_dir_all(&source).unwrap();
+    std::fs::write(source.join("auth.json"), [0xff, 0xfe]).unwrap();
+    let error = capture_selected_source(
+        Agent::Codex,
+        None,
+        None,
+        &source,
+        temp.path(),
+        &snapshot_parent,
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("not valid UTF-8"), "{error:#}");
+
+    std::fs::write(
+        source.join("auth.json"),
+        vec![b'x'; super::MAX_AUTH_SOURCE_FILE_BYTES + 1],
+    )
+    .unwrap();
+    let error = capture_selected_source(
+        Agent::Codex,
+        None,
+        None,
+        &source,
+        temp.path(),
+        &snapshot_parent,
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("size limit"), "{error:#}");
+}
+
+#[cfg(unix)]
+#[test]
+fn selected_snapshot_creates_missing_protected_parent() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let temp = tempdir().unwrap();
+    let source = temp.path().join("codex");
+    std::fs::create_dir_all(&source).unwrap();
+    std::fs::write(source.join("auth.json"), TEST_CREDENTIALS).unwrap();
+    let snapshot_parent = temp
+        .path()
+        .join("protected/provider-config/source-snapshots");
+    assert!(!snapshot_parent.exists());
+
+    let snapshot = capture_selected_source(
+        Agent::Codex,
+        None,
+        None,
+        &source,
+        temp.path(),
+        &snapshot_parent,
+    )
+    .unwrap()
+    .expect("source snapshot");
+
+    let canonical_parent = std::fs::canonicalize(&snapshot_parent).unwrap();
+    assert!(
+        snapshot
+            .materialized_source_dir()
+            .starts_with(&canonical_parent)
+    );
+    assert_eq!(
+        std::fs::read_to_string(snapshot.materialized_source_dir().join("auth.json")).unwrap(),
+        TEST_CREDENTIALS
+    );
+    let mode = std::fs::symlink_metadata(&snapshot_parent)
+        .unwrap()
+        .permissions()
+        .mode()
+        & 0o7777;
+    assert_eq!(mode, 0o700, "snapshot parent must remain private");
+}
+
+#[cfg(unix)]
+#[test]
+fn selected_snapshot_rejects_symlink_parent_traversal() {
+    use std::os::unix::fs::symlink;
+
+    let temp = tempdir().unwrap();
+    let source = temp.path().join("real");
+    std::fs::create_dir_all(&source).unwrap();
+    std::fs::write(source.join("auth.json"), TEST_CREDENTIALS).unwrap();
+    symlink(&source, temp.path().join("link")).unwrap();
+    let descriptor = temp.path().join("link/../real");
+
+    let error = capture_selected_source(
+        Agent::Codex,
+        None,
+        None,
+        &descriptor,
+        temp.path(),
+        temp.path(),
+    )
+    .unwrap_err();
+    assert!(
+        error.to_string().contains("parent traversal"),
+        "symlink + parent traversal must be rejected: {error:#}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn source_lock_timeout_is_bounded() {
+    use std::time::{Duration, Instant};
+
+    let temp = tempdir().unwrap();
+    let source = temp.path().join("codex");
+    std::fs::create_dir_all(&source).unwrap();
+    let _holder = lock_source_dir_for_test(&source, Duration::from_millis(25))
+        .unwrap()
+        .expect("source lock holder");
+
+    let started = Instant::now();
+    let error = lock_source_dir_for_test(&source, Duration::from_millis(25)).unwrap_err();
+    assert!(
+        started.elapsed() < Duration::from_secs(1),
+        "contended source lock exceeded bounded test deadline"
+    );
+    assert!(error.to_string().contains("timed out"), "{error:#}");
 }
 
 #[test]
@@ -2140,7 +2937,7 @@ fn rejects_symlink_at_credentials_json() {
 
 // Tests for `instance/auth` — amp auth tests.
 
-fn stage_host_secrets(temp: &tempfile::TempDir, content: &str) -> std::path::PathBuf {
+fn stage_host_secrets(temp: &tempfile::TempDir, content: &str) -> PathBuf {
     let host_home = temp.path().join("host_home");
     let amp_dir = host_home.join(".local/share/amp");
     std::fs::create_dir_all(&amp_dir).unwrap();
@@ -2470,7 +3267,7 @@ fn sync_treats_empty_host_secrets_as_host_missing() {
 /// Stage a fake host home with a populated `~/.codex/auth.json` so
 /// the sync-mode tests below have a real source file to copy from.
 /// Returns the host-home root and the auth.json contents written.
-fn stage_host_auth_json(temp: &tempfile::TempDir, tail: &str) -> (std::path::PathBuf, String) {
+fn stage_host_auth_json(temp: &tempfile::TempDir, tail: &str) -> (PathBuf, String) {
     let host_home = temp.path().join("host_home");
     let codex_dir = host_home.join(".codex");
     std::fs::create_dir_all(&codex_dir).unwrap();
@@ -2872,7 +3669,7 @@ use crate::{
 
 /// Stage a fake host home with a populated `~/.config/gh/hosts.yml`
 /// so the file-fallback path can be exercised hermetically.
-fn stage_host_hosts_yml(temp: &tempfile::TempDir, token: &str) -> std::path::PathBuf {
+fn stage_host_hosts_yml(temp: &tempfile::TempDir, token: &str) -> PathBuf {
     let host_home = temp.path().join("host_home");
     let gh_dir = host_home.join(".config/gh");
     std::fs::create_dir_all(&gh_dir).unwrap();
@@ -3317,7 +4114,7 @@ fn stage_host_kimi_dir(
     cred_files: &[(&str, &str)],
     mcp_json: Option<&str>,
     device_id: Option<&str>,
-) -> std::path::PathBuf {
+) -> PathBuf {
     let host_home = temp.path().join("host_home");
     let kimi_dir = host_home.join(".kimi-code");
     std::fs::create_dir_all(&kimi_dir).unwrap();

@@ -16,7 +16,6 @@
 
 use super::prune_output;
 use crate::instance::{DockerResources, InstanceIndex, InstanceManifest, InstanceStatus};
-use fs4::FileExt;
 use jackin_core::JackinPaths;
 use jackin_core::RoleSelector;
 use jackin_core::{CommandRunner, ContainerHandle};
@@ -122,6 +121,7 @@ async fn purge_container_filesystem(
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
     let _timing = cleanup_timing("container_filesystem");
+    super::coordination::ensure_prunable_async(paths, &paths.data_dir.join(container_name)).await?;
     ensure_backend_absent_for_purge(paths, container_name, docker).await?;
     crate::isolation::cleanup::purge_isolated_for_container(
         &paths.data_dir.join(container_name),
@@ -139,21 +139,8 @@ async fn purge_container_filesystem(
     // here leaks stale `agent.toml` across load/purge cycles; a future
     // launch with the same container basename would bind-mount the old
     // contents before the host's mkdir + write overwrites them.
-    remove_socket_dir(paths, container_name);
-    // Reap the name-claim lock file (D9). The flock is released when the
-    // File handle drops at session end; the file itself must be removed
-    // explicitly so it does not accumulate across launch/purge cycles.
-    let lock_path = paths.data_dir.join(format!("{container_name}.lock"));
-    match std::fs::remove_file(&lock_path) {
-        Ok(()) => {}
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => {
-            eprintln!(
-                "jackin: warning: failed to remove name-claim lock {}: {error}",
-                lock_path.display()
-            );
-        }
-    }
+    remove_socket_dir(paths, container_name).await;
+    // Coordination inodes live outside the purged runtime state and persist.
     Ok(())
 }
 
@@ -286,7 +273,7 @@ async fn eject_docker_role_with_resources(
     // ~/.jackin/sockets/<container>/ and must be removed alongside the
     // docker-side teardown so re-launching the same container basename
     // does not inherit stale state.
-    remove_socket_dir(paths, container_name);
+    remove_socket_dir(paths, container_name).await;
 
     Ok(())
 }
@@ -454,16 +441,25 @@ async fn ensure_backend_absent_for_purge(
 /// teardown — the docker-side resources are already gone, and a
 /// half-removed `~/.jackin/sockets/<container>/` is no worse than the
 /// pre-fix steady state.
-fn remove_socket_dir(paths: &JackinPaths, container_name: &str) {
+async fn remove_socket_dir(paths: &JackinPaths, container_name: &str) {
+    let paths = paths.clone();
     let dir = paths.jackin_home.join("sockets").join(container_name);
-    if let Err(error) =
-        crate::isolation::safe_remove::safe_remove_dir_contained(&paths.jackin_home, &dir)
-    {
-        eprintln!(
-            "jackin: warning: failed to remove socket dir {}: {error}",
-            dir.display()
-        );
-    }
+    let displayed = dir.clone();
+    let result = jackin_telemetry::spawn::joined_blocking(move || {
+        super::coordination::ensure_prunable(&paths, &dir).and_then(|()| {
+            crate::isolation::safe_remove::safe_remove_dir_contained(&paths.jackin_home, &dir)
+        })
+    })
+    .await;
+    let error = match result {
+        Ok(Ok(())) => return,
+        Ok(Err(error)) => error,
+        Err(error) => std::io::Error::other(error),
+    };
+    eprintln!(
+        "jackin: warning: failed to remove socket dir {}: {error}",
+        displayed.display()
+    );
 }
 
 // ── Orphaned resource garbage collection ─────────────────────────────────
@@ -816,6 +812,7 @@ fn prune_dir(
 }
 
 pub fn prune_roles(paths: &JackinPaths) -> anyhow::Result<()> {
+    super::coordination::ensure_prunable(paths, &paths.roles_dir)?;
     prune_dir(
         &paths.roles_dir,
         "Role Cache",
@@ -825,6 +822,7 @@ pub fn prune_roles(paths: &JackinPaths) -> anyhow::Result<()> {
 }
 
 pub fn prune_cache(paths: &JackinPaths) -> anyhow::Result<()> {
+    super::coordination::ensure_prunable(paths, &paths.cache_dir)?;
     prune_dir(
         &paths.cache_dir,
         "Shared Cache",
@@ -833,7 +831,8 @@ pub fn prune_cache(paths: &JackinPaths) -> anyhow::Result<()> {
     )
 }
 
-pub fn prune_jackin_home(paths: &JackinPaths) {
+pub fn prune_jackin_home(paths: &JackinPaths) -> anyhow::Result<()> {
+    super::coordination::ensure_prunable(paths, &paths.jackin_home)?;
     let _timing = cleanup_timing("runtime_home");
     prune_output::section("Runtime Home", "removing remaining runtime state");
     let row = prune_output::start("Deleting", "runtime home");
@@ -841,9 +840,11 @@ pub fn prune_jackin_home(paths: &JackinPaths) {
         Err(err) => {
             cleanup_failure(format!("could not remove runtime home: {err}"));
             row.failed(format!("could not remove runtime home: {err}"));
+            return Err(err.into());
         }
         Ok(()) => row.ok(),
     }
+    Ok(())
 }
 
 /// Remove jk_* Docker images that have no managed role containers (running or stopped).
@@ -1057,50 +1058,7 @@ pub async fn prune_instances(
         );
     }
 
-    // D9: reap orphaned name-claim lock files. Any `<data_dir>/<name>.lock`
-    // that is not currently held by a live process (flock acquirable) and has
-    // no Active index entry is a leftover that `purge_container_filesystem`
-    // should have removed but did not (e.g. the process crashed mid-purge).
-    reap_orphaned_name_locks(paths);
-
     Ok(())
-}
-
-/// Remove stale `<data_dir>/<name>.lock` files left behind by crashed or
-/// interrupted launches (D9). Tries a non-blocking exclusive lock; if the
-/// lock can be acquired the file is unlocked → orphaned → safe to remove.
-/// Files held by a live process are left untouched.
-fn reap_orphaned_name_locks(paths: &JackinPaths) {
-    let Ok(entries) = std::fs::read_dir(&paths.data_dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let name = entry.file_name();
-        let name = name.to_string_lossy();
-        if !name.ends_with(".lock") {
-            continue;
-        }
-        // Check whether a live process holds the lock.
-        let lock_path = paths.data_dir.join(name.as_ref());
-        #[expect(
-            clippy::disallowed_methods,
-            reason = "lock-holder check requires opening the file to call try_lock"
-        )]
-        let Ok(file) = std::fs::File::open(&lock_path) else {
-            continue;
-        };
-        if FileExt::try_lock(&file).is_ok() {
-            // Lock acquired → no live holder → orphaned.
-            drop(file); // Release before removing
-            match std::fs::remove_file(&lock_path) {
-                Ok(()) => {}
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                Err(_) => {
-                    let _warning = jackin_telemetry::record_recovered_degradation();
-                }
-            }
-        }
-    }
 }
 
 /// Force-eject all managed Docker resources then purge every instance's
@@ -1111,6 +1069,7 @@ pub async fn prune_all_instances(
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
+    super::coordination::ensure_prunable_async(paths, &paths.data_dir).await?;
     prune_output::section(
         "Instances",
         "stopping managed containers and removing all state",

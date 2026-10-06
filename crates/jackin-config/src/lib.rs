@@ -55,6 +55,10 @@ pub use accounts::{
     XdgRoots, resolve_account, resolve_launch, validate_account_id,
 };
 pub use error::{ConfigError, ConfigResult};
+pub use jackin_omp_store::{
+    MAX_STANDALONE_DATABASE_BYTES, OmpAccount, OmpError, OmpSelectedAccount, OmpSelector,
+    OmpSnapshot,
+};
 
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_support;

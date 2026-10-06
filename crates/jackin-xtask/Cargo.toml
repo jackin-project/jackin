@@ -14,12 +14,14 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = { workspace = true }
+chrono = { workspace = true, features = ["clock"] }
 clap = { workspace = true, features = ["derive"] }
 flate2 = { workspace = true }
 fs4 = { workspace = true }
 jackin-process = { workspace = true }
 portable-pty = { workspace = true }
 hex = { workspace = true }
+nix = { workspace = true, features = ["dir", "fs"] }
 proc-macro2 = { workspace = true }
 quick-xml = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
@@ -30,6 +32,7 @@ syn = { workspace = true, features = ["full", "visit", "parsing", "extra-traits"
 tar = { workspace = true }
 tempfile = { workspace = true }
 toml = { workspace = true }
+zip = { workspace = true }
 
 [lints]
 workspace = true

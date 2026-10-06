@@ -564,3 +564,142 @@ fn single_account_plan_carries_the_exact_pinned_model() {
     assert_eq!(plan.instances.len(), 1);
     assert_eq!(plan.instances[0].model.as_deref(), Some(MODEL));
 }
+
+fn mixed_model_projection_config() -> (AppConfig, WorkspaceName) {
+    let mut config = AppConfig::default();
+    for (id, provider, model) in [
+        ("openai", AiProvider::OpenAi, None),
+        ("zai", AiProvider::Zai, Some("glm-account-default")),
+    ] {
+        config.accounts.insert(
+            id.to_owned(),
+            AccountConfig {
+                enabled: true,
+                name: id.to_owned(),
+                provider,
+                credential: AccountCredential::ApiKey {
+                    value: jackin_core::EnvValue::Plain("fixture-key".to_owned()),
+                    base_url: None,
+                    model: model.map(ToOwned::to_owned),
+                },
+            },
+        );
+    }
+    for (id, agent, account) in [
+        ("codex-main", Agent::Codex, "openai"),
+        ("opencode-openai", Agent::Opencode, "openai"),
+        ("opencode-zai", Agent::Opencode, "zai"),
+    ] {
+        config.agent_configurations.insert(
+            id.to_owned(),
+            AgentConfiguration {
+                agent,
+                account: account.to_owned(),
+                model: None,
+                base_url: None,
+                display_label: None,
+                invoked_via_wrapper: None,
+            },
+        );
+    }
+    config.default_launch = Some(vec!["codex-main".to_owned(), "opencode-zai".to_owned()]);
+    config.workspaces.insert(
+        WS.to_owned(),
+        WorkspaceConfig {
+            workdir: "/workspace".to_owned(),
+            accounts: vec!["openai".to_owned(), "zai".to_owned()],
+            ..WorkspaceConfig::default()
+        },
+    );
+    (config, WorkspaceName::parse(WS).unwrap())
+}
+
+fn mixed_role_model_defaults() -> std::collections::BTreeMap<Agent, String> {
+    std::collections::BTreeMap::from([
+        (Agent::Codex, "codex-role-default".to_owned()),
+        (Agent::Opencode, "opencode-role-default".to_owned()),
+    ])
+}
+
+#[test]
+fn model_projection_matches_launch_for_mixed_providers_and_trimmed_override() {
+    let (config, workspace) = mixed_model_projection_config();
+    let identity =
+        resolve_dry_run_identity(&config, Agent::Codex, Some(&workspace), ROLE, false).unwrap();
+    assert_eq!(identity.instances.len(), 2);
+
+    let defaults = resolve_dry_run_model_projection(
+        &config,
+        &mixed_role_model_defaults(),
+        &identity,
+        Agent::Opencode,
+        None,
+    )
+    .unwrap();
+    assert_eq!(
+        defaults.model, None,
+        "multi-instance plans have no top model"
+    );
+    assert_eq!(defaults.instances["codex-main"], "codex-role-default");
+    assert_eq!(
+        defaults.instances["opencode-zai"], "zai-coding-plan/glm-account-default",
+        "account model defaults override the role and use the owning provider"
+    );
+
+    let overridden = resolve_dry_run_model_projection(
+        &config,
+        &mixed_role_model_defaults(),
+        &identity,
+        Agent::Opencode,
+        Some("  gpt-6-luna  "),
+    )
+    .unwrap();
+    assert_eq!(overridden.instances["codex-main"], "codex-role-default");
+    assert_eq!(
+        overridden.instances["opencode-zai"],
+        "zai-coding-plan/gpt-6-luna"
+    );
+}
+
+#[test]
+fn model_projection_matches_single_account_selection_and_trims_override() {
+    let (mut config, workspace) = mixed_model_projection_config();
+    config.default_launch = Some(vec!["codex-main".to_owned(), "opencode-openai".to_owned()]);
+    let scoped = super::super::programmatic::with_account_selection(
+        &config,
+        Agent::Opencode,
+        Some(&workspace),
+        ROLE,
+        "openai",
+    )
+    .unwrap();
+    let identity =
+        resolve_dry_run_identity(&scoped, Agent::Opencode, Some(&workspace), ROLE, true).unwrap();
+    assert_eq!(identity.account_id.as_deref(), Some("openai"));
+    assert!(identity.instances.is_empty());
+    assert_eq!(identity.admitted_instances.len(), 2);
+
+    let defaults = resolve_dry_run_model_projection(
+        &scoped,
+        &mixed_role_model_defaults(),
+        &identity,
+        Agent::Opencode,
+        None,
+    )
+    .unwrap();
+    assert_eq!(
+        defaults.model.as_deref(),
+        Some("openai/opencode-role-default")
+    );
+
+    let projection = resolve_dry_run_model_projection(
+        &scoped,
+        &mixed_role_model_defaults(),
+        &identity,
+        Agent::Opencode,
+        Some("  gpt-6-luna  "),
+    )
+    .unwrap();
+    assert_eq!(projection.model.as_deref(), Some("openai/gpt-6-luna"));
+    assert_eq!(projection.instances["opencode-openai"], "openai/gpt-6-luna");
+}

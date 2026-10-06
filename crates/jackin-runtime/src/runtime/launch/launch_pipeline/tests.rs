@@ -75,6 +75,55 @@ impl Drop for ConfigRotationGuard {
     }
 }
 
+type ScheduledIsolationCorruption = (String, PathBuf);
+
+fn isolation_corruption_slot() -> &'static Mutex<Vec<ScheduledIsolationCorruption>> {
+    static SLOT: OnceLock<Mutex<Vec<ScheduledIsolationCorruption>>> = OnceLock::new();
+    SLOT.get_or_init(|| Mutex::new(Vec::new()))
+}
+
+struct IsolationCorruptionGuard {
+    operation: String,
+    path: PathBuf,
+}
+
+/// Rewrite `isolation.json` with an unsupported envelope once the pipeline
+/// reaches `operation` (exact Docker op match). Production migrates the
+/// isolation envelope early in `prepare_instance`, so a finalize-phase
+/// failure must be planted after migration but before `finalize_clean_exit`
+/// reads the envelope.
+fn schedule_isolation_corruption(
+    operation: impl Into<String>,
+    path: PathBuf,
+) -> IsolationCorruptionGuard {
+    let operation = operation.into();
+    isolation_corruption_slot()
+        .lock()
+        .unwrap()
+        .push((operation.clone(), path.clone()));
+    IsolationCorruptionGuard { operation, path }
+}
+
+fn corrupt_isolation_on_operation(operation: &str) {
+    let scheduled = {
+        let mut slot = isolation_corruption_slot().lock().unwrap();
+        let position = slot.iter().position(|(expected, _)| operation == expected);
+        position.map(|position| slot.remove(position))
+    };
+    if let Some((_, path)) = scheduled {
+        std::fs::write(path, r#"{"version":999,"records":[]}"#).unwrap();
+    }
+}
+
+impl Drop for IsolationCorruptionGuard {
+    fn drop(&mut self) {
+        isolation_corruption_slot()
+            .lock()
+            .unwrap()
+            .retain(|(operation, path)| operation != &self.operation || path != &self.path);
+    }
+}
+
 fn observe_launch_process(command: &str) {
     let program = command.split_whitespace().next().unwrap_or("unknown");
     let operation = jackin_telemetry::operation_or_disabled(
@@ -276,17 +325,18 @@ agents = ["codex"]
         self
     }
 
-    /// Corrupt isolation.json so post-success finalization fails while cleanup
-    /// is still armed (proves cleanup-before-error at the pipeline boundary).
-    fn plant_corrupt_isolation_for_finalize_error(&self) {
+    /// Plant a valid envelope so early `prepare_instance` migration passes;
+    /// the finalize-phase corruption is scheduled separately (after
+    /// migration, before `finalize_clean_exit` reads the envelope) so
+    /// post-success finalization fails while cleanup is still armed (proves
+    /// cleanup-before-error at the pipeline boundary).
+    fn plant_valid_isolation_for_finalize_error(&self) -> PathBuf {
         let state = self.paths.data_dir.join(&self.container_name);
         let iso_dir = state.join(".jackin");
         std::fs::create_dir_all(&iso_dir).unwrap();
-        std::fs::write(
-            iso_dir.join("isolation.json"),
-            r#"{"version":999,"records":[]}"#,
-        )
-        .unwrap();
+        let path = iso_dir.join("isolation.json");
+        std::fs::write(&path, r#"{"version":2,"records":[]}"#).unwrap();
+        path
     }
 
     fn as_core(&mut self) -> LaunchCore<'_, FakeDockerClient, FakeRunner> {
@@ -663,7 +713,14 @@ async fn run_launch_core_suite_a_grant_failure_cleans_up_before_return() {
 #[tokio::test]
 async fn run_launch_core_finalize_error_runs_cleanup_before_return() {
     let mut fix = LaunchCoreFixture::new();
-    fix.plant_corrupt_isolation_for_finalize_error();
+    let isolation_path = fix.plant_valid_isolation_for_finalize_error();
+    // Role creation runs strictly after `prepare_instance` migration and
+    // before finalization; nothing else reads the envelope between them.
+    let _corruption = schedule_isolation_corruption(
+        format!("create_container:{}", fix.container_name),
+        isolation_path,
+    );
+    fix.docker.operation_hook = Some(corrupt_isolation_on_operation);
     // Drive to finalization with sessions=0 so finalize_clean_exit reads isolation.json.
     fix.docker.exec_capture_queue = std::cell::RefCell::new(VecDeque::from([
         String::new(),

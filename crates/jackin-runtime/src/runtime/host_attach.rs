@@ -135,16 +135,25 @@ pub(super) async fn run_host_attach_session(
 
     match select_host_attach_transport(paths, container_name) {
         HostAttachTransportPlan::DirectSocket { socket_path } => {
-            let stream = jackin_diagnostics::operation::connection_attempt(
+            let mut stream = jackin_diagnostics::operation::connection_attempt(
                 jackin_telemetry::schema::enums::ConnectionPeerType::CapsuleAttach,
                 UnixStream::connect(&socket_path),
             )
             .await
             .with_context(|| format!("connecting to {}", socket_path.display()))?;
+            jackin_protocol::capsule_transport::client_handshake_async(&mut stream)
+                .await
+                .context("negotiating Capsule attach transport")?;
             let (reader, writer) = stream.into_split();
             run_terminal_attach(reader, writer, request).await
         }
         HostAttachTransportPlan::AttachProxy { .. } => {
+            let preflight_container = container.clone();
+            tokio::task::spawn_blocking(move || {
+                super::snapshot::ensure_capsule_protocol_via_docker_exec(&preflight_container)
+            })
+            .await
+            .context("joining Capsule protocol preflight")??;
             let process_request =
                 jackin_process::ExecRequest::new("docker", attach_proxy_exec_args(container))
                     .stdin_mode(jackin_process::StdioMode::Capture)

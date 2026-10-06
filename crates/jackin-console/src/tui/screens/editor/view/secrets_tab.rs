@@ -245,9 +245,7 @@ pub(crate) fn secret_key_line_width(
     const OP_REF_REPICK_PLACEHOLDER: &str = "<unparseable path \u{2014} re-pick>";
 
     let op_breadcrumb = match value {
-        SecretValueDisplay::OpRefPath(path) => {
-            crate::tui::op_breadcrumb::parse_path_breadcrumb(path)
-        }
+        SecretValueDisplay::OpRefPath(path) => jackin_core::parse_op_breadcrumb_path(path),
         SecretValueDisplay::Plain(_) => None,
     };
     let marker = if op_breadcrumb.is_some() {

@@ -345,6 +345,20 @@ impl SessionEvents {
         stream
             .set_write_timeout(Some(Duration::from_secs(2)))
             .context("setting write timeout")?;
+        stream
+            .set_read_timeout(Some(jackin_protocol::capsule_transport::HANDSHAKE_TIMEOUT))
+            .context("setting handshake read timeout")?;
+        jackin_protocol::capsule_transport::client_handshake(
+            &mut stream,
+            jackin_protocol::capsule_transport::HANDSHAKE_TIMEOUT,
+        )
+        .context("negotiating Capsule control transport")?;
+        stream
+            .set_read_timeout(None)
+            .context("clearing handshake read timeout")?;
+        stream
+            .set_write_timeout(Some(Duration::from_secs(2)))
+            .context("restoring write timeout")?;
         write_control_request(&mut stream, &ClientMsg::Events { session })?;
 
         let (tx, rx) = mpsc::channel();
@@ -365,6 +379,7 @@ impl SessionEvents {
         container: &ContainerHandle,
         session: Option<u64>,
     ) -> Result<Self> {
+        super::snapshot::ensure_capsule_protocol_via_docker_exec(container)?;
         let args = docker_events_exec_args(container, session);
         let request = jackin_process::ExecRequest::new("docker", &args);
         let (operation, mut child) = crate::process_telemetry::spawn_sync(&request)

@@ -602,6 +602,17 @@ fn build_stderr_summary_reports_empty_capture() {
     assert_eq!(summarize_build_stderr(b"\n  \n"), "(no stderr captured)");
 }
 
+#[test]
+fn build_stderr_summary_redacts_multiline_credentials() {
+    let stderr = b"token: |\n  block-secret-canary\n-----BEGIN PRIVATE KEY-----\npem-secret-canary\n-----END PRIVATE KEY-----\nERROR: build stopped\n";
+    let summary = summarize_build_stderr(stderr);
+
+    assert!(summary.contains("<redacted>"), "{summary}");
+    assert!(summary.contains("ERROR: build stopped"), "{summary}");
+    assert!(!summary.contains("block-secret-canary"), "{summary}");
+    assert!(!summary.contains("pem-secret-canary"), "{summary}");
+}
+
 #[cfg(unix)]
 async fn fixture_bare_repository(runner: &mut ShellRunner, path: &Path) -> String {
     let quiet = RunOptions {

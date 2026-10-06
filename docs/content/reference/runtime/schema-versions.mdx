@@ -24,13 +24,44 @@ The split-workspace layout described in [Configuration File](/reference/runtime/
 
 | File | Current version | Owner | Migration mode |
 |---|---|---|---|
-| `~/.config/jackin/config.toml` | `v1alpha12` | jackin❯ | Automatic on startup |
-| `~/.config/jackin/workspaces/<name>.toml` | `v1alpha10` | jackin❯ | Automatic on startup |
+| `~/.config/jackin/config.toml` | `v1alpha13` | jackin❯ | Automatic on startup |
+| `~/.config/jackin/workspaces/<name>.toml` | `v1alpha11` | jackin❯ | Automatic on startup |
 | `jackin.role.toml` | `v1alpha7` | Role repository | Desktop: `jackin role migrate <role-repo-path>`; CI/automation: `jackin-role migrate <role-repo-path>` |
 
 ## Timeline
 
 Each entry is one upgrade path the current binary applies. <RepoFile path="crates/jackin/tests/migration_fixtures.rs">crates/jackin/tests/migration_fixtures.rs</RepoFile> walks every fixture on every CI run, so a regression breaks here before it breaks on a delayed operator's machine. Newest first; append, never edit.
+
+### Config `v1alpha13` and workspace `v1alpha11` — 2026-10-05
+
+| File kind | Predecessor | Migration mode | Fixture |
+|---|---|---|---|
+| Config (`config.toml`) | `v1alpha12` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/config/from-v1alpha12/meta.toml">crates/jackin/tests/fixtures/migrations/config/from-v1alpha12/meta.toml</RepoFile> |
+| Workspace (`workspaces/<name>.toml`) | `v1alpha10` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/workspace/from-v1alpha10/meta.toml">crates/jackin/tests/fixtures/migrations/workspace/from-v1alpha10/meta.toml</RepoFile> |
+
+**Summary**: replaces the ambiguous OpRef `path` string with a versioned
+`breadcrumb` object. The migration treats old percent sequences as literal
+text, escapes them into the v1 value, and checks the breadcrumb segment count
+against its `op://` reference. It walks global, GitHub, role, workspace, and
+account credential values before strict deserialization. Values whose
+component boundaries cannot be recovered stop migration with an explicit
+error before any file is written.
+
+**Before**:
+
+```toml
+TOKEN = { op = "op://vault-id/item-id/field-id", path = "Private/Team%2FBlue/token" }
+```
+
+**After**:
+
+```toml
+TOKEN = { op = "op://vault-id/item-id/field-id", breadcrumb = { version = 1, value = "Private/Team%252FBlue/token" } }
+```
+
+The stored `%252F` decodes to literal `%2F`; new picker values use `%2F` to
+represent a slash within one display component. Global config and every split
+workspace file migrate before strict `EnvValue` parsing.
 
 ### Config `v1alpha12` — 2026-09-19
 
@@ -589,7 +620,7 @@ The split-from-`config.toml` work for legacy `[workspaces.<name>]` tables runs a
 
 | Field | Type | Required | Since | Notes |
 |---|---|---|---|---|
-| `version` | string | Yes | `v1alpha1` | Current value: `v1alpha12` |
+| `version` | string | Yes | `v1alpha1` | Current value: `v1alpha13` |
 | `dirty_exit_policy` | string | No | `v1alpha8` | `ask`, `keep`, or `discard`; global dirty/unpushed exit policy; omitted means built-in `ask` |
 | `[telemetry].level` | string | No | `v1alpha9` | Persisted telemetry capture/export level: `info`, `debug`, or `trace`; env var override wins for one process |
 | `[telemetry].categories` | string array | No | `v1alpha9` | Persisted telemetry category allowlist such as `docker` or `launch`; empty means no category filter |

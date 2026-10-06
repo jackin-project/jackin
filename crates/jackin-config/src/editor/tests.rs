@@ -1560,7 +1560,7 @@ fn set_env_var_writes_inline_table_for_op_ref() {
     let serialized = std::fs::read_to_string(&paths.config_file).unwrap();
     // Inline-table form, not a scalar string with quoted JSON.
     assert!(
-            serialized.contains(r#"SERVICE_TOKEN = { op = "op://abc/def/fld", path = "Private/Claude/security/auth token" }"#),
+            serialized.contains(r#"SERVICE_TOKEN = { op = "op://abc/def/fld", breadcrumb = { version = 1, value = "Private/Claude/security/auth token" } }"#),
             "expected inline-table emit, got:\n{serialized}"
         );
 }
@@ -1594,7 +1594,7 @@ fn set_env_var_persists_op_ref_account() {
     let saved = std::fs::read_to_string(&paths.config_file).unwrap();
     assert!(
             saved.contains(
-                r#"SERVICE_TOKEN = { op = "op://abc/def/fld", path = "Work/Claude/auth token", account = "WORKACCT" }"#
+                r#"SERVICE_TOKEN = { op = "op://abc/def/fld", breadcrumb = { version = 1, value = "Work/Claude/auth token" }, account = "WORKACCT" }"#
             ),
             "expected account key in inline table, got:\n{saved}"
         );
@@ -2546,6 +2546,81 @@ fn scan_for_accounts_imports_profiles_with_bootstrap_naming_and_dedupes() {
         .scan_for_accounts_with(&paths.home_dir, &BTreeMap::new())
         .unwrap();
     assert!(second.added_accounts.is_empty(), "{second:?}");
+}
+
+#[test]
+fn scan_for_accounts_uses_injected_codex_home_instead_of_ambient_override() {
+    const CHILD_ROOT_ENV: &str = "JACKIN_CODEX_HOME_ROUTE_TEST_ROOT";
+    let Some(root) = std::env::var_os(CHILD_ROOT_ENV) else {
+        let fixture = tempdir().unwrap();
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "test re-execs itself in a child process for env isolation"
+        )]
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .arg("--exact")
+            .arg(
+                "editor::tests::scan_for_accounts_uses_injected_codex_home_instead_of_ambient_override",
+            )
+            .env(CHILD_ROOT_ENV, fixture.path())
+            .env("CODEX_HOME", fixture.path().join("host-codex"))
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "isolated discovery child failed; stdout: {}; stderr: {}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            String::from_utf8_lossy(&output.stdout).contains("running 1 test"),
+            "isolated discovery child did not run the expected fixture: {}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+        return;
+    };
+
+    let root = PathBuf::from(root);
+    let host_codex = root.join("host-codex");
+    let injected_codex = root.join("injected-codex");
+    for (directory, token) in [
+        (&host_codex, "host-codex-sentinel"),
+        (&injected_codex, "injected-codex-sentinel"),
+    ] {
+        std::fs::create_dir_all(directory).unwrap();
+        std::fs::write(
+            directory.join("auth.json"),
+            format!(r#"{{"tokens":{{"access_token":"{token}"}}}}"#),
+        )
+        .unwrap();
+    }
+
+    let paths = JackinPaths::for_tests(&root.join("jackin"));
+    minimal_config_file(&paths);
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    let environment = BTreeMap::from([(
+        "CODEX_HOME".to_owned(),
+        injected_codex.to_string_lossy().into_owned(),
+    )]);
+    let report = editor
+        .scan_for_accounts_with(&paths.home_dir, &environment)
+        .unwrap();
+    let (_, account) = report
+        .added
+        .iter()
+        .find(|(id, _)| id == "default-codex")
+        .expect("injected Codex profile is registered");
+    match &account.credential {
+        crate::AccountCredential::Profile {
+            agent: Agent::Codex,
+            directory,
+            ..
+        } => assert_eq!(directory, &injected_codex),
+        credential => panic!("unexpected Codex credential route: {credential:?}"),
+    }
+    let rendered = format!("{report:?}");
+    assert!(!rendered.contains("host-codex-sentinel"));
+    assert!(!rendered.contains("injected-codex-sentinel"));
 }
 
 #[test]

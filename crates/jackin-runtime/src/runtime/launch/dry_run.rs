@@ -17,12 +17,11 @@
 //! * one synthesized instance (binding/sole-eligible fallback, no list) — the
 //!   single-account shape (`account` set, `instances` empty);
 //! * anything else — the instances shape (`account` unset, every admitted
-//!   instance listed, each carrying its effective model).
+//!   instance listed; the canonical model projection fills each model).
 //!
-//! An explicit `--account` pick keeps the single-account shape: the scoped
-//! config rewrites both the binding and the launch list to the pick, so the
-//! list it carries is the pick itself, not an ambient default the plan must
-//! surface.
+//! An explicit `--account` pick keeps the single-account shape for the
+//! selected agent, while retaining the complete scoped admission internally
+//! so other-agent slots and provider-specific model projection stay exact.
 
 use jackin_config::{AppConfig, ResolvedInstance};
 use jackin_core::{Agent, WorkspaceName};
@@ -33,13 +32,27 @@ use jackin_core::{Agent, WorkspaceName};
 pub struct DryRunIdentity {
     /// Resolved account id, set only for the single-account shape.
     pub account_id: Option<String>,
-    /// Effective model for [`Self::account_id`], when the account pins one.
-    /// Lets the plan echo the exact model the launch would provision.
+    /// Account model hint for [`Self::account_id`]. The launch-equivalent
+    /// model is resolved separately by [`resolve_dry_run_model_projection`].
     pub model: Option<String>,
-    /// Admitted instances for the instances shape; empty otherwise. Each
-    /// carries its effective model (configuration override, else account
-    /// default) byte-exact from the resolvers.
+    /// Admitted instances for the instances shape; empty otherwise. Model
+    /// values are projected separately after the role manifest is available.
     pub instances: Vec<ResolvedInstance>,
+    /// The complete admission result, including a synthesized instance when
+    /// the public plan uses the single-account shape. This lets dry-run
+    /// resolve role and task-scoped model choices with the same per-slot
+    /// resolver as launch without changing the displayed identity shape.
+    pub admitted_instances: Vec<ResolvedInstance>,
+}
+
+/// Canonical model projection for a resolved dry-run identity.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct DryRunModelProjection {
+    /// Effective model in the single-account shape; absent for a multi-slot
+    /// plan, whose models belong to individual instances.
+    pub model: Option<String>,
+    /// Effective models keyed by the exact instance config ID used by launch.
+    pub instances: std::collections::BTreeMap<String, String>,
 }
 
 /// Resolve the identity half of the `--dry-run` plan.
@@ -74,10 +87,18 @@ pub fn resolve_dry_run_identity(
         let model = account_id
             .as_ref()
             .and_then(|id| plan_config.accounts.get(id).and_then(account_model));
+        let admitted_instances = jackin_config::resolve_launch(
+            plan_config,
+            workspace,
+            role_key,
+            None,
+            Some(selected_agent),
+        )?;
         return Ok(DryRunIdentity {
             account_id,
             model,
             instances: Vec::new(),
+            admitted_instances,
         });
     }
     let instances = jackin_config::resolve_launch(
@@ -94,13 +115,48 @@ pub fn resolve_dry_run_identity(
             account_id: Some(single.account_id.clone()),
             model: single.model.clone(),
             instances: Vec::new(),
+            admitted_instances: instances,
         });
     }
     Ok(DryRunIdentity {
         account_id: None,
         model: None,
+        admitted_instances: instances.clone(),
         instances,
     })
+}
+
+/// Resolve role, account, and task-scoped models exactly as the launch
+/// pipeline does, then project them onto the dry-run's single-account or
+/// per-instance display shape.
+pub fn resolve_dry_run_model_projection(
+    config: &AppConfig,
+    role_models: &std::collections::BTreeMap<Agent, String>,
+    identity: &DryRunIdentity,
+    selected_agent: Agent,
+    model_override: Option<&str>,
+) -> anyhow::Result<DryRunModelProjection> {
+    let instances = super::capsule_setup::resolved_instance_models_from_role_models(
+        config,
+        role_models,
+        &identity.admitted_instances,
+        selected_agent,
+        model_override,
+    )?;
+    let model = identity.account_id.as_ref().and_then(|_| {
+        let selected_models: Vec<Option<&str>> = identity
+            .admitted_instances
+            .iter()
+            .filter(|instance| instance.agent == selected_agent)
+            .map(|instance| instances.get(&instance.config_id).map(String::as_str))
+            .collect();
+        let first = selected_models.first().copied().flatten()?;
+        selected_models
+            .iter()
+            .all(|candidate| *candidate == Some(first))
+            .then(|| first.to_owned())
+    });
+    Ok(DryRunModelProjection { model, instances })
 }
 
 /// Account-level model default: only API-key credentials pin one.

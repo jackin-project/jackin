@@ -33,7 +33,7 @@ pub(super) fn env_rows<'a>(
 ) -> Vec<EnvListRow> {
     env.into_iter()
         .filter(|(k, _)| !jackin_core::is_account_env(k))
-        .map(|(k, v)| (k.clone(), v.as_display_str().to_owned(), v.is_on_demand()))
+        .map(|(k, v)| (k.clone(), v.as_display_str(), v.is_on_demand()))
         .collect()
 }
 
@@ -113,13 +113,17 @@ pub(super) fn unresolved_op_ref(value: &str, on_demand: bool) -> Result<jackin_c
              `op://<vault>/<item>/[<section>/]<field>`"
         );
     };
-    let mut path = format!("{}/{}", parts.vault, parts.item);
+    let mut path = format!(
+        "{}/{}",
+        jackin_core::encode_op_breadcrumb_segment(&parts.vault),
+        jackin_core::encode_op_breadcrumb_segment(&parts.item)
+    );
     if let Some(section) = &parts.section {
         path.push('/');
-        path.push_str(section);
+        path.push_str(&jackin_core::encode_op_breadcrumb_segment(section));
     }
     path.push('/');
-    path.push_str(&parts.field);
+    path.push_str(&jackin_core::encode_op_breadcrumb_segment(&parts.field));
     Ok(jackin_core::OpRef {
         op: value.to_owned(),
         path,
@@ -600,8 +604,11 @@ mod tests {
             _item_id: &str,
             _vault_id: &str,
             _account: Option<&str>,
-        ) -> anyhow::Result<Vec<jackin_core::OpField>> {
-            Ok(self.fields.clone())
+        ) -> anyhow::Result<jackin_core::OpItemDetail<jackin_core::OpField>> {
+            Ok(jackin_core::OpItemDetail {
+                fields: self.fields.clone(),
+                sections: Vec::new(),
+            })
         }
     }
 
@@ -618,6 +625,7 @@ mod tests {
             }],
             fields: vec![jackin_core::OpField {
                 id: "field-id".to_owned(),
+                section_id: None,
                 label: "key".to_owned(),
                 field_type: "CONCEALED".to_owned(),
                 concealed: true,

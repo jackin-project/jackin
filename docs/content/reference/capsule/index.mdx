@@ -21,7 +21,7 @@ These three gaps are why observability, attention prompts, and future desktop in
 
 ## Why build it in-house
 
-The closest public reference is [Herdr](https://github.com/ogulcancelik/herdr) — a Rust multiplexer purpose-built for AI coding agents with four-state status tracking, a Unix socket API, and workspace-level roll-ups. Herdr cannot be embedded in jackin❯: it is AGPL-3.0, which conflicts with the Apache-2.0 license used by jackin❯.
+The closest public reference is [Herdr](https://github.com/ogulcancelik/herdr) — a Rust multiplexer purpose-built for AI coding agents with four-state status tracking, a Unix socket API, and workspace-level roll-ups. Herdr is identified as AGPL-3.0-or-later; this prior-art comparison proposes no source reuse or dependency. Any future code reuse or dependency requires a separate license-compatibility review for the specific versions and distribution path.
 
 Beyond the license, Herdr wraps **bare host processes**. jackin❯ wraps **Docker containers**. When Herdr sees `docker attach` rather than the agent process, its PTY heuristics degrade — it is watching the wrong process. `jackin-capsule` runs *inside* the container and reads the agent's PTY output directly, which is exactly where the heuristics need to run.
 
@@ -101,25 +101,25 @@ Current control messages:
 | `{"type":"events_subscribe",...}` | persistent stream of `ServerMsg` events | Host daemons and tools that need live session, token, and workspace status changes |
 | `{"type":"agents"}` | `{"type":"agent_registry","records":[...]}` | `jackin-capsule agents`, per-container agent inventory |
 | `{"type":"usage_focused"}` | `{"type":"usage_focused","usage":{...}}` | Capsule prefix-`u` overlay and active-tab status signal |
-| `{"type":"usage_refresh_focused"}` | `{"type":"usage_focused","usage":{...}}` | Capsule overlay refresh action; refresh runs inside the daemon cache |
-| `{"type":"usage_account_list"}` | `{"type":"usage_accounts","accounts":[...]}` | `jackin-capsule usage accounts` |
+| `{"type":"usage_refresh_focused"}` | `{"type":"usage_focused","usage":{...}}` | Capsule overlay refresh action; provider refresh is queued through the scoped relay for the host broker |
+| `{"type":"usage_account_list"}` | `{"type":"usage_accounts","membership":{"state":"current","projection":...}}` | `jackin-capsule usage accounts`; `membership` is `current`, `unavailable`, or `revoked`, not a quota-row list |
 
 `SessionInfo` carries `id`, `label`, optional `agent`, public `state`, and `active`. `TabSnapshot` carries render-order tabs, each tab's focused pane id, and one `PaneSnapshot` per pane leaf. `PaneSnapshot` carries `session_id`, label, optional agent slug, public state, and an `AgentStatusReport` when the daemon has evidence. The report exposes the raw detector state, source, confidence, detected agent, foreground pgid, visible-screen booleans, `process_exited`, `foreground_returned_to_shell`, `stale_report`, `subagents_active`, and revision fields. The public states are `working`, `blocked`, `done`, `idle`, and `unknown`; `stuck` is a diagnostic overlay exposed in `status explain`, not a replacement state. Raw detector states are `unknown`, `working`, `blocked`, and `idle`; `done` is derived when raw idle returns after work and the pane has not yet been acknowledged by focus or attach. The authority is implemented by <RepoFile path="crates/jackin-agent-status/src/lib.rs" />, with the evidence snapshot in <RepoFile path="crates/jackin-agent-status/src/evidence.rs" />, arbitration in <RepoFile path="crates/jackin-agent-status/src/arbitrate.rs" />, debounce/watchdog policy in <RepoFile path="crates/jackin-agent-status/src/policy.rs" />, and rule-pack engine in <RepoFile path="crates/jackin-agent-status/src/rules.rs" />. Capsule's <RepoFile path="crates/jackin-capsule/src/agent_status.rs" /> re-exports the pure crate and keeps reporter installers. Rule packs load from embedded fallbacks, then `/jackin/runtime/agent-status/packs/`, then the operator override directory selected by `JACKIN_STATUS_PACK_DIR` or `$HOME/.jackin/agent-status/packs/`. The detection crate also models a signed bundle source for future org-published pack updates: a bundle must verify signer identity and signature before any pack TOML is parsed, and rejected or malformed bundles keep the embedded floor live.
 
 `EventsSubscribe` keeps the control connection open after the initial request and sends length-prefixed `ServerMsg` frames. The live event stream includes `AgentStateChanged` for per-session effective-state transitions, `SessionSpawned`, `SessionExited`, `TokenUsageChanged`, and `WorkspaceStatusChanged`. `WorkspaceStatusChanged` is emitted when the daemon's aggregate status snapshot changes; it carries the rolled-up `effective` status plus `session_count`, `blocked_count`, `done_count`, and `working_count`. The roll-up precedence is `blocked > done > working > idle > unknown`, matching the status authority contract used by console badges and future host-daemon consumers.
 
-Usage control replies are daemon-cache reads. Capsule renderers and one-shot
-clients do not call provider APIs directly; refresh cadence, timeouts, stale
-states, and provider-child cooldowns stay owned by the PID 1 daemon.
+Usage control replies read the daemon cache. Capsule renderers and one-shot clients request refresh through the scoped relay; the host broker owns provider calls, generation state, timeouts, and retry deadlines.
+
+`FocusedUsageView` and `AccountUsageSnapshotView` carry an optional `UsageAccountIdentity` with the canonical `surface_id` and `account_id`. A missing identity denotes an unbound provider diagnostic. The broker stamps bound snapshots from their validated capability, including loading and error states. Account tabs, active selection, refresh routing, and durable snapshot keys use that canonical pair; provider titles, account labels, and email addresses are display data. Distinct accounts keep distinct rows even when those labels match or are empty, and a rename preserves selection. Missing or unknown tab keys never select a provider sibling.
+
+The derived quota snapshot store uses schema v8 with required canonical account and surface columns. Migration preserves broker identity/routes and last-good rows from schemas 5–7, marking missing canonical identity or source-revision metadata as requiring refresh. Schemas 1–4 used display-derived account keys, so those rows are discarded during explicit migration. Account broker envelopes already contain validated capabilities; loading or publishing an envelope derives each snapshot identity from that authority.
 The usage surface is account-quota-only: the obsolete workspace/session spend
 summary messages and CLI subcommands were removed with the Capsule usage overlay
 cleanup. Per-message token/cost attribution belongs to
 [Token & Cost Telemetry](/research/agents/telemetry/token-cost-telemetry/), not this
 control surface.
-`jackin-capsule usage claude-cli` is intentionally outside the control channel:
-it is an explicit operator diagnostic that runs `claude -p /usage` on demand and
-prints the raw CLI stdout/stderr/status as JSON for debugging Claude OAuth
-snapshot failures.
+The `jackin-capsule usage` CLI supports `accounts` for cached account quota rows
+and `verify` for checking that provider quota rows are cached and trusted.
 
 Current attach frames:
 

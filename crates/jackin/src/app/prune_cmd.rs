@@ -61,8 +61,8 @@ pub(super) async fn handle_prune(
     connect_docker: impl FnOnce() -> Result<BollardDockerClient>,
 ) -> Result<()> {
     match cmd {
-        PruneCommand::Roles => runtime::prune_roles(paths),
-        PruneCommand::Cache => runtime::prune_cache(paths),
+        PruneCommand::Roles => prune_host_paths(paths, runtime::prune_roles).await,
+        PruneCommand::Cache => prune_host_paths(paths, runtime::prune_cache).await,
         PruneCommand::Images => {
             let docker = connect_docker()?;
             runtime::prune_images(&docker).await
@@ -103,13 +103,19 @@ pub(super) async fn handle_prune(
             let results = [
                 prune_instances_result,
                 runtime::prune_images(&docker).await.context("prune images"),
-                runtime::prune_roles(paths).context("prune roles"),
-                runtime::prune_cache(paths).context("prune cache"),
+                prune_host_paths(paths, runtime::prune_roles)
+                    .await
+                    .context("prune roles"),
+                prune_host_paths(paths, runtime::prune_cache)
+                    .await
+                    .context("prune cache"),
             ];
             let errors: Vec<anyhow::Error> = results.into_iter().filter_map(Result::err).collect();
             if errors.is_empty() {
                 if args.all {
-                    runtime::prune_jackin_home(paths);
+                    prune_host_paths(paths, runtime::prune_jackin_home)
+                        .await
+                        .context("prune runtime home")?;
                 }
                 Ok(())
             } else {
@@ -120,4 +126,14 @@ pub(super) async fn handle_prune(
             }
         }
     }
+}
+
+async fn prune_host_paths(
+    paths: &JackinPaths,
+    action: fn(&JackinPaths) -> Result<()>,
+) -> Result<()> {
+    let paths = paths.clone();
+    jackin_telemetry::spawn::joined_blocking(move || action(&paths))
+        .await
+        .context("join host prune worker")?
 }

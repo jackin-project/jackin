@@ -22,7 +22,7 @@ The `construct` family (source: <RepoFile path="crates/jackin-xtask/src/construc
 | `cargo xtask construct build-platform <amd64\|arm64>` | `construct-build-platform <platform>` | Build for one specific platform and load it locally. |
 | `cargo xtask construct push-platform <amd64\|arm64>` | `construct-push-platform <platform>` | Push a single-platform image by digest. CI-only for the canonical registry. |
 | `cargo xtask construct assert-version-unpublished` | `construct-assert-version-unpublished` | Fail when the version in <RepoFile path="docker/construct/versions.env">docker/construct/versions.env</RepoFile> already exists in the registry — the publish-gate guard. |
-| `cargo xtask construct publish-manifest` | `construct-publish-manifest` | Combine per-platform digest pushes into one multi-platform manifest. CI publish step. |
+| `cargo xtask construct publish-manifest` | `construct-publish-manifest` | Combine per-platform digest pushes into one multi-platform manifest. The current generated CI does not invoke this publication command. |
 | `cargo xtask construct inspect` | `construct-inspect` | Print the resolved Bake configuration without building — dry-run inspection. |
 
 ## Pull request verification helpers
@@ -61,14 +61,15 @@ The `change`, `research`, and `roadmap` families (source: <RepoFile path="crates
 | `cargo xtask change new <slug> --group <group>` | Scaffold a roadmap item under `/roadmap/` with `Status`, `Outcome`, `Current state`, `Remaining work`, `Completion gate`, and `Related research`, then register it in the named product-area group. `--title` overrides the title-cased default. |
 | `cargo xtask research scaffold <slug> --group <domain>` | Scaffold a research dossier under `/research/<domain>/<slug>/` with a consistent question, findings, evidence, limitations, reading-order, and related-work format. The reusable brief is created outside published docs at `prompts/research/<domain>/<slug>.md`. Domains are `agents`, `platform`, `product`, `engineering`, or `context`; `--title` overrides the default. |
 | `cargo xtask research check` | Validate research sidebar parity plus the shared page contract: title and concise description frontmatter, canonical state labels, no duplicate body H1, and no published prompt/brief pages. Non-zero exit on any problem. |
+| `cargo xtask docs brand` | Enforce the product spelling in published prose. Root documents must be registered in `ROOT_PROSE_DOCS`; missing registered roots fail. Crate-level readmes and agent-instruction files are discovered automatically; documentation-content and roadmap pages are discovered recursively. Operational root inputs are outside the published-prose contract. |
 | `cargo xtask roadmap audit` | Same validation for the roadmap subtree, including `(group)` folders and `../<slug>` cross-references. Non-zero exit on any problem. |
 | `cargo xtask roadmap retire <slug>` | Retire a shipped roadmap item. `--plan` (default) prints a read-only worklist — page content, inbound links, and the sidebar entry. `--apply` drops the `../<slug>` group entry, deletes the `.mdx`, runs the audit, and fails if any inbound link still resolves to it. `--partial` sets `**Status**: Partially implemented` and keeps the page. |
 
-`research check` is read-only and deterministic. Roadmap sidebar parity and the machine-checkable research rules listed above are gated in CI by `cargo xtask roadmap audit` and `cargo xtask research check` in the docs workflow, so those commands are the local equivalents. Page-type section order and evidence quality remain review requirements.
+`research check` is read-only and deterministic. The local `cargo xtask ci --only docs` partition runs roadmap audit, repository-link validation, brand validation, and research validation. The current generated workflow does not run this docs partition; hosted documentation coverage remains an integration requirement. Page-type section order and evidence quality remain review requirements.
 
 ## Schema migration gate
 
-`cargo xtask schema-check --base <ref>` (source: <RepoFile path="crates/jackin-xtask/src/schema.rs">crates/jackin-xtask/src/schema.rs</RepoFile>) enforces the five-artifact rule for versioned schemas described in <RepoFile path="PRERELEASE.md">PRERELEASE.md</RepoFile>. It reads each `CURRENT_{CONFIG,WORKSPACE,MANIFEST}_VERSION` on the working tree and at the base ref; when one is bumped it asserts the new `from-<predecessor>/` fixture directory exists (`meta.toml` / `before.toml` / `after.toml`, with the right `target_version`) and that <RepoFile path="docs/content/reference/runtime/schema-versions.mdx">schema-versions.mdx</RepoFile> carries a Timeline entry for the new version. The migration step and the existing-fixture re-bake are already enforced by `tests/migration_fixtures.rs`, so this gate covers only the two artifacts those tests cannot see. The CI workflow runs it on every Rust change so a partial schema bump fails before merge.
+`cargo xtask schema-check --base <ref>` (source: <RepoFile path="crates/jackin-xtask/src/schema.rs">crates/jackin-xtask/src/schema.rs</RepoFile>) enforces the five-artifact rule for versioned schemas described in <RepoFile path="PRERELEASE.md">PRERELEASE.md</RepoFile>. It reads each `CURRENT_{CONFIG,WORKSPACE,MANIFEST}_VERSION` on the working tree and at the base ref; when one is bumped it asserts the new `from-<predecessor>/` fixture directory exists (`meta.toml` / `before.toml` / `after.toml`, with the right `target_version`) and that <RepoFile path="docs/content/reference/runtime/schema-versions.mdx">schema-versions.mdx</RepoFile> carries a Timeline entry for the new version. The migration step and the existing-fixture re-bake are already enforced by <RepoFile path="crates/jackin/tests/migration_fixtures.rs">crates/jackin/tests/migration_fixtures.rs</RepoFile>, so this gate covers only the two artifacts those tests cannot see. The local `cargo xtask ci --only policy` partition invokes it. The current generated workflow does not run that policy partition, so hosted enforcement remains an integration requirement.
 
 ## Adding a new xtask
 
@@ -76,12 +77,15 @@ Repo-internal automation belongs in this binary, not in shell scripts or one-off
 
 ## Preview package publication
 
-Preview publication is owned by the typed package-release workflow:
+Local preview package preparation and verification use these typed commands:
 
 1. `mise run release-preview-package` builds the source-bound six-payload package.
 2. `mise run verify-preview-package` verifies the handoff and its provenance.
-3. The generated preview workflow stages and publishes the verified package, then
-   creates the Homebrew consumer update PR.
 
-A malformed rolling release is handled only by the Jackin-specific,
-fingerprint-guarded migration path before the typed publisher runs.
+The current generated workflow does not stage or publish the preview package or
+create the Homebrew consumer update PR. Those hosted steps remain an integration
+requirement; the local commands do not establish publication coverage.
+
+`mise run migrate-preview-legacy` invokes the jackin❯-specific,
+fingerprint-guarded migration for the known malformed rolling release. This
+explicit command is separate from the current generated CI.

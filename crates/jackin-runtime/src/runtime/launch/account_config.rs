@@ -1,10 +1,11 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Materialize selected API account settings in the private capsule home.
+//! Publish selected API account settings in host-only provider authority.
+//! Only exact generated files cross into the capsule as read-only overlays.
 
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::Context as _;
 use jackin_config::{AccountCredential, AiProvider, AppConfig};
@@ -73,6 +74,8 @@ mod private_config_fs {
         CodexCatalog,
         CodexConfig,
         OpenCodeConfig,
+        CodexGenerationConfig,
+        OpenCodeGenerationConfig,
     }
 
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -124,6 +127,11 @@ mod private_config_fs {
         }
         anyhow::ensure!(saw_root, "private account config root is empty");
 
+        // The instance root is never mounted. Keeping authority outside every
+        // home/state/auth bind removes the agent's ability to exchange staged
+        // names, replace locks, or mutate published config/catalog bytes.
+        let directory =
+            open_child_directory(&directory, std::ffi::OsStr::new("provider-config"), true)?;
         let mut directory = open_child_directory(&directory, std::ffi::OsStr::new("home"), true)?;
         let mut found_component = false;
         for component in home_relative.components() {
@@ -366,6 +374,10 @@ mod private_config_fs {
             SFlag::from_bits_truncate(stat.st_mode) == SFlag::S_IFREG,
             "private provider config {name} is not a regular file"
         );
+        anyhow::ensure!(
+            stat.st_uid == nix::unistd::geteuid().as_raw(),
+            "private provider config {name} is not owned by the current user"
+        );
         ensure_mode(file, name, PRIVATE_FILE_MODE, stat.st_mode)?;
         Ok(())
     }
@@ -375,6 +387,10 @@ mod private_config_fs {
         anyhow::ensure!(
             SFlag::from_bits_truncate(stat.st_mode) == SFlag::S_IFDIR,
             "private account config path component {name:?} is not a directory"
+        );
+        anyhow::ensure!(
+            stat.st_uid == nix::unistd::geteuid().as_raw(),
+            "private account config directory {name:?} is not owned by the current user"
         );
         ensure_mode(
             file,
@@ -407,6 +423,19 @@ mod private_config_fs {
         directory: &File,
         name: &str,
         contents: &[u8],
+        hook: F,
+    ) -> anyhow::Result<()>
+    where
+        F: FnMut(PublishPoint) -> anyhow::Result<()>,
+    {
+        publish_immutable(directory, name, contents, Artifact::CodexCatalog, hook)
+    }
+
+    pub(super) fn publish_immutable<F>(
+        directory: &File,
+        name: &str,
+        contents: &[u8],
+        artifact: Artifact,
         mut hook: F,
     ) -> anyhow::Result<()>
     where
@@ -417,7 +446,7 @@ mod private_config_fs {
             Some(existing) if existing == contents => return Ok(()),
             Some(_) => {
                 anyhow::bail!(
-                    "content-addressed Codex catalog {} has different contents",
+                    "content-addressed provider artifact {} has different contents",
                     name.as_str()
                 )
             }
@@ -426,16 +455,16 @@ mod private_config_fs {
 
         let (temp_name, mut temp_file) = create_temp_file(directory)?;
         let result = (|| {
-            hook(PublishPoint::TempCreated(Artifact::CodexCatalog))?;
+            hook(PublishPoint::TempCreated(artifact))?;
             temp_file
                 .write_all(contents)
-                .context("write staged Codex model catalog")?;
-            hook(PublishPoint::TempWritten(Artifact::CodexCatalog))?;
+                .context("write staged provider artifact")?;
+            hook(PublishPoint::TempWritten(artifact))?;
             temp_file
                 .sync_all()
-                .context("sync staged Codex model catalog")?;
-            hook(PublishPoint::TempSynced(Artifact::CodexCatalog))?;
-            hook(PublishPoint::BeforeInstall(Artifact::CodexCatalog))?;
+                .context("sync staged provider artifact")?;
+            hook(PublishPoint::TempSynced(artifact))?;
+            hook(PublishPoint::BeforeInstall(artifact))?;
             match linkat(
                 directory,
                 temp_name.as_str(),
@@ -448,21 +477,21 @@ mod private_config_fs {
                     let existing = read_optional_bounded(directory, name.as_str(), contents.len())?;
                     anyhow::ensure!(
                         existing.as_deref() == Some(contents),
-                        "content-addressed Codex catalog {} changed during publication",
+                        "content-addressed provider artifact {} changed during publication",
                         name.as_str()
                     );
                     return Ok(());
                 }
-                Err(error) => return Err(error).context("install immutable Codex model catalog"),
+                Err(error) => return Err(error).context("install immutable provider artifact"),
             }
             directory
                 .sync_all()
-                .context("sync installed Codex model catalog")?;
-            hook(PublishPoint::Installed(Artifact::CodexCatalog))?;
+                .context("sync installed provider artifact")?;
+            hook(PublishPoint::Installed(artifact))?;
             directory
                 .sync_all()
-                .context("sync installed Codex model catalog")?;
-            hook(PublishPoint::DirectorySynced(Artifact::CodexCatalog))?;
+                .context("sync installed provider artifact")?;
+            hook(PublishPoint::DirectorySynced(artifact))?;
             Ok(())
         })();
 
@@ -630,7 +659,8 @@ pub(super) fn configure_accounts(
     slots: &BTreeMap<String, crate::instance::ProvisionedInstanceAuth>,
     models: &BTreeMap<String, String>,
     efforts: &BTreeMap<String, String>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Vec<(PathBuf, String)>> {
+    let mut mounts = Vec::new();
     for instance in instances {
         let Some(slot) = slots.get(&instance.config_id) else {
             if matches!(instance.agent, Agent::Codex | Agent::Opencode) {
@@ -660,19 +690,21 @@ pub(super) fn configure_accounts(
             .map(String::as_str)
             .or(instance.model.as_deref());
         match instance.agent {
-            Agent::Codex => configure_codex(
+            Agent::Codex => mounts.extend(configure_codex(
                 root,
                 config,
                 instance,
                 slot,
                 model,
                 efforts.get(&instance.config_id).map(String::as_str),
-            )?,
-            Agent::Opencode => configure_opencode(root, config, instance, slot, model)?,
+            )?),
+            Agent::Opencode => {
+                mounts.extend(configure_opencode(root, config, instance, slot, model)?);
+            }
             _ => {}
         }
     }
-    Ok(())
+    Ok(mounts)
 }
 
 #[cfg(unix)]
@@ -683,7 +715,7 @@ fn configure_codex(
     slot: &crate::instance::ProvisionedInstanceAuth,
     model: Option<&str>,
     effort: Option<&str>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Vec<(PathBuf, String)>> {
     configure_codex_with_publish_hook(root, config, instance, slot, model, effort, |_| Ok(()))
 }
 
@@ -695,7 +727,7 @@ fn configure_codex(
     _slot: &crate::instance::ProvisionedInstanceAuth,
     _model: Option<&str>,
     _effort: Option<&str>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Vec<(PathBuf, String)>> {
     anyhow::bail!(
         "private Codex config publication requires Unix descriptor-relative file operations"
     )
@@ -710,7 +742,7 @@ fn configure_codex_with_publish_hook<F>(
     model: Option<&str>,
     effort: Option<&str>,
     mut hook: F,
-) -> anyhow::Result<()>
+) -> anyhow::Result<Vec<(PathBuf, String)>>
 where
     F: FnMut(private_config_fs::PublishPoint) -> anyhow::Result<()>,
 {
@@ -719,7 +751,7 @@ where
         .get(&instance.account_id)
         .ok_or_else(|| anyhow::anyhow!("unknown account {:?}", instance.account_id))?;
     let AccountCredential::ApiKey { .. } = &account.credential else {
-        return Ok(());
+        return Ok(Vec::new());
     };
     let base_url = instance.base_url.as_deref();
     let cross_provider = account.provider != AiProvider::OpenAi;
@@ -740,6 +772,15 @@ where
     // `container_home_rel` is computed by the auth provisioner from the same
     // slot layout used by mounts and the Capsule's CODEX_HOME value. Never
     // collapse multiple admitted Codex instances onto the primary home.
+    let target_home = format!("/home/agent/{}", slot.container_home_rel);
+    anyhow::ensure!(
+        slot.folder_target == target_home,
+        "Codex config slot folder target disagrees with its mounted home"
+    );
+    let authority = root
+        .join("provider-config/home")
+        .join(&slot.container_home_rel);
+    let mut mounts = Vec::new();
     let directory = private_config_fs::open_directory(root, Path::new(&slot.container_home_rel))?;
     let _lock = private_config_fs::lock(&directory)?;
     let mut document: toml::Table =
@@ -824,7 +865,26 @@ where
         // atomically changing config.toml, which is the pair's commit point.
         private_config_fs::publish_catalog(&directory, &catalog_name, &catalog_contents, &mut hook)
             .context("publish private Codex model metadata")?;
+        mounts.push((
+            authority.join(&catalog_name),
+            format!("{target_home}/{catalog_name}"),
+        ));
     }
+    // Docker resolves bind sources after this function returns. Bind the
+    // immutable content-addressed config, so another host launch cannot
+    // substitute a later config/catalog generation during container creation.
+    let generation_name = provider_config_filename(&config_contents, "toml");
+    private_config_fs::publish_immutable(
+        &directory,
+        &generation_name,
+        &config_contents,
+        private_config_fs::Artifact::CodexGenerationConfig,
+        &mut hook,
+    )?;
+    mounts.push((
+        authority.join(&generation_name),
+        format!("{target_home}/config.toml"),
+    ));
     private_config_fs::publish_atomic(
         &directory,
         "config.toml",
@@ -832,7 +892,16 @@ where
         private_config_fs::Artifact::CodexConfig,
         &mut hook,
     )
-    .context("publish private Codex account configuration")
+    .context("publish private Codex account configuration")?;
+    Ok(mounts)
+}
+
+fn provider_config_filename(contents: &[u8], extension: &str) -> String {
+    use sha2::{Digest as _, Sha256};
+    format!(
+        "account-config-{}.{extension}",
+        hex::encode(Sha256::digest(contents))
+    )
 }
 
 fn codex_catalog_filename(contents: &[u8]) -> String {
@@ -916,13 +985,13 @@ fn configure_opencode(
     instance: &jackin_config::ResolvedInstance,
     slot: &crate::instance::ProvisionedInstanceAuth,
     model: Option<&str>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Vec<(PathBuf, String)>> {
     let account = config
         .accounts
         .get(&instance.account_id)
         .ok_or_else(|| anyhow::anyhow!("unknown account {:?}", instance.account_id))?;
     let AccountCredential::ApiKey { .. } = &account.credential else {
-        return Ok(());
+        return Ok(Vec::new());
     };
     let base_url = instance.base_url.as_deref();
     let (id, npm, default_url) = opencode_provider(account.provider)?;
@@ -931,13 +1000,9 @@ fn configure_opencode(
     let key = account
         .resolved_credential_descriptor(Agent::Opencode)?
         .env_name;
-    let directory = private_config_fs::open_directory(
-        root,
-        Path::new(&crate::instance::slot_home_rel(
-            ".config/opencode",
-            slot.slot_suffix.as_deref(),
-        )),
-    )?;
+    let home_rel = crate::instance::slot_home_rel(".config/opencode", slot.slot_suffix.as_deref());
+    let directory = private_config_fs::open_directory(root, Path::new(&home_rel))?;
+    let _lock = private_config_fs::lock(&directory)?;
     let mut provider = serde_json::json!({
         "name": account.name, "npm": npm,
         "options": { "baseURL": base_url.unwrap_or(default_url), "apiKey": format!("{{env:{key}}}") }
@@ -967,6 +1032,15 @@ fn configure_opencode(
     }
     document["provider"] = serde_json::json!({ id: provider });
     let contents = serde_json::to_string_pretty(&document)?;
+    private_config_fs::validate_config_contents(contents.as_bytes(), "opencode.json")?;
+    let generation_name = provider_config_filename(contents.as_bytes(), "json");
+    private_config_fs::publish_immutable(
+        &directory,
+        &generation_name,
+        contents.as_bytes(),
+        private_config_fs::Artifact::OpenCodeGenerationConfig,
+        |_| Ok(()),
+    )?;
     private_config_fs::publish_atomic(
         &directory,
         "opencode.json",
@@ -974,7 +1048,16 @@ fn configure_opencode(
         private_config_fs::Artifact::OpenCodeConfig,
         |_| Ok(()),
     )
-    .context("write private OpenCode account configuration")
+    .context("write private OpenCode account configuration")?;
+    Ok(vec![(
+        root.join("provider-config/home")
+            .join(home_rel)
+            .join(generation_name),
+        format!(
+            "/home/agent/{}/opencode.json",
+            crate::instance::slot_home_rel(".config/opencode", slot.slot_suffix.as_deref())
+        ),
+    )])
 }
 
 #[cfg(not(unix))]
@@ -984,7 +1067,7 @@ fn configure_opencode(
     _instance: &jackin_config::ResolvedInstance,
     _slot: &crate::instance::ProvisionedInstanceAuth,
     _model: Option<&str>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Vec<(PathBuf, String)>> {
     anyhow::bail!(
         "private OpenCode config publication requires Unix descriptor-relative file operations"
     )
@@ -1045,3 +1128,7 @@ fn model_catalog(provider: AiProvider, model: &str) -> Option<serde_json::Value>
 
 #[cfg(all(test, unix))]
 mod tests;
+
+#[cfg(all(test, unix))]
+#[path = "account_config/authority_tests.rs"]
+mod authority_tests;

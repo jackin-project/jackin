@@ -921,14 +921,14 @@ pub struct UsageDetailRow {
     pub severity: UsageSeverity,
 }
 
-/// The complete Rust-owned provider-detail card: rows in the fixed order
-/// `focused`, `header`, `provider`, `account`, `status`, `updated`, optional
-/// `username`/`plan`/`auth`, one `bucket:<index>` per source bucket in source
-/// order, then optional `detail`. Capsule and Desktop render these rows
-/// mechanically without splitting, joining, reordering, or relabeling.
+/// Rows produced for the provider-detail card. The usage presenter emits
+/// optional `username` (only when its trimmed value differs from the trimmed
+/// account label), optional `plan` and `auth`, one `bucket:<index>` row per
+/// source bucket in source order, then optional trailing `detail` for
+/// `last_error`. Identity, activity, and focused-view freshness use a separate presentation.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct UsageDetailPresentation {
-    /// Detail rows in canonical order.
+    /// Detail rows in producer order.
     pub rows: Vec<UsageDetailRow>,
 }
 

@@ -4,6 +4,8 @@
 //! Tests for `image`.
 use super::*;
 use jackin_core::Agent;
+#[cfg(unix)]
+use jackin_core::{CommandRunner, RunOptions};
 use jackin_image::{
     LABEL_IMAGE_CAPSULE_VERSION, LABEL_IMAGE_MANIFEST_VERSION, LABEL_IMAGE_RECIPE_HASH,
     LABEL_IMAGE_RECIPE_VERSION, image_recipe::build_image_recipe,
@@ -11,21 +13,151 @@ use jackin_image::{
 use jackin_test_support::{FakeDockerClient, FakeRunner};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Mutex, MutexGuard};
+#[cfg(unix)]
+use std::{os::unix::fs::PermissionsExt, path::Path, process::Command as ProcessCommand};
+
+#[cfg(unix)]
+const BUILD_TOKEN_TEST_CHILD: &str = "JACKIN_BUILD_TOKEN_TEST_CHILD";
+#[cfg(unix)]
+const BUILD_TOKEN_TEST_MARKER: &str = "JACKIN_BUILD_TOKEN_TEST_MARKER";
+#[cfg(unix)]
+const BUILD_TOKEN_TEST_GITHUB_TOKEN: &str = "FAKE_GITHUB_TOKEN_CANARY";
+#[cfg(unix)]
+const BUILD_TOKEN_TEST_GH_TOKEN: &str = "FAKE_GH_TOKEN_CANARY";
+#[cfg(unix)]
+const BUILD_TOKEN_TEST_GH_CLI: &str = "FAKE_GH_CLI_TOKEN_CANARY";
+
+#[cfg(unix)]
+#[derive(Default)]
+struct BuildSecurityRunner {
+    commands: Vec<String>,
+    secret_commands: Vec<String>,
+    docker_build_options: Vec<RunOptions>,
+    docker_build_count: usize,
+    fail_docker_build_at: Option<usize>,
+    execute_fake_gh: bool,
+}
+
+#[cfg(unix)]
+impl CommandRunner for BuildSecurityRunner {
+    async fn run(
+        &mut self,
+        program: &str,
+        args: &[&str],
+        _cwd: Option<&Path>,
+        opts: &RunOptions,
+    ) -> anyhow::Result<()> {
+        self.commands.push(format!("{program} {}", args.join(" ")));
+        if program == "docker" && args.first() == Some(&"build") {
+            self.docker_build_count += 1;
+            self.docker_build_options.push(opts.clone());
+            if self.fail_docker_build_at == Some(self.docker_build_count) {
+                anyhow::bail!("simulated Docker BuildKit failure");
+            }
+        }
+        Ok(())
+    }
+
+    async fn capture(
+        &mut self,
+        program: &str,
+        args: &[&str],
+        _cwd: Option<&Path>,
+    ) -> anyhow::Result<String> {
+        self.commands.push(format!("{program} {}", args.join(" ")));
+        if program == "git" && args.contains(&"remote") {
+            return Ok("https://github.com/example/agent-smith.git".to_owned());
+        }
+        if program == "git" && args.contains(&"rev-parse") {
+            return Ok("main".to_owned());
+        }
+        Ok(String::new())
+    }
+
+    async fn capture_secret(
+        &mut self,
+        program: &str,
+        args: &[&str],
+        _cwd: Option<&Path>,
+    ) -> anyhow::Result<String> {
+        self.secret_commands
+            .push(format!("{program} {}", args.join(" ")));
+        if !self.execute_fake_gh {
+            return Ok(BUILD_TOKEN_TEST_GH_CLI.to_owned());
+        }
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "test fake executes a fixture credential command off runtime threads"
+        )]
+        let output = ProcessCommand::new(program).args(args).output()?;
+        anyhow::ensure!(output.status.success(), "fake credential command failed");
+        Ok(String::from_utf8(output.stdout)?)
+    }
+}
+
+#[cfg(unix)]
+async fn build_test_agent_image(runner: &mut BuildSecurityRunner) -> anyhow::Result<()> {
+    let temp = tempfile::tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let selector = RoleSelector::new(None, "agent-smith");
+    let cached_repo = CachedRepo::new(&paths, &selector);
+    jackin_test_support::seed_valid_role_repo(&cached_repo.repo_dir);
+    std::fs::write(
+        cached_repo.repo_dir.join("Dockerfile"),
+        format!(
+            "{}RUN --mount=type=secret,id=github_token echo private-dependency\n",
+            jackin_test_support::TEST_DOCKERFILE_FROM
+        ),
+    )?;
+
+    let source_url = "https://github.com/example/agent-smith.git";
+    let (cached_repo, validated_repo, repo_lock) =
+        crate::runtime::repo_cache::resolve_agent_repo_with(
+            &paths,
+            &selector,
+            source_url,
+            runner,
+            crate::runtime::repo_cache::RepoResolveOptions::interactive(false),
+            || Ok(false),
+        )
+        .await?;
+    let capsule = temp.path().join("jackin-capsule");
+    std::fs::write(&capsule, b"fake capsule binary")?;
+    let runtime_binaries = PreparedRuntimeBinaries {
+        agent_installs: BTreeMap::from([(Agent::Claude, AgentInstall::ScriptFallback)]),
+        prefetched_agent_versions: BTreeMap::new(),
+        jackin_capsule_src: capsule.display().to_string(),
+    };
+    let docker = FakeDockerClient::default();
+
+    build_agent_image(
+        &paths,
+        &selector,
+        &cached_repo,
+        &validated_repo,
+        Agent::Claude,
+        runtime_binaries,
+        false,
+        ImageInvalidationReason::LocalImageMissing,
+        None,
+        false,
+        None,
+        &docker,
+        runner,
+        repo_lock,
+        Some("abc123"),
+        None,
+    )
+    .await?;
+    Ok(())
+}
 
 static RICH_SURFACE_TEST_LOCK: Mutex<()> = Mutex::new(());
 
-#[test]
-fn github_token_recovery_export_is_bodyless() {
-    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
-    tracing::subscriber::with_default(subscriber, record_github_token_recovery);
-
-    export.force_flush();
-    assert_eq!(export.event_count("operation.warn"), 1);
-    assert!(export.contains_log_text("recovered_degradation"));
-    for private in ["token", "command", "stderr", "path", "raw error"] {
-        assert!(!export.contains_log_text(private));
-    }
-}
+const IMAGE_BUILD_SOURCE: &str = include_str!("build.rs");
+const IMAGE_VERSION_SOURCE: &str = include_str!("version.rs");
+const IMAGE_MODULE_SOURCE: &str = include_str!("../image.rs");
+const SHARED_IMAGE_BUILD_SOURCE: &str = include_str!("../../../../jackin-image/src/image_build.rs");
 
 struct RichSurfaceTestGuard {
     _guard: MutexGuard<'static, ()>,
@@ -104,16 +236,193 @@ fn docker_info_store_parser_detects_containerd_snapshotter() {
 }
 
 #[test]
-fn dockerfile_secret_detection_only_requests_github_token_when_used() {
-    assert!(!dockerfile_body_requests_github_token_secret(
-        "FROM projectjackin/construct:0.1-trixie\nRUN echo no secrets\n"
-    ));
-    assert!(!dockerfile_body_requests_github_token_secret(
-        "FROM projectjackin/construct:0.1-trixie\n# RUN --mount=type=secret,id=github_token git ls-remote https://github.com/example/private\n"
-    ));
-    assert!(dockerfile_body_requests_github_token_secret(
-        "FROM projectjackin/construct:0.1-trixie\nRUN --mount=type=secret,id=github_token git ls-remote https://github.com/example/private\n"
-    ));
+fn image_build_sources_have_no_ambient_github_secret_contract() {
+    for forbidden in [
+        "resolve_github_token",
+        "NamedTempFile",
+        "--secret",
+        "id=github_token",
+        "gh auth token",
+    ] {
+        assert!(
+            !IMAGE_BUILD_SOURCE.contains(forbidden),
+            "runtime image builder retained forbidden ambient-secret plumbing: {forbidden}"
+        );
+    }
+    assert!(!IMAGE_VERSION_SOURCE.contains("resolve_github_token"));
+    assert!(!IMAGE_VERSION_SOURCE.contains("capture_secret"));
+    assert!(!IMAGE_VERSION_SOURCE.contains("GITHUB_TOKEN"));
+    assert!(!IMAGE_VERSION_SOURCE.contains("GH_TOKEN"));
+    for source in [IMAGE_MODULE_SOURCE, SHARED_IMAGE_BUILD_SOURCE] {
+        assert!(!source.contains("dockerfile_requests_github_token_secret"));
+        assert!(!source.contains("dockerfile_body_requests_github_token_secret"));
+        assert!(!source.contains("id=github_token"));
+    }
+}
+
+#[cfg(unix)]
+#[tokio::test]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "test re-execs itself in an isolated child for env hermeticity"
+)]
+async fn ambient_github_credentials_are_not_forwarded_to_buildkit() -> anyhow::Result<()> {
+    const CHILD_TEST: &str =
+        "runtime::image::tests::ambient_github_credentials_are_not_forwarded_to_buildkit";
+
+    if let Some(case) = std::env::var_os(BUILD_TOKEN_TEST_CHILD) {
+        let marker = std::env::var_os(BUILD_TOKEN_TEST_MARKER)
+            .map(PathBuf::from)
+            .ok_or_else(|| anyhow::anyhow!("isolated test omitted the fake gh marker path"))?;
+        match case.to_str() {
+            Some("github-token") => anyhow::ensure!(
+                std::env::var("GITHUB_TOKEN").ok().as_deref()
+                    == Some(BUILD_TOKEN_TEST_GITHUB_TOKEN)
+                    && std::env::var_os("GH_TOKEN").is_none(),
+                "GITHUB_TOKEN child did not receive its fake-only credential"
+            ),
+            Some("gh-token") => anyhow::ensure!(
+                std::env::var("GH_TOKEN").ok().as_deref() == Some(BUILD_TOKEN_TEST_GH_TOKEN)
+                    && std::env::var_os("GITHUB_TOKEN").is_none(),
+                "GH_TOKEN child did not receive its fake-only credential"
+            ),
+            Some("gh-cli") => anyhow::ensure!(
+                std::env::var_os("GITHUB_TOKEN").is_none()
+                    && std::env::var_os("GH_TOKEN").is_none(),
+                "gh CLI child inherited a process token"
+            ),
+            _ => anyhow::bail!("unknown isolated test case"),
+        }
+
+        let mut runner = BuildSecurityRunner {
+            execute_fake_gh: true,
+            ..BuildSecurityRunner::default()
+        };
+        build_test_agent_image(&mut runner).await?;
+
+        let docker_builds: Vec<&str> = runner
+            .commands
+            .iter()
+            .filter(|command| command.starts_with("docker build "))
+            .map(String::as_str)
+            .collect();
+        anyhow::ensure!(
+            docker_builds.len() == 2,
+            "expected role-base and derived BuildKit invocations, got {docker_builds:?}"
+        );
+        for command in docker_builds {
+            anyhow::ensure!(
+                !command.contains("--secret")
+                    && !command.contains("id=github_token")
+                    && !command.contains("src="),
+                "ambient credentials created a BuildKit secret argument: {command}"
+            );
+            for canary in [
+                BUILD_TOKEN_TEST_GITHUB_TOKEN,
+                BUILD_TOKEN_TEST_GH_TOKEN,
+                BUILD_TOKEN_TEST_GH_CLI,
+            ] {
+                anyhow::ensure!(
+                    !command.contains(canary),
+                    "credential canary reached Docker argv: {command}"
+                );
+            }
+        }
+        anyhow::ensure!(
+            runner.secret_commands.is_empty(),
+            "image builds must not ask the credential resolver: {:?}",
+            runner.secret_commands
+        );
+        anyhow::ensure!(
+            !marker.exists(),
+            "fake gh auth token executable was invoked"
+        );
+        anyhow::ensure!(
+            runner
+                .docker_build_options
+                .iter()
+                .all(|options| options.extra_env == docker_build_env()),
+            "BuildKit environment defaults changed"
+        );
+        return Ok(());
+    }
+
+    let temp = tempfile::tempdir()?;
+    let fake_bin = temp.path().join("bin");
+    std::fs::create_dir_all(&fake_bin)?;
+    let fake_gh = fake_bin.join("gh");
+    std::fs::write(
+        &fake_gh,
+        format!(
+            "#!/bin/sh\nprintf '%s\\n' invoked > \"${BUILD_TOKEN_TEST_MARKER}\"\nprintf '%s\\n' '{BUILD_TOKEN_TEST_GH_CLI}'\n"
+        ),
+    )?;
+    let mut permissions = std::fs::metadata(&fake_gh)?.permissions();
+    permissions.set_mode(0o755);
+    std::fs::set_permissions(&fake_gh, permissions)?;
+    let original_path = std::env::var_os("PATH").unwrap_or_default();
+    let child_path = std::env::join_paths(
+        std::iter::once(fake_bin).chain(std::env::split_paths(&original_path)),
+    )?;
+
+    for (case, token) in [
+        (
+            "github-token",
+            Some(("GITHUB_TOKEN", BUILD_TOKEN_TEST_GITHUB_TOKEN)),
+        ),
+        ("gh-token", Some(("GH_TOKEN", BUILD_TOKEN_TEST_GH_TOKEN))),
+        ("gh-cli", None),
+    ] {
+        let marker = temp.path().join(format!("{case}.marker"));
+        let mut command = ProcessCommand::new(std::env::current_exe()?);
+        command
+            .args(["--exact", CHILD_TEST, "--nocapture"])
+            .env(BUILD_TOKEN_TEST_CHILD, case)
+            .env(BUILD_TOKEN_TEST_MARKER, &marker)
+            .env("PATH", &child_path)
+            .env_remove("GITHUB_TOKEN")
+            .env_remove("GH_TOKEN");
+        if let Some((name, value)) = token {
+            command.env(name, value);
+        }
+        let output = command.output()?;
+        anyhow::ensure!(
+            output.status.success(),
+            "isolated {case} build-token test failed:\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        anyhow::ensure!(
+            !marker.exists(),
+            "fake gh auth token executable ran in the {case} case"
+        );
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn buildkit_errors_propagate_from_role_base_and_derived_builds() -> anyhow::Result<()> {
+    for failed_build in [1, 2] {
+        let mut runner = BuildSecurityRunner {
+            fail_docker_build_at: Some(failed_build),
+            ..BuildSecurityRunner::default()
+        };
+        let error = build_test_agent_image(&mut runner)
+            .await
+            .expect_err("Docker BuildKit failure must propagate to the image caller");
+        anyhow::ensure!(
+            error
+                .to_string()
+                .contains("simulated Docker BuildKit failure"),
+            "unexpected image build error: {error:#}"
+        );
+        anyhow::ensure!(
+            runner.docker_build_count == failed_build,
+            "expected build failure at invocation {failed_build}, got {} builds",
+            runner.docker_build_count
+        );
+    }
+    Ok(())
 }
 
 #[test]

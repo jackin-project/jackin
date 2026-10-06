@@ -591,10 +591,26 @@ pub struct HostDesktopInventory {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HostDesktopProviderProjection {
     pub group: HostDesktopProviderGroup,
-    pub selected_account_key: Option<String>,
+    pub selected_account_route: HostSelectedAccountRoute,
     pub selected_usage: FocusedUsageView,
     pub identity: UsageIdentityPresentation,
     pub is_updating: bool,
+}
+
+/// Exact persisted-account route and its membership resolution for one provider.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HostSelectedAccountRoute {
+    /// No persisted account choice exists for this provider.
+    Unselected,
+    /// The persisted key exists, but cold discovery has not established membership yet.
+    Resolving { account_key: String },
+    /// The exact persisted key is present in the account catalog.
+    Available { account_key: String },
+    /// Discovery completed and the exact persisted key is absent from the catalog.
+    Unavailable {
+        account_key: String,
+        notice: &'static str,
+    },
 }
 
 /// One immutable Desktop state boundary, produced while the runtime is locked.
@@ -936,6 +952,14 @@ impl HostUsageRuntime {
         let view = self
             .selected_view_for_catalog(&catalog, surface)
             .unwrap_or(live);
+        Ok(self.with_discovery_diagnostic(surface, view))
+    }
+
+    fn with_discovery_diagnostic(
+        &self,
+        surface: HostSurfaceId,
+        view: FocusedUsageView,
+    ) -> FocusedUsageView {
         // A cold placeholder must never mask a known discovery failure: when
         // no refresh is in flight and discovery already diagnosed this
         // surface, surface the honest needs-login/unavailable view instead.
@@ -943,9 +967,9 @@ impl HostUsageRuntime {
             && !self.surface_refresh_in_progress(surface.id())
             && let Some(honest) = self.diagnostic_view_for_surface(surface)
         {
-            return Ok(honest);
+            return honest;
         }
-        Ok(view)
+        view
     }
 
     /// Honest view for a surface whose discovery already failed.
@@ -1392,6 +1416,13 @@ impl HostUsageRuntime {
         self.require_open()?;
         let catalog = self.materialize_account_catalog()?;
         self.reconcile_selected_accounts(&catalog, HostSurfaceId::DESKTOP_PROVIDER_ORDER)?;
+        self.desktop_inventory_for_catalog(&catalog)
+    }
+
+    fn desktop_inventory_for_catalog(
+        &mut self,
+        catalog: &accounts::AccountCatalog,
+    ) -> Result<HostDesktopInventory, String> {
         let now = chrono::Utc::now().timestamp();
         let prefs = self.format_prefs;
         let mut groups = Vec::new();
@@ -1405,7 +1436,7 @@ impl HostUsageRuntime {
                 .iter()
                 .any(|entry| entry.lifecycle == AccountLifecycle::Current);
             let provider_state = catalog.provider_state(surface);
-            let detected = if self.selected_account_missing(&catalog, surface)
+            let detected = if self.selected_account_missing(catalog, surface)
                 || has_current
                 || provider_state.is_some_and(view_is_auto_detected)
             {
@@ -1436,7 +1467,7 @@ impl HostUsageRuntime {
                 .collect::<Vec<_>>();
             let empty_state = accounts.is_empty().then(|| {
                 let view = self
-                    .selected_view_for_catalog(&catalog, surface)
+                    .selected_view_for_catalog(catalog, surface)
                     .unwrap_or_else(|| {
                         self.cache
                             .focused_snapshot(Some(surface.agent_slug()), surface.provider_label())
@@ -1486,18 +1517,26 @@ impl HostUsageRuntime {
     ) -> Result<HostDesktopProjection, String> {
         self.require_open()?;
         let surfaces = self.list_surfaces()?;
-        let inventory = self.desktop_inventory()?;
+        let catalog = self.materialize_account_catalog()?;
+        self.reconcile_selected_accounts(&catalog, HostSurfaceId::DESKTOP_PROVIDER_ORDER)?;
+        let inventory = self.desktop_inventory_for_catalog(&catalog)?;
         let mut providers = Vec::with_capacity(inventory.groups.len());
         for group in inventory.groups {
-            let surface_id = group.surface_id.clone();
-            let selected_account_key = self.selected_accounts.get(&surface_id).cloned();
-            let selected_usage = self.snapshot(&surface_id)?;
-            let is_updating = self.surface_refresh_in_progress(&surface_id);
+            let surface = HostSurfaceId::from_id(&group.surface_id)
+                .ok_or_else(|| format!("unknown desktop provider: {}", group.surface_id))?;
+            let (selected_account_route, selected_usage) =
+                self.selected_route_and_view_for_catalog(&catalog, surface);
+            let selected_usage = selected_usage.unwrap_or_else(|| {
+                self.cache
+                    .focused_snapshot(Some(surface.agent_slug()), surface.provider_label())
+            });
+            let selected_usage = self.with_discovery_diagnostic(surface, selected_usage);
+            let is_updating = self.surface_refresh_in_progress(surface.id());
             let identity =
                 usage_identity_presentation(&group.display_label, &selected_usage, is_updating);
             providers.push(HostDesktopProviderProjection {
                 group,
-                selected_account_key,
+                selected_account_route,
                 selected_usage,
                 identity,
                 is_updating,
@@ -1751,23 +1790,50 @@ impl HostUsageRuntime {
         catalog: &accounts::AccountCatalog,
         surface: HostSurfaceId,
     ) -> Option<FocusedUsageView> {
-        match self.selected_accounts.get(surface.id()) {
-            Some(key) => match catalog.entry(surface, key) {
-                Some(entry) => Some(entry.view.clone()),
-                None if self.discovery.is_none()
-                    && catalog.entries_for_surface(surface).is_empty()
-                    && catalog
-                        .provider_state(surface)
-                        .is_some_and(FocusedUsageView::is_refreshing_placeholder) =>
-                {
-                    // Before membership is known, retain honest loading without
-                    // borrowing another account's identity or quota.
-                    catalog.provider_state(surface).cloned()
-                }
-                None => Some(selected_account_unavailable_view(surface)),
-            },
-            None => catalog.provider_state(surface).cloned(),
+        self.selected_route_and_view_for_catalog(catalog, surface).1
+    }
+
+    fn selected_route_and_view_for_catalog(
+        &self,
+        catalog: &accounts::AccountCatalog,
+        surface: HostSurfaceId,
+    ) -> (HostSelectedAccountRoute, Option<FocusedUsageView>) {
+        let Some(key) = self.selected_accounts.get(surface.id()) else {
+            return (
+                HostSelectedAccountRoute::Unselected,
+                catalog.provider_state(surface).cloned(),
+            );
+        };
+        if let Some(entry) = catalog.entry(surface, key) {
+            return (
+                HostSelectedAccountRoute::Available {
+                    account_key: key.clone(),
+                },
+                Some(entry.view.clone()),
+            );
         }
+        if self.discovery.is_none()
+            && catalog.entries_for_surface(surface).is_empty()
+            && catalog
+                .provider_state(surface)
+                .is_some_and(FocusedUsageView::is_refreshing_placeholder)
+        {
+            // Before membership is known, retain honest loading without
+            // borrowing another account's identity or quota.
+            return (
+                HostSelectedAccountRoute::Resolving {
+                    account_key: key.clone(),
+                },
+                catalog.provider_state(surface).cloned(),
+            );
+        }
+        (
+            HostSelectedAccountRoute::Unavailable {
+                account_key: key.clone(),
+                notice: SELECTED_ACCOUNT_UNAVAILABLE_NOTICE,
+            },
+            Some(selected_account_unavailable_view(surface)),
+        )
     }
 
     fn require_open(&self) -> Result<(), String> {

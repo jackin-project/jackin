@@ -79,8 +79,8 @@ pub(crate) fn resolve_launch_role_source(
 
 pub(crate) async fn render_exit(paths: &JackinPaths, docker: &impl DockerApi) {
     let force_outro = crate::runtime::universe::force_boundary_outro_enabled();
-    let running = match super::list_running_agent_names(docker).await {
-        Ok(names) => names,
+    let (running, exit_claim) = match crate::runtime::universe::observe_exit(paths, docker).await {
+        Ok(observation) => observation,
         Err(e) => {
             if let Some(run) = jackin_diagnostics::active_run() {
                 run.compact(
@@ -119,7 +119,7 @@ pub(crate) async fn render_exit(paths: &JackinPaths, docker: &impl DockerApi) {
     let elapsed = if force_outro && !running.is_empty() {
         None
     } else {
-        match crate::runtime::universe::take_exit_claim(paths) {
+        match exit_claim {
             ExitClaim::Claimed { elapsed } => elapsed,
             ExitClaim::Missing if force_outro => None,
             ExitClaim::Missing => return,

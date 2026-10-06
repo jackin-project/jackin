@@ -501,3 +501,35 @@ fn launch_accounts_require_workspace_assignment_and_agent_support() {
     assert!(accounts_for_launch(&config, Some(&wn("demo")), Agent::Claude).is_empty());
     assert!(account_choices(&config, Some(&wn("demo"))).is_empty());
 }
+
+#[test]
+fn configured_picker_selection_preserves_exact_configuration() {
+    let row = AccountChoice {
+        id: "shared-account".into(),
+        name: "Shared account".into(),
+        provider: AiProvider::Anthropic,
+        agents: vec![Agent::Claude],
+        configuration_id: Some("claude-deep".into()),
+        instance_id: None,
+    };
+    assert_eq!(
+        row.into_launch_selection(),
+        jackin_core::LaunchSelection::Configuration("claude-deep".into())
+    );
+}
+
+#[test]
+fn unconfigured_picker_selection_preserves_account() {
+    let row = AccountChoice {
+        id: "shared-account".into(),
+        name: "Shared account".into(),
+        provider: AiProvider::Anthropic,
+        agents: vec![Agent::Claude],
+        configuration_id: None,
+        instance_id: None,
+    };
+    assert_eq!(
+        row.into_launch_selection(),
+        jackin_core::LaunchSelection::Account("shared-account".into())
+    );
+}

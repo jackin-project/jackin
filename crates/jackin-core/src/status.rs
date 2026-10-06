@@ -10,13 +10,15 @@
 //! — so it lives in `jackin-core` and both crates reach it without depending on
 //! each other.
 
-/// Shell command the capsule-side daemon runs to report its session state on
-/// the status socket. The unary `test -S` precedes the runtime invocation so
-/// the daemon is gated on the socket being present — without the guard a
-/// missing socket surfaces as `jackin-capsule status` failing loudly rather
-/// than silently producing an empty status body.
-pub const JACKIN_STATUS_CMD: &str =
-    "test -S /jackin/run/jackin.sock && /jackin/runtime/jackin-capsule status";
+/// Build the Capsule status command with the caller's required protocol
+/// major. The preflight is read-only and must pass before `status` can issue a
+/// control request.
+#[must_use]
+pub fn jackin_status_command(expected_protocol_major: u16) -> String {
+    format!(
+        "test -S /jackin/run/jackin.sock && /jackin/runtime/jackin-capsule protocol-check --expected-major {expected_protocol_major} && /jackin/runtime/jackin-capsule status"
+    )
+}
 
 /// Parse the `Sessions: <N>` header from `jackin-capsule status` output.
 /// Returns `None` if no parsable header line is present — daemon unreachable,

@@ -125,7 +125,16 @@ pub struct WorkspaceRoleOverride {
     pub github: Option<GithubAuthConfig>,
 }
 
-impl WorkspaceRoleOverride {}
+impl WorkspaceRoleOverride {
+    /// Whether every role-specific value is at its default.
+    ///
+    /// An explicit empty launch list is not default: it disables inherited
+    /// launch selections.
+    #[must_use]
+    pub fn is_default(&self) -> bool {
+        self == &Self::default()
+    }
+}
 
 // ─── Runtime backend selection ───────────────────────────────────────────────
 

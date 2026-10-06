@@ -14,9 +14,9 @@ use jackin_core::container_paths;
 /// Listens on `/jackin/run/jackin.sock`. Two protocols share the socket:
 /// the **control channel** (length-prefixed JSON, used by the host CLI
 /// for one-shot queries) and the **attach channel** (binary tag+length
-/// frames, used by interactive clients). The two are disambiguated by
-/// the first byte of the connection — `0x00` means a length prefix
-/// (control), anything else is an attach-channel tag.
+/// frames, used by interactive clients). Every client first negotiates
+/// the shared Capsule transport major. Only after the exact ACK does
+/// the first application byte route control (`0x00`) or attach frames.
 ///
 /// Path lives under the `/jackin/` container-root convention (see
 /// AGENTS.md "Container path convention"): every jackin-owned mount,
