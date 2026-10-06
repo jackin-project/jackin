@@ -1,6 +1,13 @@
 use super::*;
 use std::{fs, io::Write, path::Path, process::Command};
 
+// Frozen copies of the last rendered evidence-observer workflows. The live
+// files were dropped from `.github/workflows/` because the pinned
+// velnor-actions renderer rejects non-generated files; the contract and
+// tamper-binding validators still exercise their exact last-known shapes.
+const CI_EVIDENCE_WORKFLOW_FIXTURE: &str = include_str!("fixtures/ci-evidence.yml");
+const CI_PUSH_HEAD_LEDGER_WORKFLOW_FIXTURE: &str = include_str!("fixtures/ci-push-head-ledger.yml");
+
 fn commit_from_source(sha: &str, source: DenominatorSource) -> ExpectedCommit {
     ExpectedCommit {
         sha: sha.to_owned(),
@@ -1905,22 +1912,33 @@ fn fake_git_commit_identity_is_rejected() {
 fn generated_evidence_workflows_are_complete_and_tamper_bound() {
     // Post-#1110 the repo no longer carries the velnor-workflow contract or
     // generator state (main commit 6c389d38e deleted .github-gen/ and
-    // .github/ci/ as "legacy velnor-workflow generator files"), so the
-    // tamper-binding assertions below run against a fixture: the REAL
-    // surviving evidence workflows and task contract copied from this repo,
-    // plus a synthesized workflow contract and ownership state.
+    // .github/ci/ as "legacy velnor-workflow generator files"), and the
+    // all-branches consolidation dropped the two evidence-observer workflow
+    // stubs because the pinned renderer rejects non-generated files. The
+    // tamper-binding assertions below therefore run against frozen fixtures
+    // (the last rendered observer workflows) plus the live task contract
+    // copied from this repo and a synthesized workflow contract and
+    // ownership state.
     let root = docs::repo_root().unwrap();
     let directory = tempfile::tempdir().unwrap();
     let copy = directory.path();
-    for relative in [
-        ".github/workflows/ci-evidence.yml",
-        ".github/workflows/ci-push-head-ledger.yml",
-        MISE_PATH,
+    for (relative, contents) in [
+        (
+            ".github/workflows/ci-evidence.yml",
+            CI_EVIDENCE_WORKFLOW_FIXTURE,
+        ),
+        (
+            ".github/workflows/ci-push-head-ledger.yml",
+            CI_PUSH_HEAD_LEDGER_WORKFLOW_FIXTURE,
+        ),
     ] {
         let destination = copy.join(relative);
         fs::create_dir_all(destination.parent().unwrap()).unwrap();
-        fs::copy(root.join(relative), destination).unwrap();
+        fs::write(destination, contents).unwrap();
     }
+    let destination = copy.join(MISE_PATH);
+    fs::create_dir_all(destination.parent().unwrap()).unwrap();
+    fs::copy(root.join(MISE_PATH), destination).unwrap();
     let contract = "schema = 2\n\
          \n\
          [generator]\n\
@@ -2025,11 +2043,7 @@ fn generated_evidence_workflows_are_complete_and_tamper_bound() {
     );
 
     fs::write(&state_path, &pristine_state).unwrap();
-    fs::copy(
-        root.join(".github/workflows/ci-evidence.yml"),
-        &workflow_path,
-    )
-    .unwrap();
+    fs::write(&workflow_path, CI_EVIDENCE_WORKFLOW_FIXTURE).unwrap();
     #[expect(
         clippy::disallowed_methods,
         reason = "the synchronous xtask test edits a generated workflow fixture"
@@ -2049,9 +2063,8 @@ fn generated_evidence_workflows_are_complete_and_tamper_bound() {
 
 #[test]
 fn generated_evidence_workflows_reject_skip_controls() {
-    let root = docs::repo_root().unwrap();
-    let bytes = fs::read(root.join(".github/workflows/ci-evidence.yml")).unwrap();
-    let workflow: serde_json::Value = serde_yaml_ng::from_slice(&bytes).unwrap();
+    let workflow: serde_json::Value =
+        serde_yaml_ng::from_slice(CI_EVIDENCE_WORKFLOW_FIXTURE.as_bytes()).unwrap();
     let contract = EvidenceWorkflowContract {
         file: DEFAULT_CI_EVIDENCE_WORKFLOW,
         display_name: "CI first-attempt evidence",
@@ -2085,9 +2098,8 @@ fn generated_evidence_workflows_reject_skip_controls() {
 
 #[test]
 fn push_head_ledger_requires_full_history_checkout() {
-    let root = docs::repo_root().unwrap();
-    let bytes = fs::read(root.join(".github/workflows/ci-push-head-ledger.yml")).unwrap();
-    let workflow: serde_json::Value = serde_yaml_ng::from_slice(&bytes).unwrap();
+    let workflow: serde_json::Value =
+        serde_yaml_ng::from_slice(CI_PUSH_HEAD_LEDGER_WORKFLOW_FIXTURE.as_bytes()).unwrap();
     let contract = EvidenceWorkflowContract {
         file: DEFAULT_PUSH_HEAD_LEDGER_WORKFLOW,
         display_name: "CI push-head ledger",

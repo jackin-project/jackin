@@ -40,58 +40,79 @@ struct BuildSecurityRunner {
 
 #[cfg(unix)]
 impl CommandRunner for BuildSecurityRunner {
-    async fn run(
+    #[expect(
+        clippy::manual_async_fn,
+        reason = "desugared so the sync-bodied fake satisfies 1.98's \
+         `unused_async_trait_impl`; the trait still requires a `Future`"
+    )]
+    fn run(
         &mut self,
         program: &str,
         args: &[&str],
         _cwd: Option<&Path>,
         opts: &RunOptions,
-    ) -> anyhow::Result<()> {
-        self.commands.push(format!("{program} {}", args.join(" ")));
-        if program == "docker" && args.first() == Some(&"build") {
-            self.docker_build_count += 1;
-            self.docker_build_options.push(opts.clone());
-            if self.fail_docker_build_at == Some(self.docker_build_count) {
-                anyhow::bail!("simulated Docker BuildKit failure");
+    ) -> impl Future<Output = anyhow::Result<()>> {
+        async move {
+            self.commands.push(format!("{program} {}", args.join(" ")));
+            if program == "docker" && args.first() == Some(&"build") {
+                self.docker_build_count += 1;
+                self.docker_build_options.push(opts.clone());
+                if self.fail_docker_build_at == Some(self.docker_build_count) {
+                    anyhow::bail!("simulated Docker BuildKit failure");
+                }
             }
+            Ok(())
         }
-        Ok(())
     }
 
-    async fn capture(
+    #[expect(
+        clippy::manual_async_fn,
+        reason = "desugared so the sync-bodied fake satisfies 1.98's \
+         `unused_async_trait_impl`; the trait still requires a `Future`"
+    )]
+    fn capture(
         &mut self,
         program: &str,
         args: &[&str],
         _cwd: Option<&Path>,
-    ) -> anyhow::Result<String> {
-        self.commands.push(format!("{program} {}", args.join(" ")));
-        if program == "git" && args.contains(&"remote") {
-            return Ok("https://github.com/example/agent-smith.git".to_owned());
+    ) -> impl Future<Output = anyhow::Result<String>> {
+        async move {
+            self.commands.push(format!("{program} {}", args.join(" ")));
+            if program == "git" && args.contains(&"remote") {
+                return Ok("https://github.com/example/agent-smith.git".to_owned());
+            }
+            if program == "git" && args.contains(&"rev-parse") {
+                return Ok("main".to_owned());
+            }
+            Ok(String::new())
         }
-        if program == "git" && args.contains(&"rev-parse") {
-            return Ok("main".to_owned());
-        }
-        Ok(String::new())
     }
 
-    async fn capture_secret(
+    #[expect(
+        clippy::manual_async_fn,
+        reason = "desugared so the sync-bodied fake satisfies 1.98's \
+         `unused_async_trait_impl`; the trait still requires a `Future`"
+    )]
+    fn capture_secret(
         &mut self,
         program: &str,
         args: &[&str],
         _cwd: Option<&Path>,
-    ) -> anyhow::Result<String> {
-        self.secret_commands
-            .push(format!("{program} {}", args.join(" ")));
-        if !self.execute_fake_gh {
-            return Ok(BUILD_TOKEN_TEST_GH_CLI.to_owned());
+    ) -> impl Future<Output = anyhow::Result<String>> {
+        async move {
+            self.secret_commands
+                .push(format!("{program} {}", args.join(" ")));
+            if !self.execute_fake_gh {
+                return Ok(BUILD_TOKEN_TEST_GH_CLI.to_owned());
+            }
+            #[expect(
+                clippy::disallowed_methods,
+                reason = "test fake executes a fixture credential command off runtime threads"
+            )]
+            let output = ProcessCommand::new(program).args(args).output()?;
+            anyhow::ensure!(output.status.success(), "fake credential command failed");
+            Ok(String::from_utf8(output.stdout)?)
         }
-        #[expect(
-            clippy::disallowed_methods,
-            reason = "test fake executes a fixture credential command off runtime threads"
-        )]
-        let output = ProcessCommand::new(program).args(args).output()?;
-        anyhow::ensure!(output.status.success(), "fake credential command failed");
-        Ok(String::from_utf8(output.stdout)?)
     }
 }
 

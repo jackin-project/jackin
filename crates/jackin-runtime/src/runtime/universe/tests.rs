@@ -576,26 +576,33 @@ struct CausalInterleavingDocker {
 
 #[cfg(unix)]
 impl DockerApi for CausalInterleavingDocker {
-    async fn list_containers(
+    #[expect(
+        clippy::manual_async_fn,
+        reason = "desugared so the sync-bodied fake satisfies 1.98's \
+         `unused_async_trait_impl`; the trait still requires a `Future`"
+    )]
+    fn list_containers(
         &self,
         _label_filters: &[&str],
         _all: bool,
-    ) -> anyhow::Result<Vec<ContainerRow>> {
-        let snapshot = self.current_containers.lock().unwrap().clone();
-        let call_number = {
-            let mut observations = self.observations.lock().unwrap();
-            observations.push(snapshot.clone());
-            observations.len()
-        };
-        if call_number == 1 {
-            self.first_observation.send(()).unwrap();
-            self.release_first_observation
-                .lock()
-                .unwrap()
-                .recv()
-                .unwrap();
+    ) -> impl Future<Output = anyhow::Result<Vec<ContainerRow>>> {
+        async move {
+            let snapshot = self.current_containers.lock().unwrap().clone();
+            let call_number = {
+                let mut observations = self.observations.lock().unwrap();
+                observations.push(snapshot.clone());
+                observations.len()
+            };
+            if call_number == 1 {
+                self.first_observation.send(()).unwrap();
+                self.release_first_observation
+                    .lock()
+                    .unwrap()
+                    .recv()
+                    .unwrap();
+            }
+            Ok(snapshot)
         }
-        Ok(snapshot)
     }
 
     forward_docker_api_methods! {

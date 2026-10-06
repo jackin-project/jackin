@@ -26,7 +26,8 @@ exclude = [
   "crates/jackin-brand/**",
   "crates/jackin-build-meta/**",
   "crates/jackin-oppicker/**",
-  "crates/jackin-pr-trailers/**"
+  "crates/jackin-pr-trailers/**",
+  "crates/jackin-omp-store/**"
 ]
 
 [stacks.rust]

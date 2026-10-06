@@ -96,14 +96,11 @@ fn assert_no_sccache_env(text: &str, context: &str) {
     }
 }
 
-/// Post-#1110 CI surface: velnor-actions 0.1.0 `ci.yml` plus the two advisory
-/// evidence observers. The legacy per-lane workflows were deleted by main
-/// commit 6c389d38e.
-const GENERATED_WORKFLOWS: [&str; 3] = [
-    ".github/workflows/ci.yml",
-    ".github/workflows/ci-evidence.yml",
-    ".github/workflows/ci-push-head-ledger.yml",
-];
+/// Post-#1110 CI surface: velnor-actions 0.1.0 `ci.yml` only. The legacy
+/// per-lane workflows were deleted by main commit 6c389d38e, and the two
+/// advisory evidence-observer stubs were dropped by the all-branches
+/// consolidation because the pinned renderer rejects non-generated files.
+const GENERATED_WORKFLOWS: [&str; 1] = [".github/workflows/ci.yml"];
 
 #[test]
 fn sccache_is_absent_from_generated_workflow_environment() {
@@ -117,7 +114,7 @@ fn sccache_is_absent_from_generated_workflow_environment() {
 fn sccache_is_absent_from_installer_environment() {
     for workflow in GENERATED_WORKFLOWS {
         let text = workspace_file(workflow);
-        // velnor-actions emits "Setup Mise"; the evidence observers use "Set up Mise".
+        // velnor-actions emits "Setup Mise" (kept tolerant of "Set up Mise").
         let setup = ["- name: Set up Mise", "- name: Setup Mise"]
             .iter()
             .filter_map(|marker| text.find(marker))

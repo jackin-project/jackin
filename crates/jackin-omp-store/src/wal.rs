@@ -286,7 +286,7 @@ fn checksum(
     if !bytes.len().is_multiple_of(8) {
         return Err(WalError::InvalidLength);
     }
-    for (index, words) in bytes.chunks_exact(8).enumerate() {
+    for (index, words) in bytes.as_chunks::<8>().0.iter().enumerate() {
         if index.is_multiple_of(CHECKSUM_DEADLINE_INTERVAL / 8) {
             check_deadline(deadline)?;
         }

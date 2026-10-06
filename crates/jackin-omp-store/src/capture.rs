@@ -534,13 +534,21 @@ struct FileIdentity {
 
 #[cfg(unix)]
 impl FileIdentity {
+    #[cfg_attr(
+        target_os = "macos",
+        expect(
+            clippy::unnecessary_fallible_conversions,
+            reason = "`st_dev`/`st_nlink` are narrow on macOS (infallible) but u64 on \
+             Linux (fallible); keep the fallible form so both targets compile"
+        )
+    )]
     fn from_stat(stat: &nix::sys::stat::FileStat) -> Self {
         Self {
-            device: i64::from(stat.st_dev),
+            device: i64::try_from(stat.st_dev).unwrap_or(i64::MAX),
             inode: stat.st_ino,
             uid: stat.st_uid,
             mode: i64::from(stat.st_mode),
-            links: i64::from(stat.st_nlink),
+            links: i64::try_from(stat.st_nlink).unwrap_or(i64::MAX),
             size: stat.st_size,
             modified: stat.st_mtime,
             changed: stat.st_ctime,
