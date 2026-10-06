@@ -163,7 +163,8 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: velnor-render-${{ github.run_id }}-a1
-          path: /home/runner/work/_temp/velnor-actions-${{ github.run_id }}-1/.github
+          path: /home/runner/work/_temp/velnor-actions-${{ github.run_id }}-1
+          include-hidden-files: true
       - name: Plan
         id: plan
         env:
