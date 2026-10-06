@@ -158,6 +158,12 @@ jobs:
           NPM_TOKEN: ""
           RUSTUP_TOOLCHAIN: 1.98.1
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0 generate --output-dir \"$RUNNER_TEMP/velnor-actions-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}\" && diff -r --brief .github \"$RUNNER_TEMP/velnor-actions-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}/.github\"'"
+      - name: Exfil render (TEMP DEBUG)
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: velnor-render-${{ github.run_id }}-a1
+          path: /home/runner/work/_temp/velnor-actions-${{ github.run_id }}-1/.github
       - name: Plan
         id: plan
         env:
