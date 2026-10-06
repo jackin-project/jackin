@@ -26,6 +26,23 @@ Boundary decision record for Ownership item 4 (plan 020). Each named concept rec
 - **`async fn` in trait Send**: public port traits that cross spawned-task boundaries require `Send`; local-only traits document the absence. No blanket `async_trait` expansion is needed on the current stable compiler.
 - **`#[non_exhaustive]`**: extensible public taxonomies such as `ConfigError` are `#[non_exhaustive]`; the two newtype constructor errors are deliberately closed because validation has an exhaustive, stable rule set.
 
+### Canonical ID admission through Serde
+
+<RepoFile path="crates/jackin-core/src/container_id.rs" label="ContainerId" /> and
+<RepoFile path="crates/jackin-core/src/session_id.rs" label="SessionId" /> use manual
+`Deserialize` implementations that call the same fallible constructors used by
+ordinary callers. Deserialization cannot bypass their admission rules:
+
+- `ContainerId::parse` rejects an empty string, any Unicode whitespace, and either
+  path separator (`/` or `\`). It preserves admitted strings without trimming or
+  imposing additional Docker-name or UUID rules.
+- `SessionId::new` accepts nonzero `u64` values and rejects zero, including when
+  deserializing. This daemon session handle is distinct from UUID session tokens.
+
+Serialization remains transparent: a container ID is a string and a session ID is
+an integer. Valid existing ID values retain their contents and meaning; this
+change rejects invalid values at admission and introduces no wire-format migration.
+
 ## Public-surface note (plan 019)
 
 Executable `public-surface` ratchet (`public_surface_pub_mods`) measures root `pub mod` counts per crate. Growth is shrink-only; API snapshots were intentionally not chosen as the gate.

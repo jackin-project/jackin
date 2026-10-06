@@ -321,6 +321,7 @@ pub struct RulePackRegistry {
 pub enum PackSource {
     Embedded,
     LocalDir(PathBuf),
+    /// Rejected until a cryptographic signature verifier is installed.
     SignedRemoteBundle(SignedPackBundle),
 }
 
@@ -338,13 +339,6 @@ pub struct SignedPackEntry {
 }
 
 const RUNTIME_PACK_DIR: &str = container_paths::AGENT_STATUS_PACKS_DIR;
-/// Local/operator-supplied signed bundles (plan 010). Not an org CA — a
-/// deterministic local-trust identity check so production can load
-/// `SignedRemoteBundle` without a network channel. Live remote fetch stays
-/// product-gated.
-const TRUSTED_PACK_BUNDLE_IDENTITY: &str = "jackin-project/agent-status-packs";
-const LOCAL_SIGNED_BUNDLE_SIGNATURE_PREFIX: &str = "jackin-agent-status-pack-bundle:v1:";
-const MAX_SIGNED_BUNDLE_BYTES: usize = 512 * 1024;
 const MAX_SIGNED_PACK_BYTES: usize = 64 * 1024;
 
 impl RulePackRegistry {
@@ -428,21 +422,6 @@ impl RulePackRegistry {
     }
 }
 
-impl SignedPackBundle {
-    /// Local-trust signature for operator/test signed bundles (plan 010).
-    #[must_use]
-    pub fn local_signature_for(identity: &str) -> String {
-        format!("{LOCAL_SIGNED_BUNDLE_SIGNATURE_PREFIX}{identity}")
-    }
-
-    /// Test alias — same as [`Self::local_signature_for`].
-    #[cfg(test)]
-    #[must_use]
-    pub fn local_test_signature_for(identity: &str) -> String {
-        Self::local_signature_for(identity)
-    }
-}
-
 fn load_embedded_packs(packs: &mut HashMap<String, RulePack>) -> anyhow::Result<()> {
     let failures = load_pack_sources(
         packs,
@@ -477,6 +456,16 @@ fn load_signed_bundle(
             return notes;
         }
     };
+    load_bundle_entries(packs, entries)
+}
+
+// Entry parsing is separate from authentication. Only the verified source path
+// may call it at runtime; parser unit tests exercise it without faking a signer.
+fn load_bundle_entries(
+    packs: &mut HashMap<String, RulePack>,
+    entries: &[SignedPackEntry],
+) -> Vec<String> {
+    let mut notes = Vec::new();
     if entries.is_empty() {
         notes.push("remote pack bundle was empty - using baked packs".to_owned());
         return notes;
@@ -504,27 +493,10 @@ fn load_signed_bundle(
 }
 
 fn verify_signed_bundle(bundle: &SignedPackBundle) -> anyhow::Result<&[SignedPackEntry]> {
-    // Production-usable local verifier (plan 010): trusted identity +
-    // deterministic local signature + size bounds. Embedded packs always
-    // remain the floor when verification fails (caller records a note).
-    anyhow::ensure!(
-        bundle.signer_identity == TRUSTED_PACK_BUNDLE_IDENTITY,
-        "remote pack bundle signer identity rejected"
-    );
-    anyhow::ensure!(
-        bundle.signature == SignedPackBundle::local_signature_for(&bundle.signer_identity),
-        "remote pack bundle signature rejected"
-    );
-    let bundle_bytes = bundle
-        .packs
-        .iter()
-        .map(|entry| entry.label.len() + entry.content.len())
-        .sum::<usize>();
-    anyhow::ensure!(
-        bundle_bytes <= MAX_SIGNED_BUNDLE_BYTES,
-        "remote pack bundle exceeds size limit"
-    );
-    Ok(&bundle.packs)
+    let _ = bundle;
+    // No production signature verifier is installed. An identity marker cannot
+    // authenticate a signer or bind pack contents, even for operator input.
+    anyhow::bail!("remote pack bundles require a production signature verifier");
 }
 
 fn load_pack_sources<'a>(

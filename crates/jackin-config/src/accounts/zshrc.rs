@@ -1071,14 +1071,18 @@ fn parse_op_read(detail: &str) -> Option<OpRef> {
     let parts = parse_op_reference(&op)?;
     let vault = &parts.vault;
     let item = &parts.item;
-    let mut path = format!("{vault}/{item}");
+    let mut path = format!(
+        "{}/{}",
+        jackin_core::encode_op_breadcrumb_segment(vault),
+        jackin_core::encode_op_breadcrumb_segment(item)
+    );
     if let Some(section) = &parts.section {
         path.push('/');
-        path.push_str(section);
+        path.push_str(&jackin_core::encode_op_breadcrumb_segment(section));
     }
     path.push('/');
     let field = &parts.field;
-    path.push_str(field);
+    path.push_str(&jackin_core::encode_op_breadcrumb_segment(field));
     Some(OpRef {
         op,
         path,

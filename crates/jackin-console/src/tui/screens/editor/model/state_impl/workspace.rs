@@ -219,7 +219,7 @@ impl<
     }
 
     /// Delete an environment key from the draft workspace or role override.
-    /// Preserve a role override while it still owns account or GitHub bindings.
+    /// Remove a role override only when every role-specific field is default.
     pub fn delete_env_var(&mut self, scope: &SecretsScopeTag, key: &str) -> anyhow::Result<()> {
         match scope {
             SecretsScopeTag::Workspace => {
@@ -229,8 +229,7 @@ impl<
                 let mut drop_role = false;
                 if let Some(override_config) = self.pending.roles.get_mut(role) {
                     override_config.env.remove(key);
-                    drop_role = override_config.env.is_empty()
-                        && override_config.account_bindings.is_empty();
+                    drop_role = override_config.is_default();
                 }
                 if drop_role {
                     self.pending.roles.remove(role);

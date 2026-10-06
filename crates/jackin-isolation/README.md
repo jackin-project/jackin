@@ -28,10 +28,11 @@ Mount isolation subsystem. Materializes per-workspace isolated git worktree moun
 
 Materialize/finalize/cleanup entry points consumed by `jackin-runtime`. Parallel materialization must partition by dependency/order group and host repo to avoid `.git` lock contention (tracked as a performance item in the code-health roadmap).
 
+Worktree add/adopt/prune and cleanup share a persistent OS lock in the repository's common Git directory. This serializes Jackin callers that use the lock. Concurrent out-of-band Git worktree mutations are unsupported: Git does not honor the lock, and an external `git worktree add --force` can still add a scratch-branch checkout between cleanup's final inventory and ref deletion. Jackin retains its cleanup journal and fails closed when its checkout inventory or exact registration identity no longer matches.
+
 ## How to verify
 
 ```sh
 cargo nextest run -p jackin-isolation
 cargo clippy -p jackin-isolation --all-targets -- -D warnings
 ```
-

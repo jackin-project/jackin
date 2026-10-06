@@ -216,7 +216,7 @@ impl super::LoadOptions {
         if !role_trust_granted(config, &role) {
             return Err(LoadOptionsError::TrustNotGranted { role });
         }
-        if let Some(account) = self.account.as_ref()
+        if let Some(jackin_core::LaunchSelection::Account(account)) = self.selection.as_ref()
             && !config.accounts.contains_key(account)
         {
             return Err(LoadOptionsError::AccountMissing {
@@ -423,24 +423,19 @@ fn replace_agent_default_launch(
     chosen_ids: &[String],
 ) -> anyhow::Result<()> {
     anyhow::ensure!(!chosen_ids.is_empty(), "launch selection cannot be empty");
-    let inherited = selected
-        .effective_default_launch(workspace, role)
-        .map(<[String]>::to_vec)
-        .ok_or_else(|| anyhow::anyhow!("no default launch set is configured"))?;
+    // Resolve inherited admission before promoting it to an explicit role list.
+    // Global defaults may contain accounts the workspace does not authorize.
+    let inherited = jackin_config::resolve_launch(selected, workspace, role, None, None)?;
     let mut replaced = false;
     let mut launch = Vec::with_capacity(inherited.len() + chosen_ids.len());
-    for configuration_id in inherited {
-        let configuration = selected
-            .agent_configurations
-            .get(&configuration_id)
-            .ok_or_else(|| anyhow::anyhow!("unknown agent configuration {configuration_id:?}"))?;
-        if configuration.agent == agent {
+    for instance in inherited {
+        if instance.agent == agent {
             if !replaced {
                 launch.extend(chosen_ids.iter().cloned());
                 replaced = true;
             }
         } else {
-            launch.push(configuration_id);
+            launch.push(instance.config_id);
         }
     }
     if !replaced {

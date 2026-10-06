@@ -2,9 +2,21 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Tests for `op_picker` component.
+use jackin_core::{OpSection, OpSectionTarget};
 use std::collections::HashSet;
 
 use super::*;
+
+fn field(id: &str, section_id: Option<&str>, reference: &str) -> OpPickerField {
+    OpPickerField {
+        id: id.to_owned(),
+        section_id: section_id.map(str::to_owned),
+        label: id.to_owned(),
+        field_type: "STRING".to_owned(),
+        concealed: false,
+        reference: reference.to_owned(),
+    }
+}
 
 #[test]
 fn background_worker_disconnected_message_is_component_owned() {
@@ -190,59 +202,136 @@ fn probe_error_downcast_classifies_without_substring() {
 }
 
 #[test]
-fn section_choices_deduplicate_in_first_seen_order() {
-    let choices = section_choices_from_references([
-        "op://Vault/Item/token",
-        "op://Vault/Item/Auth/password",
-        "op://Vault/Item/Deploy/key",
-        "op://Vault/Item/Auth/otp",
-    ]);
-    assert_eq!(
-        choices,
-        vec![None, Some("Auth".to_owned()), Some("Deploy".to_owned())]
+fn field_rows_group_by_explicit_section_id_in_first_seen_order() {
+    let sections = vec![
+        OpSection {
+            id: "opaque-auth-id".to_owned(),
+            label: "Auth".to_owned(),
+        },
+        OpSection {
+            id: "opaque-deploy-id".to_owned(),
+            label: "Deploy".to_owned(),
+        },
+    ];
+    let rows = field_display_rows_for_picker(
+        &OpPickerMode::Browse,
+        "",
+        &[
+            field("root", None, "op://Vault/Item/token"),
+            field(
+                "auth-password",
+                Some("opaque-auth-id"),
+                "op://Vault/Item/Auth/password",
+            ),
+            field(
+                "deploy-key",
+                Some("opaque-deploy-id"),
+                "op://Vault/Item/Deploy/key",
+            ),
+            // Some CLI responses omit `section.id` even when the reference
+            // section segment uniquely matches item section metadata.
+            field("auth-otp", None, "op://Vault/Item/Auth/otp"),
+        ],
+        &sections,
+        None,
+        &HashSet::new(),
     );
+    assert!(matches!(rows[0], FieldDisplayRow::Field { field_idx: 0 }));
+    assert!(matches!(
+        rows[1],
+        FieldDisplayRow::SectionHeader {
+            ref section_id,
+            ref name,
+            field_count: 2,
+        } if section_id == "opaque-auth-id" && name == "Auth"
+    ));
+    assert!(matches!(
+        rows[4],
+        FieldDisplayRow::SectionHeader {
+            ref section_id,
+            ref name,
+            field_count: 1,
+        } if section_id == "opaque-deploy-id" && name == "Deploy"
+    ));
 }
 
 #[test]
 fn browse_field_rows_group_sections_and_respect_collapse() {
     let mut collapsed = HashSet::new();
-    collapsed.insert("Auth".to_owned());
-    let rows = browse_field_display_rows(
-        [
-            "op://Vault/Item/root",
-            "op://Vault/Item/Auth/password",
-            "op://Vault/Item/Auth/otp",
-            "op://Vault/Item/Deploy/key",
+    collapsed.insert("opaque-auth-id".to_owned());
+    let rows = field_display_rows_for_picker(
+        &OpPickerMode::Browse,
+        "",
+        &[
+            field("root", None, "op://Vault/Item/root"),
+            field(
+                "password",
+                Some("opaque-auth-id"),
+                "op://Vault/Item/Auth/password",
+            ),
+            field("otp", Some("opaque-auth-id"), "op://Vault/Item/Auth/otp"),
+            field(
+                "key",
+                Some("opaque-deploy-id"),
+                "op://Vault/Item/Deploy/key",
+            ),
         ],
+        &[
+            OpSection {
+                id: "opaque-auth-id".to_owned(),
+                label: "Auth".to_owned(),
+            },
+            OpSection {
+                id: "opaque-deploy-id".to_owned(),
+                label: "Deploy".to_owned(),
+            },
+        ],
+        None,
         &collapsed,
     );
     assert!(matches!(rows[0], FieldDisplayRow::Field { field_idx: 0 }));
     assert!(matches!(
         rows[1],
         FieldDisplayRow::SectionHeader {
+            ref section_id,
             ref name,
             field_count: 2
-        } if name == "Auth"
+        } if section_id == "opaque-auth-id" && name == "Auth"
     ));
     assert!(matches!(
         rows[2],
         FieldDisplayRow::SectionHeader {
+            ref section_id,
             ref name,
             field_count: 1
-        } if name == "Deploy"
+        } if section_id == "opaque-deploy-id" && name == "Deploy"
     ));
     assert!(matches!(rows[3], FieldDisplayRow::Field { field_idx: 3 }));
 }
 
 #[test]
 fn create_field_rows_scope_to_section_and_add_sentinel() {
-    let rows = create_field_display_rows(
-        [
-            "op://Vault/Item/root",
-            "op://Vault/Item/Auth/password",
-            "op://Vault/Item/Auth/otp",
+    let rows = field_display_rows_for_picker(
+        &OpPickerMode::Create {
+            item_name_default: String::new(),
+            field_label_default: String::new(),
+        },
+        "",
+        &[
+            field("root", None, "op://Vault/Item/root"),
+            field(
+                "password",
+                Some("opaque-auth-id"),
+                "op://Vault/Item/Auth/password",
+            ),
+            field("otp", Some("opaque-auth-id"), "op://Vault/Item/Auth/otp"),
         ],
-        Some("Auth"),
+        &[OpSection {
+            id: "opaque-auth-id".to_owned(),
+            label: "Auth".to_owned(),
+        }],
+        Some("opaque-auth-id"),
+        &HashSet::new(),
     );
     assert!(matches!(rows[0], FieldDisplayRow::Field { field_idx: 1 }));
     assert!(matches!(rows[1], FieldDisplayRow::Field { field_idx: 2 }));
@@ -400,7 +489,11 @@ fn section_stage_back_plan_returns_to_item() {
 
 #[test]
 fn section_stage_commit_plan_resolves_sentinel_and_choices() {
-    let choices = vec![None, Some("api".to_owned())];
+    let api = OpSection {
+        id: "opaque-api-id".to_owned(),
+        label: "api".to_owned(),
+    };
+    let choices = vec![None, Some(api.clone())];
 
     assert_eq!(
         section_stage_commit_plan(Some(0), &choices),
@@ -411,7 +504,7 @@ fn section_stage_commit_plan_resolves_sentinel_and_choices() {
     assert_eq!(
         section_stage_commit_plan(Some(1), &choices),
         SectionStageCommitPlan::ExistingSection {
-            selected_section: Some("api".to_owned())
+            selected_section: Some(api)
         }
     );
     assert_eq!(
@@ -529,6 +622,7 @@ fn account_stage_commit_plan_routes_existing_and_empty() {
 #[test]
 fn section_header_collapse_target_routes_only_headers() {
     let row = FieldDisplayRow::SectionHeader {
+        section_id: "opaque-auth-id".to_owned(),
         name: "Auth".to_owned(),
         field_count: 2,
     };
@@ -536,21 +630,21 @@ fn section_header_collapse_target_routes_only_headers() {
 
     assert_eq!(
         section_header_collapse_target(Some(&row), &collapsed, SectionCollapseIntent::Collapse),
-        Some(("Auth".to_owned(), true))
+        Some(("opaque-auth-id".to_owned(), true))
     );
     assert_eq!(
         section_header_collapse_target(Some(&row), &collapsed, SectionCollapseIntent::Expand),
-        Some(("Auth".to_owned(), false))
+        Some(("opaque-auth-id".to_owned(), false))
     );
     assert_eq!(
         section_header_collapse_target(Some(&row), &collapsed, SectionCollapseIntent::Toggle),
-        Some(("Auth".to_owned(), true))
+        Some(("opaque-auth-id".to_owned(), true))
     );
 
-    collapsed.insert("Auth".to_owned());
+    collapsed.insert("opaque-auth-id".to_owned());
     assert_eq!(
         section_header_collapse_target(Some(&row), &collapsed, SectionCollapseIntent::Toggle),
-        Some(("Auth".to_owned(), false))
+        Some(("opaque-auth-id".to_owned(), false))
     );
     assert_eq!(
         section_header_collapse_target(
@@ -565,14 +659,19 @@ fn section_header_collapse_target_routes_only_headers() {
 #[test]
 fn field_stage_commit_plan_routes_row_kinds() {
     let row = FieldDisplayRow::SectionHeader {
+        section_id: "opaque-auth-id".to_owned(),
         name: "Auth".to_owned(),
         field_count: 2,
     };
     let collapsed = HashSet::new();
+    let auth = OpSection {
+        id: "opaque-auth-id".to_owned(),
+        label: "Auth".to_owned(),
+    };
     assert_eq!(
-        field_stage_commit_plan(Some(&row), &collapsed, Some("Auth")),
+        field_stage_commit_plan(Some(&row), &collapsed, Some(&auth)),
         FieldStageCommitPlan::ToggleSection {
-            name: "Auth".to_owned(),
+            section_id: "opaque-auth-id".to_owned(),
             collapsed: true,
         }
     );
@@ -581,7 +680,7 @@ fn field_stage_commit_plan_routes_row_kinds() {
         field_stage_commit_plan(
             Some(&FieldDisplayRow::Field { field_idx: 3 }),
             &collapsed,
-            Some("Auth"),
+            Some(&auth),
         ),
         FieldStageCommitPlan::ExistingField { field_idx: 3 }
     );
@@ -615,7 +714,7 @@ fn naming_stage_plans_name_next_stage_and_pending_section() {
         NamingStagePlan {
             stage: OpPickerStage::FieldLabel,
             field_label_origin: Some(FieldLabelOrigin::NewSection),
-            pending_section: Some("Deploy".to_owned()),
+            pending_section: Some(OpSectionTarget::NewLabel("Deploy".to_owned())),
             clear_pending_section: false,
         }
     );
@@ -662,13 +761,19 @@ fn build_op_picker_ref_uses_uuid_op_and_clean_path_for_unique_item() {
             id: "f_uuid",
             label: "api key",
             reference: "op://Private/Stripe/api key",
+            section_id: None,
+            section_label: None,
         },
         [OpPickerFieldRef {
             id: "f_uuid",
             label: "api key",
             reference: "op://Private/Stripe/api key",
+            section_id: None,
+            section_label: None,
         }],
-    );
+        &[],
+    )
+    .expect("fixture IDs form a valid secret reference");
     assert_eq!(built.op, "op://v_uuid/i_uuid/f_uuid");
     assert_eq!(built.path, "Private/Stripe/api key");
     assert!(!built.empty_reference_with_sibling_refs);
@@ -701,15 +806,24 @@ fn build_op_picker_ref_preserves_sections_and_ambiguous_subtitles() {
         OpPickerFieldRef {
             id: "f_uuid",
             label: "token",
-            reference: "op://Private/Claude/Auth/token",
+            reference: "op://Private/Claude/aUtH/token",
+            section_id: None,
+            section_label: None,
         },
         [OpPickerFieldRef {
             id: "f_uuid",
             label: "token",
-            reference: "op://Private/Claude/Auth/token",
+            reference: "op://Private/Claude/aUtH/token",
+            section_id: None,
+            section_label: None,
         }],
-    );
-    assert_eq!(built.op, "op://v_uuid/i_a/Auth/f_uuid");
+        &[OpSection {
+            id: "s_auth_uuid".to_owned(),
+            label: "Auth".to_owned(),
+        }],
+    )
+    .expect("fixture IDs form a valid secret reference");
+    assert_eq!(built.op, "op://v_uuid/i_a/s_auth_uuid/f_uuid");
     assert_eq!(built.path, "Private/Claude[alice@example.com]/Auth/token");
 }
 
@@ -734,20 +848,31 @@ fn build_op_picker_ref_flags_empty_reference_with_sibling_refs() {
             id: "f_noref",
             label: "notes",
             reference: "",
+            section_id: None,
+            section_label: None,
         },
         [
             OpPickerFieldRef {
                 id: "f_noref",
                 label: "notes",
                 reference: "",
+                section_id: None,
+                section_label: None,
             },
             OpPickerFieldRef {
                 id: "f_sectioned",
                 label: "password",
                 reference: "op://Private/MyItem/Auth/password",
+                section_id: Some("s_auth_uuid"),
+                section_label: None,
             },
         ],
-    );
+        &[OpSection {
+            id: "s_auth_uuid".to_owned(),
+            label: "Auth".to_owned(),
+        }],
+    )
+    .expect("fixture IDs form a valid secret reference");
     assert_eq!(built.op, "op://v_uuid/i_uuid/f_noref");
     assert_eq!(built.path, "Private/MyItem/notes");
     assert!(built.empty_reference_with_sibling_refs);
@@ -755,8 +880,21 @@ fn build_op_picker_ref_flags_empty_reference_with_sibling_refs() {
 
 #[test]
 fn section_lines_append_new_section_sentinel() {
-    let lines = section_lines([None, Some("Auth".to_owned())], Some(2));
-    assert_eq!(lines.len(), 3);
+    let lines = section_lines(
+        [
+            None,
+            Some(OpSection {
+                id: "aaaa-id".to_owned(),
+                label: "Auth".to_owned(),
+            }),
+            Some(OpSection {
+                id: "bbbb-id".to_owned(),
+                label: "Auth".to_owned(),
+            }),
+        ],
+        Some(2),
+    );
+    assert_eq!(lines.len(), 4);
     assert_eq!(
         lines[0].spans[0].content.as_ref(),
         "(root)",
@@ -764,11 +902,16 @@ fn section_lines_append_new_section_sentinel() {
     );
     assert_eq!(
         lines[1].spans[0].content.as_ref(),
-        "Auth",
-        "named section renders second"
+        "Auth [aaaa]",
+        "duplicate section labels include an opaque ID prefix"
     );
     assert_eq!(
         lines[2].spans[0].content.as_ref(),
+        "Auth [bbbb]",
+        "duplicate labels remain distinguishable"
+    );
+    assert_eq!(
+        lines[3].spans[0].content.as_ref(),
         "+ New section",
         "sentinel renders last without embedding selection chrome"
     );
@@ -817,10 +960,11 @@ fn account_vault_and_item_lines_leave_selection_to_shared_renderer() {
 #[test]
 fn field_lines_render_headers_fields_and_sentinels() {
     let mut collapsed = HashSet::new();
-    collapsed.insert("Auth".to_owned());
+    collapsed.insert("auth-id".to_owned());
     let lines = field_lines(
         [
             FieldDisplayRow::SectionHeader {
+                section_id: "auth-id".to_owned(),
                 name: "Auth".to_owned(),
                 field_count: 1,
             },
@@ -941,7 +1085,16 @@ impl OpPickerRenderState for RenderStateFixture {
     }
 
     fn section_lines(&self) -> Vec<Line<'static>> {
-        section_lines([None, Some("Auth".to_owned())], self.selected)
+        section_lines(
+            [
+                None,
+                Some(OpSection {
+                    id: "auth-id".to_owned(),
+                    label: "Auth".to_owned(),
+                }),
+            ],
+            self.selected,
+        )
     }
 
     fn field_lines(&self) -> Vec<Line<'static>> {
@@ -1032,12 +1185,16 @@ fn field_label_origin_maps_to_cancel_stage() {
 
 #[test]
 fn field_label_commit_plan_trims_and_routes_item_presence() {
+    let section = OpSection {
+        id: "section-id".to_owned(),
+        label: "section".to_owned(),
+    };
     assert_eq!(
         field_label_commit_plan(
             Some("account"),
             "vault",
             Some("item"),
-            Some("section".to_owned()),
+            Some(OpSectionTarget::Existing(section.clone())),
             "ignored".to_owned(),
             "  token  ",
         ),
@@ -1045,7 +1202,7 @@ fn field_label_commit_plan_trims_and_routes_item_presence() {
             account: Some("account"),
             vault: "vault",
             item: "item",
-            section: Some("section".to_owned()),
+            section: Some(OpSectionTarget::Existing(section)),
             field_label: "token".to_owned(),
         }
     );
@@ -1070,12 +1227,16 @@ fn field_label_commit_plan_trims_and_routes_item_presence() {
 
 #[test]
 fn field_label_commit_selection_builds_component_owned_selection_shape() {
+    let section = OpSection {
+        id: "opaque-api-id".to_owned(),
+        label: "api".to_owned(),
+    };
     let selection = field_label_commit_selection::<&str, &str, &str, &str, (&str, String)>(
         FieldLabelCommitPlan::EditItemField {
             account: Some("account"),
             vault: "vault",
             item: "item",
-            section: Some("api".to_owned()),
+            section: Some(OpSectionTarget::Existing(section.clone())),
             field_label: "token".to_owned(),
         },
         |label| ("new", label),
@@ -1086,7 +1247,7 @@ fn field_label_commit_selection_builds_component_owned_selection_shape() {
             account: Some("account"),
             vault: "vault",
             item: "item",
-            section: Some("api".to_owned()),
+            section: Some(OpSectionTarget::Existing(section)),
             field: ("new", "token".to_owned()),
         }
     );
@@ -1115,6 +1276,10 @@ fn field_label_commit_selection_builds_component_owned_selection_shape() {
 
 #[test]
 fn existing_field_commit_plan_routes_create_mode_to_field_target_data() {
+    let api = OpSection {
+        id: "opaque-api-id".to_owned(),
+        label: "api".to_owned(),
+    };
     assert_eq!(
         existing_field_commit_plan(
             &OpPickerMode::Create {
@@ -1123,10 +1288,10 @@ fn existing_field_commit_plan_routes_create_mode_to_field_target_data() {
             },
             "field-id",
             "token",
-            Some("api".to_owned()),
+            Some(api.clone()),
         ),
         ExistingFieldCommitPlan::EditItemField {
-            section: Some("api".to_owned()),
+            section: Some(OpSectionTarget::Existing(api)),
             field_id: "field-id".to_owned(),
             field_label: "token".to_owned(),
         }
@@ -1139,9 +1304,13 @@ fn existing_field_commit_plan_routes_create_mode_to_field_target_data() {
 
 #[test]
 fn existing_field_commit_selection_builds_component_owned_selection_shape() {
+    let section = OpSection {
+        id: "opaque-api-id".to_owned(),
+        label: "api".to_owned(),
+    };
     let selection = existing_field_commit_selection(
         ExistingFieldCommitPlan::EditItemField {
-            section: Some("api".to_owned()),
+            section: Some(OpSectionTarget::Existing(section.clone())),
             field_id: "field-id".to_owned(),
             field_label: "token".to_owned(),
         },
@@ -1159,7 +1328,7 @@ fn existing_field_commit_selection_builds_component_owned_selection_shape() {
             account: Some("account"),
             vault: "vault",
             item: "item",
-            section: Some("api".to_owned()),
+            section: Some(OpSectionTarget::Existing(section)),
             field: ("field-id".to_owned(), "token".to_owned()),
         }
     );

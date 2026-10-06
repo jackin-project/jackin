@@ -182,10 +182,14 @@ pub async fn run_client(
 }
 
 async fn connect_attach_socket() -> Result<UnixStream> {
-    jackin_diagnostics::operation::connection_attempt(
+    let mut stream = jackin_diagnostics::operation::connection_attempt(
         jackin_telemetry::schema::enums::ConnectionPeerType::CapsuleAttach,
         UnixStream::connect(SOCKET_PATH),
     )
     .await
-    .context("cannot connect to jackin-capsule daemon — is it running?")
+    .context("cannot connect to jackin-capsule daemon — is it running?")?;
+    jackin_protocol::capsule_transport::client_handshake_async(&mut stream)
+        .await
+        .context("negotiating Capsule attach transport")?;
+    Ok(stream)
 }

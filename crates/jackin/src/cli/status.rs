@@ -26,9 +26,13 @@ use jackin_core::{ContainerHandle, JackinPaths};
 use jackin_docker::docker_client::{BollardDockerClient, ContainerState, DockerApi};
 use jackin_runtime::instance::manifest::InstanceIndex;
 
-/// Command string for querying the agent registry over the capsule socket.
-const JACKIN_AGENTS_CMD: &str =
-    "test -S /jackin/run/jackin.sock && /jackin/runtime/jackin-capsule agents --format json";
+/// Build the agent registry query with the caller's required Capsule protocol major.
+fn jackin_agents_command() -> String {
+    format!(
+        "test -S /jackin/run/jackin.sock && /jackin/runtime/jackin-capsule protocol-check --expected-major {} && /jackin/runtime/jackin-capsule agents --format json",
+        jackin_protocol::capsule_transport::CONTROL_PROTOCOL_MAJOR
+    )
+}
 
 /// Command for getting the current git branch inside the container workdir.
 const GIT_BRANCH_CMD: &str =
@@ -376,7 +380,7 @@ async fn run_level2(
             return Ok(());
         };
         match docker
-            .exec_capture_by_id(container, &["sh", "-c", JACKIN_AGENTS_CMD])
+            .exec_capture_by_id(container, &["sh", "-c", &jackin_agents_command()])
             .await
         {
             Err(_) => None, // socket not yet up or container exec failed — expected transient

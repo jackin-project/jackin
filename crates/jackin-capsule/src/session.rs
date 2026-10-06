@@ -204,6 +204,8 @@ pub struct Session {
     /// evidence snapshot. OSC signals are TTL-bounded or cleared with authority
     /// so a stale terminal edge cannot pin session state indefinitely.
     osc: crate::agent_status::evidence::OscEvidence,
+    /// Persistent status framing across arbitrary PTY packet boundaries.
+    osc_status_decoder: crate::agent_status::OscStatusDecoder,
     pub input_tx: mpsc::UnboundedSender<Vec<u8>>,
     pub pty_master: Arc<Mutex<Box<dyn MasterPty + Send>>>,
     child_killer: Arc<Mutex<Box<dyn ChildKiller + Send + Sync>>>,
@@ -672,6 +674,7 @@ impl Session {
                 cpu_sample: None,
                 saw_agent_foreground: false,
                 osc: crate::agent_status::evidence::OscEvidence::default(),
+                osc_status_decoder: crate::agent_status::OscStatusDecoder::default(),
                 input_tx,
                 pty_master: master,
                 child_killer,
@@ -1216,38 +1219,37 @@ impl Session {
         // arbitration over the rule pack / OSC / authority / physics.
         self.last_output_at = std::time::Instant::now();
 
-        // OSC 133 shell-integration marks (emitted by the container shell rc,
-        // not by agents) are strong shell-state evidence: PreExec → working,
-        // PromptEnd / CommandFinished → idle. Captured here as evidence, never
-        // authoring state directly.
-        if let Some(mark) = crate::agent_status::scan_osc133(bytes) {
-            use crate::agent_status::OscShellMark;
+        // Status evidence has its own persistent framing because the grid
+        // does not surface OSC 133 or typed OSC 9;4 events. Apply every complete
+        // event in wire order; PTY packet boundaries carry no protocol meaning.
+        for event in self.osc_status_decoder.feed(bytes) {
             use crate::agent_status::evidence::RawAgentState;
-            let shell_state = match mark {
-                OscShellMark::PreExec => Some(RawAgentState::Working),
-                OscShellMark::PromptEnd | OscShellMark::CommandFinished { .. } => {
-                    Some(RawAgentState::Idle)
+            use crate::agent_status::{OscShellMark, OscStatusEvent};
+            match event {
+                OscStatusEvent::Shell(mark) => {
+                    let shell_state = match mark {
+                        OscShellMark::PreExec => Some(RawAgentState::Working),
+                        OscShellMark::PromptEnd | OscShellMark::CommandFinished { .. } => {
+                            Some(RawAgentState::Idle)
+                        }
+                        OscShellMark::PromptStart => None,
+                    };
+                    if let Some(state) = shell_state {
+                        self.osc.shell_state_marked_at = Some(std::time::Instant::now());
+                        self.osc.shell_state = Some(state);
+                    }
                 }
-                OscShellMark::PromptStart => None,
-            };
-            if let Some(state) = shell_state {
-                self.osc.shell_state_marked_at = Some(std::time::Instant::now());
-                self.osc.shell_state = Some(state);
-            }
-        }
-
-        // OSC 9;4 (ConEmu progress): state 0 = clear (done-ish hint), 1/2/3 =
-        // active, 4 = paused. Not surfaced as a passthrough event, so scanned
-        // from the raw stream. Progress-active is never working-proof (Claude
-        // animates it during approval prompts); arbitration treats the clear
-        // edge as a hint only.
-        if let Some(state) = crate::agent_status::scan_osc9_progress(bytes) {
-            self.osc.progress_raw = Some(format!("4;{state}"));
-            if state == 0 {
-                self.osc.progress_active = false;
-                self.osc.progress_cleared_at = Some(std::time::Instant::now());
-            } else {
-                self.osc.progress_active = true;
+                OscStatusEvent::Progress(state) => {
+                    // Progress-active is never working-proof; arbitration
+                    // treats the clear edge as a hint only.
+                    self.osc.progress_raw = Some(format!("4;{state}"));
+                    if state == 0 {
+                        self.osc.progress_active = false;
+                        self.osc.progress_cleared_at = Some(std::time::Instant::now());
+                    } else {
+                        self.osc.progress_active = true;
+                    }
+                }
             }
         }
     }
@@ -1304,7 +1306,7 @@ impl Session {
                 PassthroughEvent::Notification(_) => {
                     // Plain OSC 9 desktop notification is forwarded to the host
                     // per policy. OSC 9;4 progress is decoded separately from the
-                    // raw stream in `feed_pty` — termpane does not surface it
+                    // persistent status decoder — termpane does not surface it
                     // here.
                     if self.osc_policy.allow_notify()
                         && let Some(bytes) = event.encode()
@@ -1604,6 +1606,7 @@ impl Session {
             cpu_sample: None,
             saw_agent_foreground: false,
             osc: crate::agent_status::evidence::OscEvidence::default(),
+            osc_status_decoder: crate::agent_status::OscStatusDecoder::default(),
             input_tx,
             pty_master,
             child_killer,

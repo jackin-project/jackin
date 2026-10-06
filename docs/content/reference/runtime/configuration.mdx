@@ -42,11 +42,41 @@ Saved workspaces live one-per-file under `~/.config/jackin/workspaces/` rather t
 - **Restore the full setup on a new machine** by checking out the dotfile repo and running `chezmoi apply` (or equivalent), with no manual TOML reconstruction.
 - **Diff a single workspace** in PR review without seeing churn in unrelated workspaces, which is impossible when every change touches a shared `[workspaces.*]` block.
 
-Each file carries its own schema-version stamp (`v1alpha12` for
-`config.toml`, `v1alpha10` for workspace files), so a dotfile-managed setup
+Each file carries its own schema-version stamp (`v1alpha13` for
+`config.toml`, `v1alpha11` for workspace files), so a dotfile-managed setup
 that is partially old (some workspaces stamped, some not) migrates per-file on
 first load. See [Schema Versions](/reference/runtime/schema-versions/) for the
 full version history and migration matrix.
+
+## Publication and recovery journal
+
+Configuration publication is implemented in
+<RepoFile path="crates/jackin-config/src/persist.rs" />.
+The private, mode-`0600` `config.publish.journal` records pending writes and deletes.
+Journal version 2 records the SHA-256 of each staged write generation; version 1
+and unknown versions are rejected and retained, with no automatic journal migration.
+This journal version does not change the configuration or workspace schema versions.
+
+Staged files and their parent directories are synced before the journal references
+them. Recovery custody begins before journal publication because rename can succeed
+while the following parent-directory sync fails. Under the exclusive configuration
+lock, the next writer replays the retained journal. A write must match the recorded
+hash in its staged file, or in the published target if the staged file is already
+gone. A missing or mismatched generation fails closed and retains recovery artifacts;
+ordinary reads do not perform this recovery.
+
+A failed forward publication attempts to restore the original targets. The restore
+stages enter recovery custody before a replacement rollback journal is published.
+If staging or syncing the restore, publishing the rollback journal, or replaying it
+fails, the retained journal and owned staged files remain available for recovery.
+Recovery replays the installed journal, completing its forward or restore operations.
+A publication error can follow a successful journal rename whose parent-directory
+sync failed. Target operations sync their parent directories; the journal
+is removed last, followed by a parent-directory sync.
+
+These ordering and failure-injection contracts do not establish actual power-loss
+recovery on a filesystem or make the journal a backup against external edits.
+Operator guidance belongs in [Configuration commands](/commands/config/#save-errors-and-recovery).
 
 ## config.toml schema
 
@@ -140,7 +170,7 @@ The configuration is TOML. Global settings live at
 `~/.config/jackin/workspaces/`. The CLI and console manage both locations
 for you, so you generally don't need to edit them by hand.
 
-Top-level `version` is the config schema version. jackin❯ writes `version = "v1alpha12"` today. Older config files with no `version` are treated as legacy and migrated automatically on startup before parsing. See [Schema Versions](/reference/runtime/schema-versions/) for the full version history and migration matrix.
+Top-level `version` is the config schema version. jackin❯ writes `version = "v1alpha13"` today. Older config files with no `version` are treated as legacy and migrated automatically on startup before parsing. See [Schema Versions](/reference/runtime/schema-versions/) for the full version history and migration matrix.
 
 ### Runtime backend selection
 
@@ -256,7 +286,7 @@ selected instance receives a unique container target such as
 `/home/agent/.cache/amp` or `/home/agent/.cache/opencode`; secondary instances
 get a slot suffix. Reusing or nesting configured cache roots across selected
 instances is rejected because it would break per-instance isolation. Without
-an explicit cache root, jackin creates the equivalent cache directory under
+an explicit cache root, jackin❯ creates the equivalent cache directory under
 the instance's managed `home/` state.
 
 Omp and Hermes profile accounts pin an immutable `source_selector` so launch
@@ -300,14 +330,14 @@ auth_forward = "sync"   # "sync" (default), "token", or "ignore"
 auth_forward = "token"
 
 [github.env]
-GH_TOKEN = { op = "op://abc.../def.../fld...", path = "Work/ACME/github-fine-grained-pat" }
+GH_TOKEN = { op = "op://abc.../def.../fld...", breadcrumb = { version = 1, value = "Work/ACME/github-fine-grained-pat" } }
 
 # Layer 3 — workspace × role override (e.g. a tighter release-bot token)
 [roles.release-bot.github]
 auth_forward = "token"
 
 [roles.release-bot.github.env]
-GH_TOKEN = { op = "op://abc.../def.../fld...", path = "Work/ACME/github-release-pat" }
+GH_TOKEN = { op = "op://abc.../def.../fld...", breadcrumb = { version = 1, value = "Work/ACME/github-release-pat" } }
 
 # Per-role opt-out — throwaway role with no GitHub access
 [roles.scratch.github]

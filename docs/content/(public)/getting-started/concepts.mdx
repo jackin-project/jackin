@@ -18,12 +18,12 @@ The operator never enters the container. You drive jackin❯ from your host mach
 
 ## Agents
 
-An **agent** is an AI coding runtime (`Claude Code`, `Codex`, `Amp`, `Kimi`, or `OpenCode` today) running inside an isolated `Docker` container. Each agent:
+An **agent** is an AI coding runtime (`Claude Code`, `Codex`, `Amp`, `Kimi`, or `OpenCode` today) running in a role's configured container. Each agent:
 
-- Has its own filesystem, network, and process space
-- Runs at full speed inside the container — whatever "no permission prompts" mode the runtime ships (`Claude Code`'s `--dangerously-skip-permissions`, `Codex`'s YOLO, etc.) — because the boundary is the container, not the prompts
-- Can only access directories you explicitly mount
-- Can build and run its own containers (`Docker-in-Docker`), without touching your host's `Docker` daemon
+- Shares its role container's filesystem, network namespace, and process namespace with other runtimes in that role
+- Runs at full speed inside the container — whatever "no permission prompts" mode the runtime ships (`Claude Code`'s `--dangerously-skip-permissions`, `Codex`'s YOLO, etc.); access depends on the configured mounts, grants, and backend, not runtime prompts
+- Direct host-file access follows configured mounts. jackin❯ does not add the host Docker socket as a standard mount; configured mounts may expose other host paths or interfaces.
+- Can run containers through jackin❯'s separate private DinD sidecar when effective grants enable it; configured mounts or reachable Docker APIs may expose another daemon.
 - Persists its state between sessions (conversation history, runtime settings, `GitHub CLI` auth/config, plugins)
 
 ### Roles
@@ -81,7 +81,7 @@ That means one running instance can hold a small working room:
 - a shell tab for inspection or one-off commands
 - split panes when you want multiple views visible at once
 
-All of those tabs share the same mounted files, branch, role tooling, forwarded credentials, and private Docker-in-Docker sidecar. They do **not** share conversation context: each agent runtime still owns its own prompt history and state.
+All of those tabs share one role container, filesystem, process namespace, network namespace, workspace mounts, branch, and role tooling. Per-instance home and auth mount paths, forwarded credentials, account bindings, and auth modes remain scoped to each admitted instance; each runtime also keeps its own prompt history and state. If the role's effective grants enable DinD, the tabs share its private sidecar.
 
 The Capsule is not another agent and it is not a separate container. It is jackin❯-owned runtime plumbing inside the role container. You normally interact with it through `jackin load`, `jackin console`, and `jackin hardline`, not by running `jackin-capsule` yourself.
 
@@ -103,9 +103,9 @@ the internals section. Operators rarely need that level of detail.
 
 ## Docker-in-Docker
 
-Each agent gets its own private `Docker` daemon. From the agent's point of view that means it can run `docker build`, `docker run`, and `docker compose` inside its own container, without ever talking to your host `Docker` daemon.
+jackin❯ is research software, unsafe and not production-ready. DinD is an optional Docker grant. When enabled, jackin❯ starts a per-role sidecar and points the role's Docker client at its TLS endpoint. Without the grant, no DinD daemon starts.
 
-The practical consequence: an agent can build and run containers as part of its work, but those containers cannot escape into your host's `Docker` engine.
+The sidecar is launched by the Docker engine, and containers created through it share the Linux kernel used by that daemon. On macOS, Docker Desktop and OrbStack run the daemon inside a Linux VM, so this is the backend VM's kernel rather than macOS's. jackin❯ does not mount the host Docker socket by default, but an explicit workspace mount can expose it. A privileged DinD grant can bypass some role-container capability drops; when allowlist egress is selected, any DinD grant lets nested containers bypass the role's host-iptables rules. DinD provides a separate Docker API endpoint, not a VM boundary.
 
 ## Workspaces
 

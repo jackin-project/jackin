@@ -49,7 +49,7 @@ where
             .map_err(|e| {
                 anyhow::anyhow!(
                     "{layer_label} env var {var_name:?}: 1Password reference {:?} failed: {e}",
-                    r.path
+                    jackin_core::display_op_breadcrumb_path(&r.path)
                 )
             }),
         EnvValue::Extended(e) => {

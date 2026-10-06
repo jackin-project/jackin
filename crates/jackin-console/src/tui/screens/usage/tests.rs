@@ -2475,3 +2475,93 @@ fn filtered_accounts_cannot_hide_provider_publication_diagnostics() {
         "{rendered}"
     );
 }
+
+fn assert_manual_refresh_join_preserves_periodic_cadence(
+    failed: bool,
+    claim_before_completion: bool,
+) {
+    use crossterm::event::KeyCode;
+    let (mut projection, _) = metric_group_projection_fixture();
+    projection.providers[0].accounts[0].freshness.retry_at_epoch = Some(TEST_NOW_EPOCH + 900);
+    let publication = UsageScreenState::from_projection(&projection);
+    let started = Instant::now();
+    let mut state = UsageScreenState::open_with_snapshot(publication.clone());
+    let active = state.next_refresh_plan_if_due(started).expect("open cycle");
+    assert!(!active.force);
+    let result = if failed {
+        Err("independent transport failure".to_owned())
+    } else {
+        Ok(publication)
+    };
+    state.begin_refresh(crate::tui::runtime::ready_blocking_subscription((
+        active.generation,
+        result,
+    )));
+    let mut manager = manager_with_usage(state);
+    press_key(&mut manager, KeyCode::Char('r'));
+    let screen = manager.usage.screen.as_mut().unwrap();
+    assert!(screen.refresh_due && screen.force_refresh_pending);
+    if claim_before_completion {
+        assert!(
+            screen.next_refresh_plan_if_due(started).is_none(),
+            "manual request joins active cycle"
+        );
+        assert_eq!(screen.refresh_generation, active.generation);
+        assert!(
+            !screen.refresh_due && !screen.force_refresh_pending,
+            "joined intent is consumed together"
+        );
+    }
+    // Production polls before claiming. A Ready receiver must consume a
+    // manual request even when the in-flight claim branch never executes.
+    let completed = started + Duration::from_secs(1);
+    let outcome = screen.poll_refresh().expect("ready active generation");
+    match outcome {
+        Ok(snapshot) => screen.apply_refresh(snapshot, completed),
+        Err(notice) => screen.apply_refresh_error(notice, completed),
+    }
+    assert!(!screen.refresh_in_flight());
+    assert_eq!(screen.refresh_generation, active.generation);
+    assert!(
+        screen.next_refresh_plan_if_due(completed).is_none(),
+        "joining never queues another cycle"
+    );
+    assert!(
+        screen
+            .next_refresh_plan_if_due(
+                (completed + USAGE_HEARTBEAT_INTERVAL)
+                    .checked_sub(Duration::from_nanos(1))
+                    .expect("heartbeat boundary admits one nanosecond")
+            )
+            .is_none(),
+        "heartbeat cadence is preserved"
+    );
+    assert_eq!(screen.canonical_projection.as_ref(), Some(&projection));
+    assert_eq!(
+        screen.accounts[0].retry_at_epoch,
+        Some(TEST_NOW_EPOCH + 900)
+    );
+    let periodic = screen
+        .next_refresh_plan_if_due(completed + USAGE_HEARTBEAT_INTERVAL)
+        .expect("next periodic cycle");
+    assert!(
+        !periodic.force,
+        "joined manual intent cannot bypass broker backoff on a later heartbeat"
+    );
+    assert_eq!(periodic.generation, active.generation + 1);
+    assert!(!screen.refresh_due && !screen.force_refresh_pending);
+}
+
+#[test]
+fn manual_refresh_join_after_success_keeps_periodic_request_non_forced() {
+    for claim_before_completion in [false, true] {
+        assert_manual_refresh_join_preserves_periodic_cadence(false, claim_before_completion);
+    }
+}
+
+#[test]
+fn manual_refresh_join_after_error_keeps_periodic_request_non_forced() {
+    for claim_before_completion in [false, true] {
+        assert_manual_refresh_join_preserves_periodic_cadence(true, claim_before_completion);
+    }
+}

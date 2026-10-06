@@ -1224,6 +1224,48 @@ fn osc133_marks_set_shell_state() {
 }
 
 #[test]
+fn osc_status_evidence_survives_every_pty_split_and_keeps_wire_order() {
+    use crate::agent_status::evidence::RawAgentState;
+    let wire = b"\x1b]133;B\x07\x1b]133;C\x1b\\\x1b]133;A\x07\x1b]9;4;1;50\x07\x1b]9;4;0\x1b\\";
+    for split in 0..=wire.len() {
+        let mut session = test_session_with_policy(OscPolicy::default());
+        session.feed_pty(&wire[..split]);
+        session.feed_pty(&wire[split..]);
+        assert_eq!(
+            session.osc_evidence().shell_state,
+            Some(RawAgentState::Working),
+            "split {split}"
+        );
+        assert_eq!(
+            session.osc_evidence().progress_raw.as_deref(),
+            Some("4;0"),
+            "split {split}"
+        );
+        assert!(!session.osc_evidence().progress_active, "split {split}");
+        assert!(session.osc_evidence().progress_cleared_at.is_some());
+    }
+}
+
+#[test]
+fn osc_status_partial_evidence_is_private_to_its_session() {
+    use crate::agent_status::evidence::RawAgentState;
+    let mut first = test_session_with_policy(OscPolicy::default());
+    let mut second = test_session_with_policy(OscPolicy::default());
+    first.feed_pty(b"\x1b]133;C\x1b");
+    assert!(first.osc_evidence().shell_state.is_none());
+    assert!(first.osc_evidence().shell_state_marked_at.is_none());
+    second.feed_pty(b"\\");
+    assert!(second.osc_evidence().shell_state.is_none());
+    first.feed_pty(b"\\");
+    assert_eq!(
+        first.osc_evidence().shell_state,
+        Some(RawAgentState::Working)
+    );
+    first.feed_pty(b"\x1b]133;D;0\x07\x1b]133;A\x07");
+    assert_eq!(first.osc_evidence().shell_state, Some(RawAgentState::Idle));
+}
+
+#[test]
 fn process_evidence_unavailable_without_child_pid() {
     // Test sessions have no real child PID; sampling must report "no physics"
     // (never a false exit), so the watchdog can't demote off this evidence.

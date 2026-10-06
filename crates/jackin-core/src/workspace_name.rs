@@ -8,7 +8,10 @@ use std::fmt;
 /// Construct only via [`WorkspaceName::parse`] / [`TryFrom`]. The rules match
 /// the former `validate_workspace_file_stem` invariant (empty, reserved dots,
 /// path separators, and Windows device names).
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
+#[serde(try_from = "String", into = "String")]
 pub struct WorkspaceName(String);
 
 /// Why a workspace name string is not legal as a config-file stem.
@@ -106,3 +109,17 @@ impl TryFrom<&str> for WorkspaceName {
 
 #[cfg(test)]
 mod tests;
+
+impl TryFrom<String> for WorkspaceName {
+    type Error = WorkspaceNameError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::parse(&value)
+    }
+}
+
+impl From<WorkspaceName> for String {
+    fn from(value: WorkspaceName) -> Self {
+        value.0
+    }
+}

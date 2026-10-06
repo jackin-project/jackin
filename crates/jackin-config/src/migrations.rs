@@ -109,8 +109,16 @@ pub const CONFIG_MIGRATIONS: &[MigrationStep] = &[
     // deliberate account removal is not undone by an explicit rescan.
     MigrationStep {
         from: "v1alpha11",
-        to: CURRENT_CONFIG_VERSION,
+        to: "v1alpha12",
         migrate: noop_migration,
+    },
+    // v1alpha12 -> v1alpha13: replace unversioned OpRef `path` strings with
+    // versioned `breadcrumb` objects. Literal percent sequences are escaped
+    // as data; migration never guesses that old text was percent-encoded.
+    MigrationStep {
+        from: "v1alpha12",
+        to: CURRENT_CONFIG_VERSION,
+        migrate: migrate_config_op_breadcrumbs,
     },
 ];
 /// Ordered per-workspace file migration chain from [`LEGACY_VERSION`] to current.
@@ -170,8 +178,16 @@ pub const WORKSPACE_MIGRATIONS: &[MigrationStep] = &[
     // and role overrides. Additive with serde defaults; no transform.
     MigrationStep {
         from: "v1alpha9",
-        to: CURRENT_WORKSPACE_VERSION,
+        to: "v1alpha10",
         migrate: noop_migration,
+    },
+    // v1alpha10 -> v1alpha11: replace unversioned OpRef `path` strings with
+    // versioned `breadcrumb` objects. Literal percent sequences are escaped
+    // as data; migration never guesses that old text was percent-encoded.
+    MigrationStep {
+        from: "v1alpha10",
+        to: CURRENT_WORKSPACE_VERSION,
+        migrate: migrate_workspace_op_breadcrumbs,
     },
 ];
 
@@ -262,6 +278,228 @@ pub fn migrate_workspace_op_account_to_refs(doc: &mut DocumentMut) -> crate::Con
     }
 
     doc.remove("op_account");
+    Ok(())
+}
+
+/// v1alpha12 -> v1alpha13: migrate global `OpRef` snapshot breadcrumbs.
+///
+/// This walks embedded workspaces too; they still pass through their own
+/// workspace migration chain immediately after the global chain.
+fn migrate_config_op_breadcrumbs(doc: &mut DocumentMut) -> crate::ConfigResult<()> {
+    let root = doc.as_table_mut();
+    migrate_env_map(root.get_mut("env"))?;
+    migrate_github_settings(root.get_mut("github"))?;
+    migrate_role_sources(root.get_mut("roles"))?;
+    migrate_workspace_map(root.get_mut("workspaces"))?;
+    migrate_account_credentials(root.get_mut("accounts"))
+}
+
+/// v1alpha10 -> v1alpha11: migrate all `OpRef`s in one workspace document.
+fn migrate_workspace_op_breadcrumbs(doc: &mut DocumentMut) -> crate::ConfigResult<()> {
+    migrate_workspace_settings(doc.as_table_mut())
+}
+
+fn migrate_workspace_settings(table: &mut dyn toml_edit::TableLike) -> crate::ConfigResult<()> {
+    migrate_env_map(table.get_mut("env"))?;
+    migrate_github_settings(table.get_mut("github"))?;
+    migrate_workspace_role_overrides(table.get_mut("roles"))
+}
+
+fn migrate_env_map(item: Option<&mut toml_edit::Item>) -> crate::ConfigResult<()> {
+    let Some(item) = item else {
+        return Ok(());
+    };
+    for_each_table_like_entry(item, &mut migrate_env_value_table)
+}
+
+fn migrate_github_settings(item: Option<&mut toml_edit::Item>) -> crate::ConfigResult<()> {
+    let Some(item) = item else {
+        return Ok(());
+    };
+    visit_table_like_item(item, &mut |github| migrate_env_map(github.get_mut("env")))
+}
+
+fn migrate_role_sources(item: Option<&mut toml_edit::Item>) -> crate::ConfigResult<()> {
+    let Some(item) = item else {
+        return Ok(());
+    };
+    for_each_table_like_entry(item, &mut |role| migrate_env_map(role.get_mut("env")))
+}
+
+fn migrate_workspace_map(item: Option<&mut toml_edit::Item>) -> crate::ConfigResult<()> {
+    let Some(item) = item else {
+        return Ok(());
+    };
+    for_each_table_like_entry(item, &mut migrate_workspace_settings)
+}
+
+fn migrate_workspace_role_overrides(item: Option<&mut toml_edit::Item>) -> crate::ConfigResult<()> {
+    let Some(item) = item else {
+        return Ok(());
+    };
+    for_each_table_like_entry(item, &mut |role| {
+        migrate_env_map(role.get_mut("env"))?;
+        migrate_github_settings(role.get_mut("github"))
+    })
+}
+
+fn migrate_account_credentials(item: Option<&mut toml_edit::Item>) -> crate::ConfigResult<()> {
+    let Some(item) = item else {
+        return Ok(());
+    };
+    for_each_table_like_entry(item, &mut |account| {
+        let Some(credential) = account.get_mut("credential") else {
+            return Ok(());
+        };
+        visit_table_like_item(credential, &mut |credential| {
+            let kind = credential.get("type").and_then(toml_edit::Item::as_str);
+            if matches!(kind, Some("api_key" | "oauth_token")) {
+                migrate_env_value(credential.get_mut("value"))?;
+            }
+            Ok(())
+        })
+    })
+}
+
+fn migrate_env_value_table(table: &mut dyn toml_edit::TableLike) -> crate::ConfigResult<()> {
+    migrate_op_ref_value(table)
+}
+
+fn migrate_env_value(item: Option<&mut toml_edit::Item>) -> crate::ConfigResult<()> {
+    let Some(item) = item else {
+        return Ok(());
+    };
+    visit_table_like_item(item, &mut migrate_op_ref_value)
+}
+
+fn migrate_op_ref_value(table: &mut dyn toml_edit::TableLike) -> crate::ConfigResult<()> {
+    let has_op = table.contains_key("op");
+    let has_path = table.contains_key("path");
+    let has_breadcrumb = table.contains_key("breadcrumb");
+    if !has_op && !has_path && !has_breadcrumb {
+        return Ok(());
+    }
+
+    let old_path = table.get("path");
+    match (old_path, has_breadcrumb) {
+        (Some(_), true) => Err(ConfigError::msg(format_args!(
+            "OpRef contains both legacy `path` and versioned `breadcrumb` fields"
+        ))),
+        (Some(path_item), false) => {
+            let Some(path) = path_item.as_str() else {
+                return Err(ConfigError::msg(format_args!(
+                    "OpRef legacy `path` must be a string to migrate"
+                )));
+            };
+            let Some(reference) = table.get("op").and_then(toml_edit::Item::as_str) else {
+                return Err(ConfigError::msg(format_args!(
+                    "OpRef `op` must be a string to migrate its legacy `path`"
+                )));
+            };
+            let Some(value) = jackin_core::encode_legacy_op_breadcrumb(path, reference) else {
+                return Err(ConfigError::msg(format_args!(
+                    "OpRef legacy `path` is ambiguous or does not match the 3/4-segment path or query suffix in its `op` URI"
+                )));
+            };
+            let mut breadcrumb = toml_edit::InlineTable::new();
+            breadcrumb.insert("version", toml_edit::Value::from(1));
+            breadcrumb.insert("value", toml_edit::Value::from(value));
+            table.remove("path");
+            table.insert(
+                "breadcrumb",
+                toml_edit::Item::Value(toml_edit::Value::InlineTable(breadcrumb)),
+            );
+            Ok(())
+        }
+        (None, true) => {
+            let Some(reference) = table.get("op").and_then(toml_edit::Item::as_str) else {
+                return Err(ConfigError::msg(format_args!(
+                    "versioned OpRef breadcrumb requires a string `op` URI"
+                )));
+            };
+            if !reference.starts_with("op://") {
+                return Err(ConfigError::msg(format_args!(
+                    "OpRef `op` must start with op://: {reference:?}"
+                )));
+            }
+            Ok(())
+        }
+        (None, false) => Err(ConfigError::msg(format_args!(
+            "OpRef is missing both legacy `path` and versioned `breadcrumb` fields"
+        ))),
+    }
+}
+
+fn for_each_table_like_entry<F>(
+    item: &mut toml_edit::Item,
+    visitor: &mut F,
+) -> crate::ConfigResult<()>
+where
+    F: FnMut(&mut dyn toml_edit::TableLike) -> crate::ConfigResult<()>,
+{
+    if let Some(tables) = item.as_array_of_tables_mut() {
+        for table in tables.iter_mut() {
+            visitor(table)?;
+        }
+    } else if let Some(table) = item.as_table_like_mut() {
+        for (_, child) in table.iter_mut() {
+            visit_table_like_item(child, visitor)?;
+        }
+    } else if let Some(value) = item.as_value_mut() {
+        for_each_table_like_entry_value(value, visitor)?;
+    }
+    Ok(())
+}
+
+fn for_each_table_like_entry_value<F>(
+    value: &mut toml_edit::Value,
+    visitor: &mut F,
+) -> crate::ConfigResult<()>
+where
+    F: FnMut(&mut dyn toml_edit::TableLike) -> crate::ConfigResult<()>,
+{
+    if let Some(table) = value.as_inline_table_mut() {
+        for (_, child) in table.iter_mut() {
+            visit_table_like_item_value(child, visitor)?;
+        }
+    } else if let Some(array) = value.as_array_mut() {
+        for child in array.iter_mut() {
+            visit_table_like_item_value(child, visitor)?;
+        }
+    }
+    Ok(())
+}
+
+fn visit_table_like_item<F>(item: &mut toml_edit::Item, visitor: &mut F) -> crate::ConfigResult<()>
+where
+    F: FnMut(&mut dyn toml_edit::TableLike) -> crate::ConfigResult<()>,
+{
+    if let Some(tables) = item.as_array_of_tables_mut() {
+        for table in tables.iter_mut() {
+            visitor(table)?;
+        }
+    } else if let Some(table) = item.as_table_like_mut() {
+        visitor(table)?;
+    } else if let Some(value) = item.as_value_mut() {
+        visit_table_like_item_value(value, visitor)?;
+    }
+    Ok(())
+}
+
+fn visit_table_like_item_value<F>(
+    value: &mut toml_edit::Value,
+    visitor: &mut F,
+) -> crate::ConfigResult<()>
+where
+    F: FnMut(&mut dyn toml_edit::TableLike) -> crate::ConfigResult<()>,
+{
+    if let Some(table) = value.as_inline_table_mut() {
+        visitor(table)?;
+    } else if let Some(array) = value.as_array_mut() {
+        for child in array.iter_mut() {
+            visit_table_like_item_value(child, visitor)?;
+        }
+    }
     Ok(())
 }
 

@@ -1,6 +1,6 @@
 type BrandMarkProps = {
-  /** Use the lockup with the "by tailrocks" byline (footer / large surfaces).
-   *  Nav chrome (header, sidebar, top nav) leaves this off. */
+  /** Select the explicit lockup asset alias (footer / large surfaces).
+   *  Both lockup and default wordmark artwork include the "by tailrocks" byline. */
   byline?: boolean
   className?: string
 }

@@ -828,8 +828,7 @@ pub fn handle_launch_account_picker(state: &mut ManagerState<'_>, key: KeyEvent)
             InputOutcome::LaunchWithAccount {
                 selector: context,
                 agent,
-                account: Some(provider.id),
-                configuration: provider.configuration_id,
+                selection: provider.into_launch_selection(),
             }
         }
         AccountPickerOutcome::Cancel => {

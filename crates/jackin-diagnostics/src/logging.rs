@@ -7,8 +7,6 @@ use std::sync::{
     Mutex, OnceLock,
     atomic::{AtomicBool, Ordering},
 };
-use std::{fmt::Arguments, io::Write as _};
-
 pub(crate) static DEBUG_BUFFER_ACTIVE: AtomicBool = AtomicBool::new(false);
 static DEBUG_BUFFER: OnceLock<Mutex<Vec<String>>> = OnceLock::new();
 const DEBUG_BUFFER_LIMIT: usize = 2048;
@@ -161,9 +159,15 @@ fn debug_buffer() -> &'static Mutex<Vec<String>> {
     DEBUG_BUFFER.get_or_init(|| Mutex::new(Vec::new()))
 }
 
-fn stderr_line(args: Arguments<'_>) {
+fn stderr_line(line: &str) {
     let mut stderr = std::io::stderr().lock();
-    drop(writeln!(stderr, "{args}"));
+    drop(write_redacted_line(&mut stderr, line));
+}
+
+// Every stderr branch, including teardown and deferred flushes, crosses this
+// boundary. Keep it independent of run capture and terminal ownership.
+fn write_redacted_line(output: &mut impl std::io::Write, line: &str) -> std::io::Result<()> {
+    writeln!(output, "{}", crate::redact::redact_text(line))
 }
 
 pub(crate) fn should_tee_debug_to_stderr() -> bool {
@@ -184,7 +188,7 @@ pub fn begin_debug_buffering() {
 pub fn end_debug_buffering() {
     DEBUG_BUFFER_ACTIVE.store(false, Ordering::Relaxed);
     for line in drain_debug_buffer() {
-        stderr_line(format_args!("{line}"));
+        stderr_line(&line);
     }
 }
 
@@ -199,7 +203,7 @@ pub fn emit_debug_line(category: &str, message: &str) {
     let line = format_debug_line(category, message);
     if crate::run::active_debug(category, &line) {
         if should_tee_debug_to_stderr() {
-            stderr_line(format_args!("{line}"));
+            stderr_line(&line);
         }
         return;
     }
@@ -222,7 +226,7 @@ pub fn emit_debug_line(category: &str, message: &str) {
         }
         guard.push(line);
     } else {
-        stderr_line(format_args!("{line}"));
+        stderr_line(&line);
     }
 }
 
@@ -235,10 +239,11 @@ pub fn emit_debug_line(category: &str, message: &str) {
 /// notice (e.g. "OTLP export failing") still reaches the operator and any parent
 /// process wrapping the command without ever spewing over the live TUI.
 pub fn emit_compact_line(kind: &str, line: &str) {
+    let line = crate::redact::redact_text(line);
     if let Some(run) = crate::run::active_run() {
-        run.compact(kind, line);
+        run.compact(kind, &line);
     }
-    emit_operator_notice(line);
+    emit_operator_notice(&line);
 }
 
 /// The terminal-only half of [`emit_compact_line`]: stderr on a plain CLI,
@@ -248,7 +253,7 @@ pub fn emit_operator_notice(line: &str) {
     if crate::terminal::rich_terminal_owned() {
         buffer_pending_notice(line);
     } else {
-        stderr_line(format_args!("{line}"));
+        stderr_line(line);
     }
 }
 
@@ -259,7 +264,7 @@ pub fn emit_operator_notice(line: &str) {
 /// notice. At process exit, writing straight to stderr cannot corrupt a live TUI
 /// because the surface is already torn down.
 pub fn emit_teardown_notice(line: &str) {
-    stderr_line(format_args!("{line}"));
+    stderr_line(line);
 }
 
 /// Queue an operator notice for the deferred stderr flush at rich-surface
@@ -273,14 +278,14 @@ fn buffer_pending_notice(line: &str) {
         let keep_from = guard.len() / 2;
         guard.drain(..keep_from);
     }
-    guard.push(line.to_owned());
+    guard.push(crate::redact::redact_text(line).into_owned());
 }
 
 /// Format a single debug-log line. Pure (no I/O) so unit tests can
 /// assert on the wire format without touching global state or stderr.
 #[must_use]
 pub fn format_debug_line(category: &str, message: &str) -> String {
-    format!("[jackin debug {category}] {message}")
+    crate::redact::redact_text(&format!("[jackin debug {category}] {message}")).into_owned()
 }
 
 #[cfg(test)]

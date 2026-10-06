@@ -159,7 +159,7 @@ pub fn env_display_map(values: &BTreeMap<String, EnvValue>) -> BTreeMap<String, 
     values
         .iter()
         .filter(|(key, _)| !credential_keys.contains(key.as_str()))
-        .map(|(key, value)| (key.clone(), value.as_display_str().to_owned()))
+        .map(|(key, value)| (key.clone(), value.as_display_str()))
         .collect()
 }
 

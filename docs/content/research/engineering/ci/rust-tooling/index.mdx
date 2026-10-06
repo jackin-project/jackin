@@ -9,34 +9,36 @@ description: Evaluates Rust CI tooling for dependency hygiene, spell checking, c
 
 Rust CI should add focused dependency, spelling, coverage, and snapshot gates only where each tool has a clear ownership boundary.
 
-Dependency hygiene and Codebook checks are established; coverage and snapshot evidence remain incomplete.
+The tooling research records earlier dependency-hygiene and Codebook choices. Current <RepoFile path=".github/workflows/ci.yml" /> provides Rust crate verification and actionlint, with no dependency-hygiene, Codebook, coverage, or scheduled hygiene jobs. The historical adoption evidence and proposed wiring below do not establish current CI execution.
+
+Generated workflow changes belong in the Velnor generator and <RepoFile path=".velnor/config.toml" />, following <RepoFile path=".github/AGENTS.md" />; the generated YAML must not be hand-edited.
 
 ## Research question
 
-jackin❯ CI runs the Rust baseline — `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo nextest`, an MSRV check, `sccache`, and `mold` — but nothing beyond it. Two whole layers a mature Rust project of this size (~91K lines of production Rust, a four-crate workspace, 447 resolved packages) normally has are absent:
+The June 2026 research described a Rust baseline — `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo nextest`, an MSRV check, `sccache`, and `mold` — but nothing beyond it. Two whole layers a mature Rust project of this size (~91K lines of production Rust, a four-crate workspace, 447 resolved packages) normally has are absent:
 
-- **No dependency-hygiene layer.** The 447-package tree (85 direct dependencies in the root <RepoFile path="Cargo.toml">Cargo.toml</RepoFile> plus the four workspace crates, per <RepoFile path="Cargo.lock">Cargo.lock</RepoFile>) is unchecked: no advisory scan, no license gate, no unused-dependency check, no duplicate-version or source check.
-- **No quality-instrumentation layer.** No coverage measurement to find untested paths, no snapshot tests for the two TUI surfaces whose rendered output is otherwise asserted by hand, no spell-check on prose and identifiers.
+- **Recorded dependency-hygiene gap in June 2026.** That investigation described its 447-package tree (85 direct dependencies in the root <RepoFile path="Cargo.toml">Cargo.toml</RepoFile> plus the four workspace crates, per <RepoFile path="Cargo.lock">Cargo.lock</RepoFile>) as unchecked: no advisory scan, no license gate, no unused-dependency check, no duplicate-version or source check.
+- **Recorded quality-instrumentation gap in June 2026.** That investigation reported no coverage measurement, no TUI snapshot suite, and no spell-check. These are historical observations: current Console and Capsule sources contain rendered snapshot tests, while current generated CI execution still needs its own coverage audit.
 
-This item records the current CI ownership boundaries plus release-tooling evidence that becomes relevant when tagged-release requirements exist. It also records tools rejected for this project profile: solo-maintainer, pre-release, `Apache-2.0`, and a binary CLI workspace shipping static binaries through a Homebrew tap and `cargo-zigbuild`.
+This item records historical CI ownership boundaries and proposals plus release-tooling evidence that becomes relevant when tagged-release requirements exist. It also records tools rejected for this project profile: solo-maintainer, pre-release, `Apache-2.0`, and a binary CLI workspace shipping static binaries through a Homebrew tap and `cargo-zigbuild`.
 
-Per the solo-maintainer staffing model in <RepoFile path="AGENTS.md">AGENTS.md</RepoFile>, there is no second human to notice a `RUSTSEC` advisory, a copyleft license sneaking in through a transitive bump, or a regression in an untested branch. Automated CI checks are the substitute, exactly as multi-agent review substitutes for the missing second reviewer elsewhere. Every tool below installs through `mise` (per the mise-only CI rule in <RepoFile path=".github/AGENTS.md">.github/AGENTS.md</RepoFile>) and, where it gates, folds into the `ci-required` aggregator.
+Per the solo-maintainer staffing model in <RepoFile path="AGENTS.md">AGENTS.md</RepoFile>, there is no second human to notice a `RUSTSEC` advisory, a copyleft license sneaking in through a transitive bump, or a regression in an untested branch. Automated CI checks are the substitute, exactly as multi-agent review substitutes for the missing second reviewer elsewhere. The older proposal installed tools through `mise` and assigned blocking tools to a required aggregator. Current generation ownership is defined in <RepoFile path=".github/AGENTS.md" />; the current aggregator is `required`, and the proposed tooling jobs are absent.
 
-## Current dependency and quality gates
+## Historical tooling choices and proposed gates
 
 ### Supply-chain: `cargo-deny` + `cargo-shear`
 
-jackin❯ whole pitch is *"keep the agent from doing dangerous things to your host."* A tool that markets a security posture but has **no demonstrable supply-chain story for its own dependencies** carries a credibility gap. The source policy is now strict: crates.io is allowed, unknown registries are denied, and git dependencies are denied unless a future PR documents and justifies a scoped exception.
+jackin❯ whole pitch is *"keep the agent from doing dangerous things to your host."* A tool that markets a security posture but has **no demonstrable supply-chain story for its own dependencies** carries a credibility gap. The recorded supply-chain policy was strict: crates.io is allowed, unknown registries are denied, and git dependencies are denied unless a future PR documents and justifies a scoped exception.
 
 #### License obligation — verified
 
-The concern that copyleft licenses can force jackin❯ to adopt their terms is **correct** for the licenses that matter here:
+The historical June 2026 review recorded these license concerns; they are research context rather than current legal advice:
 
 - **`GPL` (and `AGPL`)** are strong copyleft. Rust statically links its dependencies by default, so a binary that links a GPL crate is a *combined / derivative work*. jackin❯ distributes binaries (the [`homebrew-tap`](https://github.com/jackin-project/homebrew-tap), GitHub release artifacts, the `jackin-role` validator). Distributing a binary that statically links GPL code obligates the **entire binary** to ship under GPL-compatible terms — incompatible with the project's `Apache-2.0` license.
 - **`AGPL`** adds a network-use clause: merely *operating* the software as a network service triggers the source-disclosure obligation, even without distributing a binary. Strictly worse for a tool that may grow daemon/remote surfaces.
 - **`SSPL`, `BUSL`/`BSL` (non-permissive variants), `EUPL`, `CC-BY-SA`** are in the same "avoid for a permissively-licensed distributed binary" bucket and should be denied by default.
 
-A `cargo metadata` license audit of the current 447-package tree (June 2026) found **zero `GPL` and zero `AGPL` dependencies**. There is **nothing to clean today** — the ban is a *preventive guard against future bumps*, not a cleanup. Three edge cases were reviewed and are not problems:
+A `cargo metadata` license audit of the June 2026 447-package tree found **zero `GPL` and zero `AGPL` dependencies**. That audit found **nothing to clean in the measured tree** — the ban is a *preventive guard against future bumps*, not a cleanup. Three edge cases were reviewed and are not problems:
 
 | Crate | Pulled via | License | Verdict |
 | --- | --- | --- | --- |
@@ -44,11 +46,11 @@ A `cargo metadata` license audit of the current 447-package tree (June 2026) fou
 | `r-efi` (5.x, 6.x) | `getrandom` | `MIT OR Apache-2.0 OR LGPL-2.1-or-later` | **Allow.** An `OR` expression — the project selects `MIT`/`Apache-2.0`, so the `LGPL` arm never applies. |
 | (one crate) | — | `WTFPL` | **Decide.** Permissive in intent but not OSI-clear; either allow explicitly or replace. Low stakes. |
 
-The license check therefore lands green on the current tree with a small, documented allow-list — no dependency removal required before it can be enabled.
+The June 2026 audit supported a small allow-list without dependency removal. A current lockfile run is required before claiming the proposed license check passes today.
 
 #### `cargo-audit` and `cargo-deny` — advisories, licenses, bans, sources
 
-`cargo-audit` is the PR-blocking RustSec lockfile scan. `cargo-deny` remains the broader supply-chain policy tool: its scheduled `advisories` check catches new advisories against the existing tree, while its PR-blocking `licenses`, `bans`, and `sources` checks enforce deterministic policy against the lockfile. This intentionally duplicates the RustSec advisory scan so a pull request that changes dependencies gets a direct `cargo audit` failure before the next scheduled hygiene run.
+The historical pipeline used `cargo-audit` as a PR-blocking RustSec lockfile scan. It used `cargo-deny` for scheduled advisory checks and PR-blocking license, ban, and source policy checks, deliberately duplicating advisory coverage for dependency-changing PRs. The current generated workflow has none of these jobs; this describes the former policy, not current enforcement.
 
 A first `deny.toml`, written against the **current cargo-deny config schema** (verified against the upstream docs in June 2026 — see [Upstream verification](#upstream-verification) below). Note there is no longer a `version = 2` marker in any section: the `version` field is deprecated and ignored, and the modern template documents each field by its default instead.
 
@@ -105,11 +107,11 @@ The empty `allow-git` list makes any new git dependency an explicit, reviewable 
 
 #### `cargo-shear` — unused/misplaced dependencies and unlinked sources
 
-`cargo-shear` is the adopted dependency-hygiene scanner. It runs on stable, is fast enough for every PR, and covers unused dependencies, misplaced dependencies, and unlinked Rust source files. The unlinked-source check guards against orphaned migration-residue source trees that normal compiler lints cannot see.
+The earlier tooling plan adopted `cargo-shear` as its dependency-hygiene scanner. It runs on stable and covers unused dependencies, misplaced dependencies, and unlinked Rust source files; the current generated CI does not run it. The unlinked-source check guards against orphaned migration-residue source trees that normal compiler lints cannot see.
 
 `cargo-machete` was evaluated but is not added to CI. Its own project describes the scanner as fast but imprecise, and its useful class overlaps with `cargo-shear`'s unused-dependency coverage. Keep it in reserve only as an optional local second opinion if a future `cargo-shear` finding looks suspicious.
 
-`cargo-udeps` was also evaluated and retired. It needs nightly and overlaps the unused-dependency class now covered by stable, PR-blocking `cargo-shear`.
+`cargo-udeps` was also evaluated and retired. It needs nightly and overlaps the unused-dependency class assigned to stable `cargo-shear` in the earlier plan.
 
 ### Coverage: `cargo-llvm-cov`
 
@@ -127,14 +129,14 @@ The substantive design for *what* is snapshotted — styled SVG goldens for TUI 
 
 ### Spell-check: Codebook
 
-Codebook (`codebook-lsp lint`) is the adopted spell-check gate. It combines Spellbook's Hunspell-compatible dictionary engine with Tree-sitter-aware parsing, so it can check prose-heavy project files and source comments without treating every code token as plain English.
+Codebook (`codebook-lsp lint`) was the earlier adopted spell-check choice; it is absent from current generated CI. It combines Spellbook's Hunspell-compatible dictionary engine with Tree-sitter-aware parsing, so it can check prose-heavy project files and source comments without treating every code token as plain English.
 
-The planned CI integration is whole-branch, not diff-only: <RepoFile path=".github/workflows/ci-pr.yml">.github/workflows/ci-pr.yml</RepoFile> would run two separate required jobs (the old `docs.yml` workflow was consolidated into the generated PR workflow before this integration landed):
+The proposed integration checks the whole branch. The former `.github/workflows/ci-pr.yml` and `docs.yml` workflows are deleted; neither proposed job exists in current <RepoFile path=".github/workflows/ci.yml" />:
 
 - `spell-check-docs` checks root contributor Markdown, GitHub workflow text, and the published docs corpus.
 - `spell-check-source` checks Rust source, crate TOML files, and Docker runtime/construct scripts.
 
-Both jobs run `codebook-lsp --root . lint --unique ...` over tracked files on the current branch and use the project dictionary in <RepoFile path=".codebook.toml">.codebook.toml</RepoFile>. The dictionary is the baseline of accepted jackin❯ vocabulary, tool names, British spellings used in docs, terminal/protocol acronyms, and synthetic fixture words; new vocabulary is checked against it.
+Both proposed jobs would run `codebook-lsp --root . lint --unique ...` over tracked files on the current branch and use the project dictionary in <RepoFile path=".codebook.toml">.codebook.toml</RepoFile>. The dictionary is the baseline of accepted jackin❯ vocabulary, tool names, British spellings used in docs, terminal/protocol acronyms, and synthetic fixture words; new vocabulary is checked against it.
 
 ## Release-tooling evidence
 
@@ -149,17 +151,17 @@ These verdicts are reasoned from ecosystem norms plus the verified facts below; 
 
 | Tool | Decision | Reason |
 | --- | --- | --- |
-| `cargo-audit` | **Adopt** | Runs on every PR and push to `main` as the direct RustSec lockfile gate. This duplicates cargo-deny's advisory scan intentionally so a dependency-changing PR cannot wait for the scheduled hygiene workflow to surface a known vulnerability. |
-| `cargo-shear` | **Adopt** | Runs in PR CI as the stable unused-dependency, misplaced-dependency, and unlinked-source scanner. It replaced the temporary nightly `cargo-udeps` sweep and the unused-pub wrapper after the restructure cleanup. |
+| `cargo-audit` | **Adopt** | The historical pipeline ran it on PRs and pushes to `main` as the direct RustSec lockfile gate; current generated CI has no such job. The historical policy duplicated cargo-deny's advisory scan so dependency-changing PRs did not wait for scheduled hygiene. |
+| `cargo-shear` | **Adopt** | The historical pipeline ran it as the stable unused-dependency, misplaced-dependency, and unlinked-source scanner; current generated CI has no such job. It replaced the temporary nightly `cargo-udeps` sweep and the unused-pub wrapper after the restructure cleanup. |
 | `release-plz` | **Skip** | Automates crates.io publishing and SemVer version bumps — value tied to a published library API and `cargo publish`. jackin❯ is `publish = false`, binary-only; `dist` already covers binary distribution. Only its changelog mechanics overlap, and `git-cliff` covers those directly. |
 | `cargo-semver-checks` / `cargo-public-api` | **Skip** | Library-only: "binaries have no API surface area to check." A CLI workspace with no published library crate has nothing meaningful to diff. Revisit only if a workspace crate is ever published as a library. |
-| `cargo-mutants` | **Defer** *(unverified cost)* | Mutation testing surfaces test-coverage gaps a line-coverage tool misses, but runtime cost on a TUI/CLI workspace is unverified; at-scale / periodic-manual nicety, not a per-PR gate. |
+| `cargo-mutants` | **Historical proposal; execution unverified** | Mutation testing exposes assertions that line coverage cannot establish. No current generated job runs it. Required mutation and red/green regression proof must still execute; absence of this particular tool does not remove that contract. |
 | `cargo-vet` / `cargo-crev` | **Defer** | Human-audit-trail tooling whose value scales with reviewer count or an imported trusted-audit set (Mozilla/Google). A solo maintainer cannot sustain a per-crate audit ledger; revisit if the project gains contributors. |
 | `cargo-geiger` | **Defer** | `unsafe`-usage census — a metric, not a pass/fail policy. Out of scope for a CI gate. |
 | `OpenSSF Scorecard` / GitHub `dependency-review-action` | **Defer** | Repo-health and PR-dependency-diff signals overlapping cargo-deny's coverage for a Rust project; reconsider only if a published security-posture score is wanted. |
 | `taplo`, `cocogitto` / `committed`, `cargo-chef`, `cargo-about` | **Open** *(unverified)* | TOML lint, conventional-commit lint, Docker build-cache, and license-attribution generation. Evaluate individually if a concrete need appears (e.g. `cargo-chef` if Rust Docker-layer build times become a problem). |
 | `cargo-hakari` | **No-adopt** | Hygiene run `29397057453` measured clean, locked workspace builds at **152s before** and **152s after** generating the workspace-hack and managing every workspace dependency: a 0s / 0% delta. That does not justify the generated crate and dependency-maintenance cost. The exit-checked lane remains as reproducible evidence; see plan 012. |
-| `miri` | **Adopt (advisory)** | Hygiene job `miri` runs independent pure-crate invocations (`jackin-core`, `jackin-config`, `jackin-manifest`) with per-crate PASS/FAIL summary lines — no `\|\|` fallback masking. Advisory; not a merge gate. |
+| `miri` | **Historical adoption (advisory)** | The historical hygiene job `miri` ran independent pure-crate invocations (`jackin-core`, `jackin-config`, `jackin-manifest`) with per-crate PASS/FAIL summary lines — no `\|\|` fallback masking. Advisory; not a merge gate. |
 
 ## CI wiring
 
@@ -168,9 +170,9 @@ These verdicts are reasoned from ecosystem norms plus the verified facts below; 
 There are two integration paths for `cargo-deny`, and they pull in different directions:
 
 - **Upstream-canonical: `EmbarkStudios/cargo-deny-action@v2`** — the documented canonical CI integration, a single step after `actions/checkout` with the binary bundled by the action (`@v2` currently ships cargo-deny 0.19.x). Lowest friction, but installs a tool *outside* `mise`.
-- **Project-consistent: install via `mise`, run the binary directly** — jackin❯ mise-only CI tool-install rule in <RepoFile path=".github/AGENTS.md">.github/AGENTS.md</RepoFile> requires every CI tool to come from <RepoFile path="mise.toml">mise.toml</RepoFile>, like the existing `cargo:cargo-nextest` and `cargo:cargo-zigbuild` entries.
+- **Project-consistent: install via `mise`, run the binary directly** — jackin❯ mise-only CI tool-install rule in <RepoFile path="PULL_REQUESTS.md">PULL_REQUESTS.md</RepoFile> requires every CI tool to come from <RepoFile path="mise.toml">mise.toml</RepoFile>, like the existing `cargo:cargo-nextest` and `cargo:cargo-zigbuild` entries.
 
-**Recommendation: the mise path**, to honour the project's hard rule and keep one tool-install mechanism. The `cargo-deny-action` is noted as the upstream-canonical alternative, explicitly *not* adopted because it bypasses `mise`. A new `deny` unit in <RepoFile path=".github/workflows/ci-pr.yml">.github/workflows/ci-pr.yml</RepoFile>, alongside the existing per-crate units:
+**Recommendation: the mise path**, to honour the project's tool-install rule and keep one tool-install mechanism. The `cargo-deny-action` is noted as the upstream-canonical alternative, explicitly *not* adopted because it bypasses `mise`. The current <RepoFile path=".github/workflows/ci.yml">.github/workflows/ci.yml</RepoFile> has no `deny` job; introduce the required capability in the workflow generator, then select it through <RepoFile path=".velnor/config.toml">.velnor/config.toml</RepoFile>. The following is a proposed job shape, not an instruction to edit generated YAML:
 
 ```yaml
   deny:
@@ -183,7 +185,7 @@ There are two integration paths for `cargo-deny`, and they pull in different dir
       - run: cargo shear
 ```
 
-CI tools are pinned in <RepoFile path="mise.toml">mise.toml</RepoFile> alongside `cargo:cargo-nextest` and `cargo:cargo-zigbuild`:
+The tooling is pinned locally in <RepoFile path="mise.toml" />: `cargo-audit`, `cargo-deny`, `cargo-shear`, `cargo-llvm-cov`, `cargo-mutants`, and `codebook-lsp` have current version entries. Local pins do not establish generated CI execution. The illustrative placeholders below describe the proposed integration rather than the current version values:
 
 ```toml
 "cargo:cargo-deny" = "<pinned>"      # e.g. the 0.19.x line current in mid-2026
@@ -194,13 +196,13 @@ CI tools are pinned in <RepoFile path="mise.toml">mise.toml</RepoFile> alongside
 # optional locally and not required in CI (snapshots assert via the nextest run).
 ```
 
-The `deny`, Codebook spell-check, and (informational) coverage steps slot into CI behind the existing aggregators. Codebook would join <RepoFile path=".github/workflows/ci-pr.yml">.github/workflows/ci-pr.yml</RepoFile> through the required aggregator as `spell-check-docs` and `spell-check-source`. Coverage is non-gating and does not join a required aggregator.
+The proposed `deny` and Codebook jobs would feed the required aggregator after generator support is implemented and verified. Informational coverage would remain non-gating. None of these jobs exists in the current generated workflow.
 
 ### Advisory-freshness consideration
 
 The `RUSTSEC` database updates independently of the repo, so a green PR can turn red later when a new advisory lands against an existing dependency — with no code change. (`cargo-audit` and cargo-deny both fetch the same `RustSec/advisory-db`; cargo-deny caches it under `$CARGO_HOME/advisory-dbs` and treats a DB older than `maximum-db-staleness`, default `P90D` / 90 days, as an error — so CI must refresh the DB rather than rely on a stale cache.) Two shapes resolve the green-turns-red problem:
 
-- **Blocking on every PR + a scheduled run.** Keep `advisories` in the per-PR gate (catches newly-introduced vulnerable deps immediately) **and** add a daily/weekly `schedule:`-triggered run so an advisory against the existing tree surfaces as its own failing run rather than blocking an unrelated PR author. This is the recommended shape.
+- **Blocking on every PR + a scheduled run.** Add `advisories` to the proposed per-PR gate (catches newly-introduced vulnerable deps immediately) **and** add a daily/weekly `schedule:`-triggered run so an advisory against the existing tree surfaces as its own failing run rather than blocking an unrelated PR author. This is the recommended shape.
 - **License + bans + sources block per-PR; advisories scheduled-only.** Lower friction, but a PR that introduces a known-vulnerable dependency would not be caught until the next scheduled run. Weaker; not recommended.
 
 ## Host-side effects

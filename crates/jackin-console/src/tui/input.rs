@@ -22,7 +22,7 @@ pub type InputOutcome = crate::tui::message::ConsoleInputOutcome<
     jackin_core::RoleSelector,
     jackin_core::Agent,
     crate::tui::message::ConsoleInstanceAction<jackin_core::Agent>,
-    Option<String>,
+    jackin_core::LaunchSelection,
 >;
 
 #[cfg(test)]
