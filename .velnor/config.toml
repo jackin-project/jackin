@@ -8,6 +8,29 @@ runner_label = "ubuntu-26.04"
 generator_validation = "bootstrap"
 max_parallel_jobs = 4
 
+# Verification tasks are standalone jobs. Their Mise task bodies must stay
+# free of Cargo/rustc; Rust work belongs to the MBX-backed Rust stack.
+[[workflow.tasks]]
+kind = "verification"
+id = "construct-upstream-assets"
+mise_task = "renovate-upstream-sources"
+runner = "linux-x64"
+timeout_minutes = 10
+
+[[workflow.tasks]]
+kind = "verification"
+id = "native-swift-format"
+mise_task = "desktop-format-check"
+runner = "macos-arm64"
+timeout_minutes = 10
+
+[[workflow.tasks]]
+kind = "verification"
+id = "native-swiftlint"
+mise_task = "desktop-lint"
+runner = "macos-arm64"
+timeout_minutes = 10
+
 [resources]
 compiler_process_budget = 4
 test_process_budget = 4
@@ -23,10 +46,6 @@ exclude = [
   "**/fuzz/**",
   "crates/jackin-lints/**",
   "vendor/**",
-  "crates/jackin-brand/**",
-  "crates/jackin-build-meta/**",
-  "crates/jackin-oppicker/**",
-  "crates/jackin-pr-trailers/**"
 ]
 
 [stacks.rust]

@@ -259,13 +259,6 @@ fn repo_text(relative: &str) -> String {
         .unwrap_or_else(|error| panic!("reading {}: {error}", path.display()))
 }
 
-fn repo_text_opt(relative: &str) -> std::io::Result<String> {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .join(relative);
-    std::fs::read_to_string(&path)
-}
-
 fn task_block<'a>(mise: &'a str, name: &str) -> &'a str {
     let marker = format!("[tasks.{name}]\n");
     let start = mise
@@ -329,9 +322,7 @@ fn cadence_tasks_define_the_canonical_graph() {
 
 #[test]
 fn release_workflow_invokes_canonical_mise_tasks() {
-    let Ok(release) = repo_text_opt(".github/workflows/release.yml") else {
-        return;
-    };
+    let release = repo_text(".github/workflows/release.yml");
     let mise = repo_text("mise.toml");
     let release_tools = task_block(&mise, "desktop-release-tools");
     assert!(
@@ -368,18 +359,85 @@ fn release_workflow_invokes_canonical_mise_tasks() {
 }
 
 #[test]
-fn generated_ci_delegates_the_native_lane() {
-    let Ok(ci) = repo_text_opt(".github/workflows/ci-pr.yml") else {
-        return;
-    };
-    assert!(
-        ci.contains("ci-unit-swift.yml"),
-        "generated ci-pr.yml must dispatch the Swift units to the unit workflow"
-    );
-    for hand_restated in ["swift test", "cargo xtask desktop", "xcodebuild"] {
-        assert!(
-            !ci.contains(hand_restated),
-            "generated ci-pr.yml must not hand-restate native step `{hand_restated}`"
+fn generated_ci_includes_configured_native_verification_tasks() -> anyhow::Result<()> {
+    use anyhow::Context as _;
+    use std::{collections::BTreeSet, fs, path::Path};
+
+    const TASK_IDS: [&str; 2] = ["native-swift-format", "native-swiftlint"];
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let config_path = root.join(".velnor/config.toml");
+    let config_text = fs::read_to_string(&config_path)
+        .with_context(|| format!("reading {}", config_path.display()))?;
+    let config: toml::Value = toml::from_str(&config_text)
+        .with_context(|| format!("parsing {}", config_path.display()))?;
+    let configured_tasks = config
+        .get("workflow")
+        .and_then(|value| value.get("tasks"))
+        .and_then(toml::Value::as_array)
+        .context("maintained verification tasks are declared")?;
+    for task_id in TASK_IDS {
+        anyhow::ensure!(
+            configured_tasks.iter().any(|task| {
+                task.get("kind").and_then(toml::Value::as_str) == Some("verification")
+                    && task.get("id").and_then(toml::Value::as_str) == Some(task_id)
+            }),
+            "Velnor config must declare native task {task_id}"
         );
     }
+
+    let workflow_dir = root.join(".github/workflows");
+    let entries = fs::read_dir(&workflow_dir)
+        .with_context(|| format!("reading {}", workflow_dir.display()))?;
+    let mut has_required_fan_in = false;
+    let mut job_ids = BTreeSet::new();
+    let mut required_needs = BTreeSet::new();
+    for entry in entries {
+        let path = entry.context("reading workflow entry")?.path();
+        if !path
+            .extension()
+            .is_some_and(|extension| extension == "yml" || extension == "yaml")
+        {
+            continue;
+        }
+        let contents =
+            fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
+        let workflow: serde_json::Value = serde_yaml_ng::from_str(&contents)
+            .with_context(|| format!("parsing {}", path.display()))?;
+        let jobs = workflow
+            .get("jobs")
+            .and_then(serde_json::Value::as_object)
+            .with_context(|| format!("{} has no jobs mapping", path.display()))?;
+        for task_id in TASK_IDS {
+            let job_id = format!("task-{task_id}");
+            if jobs.contains_key(&job_id) {
+                job_ids.insert(job_id);
+            }
+        }
+        if let Some(required) = jobs.get("required") {
+            has_required_fan_in = true;
+            let needs = required
+                .get("needs")
+                .and_then(serde_json::Value::as_array)
+                .with_context(|| format!("{} Required.needs must be a sequence", path.display()))?;
+            required_needs.extend(
+                needs
+                    .iter()
+                    .filter_map(serde_json::Value::as_str)
+                    .map(str::to_owned),
+            );
+        }
+    }
+    anyhow::ensure!(
+        has_required_fan_in,
+        "generated CI has no Required fan-in job"
+    );
+    for task_id in TASK_IDS {
+        let job_id = format!("task-{task_id}");
+        anyhow::ensure!(job_ids.contains(&job_id), "generated CI omits {job_id}");
+        anyhow::ensure!(
+            required_needs.contains(&job_id),
+            "generated Required.needs omits {job_id}"
+        );
+    }
+    Ok(())
 }

@@ -10,6 +10,7 @@
 
 use crate::ConfigError;
 use std::collections::{BTreeMap, BTreeSet};
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
 use anyhow::Context as _;
@@ -461,22 +462,40 @@ impl ConfigEditor {
     /// Returns an error if a synthesized account fails validation.
     pub fn scan_for_accounts(&mut self) -> crate::ConfigResult<BootstrapReport> {
         let home = self.home_dir.clone();
+        let mut codex_home = None;
         let environment = std::env::vars_os()
-            .filter_map(|(name, value)| Some((name.into_string().ok()?, value.into_string().ok()?)))
+            .filter_map(|(name, value)| {
+                if name == OsStr::new("CODEX_HOME") {
+                    codex_home = Some(value.clone());
+                }
+                Some((name.into_string().ok()?, value.into_string().ok()?))
+            })
             .collect();
-        self.scan_for_accounts_with(&home, &environment)
+        self.scan_for_accounts_with_codex_home(&home, &environment, codex_home.as_deref())
     }
 
     /// [`scan_for_accounts`](Self::scan_for_accounts) with explicit
     /// discovery inputs (deterministic seam for tests; production passes
     /// the live home directory and process environment).
+    #[cfg(test)]
     fn scan_for_accounts_with(
         &mut self,
         home: &Path,
         environment: &BTreeMap<String, String>,
     ) -> crate::ConfigResult<BootstrapReport> {
+        let codex_home = environment.get("CODEX_HOME").map(OsStr::new);
+        self.scan_for_accounts_with_codex_home(home, environment, codex_home)
+    }
+
+    fn scan_for_accounts_with_codex_home(
+        &mut self,
+        home: &Path,
+        environment: &BTreeMap<String, String>,
+        codex_home: Option<&OsStr>,
+    ) -> crate::ConfigResult<BootstrapReport> {
         let mut report = BootstrapReport::default();
-        let scan = crate::discover_default_accounts(home);
+        let scan =
+            crate::accounts::discovery::discover_default_accounts_with_codex_home(home, codex_home);
         report.issues = scan.issues;
         let mut candidates = Vec::new();
         for discovered in scan.accounts {
