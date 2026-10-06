@@ -3,7 +3,7 @@
 
 [package]
 name = "jackin-process-directory"
-version = "0.6.4"
+version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
@@ -14,7 +14,7 @@ publish = false
 readme = "README.md"
 
 [target.'cfg(unix)'.dependencies]
-rustix = { version = "1", features = ["fs", "process"] }
+rustix = { workspace = true, features = ["process"] }
 
 [dev-dependencies]
 nix = { workspace = true }
