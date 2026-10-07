@@ -5731,3 +5731,123 @@ bound 720.
 - Raw outputs:
   `/tmp/s7-s65-{pre,post}-*.txt`
   (kept out of the repo).
+
+### Split 66: runtime-launch-image-plan extraction (M28)
+
+- `jackin-runtime` ->
+  `jackin-runtime` +
+  `jackin-runtime-launch-image-plan`
+  (T7: the whole
+  `launch::image_plan`
+  module moves —
+  role-repo resolution
+  + image decision,
+  single `tests.rs`
+  with 5 tests).
+  Cross-leaf edges: 6x
+  into already-split
+  crates (`image`,
+  `naming`, `repo_cache`
+  + split-65
+  `capsule_setup::role_model_defaults`).
+  Zero visibility changes:
+  the public surface
+  (`LaunchImagePlan`,
+  `resolve_launch_image_plan`)
+  was already `pub`,
+  `plan_from_decision`
+  has no external users
+  and stays `pub(crate)`.
+  The shim is a `pub`
+  glob (`launch.rs`
+  re-exports the plan
+  publicly for
+  `crates/apps/jackin`
+  — the split-60/64
+  precedent). Tier:
+  names T6 image, so it
+  takes T7; no renumber
+  cascade. New-crate deps:
+  config, core, docker,
+  runtime-image,
+  launch-capsule-setup,
+  runtime-naming,
+  runtime-repo-cache,
+  anyhow, serde_json
+  (lockfile +1
+  package, +9
+  edges). Policy
+  registries: +1
+  owned package
+  (`library`).
+
+- Verify: `cargo check
+  --locked --workspace
+  --all-targets`
+  green; `cargo fmt
+  --all --check`
+  clean; `cargo
+  clippy` 0 errors on
+  the new crate,
+  `jackin-runtime`
+  holds at the 7
+  pre-existing errors
+  (all in
+  `launch_slot/tests`,
+  byte-identical
+  locations).
+  `cargo nextest list
+  --workspace
+  --all-targets`: 7277
+  -> 7277 (5
+  relocations map 1:1
+  by name, verified by
+  stripped-diff:
+  `launch::image_plan`
+  -> `image_plan`;
+  0 dropped, 0 added).
+  `nextest run`:
+  497/497 runtime
+  (492) +
+  image-plan (5).
+  `alint check`:
+  182 violations / 11
+  failing unchanged.
+  `check-gaps`
+  (v0.1.3,
+  production-only):
+  12 -> 12 (runtime
+  `SIZE-001/002`
+  persist: 16063 ->
+  15959 prod code
+  lines, 95 -> 95
+  prod files; new
+  crate fits at
+  290 raw / 6
+  files, no SIZE
+  finding).
+  `GAP-TEST-001/002/003`
+  stay 0/0/0.
+  `ratchet.toml`: +2
+  rows
+  (agent-doc-bytes
+  README 666,
+  public-surface 1;
+  no lint rows move,
+  complexity under
+  the default cap);
+  failures 56
+  -> 56 — remaining
+  keys byte-identical.
+  `lint arch
+  --strict`: missing
+  tiers stay 3, zero
+  direction
+  violations; `lint
+  headers` stays at
+  the base 2; `lint
+  tests` OK.
+
+- Raw outputs:
+  `/tmp/s7-s66-{pre,post}-*.txt`
+  (kept out of the repo).

@@ -44,6 +44,7 @@
     "jackin-runtime-launch-account-config",
     "jackin-runtime-launch-account-identity",
     "jackin-runtime-launch-capsule-setup",
+    "jackin-runtime-launch-image-plan",
     "jackin-runtime-launch-mounts",
     "jackin-runtime-launch-plan",
     "jackin-runtime-launch-trust",

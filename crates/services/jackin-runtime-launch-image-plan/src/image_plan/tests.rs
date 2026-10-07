@@ -5,7 +5,7 @@
 //! decision is the input here, not something these tests resolve.
 
 use super::*;
-use crate::runtime::image::ImageInvalidationReason;
+use jackin_runtime_image::image::ImageInvalidationReason;
 
 fn selector() -> RoleSelector {
     RoleSelector::parse("donbeave/the-architect").expect("role selector must parse")
