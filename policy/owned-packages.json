@@ -54,6 +54,7 @@
     "jackin-runtime-launch-attach-outcome",
     "jackin-runtime-launch-auth-error",
     "jackin-runtime-launch-capsule-setup",
+    "jackin-runtime-launch-dry-run",
     "jackin-runtime-launch-exit-diagnosis",
     "jackin-runtime-launch-git-pull",
     "jackin-runtime-launch-image-plan",

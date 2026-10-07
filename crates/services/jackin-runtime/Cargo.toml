@@ -57,6 +57,7 @@ jackin-runtime-launch-account-identity = { workspace = true }
 jackin-runtime-launch-attach-outcome = { workspace = true }
 jackin-runtime-launch-auth-error = { workspace = true }
 jackin-runtime-launch-capsule-setup = { workspace = true }
+jackin-runtime-launch-dry-run = { workspace = true }
 jackin-runtime-launch-exit-diagnosis = { workspace = true }
 jackin-runtime-launch-git-pull = { workspace = true }
 jackin-runtime-launch-image-plan = { workspace = true }

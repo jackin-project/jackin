@@ -8368,3 +8368,147 @@ bound 720.
   `/tmp/s7-s84-{pre,post}-*.txt`
   (kept out of the
   repo).
+
+### Split 85: runtime-launch-dry-run extraction (M47)
+
+- `jackin-runtime`
+  ->
+  `jackin-runtime`
+  +
+  `jackin-runtime-launch-dry-run`
+  (T6: the whole
+  `launch/dry_run`
+  module moves --
+  `DryRunIdentity` /
+  `DryRunModelProjection`
+  +
+  `resolve_dry_run_identity`
+  /
+  `resolve_dry_run_model_projection`
+  + private
+  `account_model`
+  (171 -> 21 shim
+  lines). Bodies
+  unchanged modulo
+  one path rewrite
+  (`super::capsule_setup::resolved_instance_models_from_role_models`
+  -> the T5
+  `jackin-runtime-launch-capsule-setup`
+  re-export) and one
+  doc-link reword
+  (the
+  `super::programmatic::with_account_selection`
+  intra-doc link
+  becomes plain text
+  -- programmatic
+  stays in the hub).
+  No visibility widens
+  (every moved item
+  already `pub`).
+  Hub keeps a glob
+  re-export shim with
+  the `#[cfg(test)]`
+  suite in place: the
+  21 dry_run tests name
+  hub
+  `programmatic::with_account_selection`,
+  so coverage stays in
+  the hub and the shim
+  restores the four
+  test-only imports
+  (`AppConfig`,
+  `ResolvedInstance`,
+  `Agent`,
+  `WorkspaceName`)
+  under `cfg(test)`.
+  `mod dry_run` +
+  `launch.rs` item
+  re-exports unchanged,
+  so all prod callers
+  (hub `runtime.rs`,
+  app `load_cmd.rs`)
+  compile unchanged.
+  Tier: names T5
+  capsule-setup + T1
+  config + T0 core, so
+  it takes T6; no
+  renumber cascade.
+  New-crate deps:
+  config, core,
+  capsule-setup,
+  anyhow (lockfile +1
+  package, +5 edges).
+  Policy registries:
+  +1 owned package
+  (`library`).)
+
+- Verify: `cargo check
+  --locked --workspace
+  --all-targets` green
+  (after `--offline`
+  lockfile regen);
+  `cargo fmt --all
+  --check` clean; `cargo
+  clippy` 0 errors on
+  the new crate (`-D
+  warnings`),
+  `jackin-runtime`
+  holds at the 7
+  pre-existing errors
+  (same 6 lints at
+  identical locations
+  + summary). `cargo
+  nextest list
+  --workspace
+  --all-targets`: 7277
+  -> 7277,
+  byte-identical (0
+  relocations -- the
+  suite stays in the
+  hub `dry_run` shim;
+  0 dropped, 0 added).
+  `nextest run`:
+  433/433 runtime
+  green (1 skipped,
+  pre-existing; the new
+  crate has no tests
+  yet) + 17/17 app
+  `load_cmd` green.
+  `alint check`:
+  181 violations / 11
+  failing,
+  byte-identical.
+  `check-gaps`:
+  12 -> 12 (hub 11772
+  -> 11670 prod code
+  lines, 79 prod files
+  unchanged; xtask
+  26298 -> 26299 from
+  the TIERS row; new
+  crate fits at 189 raw
+  / 3 files, no SIZE
+  finding).
+  `GAP-TEST-001/002/003`
+  stay 0/0/0.
+  `ratchet.toml`: +2
+  rows (agent-doc-bytes
+  README 888,
+  public-surface 1);
+  gate output
+  byte-identical to
+  base. `lint arch
+  --strict`: 3
+  pre-existing no-tier
+  violations
+  byte-identical, zero
+  direction violations;
+  `lint headers` stays
+  at the base 2; `lint
+  tests` OK; `lint
+  readme-freshness`
+  unchanged.
+
+- Raw outputs:
+  `/tmp/s7-s85-{pre,post}-*.txt`
+  (kept out of the
+  repo).

@@ -52,6 +52,7 @@ members = [
     "crates/services/jackin-runtime-launch-attach-outcome",
     "crates/services/jackin-runtime-launch-auth-error",
     "crates/services/jackin-runtime-launch-capsule-setup",
+    "crates/services/jackin-runtime-launch-dry-run",
     "crates/services/jackin-runtime-launch-exit-diagnosis",
     "crates/services/jackin-runtime-launch-git-pull",
     "crates/services/jackin-runtime-launch-image-plan",
@@ -202,6 +203,7 @@ jackin-runtime-launch-account-identity = { version = "0.6.4", path = "crates/ser
 jackin-runtime-launch-attach-outcome = { version = "0.6.4", path = "crates/services/jackin-runtime-launch-attach-outcome" }
 jackin-runtime-launch-auth-error = { version = "0.6.4", path = "crates/services/jackin-runtime-launch-auth-error" }
 jackin-runtime-launch-capsule-setup = { version = "0.6.4", path = "crates/services/jackin-runtime-launch-capsule-setup" }
+jackin-runtime-launch-dry-run = { version = "0.6.4", path = "crates/services/jackin-runtime-launch-dry-run" }
 jackin-runtime-launch-exit-diagnosis = { version = "0.6.4", path = "crates/services/jackin-runtime-launch-exit-diagnosis" }
 jackin-runtime-launch-git-pull = { version = "0.6.4", path = "crates/services/jackin-runtime-launch-git-pull" }
 jackin-runtime-launch-image-plan = { version = "0.6.4", path = "crates/services/jackin-runtime-launch-image-plan" }

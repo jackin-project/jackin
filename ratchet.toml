@@ -783,6 +783,9 @@ bound = 900
 key = "crates/services/jackin-runtime-launch-capsule-setup/README.md"
 bound = 1066
 [[family.entry]]
+key = "crates/services/jackin-runtime-launch-dry-run/README.md"
+bound = 888
+[[family.entry]]
 key = "crates/services/jackin-runtime-launch-exit-diagnosis/README.md"
 bound = 1274
 [[family.entry]]
@@ -1152,6 +1155,9 @@ key = "jackin-runtime-launch-auth-error"
 bound = 1
 [[family.entry]]
 key = "jackin-runtime-launch-capsule-setup"
+bound = 1
+[[family.entry]]
+key = "jackin-runtime-launch-dry-run"
 bound = 1
 [[family.entry]]
 key = "jackin-runtime-launch-exit-diagnosis"
