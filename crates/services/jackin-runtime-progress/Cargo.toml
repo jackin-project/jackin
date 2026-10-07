@@ -1,0 +1,32 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "jackin-runtime-progress"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
+description = "Host wiring for launch progress surfaces."
+license.workspace = true
+readme = "README.md"
+publish = false
+
+repository.workspace = true
+
+[lib]
+name = "jackin_runtime_progress"
+path = "src/lib.rs"
+
+[dependencies]
+jackin-core = { workspace = true }
+jackin-diagnostics = { workspace = true }
+jackin-host = { workspace = true }
+jackin-launch = { workspace = true }
+anyhow = { workspace = true }
+
+[build-dependencies]
+jackin-build-meta = { workspace = true }
+
+[lints]
+workspace = true

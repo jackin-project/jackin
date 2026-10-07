@@ -3587,6 +3587,7 @@ dependencies = [
  "jackin-runtime-isolation",
  "jackin-runtime-naming",
  "jackin-runtime-process-telemetry",
+ "jackin-runtime-progress",
  "jackin-runtime-repo-cache",
  "jackin-runtime-session-control",
  "jackin-runtime-snapshot",
@@ -3700,6 +3701,18 @@ dependencies = [
  "jackin-telemetry",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "jackin-runtime-progress"
+version = "0.6.4"
+dependencies = [
+ "anyhow",
+ "jackin-build-meta",
+ "jackin-core",
+ "jackin-diagnostics",
+ "jackin-host",
+ "jackin-launch",
 ]
 
 [[package]]

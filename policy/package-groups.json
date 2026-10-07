@@ -38,6 +38,7 @@
     "jackin-runtime-isolation": "library",
     "jackin-runtime-naming": "library",
     "jackin-runtime-process-telemetry": "library",
+    "jackin-runtime-progress": "library",
     "jackin-runtime-repo-cache": "library",
     "jackin-runtime-session-control": "library",
     "jackin-runtime-snapshot": "library",

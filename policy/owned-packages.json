@@ -38,6 +38,7 @@
     "jackin-runtime-isolation",
     "jackin-runtime-naming",
     "jackin-runtime-process-telemetry",
+    "jackin-runtime-progress",
     "jackin-runtime-repo-cache",
     "jackin-runtime-session-control",
     "jackin-runtime-snapshot",
