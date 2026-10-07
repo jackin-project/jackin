@@ -46,6 +46,7 @@
     "jackin-runtime-launch-auth-error",
     "jackin-runtime-launch-capsule-setup",
     "jackin-runtime-launch-image-plan",
+    "jackin-runtime-launch-load-cleanup",
     "jackin-runtime-launch-mounts",
     "jackin-runtime-launch-plan",
     "jackin-runtime-launch-trust",

@@ -743,6 +743,9 @@ bound = 1066
 key = "crates/services/jackin-runtime-launch-image-plan/README.md"
 bound = 666
 [[family.entry]]
+key = "crates/services/jackin-runtime-launch-load-cleanup/README.md"
+bound = 794
+[[family.entry]]
 key = "crates/services/jackin-runtime-launch-mounts/README.md"
 bound = 907
 [[family.entry]]
@@ -1063,6 +1066,9 @@ bound = 1
 key = "jackin-runtime-launch-image-plan"
 bound = 1
 [[family.entry]]
+key = "jackin-runtime-launch-load-cleanup"
+bound = 1
+[[family.entry]]
 key = "jackin-runtime-launch-mounts"
 bound = 1
 [[family.entry]]
@@ -1253,6 +1259,9 @@ bound = 28
 [[family.entry]]
 key = "jackin-runtime-launch-account-identity"
 bound = 41
+[[family.entry]]
+key = "jackin-runtime-launch-load-cleanup"
+bound = 26
 [[family.entry]]
 key = "jackin-telemetry"
 bound = 30

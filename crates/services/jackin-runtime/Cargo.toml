@@ -49,6 +49,7 @@ jackin-runtime-launch-account-identity = { workspace = true }
 jackin-runtime-launch-auth-error = { workspace = true }
 jackin-runtime-launch-capsule-setup = { workspace = true }
 jackin-runtime-launch-image-plan = { workspace = true }
+jackin-runtime-launch-load-cleanup = { workspace = true }
 jackin-runtime-launch-mounts = { workspace = true }
 jackin-runtime-launch-plan = { workspace = true }
 jackin-runtime-launch-trust = { workspace = true }

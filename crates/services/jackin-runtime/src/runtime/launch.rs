@@ -283,7 +283,9 @@ pub(crate) use jackin_runtime_launch_plan::launch_plan::{
     emit_prewarm_launch_plan, emit_rejected_launch_plan_for_run,
 };
 
-mod load_cleanup;
+// Moved to jackin_runtime_launch_load_cleanup::load_cleanup (S7 split 68);
+// the module re-export keeps every `launch::load_cleanup::*` path stable.
+pub(crate) use jackin_runtime_launch_load_cleanup::load_cleanup;
 pub use load_cleanup::LoadCleanup;
 pub(crate) use load_cleanup::write_if_changed_atomic;
 

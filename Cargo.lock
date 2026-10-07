@@ -3595,6 +3595,7 @@ dependencies = [
  "jackin-runtime-launch-auth-error",
  "jackin-runtime-launch-capsule-setup",
  "jackin-runtime-launch-image-plan",
+ "jackin-runtime-launch-load-cleanup",
  "jackin-runtime-launch-mounts",
  "jackin-runtime-launch-plan",
  "jackin-runtime-launch-trust",
@@ -3837,6 +3838,17 @@ dependencies = [
  "jackin-runtime-naming",
  "jackin-runtime-repo-cache",
  "serde_json",
+]
+
+[[package]]
+name = "jackin-runtime-launch-load-cleanup"
+version = "0.6.4"
+dependencies = [
+ "jackin-core",
+ "jackin-diagnostics",
+ "jackin-docker",
+ "jackin-runtime-progress",
+ "jackin-telemetry",
 ]
 
 [[package]]

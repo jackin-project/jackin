@@ -5962,3 +5962,124 @@ bound 720.
 - Raw outputs:
   `/tmp/s7-s67-{pre,post}-*.txt`
   (kept out of the repo).
+
+### Split 68: runtime-launch-load-cleanup extraction (M30)
+
+- `jackin-runtime` ->
+  `jackin-runtime` +
+  `jackin-runtime-launch-load-cleanup`
+  (T6: the whole
+  `launch::load_cleanup`
+  module moves —
+  `LoadCleanup`
+  teardown coordinator
+  + atomic-write
+  guard, no tests).
+  Cross-leaf edges: 1x
+  into an already-split
+  crate (`progress`;
+  the `ContainerState`
+  use already pointed
+  at `jackin-core`,
+  not at un-split
+  `attach`). Nine
+  `pub(crate)` items
+  widen to `pub`
+  (forced: the module
+  was crate-local and
+  stays used
+  cross-crate).
+  No shim file:
+  `launch.rs`
+  re-exports the module
+  itself (the split-56
+  precedent), so the
+  `pub use
+  load_cleanup::LoadCleanup`
+  item path and every
+  `launch::LoadCleanup`
+  call site keep
+  working unchanged.
+  Tier: names T5
+  progress, so it
+  takes T6; no renumber
+  cascade. New-crate deps:
+  core, diagnostics,
+  docker,
+  runtime-progress,
+  telemetry (lockfile
+  +1 package, +5
+  edges). Policy
+  registries: +1
+  owned package
+  (`library`).
+
+- Verify: `cargo check
+  --locked --workspace
+  --all-targets`
+  green; `cargo fmt
+  --all --check`
+  clean; `cargo
+  clippy` 0 errors on
+  the new crate,
+  `jackin-runtime`
+  holds at the 7
+  pre-existing errors
+  (all in
+  `launch_slot/tests`,
+  byte-identical
+  locations).
+  `cargo nextest list
+  --workspace
+  --all-targets`: 7277
+  -> 7277 (byte-identical
+  output: the moved
+  module carries no
+  tests, 0 dropped,
+  0 added).
+  `nextest run`:
+  492/492 runtime +
+  new crate (1 skipped,
+  pre-existing; one run
+  flagged a flaky
+  `(1 leaky)`, clean on
+  rerun). `alint check`:
+  182 violations / 11
+  failing unchanged.
+  `check-gaps`
+  (v0.1.3,
+  production-only):
+  12 -> 12 (runtime
+  `SIZE-001/002`
+  persist: 15919 ->
+  15687 prod code
+  lines, 94 -> 93
+  prod files; new
+  crate fits at
+  301 raw / 1 file,
+  no SIZE finding).
+  `GAP-TEST-001/002/003`
+  stay 0/0/0.
+  `ratchet.toml`: +3
+  rows
+  (agent-doc-bytes
+  README 794,
+  public-surface 1,
+  rust-function-complexity
+  26 for `run_inner`
+  over the default 20
+  cap); failures 56
+  -> 56 — remaining
+  keys byte-identical.
+  `lint arch
+  --strict`: output
+  byte-identical, zero
+  direction
+  violations; `lint
+  headers` stays at
+  the base 2; `lint
+  tests` OK.
+
+- Raw outputs:
+  `/tmp/s7-s68-{pre,post}-*.txt`
+  (kept out of the repo).

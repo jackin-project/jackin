@@ -46,6 +46,7 @@
     "jackin-runtime-launch-auth-error": "library",
     "jackin-runtime-launch-capsule-setup": "library",
     "jackin-runtime-launch-image-plan": "library",
+    "jackin-runtime-launch-load-cleanup": "library",
     "jackin-runtime-launch-mounts": "library",
     "jackin-runtime-launch-plan": "library",
     "jackin-runtime-launch-trust": "library",

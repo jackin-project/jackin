@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use jackin_core::{ContainerHandle, ContainerState};
 use jackin_docker::docker_client::DockerApi;
 
-use crate::runtime::progress::launch_output;
+use jackin_runtime_progress::progress::launch_output;
 
 fn record_cleanup_teardown_failure(body: &'static str) {
     let _error =
@@ -19,11 +19,7 @@ fn record_cleanup_teardown_failure(body: &'static str) {
     jackin_diagnostics::emit_operator_notice(body);
 }
 
-pub(crate) fn write_if_changed_atomic(
-    path: &Path,
-    tmp: &Path,
-    bytes: &[u8],
-) -> std::io::Result<()> {
+pub fn write_if_changed_atomic(path: &Path, tmp: &Path, bytes: &[u8]) -> std::io::Result<()> {
     // Single-file bind mounts keep the original inode alive in running
     // containers. Skip the temp+rename when the content already matches so a
     // concurrent launch cannot invalidate getpwuid/getgrgid lookups in an
@@ -84,7 +80,7 @@ impl LoadCleanup {
         }
     }
 
-    pub(crate) const fn disarm(&mut self) {
+    pub const fn disarm(&mut self) {
         self.armed = false;
     }
 
@@ -93,26 +89,22 @@ impl LoadCleanup {
     /// "session ended cleanly, tear down DinD/network/volume"); the
     /// host-side bind-mount dir is left for the operator to inspect
     /// and gets reaped by the next explicit eject / purge.
-    pub(crate) const fn keep_socket_dir(&mut self) {
+    pub const fn keep_socket_dir(&mut self) {
         self.clean_socket_dir = false;
     }
 
     /// Share the sidecar identity sink with the concurrent sidecar launch.
-    pub(crate) fn dind_handle_slot(
-        &self,
-    ) -> std::sync::Arc<std::sync::Mutex<Option<ContainerHandle>>> {
+    pub fn dind_handle_slot(&self) -> std::sync::Arc<std::sync::Mutex<Option<ContainerHandle>>> {
         std::sync::Arc::clone(&self.dind_handle_slot)
     }
 
     /// Share the role identity sink with the launch that owns this cleanup.
-    pub(crate) fn role_handle_slot(
-        &self,
-    ) -> std::sync::Arc<std::sync::Mutex<Option<ContainerHandle>>> {
+    pub fn role_handle_slot(&self) -> std::sync::Arc<std::sync::Mutex<Option<ContainerHandle>>> {
         std::sync::Arc::clone(&self.role_handle_slot)
     }
 
     /// Bind cleanup to the role identity returned by Docker create.
-    pub(crate) fn set_role_handle(&self, container: ContainerHandle) {
+    pub fn set_role_handle(&self, container: ContainerHandle) {
         *self
             .role_handle_slot
             .lock()
@@ -120,7 +112,7 @@ impl LoadCleanup {
     }
 
     /// Bind cleanup to a sidecar identity already captured during adoption.
-    pub(crate) fn set_dind_handle(&self, container: ContainerHandle) {
+    pub fn set_dind_handle(&self, container: ContainerHandle) {
         self.dind_required
             .store(true, std::sync::atomic::Ordering::Release);
         *self
@@ -132,7 +124,7 @@ impl LoadCleanup {
     /// Record whether this launch owns a `DinD` sidecar even before its create
     /// call returns an immutable handle. Cleanup uses this to distinguish a
     /// role-only network from shared sidecar resources.
-    pub(crate) fn set_dind_required(&self, required: bool) {
+    pub fn set_dind_required(&self, required: bool) {
         self.dind_required
             .store(required, std::sync::atomic::Ordering::Release);
     }
@@ -143,11 +135,7 @@ impl LoadCleanup {
     }
 
     /// Bind a caller-owned immutable role identity before teardown.
-    pub(crate) async fn run_with_role_handle(
-        &self,
-        docker: &impl DockerApi,
-        container: &ContainerHandle,
-    ) {
+    pub async fn run_with_role_handle(&self, docker: &impl DockerApi, container: &ContainerHandle) {
         self.set_role_handle(container.clone());
         self.run(docker).await;
     }
