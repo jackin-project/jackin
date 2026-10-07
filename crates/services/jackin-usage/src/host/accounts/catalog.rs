@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use jackin_protocol::control::FocusedUsageView;
 use serde::{Deserialize, Serialize};
 
-use crate::usage::atomic_write_usage_json;
+use jackin_usage_provider_core::atomic_write_usage_json;
 
 use super::super::HostSurfaceId;
 use super::{AccountLifecycle, AccountProvenance, CanonicalAccountIdentity};

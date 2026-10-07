@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `Amp` CLI usage output parsing.
 
-use super::super::dollar_amounts;
 use super::{AmpRenewal, AmpSubscription, AmpSubscriptionKind, AmpUsage, AmpWorkspaceBalance};
+use jackin_usage_provider_core::dollar_amounts;
 
 /// The one parser for the current Amp `displayText`/CLI usage contract. Rejects
 /// the retired `$remaining/$limit (replenishes +$N/hour)` line entirely.

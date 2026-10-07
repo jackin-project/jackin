@@ -2,8 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `Grok` billing fetch and tier parsing.
 
-use super::super::refresh::ProviderError;
 use super::super::*;
+use jackin_usage_provider_core::ProviderError;
+use jackin_usage_provider_core::{
+    ChildOperation, GROK_RPC_INIT_TIMEOUT, GROK_RPC_REQUEST_TIMEOUT, ManagedCliLaunchGate,
+    get_json_bearer, provider_http_client,
+};
 
 use super::{
     GrokBillingConfig, GrokBillingResponse, GrokBillingSnapshot, grok_bearer_token,
@@ -116,7 +120,7 @@ pub(crate) fn fetch_grok_rpc_billing(
 ) -> Result<GrokBillingResponse, String> {
     gate.can_launch("Grok ACP billing", Instant::now())?;
     let executable = grok_binary_path();
-    let process = process_telemetry::ChildOperation::begin(executable.to_string_lossy().as_ref());
+    let process = ChildOperation::begin(executable.to_string_lossy().as_ref());
     let mut child = match Command::new(&executable)
         .args(["agent", "stdio"])
         .stdin(Stdio::piped())
@@ -184,7 +188,7 @@ pub(crate) fn fetch_grok_rpc_billing(
     })();
 
     drop(stdin);
-    let reaped = process_telemetry::ChildOperation::reap_managed(&mut child);
+    let reaped = ChildOperation::reap_managed(&mut child);
     let reader_joined = reader.join().is_ok();
     process.finish_managed(reaped && reader_joined);
     if result.is_ok() {

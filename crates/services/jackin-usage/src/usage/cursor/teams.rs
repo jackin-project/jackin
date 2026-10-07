@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `Cursor` enterprise team spend.
 
-use super::super::{
-    QuotaBucketView, StatusSlot, UsageSnapshotStatus, bucket, epoch_seconds_from_maybe_ms,
-    format_currency, json_number, parse_iso_epoch, provider_http_client, timed_bucket,
-    with_status_slot,
+use jackin_protocol::control::{QuotaBucketView, StatusSlot, UsageSnapshotStatus};
+use jackin_usage_provider_core::{
+    bucket, epoch_seconds_from_maybe_ms, format_currency, json_number, parse_iso_epoch,
+    provider_http_client, timed_bucket, with_status_slot,
 };
 
 /// Explicit Enterprise Admin credential. Never derived from a personal key: a

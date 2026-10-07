@@ -13,8 +13,6 @@ mod types;
 mod views;
 
 #[cfg(test)]
-use super::refresh::{ProviderError, ProviderRateLimit};
-#[cfg(test)]
 use super::*;
 #[cfg(test)]
 pub(crate) use billing::grok_tier_from_settings;
@@ -22,6 +20,8 @@ pub(crate) use billing::{
     fetch_grok_billing, fetch_grok_rest_billing, fetch_grok_rpc_billing,
     parse_grok_rest_billing_response,
 };
+#[cfg(test)]
+use jackin_usage_provider_core::{ProviderError, ProviderRateLimit};
 pub(crate) use rpc::{
     grok_bearer_token, grok_bearer_token_from_entry, grok_binary_path, grok_rpc_request,
     grok_rpc_request_payload, grpc_web_data_frames, parse_grok_web_billing_response, scan_protobuf,

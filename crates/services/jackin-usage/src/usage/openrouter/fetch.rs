@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `OpenRouter` endpoint resolution and API fetch.
 
-use super::super::refresh::ProviderError;
-use super::super::{
-    ProviderHttpError, UsageSnapshotStatus, env_value, get_json_bearer, provider_http_client,
-    provider_request,
+use jackin_protocol::control::UsageSnapshotStatus;
+use jackin_usage_provider_core::ProviderError;
+use jackin_usage_provider_core::{
+    ProviderHttpError, env_value, get_json_bearer, provider_http_client, provider_request,
 };
 
 use super::{OpenRouterCreditsOutcome, OpenRouterModelCheck, parse_openrouter_credits};

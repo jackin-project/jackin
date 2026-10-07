@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `Cursor` request usage fetch and buckets.
 
-use super::super::{QuotaBucketView, UsageSnapshotStatus, bucket, compact_count, json_number};
 use super::cursor_rest_get;
+use jackin_protocol::control::{QuotaBucketView, UsageSnapshotStatus};
+use jackin_usage_provider_core::{bucket, compact_count, json_number};
 
 /// Request allowance (`/api/usage?user=`): used/total request counts.
 #[derive(Debug, Clone)]

@@ -2,12 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `Claude` refresh-wave policy and resolved views.
 
-use super::super::refresh::{ProviderError, ProviderRateLimit, split_provider_fetch};
-use super::super::{
-    FocusedUsageView, Path, PathBuf, QuotaBucketView, UsageConfidence, UsageSnapshotStatus,
-    UsageSource, UsageSurface, UsageViewInput, bucket, oauth_origin, resolve_identity_with_extra,
-    usage_view,
+use jackin_protocol::control::{
+    FocusedUsageView, QuotaBucketView, UsageConfidence, UsageSnapshotStatus, UsageSource,
 };
+use jackin_usage_provider_core::{ProviderError, ProviderRateLimit, split_provider_fetch};
+use jackin_usage_provider_core::{
+    UsageSurface, UsageViewInput, bucket, oauth_origin, resolve_identity_with_extra, usage_view,
+};
+use std::path::{Path, PathBuf};
 
 use super::{
     ClaudeCliUsage, ClaudeFileProbe, ClaudeOAuthEnvToken, ClaudeResolved, ClaudeWaveResolution,

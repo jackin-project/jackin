@@ -3,6 +3,7 @@
 //! `Codex` endpoint resolution.
 
 use super::super::*;
+use jackin_usage_provider_core::parse_chatgpt_base_url;
 
 pub(crate) fn resolve_codex_usage_url(codex_home: &Path) -> String {
     let normalized = resolve_codex_base_url(codex_home);

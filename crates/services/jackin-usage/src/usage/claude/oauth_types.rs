@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `Claude` OAuth usage response types.
 
-use super::super::{BTreeMap, Money};
+use jackin_protocol::control::Money;
 use serde::Deserialize;
+use std::collections::BTreeMap;
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct ClaudeOAuthUsageResponse {

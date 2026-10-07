@@ -16,8 +16,10 @@
 
 use super::{
     FocusedAccountHeader, FocusedUsageView, QuotaBucketView, StatusSlot, UsageConfidence,
-    UsageSnapshotStatus, UsageSource, status_bar_quota_labels, timed_bucket, window_minutes_label,
-    with_status_slot,
+    UsageSnapshotStatus, UsageSource,
+};
+use jackin_usage_provider_core::{
+    status_bar_quota_labels, timed_bucket, window_minutes_label, with_status_slot,
 };
 use serde::Deserialize;
 

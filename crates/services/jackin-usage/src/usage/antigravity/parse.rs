@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `Antigravity` CLI usage output parsing.
 
-use super::super::{epoch_seconds_from_maybe_ms, json_number, parse_iso_epoch};
+use jackin_usage_provider_core::{epoch_seconds_from_maybe_ms, json_number, parse_iso_epoch};
 
 use super::{
     AntigravityFamily, AntigravityPool, AntigravityUsage, AntigravityWindow,

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `Z.AI` quota fetch, team scope, and endpoint resolution.
 
-use super::super::{
+use jackin_usage_provider_core::{
     env_value, json_number, normalize_url_or_host, provider_http_client, provider_request,
 };
 

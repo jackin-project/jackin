@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `OpenRouter` key usage and credit parsing plus credit buckets.
 
-use super::super::{
-    Money, QuotaBucketView, StatusSlot, UsageSnapshotStatus, bucket, epoch_seconds_from_maybe_ms,
-    expiry_label, format_cents, parse_iso_epoch, timed_bucket,
+use jackin_protocol::control::{Money, QuotaBucketView, StatusSlot, UsageSnapshotStatus};
+use jackin_usage_provider_core::{
+    bucket, epoch_seconds_from_maybe_ms, expiry_label, format_cents, parse_iso_epoch, timed_bucket,
 };
 
 use super::{OpenRouterCreditsOutcome, OpenRouterCreditsResponse, OpenRouterKeyData};

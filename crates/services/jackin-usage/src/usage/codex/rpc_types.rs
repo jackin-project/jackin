@@ -2,12 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `Codex` RPC response types.
 
-use super::super::BTreeMap;
 use super::{
     CodexCreditDetails, CodexRateLimitDetails, CodexResetCredits, CodexUsageResponse,
     CodexWindowSnapshot,
 };
 use serde::Deserialize;
+use std::collections::BTreeMap;
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct CodexAdditionalRateLimit {

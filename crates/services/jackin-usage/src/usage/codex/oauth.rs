@@ -2,12 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `Codex` OAuth fetch and token refresh.
 
-use super::super::refresh::ProviderError;
-use super::super::{
-    CODEX_OAUTH_CLIENT_ID, CODEX_OAUTH_TOKEN_URL, Path, ProviderHttpError, get_json_bearer,
-    now_epoch, provider_http_client, provider_request, retry_after_header_seconds,
+use jackin_usage_provider_core::ProviderError;
+use jackin_usage_provider_core::{
+    CODEX_OAUTH_CLIENT_ID, CODEX_OAUTH_TOKEN_URL, ProviderHttpError, get_json_bearer, now_epoch,
+    provider_http_client, provider_request, retry_after_header_seconds,
     usage_error_is_unauthorized,
 };
+use std::path::Path;
 
 use super::{
     CodexOAuthCredentials, CodexResetCredits, CodexUsageResponse, resolve_codex_reset_credits_url,

@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `Kimi` API usage fetch and endpoint resolution.
 
-use super::super::{env_value, normalize_url_or_host, provider_http_client, provider_request};
+use jackin_usage_provider_core::{
+    env_value, normalize_url_or_host, provider_http_client, provider_request,
+};
 
 use super::KimiUsageResponse;
 

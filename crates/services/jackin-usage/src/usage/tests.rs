@@ -3,7 +3,7 @@
 
 use super::*;
 
-use crate::usage::refresh::ProviderError;
+use jackin_usage_provider_core::*;
 
 use std::thread;
 

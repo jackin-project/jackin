@@ -100,9 +100,9 @@ fn managed_probe_boundaries_export_fixed_private_shapes() {
 
     let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
     tracing::subscriber::with_default(subscriber, || {
-        let codex = process_telemetry::ChildOperation::begin("codex");
+        let codex = ChildOperation::begin("codex");
         codex.spawn_failed();
-        let grok = process_telemetry::ChildOperation::begin("/private/bin/grok");
+        let grok = ChildOperation::begin("/private/bin/grok");
         grok.io_failed();
 
         let (codex_tx, codex_rx) = mpsc::channel();

@@ -144,7 +144,7 @@ impl ProviderCredentialEnvResolver for TypedRateLimitResolver {
     ) -> ProviderCredentialRefreshOutcome {
         ProviderCredentialRefreshOutcome::Snapshot {
             view: Box::new(quota_view()),
-            rate_limit: Some(crate::usage::ProviderRateLimit {
+            rate_limit: Some(jackin_usage_provider_core::ProviderRateLimit {
                 retry_at_epoch: Some(1_700_000_037),
             }),
         }

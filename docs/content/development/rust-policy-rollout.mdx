@@ -721,3 +721,67 @@ passes.
   rewrite `/tmp/jackin-s7-split2-rewrite.py`,
   gap/ratchet/alint pairs `/tmp/{*-old,*-new*}.txt`
   (kept out of the repo).
+
+### Split 3: usage-provider-core extraction (U1)
+
+- `jackin-usage` -> `jackin-usage` (providers, host,
+  stores) + `jackin-usage-provider-core` (T2 leaf
+  substrate: 17 modules — cache, cache_keys, consts,
+  credentials, diagnostic, fallback, format, http, io,
+  labels, omp, outcome, process_telemetry, refresh,
+  surface, transport, view — + `materialize_accounts`
+  bench, `lib.rs` re-export root, README, `tests/`
+  placeholder). Consumers rewired to direct
+  `jackin_usage_provider_core::` imports (providers,
+  host, snapshot store, capsule dialogs, ffi dto);
+  `usage.rs` 320 -> 261 (kept provider re-exports +
+  `#[cfg(test)]` core shim for the suite). Seam files
+  stay in usage: `credential_snapshots.rs` (128,
+  vendor dispatch out of `usage.rs`),
+  `claude/diagnostic.rs` (69, CLI runner out of
+  `claude/cli.rs`). Visibility deltas: `Debug` on
+  `ProviderPresence`/`ChildOperation`/`UsageViewInput`,
+  `pub` on `UsageSurface::label` /
+  `ProviderError::status` / `with_message` (+
+  `#[must_use]`); omp keeps a `not(test)`-gated
+  `dead_code` expect as a file-inner attribute (the
+  v0.1.2 text scan misreads `not(test)` above a
+  `mod` line as a malformed suite decl).
+- Verify: `cargo check --locked --workspace
+  --all-targets` green; `cargo fmt --all --check`
+  clean; `cargo clippy` 0 errors, warnings
+  identical to base (xtask 1, runtime 7).
+  `cargo nextest list --workspace --all-targets`:
+  HEAD 7277 -> 7277, bijection exact (9 unit:
+  5 omp + 4 format move `usage::` -> core root,
+  1 `materialize_accounts` bench criterion moves
+  with them; zero dropped, zero added; the +5 vs
+  the 7272 S7 base file predate U1, from splits
+  2c-2k).
+  `nextest run`: 608/608 usage + 9/9 core +
+  982/982 ffi/capsule; doctests 0/0. The
+  `provider_calls_have_no_unclassified_route`
+  contract was red at HEAD (S7 file splits moved
+  call sites without re-blessing); fixture
+  regenerated 31 -> 33 entries, symbol set
+  identical (paths only). Root
+  <RepoFile path="Cargo.lock" /> gains the 1
+  member (+22 lines). `alint check`: 198 ->
+  198, finding-identical. `check-gaps`: 28 ->
+  28 (usage `SIZE-001` 49747 -> 46648 lines,
+  `SIZE-002` 351 -> 321 files; xtask +1 line
+  for the tier row); `GAP-TEST-001/002/003`
+  stay 0/0/0. `ratchet.toml`: +7 core rows
+  (agent-doc 2050, complexity 23, 5
+  expect-per-lint), 3 usage shrinks (cast 31 ->
+  30, panic 3 -> 2, too_many_arguments 2 ->
+  1), protocol README 2500 -> 2507 (provider
+  path repoint); 62 -> 61 rows with
+  `unused_imports@usage` fixed and zero new
+  failures. `lint arch --strict`: missing
+  tiers stay 3 (pre-existing instance crates);
+  tier row + ownership header added for the
+  new crate.
+- Raw outputs: `/tmp/s7-{head,new}-nextest.txt`
+  (7277), `/tmp/s7-{head,new}-{gaps,alint,
+  ratchet}.txt` (kept out of the repo).

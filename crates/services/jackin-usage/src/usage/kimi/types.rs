@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `Kimi` usage response and pool types.
 
-use super::super::{epoch_seconds_from_maybe_ms, parse_iso_epoch};
+use jackin_usage_provider_core::{epoch_seconds_from_maybe_ms, parse_iso_epoch};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]

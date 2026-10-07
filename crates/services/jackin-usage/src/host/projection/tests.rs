@@ -22,7 +22,7 @@ use jackin_protocol::usage_broker::{UsageIssueRecoverabilityV1, UsageIssueScopeV
 
 use crate::host::HostSurfaceId;
 
-use crate::usage::{
+use jackin_usage_provider_core::{
     CachedUsage, UsageSurface, UsageViewInput, enrich_provider_tabs, mark_active_tab,
     provider_display_label, provider_tabs, refresh_cached_updated_label, timed_bucket,
     usage_bucket_presentation, usage_detail_presentation, usage_identity_presentation, usage_view,

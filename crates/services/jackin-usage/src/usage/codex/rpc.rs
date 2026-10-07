@@ -2,11 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `Codex` RPC transport.
 
-use super::super::refresh::ProviderError;
-use super::super::{
-    BufRead, BufReader, CODEX_RPC_INIT_TIMEOUT, CODEX_RPC_REQUEST_TIMEOUT, Command, Duration,
-    Instant, ManagedCliLaunchGate, Stdio, Write, mpsc, process_telemetry, write_json_line,
+use jackin_usage_provider_core::ProviderError;
+use jackin_usage_provider_core::{
+    CODEX_RPC_INIT_TIMEOUT, CODEX_RPC_REQUEST_TIMEOUT, ChildOperation, ManagedCliLaunchGate,
+    complete_external_rpc, external_rpc_operation, write_json_line,
 };
+use std::io::{BufRead, BufReader, Write};
+use std::process::{Command, Stdio};
+use std::sync::mpsc;
+use std::time::{Duration, Instant};
 
 use super::{CodexRpcAccountResponse, CodexRpcRateLimitsResponse, CodexRpcUsage};
 
@@ -30,7 +34,7 @@ pub(crate) fn fetch_codex_rpc_usage(
     gate: &mut ManagedCliLaunchGate,
 ) -> Result<CodexRpcUsage, ProviderError> {
     gate.can_launch("Codex app-server", Instant::now())?;
-    let process = process_telemetry::ChildOperation::begin("codex");
+    let process = ChildOperation::begin("codex");
     let mut child = match Command::new("codex")
         .args(["-s", "read-only", "-a", "untrusted", "app-server"])
         .stdin(Stdio::piped())
@@ -106,7 +110,7 @@ pub(crate) fn fetch_codex_rpc_usage(
     })();
 
     drop(stdin);
-    let reaped = process_telemetry::ChildOperation::reap_managed(&mut child);
+    let reaped = ChildOperation::reap_managed(&mut child);
     let reader_joined = reader.join().is_ok();
     process.finish_managed(reaped && reader_joined);
 
@@ -126,7 +130,7 @@ pub(crate) fn codex_rpc_request(
     params: serde_json::Value,
     timeout: Duration,
 ) -> Result<serde_json::Value, String> {
-    let operation = process_telemetry::external_rpc_operation(
+    let operation = external_rpc_operation(
         jackin_telemetry::schema::enums::RpcSystemName::CodexAppServer,
         method,
     );
@@ -171,12 +175,12 @@ pub(crate) fn codex_rpc_request(
                 .ok_or_else(|| format!("Codex app-server {method} response missing result"));
         }
     })();
-    process_telemetry::complete_external_rpc(operation, &result, started.elapsed() >= timeout);
+    complete_external_rpc(operation, &result, started.elapsed() >= timeout);
     result
 }
 
 pub(crate) fn codex_rpc_notification(stdin: &mut impl Write, method: &str) -> Result<(), String> {
-    let operation = process_telemetry::external_rpc_operation(
+    let operation = external_rpc_operation(
         jackin_telemetry::schema::enums::RpcSystemName::CodexAppServer,
         method,
     );
@@ -190,6 +194,6 @@ pub(crate) fn codex_rpc_notification(stdin: &mut impl Write, method: &str) -> Re
         "Codex app-server notification encode failed",
         "Codex app-server notification write failed",
     );
-    process_telemetry::complete_external_rpc(operation, &result, false);
+    complete_external_rpc(operation, &result, false);
     result
 }

@@ -22,9 +22,9 @@ mod snapshot;
 mod types;
 
 #[cfg(test)]
-use super::refresh::ProviderError;
-#[cfg(test)]
 use super::*;
+#[cfg(test)]
+use jackin_usage_provider_core::ProviderError;
 
 pub(crate) use fetch::openrouter_key_error_status;
 pub(crate) use fetch::{

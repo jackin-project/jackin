@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `Antigravity` snapshot entry points and status.
 
-use super::super::{
+use jackin_protocol::control::{
     FocusedUsageView, QuotaBucketView, UsageConfidence, UsageSnapshotStatus, UsageSource,
-    UsageSurface, UsageViewInput, bucket, split_fetch, usage_view,
 };
+use jackin_usage_provider_core::{UsageSurface, UsageViewInput, bucket, split_fetch, usage_view};
 
 use super::{
     AntigravityUsage, antigravity_buckets, antigravity_cli_version, antigravity_credits_bucket,

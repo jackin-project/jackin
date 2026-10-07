@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `MiniMax` fetch plans, endpoints, and HTTP fetch.
 
-use super::super::{
+use jackin_usage_provider_core::{
     env_value, epoch_seconds_from_maybe_ms, normalize_url_or_host, provider_http_client,
     provider_request,
 };

@@ -27,7 +27,9 @@ pub fn focused_usage_view(
     let rows = stored_account_snapshots(path)?;
     let tabs = usage_provider_tabs_from_rows(&rows);
     let resolved_provider = focused_provider.or_else(|| {
-        focused_agent.and_then(|agent| crate::usage::resolved_usage_provider_label(agent, None))
+        focused_agent.and_then(|agent| {
+            jackin_usage_provider_core::resolved_usage_provider_label(agent, None)
+        })
     });
     let Some((provider, rows)) = select_provider_rows(rows, resolved_provider) else {
         return Ok(None);
@@ -89,7 +91,7 @@ pub fn focused_usage_view(
             UsageSnapshotStatus::Fresh | UsageSnapshotStatus::Stale
         ) || first.updated_label.trim().is_empty()
         {
-            crate::usage::relative_updated_label(fetched_at, now_epoch)
+            jackin_usage_provider_core::relative_updated_label(fetched_at, now_epoch)
         } else {
             first.updated_label.clone()
         },

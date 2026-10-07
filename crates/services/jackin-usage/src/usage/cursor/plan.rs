@@ -2,11 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `Cursor` plan info and credit grants.
 
-use super::super::{
-    Money, QuotaBucketView, UsageSnapshotStatus, bucket, format_cents, humanize_plan_label,
-    json_number,
-};
 use super::cursor_dashboard_post;
+use jackin_protocol::control::{Money, QuotaBucketView, UsageSnapshotStatus};
+use jackin_usage_provider_core::{bucket, format_cents, humanize_plan_label, json_number};
 
 pub(crate) fn fetch_cursor_plan_info(base: &str, token: &str) -> Result<Option<String>, String> {
     let value = cursor_dashboard_post(base, token, "GetPlanInfo")?;

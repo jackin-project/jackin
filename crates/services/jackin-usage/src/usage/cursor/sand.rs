@@ -2,11 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `Cursor` sand usage fetch and buckets.
 
-use super::super::{
-    QuotaBucketView, UsageSnapshotStatus, epoch_seconds_from_maybe_ms, json_number,
-    parse_iso_epoch, timed_bucket,
-};
 use super::cursor_dashboard_post;
+use jackin_protocol::control::{QuotaBucketView, UsageSnapshotStatus};
+use jackin_usage_provider_core::{
+    epoch_seconds_from_maybe_ms, json_number, parse_iso_epoch, timed_bucket,
+};
 
 /// Grok Bot weekly meter. Pooled enterprise allowance or zero allowance means
 /// no meter (`None`) — never a 0% row.

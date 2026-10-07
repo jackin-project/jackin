@@ -184,7 +184,7 @@ fn discovery_typed_rate_limit_reaches_broker_without_text_parsing() {
         retry_at_epoch,
     } = provider_probe_outcome_with_rate_limit(
         view,
-        Some(crate::usage::ProviderRateLimit {
+        Some(jackin_usage_provider_core::ProviderRateLimit {
             retry_at_epoch: Some(1_700_000_037),
         }),
     )

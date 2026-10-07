@@ -3,6 +3,7 @@
 //! `Codex` OAuth credential loading.
 
 use super::super::*;
+use jackin_usage_provider_core::first_string_key;
 
 #[derive(Clone)]
 pub(crate) struct CodexOAuthCredentials {

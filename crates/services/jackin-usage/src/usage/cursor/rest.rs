@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `Cursor` session REST transport.
 
-use super::super::provider_http_client;
 use super::CURSOR_SESSION_BASE;
+use jackin_usage_provider_core::provider_http_client;
 
 pub(crate) fn cursor_session_cookie(user_id: &str, token: &str) -> String {
     format!("WorkosCursorSessionToken={user_id}%3A%3A{token}")

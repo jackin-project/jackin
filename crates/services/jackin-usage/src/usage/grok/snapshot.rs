@@ -2,12 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `Grok` snapshot entry points and account labels.
 
-use super::super::refresh::{ProviderError, ProviderRateLimit};
-use super::super::{
-    FocusedUsageView, GROK_HANDOFF_AUTH_PATH, ManagedCliLaunchGate, Path, PathBuf, UsageConfidence,
-    UsageSnapshotStatus, UsageSource, UsageSurface, UsageViewInput, bucket, env_value,
+use jackin_protocol::control::{
+    FocusedUsageView, UsageConfidence, UsageSnapshotStatus, UsageSource,
+};
+use jackin_usage_provider_core::{
+    GROK_HANDOFF_AUTH_PATH, ManagedCliLaunchGate, UsageSurface, UsageViewInput, bucket, env_value,
     first_string_key, home_path, read_json_file, usage_view,
 };
+use jackin_usage_provider_core::{ProviderError, ProviderRateLimit};
+use std::path::{Path, PathBuf};
 
 use super::{GrokBillingAuth, GrokBillingSnapshot, fetch_grok_billing, resolve_grok_billing_auth};
 

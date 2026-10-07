@@ -11,8 +11,8 @@
 //! failure), and per-model quota or Zen balance fields are never invented:
 //! unknown payload fields render nothing.
 
-use super::{
-    FocusedUsageView, QuotaBucketView, UsageConfidence, UsageSnapshotStatus, UsageSource,
+use super::{FocusedUsageView, QuotaBucketView, UsageConfidence, UsageSnapshotStatus, UsageSource};
+use jackin_usage_provider_core::{
     UsageSurface, UsageViewInput, bucket, parse_iso_epoch, provider_http_client, timed_bucket,
     usage_view,
 };

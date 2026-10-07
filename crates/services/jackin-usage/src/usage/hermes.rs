@@ -11,8 +11,9 @@
 
 use super::{
     FocusedAccountHeader, FocusedUsageView, QuotaBucketView, UsageConfidence, UsageSnapshotStatus,
-    UsageSource, parse_iso_epoch, status_bar_quota_labels, timed_bucket,
+    UsageSource,
 };
+use jackin_usage_provider_core::{parse_iso_epoch, status_bar_quota_labels, timed_bucket};
 use serde::Deserialize;
 
 /// Exclusively owned Hermes runtime profile: concurrent processes must never

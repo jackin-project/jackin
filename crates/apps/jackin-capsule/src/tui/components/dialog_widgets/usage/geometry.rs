@@ -67,7 +67,7 @@ pub(crate) fn usage_tab_strip_labels(
 
 pub(crate) fn usage_provider_display_label(label: &str) -> &str {
     // Lifted to jackin-usage so Desktop + Capsule share one remap (plan 008).
-    jackin_usage::usage::provider_display_label(label)
+    jackin_usage_provider_core::provider_display_label(label)
 }
 
 pub(crate) fn usage_tab_strip_width(tabs: &[(String, bool)]) -> usize {

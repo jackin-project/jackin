@@ -82,7 +82,7 @@ fn amp_legacy_hourly_display_text_is_rejected() {
 
 #[test]
 fn cli_output_collector_treats_reaped_child_as_success() {
-    let output = format::collect_cli_output(
+    let output = collect_cli_output(
         "amp",
         None,
         thread::spawn(|| Ok("usage rows".to_owned())),
@@ -148,9 +148,9 @@ fn usage_cli_owner_exports_outcomes_without_process_material() {
 
 #[test]
 fn usage_cli_output_capture_is_bounded() {
-    let oversized = vec![b'x'; format::PROCESS_OUTPUT_MAX + 1];
+    let oversized = vec![b'x'; PROCESS_OUTPUT_MAX + 1];
     assert_eq!(
-        format::read_process_pipe(std::io::Cursor::new(oversized)).unwrap_err(),
+        read_process_pipe(std::io::Cursor::new(oversized)).unwrap_err(),
         "process output exceeded limit"
     );
 }

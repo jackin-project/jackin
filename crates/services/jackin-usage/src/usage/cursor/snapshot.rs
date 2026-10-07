@@ -2,10 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `Cursor` snapshot entry points.
 
-use super::super::{
-    FocusedUsageView, Path, UsageConfidence, UsageSnapshotStatus, UsageSource, UsageSurface,
-    UsageViewInput, bucket, read_json_file, split_fetch, usage_view,
-};
 use super::{
     CursorAuth, CursorEnterpriseScope, cursor_auth_from_value, cursor_cli_identity_from_value,
     cursor_credits_bucket, cursor_dashboard_base, cursor_default_base,
@@ -16,6 +12,13 @@ use super::{
     fetch_cursor_team_spend, fetch_cursor_usage_summary, load_cursor_auth,
     load_cursor_cli_identity,
 };
+use jackin_protocol::control::{
+    FocusedUsageView, UsageConfidence, UsageSnapshotStatus, UsageSource,
+};
+use jackin_usage_provider_core::{
+    UsageSurface, UsageViewInput, bucket, read_json_file, split_fetch, usage_view,
+};
+use std::path::Path;
 
 pub(crate) fn cursor_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsageView {
     let auth = match load_cursor_auth() {

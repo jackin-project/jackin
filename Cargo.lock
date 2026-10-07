@@ -3099,6 +3099,7 @@ dependencies = [
  "jackin-telemetry",
  "jackin-tui",
  "jackin-usage",
+ "jackin-usage-provider-core",
  "libc",
  "nix 0.31.3",
  "opentelemetry",
@@ -3648,6 +3649,7 @@ dependencies = [
  "jackin-otlp-testbed",
  "jackin-protocol",
  "jackin-telemetry",
+ "jackin-usage-provider-core",
  "nix 0.31.3",
  "ratatui",
  "reqwest",
@@ -3676,7 +3678,27 @@ dependencies = [
  "jackin-protocol",
  "jackin-telemetry",
  "jackin-usage",
+ "jackin-usage-provider-core",
  "tempfile",
+]
+
+[[package]]
+name = "jackin-usage-provider-core"
+version = "0.6.4"
+dependencies = [
+ "chrono",
+ "criterion",
+ "httpdate",
+ "jackin-core",
+ "jackin-protocol",
+ "jackin-telemetry",
+ "nix 0.31.3",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tower",
+ "tracing",
 ]
 
 [[package]]

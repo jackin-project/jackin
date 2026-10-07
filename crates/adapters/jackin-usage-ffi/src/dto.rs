@@ -11,7 +11,7 @@ use jackin_usage::host::{
     HostDesktopProviderProjection, HostDesktopProviderState, HostEventBatch, HostOverviewRow,
     HostSelectedAccountRoute, HostSurfaceDescriptor, HostUsageEvent, UsageDiscoveryDiagnostic,
 };
-use jackin_usage::usage::{PercentStyle, ResetStyle, UsageFormatPrefs, estimate_caption};
+use jackin_usage_provider_core::{PercentStyle, ResetStyle, UsageFormatPrefs, estimate_caption};
 
 /// Open configuration from Swift (paths only — no credentials).
 #[derive(Debug, Clone)]
@@ -573,7 +573,7 @@ fn detail_presentation_dto(
     account: Option<&HostAccountDescriptor>,
 ) -> UsageDetailPresentationDto {
     // Same Rust builder Capsule uses — one parity handoff, no second assembler.
-    let presentation = jackin_usage::usage::usage_detail_presentation(view);
+    let presentation = jackin_usage_provider_core::usage_detail_presentation(view);
     let mut rows = presentation
         .rows
         .into_iter()
@@ -603,8 +603,9 @@ fn detail_presentation_dto(
 }
 
 pub(crate) fn view_dto(view: FocusedUsageView) -> UsageViewDto {
-    let provider_title = jackin_usage::usage::provider_display_label(&view.account.provider_label);
-    let identity = jackin_usage::usage::usage_identity_presentation(
+    let provider_title =
+        jackin_usage_provider_core::provider_display_label(&view.account.provider_label);
+    let identity = jackin_usage_provider_core::usage_identity_presentation(
         provider_title,
         &view,
         view.is_refreshing_placeholder(),
@@ -733,7 +734,7 @@ pub(crate) fn parse_format_prefs(dto: UsageFormatPrefsDto) -> Result<UsageFormat
 
 fn bucket_dto(bucket: QuotaBucketView) -> QuotaBucketDto {
     // Rust owns the limits-only segment choice/order; Swift renders it verbatim.
-    let presentation = jackin_usage::usage::usage_bucket_presentation(&bucket);
+    let presentation = jackin_usage_provider_core::usage_bucket_presentation(&bucket);
     QuotaBucketDto {
         label: bucket.label,
         used_label: bucket.used_label,
@@ -776,15 +777,15 @@ fn money_dto(money: Money) -> MoneyDto {
 }
 
 fn status_label(status: UsageSnapshotStatus) -> &'static str {
-    jackin_usage::usage::usage_status_storage_label(status)
+    jackin_usage_provider_core::usage_status_storage_label(status)
 }
 
 fn source_label(source: UsageSource) -> &'static str {
-    jackin_usage::usage::usage_source_storage_label(source)
+    jackin_usage_provider_core::usage_source_storage_label(source)
 }
 
 fn confidence_label(confidence: UsageConfidence) -> &'static str {
-    jackin_usage::usage::usage_confidence_storage_label(confidence)
+    jackin_usage_provider_core::usage_confidence_storage_label(confidence)
 }
 
 /// Build open config for the host runtime.

@@ -2,12 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `Codex` quota windows and reset credits.
 
-use super::super::{
-    Money, QuotaBucketView, StatusSlot, UsageSnapshotStatus, bucket, codex_limit_label,
-    expiry_label, format_amount_with_unit, json_number, parse_iso_epoch, quota_pace_label,
-    timed_bucket, with_status_slot,
-};
 use super::{CodexIndividualLimit, CodexUsageResponse, CodexWindowSnapshot};
+use jackin_protocol::control::{Money, QuotaBucketView, StatusSlot, UsageSnapshotStatus};
+use jackin_usage_provider_core::{
+    bucket, codex_limit_label, expiry_label, format_amount_with_unit, json_number, parse_iso_epoch,
+    quota_pace_label, timed_bucket, with_status_slot,
+};
 use serde::Deserialize;
 
 impl CodexUsageResponse {

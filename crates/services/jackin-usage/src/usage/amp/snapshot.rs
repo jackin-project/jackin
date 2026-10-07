@@ -2,15 +2,18 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `Amp` snapshot entry points.
 
-use super::super::{
-    AMP_HANDOFF_SECRETS_PATH, FocusedUsageView, Path, UsageConfidence, UsageSnapshotStatus,
-    UsageSource, UsageSurface, UsageViewInput, bucket, env_value, first_credential_with_path,
-    home_path, split_fetch, usage_view,
-};
 use super::{
     AmpSuccessContext, amp_view_from_usage, fetch_amp_api_usage, fetch_amp_cli_usage,
     load_amp_api_key,
 };
+use jackin_protocol::control::{
+    FocusedUsageView, UsageConfidence, UsageSnapshotStatus, UsageSource,
+};
+use jackin_usage_provider_core::{
+    AMP_HANDOFF_SECRETS_PATH, UsageSurface, UsageViewInput, bucket, env_value,
+    first_credential_with_path, home_path, split_fetch, usage_view,
+};
+use std::path::Path;
 
 pub(crate) fn amp_snapshot(agent: &str, now: i64) -> FocusedUsageView {
     let data = home_path(".local/share/amp");

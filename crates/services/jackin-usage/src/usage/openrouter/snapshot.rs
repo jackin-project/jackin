@@ -2,10 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `OpenRouter` snapshot entry points.
 
-use super::super::refresh::{ProviderError, ProviderRateLimit};
-use super::super::{
-    FocusedUsageView, ProviderHttpError, UsageConfidence, UsageSnapshotStatus, UsageSource,
-    UsageSurface, UsageViewInput, bucket, usage_view,
+use jackin_protocol::control::{
+    FocusedUsageView, UsageConfidence, UsageSnapshotStatus, UsageSource,
+};
+use jackin_usage_provider_core::{ProviderError, ProviderRateLimit};
+use jackin_usage_provider_core::{
+    ProviderHttpError, UsageSurface, UsageViewInput, bucket, usage_view,
 };
 
 use super::{

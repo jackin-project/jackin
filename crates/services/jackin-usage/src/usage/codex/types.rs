@@ -2,10 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `Codex` usage response and window types.
 
-use super::super::{StatusSlot, json_number, window_minutes_label};
 use super::{
     CodexAdditionalRateLimit, CodexResetCredits, CodexRpcCredits, CodexRpcRateLimitWindow,
 };
+use jackin_protocol::control::StatusSlot;
+use jackin_usage_provider_core::{json_number, window_minutes_label};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]

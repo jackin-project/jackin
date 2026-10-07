@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `MiniMax` key products and region selection.
 
-use super::super::env_value;
+use jackin_usage_provider_core::env_value;
 
 /// Key product selected by key shape: secret `sk-api-*` keys are PAYG
 /// balance keys; anything else is a Token Plan subscription key. Evidence:

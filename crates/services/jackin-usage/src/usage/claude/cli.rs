@@ -2,14 +2,18 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `Claude` CLI usage parsing and diagnostics.
 
-use super::super::refresh::ProviderError;
-use super::super::{
-    CLAUDE_CODE_USER_AGENT_FALLBACK, CLAUDE_VERSION_TIMEOUT, CliOutput, Duration, QuotaBucketView,
-    Serialize, StatusSlot, parse_claude_usage_output, run_claude_usage_diagnostic,
-    run_cli_with_timeout_full,
+use super::{
+    CLAUDE_SESSION_WINDOW_SECONDS, CLAUDE_WEEKLY_WINDOW_SECONDS, ClaudeQuotaWindow,
+    parse_claude_usage_output, run_claude_usage_diagnostic,
 };
-use super::{CLAUDE_SESSION_WINDOW_SECONDS, CLAUDE_WEEKLY_WINDOW_SECONDS, ClaudeQuotaWindow};
+use jackin_protocol::control::{QuotaBucketView, StatusSlot};
+use jackin_usage_provider_core::ProviderError;
+use jackin_usage_provider_core::{
+    CLAUDE_CODE_USER_AGENT_FALLBACK, CLAUDE_VERSION_TIMEOUT, CliOutput, run_cli_with_timeout_full,
+};
 use serde::Deserialize;
+use serde::Serialize;
+use std::time::Duration;
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct ClaudeCliUsage {

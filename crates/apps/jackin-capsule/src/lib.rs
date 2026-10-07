@@ -78,5 +78,5 @@ pub mod token_monitor {
     pub use jackin_usage::token_monitor::*;
 }
 pub mod usage {
-    pub use jackin_usage::usage::*;
+    pub use jackin_usage_provider_core::*;
 }

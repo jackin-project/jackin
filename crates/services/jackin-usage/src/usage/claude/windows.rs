@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `Claude` quota windows and legacy mapping.
 
-use super::super::{
-    QuotaBucketView, StatusSlot, UsageSeverity, UsageSnapshotStatus, json_number, parse_iso_epoch,
-    quota_pace_label, remaining_from_fraction, severity_from_label, timed_bucket,
-    used_percent_label,
+use jackin_protocol::control::{QuotaBucketView, StatusSlot, UsageSeverity, UsageSnapshotStatus};
+use jackin_usage_provider_core::{
+    json_number, parse_iso_epoch, quota_pace_label, remaining_from_fraction, severity_from_label,
+    timed_bucket, used_percent_label,
 };
 
 use super::{

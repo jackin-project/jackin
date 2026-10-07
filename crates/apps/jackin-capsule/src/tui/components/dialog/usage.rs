@@ -52,10 +52,10 @@ impl Dialog {
         // machine-labelled identity rows let the TUI lay out the Rust projection
         // without restoring the duplicate detail rows Plan 005 removed.
         let provider_title =
-            jackin_usage::usage::provider_display_label(&view.account.provider_label);
+            jackin_usage_provider_core::provider_display_label(&view.account.provider_label);
         let identity =
-            jackin_usage::usage::usage_identity_presentation(provider_title, view, false);
-        let presentation = jackin_usage::usage::usage_detail_presentation(view);
+            jackin_usage_provider_core::usage_identity_presentation(provider_title, view, false);
+        let presentation = jackin_usage_provider_core::usage_detail_presentation(view);
         let mut rows = Vec::with_capacity(presentation.rows.len().saturating_add(3));
         rows.push(
             crate::tui::components::container_info_surface::ContainerInfoRow::new(

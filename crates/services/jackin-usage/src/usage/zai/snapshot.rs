@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `Z.AI` provider-key snapshot entry point.
 
-use super::super::{
-    FocusedUsageView, ProviderPresence, UsageSnapshotStatus, UsageSurface, UsageViewInput, bucket,
-    provider_outcome, split_fetch, usage_view,
+use jackin_protocol::control::{FocusedUsageView, UsageSnapshotStatus};
+use jackin_usage_provider_core::{
+    ProviderPresence, UsageSurface, UsageViewInput, bucket, provider_outcome, split_fetch,
+    usage_view,
 };
 
 use super::{ZaiQuotaResponse, fetch_zai_usage, resolve_zai_team_scope};

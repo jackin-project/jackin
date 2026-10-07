@@ -123,8 +123,9 @@ pub(crate) fn account_snapshot_rows(view: &FocusedUsageView) -> Vec<StoredAccoun
     let provider = view.account.provider_label.clone();
     let account_label = view.account.account_label.clone();
     let account_key_hash = account_key_hash(&provider, &account_label);
-    let source = crate::usage::usage_source_storage_label(view.source).to_owned();
-    let confidence = crate::usage::usage_confidence_storage_label(view.confidence).to_owned();
+    let source = jackin_usage_provider_core::usage_source_storage_label(view.source).to_owned();
+    let confidence =
+        jackin_usage_provider_core::usage_confidence_storage_label(view.confidence).to_owned();
     let fetched_at = view.fetched_at_epoch;
     let last_error = view.last_error.clone();
     view.buckets
@@ -145,7 +146,8 @@ pub(crate) fn account_snapshot_rows(view: &FocusedUsageView) -> Vec<StoredAccoun
                 resets_at: bucket.resets_at,
                 fetched_at,
                 expires_at: None,
-                status: crate::usage::usage_status_storage_label(bucket.status).to_owned(),
+                status: jackin_usage_provider_core::usage_status_storage_label(bucket.status)
+                    .to_owned(),
                 last_error: last_error.clone(),
                 focused_provider: view.focused_provider.clone(),
                 plan_label: view.account.plan_label.clone(),
@@ -154,7 +156,8 @@ pub(crate) fn account_snapshot_rows(view: &FocusedUsageView) -> Vec<StoredAccoun
                 limit_label: bucket.limit_label.clone(),
                 reset_label: bucket.reset_label.clone(),
                 pace_label: bucket.pace_label.clone(),
-                view_status: crate::usage::usage_status_storage_label(view.status).to_owned(),
+                view_status: jackin_usage_provider_core::usage_status_storage_label(view.status)
+                    .to_owned(),
                 updated_label: view.updated_label.clone(),
                 status_bar_label: view.status_bar_label.clone(),
             }

@@ -45,7 +45,7 @@ use jackin_protocol::usage_broker::{
     UsageAccountCapability, UsageGenerationView, UsageProjectionV1, UsageRefreshPhase,
 };
 
-use crate::usage::{UsageCache, UsageFormatPrefs};
+use jackin_usage_provider_core::{UsageCache, UsageFormatPrefs};
 
 pub use accounts::{
     AccountLifecycle, AccountProvenance, CanonicalAccountIdentity, CanonicalAccountSubject,

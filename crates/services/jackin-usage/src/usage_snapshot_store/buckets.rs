@@ -117,7 +117,7 @@ pub(crate) fn usage_provider_tabs_from_rows(
         .values()
         .map(|row| jackin_protocol::control::UsageProviderTab {
             id: row.account_key_hash.clone(),
-            label: crate::usage::account_tab_label_for_parts(
+            label: jackin_usage_provider_core::account_tab_label_for_parts(
                 &row.provider,
                 &row.account_label,
                 row.focused_provider.as_deref(),

@@ -8,7 +8,7 @@ use super::{
     view_is_auto_detected,
 };
 
-use crate::usage::{UsageFormatPrefs, compact_duration_label, estimate_caption};
+use jackin_usage_provider_core::{UsageFormatPrefs, compact_duration_label, estimate_caption};
 
 impl HostUsageRuntime {
     /// Compact bar label for one enabled surface, if known.
@@ -269,17 +269,17 @@ impl HostUsageRuntime {
                 );
             }
             return match prefs.percent_style {
-                crate::usage::PercentStyle::Left => {
+                jackin_usage_provider_core::PercentStyle::Left => {
                     format!("{} 0%", surface.compact_prefix())
                 }
-                crate::usage::PercentStyle::Used => {
+                jackin_usage_provider_core::PercentStyle::Used => {
                     format!("{} 100%", surface.compact_prefix())
                 }
             };
         }
         let pct = match prefs.percent_style {
-            crate::usage::PercentStyle::Left => remaining,
-            crate::usage::PercentStyle::Used => 100u8.saturating_sub(remaining),
+            jackin_usage_provider_core::PercentStyle::Left => remaining,
+            jackin_usage_provider_core::PercentStyle::Used => 100u8.saturating_sub(remaining),
         };
         format!("{} {pct}%", surface.compact_prefix())
     }

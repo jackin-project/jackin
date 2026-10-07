@@ -8,6 +8,7 @@
 
 mod cli;
 mod credentials;
+mod diagnostic;
 mod keychain;
 mod oauth_types;
 mod refresh;
@@ -17,10 +18,14 @@ mod wave;
 mod windows;
 
 #[cfg(test)]
-use super::refresh::ProviderError;
-#[cfg(test)]
 use super::*;
+#[cfg(test)]
+use jackin_usage_provider_core::ProviderError;
 
+pub(crate) use self::diagnostic::parse_claude_usage_output;
+pub use self::diagnostic::run_claude_usage_diagnostic;
+#[cfg(test)]
+pub(crate) use self::diagnostic::run_claude_usage_diagnostic_with;
 pub use cli::ClaudeUsageDiagnostic;
 pub(crate) use cli::{
     ClaudeCliUsage, claude_code_user_agent, claude_code_user_agent_with,

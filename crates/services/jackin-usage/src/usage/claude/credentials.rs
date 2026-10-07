@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `Claude` OAuth credential loading.
 
-use super::super::{Path, humanize_plan_label, read_json_file};
+use jackin_usage_provider_core::{humanize_plan_label, read_json_file};
+use std::path::Path;
 
 // No `Debug`/`Display`: this carries a live access token and (optionally) the
 // stable refresh token, so it must never be formatted into a log or error.

@@ -66,7 +66,7 @@ pub(crate) fn refresh_credential_binding(
         // `Unsupported` view flows through the success path, outside
         // retry/backoff.
         ValidatedCredentialSource::Unpollable => (
-            crate::usage::unpollable_snapshot(
+            jackin_usage_provider_core::unpollable_snapshot(
                 binding.surface.agent_slug(),
                 binding.surface.provider_label(),
                 chrono::Utc::now().timestamp(),

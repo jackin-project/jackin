@@ -100,7 +100,7 @@ impl HostUsageRuntime {
             .find(|diagnostic| diagnostic.surface_id.as_deref() == Some(surface.id()))
             .map(|diagnostic| diagnostic.issue)?;
         let now = chrono::Utc::now().timestamp();
-        let mut view = crate::usage::cached_unavailable_view(
+        let mut view = jackin_usage_provider_core::cached_unavailable_view(
             surface.agent_slug(),
             surface.provider_label(),
             now,

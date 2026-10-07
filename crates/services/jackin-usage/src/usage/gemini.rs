@@ -22,6 +22,10 @@
     expect(clippy::wildcard_imports, reason = "target-dependent")
 )]
 use super::*;
+use jackin_usage_provider_core::{
+    UsageSurface, UsageViewInput, bucket, compact_count, env_value, epoch_seconds_from_maybe_ms,
+    home_path, humanize_plan_label, json_number, parse_iso_epoch, timed_bucket, usage_view,
+};
 
 /// 2026-06-18T00:00:00Z: consumer Google OAuth through Gemini CLI ended.
 /// (`parse_iso_epoch` cross-checks this constant in tests.)

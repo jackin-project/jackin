@@ -17,9 +17,9 @@ mod views;
 mod windows;
 
 #[cfg(test)]
-use super::refresh::ProviderError;
-#[cfg(test)]
 use super::*;
+#[cfg(test)]
+use jackin_usage_provider_core::ProviderError;
 
 #[cfg(test)]
 pub(crate) use credentials::load_codex_oauth_credentials;

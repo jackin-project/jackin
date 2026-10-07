@@ -70,7 +70,10 @@ key = "clippy::cast_sign_loss@jackin-launch"
 bound = 9
 [[family.entry]]
 key = "clippy::cast_sign_loss@jackin-usage"
-bound = 31
+bound = 30
+[[family.entry]]
+key = "clippy::cast_sign_loss@jackin-usage-provider-core"
+bound = 1
 [[family.entry]]
 key = "clippy::cognitive_complexity@jackin-runtime"
 bound = 1
@@ -115,6 +118,9 @@ key = "clippy::disallowed_methods@jackin-test-support"
 bound = 5
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-usage"
+bound = 2
+[[family.entry]]
+key = "clippy::disallowed_methods@jackin-usage-provider-core"
 bound = 2
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-xtask"
@@ -244,9 +250,12 @@ key = "clippy::panic@jackin-manifest"
 bound = 1
 [[family.entry]]
 key = "clippy::panic@jackin-usage"
-bound = 3
+bound = 2
 [[family.entry]]
 key = "clippy::panic@jackin-usage-ffi"
+bound = 1
+[[family.entry]]
+key = "clippy::panic@jackin-usage-provider-core"
 bound = 1
 [[family.entry]]
 key = "clippy::print_stderr@jackin"
@@ -349,7 +358,10 @@ key = "clippy::too_many_arguments@jackin-runtime"
 bound = 12
 [[family.entry]]
 key = "clippy::too_many_arguments@jackin-usage"
-bound = 2
+bound = 1
+[[family.entry]]
+key = "clippy::too_many_arguments@jackin-usage-provider-core"
+bound = 1
 [[family.entry]]
 key = "clippy::too_many_lines@jackin-capsule"
 bound = 7
@@ -416,6 +428,9 @@ key = "dead_code@jackin-runtime"
 bound = 4
 [[family.entry]]
 key = "dead_code@jackin-usage"
+bound = 1
+[[family.entry]]
+key = "dead_code@jackin-usage-provider-core"
 bound = 1
 [[family.entry]]
 key = "dead_code@jackin-xtask"
@@ -564,7 +579,7 @@ key = "crates/testing/jackin-otlp-testbed/README.md"
 bound = 1122
 [[family.entry]]
 key = "crates/core/jackin-protocol/README.md"
-bound = 2500
+bound = 2507
 [[family.entry]]
 key = "crates/services/jackin-runtime/README.md"
 bound = 3545
@@ -583,6 +598,9 @@ bound = 6514
 [[family.entry]]
 key = "crates/adapters/jackin-usage-ffi/README.md"
 bound = 3078
+[[family.entry]]
+key = "crates/services/jackin-usage-provider-core/README.md"
+bound = 2050
 [[family.entry]]
 key = "crates/tools/jackin-xtask/README.md"
 bound = 6113
@@ -833,6 +851,9 @@ bound = 30
 [[family.entry]]
 key = "jackin-usage"
 bound = 29
+[[family.entry]]
+key = "jackin-usage-provider-core"
+bound = 23
 [[family.entry]]
 key = "jackin-xtask"
 bound = 38

@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `Z.AI` quota response types and plan windows.
 
-use super::super::{QuotaBucketView, StatusSlot, with_status_slot};
+use jackin_protocol::control::{QuotaBucketView, StatusSlot};
+use jackin_usage_provider_core::with_status_slot;
 
 use super::zai_bucket;
 use serde::Deserialize;

@@ -22,6 +22,7 @@ jackin-config = { workspace = true }
 jackin-core = { workspace = true }
 jackin-env = { workspace = true }
 jackin-usage = { workspace = true }
+jackin-usage-provider-core = { workspace = true }
 jackin-protocol = { workspace = true }
 jackin-telemetry = { workspace = true }
 boltffi = "=0.30.1"

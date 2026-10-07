@@ -2,11 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `Cursor` period usage fetch and buckets.
 
-use super::super::{
-    QuotaBucketView, StatusSlot, UsageSnapshotStatus, bucket, format_currency, json_number,
-    provider_http_client, timed_bucket, with_status_slot,
-};
 use super::cursor_dashboard_url_with_base;
+use jackin_protocol::control::{QuotaBucketView, StatusSlot, UsageSnapshotStatus};
+use jackin_usage_provider_core::{
+    bucket, format_currency, json_number, provider_http_client, timed_bucket, with_status_slot,
+};
 
 /// Connect-protocol POST: JSON body `{}`, bearer auth, protocol version 1.
 pub(crate) fn cursor_dashboard_post(

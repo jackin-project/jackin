@@ -12,7 +12,7 @@ use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
 use jackin_core::Agent;
 
-use crate::usage::{UsageCache, UsageFormatPrefs};
+use jackin_usage_provider_core::{UsageCache, UsageFormatPrefs};
 
 impl HostUsageRuntime {
     /// Construct a closed runtime (call [`Self::open`] before use).

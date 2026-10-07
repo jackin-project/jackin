@@ -2,11 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `Claude` snapshot entry points and identity.
 
-use super::super::{
-    CLAUDE_HANDOFF_CREDENTIALS_PATH, FocusedUsageView, Path, PathBuf, UsageConfidence,
-    UsageSnapshotStatus, UsageSource, UsageSurface, UsageViewInput, bucket, env_dir_or_home,
+use jackin_protocol::control::{
+    FocusedUsageView, UsageConfidence, UsageSnapshotStatus, UsageSource,
+};
+use jackin_usage_provider_core::{
+    CLAUDE_HANDOFF_CREDENTIALS_PATH, UsageSurface, UsageViewInput, bucket, env_dir_or_home,
     home_path, usage_view,
 };
+use std::path::{Path, PathBuf};
 
 use super::{
     ClaudeWaveResolution, claude_keychain_state, claude_scope_file_probe,

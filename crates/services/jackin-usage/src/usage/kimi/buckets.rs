@@ -2,10 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `Kimi` quota buckets and window views.
 
-use super::super::{
-    QuotaBucketView, StatusSlot, UsageSnapshotStatus, compact_count, quota_pace_label,
-    timed_bucket, with_status_slot,
-};
+use jackin_protocol::control::{QuotaBucketView, StatusSlot, UsageSnapshotStatus};
+use jackin_usage_provider_core::{compact_count, quota_pace_label, timed_bucket, with_status_slot};
 
 use super::{
     KimiCount, KimiPool, KimiPools, KimiReset, KimiUsageDetail, KimiUsageResponse, KimiUsages,

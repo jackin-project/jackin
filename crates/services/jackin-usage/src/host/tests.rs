@@ -3,7 +3,7 @@
 
 use super::*;
 
-use crate::usage::{
+use jackin_usage_provider_core::{
     PercentStyle, ResetStyle, UsageFormatPrefs, estimate_caption, provider_display_label,
 };
 

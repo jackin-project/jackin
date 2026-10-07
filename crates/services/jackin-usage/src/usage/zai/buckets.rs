@@ -2,10 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `Z.AI` quota bucket views and peak-hour notes.
 
-use super::super::{
-    QuotaBucketView, UsageSnapshotStatus, compact_count, epoch_seconds_from_maybe_ms, timed_bucket,
-};
 use chrono::{Datelike, Timelike};
+use jackin_protocol::control::{QuotaBucketView, UsageSnapshotStatus};
+use jackin_usage_provider_core::{compact_count, epoch_seconds_from_maybe_ms, timed_bucket};
 
 use super::ZaiLimitRaw;
 

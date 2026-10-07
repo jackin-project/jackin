@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `Antigravity` CLI version probe and usage fetch.
 
-use super::super::{PROVIDER_CLI_TIMEOUT, run_cli_with_timeout};
+use jackin_usage_provider_core::{PROVIDER_CLI_TIMEOUT, run_cli_with_timeout};
 
 use super::{
     AntigravityCredits, AntigravityUsage, parse_antigravity_credits_output,

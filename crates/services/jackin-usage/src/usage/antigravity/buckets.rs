@@ -2,10 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `Antigravity` identity, plan, and quota buckets.
 
-use super::super::{
-    QuotaBucketView, StatusSlot, UsageSnapshotStatus, bucket, humanize_plan_label,
-    quota_pace_label, timed_bucket,
-};
+use jackin_protocol::control::{QuotaBucketView, StatusSlot, UsageSnapshotStatus};
+use jackin_usage_provider_core::{bucket, humanize_plan_label, quota_pace_label, timed_bucket};
 
 use super::{AntigravityFamily, AntigravityPool, AntigravityUsage, AntigravityWindow};
 

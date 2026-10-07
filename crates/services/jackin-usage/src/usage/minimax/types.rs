@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `MiniMax` usage response types and validation.
 
-use super::super::QuotaBucketView;
 use super::{
     MiniMaxBalanceResponse, MiniMaxRegion, MiniMaxWindow, minimax_bucket, minimax_is_general_model,
 };
+use jackin_protocol::control::QuotaBucketView;
 use serde::Deserialize;
 
 /// A successful `MiniMax` fetch: the decoded product payload plus the region

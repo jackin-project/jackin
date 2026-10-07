@@ -9,7 +9,7 @@ use super::{
 
 use jackin_protocol::control::{FocusedUsageView, UsageSeverity};
 
-use crate::usage::{
+use jackin_usage_provider_core::{
     UsageFormatPrefs, compact_duration_label, exact_reset_parenthetical, percent_headline,
     provider_display_label, reset_label_with_prefs, usage_display_status_label,
     usage_identity_presentation, usage_status_storage_label,

@@ -2,11 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `Grok` RPC transport and protobuf scan.
 
-use super::super::{
-    Duration, Fixed32Field, Instant, Path, PathBuf, ProtobufScan, VarintField, Write, fs,
-    home_path, looks_like_protobuf_payload, mpsc, parse_iso_epoch, process_telemetry, read_varint,
-    write_json_line,
+use jackin_usage_provider_core::{
+    Fixed32Field, ProtobufScan, VarintField, complete_external_rpc, external_rpc_operation,
+    home_path, looks_like_protobuf_payload, parse_iso_epoch, read_varint, write_json_line,
 };
+use std::fs;
+use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::sync::mpsc;
+use std::time::{Duration, Instant};
 
 use super::GrokWebBillingSnapshot;
 
@@ -238,7 +242,7 @@ pub(crate) fn grok_rpc_request(
     params: serde_json::Value,
     timeout: Duration,
 ) -> Result<serde_json::Value, String> {
-    let operation = process_telemetry::external_rpc_operation(
+    let operation = external_rpc_operation(
         jackin_telemetry::schema::enums::RpcSystemName::GrokAcp,
         method,
     );
@@ -279,7 +283,7 @@ pub(crate) fn grok_rpc_request(
                 .ok_or_else(|| format!("Grok RPC {method} response missing result"));
         }
     })();
-    process_telemetry::complete_external_rpc(operation, &result, started.elapsed() >= timeout);
+    complete_external_rpc(operation, &result, started.elapsed() >= timeout);
     result
 }
 

@@ -2,12 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `Amp` usage views and quota buckets.
 
-use super::super::{
+use super::{AmpSubscriptionKind, AmpUsage, parse_amp_usage_output};
+use jackin_protocol::control::{
     FocusedUsageView, Money, QuotaBucketView, StatusSlot, UsageConfidence, UsageSnapshotStatus,
-    UsageSource, UsageSurface, UsageViewInput, bucket, format_currency, timed_bucket, usage_view,
+    UsageSource,
+};
+use jackin_usage_provider_core::{
+    UsageSurface, UsageViewInput, bucket, format_currency, timed_bucket, usage_view,
     with_status_slot,
 };
-use super::{AmpSubscriptionKind, AmpUsage, parse_amp_usage_output};
 
 impl AmpUsage {
     pub(crate) fn from_api_value(value: serde_json::Value) -> Option<Self> {

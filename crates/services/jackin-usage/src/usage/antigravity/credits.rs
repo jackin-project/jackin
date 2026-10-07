@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `Antigravity` credit parsing and buckets.
 
-use super::super::{Money, QuotaBucketView, StatusSlot, UsageSnapshotStatus, bucket, json_number};
 use super::antigravity_remaining_from_entry;
+use jackin_protocol::control::{Money, QuotaBucketView, StatusSlot, UsageSnapshotStatus};
+use jackin_usage_provider_core::{bucket, json_number};
 
 /// Parsed `/credits` output. Money attaches only when the response states an
 /// explicit minor-unit amount + exponent; plain numbers stay labels so an

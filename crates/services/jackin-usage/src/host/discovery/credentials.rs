@@ -159,7 +159,7 @@ pub enum ProviderCredentialRefreshOutcome {
         /// Provider view with secret-free account/quota data.
         view: Box<FocusedUsageView>,
         /// Typed provider rate-limit metadata, when the provider returned HTTP 429.
-        rate_limit: Option<crate::usage::ProviderRateLimit>,
+        rate_limit: Option<jackin_usage_provider_core::ProviderRateLimit>,
     },
     /// Credential disappeared after discovery.
     Missing,

@@ -178,7 +178,7 @@ pub(crate) fn account_usage_view_from_rows(
         confidence,
         fetched_at_epoch: latest,
         updated_label: if first.updated_label.trim().is_empty() {
-            crate::usage::relative_updated_label(latest, now_epoch)
+            jackin_usage_provider_core::relative_updated_label(latest, now_epoch)
         } else {
             first.updated_label.clone()
         },

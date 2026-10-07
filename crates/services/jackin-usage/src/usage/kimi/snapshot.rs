@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `Kimi` snapshot entry point and identity.
 
-use super::super::{
-    FocusedUsageView, ProviderPresence, UsageSnapshotStatus, UsageSurface, UsageViewInput, bucket,
-    home_path, humanize_plan_label, provider_outcome, split_fetch, usage_view,
+use jackin_protocol::control::{FocusedUsageView, UsageSnapshotStatus};
+use jackin_usage_provider_core::{
+    ProviderPresence, UsageSurface, UsageViewInput, bucket, home_path, humanize_plan_label,
+    provider_outcome, split_fetch, usage_view,
 };
 
 use super::{KimiUsageResponse, fetch_kimi_usage};

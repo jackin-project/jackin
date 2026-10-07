@@ -2,12 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `Cursor` usage summary and stripe balance.
 
-use super::super::{
-    QuotaBucketView, StatusSlot, UsageSnapshotStatus, bucket, epoch_seconds_from_maybe_ms,
-    format_currency, humanize_plan_label, json_number, parse_iso_epoch, quota_pace_label,
-    timed_bucket, with_status_slot,
-};
 use super::cursor_rest_get;
+use jackin_protocol::control::{QuotaBucketView, StatusSlot, UsageSnapshotStatus};
+use jackin_usage_provider_core::{
+    bucket, epoch_seconds_from_maybe_ms, format_currency, humanize_plan_label, json_number,
+    parse_iso_epoch, quota_pace_label, timed_bucket, with_status_slot,
+};
 
 /// Structured usage summary (`/api/usage-summary`): exact cycle bounds,
 /// percent buckets, and dollar figures. Dollar fields stay labels (scale

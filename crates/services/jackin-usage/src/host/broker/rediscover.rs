@@ -129,7 +129,7 @@ pub(crate) fn provider_probe_outcome(
 
 pub(crate) fn provider_probe_outcome_with_rate_limit(
     view: jackin_protocol::control::FocusedUsageView,
-    rate_limit: Option<crate::usage::ProviderRateLimit>,
+    rate_limit: Option<jackin_usage_provider_core::ProviderRateLimit>,
 ) -> ProviderProbeOutcome {
     if let Some(rate_limit) = rate_limit {
         return ProviderProbeOutcome::Failure {

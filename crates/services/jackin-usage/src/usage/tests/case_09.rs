@@ -144,26 +144,17 @@ fn reset_label_uses_relative_and_local_timestamp() {
     let same_day = parse_iso_epoch("2026-06-11T15:12:00Z").expect("same day");
     assert_eq!(
         reset_label(same_day, now),
-        format!(
-            "Resets in 1h 26m ({})",
-            format::local_timestamp_label(same_day)
-        )
+        format!("Resets in 1h 26m ({})", local_timestamp_label(same_day))
     );
     let tomorrow = parse_iso_epoch("2026-06-12T04:18:00Z").expect("tomorrow");
     assert_eq!(
         reset_label(tomorrow, now),
-        format!(
-            "Resets in 14h 32m ({})",
-            format::local_timestamp_label(tomorrow)
-        )
+        format!("Resets in 14h 32m ({})", local_timestamp_label(tomorrow))
     );
     let future = parse_iso_epoch("2026-07-01T16:31:00Z").expect("future");
     assert_eq!(
         reset_label(future, now),
-        format!(
-            "Resets in 20d 2h ({})",
-            format::local_timestamp_label(future)
-        )
+        format!("Resets in 20d 2h ({})", local_timestamp_label(future))
     );
     assert_eq!(reset_label(now, now), "Resets now");
 }

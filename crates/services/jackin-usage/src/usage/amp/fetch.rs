@@ -2,11 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `Amp` API usage fetch and key loading.
 
-use super::super::{
-    PROVIDER_CLI_TIMEOUT, Path, provider_http_client, provider_request, read_json_file,
+use super::{AmpUsage, parse_amp_usage_output};
+use jackin_usage_provider_core::{
+    PROVIDER_CLI_TIMEOUT, provider_http_client, provider_request, read_json_file,
     run_cli_with_timeout,
 };
-use super::{AmpUsage, parse_amp_usage_output};
+use std::path::Path;
 
 pub(crate) fn fetch_amp_api_usage(token: &str) -> Result<AmpUsage, String> {
     provider_request(

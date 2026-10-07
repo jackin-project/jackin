@@ -3,6 +3,7 @@
 //! `Cursor` auth, identity, and dashboard endpoints.
 
 use super::super::*;
+use jackin_usage_provider_core::{env_value, home_path, read_json_file};
 
 pub(crate) const CURSOR_DEFAULT_DASHBOARD_BASE: &str = "https://api2.cursor.sh";
 pub(crate) const CURSOR_SESSION_BASE: &str = "https://cursor.com";

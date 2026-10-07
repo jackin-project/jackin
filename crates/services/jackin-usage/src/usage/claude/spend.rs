@@ -2,11 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `Claude` spend buckets and OAuth fetch.
 
-use super::super::{
-    BTreeMap, Money, ProviderHttpError, QuotaBucketView, StatusSlot, UsageSeverity,
-    UsageSnapshotStatus, bucket, get_json_bearer, humanize_reason, humanize_window_label,
+use jackin_protocol::control::{
+    Money, QuotaBucketView, StatusSlot, UsageSeverity, UsageSnapshotStatus,
+};
+use jackin_usage_provider_core::{
+    ProviderHttpError, bucket, get_json_bearer, humanize_reason, humanize_window_label,
     parse_iso_epoch, severity_from_label, timed_bucket, used_percent_from_fraction,
 };
+use std::collections::BTreeMap;
 
 use super::{
     ClaudeOAuthExtraUsage, ClaudeOAuthMoney, ClaudeOAuthSpend, ClaudeOAuthUsageResponse,

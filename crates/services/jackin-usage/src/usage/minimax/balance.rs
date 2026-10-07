@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `MiniMax` PAYG balance parsing.
 
-use super::super::{QuotaBucketView, UsageSnapshotStatus, bucket};
 use super::{MiniMaxBaseResponse, MiniMaxRegion};
+use jackin_protocol::control::{QuotaBucketView, UsageSnapshotStatus};
+use jackin_usage_provider_core::bucket;
 use serde::Deserialize;
 
 /// PAYG balance (`GET {base}/account/query_balance`, `sk-api-*` keys only).
