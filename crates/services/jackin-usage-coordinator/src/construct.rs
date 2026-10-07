@@ -59,7 +59,7 @@ impl UsageCoordinator {
     /// catalog. Broker recovery uses this so executor rollback is fenced by
     /// the same caller/service revision as the forward rotation.
     #[must_use]
-    pub(crate) fn with_catalog_revision(
+    pub fn with_catalog_revision(
         executor: Arc<dyn UsageProviderExecutor>,
         store: Arc<dyn AccountStateStore>,
         config: UsageCoordinatorConfig,

@@ -332,7 +332,7 @@ impl AccountStateStore for FileAccountStateStore {
 impl FileProjectionStateStore {
     /// Remove the active envelope after a failed first publication. The
     /// caller uses this only to restore an absent preimage.
-    pub(crate) fn clear(&self) -> Result<(), StateStoreError> {
+    pub fn clear(&self) -> Result<(), StateStoreError> {
         let Some(parent) = self.path.parent() else {
             return Err(StateStoreError::Unavailable);
         };

@@ -1,7 +1,12 @@
-// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
-// SPDX-License-Identifier: Apache-2.0
-
+//! jackin-usage-coordinator: per-account single-flight refresh generations.
+//!
+//! **Architecture Invariant:** T2.
+//! Entry point: [`UsageCoordinator`] — single-flight refresh generations.
+//!
 //! Per-account single-flight refresh generations owned by the host broker.
+//! Probe execution stays behind [`UsageProviderExecutor`], implemented by
+//! the T4 host broker; file-backed generation and projection state lives
+//! behind [`AccountStateStore`].
 
 pub mod policy;
 mod state;
@@ -49,9 +54,8 @@ pub(crate) use catalog::{
     validate_catalog_entries,
 };
 pub use config::{UsageCapabilitySet, UsageCoordinatorConfig};
-pub(crate) use entries::{
-    AccountEntry, CatalogAccountPreimage, CatalogTransaction, CoordinatorState, Shared,
-};
+pub use entries::CatalogTransaction;
+pub(crate) use entries::{AccountEntry, CatalogAccountPreimage, CoordinatorState, Shared};
 pub(crate) use errors::{
     catalog_revoked_error, coordination_error, state_error, unavailable_error,
 };

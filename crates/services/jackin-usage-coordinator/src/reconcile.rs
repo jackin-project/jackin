@@ -33,7 +33,7 @@ impl UsageCoordinator {
     /// revision. Broker processes use this stronger boundary so executor
     /// discovery can reject a caller/service catalog mismatch before state is
     /// changed.
-    pub(crate) fn reconcile_catalog_transaction_with_revision(
+    pub fn reconcile_catalog_transaction_with_revision(
         &self,
         catalog_revision: Option<&str>,
         entries: impl IntoIterator<Item = UsageCatalogEntry>,

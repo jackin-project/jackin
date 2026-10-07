@@ -104,7 +104,7 @@ pub(crate) enum CatalogAccountPreimage {
 
 /// Coordinator-side catalog commit whose durable projection can still reject
 /// the catalog and restore the exact pre-rotation state.
-pub(crate) struct CatalogTransaction {
+pub struct CatalogTransaction {
     pub(crate) shared: Arc<Shared>,
     pub(crate) previous_state: CoordinatorState,
     pub(crate) preimages: BTreeMap<UsageAccountCapability, CatalogAccountPreimage>,
@@ -112,11 +112,17 @@ pub(crate) struct CatalogTransaction {
     pub(crate) previous_catalog_revision: Option<String>,
 }
 
+impl std::fmt::Debug for CatalogTransaction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CatalogTransaction").finish_non_exhaustive()
+    }
+}
+
 impl CatalogTransaction {
     /// Restore coordinator memory, account state, and executor bindings.
     /// Corrupt preimages remain in quarantine by design; they are not safe to
     /// put back into the active account namespace.
-    pub(crate) fn rollback(self, now_epoch: i64) -> Result<(), UsageCoordinationError> {
+    pub fn rollback(self, now_epoch: i64) -> Result<(), UsageCoordinationError> {
         let _catalog_lifecycle = self
             .shared
             .catalog_lifecycle

@@ -3649,6 +3649,7 @@ dependencies = [
  "jackin-otlp-testbed",
  "jackin-protocol",
  "jackin-telemetry",
+ "jackin-usage-coordinator",
  "jackin-usage-credential-snapshots",
  "jackin-usage-output",
  "jackin-usage-provider-amp",
@@ -3681,6 +3682,21 @@ dependencies = [
  "tracing",
  "turso",
  "url",
+]
+
+[[package]]
+name = "jackin-usage-coordinator"
+version = "0.6.4"
+dependencies = [
+ "chrono",
+ "jackin-core",
+ "jackin-protocol",
+ "jackin-telemetry",
+ "nix 0.31.3",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

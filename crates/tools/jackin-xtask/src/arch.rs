@@ -52,6 +52,7 @@ pub(crate) const TIERS: &[(&str, u8)] = &[
     ("jackin-diagnostics", 2),
     ("jackin-manifest", 2),
     ("jackin-usage-provider-core", 2),
+    ("jackin-usage-coordinator", 2),
     ("jackin-usage-provider-zai", 3),
     ("jackin-usage-provider-kimi", 3),
     ("jackin-usage-provider-amp", 3),

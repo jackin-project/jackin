@@ -1716,3 +1716,58 @@ passes.
 - Raw outputs:
   `/tmp/s10-credsnap-{before,after}.txt`
   (kept out of the repo).
+
+### Split 20: usage-coordinator extraction (C1)
+
+- `jackin-usage` -> `jackin-usage` +
+  `jackin-usage-coordinator` (T2:
+  `coordinator.rs` -> `lib.rs` re-export
+  root + 30 module files moved flat, zero
+  internal path edits; `lib.rs` carries
+  the ownership header). The coordinator
+  has no `crate::` edges outside itself,
+  so the move is a pure relocation: the
+  T4 `jackin-usage` keeps the public path
+  via `pub use ... as coordinator`. Five
+  `pub(crate)` items the host broker
+  calls across the new boundary widen to
+  `pub` (`CatalogTransaction` +
+  `rollback`, `reconcile_catalog_...`,
+  `with_catalog_revision`, `clear`) with
+  an opaque `Debug` for the transaction
+  type; public API paths unchanged.
+- Verify: `cargo check --locked --workspace
+  --all-targets` green; `cargo fmt --all
+  --check` clean; `cargo clippy` 0 errors,
+  0 warnings on both touched packages.
+  `cargo nextest list --workspace
+  --all-targets`: 7276 -> 7276, delta is
+  exactly 40 moved (`jackin-usage
+  coordinator::X` ->
+  `jackin-usage-coordinator X`; zero
+  dropped, zero added).
+  `nextest run`: 450/450 usage + 40/40
+  coordinator (sums to the 490 pre-split
+  usage total). No contract fixture
+  entries name coordinator paths, so no
+  remap. `alint check`: 197 -> 197,
+  findings identical. `check-gaps`:
+  27 -> 27 (usage `SIZE-001`
+  34016 -> 30140 lines, `SIZE-002`
+  213 -> 182 files; xtask +1 line for
+  the tier row); `GAP-TEST-001/002/003`
+  stay 0/0/0. `ratchet.toml`: +2 rows
+  (agent-doc 1408, public-surface
+  coordinator 1) and the usage
+  public-surface row shrinks 8 -> 7;
+  violations 60 -> 60 with zero new
+  failures (the `clone_on_ref_ptr`
+  unlisted row moves keys with its two
+  test expects, count unchanged).
+  `lint arch`: missing tiers stay 3,
+  zero direction violations;
+  `lint headers` stays at the base 2;
+  `lint tests` OK.
+- Raw outputs:
+  `/tmp/s11-split20-{before,after}.txt`
+  (kept out of the repo).
