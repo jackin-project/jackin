@@ -3580,6 +3580,7 @@ dependencies = [
  "jackin-process",
  "jackin-protocol",
  "jackin-runtime-exec-host",
+ "jackin-runtime-host-daemon",
  "jackin-runtime-isolation",
  "jackin-runtime-process-telemetry",
  "jackin-runtime-spin-wait",
@@ -3611,6 +3612,26 @@ dependencies = [
  "jackin-protocol",
  "jackin-runtime-process-telemetry",
  "jackin-telemetry",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "jackin-runtime-host-daemon"
+version = "0.6.4"
+dependencies = [
+ "anyhow",
+ "jackin-core",
+ "jackin-diagnostics",
+ "jackin-otlp-testbed",
+ "jackin-process",
+ "jackin-protocol",
+ "jackin-runtime-process-telemetry",
+ "jackin-telemetry",
+ "nix 0.31.3",
+ "serde",
  "serde_json",
  "tempfile",
  "tokio",

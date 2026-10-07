@@ -650,6 +650,9 @@ bound = 3545
 key = "crates/services/jackin-runtime-exec-host/README.md"
 bound = 965
 [[family.entry]]
+key = "crates/services/jackin-runtime-host-daemon/README.md"
+bound = 978
+[[family.entry]]
 key = "crates/services/jackin-runtime-isolation/README.md"
 bound = 963
 [[family.entry]]
@@ -893,6 +896,9 @@ key = "jackin-runtime"
 bound = 8
 [[family.entry]]
 key = "jackin-runtime-exec-host"
+bound = 1
+[[family.entry]]
+key = "jackin-runtime-host-daemon"
 bound = 1
 [[family.entry]]
 key = "jackin-runtime-isolation"
