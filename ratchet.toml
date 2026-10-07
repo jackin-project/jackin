@@ -755,6 +755,9 @@ bound = 720
 key = "crates/services/jackin-usage-credential-resolver/README.md"
 bound = 821
 [[family.entry]]
+key = "crates/services/jackin-usage-host-runtime/README.md"
+bound = 988
+[[family.entry]]
 key = "crates/tools/jackin-xtask/README.md"
 bound = 6113
 [[family.entry]]
@@ -887,6 +890,9 @@ key = "jackin-usage-token-monitor"
 bound = 6
 [[family.entry]]
 key = "jackin-usage-capsule-telemetry"
+bound = 1
+[[family.entry]]
+key = "jackin-usage-host-runtime"
 bound = 1
 
 

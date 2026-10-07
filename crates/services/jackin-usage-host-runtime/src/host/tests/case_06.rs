@@ -263,7 +263,8 @@ fn request_usage_batch_forced_refresh_still_honors_retry_after() {
         calls: AtomicUsize::new(0),
     });
     let concrete_executor = Arc::clone(&executor);
-    let broker_executor: Arc<dyn crate::coordinator::UsageProviderExecutor> = concrete_executor;
+    let broker_executor: Arc<dyn jackin_usage_coordinator::UsageProviderExecutor> =
+        concrete_executor;
     let client = ensure_usage_broker_with_executor(
         UsageBrokerConfig::for_data_dir(temp.path().to_path_buf()),
         broker_executor,
@@ -325,7 +326,8 @@ fn broker_serves_through_socket_alias_for_overlong_data_dir() {
         calls: AtomicUsize::new(0),
     });
     let concrete_executor = Arc::clone(&executor);
-    let broker_executor: Arc<dyn crate::coordinator::UsageProviderExecutor> = concrete_executor;
+    let broker_executor: Arc<dyn jackin_usage_coordinator::UsageProviderExecutor> =
+        concrete_executor;
     let client = ensure_usage_broker_with_executor(
         UsageBrokerConfig::for_data_dir(data_dir.clone()),
         broker_executor,

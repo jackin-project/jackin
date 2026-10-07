@@ -2693,3 +2693,87 @@ bound 720.
 - Raw outputs:
   `/tmp/s12-s37-{before,after}.txt`
   (kept out of the repo).
+
+### Split 38: usage-host-runtime extraction (H5)
+
+- `jackin-usage` ->
+  `jackin-usage` +
+  `jackin-usage-host-runtime` (T6:
+  the whole `host` module moves
+  verbatim — `HostUsageRuntime`,
+  the 11 method leaves, the
+  broker/discovery/projection
+  runtime glue, and
+  `host/tests`). Every leaf is an
+  `impl HostUsageRuntime` block,
+  so the struct and its leaves
+  are one indivisible ownership
+  boundary; the relative layout
+  is preserved, so all
+  `super::`/`crate::host::`
+  paths hold. Three mechanical
+  edits: `crate::usage_snapshot_store`
+  -> `jackin_usage_snapshot_store`
+  (2 files + 1 use site),
+  `crate::coordinator` ->
+  `jackin_usage_coordinator` (2
+  test files), plus `cargo fmt`
+  reflow. `usage/src/host.rs`
+  becomes a 1-line re-export
+  shim, so every
+  `jackin_usage::host::*` path
+  stays stable for the FFI
+  bridge. Tier renumber (strictly
+  lower edges only): the new
+  crate names the T5 broker +
+  projection crates, so it takes
+  T6; `jackin-usage` 6 -> 7,
+  capsule/runtime/FFI 7 -> 8,
+  `jackin` 8 -> 9, with the 7
+  ownership headers bumped to
+  match. New-crate deps: broker,
+  credential-resolver,
+  destination, discovery,
+  host-accounts, host-credentials,
+  host-glance, host-presentation,
+  projection, provider-core,
+  snapshot-store, core, protocol,
+  chrono, serde_json; dev-deps add
+  config, broker-wire,
+  coordinator, tempfile, toml,
+  and snapshot-store
+  `test-support` (lockfile +1
+  package, +21 edges).
+- Verify: `cargo check --locked --workspace
+  --all-targets` green; `cargo fmt --all
+  --check` clean; `cargo clippy` 0
+  errors, 0 warnings on the two
+  touched packages. `cargo nextest list
+  --workspace --all-targets`: 7277 ->
+  7277 (79 relocations map 1:1 by
+  name: usage -> host-runtime; 0
+  dropped, 0 added). `nextest run`:
+  147/147 usage (68) +
+  host-runtime (79). `alint check`:
+  196 -> 195 (the resolved usage
+  `policy-gaps` finding drops
+  out; nothing else moves).
+  `check-gaps`: 26 -> 25 (usage
+  `SIZE-001` resolved: 7371 code
+  lines -> under budget at 2746
+  raw lines / 21 files, zero
+  SIZE gaps; host-runtime fits at
+  5587 raw / 31 files; xtask +1
+  line for the tier row).
+  `GAP-TEST-001/002/003` stay 0/0/0.
+  `ratchet.toml`: +2 rows
+  (agent-doc-bytes README 988,
+  public-surface 1), output back
+  to baseline 60 -> 60. `lint
+  arch`: missing tiers stay 3, zero
+  direction violations; `lint
+  headers` stays at the base 2; `lint
+  tests` OK.
+- Raw outputs:
+  `/tmp/s7-s38-{pre,post}-*.txt`
+  (kept out of the repo).

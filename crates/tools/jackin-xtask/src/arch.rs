@@ -83,6 +83,7 @@ pub(crate) const TIERS: &[(&str, u8)] = &[
     ("jackin-usage-projection", 5),
     ("jackin-usage-host-glance", 4),
     ("jackin-usage-credential-resolver", 4),
+    ("jackin-usage-host-runtime", 6),
     ("jackin-oppicker", 3),
     ("jackin-docker", 3),
     ("jackin-env", 3),
@@ -90,15 +91,15 @@ pub(crate) const TIERS: &[(&str, u8)] = &[
     ("jackin-otlp-testbed", 3),
     ("jackin-launch", 3),
     ("jackin-test-support", 3),
-    ("jackin-usage", 6),
+    ("jackin-usage", 7),
     ("jackin-console", 4),
     ("jackin-host", 4),
     ("jackin-image", 4),
     ("jackin-isolation", 4),
-    ("jackin-usage-ffi", 7),
-    ("jackin-capsule", 7),
-    ("jackin-runtime", 7),
-    ("jackin", 8),
+    ("jackin-usage-ffi", 8),
+    ("jackin-capsule", 8),
+    ("jackin-runtime", 8),
+    ("jackin", 9),
 ];
 
 /// Grandfathered production+dev cycles. Each entry is a dev-edge

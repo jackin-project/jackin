@@ -58,6 +58,7 @@ jackin-usage-broker = { workspace = true }
 jackin-usage-projection = { workspace = true }
 jackin-usage-host-glance = { workspace = true }
 jackin-usage-credential-resolver = { workspace = true }
+jackin-usage-host-runtime = { workspace = true }
 base64 = { workspace = true }
 chrono = { workspace = true, features = ["clock"] }
 httpdate = { workspace = true }

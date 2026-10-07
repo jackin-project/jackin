@@ -5,7 +5,7 @@ use super::*;
 
 #[test]
 fn canon_sel_valid_historical_choice_survives_reopen() {
-    use crate::usage_snapshot_store::store_usage_snapshot;
+    use jackin_usage_snapshot_store::store_usage_snapshot;
 
     let dir = tempfile::tempdir().expect("tempdir");
     let view = glance_view(
@@ -34,7 +34,7 @@ fn canon_sel_valid_historical_choice_survives_reopen() {
 
 #[test]
 fn canon_amp_presence_does_not_promote_durable_history() {
-    use crate::usage_snapshot_store::store_usage_snapshot;
+    use jackin_usage_snapshot_store::store_usage_snapshot;
 
     let dir = tempfile::tempdir().expect("tempdir");
     let mut history = glance_view(
@@ -65,7 +65,7 @@ fn canon_amp_presence_does_not_promote_durable_history() {
 
 #[test]
 fn canon_each_account_retains_its_own_status_limit_and_error() {
-    use crate::usage_snapshot_store::store_usage_snapshot;
+    use jackin_usage_snapshot_store::store_usage_snapshot;
 
     let dir = tempfile::tempdir().expect("tempdir");
     let mut history = glance_view(

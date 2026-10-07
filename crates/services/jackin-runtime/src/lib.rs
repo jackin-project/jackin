@@ -1,6 +1,6 @@
 //! jackin-runtime: role launch, attach, cleanup, and backend orchestration.
 //!
-//! **Architecture Invariant:** T7.
+//! **Architecture Invariant:** T8.
 //! Entry point: [`launch_role_runtime`] — role launch orchestration.
 
 pub mod apple_container_client;

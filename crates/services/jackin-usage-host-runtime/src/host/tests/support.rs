@@ -253,14 +253,14 @@ pub(super) struct BatchCountingExecutor {
     pub(super) calls: AtomicUsize,
 }
 
-impl crate::coordinator::UsageProviderExecutor for BatchCountingExecutor {
+impl jackin_usage_coordinator::UsageProviderExecutor for BatchCountingExecutor {
     fn probe(
         &self,
         _capability: &UsageAccountCapability,
         _generation: u64,
-    ) -> crate::coordinator::ProviderProbeOutcome {
+    ) -> jackin_usage_coordinator::ProviderProbeOutcome {
         self.calls.fetch_add(1, Ordering::SeqCst);
-        crate::coordinator::ProviderProbeOutcome::success(codex_fixture_view())
+        jackin_usage_coordinator::ProviderProbeOutcome::success(codex_fixture_view())
     }
 }
 
@@ -281,7 +281,8 @@ pub(super) fn batch_broker() -> (
         calls: AtomicUsize::new(0),
     });
     let concrete_executor = Arc::clone(&executor);
-    let broker_executor: Arc<dyn crate::coordinator::UsageProviderExecutor> = concrete_executor;
+    let broker_executor: Arc<dyn jackin_usage_coordinator::UsageProviderExecutor> =
+        concrete_executor;
     let client = ensure_usage_broker_with_executor(
         UsageBrokerConfig::for_data_dir(temp.path().to_path_buf()),
         broker_executor,
@@ -313,14 +314,14 @@ pub(super) struct BatchRateLimitedExecutor {
     pub(super) calls: AtomicUsize,
 }
 
-impl crate::coordinator::UsageProviderExecutor for BatchRateLimitedExecutor {
+impl jackin_usage_coordinator::UsageProviderExecutor for BatchRateLimitedExecutor {
     fn probe(
         &self,
         _capability: &UsageAccountCapability,
         _generation: u64,
-    ) -> crate::coordinator::ProviderProbeOutcome {
+    ) -> jackin_usage_coordinator::ProviderProbeOutcome {
         self.calls.fetch_add(1, Ordering::SeqCst);
-        crate::coordinator::ProviderProbeOutcome::Failure {
+        jackin_usage_coordinator::ProviderProbeOutcome::Failure {
             kind: jackin_protocol::usage_broker::UsageCoordinationErrorKind::RateLimited,
             message: "usage provider rate limit is active".to_owned(),
             retry_at_epoch: Some(chrono::Utc::now().timestamp() + 3_600),

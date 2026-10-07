@@ -1,6 +1,6 @@
 //! jackin-capsule: in-container capsule daemon, sessions, and TUI.
 //!
-//! **Architecture Invariant:** T7.
+//! **Architecture Invariant:** T8.
 //! Entry point: [`daemon`] — capsule daemon module the binary runs.
 
 use anyhow::Result;

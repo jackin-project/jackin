@@ -13,7 +13,7 @@ use std::path::Path;
 use jackin_protocol::control::FocusedUsageView;
 use jackin_usage_host_accounts::AccountCatalogStores;
 
-use crate::usage_snapshot_store;
+use jackin_usage_snapshot_store;
 
 /// Same-tier snapshot reads for catalog materialization.
 pub(crate) struct HostAccountCatalogStores;
@@ -24,7 +24,7 @@ impl AccountCatalogStores for HostAccountCatalogStores {
         store_path: &Path,
         now_epoch: i64,
     ) -> Result<Vec<FocusedUsageView>, String> {
-        usage_snapshot_store::load_all_account_usage_views(store_path, now_epoch)
+        jackin_usage_snapshot_store::load_all_account_usage_views(store_path, now_epoch)
             .map(|rows| rows.into_iter().map(|stored| stored.view).collect())
     }
 }

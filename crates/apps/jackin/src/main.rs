@@ -1,6 +1,6 @@
 //! jackin: host CLI binary and top-level dispatch.
 //!
-//! **Architecture Invariant:** T8.
+//! **Architecture Invariant:** T9.
 //! Entry point: [`main`] — host CLI binary entry.
 
 #![expect(

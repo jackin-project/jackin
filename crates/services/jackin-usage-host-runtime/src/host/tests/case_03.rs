@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-use crate::usage_snapshot_store::store_usage_snapshots;
+use jackin_usage_snapshot_store::store_usage_snapshots;
 
 #[test]
 fn compact_depleted_with_and_without_resets_at() {
@@ -174,7 +174,7 @@ fn compact_status_bar_strip_all_eight_host_surfaces() {
 #[test]
 fn multi_account_list_select_and_snapshot() {
     use crate::host::{account_key_for_view, host_snapshot_store_path};
-    use crate::usage_snapshot_store::store_usage_snapshot;
+    use jackin_usage_snapshot_store::store_usage_snapshot;
 
     let dir = tempfile::tempdir().expect("tempdir");
     let mut runtime = open_runtime(dir.path());
