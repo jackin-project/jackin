@@ -4545,3 +4545,186 @@ bound 720.
 - Raw outputs:
   `/tmp/s7-s58-{pre,post}-*.txt`
   (kept out of the repo).
+
+### Split 59: runtime-apple-container-client extraction (M21)
+
+- `jackin-runtime` ->
+  `jackin-runtime` +
+  `jackin-runtime-apple-container-client`
+  (T4: the whole
+  top-level
+  `apple_container_client`
+  module moves —
+  `AppleContainerApi`
+  trait +
+  `AppleContainerClient`
+  `container`-CLI
+  lifecycle +
+  `ps --format json`
+  parsing, `tests.rs` +
+  1 suite with 7
+  tests; smallest
+  M-split so far,
+  and the key that
+  unlocks mounts +
+  usage-relay).
+  Two cross-leaf
+  edges into
+  already-extracted M
+  crates: 3x
+  `crate::process_telemetry`
+  ->
+  `jackin_runtime_process_telemetry`
+  (enabled by M1),
+  1x
+  `crate::runtime::identity`
+  ->
+  `jackin_runtime_identity`
+  (enabled by M7).
+  One test-only
+  launch edge cut:
+  the env-file test
+  built its fixture
+  via
+  `launch::create_host_env_file`
+  (capsule_setup,
+  unextracted); it
+  now writes the
+  `KEY=value` file
+  directly with
+  `std::fs::write`
+  and the
+  self-asserting
+  content check
+  becomes an
+  `is_file()`
+  assertion — the 4
+  arg-shape
+  assertions are
+  untouched. One
+  test-hook crossing:
+  `FakeAppleContainerClient`
+  (`#[cfg(test)]`,
+  used by
+  `backend/tests.rs`)
+  becomes
+  `#[cfg(any(test,
+  feature =
+  "test-support"))]`
+  with a new
+  `test-support`
+  feature + runtime
+  dev-dep (the
+  split-58
+  precedent), so prod
+  stays hook-free.
+  The wider cfg
+  disables clippy's
+  `allow-unwrap-in-tests`,
+  so the 5 fake
+  `.lock().unwrap()`
+  sites move to the
+  `test-support`
+  fake idiom
+  (`if let Ok` +
+  `map(...).unwrap_or_default()`,
+  the `FixtureHttpServer`
+  precedent) with
+  zero new
+  suppressions. No
+  visibility
+  widening needed
+  (all `pub`
+  already). Parent
+  mod is `pub`, so
+  the shim keeps a
+  plain `pub` glob
+  and every
+  `apple_container_client::*`
+  path stays stable.
+  Tier: names T3
+  identity + T1
+  process-telemetry +
+  T0 process, so it
+  takes T4; no
+  renumber cascade.
+  New-crate deps:
+  process, identity,
+  process-telemetry,
+  anyhow, serde_json;
+  dev-deps add
+  tempfile, tokio
+  (`macros`, `rt`)
+  (lockfile +1
+  package, +8 edges).
+  Policy registries:
+  +1 owned package
+  (`library`).
+
+- Verify: `cargo check
+  --locked --workspace
+  --all-targets`
+  green; `cargo fmt
+  --all --check`
+  clean; `cargo
+  clippy` 0 errors on
+  the new crate,
+  `jackin-runtime`
+  holds at the 7
+  pre-existing errors
+  (all in
+  `launch_slot/tests`,
+  byte-identical
+  locations).
+  `cargo nextest list
+  --workspace
+  --all-targets`: 7277
+  -> 7277 (7
+  relocations map 1:1
+  by name, verified by
+  stripped-diff:
+  runtime -> apple-container-client;
+  0 dropped, 0 added).
+  `nextest run`:
+  652/652 runtime
+  (645) + apple-container-client
+  (7). `alint check`:
+  192 violations / 11
+  failing unchanged.
+  `check-gaps`: 22 ->
+  22 (runtime
+  `SIZE-001/002`
+  persist: 47850 ->
+  47456 code lines,
+  233 -> 231 files;
+  new crate fits at
+  553 raw / 5 files).
+  `GAP-TEST-001/002/003`
+  stay 0/0/0.
+  `ratchet.toml`: +2
+  rows
+  (agent-doc-bytes
+  README 1310,
+  public-surface 1);
+  failures 59 -> 59 —
+  the only delta is
+  absorption of the 2
+  new-crate rows,
+  remaining 59 keys
+  byte-identical,
+  zero moved-expect
+  lines (moved code
+  carries no
+  suppressions).
+  `lint arch
+  --strict`: missing
+  tiers stay 3, zero
+  direction
+  violations; `lint
+  headers` stays at
+  the base 2; `lint
+  tests` OK.
+
+- Raw outputs:
+  `/tmp/s7-s59-{pre,post}-*.txt`
+  (kept out of the repo).

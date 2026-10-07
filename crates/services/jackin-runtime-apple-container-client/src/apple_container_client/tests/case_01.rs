@@ -46,18 +46,13 @@ fn parse_empty_and_malformed() {
 fn launch_args_use_env_file_without_secret_values() {
     let secret = "fake-apple-container-secret";
     let temp = tempfile::tempdir().unwrap();
-    let host_env_file = crate::runtime::launch::create_host_env_file(
-        temp.path(),
-        "fixture",
-        &[("OPERATOR_TOKEN".to_owned(), secret.to_owned())],
-    )
-    .unwrap()
-    .unwrap();
+    let host_env_path = temp.path().join("fixture.env");
+    std::fs::write(&host_env_path, format!("OPERATOR_TOKEN={secret}\n")).unwrap();
     let spec = AppleContainerSpec {
         image: "img".into(),
         user: "0:0".into(),
         env: vec![("JACKIN_CAPSULE_FORCE_DAEMON".into(), "1".into())],
-        env_file: Some(host_env_file.path().to_path_buf()),
+        env_file: Some(host_env_path.clone()),
         mounts: vec![],
         caps_add: vec![],
     };
@@ -66,7 +61,7 @@ fn launch_args_use_env_file_without_secret_values() {
         .into_iter()
         .map(|argument| argument.to_string_lossy().into_owned())
         .collect::<Vec<_>>();
-    let env_file_path = host_env_file.path().to_string_lossy().into_owned();
+    let env_file_path = host_env_path.to_string_lossy().into_owned();
 
     assert!(args.windows(2).any(|pair| {
         pair.first().map(String::as_str) == Some("--env-file")
@@ -78,10 +73,7 @@ fn launch_args_use_env_file_without_secret_values() {
     );
     assert!(!args.join(" ").contains(secret));
     assert!(args.windows(2).any(|pair| pair == ["--user", "0:0"]));
-    assert_eq!(
-        std::fs::read_to_string(host_env_file.path()).unwrap(),
-        format!("OPERATOR_TOKEN={secret}\n")
-    );
+    assert!(host_env_path.is_file());
 }
 
 #[test]

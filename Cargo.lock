@@ -3579,6 +3579,7 @@ dependencies = [
  "jackin-otlp-testbed",
  "jackin-process",
  "jackin-protocol",
+ "jackin-runtime-apple-container-client",
  "jackin-runtime-coordination",
  "jackin-runtime-discovery",
  "jackin-runtime-docker-profile",
@@ -3613,6 +3614,19 @@ dependencies = [
  "toml",
  "toml_edit",
  "tracing",
+]
+
+[[package]]
+name = "jackin-runtime-apple-container-client"
+version = "0.6.4"
+dependencies = [
+ "anyhow",
+ "jackin-process",
+ "jackin-runtime-identity",
+ "jackin-runtime-process-telemetry",
+ "serde_json",
+ "tempfile",
+ "tokio",
 ]
 
 [[package]]

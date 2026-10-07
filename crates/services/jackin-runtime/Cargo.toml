@@ -33,6 +33,7 @@ jackin-protocol = { workspace = true }
 jackin-telemetry = { workspace = true }
 jackin-isolation = { workspace = true }
 jackin-instance = { workspace = true }
+jackin-runtime-apple-container-client = { workspace = true }
 jackin-runtime-coordination = { workspace = true }
 jackin-runtime-discovery = { workspace = true }
 jackin-runtime-docker-profile = { workspace = true }
@@ -78,6 +79,7 @@ nix = { workspace = true, features = ["user", "socket", "poll", "process", "sign
 
 [dev-dependencies]
 jackin-diagnostics = { workspace = true, features = ["test-support"] }
+jackin-runtime-apple-container-client = { workspace = true, features = ["test-support"] }
 jackin-runtime-identity = { workspace = true, features = ["test-support"] }
 jackin-runtime-universe = { workspace = true, features = ["test-support"] }
 jackin-otlp-testbed = { workspace = true }

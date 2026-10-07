@@ -53,6 +53,7 @@ pub(crate) const TIERS: &[(&str, u8)] = &[
     ("jackin-runtime-process-telemetry", 1),
     ("jackin-runtime-spin-wait", 3),
     ("jackin-runtime-host-daemon", 3),
+    ("jackin-runtime-apple-container-client", 4),
     ("jackin-runtime-coordination", 1),
     ("jackin-runtime-docker-profile", 1),
     ("jackin-runtime-identity", 3),
