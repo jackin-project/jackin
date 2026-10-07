@@ -38,6 +38,7 @@ jackin-usage-provider-codex = { workspace = true }
 jackin-usage-provider-hermes = { workspace = true }
 jackin-usage-provider-gemini = { workspace = true }
 jackin-usage-provider-muse = { workspace = true }
+jackin-usage-provider-opencode = { workspace = true }
 base64 = { workspace = true }
 chrono = { workspace = true, features = ["clock"] }
 httpdate = { workspace = true }

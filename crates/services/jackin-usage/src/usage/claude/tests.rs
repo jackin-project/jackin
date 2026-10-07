@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use jackin_protocol::control::UsageSnapshotStatus;
 
 #[test]
 fn cli_fallback_last_error_uses_normalized_scope_message() {

@@ -14,7 +14,6 @@
 
 mod claude;
 mod credential_snapshots;
-mod opencode;
 
 #[cfg(any(target_os = "macos", test))]
 pub(crate) use self::claude::classify_claude_keychain_status;
@@ -45,12 +44,6 @@ pub(crate) use self::claude::{
 pub use self::claude::{ClaudeUsageDiagnostic, run_claude_usage_diagnostic};
 pub use self::credential_snapshots::provider_credential_snapshot;
 pub(crate) use self::credential_snapshots::provider_credential_snapshot_with_rate_limit;
-pub(crate) use self::opencode::opencode_profile_snapshot;
-#[cfg(test)]
-pub(crate) use self::opencode::{load_opencode_api_key, parse_opencode_usage};
-use jackin_protocol::control::{
-    FocusedUsageView, QuotaBucketView, UsageConfidence, UsageSnapshotStatus, UsageSource,
-};
 #[cfg(test)]
 use jackin_protocol::control::{UsageProviderTab, UsageSeverity};
 #[expect(
@@ -178,6 +171,9 @@ pub(crate) use jackin_usage_provider_muse::{
     MuseIdentity, MuseKeyExchangePolicy, MuseObservation, MuseWindow, muse_buckets,
     muse_freshness_epoch, muse_identity_from_value, muse_view, parse_muse_usage_read,
 };
+pub(crate) use jackin_usage_provider_opencode::opencode_profile_snapshot;
+#[cfg(test)]
+pub(crate) use jackin_usage_provider_opencode::{load_opencode_api_key, parse_opencode_usage};
 #[expect(
     unused_imports,
     reason = "documented residual allow; prefer expect when site is lint-true"

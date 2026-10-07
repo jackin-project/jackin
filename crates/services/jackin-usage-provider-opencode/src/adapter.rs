@@ -1,17 +1,15 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! `OpenCode` Go subscription-limit adapter.
+//! `OpenCode` Go subscription-limit adapter logic (see `lib.rs`).
 //!
-//! `OpenCode` exposes one API credential in `auth.json` and a provider-owned
-//! rolling/weekly/monthly response. The response does not expose a durable
-//! non-secret account identity, so this adapter deliberately keeps the account
-//! provisional and never derives identity from the Bearer [REDACTED] A valid key without a
-//! Go subscription fails with a typed entitlement error (distinct from a key
-//! failure), and per-model quota or Zen balance fields are never invented:
-//! unknown payload fields render nothing.
+//! The response does not expose a durable non-secret account identity, and
+//! per-model quota or Zen balance fields are never invented: unknown payload
+//! fields render nothing.
 
-use super::{FocusedUsageView, QuotaBucketView, UsageConfidence, UsageSnapshotStatus, UsageSource};
+use jackin_protocol::control::{
+    FocusedUsageView, QuotaBucketView, UsageConfidence, UsageSnapshotStatus, UsageSource,
+};
 use jackin_usage_provider_core::{
     UsageSurface, UsageViewInput, bucket, parse_iso_epoch, provider_http_client, timed_bucket,
     usage_view,
@@ -32,16 +30,16 @@ struct OpenCodeAuthEntry {
 }
 
 #[derive(Debug)]
-pub(crate) struct OpenCodeQuota {
-    pub(crate) buckets: Vec<QuotaBucketView>,
-    pub(crate) rate_limited: bool,
+pub struct OpenCodeQuota {
+    pub buckets: Vec<QuotaBucketView>,
+    pub rate_limited: bool,
 }
 
 /// Typed `zen/go/v1/usage` failure: a key problem (401 / `AuthError`) needs a
 /// login, while a valid key without a Go subscription (403 / `EntitlementError`)
 /// is an honest unsupported state — never conflated.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum OpenCodeUsageError {
+pub enum OpenCodeUsageError {
     Key(String),
     Entitlement(String),
     Http(String),
@@ -82,7 +80,7 @@ impl OpenCodeUsageError {
 /// failure. Pure so the 403-vs-key distinction is unit-testable without I/O.
 /// (Research §16: a valid key without Go entitlement gets a distinct 403 —
 /// the taxonomy mirrors the server, it is not inferred.)
-pub(crate) fn classify_opencode_http_error(status: u16, body: &str) -> OpenCodeUsageError {
+pub fn classify_opencode_http_error(status: u16, body: &str) -> OpenCodeUsageError {
     let error_type = serde_json::from_str::<serde_json::Value>(body)
         .ok()
         .and_then(|value| {
@@ -105,7 +103,7 @@ pub(crate) fn classify_opencode_http_error(status: u16, body: &str) -> OpenCodeU
     }
 }
 
-pub(crate) fn load_opencode_api_key(path: &Path) -> Result<String, String> {
+pub fn load_opencode_api_key(path: &Path) -> Result<String, String> {
     let text = fs::read_to_string(path).map_err(|error| {
         if error.kind() == std::io::ErrorKind::NotFound {
             "OpenCode auth.json is missing".to_owned()
@@ -136,7 +134,7 @@ pub(crate) fn load_opencode_api_key(path: &Path) -> Result<String, String> {
         .ok_or_else(|| "OpenCode opencode-go API key is empty".to_owned())
 }
 
-pub(crate) fn fetch_opencode_usage(path: &Path) -> Result<OpenCodeQuota, OpenCodeUsageError> {
+pub fn fetch_opencode_usage(path: &Path) -> Result<OpenCodeQuota, OpenCodeUsageError> {
     let token = load_opencode_api_key(path).map_err(|error| {
         if error.contains("missing") {
             OpenCodeUsageError::Key(error)
@@ -212,10 +210,7 @@ fn opencode_window_reset(window: &serde_json::Value, now: i64) -> Option<i64> {
         })
 }
 
-pub(crate) fn parse_opencode_usage(
-    value: serde_json::Value,
-    now: i64,
-) -> Result<OpenCodeQuota, String> {
+pub fn parse_opencode_usage(value: serde_json::Value, now: i64) -> Result<OpenCodeQuota, String> {
     let usage = value
         .get("usage")
         .ok_or_else(|| "OpenCode usage response is malformed".to_owned())?;
@@ -285,11 +280,7 @@ fn opencode_used_label(used_percent: f64) -> String {
     }
 }
 
-pub(crate) fn opencode_profile_snapshot(
-    agent: &str,
-    auth_path: &Path,
-    now: i64,
-) -> FocusedUsageView {
+pub fn opencode_profile_snapshot(agent: &str, auth_path: &Path, now: i64) -> FocusedUsageView {
     let result = fetch_opencode_usage(auth_path);
     let (buckets, status, error) = match result {
         Ok(quota) => (
@@ -347,6 +338,3 @@ pub(crate) fn opencode_profile_snapshot(
         last_error: error,
     })
 }
-
-#[cfg(test)]
-mod tests;

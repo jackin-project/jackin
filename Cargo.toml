@@ -43,6 +43,7 @@ members = [
     "crates/services/jackin-usage-provider-hermes",
     "crates/services/jackin-usage-provider-gemini",
     "crates/services/jackin-usage-provider-muse",
+    "crates/services/jackin-usage-provider-opencode",
     "crates/testing/jackin-otlp-testbed",
     "crates/testing/jackin-test-support",
     "crates/tools/jackin-dev",
@@ -128,6 +129,7 @@ jackin-usage-provider-codex = { version = "0.6.4", path = "crates/services/jacki
 jackin-usage-provider-hermes = { version = "0.6.4", path = "crates/services/jackin-usage-provider-hermes" }
 jackin-usage-provider-gemini = { version = "0.6.4", path = "crates/services/jackin-usage-provider-gemini" }
 jackin-usage-provider-muse = { version = "0.6.4", path = "crates/services/jackin-usage-provider-muse" }
+jackin-usage-provider-opencode = { version = "0.6.4", path = "crates/services/jackin-usage-provider-opencode" }
 nix = "0.31"
 rustix = { version = "=1.1.4", features = ["fs"] }
 opentelemetry_sdk = "0.32"

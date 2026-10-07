@@ -1485,3 +1485,66 @@ passes.
 - Raw outputs:
   `/tmp/s10-muse-{before,after}.txt`
   (kept out of the repo).
+
+### Split 16: usage-provider-opencode extraction (V13)
+
+- `jackin-usage` -> `jackin-usage` +
+  `jackin-usage-provider-opencode` (T3 leaf:
+  `usage/opencode.rs` -> `lib.rs` re-export
+  root + `adapter` (key loading, fetch,
+  parse, errors, snapshot) +
+  `tests`/`tests/{support,case_01}` +
+  `tests/main.rs` placeholder; `lib.rs`
+  carries the ownership header).
+  `usage.rs` re-exports the vendor surface
+  from the new crate (block moved into the
+  sorted extracted-crate region).
+  Visibility deltas: `pub(crate)` -> `pub`
+  on the adapter surface; the `use
+  super::{...}` block becomes a direct
+  `jackin_protocol::control` import.
+  `load_opencode_api_key` /
+  `parse_opencode_usage` stay always-`pub`
+  (no `test-support` feature): production
+  `fetch_opencode_usage` calls both, so
+  gating trips `unreachable_pub` on the
+  plain lib build — `usage.rs` keeps the
+  `#[cfg(test)]` scope for the staying
+  harness. `usage.rs` drops its now-unused
+  protocol `use` block while the
+  `usage/tests` shim gains the five view
+  types for the staying case files, and
+  `claude/tests.rs` imports
+  `UsageSnapshotStatus` directly.
+- Verify: `cargo check --locked --workspace
+  --all-targets` green; `cargo fmt --all
+  --check` clean; `cargo clippy` 0 errors,
+  0 warnings on both touched packages.
+  `cargo nextest list --workspace
+  --all-targets`: 7272 -> 7272, bijection
+  exact (6 opencode tests move
+  `jackin-usage usage::opencode::` ->
+  `jackin-usage-provider-opencode tests::`;
+  zero dropped, zero added).
+  `nextest run`: 492/492 usage + 6/6
+  opencode. The provider-call contract
+  fixture is untouched (the single
+  opencode entry names the staying
+  broker caller) and the suite is green.
+  `alint check`: 198 -> 198,
+  byte-identical. `check-gaps`: 27 -> 27
+  (usage `SIZE-001` 35862 -> 35388
+  lines, `SIZE-002` 230 -> 226 files;
+  xtask +1 line for the tier row);
+  `GAP-TEST-001/002/003` stay 0/0/0.
+  `ratchet.toml`: +2 opencode rows
+  (agent-doc 1264, `cast_sign_loss` 1),
+  1 usage shrink (`cast_sign_loss` 2 ->
+  1); violations 60 -> 60 with zero new
+  failures. `lint arch`: missing tiers
+  stay 3, zero direction violations;
+  `lint headers` stays at the base 2;
+  `lint tests` OK.
+- Raw outputs:
+  `/tmp/s10-opencode-{before,after}.txt`
+  (kept out of the repo).

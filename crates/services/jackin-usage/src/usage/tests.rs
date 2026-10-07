@@ -4,7 +4,10 @@
 use super::*;
 
 use base64::Engine as _;
-use jackin_protocol::control::{FocusedAccountHeader, Money, StatusSlot};
+use jackin_protocol::control::{
+    FocusedAccountHeader, FocusedUsageView, Money, QuotaBucketView, StatusSlot, UsageConfidence,
+    UsageSnapshotStatus, UsageSource,
+};
 use jackin_usage_provider_core::*;
 
 use std::fs;
