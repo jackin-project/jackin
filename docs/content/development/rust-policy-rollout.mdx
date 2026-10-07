@@ -2586,3 +2586,55 @@ bound 720.
 - Raw outputs:
   `/tmp/s12-s35-{before,after}.txt`
   (kept out of the repo).
+
+### Split 36: claude vendor-test regrouping (T1)
+
+- 35 `claude_*` tests move verbatim
+  from `jackin-usage`
+  `src/usage/tests/case_*` to
+  `jackin-usage-provider-claude`
+  `src/tests/case_02..04` (new entry +
+  `support.rs` for the three keychain
+  helpers, whose last users moved with
+  them; existing 2 tests re-layout to
+  `case_01`), plus 1 resolver-dispatch
+  test to
+  `jackin-usage-credential-resolver`
+  `src/resolver/tests/case_02` (it names
+  the T4 dispatch, so the T3 crate
+  cannot host it). `tempfile` becomes a
+  claude dev-dependency (lockfile +1
+  edge). `usage.rs` drops the 7
+  newly-unused `#[cfg(test)]` claude
+  re-exports (1 survives: staying
+  cross-provider tests still name it).
+  No production line moves.
+- Verify: `cargo check --locked --workspace
+  --all-targets` green; `cargo fmt --all
+  --check` clean; `cargo clippy` 0
+  errors, 0 warnings on the three
+  touched packages. `cargo nextest list
+  --workspace --all-targets`: 7277 ->
+  7277 (38 relocations map 1:1 by
+  name: 35 usage -> claude, 1 usage ->
+  resolver, 2 claude-internal; 0
+  dropped, 0 added). `nextest run`:
+  268/268 usage (225) + claude (37) +
+  resolver (6). `alint check`:
+  byte-identical 196 -> 196 (case
+  files packed under the enforced
+  `size-file-400` cap).
+  `check-gaps`: 26 -> 26 (usage
+  `SIZE-001` 10583 -> 9575 lines,
+  `SIZE-002` stays 54 files; claude +
+  resolver fit both budgets).
+  `GAP-TEST-001/002/003` stay 0/0/0.
+  `ratchet.toml`: untouched, output
+  byte-identical 60 -> 60. `lint
+  arch`: missing tiers stay 3, zero
+  direction violations; `lint
+  headers` stays at the base 2; `lint
+  tests` OK.
+- Raw outputs:
+  `/tmp/s12-s36-{before,after}.txt`
+  (kept out of the repo).

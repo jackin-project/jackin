@@ -99,39 +99,6 @@ fn fraction_helpers_reject_absent_and_clamp_present() {
 }
 
 #[test]
-fn claude_oauth_response_accepts_window_aliases() {
-    let usage: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
-        "five_hour": { "utilization": 0.10 },
-        "seven_day": { "utilization": 0.45 },
-        "seven_day_opus": { "utilization": 0.30 },
-        // `seven_day_oauth_apps` is a SEPARATE window, not an alias of
-        // `seven_day` — it must be ignored, never override Weekly.
-        "seven_day_oauth_apps": { "utilization": 0.99 },
-        "seven_day_cowork": { "utilization": 0.25 }
-    }))
-    .expect("valid Claude OAuth usage aliases");
-
-    let buckets = usage.into_buckets(1_781_185_560);
-
-    assert!(
-        buckets
-            .iter()
-            .any(|bucket| bucket.label == "Weekly" && bucket.remaining_percent == Some(55))
-    );
-    assert!(
-        buckets
-            .iter()
-            .any(|bucket| bucket.label == "Daily Routines" && bucket.remaining_percent == Some(75))
-    );
-    // A present Opus window is a detail row, never a headline slot.
-    assert!(
-        buckets
-            .iter()
-            .any(|bucket| bucket.label == "Opus" && bucket.status_slot.is_none())
-    );
-}
-
-#[test]
 fn codex_oauth_response_maps_primary_weekly_spark_and_credits() {
     let mut usage: CodexUsageResponse = serde_json::from_value(serde_json::json!({
         "plan_type": "pro",
@@ -329,42 +296,4 @@ fn managed_cli_launch_gate_cools_down_after_launch_failure() {
 
     gate.record_success();
     gate.can_launch("probe", Instant::now()).unwrap();
-}
-
-#[test]
-fn claude_usage_diagnostic_invokes_explicit_usage_command() {
-    let diagnostic = run_claude_usage_diagnostic_with(|command, args, timeout| {
-        assert_eq!(command, "claude");
-        assert_eq!(args, ["-p", "/usage"]);
-        assert_eq!(timeout, PROVIDER_CLI_TIMEOUT);
-        Ok(CliOutput {
-            success: true,
-            exit_code: Some(0),
-            stdout: "usage output".to_owned(),
-            stderr: String::new(),
-        })
-    })
-    .expect("diagnostic");
-
-    assert_eq!(diagnostic.command, "claude");
-    assert_eq!(diagnostic.args, vec!["-p", "/usage"]);
-    assert!(diagnostic.success);
-    assert_eq!(diagnostic.stdout, "usage output");
-}
-
-#[test]
-fn claude_usage_diagnostic_preserves_cli_failure_output() {
-    let diagnostic = run_claude_usage_diagnostic_with(|_, _, _| {
-        Ok(CliOutput {
-            success: false,
-            exit_code: Some(1),
-            stdout: String::new(),
-            stderr: "not logged in".to_owned(),
-        })
-    })
-    .expect("diagnostic");
-
-    assert!(!diagnostic.success);
-    assert_eq!(diagnostic.exit_code, Some(1));
-    assert_eq!(diagnostic.stderr, "not logged in");
 }

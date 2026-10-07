@@ -11,7 +11,7 @@ use jackin_protocol::control::{
 use jackin_usage_provider_core::*;
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 use std::thread;
 use std::time::Instant;

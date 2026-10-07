@@ -129,30 +129,6 @@ fn broker_account_id_for_tab_id_recovers_broker_key() {
 }
 
 #[test]
-fn claude_account_email_reads_oauth_account_metadata() {
-    // the email identity comes from `oauthAccount.emailAddress`.
-    let dir = tempfile::tempdir().expect("tempdir");
-    let path = dir.path().join("claude.json");
-    fs::write(
-        &path,
-        r#"{"oauthAccount":{"emailAddress":"alexey@example.com"}}"#,
-    )
-    .expect("write");
-    assert_eq!(
-        load_claude_account_email(&path).as_deref(),
-        Some("alexey@example.com")
-    );
-
-    let empty = dir.path().join("empty.json");
-    fs::write(&empty, r#"{"oauthAccount":{}}"#).expect("write");
-    assert_eq!(load_claude_account_email(&empty), None);
-
-    let none = dir.path().join("none.json");
-    fs::write(&none, "{}").expect("write");
-    assert_eq!(load_claude_account_email(&none), None);
-}
-
-#[test]
 fn first_credential_uses_home_first_then_handoff_fallback() {
     let dir = tempfile::tempdir().expect("tempdir");
     let home = dir.path().join("home.credentials.json");
@@ -181,35 +157,6 @@ fn first_credential_uses_home_first_then_handoff_fallback() {
         resolved.map(|c| c.access_token),
         Some("home-token".to_owned())
     );
-}
-
-#[test]
-fn claude_oauth_usage_decodes_live_api_body() {
-    // Mirrors the live api.anthropic.com/api/oauth/usage 200 body: `seven_day`
-    // and `seven_day_oauth_apps` are SEPARATE keys (they must not collide on
-    // one field), plus new codename windows the model must tolerate.
-    let body = r#"{
-            "five_hour": {"utilization": 12, "resets_at": "2026-06-25T19:00:00Z"},
-            "seven_day": {"utilization": 34, "resets_at": "2026-06-26T14:00:00Z"},
-            "seven_day_oauth_apps": null,
-            "seven_day_sonnet": {"utilization": 5, "resets_at": "2026-06-26T14:00:00Z"},
-            "seven_day_opus": null,
-            "seven_day_cowork": null,
-            "seven_day_omelette": null,
-            "amber_ladder": null, "cinder_cove": null, "iguana_necktie": null,
-            "omelette_promotional": null, "tangelo": null,
-            "extra_usage": {"is_enabled": false, "monthly_limit": 0, "used_credits": 0,
-                "utilization": 0, "currency": "USD", "decimal_places": 2,
-                "disabled_reason": "x", "daily": null, "weekly": null},
-            "limits": [{"kind": "x", "group": "x", "percent": 0, "severity": "x",
-                "resets_at": "x", "scope": null, "is_active": false}],
-            "spend": null
-        }"#;
-    let parsed: ClaudeOAuthUsageResponse =
-        serde_json::from_str(body).expect("decode live OAuth usage body");
-    assert!(parsed.five_hour.is_some());
-    assert!(parsed.seven_day.is_some());
-    assert!(parsed.seven_day_sonnet.is_some());
 }
 
 #[test]

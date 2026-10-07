@@ -32,7 +32,7 @@ pub(crate) use jackin_usage_provider_antigravity::{
     parse_agy_version, parse_antigravity_credits_output, parse_antigravity_usage_output,
 };
 #[cfg(test)]
-pub(crate) use jackin_usage_provider_claude::classify_claude_keychain_status;
+pub(crate) use jackin_usage_provider_claude::load_claude_oauth_credentials;
 #[expect(
     unused_imports,
     reason = "documented residual allow; prefer expect when site is lint-true"
@@ -50,12 +50,6 @@ pub(crate) use jackin_usage_provider_claude::{
     fetch_claude_cli_usage, fetch_claude_oauth_usage, load_claude_account_email,
     normalize_claude_spend, parse_claude_usage_output, push_claude_dollar_windows,
     read_claude_keychain_item, resolve_claude_wave,
-};
-#[cfg(test)]
-pub(crate) use jackin_usage_provider_claude::{
-    ClaudeFileProbe, ClaudeKeychainState, load_claude_oauth_credentials,
-    load_claude_organization_type, read_claude_oauth_env_token, resolve_claude_refresh_wave_with,
-    run_claude_usage_diagnostic_with,
 };
 pub use jackin_usage_provider_claude::{ClaudeUsageDiagnostic, run_claude_usage_diagnostic};
 #[cfg(test)]

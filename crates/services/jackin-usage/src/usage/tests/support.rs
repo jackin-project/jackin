@@ -75,33 +75,6 @@ pub(super) const AMP_TWO_WORKSPACE_FIXTURE: &str = "Amp Free: 61% remaining toda
      Workspace alpha: $5.33 remaining\n\
      Workspace beta: $2.25 remaining";
 
-pub(super) fn keychain_test_scope(is_default: bool) -> jackin_core::ClaudeKeychainScope {
-    jackin_core::ClaudeKeychainScope {
-        normalized_config_dir: PathBuf::from(if is_default {
-            "/home/u/.claude"
-        } else {
-            "/home/u/.claude-work"
-        }),
-        service: if is_default {
-            "Claude Code-credentials".to_owned()
-        } else {
-            "Claude Code-credentials-3342f2c7".to_owned()
-        },
-        is_default,
-    }
-}
-
-pub(super) const KEYCHAIN_PAYLOAD: &str = r#"{"claudeAiOauth":{"accessToken":"kc-token","subscriptionType":"max","refreshToken":"rt-1"}}"#;
-
-pub(super) fn empty_file_probe() -> ClaudeFileProbe {
-    ClaudeFileProbe {
-        credential: None,
-        origin: None,
-        account_email: None,
-        organization_type: None,
-    }
-}
-
 pub(super) fn presentation_bucket(
     label: &str,
     remaining: Option<u8>,
