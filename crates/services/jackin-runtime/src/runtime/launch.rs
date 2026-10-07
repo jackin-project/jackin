@@ -48,7 +48,7 @@ pub(crate) use launch_slot::{
 
 mod trust;
 #[cfg(test)]
-pub(crate) use trust::{
+pub(crate) use jackin_runtime_launch_trust::trust::{
     MISE_TRUSTED_CONFIG_PATHS_ENV, inject_workspace_mise_env, seed_codex_project_trust,
     workspace_mise_trusted_config_paths,
 };

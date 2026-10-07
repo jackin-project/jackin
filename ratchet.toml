@@ -237,6 +237,9 @@ bound = 3
 key = "clippy::expect_used@jackin-runtime"
 bound = 2
 [[family.entry]]
+key = "clippy::expect_used@jackin-runtime-launch-trust"
+bound = 1
+[[family.entry]]
 key = "clippy::expect_used@jackin-test-support"
 bound = 2
 [[family.entry]]
@@ -716,6 +719,9 @@ bound = 907
 key = "crates/services/jackin-runtime-launch-plan/README.md"
 bound = 831
 [[family.entry]]
+key = "crates/services/jackin-runtime-launch-trust/README.md"
+bound = 775
+[[family.entry]]
 key = "crates/services/jackin-runtime-naming/README.md"
 bound = 815
 [[family.entry]]
@@ -1016,6 +1022,9 @@ key = "jackin-runtime-launch-mounts"
 bound = 1
 [[family.entry]]
 key = "jackin-runtime-launch-plan"
+bound = 1
+[[family.entry]]
+key = "jackin-runtime-launch-trust"
 bound = 1
 [[family.entry]]
 key = "jackin-runtime-naming"

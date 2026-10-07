@@ -9,7 +9,7 @@ use jackin_core::{Agent, AuthForwardMode, MountIsolation};
 
 use super::*;
 
-use crate::instance::{
+use jackin_instance::{
     AgentRuntimeState, GithubProvisionOutcome, ProvisionedAuth, ProvisionedInstanceAuth, RoleState,
 };
 

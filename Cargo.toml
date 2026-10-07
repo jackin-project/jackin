@@ -41,6 +41,7 @@ members = [
     "crates/services/jackin-runtime-isolation",
     "crates/services/jackin-runtime-launch-mounts",
     "crates/services/jackin-runtime-launch-plan",
+    "crates/services/jackin-runtime-launch-trust",
     "crates/services/jackin-runtime-naming",
     "crates/services/jackin-runtime-process-telemetry",
     "crates/services/jackin-runtime-progress",
@@ -168,6 +169,7 @@ jackin-runtime-image = { version = "0.6.4", path = "crates/services/jackin-runti
 jackin-runtime-isolation = { version = "0.6.4", path = "crates/services/jackin-runtime-isolation" }
 jackin-runtime-launch-mounts = { version = "0.6.4", path = "crates/services/jackin-runtime-launch-mounts" }
 jackin-runtime-launch-plan = { version = "0.6.4", path = "crates/services/jackin-runtime-launch-plan" }
+jackin-runtime-launch-trust = { version = "0.6.4", path = "crates/services/jackin-runtime-launch-trust" }
 jackin-runtime-naming = { version = "0.6.4", path = "crates/services/jackin-runtime-naming" }
 jackin-runtime-process-telemetry = { version = "0.6.4", path = "crates/services/jackin-runtime-process-telemetry" }
 jackin-runtime-progress = { version = "0.6.4", path = "crates/services/jackin-runtime-progress" }

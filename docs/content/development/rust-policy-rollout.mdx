@@ -5162,3 +5162,131 @@ bound 720.
 - Raw outputs:
   `/tmp/s7-s61-{pre,post}-*.txt`
   (kept out of the repo).
+
+### Split 62: runtime-launch-trust extraction (M24)
+
+- `jackin-runtime` ->
+  `jackin-runtime` +
+  `jackin-runtime-launch-trust`
+  (T4: the whole
+  `launch::trust`
+  module moves —
+  Codex project
+  trust seeding +
+  mise trusted-paths
+  env, `tests.rs` +
+  1 suite + support
+  with 6 tests;
+  smallest split
+  since M21). One
+  cross-leaf edge:
+  2x `crate::instance`
+  -> `jackin_instance`
+  (external re-export).
+  Visibility widens
+  mechanically
+  (`pub(crate)` ->
+  `pub`, 3 fns + 1
+  const). `mod trust`
+  is private, so the
+  shim keeps a
+  `pub(crate)` glob
+  and both prod
+  `trust::*` module
+  paths plus the
+  test-only
+  `launch.rs`
+  re-export
+  (retargeted at the
+  use, cfg kept)
+  stay stable. Tier:
+  names T3 instance,
+  so it takes T4; no
+  renumber cascade.
+  New-crate deps:
+  config, core,
+  instance, anyhow,
+  toml_edit;
+  dev-deps add
+  tempfile, toml
+  (lockfile +1
+  package, +8 edges).
+  Policy registries:
+  +1 owned package
+  (`library`).
+
+- Verify: `cargo check
+  --locked --workspace
+  --all-targets`
+  green; `cargo fmt
+  --all --check`
+  clean; `cargo
+  clippy` 0 errors on
+  the new crate,
+  `jackin-runtime`
+  holds at the 7
+  pre-existing errors
+  (all in
+  `launch_slot/tests`,
+  byte-identical
+  locations).
+  `cargo nextest list
+  --workspace
+  --all-targets`: 7277
+  -> 7277 (6
+  relocations map 1:1
+  by name, verified by
+  stripped-diff:
+  `launch::trust` ->
+  `trust`; 0 dropped,
+  0 added). `nextest
+  run`: 577/577
+  runtime (571) +
+  trust (6).
+  `alint check`:
+  182 violations / 11
+  failing unchanged.
+  `check-gaps`
+  (v0.1.3,
+  production-only):
+  12 -> 12 (runtime
+  `SIZE-001/002`
+  persist: 18786 ->
+  18688 prod code
+  lines, 96 -> 96
+  prod files — the
+  shim keeps the
+  file; new crate
+  fits at 314 raw /
+  6 files, no SIZE
+  finding).
+  `GAP-TEST-001/002/003`
+  stay 0/0/0.
+  `ratchet.toml`: +3
+  rows
+  (agent-doc-bytes
+  README 775,
+  public-surface 1,
+  `expect_used`
+  trust 1); failures
+  58 -> 57 — the
+  `expect_used@jackin-runtime`
+  violation
+  self-heals (2
+  remain at bound 2;
+  measured total
+  preserved: 3 =
+  2+1); remaining
+  keys byte-identical.
+  `lint arch
+  --strict`: missing
+  tiers stay 3, zero
+  direction
+  violations; `lint
+  headers` stays at
+  the base 2; `lint
+  tests` OK.
+
+- Raw outputs:
+  `/tmp/s7-s62-{pre,post}-*.txt`
+  (kept out of the repo).

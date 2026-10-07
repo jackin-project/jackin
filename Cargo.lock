@@ -3592,6 +3592,7 @@ dependencies = [
  "jackin-runtime-isolation",
  "jackin-runtime-launch-mounts",
  "jackin-runtime-launch-plan",
+ "jackin-runtime-launch-trust",
  "jackin-runtime-naming",
  "jackin-runtime-process-telemetry",
  "jackin-runtime-progress",
@@ -3783,6 +3784,19 @@ version = "0.6.4"
 dependencies = [
  "jackin-diagnostics",
  "serde_json",
+]
+
+[[package]]
+name = "jackin-runtime-launch-trust"
+version = "0.6.4"
+dependencies = [
+ "anyhow",
+ "jackin-config",
+ "jackin-core",
+ "jackin-instance",
+ "tempfile",
+ "toml",
+ "toml_edit",
 ]
 
 [[package]]

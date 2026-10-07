@@ -43,6 +43,7 @@
     "jackin-runtime-isolation": "library",
     "jackin-runtime-launch-mounts": "library",
     "jackin-runtime-launch-plan": "library",
+    "jackin-runtime-launch-trust": "library",
     "jackin-runtime-naming": "library",
     "jackin-runtime-process-telemetry": "library",
     "jackin-runtime-progress": "library",
