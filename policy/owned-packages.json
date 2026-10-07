@@ -68,6 +68,7 @@
     "jackin-runtime-reactive-daemon",
     "jackin-runtime-repo-cache",
     "jackin-runtime-session-control",
+    "jackin-runtime-shared-runner",
     "jackin-runtime-snapshot",
     "jackin-runtime-spin-wait",
     "jackin-runtime-universe",

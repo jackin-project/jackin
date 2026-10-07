@@ -66,6 +66,7 @@ members = [
     "crates/services/jackin-runtime-reactive-daemon",
     "crates/services/jackin-runtime-repo-cache",
     "crates/services/jackin-runtime-session-control",
+    "crates/services/jackin-runtime-shared-runner",
     "crates/services/jackin-runtime-snapshot",
     "crates/services/jackin-runtime-spin-wait",
     "crates/services/jackin-runtime-universe",
@@ -212,6 +213,7 @@ jackin-runtime-prune-output = { version = "0.6.4", path = "crates/services/jacki
 jackin-runtime-reactive-daemon = { version = "0.6.4", path = "crates/services/jackin-runtime-reactive-daemon" }
 jackin-runtime-repo-cache = { version = "0.6.4", path = "crates/services/jackin-runtime-repo-cache" }
 jackin-runtime-session-control = { version = "0.6.4", path = "crates/services/jackin-runtime-session-control" }
+jackin-runtime-shared-runner = { version = "0.6.4", path = "crates/services/jackin-runtime-shared-runner" }
 jackin-runtime-snapshot = { version = "0.6.4", path = "crates/services/jackin-runtime-snapshot" }
 jackin-runtime-spin-wait = { version = "0.6.4", path = "crates/services/jackin-runtime-spin-wait" }
 jackin-runtime-universe = { version = "0.6.4", path = "crates/services/jackin-runtime-universe" }

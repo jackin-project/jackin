@@ -529,10 +529,14 @@ key = "dead_code@jackin-env"
 bound = 3
 [[family.entry]]
 key = "dead_code@jackin-runtime"
-bound = 3
+bound = 2
 [[family.entry]]
 key = "dead_code@jackin-runtime-repo-cache"
 # Moved with repo_cache (S7 split 48): RepoLock guard-only Arc<std::fs::File> (flock releases on last drop).
+bound = 1
+[[family.entry]]
+key = "dead_code@jackin-runtime-shared-runner"
+# Moved with shared_runner (S7 split 81): SharedCommandRunner::new awaits dependency-graph launch branches.
 bound = 1
 [[family.entry]]
 key = "dead_code@jackin-usage-provider-core"
@@ -820,6 +824,9 @@ bound = 831
 [[family.entry]]
 key = "crates/services/jackin-runtime-session-control/README.md"
 bound = 895
+[[family.entry]]
+key = "crates/services/jackin-runtime-shared-runner/README.md"
+bound = 572
 [[family.entry]]
 key = "crates/services/jackin-runtime-snapshot/README.md"
 bound = 848
@@ -1178,6 +1185,9 @@ key = "jackin-runtime-repo-cache"
 bound = 1
 [[family.entry]]
 key = "jackin-runtime-session-control"
+bound = 1
+[[family.entry]]
+key = "jackin-runtime-shared-runner"
 bound = 1
 [[family.entry]]
 key = "jackin-runtime-snapshot"

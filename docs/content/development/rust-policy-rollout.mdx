@@ -7796,3 +7796,113 @@ bound 720.
 - Raw outputs:
   `/tmp/s7-s80-{pre,post}-*.txt`
   (kept out of the repo).
+
+### Split 81: runtime-shared-runner extraction (M43)
+
+- `jackin-runtime` ->
+  `jackin-runtime` +
+  `jackin-runtime-shared-runner`
+  (T1: the whole
+  `runtime/shared_runner`
+  leaf moves --
+  `SharedCommandRunner`,
+  the cloneable
+  serialized wrapper for
+  the mutable
+  `CommandRunner` seam;
+  zero in-repo call
+  sites at split time,
+  so no shim or
+  re-export remains in
+  the hub -- a re-export
+  would be a dead
+  forwarding facade. The
+  struct widens
+  `pub(crate)` -> `pub`;
+  `new` stays
+  `pub(crate)` and its
+  `#[expect(dead_code)]`
+  travels with the move,
+  still fulfilled (the
+  split-76 precedent).
+  Tier: names only T0
+  `jackin-core` plus
+  externals (`anyhow`,
+  `tokio/sync`), so it
+  takes T1; no renumber
+  cascade. New-crate
+  deps: core, anyhow,
+  tokio/sync (lockfile
+  +1 package, +3 edges).
+  Policy registries: +1
+  owned package
+  (`library`).)
+
+- Verify: `cargo check
+  --locked --workspace
+  --all-targets` green;
+  `cargo fmt --all
+  --check` clean; `cargo
+  clippy` 0 errors on
+  the new crate (`-D
+  warnings`),
+  `jackin-runtime` holds
+  at the 7 pre-existing
+  errors (same 6 lints
+  at identical locations
+  + summary). `cargo
+  nextest list
+  --workspace
+  --all-targets`: 7277
+  -> 7277,
+  byte-identical (0
+  relocations -- the
+  module carries no
+  tests; 0 dropped, 0
+  added). `nextest run`:
+  433/433 runtime green
+  (1 skipped,
+  pre-existing; the new
+  crate has no tests
+  yet). `alint check`:
+  182 violations / 11
+  failing,
+  byte-identical.
+  `check-gaps` (v0.1.3,
+  production-only): 12
+  -> 12 (runtime
+  `SIZE-001/002`
+  persist: 12010 ->
+  11949 prod code lines,
+  81 -> 80 prod files;
+  xtask 26294 -> 26295
+  from the TIERS row;
+  new crate fits at 76
+  raw / 3 files, no SIZE
+  finding).
+  `GAP-TEST-001/002/003`
+  stay 0/0/0.
+  `ratchet.toml`: +3
+  rows (agent-doc-bytes
+  README 572,
+  public-surface 1,
+  dead_code new-crate 1;
+  hub dead_code 3 -> 2);
+  remaining 56
+  violations
+  byte-identical to a
+  clean-HEAD worktree.
+  `lint arch --strict`:
+  3 pre-existing no-tier
+  violations
+  byte-identical to
+  base, zero direction
+  violations; `lint
+  headers` stays at the
+  base 2; `lint tests`
+  OK.
+
+- Raw outputs:
+  `/tmp/s7-s81-{pre,post}-*.txt`
+  (kept out of the
+  repo).

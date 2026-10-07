@@ -14,7 +14,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 #[derive(Debug)]
-pub(crate) struct SharedCommandRunner<R> {
+pub struct SharedCommandRunner<R> {
     inner: Arc<Mutex<R>>,
 }
 

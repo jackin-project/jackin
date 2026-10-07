@@ -4137,6 +4137,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "jackin-runtime-shared-runner"
+version = "0.6.4"
+dependencies = [
+ "anyhow",
+ "jackin-core",
+ "tokio",
+]
+
+[[package]]
 name = "jackin-runtime-snapshot"
 version = "0.6.4"
 dependencies = [
