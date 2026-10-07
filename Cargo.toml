@@ -28,6 +28,7 @@ members = [
     "crates/services/jackin-instance-roles",
     "crates/services/jackin-isolation",
     "crates/services/jackin-runtime",
+    "crates/services/jackin-runtime-isolation",
     "crates/services/jackin-runtime-process-telemetry",
     "crates/services/jackin-runtime-spin-wait",
     "crates/services/jackin-telemetry",
@@ -134,6 +135,7 @@ jackin-process = { version = "0.6.4", path = "crates/core/jackin-process" }
 jackin-process-directory = { version = "0.6.4", path = "crates/core/jackin-process-directory" }
 jackin-protocol = { version = "0.6.4", path = "crates/core/jackin-protocol" }
 jackin-runtime = { version = "0.6.4", path = "crates/services/jackin-runtime" }
+jackin-runtime-isolation = { version = "0.6.4", path = "crates/services/jackin-runtime-isolation" }
 jackin-runtime-process-telemetry = { version = "0.6.4", path = "crates/services/jackin-runtime-process-telemetry" }
 jackin-runtime-spin-wait = { version = "0.6.4", path = "crates/services/jackin-runtime-spin-wait" }
 jackin-telemetry = { version = "0.6.4", path = "crates/services/jackin-telemetry" }

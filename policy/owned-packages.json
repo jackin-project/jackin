@@ -30,6 +30,7 @@
     "jackin-process-directory",
     "jackin-protocol",
     "jackin-runtime",
+    "jackin-runtime-isolation",
     "jackin-runtime-process-telemetry",
     "jackin-runtime-spin-wait",
     "jackin-telemetry",

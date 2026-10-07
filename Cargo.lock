@@ -3579,6 +3579,7 @@ dependencies = [
  "jackin-otlp-testbed",
  "jackin-process",
  "jackin-protocol",
+ "jackin-runtime-isolation",
  "jackin-runtime-process-telemetry",
  "jackin-runtime-spin-wait",
  "jackin-telemetry",
@@ -3595,6 +3596,14 @@ dependencies = [
  "toml",
  "toml_edit",
  "tracing",
+]
+
+[[package]]
+name = "jackin-runtime-isolation"
+version = "0.6.4"
+dependencies = [
+ "jackin-core",
+ "jackin-isolation",
 ]
 
 [[package]]
