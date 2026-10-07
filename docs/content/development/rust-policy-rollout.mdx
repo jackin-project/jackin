@@ -1984,3 +1984,54 @@ passes.
 - Raw outputs:
   `/tmp/s11-split24-{before,after}.txt`
   (kept out of the repo).
+
+### Split 25: usage-host-credentials extraction (H2)
+
+- `jackin-usage` -> `jackin-usage` +
+  `jackin-usage-host-credentials` (T3:
+  `host/discovery/credentials.rs` moves
+  flat and the pure governed-alias
+  table leaves `host/discovery/scan.rs`
+  for the same file; `lib.rs` carries
+  the ownership header). The credential
+  domain types name only T2-and-below
+  crates, so T3 is the lowest legal
+  tier; the secret cache
+  (`credential_resolver.rs`, with its
+  T4 `usage::` probe call) deliberately
+  stays behind. `discovery.rs` drops
+  `mod credentials` and re-exports the
+  same nine paths; `scan.rs` gains one
+  import for the relocated table. The
+  non-secret handle field widens
+  `pub(crate)` -> `pub` for the two
+  discovery readers; `Debug` stays
+  redacted. No test files move (the
+  modules have none; the governed-name
+  cases stay in `discovery/tests` with
+  identical IDs).
+- Verify: `cargo check --locked --workspace
+  --all-targets` green; `cargo fmt --all
+  --check` clean; `cargo clippy` 0
+  errors, 0 warnings on both touched
+  packages. `cargo nextest list
+  --workspace --all-targets`: 7276 ->
+  7276 with a byte-empty delta (zero
+  moved, zero dropped, zero added).
+  `nextest run`: 406/406 usage + 0/0
+  credentials. No contract fixture
+  entries name these paths, so no
+  remap. `alint check`: 197 -> 197.
+  `check-gaps`: 27 -> 27 (usage
+  `SIZE-001` 26655 -> 26524 lines,
+  `SIZE-002` 142 -> 141 files);
+  `GAP-TEST-001/002/003` stay 0/0/0.
+  `ratchet.toml`: +1 row (agent-doc
+  1251); violations 60 -> 60 with zero
+  new failures. `lint arch`: missing
+  tiers stay 3, zero direction
+  violations; `lint headers` stays at
+  the base 2; `lint tests` OK.
+- Raw outputs:
+  `/tmp/s11-split25-{before,after}.txt`
+  (kept out of the repo).

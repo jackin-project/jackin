@@ -6,8 +6,9 @@ use super::{
     CandidateAccumulator, CredentialSourceKey, ForwardedUsageAccount, ProviderCredentialEnvOutcome,
     ProviderCredentialEnvResolver, UsageCredentialKind, UsageDiscoveryCatalog,
     UsageDiscoveryDiagnostic, UsageDiscoveryIssue, UsageDiscoveryScope, account_diagnostic,
-    canonical_owner_for_account, canonical_usage_env_name, config_diagnostics, materialize_catalog,
-    merge_env_candidate, provider_surface, resolve_profile_root,
+    canonical_owner_for_account, canonical_usage_env_name, config_diagnostics,
+    governed_name_for_account_alias, materialize_catalog, merge_env_candidate, provider_surface,
+    resolve_profile_root,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -129,38 +130,6 @@ pub(crate) fn usage_account_alias_entry(
     UsageCredentialEnvName {
         name,
         owner: canonical_owner,
-    }
-}
-
-/// Recover the governed registry name for one discovery-isolated alias.
-///
-/// Unknown names pass through unchanged so direct governed-name callers keep
-/// their existing cache identity.
-pub(crate) fn governed_name_for_account_alias(name: &str) -> &str {
-    match name {
-        "JACKIN_USAGE_ACCOUNT_ANTHROPIC_API_KEY" => jackin_core::ANTHROPIC_API_KEY_ENV_NAME,
-        "JACKIN_USAGE_ACCOUNT_ANTHROPIC_AUTH_TOKEN" => jackin_core::ANTHROPIC_AUTH_TOKEN_ENV_NAME,
-        "JACKIN_USAGE_ACCOUNT_CLAUDE_CODE_OAUTH_TOKEN" => {
-            jackin_core::CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME
-        }
-        "JACKIN_USAGE_ACCOUNT_OPENAI_API_KEY" => jackin_core::OPENAI_API_KEY_ENV_NAME,
-        "JACKIN_USAGE_ACCOUNT_AMP_API_KEY" => jackin_core::AMP_API_KEY_ENV_NAME,
-        "JACKIN_USAGE_ACCOUNT_KIMI_CODE_API_KEY" => jackin_core::KIMI_CODE_API_KEY_ENV_NAME,
-        "JACKIN_USAGE_ACCOUNT_KIMI_API_KEY" => jackin_core::KIMI_API_KEY_ENV_NAME,
-        "JACKIN_USAGE_ACCOUNT_MOONSHOT_API_KEY" => jackin_core::MOONSHOT_API_KEY_ENV_NAME,
-        "JACKIN_USAGE_ACCOUNT_XAI_API_KEY" => jackin_core::XAI_API_KEY_ENV_NAME,
-        "JACKIN_USAGE_ACCOUNT_GROK_DEPLOYMENT_KEY" => jackin_core::GROK_DEPLOYMENT_KEY_ENV_NAME,
-        "JACKIN_USAGE_ACCOUNT_ZAI_API_KEY" => jackin_core::ZAI_API_KEY_ENV_NAME,
-        "JACKIN_USAGE_ACCOUNT_ZHIPU_API_KEY" => jackin_core::ZHIPU_API_KEY_ENV_NAME,
-        "JACKIN_USAGE_ACCOUNT_Z_AI_API_KEY" => "Z_AI_API_KEY",
-        "JACKIN_USAGE_ACCOUNT_MINIMAX_API_KEY" => jackin_core::MINIMAX_API_KEY_ENV_NAME,
-        "JACKIN_USAGE_ACCOUNT_OPENCODE_API_KEY" => jackin_core::OPENCODE_API_KEY_ENV_NAME,
-        "JACKIN_USAGE_ACCOUNT_GEMINI_API_KEY" => jackin_core::GEMINI_API_KEY_ENV_NAME,
-        "JACKIN_USAGE_ACCOUNT_GOOGLE_API_KEY" => jackin_core::GOOGLE_API_KEY_ENV_NAME,
-        "JACKIN_USAGE_ACCOUNT_CURSOR_API_KEY" => jackin_core::CURSOR_API_KEY_ENV_NAME,
-        "JACKIN_USAGE_ACCOUNT_META_API_KEY" => jackin_core::META_API_KEY_ENV_NAME,
-        "JACKIN_USAGE_ACCOUNT_OPENROUTER_API_KEY" => jackin_core::OPENROUTER_API_KEY_ENV_NAME,
-        _ => name,
     }
 }
 

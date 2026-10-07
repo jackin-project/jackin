@@ -24,7 +24,6 @@ use super::{CanonicalAccountSubject, HostSurfaceId, HostUsageRuntime};
 
 mod accumulate;
 mod catalog;
-mod credentials;
 mod identity;
 mod issues;
 mod ownership;
@@ -44,16 +43,17 @@ pub(super) use catalog::{
     DiscoveredCredentialSource, ProfileCredentialMaterial, ValidatedCredentialBinding,
     ValidatedCredentialSource,
 };
-pub use credentials::{
+pub(crate) use identity::{
+    opaque_credential_revision, profile_credential_revision, profile_identity,
+};
+pub use issues::{UsageDiscoveryDiagnostic, UsageDiscoveryIssue, UsageSourceCandidateDescriptor};
+pub(super) use jackin_usage_host_credentials::governed_name_for_account_alias;
+pub use jackin_usage_host_credentials::{
     ForwardedUsageAccount, OpaqueCredentialHandle, ProviderCredentialEnvOutcome,
     ProviderCredentialEnvResolution, ProviderCredentialEnvResolver,
     ProviderCredentialIdentityOutcome, ProviderCredentialRefreshOutcome,
     ProviderCredentialSourceMaterial, UsageCredentialKind,
 };
-pub(crate) use identity::{
-    opaque_credential_revision, profile_credential_revision, profile_identity,
-};
-pub use issues::{UsageDiscoveryDiagnostic, UsageDiscoveryIssue, UsageSourceCandidateDescriptor};
 #[cfg(test)]
 pub(crate) use ownership::source_capability_id;
 pub(crate) use ownership::{
@@ -72,7 +72,6 @@ pub(crate) use providers::{
 pub(super) use refresh::refresh_credential_binding;
 pub(crate) use refresh::{first_recursive_string, read_json};
 pub use scan::discover_usage_sources;
-pub(super) use scan::governed_name_for_account_alias;
 #[cfg(test)]
 pub(crate) use scan::usage_account_alias_entry;
 pub use scope::{HostCredentialRootRow, UsageDiscoveryScope, host_credential_root_matrix};
