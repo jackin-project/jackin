@@ -54,6 +54,7 @@ jackin-runtime-launch-image-plan = { workspace = true }
 jackin-runtime-launch-load-cleanup = { workspace = true }
 jackin-runtime-launch-mounts = { workspace = true }
 jackin-runtime-launch-plan = { workspace = true }
+jackin-runtime-launch-progress-helpers = { workspace = true }
 jackin-runtime-launch-trust = { workspace = true }
 jackin-runtime-naming = { workspace = true }
 jackin-runtime-process-telemetry = { workspace = true }

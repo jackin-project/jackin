@@ -6527,3 +6527,176 @@ bound 720.
 - Raw outputs:
   `/tmp/s7-s71-{pre,post}-*.txt`
   (kept out of the repo).
+
+### Split 72: runtime-launch-progress-helpers extraction (M34)
+
+- `jackin-runtime` ->
+  `jackin-runtime` +
+  `jackin-runtime-launch-progress-helpers`
+  (T6: the whole
+  `launch/progress_helpers`
+  module moves — step
+  counter with stage
+  telemetry, env
+  prompter bridge,
+  target/mount label
+  rendering, with its
+  1-case unit suite).
+  Cross-leaf edges: 1
+  hub path rewritten
+  to an already-split
+  crate (59
+  `progress::` sites ->
+  `jackin-runtime-progress`
+  T5). The only other
+  hub edge was
+  test-only
+  (`failure::resolve_launch_role_source`
+  in the suite's
+  support): inlined as
+  its `None`-path
+  equivalent
+  (`AppConfig::resolve_role_source`
+  + `restore_override =
+  false`, forced —
+  `failure` itself is
+  tier-blocked, see
+  split 71). 24
+  `pub(in ...)` items
+  widen to `pub`
+  (forced); two
+  `#[expect(missing_debug_implementations)]`
+  added (forced: both
+  structs own/borrow
+  `LaunchProgress`,
+  which has no `Debug`).
+  The suite's
+  self-referential
+  `--exact` path is
+  re-pointed at the
+  new crate (forced).
+  No shim file:
+  `launch.rs`
+  re-exports the module
+  itself (the split-56
+  precedent), so the
+  `launch::progress_helpers::*`
+  paths — including
+  the direct module
+  use in
+  `launch_runtime.rs` —
+  keep working
+  unchanged. Healing
+  delta: the widening
+  retired the
+  file-level
+  `private_interfaces`
+  expect in
+  `launch_runtime.rs`
+  (StepCounter is fully
+  `pub` now). Tier:
+  names T5
+  `jackin-runtime-progress`,
+  so it takes T6; no
+  renumber cascade.
+  New-crate deps:
+  config, core,
+  diagnostics, env,
+  runtime-progress,
+  telemetry, anyhow
+  (lockfile +1
+  package, +10 edges;
+  launch +
+  otlp-testbed + tokio
+  land in
+  dev-dependencies
+  for the moved
+  suite). Policy
+  registries: +1
+  owned package
+  (`library`).
+
+- Verify: `cargo check
+  --locked --workspace
+  --all-targets`
+  green; `cargo fmt
+  --all --check`
+  clean; `cargo
+  clippy` 0 errors on
+  the new crate,
+  `jackin-runtime`
+  holds at the 7
+  pre-existing errors
+  (all in
+  `launch_slot/tests`,
+  byte-identical
+  locations).
+  `cargo nextest list
+  --workspace
+  --all-targets`: 7277
+  -> 7277 (5
+  relocations map 1:1
+  by stripped name,
+  `jackin-runtime
+  ...launch::progress_helpers::...`
+  ->
+  `jackin-runtime-launch-progress-helpers
+  progress_helpers::...`;
+  0 dropped, 0 added).
+  `nextest run`:
+  468/468 runtime +
+  5/5 progress-helpers
+  green (1 skipped,
+  pre-existing; the
+  self-referential
+  conformance test
+  verified genuine —
+  the new `--exact`
+  path matches exactly
+  1 test, the old path
+  0). `alint check`:
+  182 violations / 11
+  failing unchanged.
+  `check-gaps`
+  (v0.1.3,
+  production-only):
+  12 -> 12 (runtime
+  `SIZE-001/002`
+  persist: 14626 ->
+  14316 prod code
+  lines, 90 -> 89
+  prod files; xtask
+  26285 -> 26286 from
+  the TIERS row; new
+  crate fits at 686
+  raw / 6 files, no
+  SIZE finding).
+  `GAP-TEST-001/002/003`
+  stay 0/0/0.
+  `ratchet.toml`: +3
+  rows
+  (agent-doc-bytes
+  README 1132,
+  public-surface 1,
+  `missing_debug_implementations`
+  2) and one deletion
+  (`private_interfaces@jackin-runtime`,
+  healed expect);
+  remaining 53
+  violations
+  byte-identical to the
+  split-71 base.
+  `lint arch
+  --strict`: 3
+  pre-existing no-tier
+  violations
+  byte-identical to
+  base, zero direction
+  violations; `lint
+  headers` stays at
+  the base 2; `lint
+  tests` OK.
+
+- Raw outputs:
+  `/tmp/s7-s72-{pre,post}-*.txt`
+  (kept out of the repo).

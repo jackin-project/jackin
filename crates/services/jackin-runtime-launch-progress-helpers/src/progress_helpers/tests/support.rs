@@ -56,8 +56,11 @@ pub(super) fn resolve_private_role_source() -> anyhow::Result<()> {
             env: BTreeMap::new(),
         },
     );
-    let (source, is_new, restore_override) =
-        super::super::super::resolve_launch_role_source(&mut config, &selector, None)?;
+    // Inlined from `failure::resolve_launch_role_source` (S7 split 72):
+    // with no restore override that helper is a straight passthrough to
+    // `AppConfig::resolve_role_source` plus `restore_override = false`.
+    let (source, is_new) = config.resolve_role_source(&selector)?;
+    let restore_override = false;
     assert_eq!(source.git, PRIVATE_ROLE_URL);
     assert!(!is_new);
     assert!(!restore_override);

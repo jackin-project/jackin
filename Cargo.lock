@@ -3600,6 +3600,7 @@ dependencies = [
  "jackin-runtime-launch-load-cleanup",
  "jackin-runtime-launch-mounts",
  "jackin-runtime-launch-plan",
+ "jackin-runtime-launch-progress-helpers",
  "jackin-runtime-launch-trust",
  "jackin-runtime-naming",
  "jackin-runtime-process-telemetry",
@@ -3899,6 +3900,22 @@ version = "0.6.4"
 dependencies = [
  "jackin-diagnostics",
  "serde_json",
+]
+
+[[package]]
+name = "jackin-runtime-launch-progress-helpers"
+version = "0.6.4"
+dependencies = [
+ "anyhow",
+ "jackin-config",
+ "jackin-core",
+ "jackin-diagnostics",
+ "jackin-env",
+ "jackin-launch",
+ "jackin-otlp-testbed",
+ "jackin-runtime-progress",
+ "jackin-telemetry",
+ "tokio",
 ]
 
 [[package]]

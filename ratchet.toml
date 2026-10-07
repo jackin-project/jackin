@@ -568,6 +568,9 @@ bound = 3
 key = "missing_debug_implementations@jackin-runtime"
 bound = 1
 [[family.entry]]
+key = "missing_debug_implementations@jackin-runtime-launch-progress-helpers"
+bound = 2
+[[family.entry]]
 key = "missing_debug_implementations@jackin-test-support"
 bound = 1
 [[family.entry]]
@@ -578,9 +581,6 @@ key = "missing_debug_implementations@jackin-usage-provider-claude"
 bound = 5
 [[family.entry]]
 key = "private_bounds@jackin-core"
-bound = 1
-[[family.entry]]
-key = "private_interfaces@jackin-runtime"
 bound = 1
 [[family.entry]]
 key = "unreachable_pub@jackin"
@@ -760,6 +760,9 @@ bound = 907
 [[family.entry]]
 key = "crates/services/jackin-runtime-launch-plan/README.md"
 bound = 831
+[[family.entry]]
+key = "crates/services/jackin-runtime-launch-progress-helpers/README.md"
+bound = 1132
 [[family.entry]]
 key = "crates/services/jackin-runtime-launch-trust/README.md"
 bound = 775
@@ -1091,6 +1094,9 @@ key = "jackin-runtime-launch-mounts"
 bound = 1
 [[family.entry]]
 key = "jackin-runtime-launch-plan"
+bound = 1
+[[family.entry]]
+key = "jackin-runtime-launch-progress-helpers"
 bound = 1
 [[family.entry]]
 key = "jackin-runtime-launch-trust"

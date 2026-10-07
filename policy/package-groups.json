@@ -51,6 +51,7 @@
     "jackin-runtime-launch-load-cleanup": "library",
     "jackin-runtime-launch-mounts": "library",
     "jackin-runtime-launch-plan": "library",
+    "jackin-runtime-launch-progress-helpers": "library",
     "jackin-runtime-launch-trust": "library",
     "jackin-runtime-naming": "library",
     "jackin-runtime-process-telemetry": "library",

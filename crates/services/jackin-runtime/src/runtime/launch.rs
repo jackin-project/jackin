@@ -241,7 +241,10 @@ pub(crate) use jackin_runtime_launch_exit_diagnosis::exit_diagnosis;
 // module re-export keeps every `launch::git_pull::*` path stable.
 pub(crate) use jackin_runtime_launch_git_pull::git_pull;
 mod mounts;
-mod progress_helpers;
+// Moved to jackin_runtime_launch_progress_helpers::progress_helpers (S7
+// split 72); the module re-export keeps every
+// `launch::progress_helpers::*` path stable.
+pub(crate) use jackin_runtime_launch_progress_helpers::progress_helpers;
 use progress_helpers::{
     LaunchEnvPrompter, StepCounter, launch_mount_lines, launch_target_kind, launch_target_label,
     sensitive_mount_prompt,

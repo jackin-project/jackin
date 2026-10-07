@@ -51,6 +51,7 @@
     "jackin-runtime-launch-load-cleanup",
     "jackin-runtime-launch-mounts",
     "jackin-runtime-launch-plan",
+    "jackin-runtime-launch-progress-helpers",
     "jackin-runtime-launch-trust",
     "jackin-runtime-naming",
     "jackin-runtime-process-telemetry",

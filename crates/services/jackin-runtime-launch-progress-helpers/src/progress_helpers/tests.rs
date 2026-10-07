@@ -3,7 +3,7 @@
 
 use super::{StepCounter, stage_index, telemetry_stage};
 
-use crate::runtime::progress::LaunchProgress;
+use jackin_runtime_progress::progress::LaunchProgress;
 
 use jackin_config::{AppConfig, RoleSource};
 

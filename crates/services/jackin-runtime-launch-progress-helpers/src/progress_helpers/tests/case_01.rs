@@ -58,7 +58,7 @@ fn conformance_wire_representative_launch_exports_complete_private_pipeline() ->
         let status = std::process::Command::new(std::env::current_exe()?)
             .arg("--exact")
             .arg(
-                "runtime::launch::progress_helpers::tests::case_01::conformance_wire_representative_launch_exports_complete_private_pipeline",
+                "progress_helpers::tests::case_01::conformance_wire_representative_launch_exports_complete_private_pipeline",
             )
             .arg("--nocapture")
             .env(LAUNCH_WIRE_CHILD, "1")

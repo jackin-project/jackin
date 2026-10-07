@@ -3,17 +3,21 @@
 
 //! Launch progress, prompt, and summary helpers.
 
-pub(in crate::runtime) struct StepCounter {
-    pub(in crate::runtime::launch) current: u32,
-    pub(in crate::runtime::launch) role_name: String,
-    pub(in crate::runtime::launch) current_stage: Option<crate::runtime::progress::LaunchStage>,
-    pub(in crate::runtime::launch) progress: Option<crate::runtime::progress::LaunchProgress>,
+#[expect(
+    missing_debug_implementations,
+    reason = "StepCounter owns a LaunchProgress whose terminal and diagnostics handles do not expose useful Debug output."
+)]
+pub struct StepCounter {
+    pub current: u32,
+    pub role_name: String,
+    pub current_stage: Option<jackin_runtime_progress::progress::LaunchStage>,
+    pub progress: Option<jackin_runtime_progress::progress::LaunchProgress>,
     stage_telemetry: [Option<jackin_telemetry::launch::StageGuard>; 11],
     target_kind: jackin_telemetry::schema::enums::LaunchTargetKind,
 }
 
 impl StepCounter {
-    pub(in crate::runtime::launch) fn new(
+    pub fn new(
         role_name: &str,
         target_kind: jackin_telemetry::schema::enums::LaunchTargetKind,
     ) -> Self {
@@ -27,14 +31,11 @@ impl StepCounter {
         }
     }
 
-    pub(in crate::runtime::launch) fn start_progress(
-        &mut self,
-        progress: crate::runtime::progress::LaunchProgress,
-    ) {
+    pub fn start_progress(&mut self, progress: jackin_runtime_progress::progress::LaunchProgress) {
         self.progress = Some(progress);
     }
 
-    pub(in crate::runtime::launch) async fn next(&mut self, text: &str) -> anyhow::Result<()> {
+    pub async fn next(&mut self, text: &str) -> anyhow::Result<()> {
         // Step boundaries are cancellation checkpoints. Long blocking ops are
         // each raced against the token via the progress `while_waiting` seam,
         // but the quick async work *between* them (docker inspects, cache
@@ -61,25 +62,25 @@ impl StepCounter {
     /// `true` once the operator has hit Ctrl+C / Ctrl+Q on the rich launch
     /// surface. Always `false` in the headless (no-progress) path, where
     /// cancellation is the OS's SIGINT rather than the cockpit's token.
-    pub(in crate::runtime::launch) fn is_cancelled(&self) -> bool {
+    pub fn is_cancelled(&self) -> bool {
         self.progress
             .as_ref()
             .is_some_and(|progress| progress.cancel_token().is_cancelled())
     }
 
-    pub(in crate::runtime::launch) fn done(&self) {
+    pub fn done(&self) {
         jackin_diagnostics::set_terminal_title(&self.role_name);
     }
 
-    pub(in crate::runtime::launch) const fn progress_mut(
+    pub const fn progress_mut(
         &mut self,
-    ) -> Option<&mut crate::runtime::progress::LaunchProgress> {
+    ) -> Option<&mut jackin_runtime_progress::progress::LaunchProgress> {
         self.progress.as_mut()
     }
 
-    pub(in crate::runtime::launch) fn stage_started(
+    pub fn stage_started(
         &mut self,
-        stage: crate::runtime::progress::LaunchStage,
+        stage: jackin_runtime_progress::progress::LaunchStage,
         detail: impl Into<String>,
     ) {
         if self.current_stage == Some(stage) {
@@ -101,9 +102,9 @@ impl StepCounter {
         }
     }
 
-    pub(in crate::runtime::launch) fn stage_done(
+    pub fn stage_done(
         &mut self,
-        stage: crate::runtime::progress::LaunchStage,
+        stage: jackin_runtime_progress::progress::LaunchStage,
         detail: impl Into<String>,
     ) {
         self.finish_stage(
@@ -116,9 +117,9 @@ impl StepCounter {
         }
     }
 
-    pub(in crate::runtime::launch) fn stage_skipped(
+    pub fn stage_skipped(
         &mut self,
-        stage: crate::runtime::progress::LaunchStage,
+        stage: jackin_runtime_progress::progress::LaunchStage,
         reason: impl Into<String>,
     ) {
         self.finish_stage(
@@ -131,9 +132,9 @@ impl StepCounter {
         }
     }
 
-    pub(in crate::runtime::launch) async fn stage_failed(
+    pub async fn stage_failed(
         &mut self,
-        failure: crate::runtime::progress::LaunchFailure,
+        failure: jackin_runtime_progress::progress::LaunchFailure,
     ) {
         self.finish_stage(
             failure.stage,
@@ -145,10 +146,7 @@ impl StepCounter {
         }
     }
 
-    pub(in crate::runtime::launch) fn stage_error(
-        &mut self,
-        stage: crate::runtime::progress::LaunchStage,
-    ) {
+    pub fn stage_error(&mut self, stage: jackin_runtime_progress::progress::LaunchStage) {
         self.finish_stage(
             stage,
             jackin_telemetry::schema::enums::OutcomeValue::Failure,
@@ -156,16 +154,16 @@ impl StepCounter {
         );
     }
 
-    pub(in crate::runtime::launch) fn opening_hardline(&mut self) {
+    pub fn opening_hardline(&mut self) {
         self.stage_started(
-            crate::runtime::progress::LaunchStage::Hardline,
+            jackin_runtime_progress::progress::LaunchStage::Hardline,
             "opening hardline",
         );
     }
 
     fn finish_stage(
         &mut self,
-        stage: crate::runtime::progress::LaunchStage,
+        stage: jackin_runtime_progress::progress::LaunchStage,
         outcome: jackin_telemetry::schema::enums::OutcomeValue,
         error_type: Option<jackin_telemetry::schema::enums::ErrorType>,
     ) {
@@ -180,7 +178,7 @@ impl StepCounter {
     /// `rich_surface_active`. Call this before handing the terminal to an
     /// interactive `docker exec -it` session, otherwise the capsule attach
     /// can't own the PTY and hangs.
-    pub(in crate::runtime::launch) fn finish_progress(&mut self) {
+    pub fn finish_progress(&mut self) {
         if let Some(progress) = self.progress.as_mut() {
             progress.finish();
         }
@@ -188,48 +186,56 @@ impl StepCounter {
     }
 }
 
-const fn stage_index(stage: crate::runtime::progress::LaunchStage) -> usize {
+const fn stage_index(stage: jackin_runtime_progress::progress::LaunchStage) -> usize {
     match stage {
-        crate::runtime::progress::LaunchStage::Identity => 0,
-        crate::runtime::progress::LaunchStage::Role => 1,
-        crate::runtime::progress::LaunchStage::Credentials => 2,
-        crate::runtime::progress::LaunchStage::Construct => 3,
-        crate::runtime::progress::LaunchStage::AgentBinaries => 4,
-        crate::runtime::progress::LaunchStage::DerivedImage => 5,
-        crate::runtime::progress::LaunchStage::Workspace => 6,
-        crate::runtime::progress::LaunchStage::Network => 7,
-        crate::runtime::progress::LaunchStage::Sidecar => 8,
-        crate::runtime::progress::LaunchStage::Capsule => 9,
-        crate::runtime::progress::LaunchStage::Hardline => 10,
+        jackin_runtime_progress::progress::LaunchStage::Identity => 0,
+        jackin_runtime_progress::progress::LaunchStage::Role => 1,
+        jackin_runtime_progress::progress::LaunchStage::Credentials => 2,
+        jackin_runtime_progress::progress::LaunchStage::Construct => 3,
+        jackin_runtime_progress::progress::LaunchStage::AgentBinaries => 4,
+        jackin_runtime_progress::progress::LaunchStage::DerivedImage => 5,
+        jackin_runtime_progress::progress::LaunchStage::Workspace => 6,
+        jackin_runtime_progress::progress::LaunchStage::Network => 7,
+        jackin_runtime_progress::progress::LaunchStage::Sidecar => 8,
+        jackin_runtime_progress::progress::LaunchStage::Capsule => 9,
+        jackin_runtime_progress::progress::LaunchStage::Hardline => 10,
     }
 }
 
 const fn telemetry_stage(
-    stage: crate::runtime::progress::LaunchStage,
+    stage: jackin_runtime_progress::progress::LaunchStage,
 ) -> jackin_telemetry::schema::enums::LaunchStageName {
     use jackin_telemetry::schema::enums::LaunchStageName as TelemetryStage;
     match stage {
-        crate::runtime::progress::LaunchStage::Identity => TelemetryStage::Identity,
-        crate::runtime::progress::LaunchStage::Role => TelemetryStage::Role,
-        crate::runtime::progress::LaunchStage::Credentials => TelemetryStage::Credentials,
-        crate::runtime::progress::LaunchStage::Construct => TelemetryStage::Construct,
-        crate::runtime::progress::LaunchStage::AgentBinaries => TelemetryStage::AgentBinaries,
-        crate::runtime::progress::LaunchStage::DerivedImage => TelemetryStage::DerivedImage,
-        crate::runtime::progress::LaunchStage::Workspace => TelemetryStage::Workspace,
-        crate::runtime::progress::LaunchStage::Network => TelemetryStage::Network,
-        crate::runtime::progress::LaunchStage::Sidecar => TelemetryStage::Sidecar,
-        crate::runtime::progress::LaunchStage::Capsule => TelemetryStage::Capsule,
-        crate::runtime::progress::LaunchStage::Hardline => TelemetryStage::Hardline,
+        jackin_runtime_progress::progress::LaunchStage::Identity => TelemetryStage::Identity,
+        jackin_runtime_progress::progress::LaunchStage::Role => TelemetryStage::Role,
+        jackin_runtime_progress::progress::LaunchStage::Credentials => TelemetryStage::Credentials,
+        jackin_runtime_progress::progress::LaunchStage::Construct => TelemetryStage::Construct,
+        jackin_runtime_progress::progress::LaunchStage::AgentBinaries => {
+            TelemetryStage::AgentBinaries
+        }
+        jackin_runtime_progress::progress::LaunchStage::DerivedImage => {
+            TelemetryStage::DerivedImage
+        }
+        jackin_runtime_progress::progress::LaunchStage::Workspace => TelemetryStage::Workspace,
+        jackin_runtime_progress::progress::LaunchStage::Network => TelemetryStage::Network,
+        jackin_runtime_progress::progress::LaunchStage::Sidecar => TelemetryStage::Sidecar,
+        jackin_runtime_progress::progress::LaunchStage::Capsule => TelemetryStage::Capsule,
+        jackin_runtime_progress::progress::LaunchStage::Hardline => TelemetryStage::Hardline,
     }
 }
 
-pub(in crate::runtime::launch) struct LaunchEnvPrompter<'a> {
-    progress: Option<std::cell::RefCell<&'a mut crate::runtime::progress::LaunchProgress>>,
+#[expect(
+    missing_debug_implementations,
+    reason = "LaunchEnvPrompter borrows a LaunchProgress whose terminal and diagnostics handles do not expose useful Debug output."
+)]
+pub struct LaunchEnvPrompter<'a> {
+    progress: Option<std::cell::RefCell<&'a mut jackin_runtime_progress::progress::LaunchProgress>>,
 }
 
 impl<'a> LaunchEnvPrompter<'a> {
-    pub(in crate::runtime::launch) fn new(
-        progress: Option<&'a mut crate::runtime::progress::LaunchProgress>,
+    pub fn new(
+        progress: Option<&'a mut jackin_runtime_progress::progress::LaunchProgress>,
     ) -> Self {
         Self {
             progress: progress.map(std::cell::RefCell::new),
@@ -266,9 +272,7 @@ impl jackin_env::EnvPrompter for LaunchEnvPrompter<'_> {
     }
 }
 
-pub(in crate::runtime::launch) fn sensitive_mount_prompt(
-    sensitive: &[jackin_config::SensitiveMount],
-) -> String {
+pub fn sensitive_mount_prompt(sensitive: &[jackin_config::SensitiveMount]) -> String {
     let mut lines = vec![
         "Sensitive host paths are mounted into this role container.".to_owned(),
         "Continue only if this role should see these credentials.".to_owned(),
@@ -282,44 +286,46 @@ pub(in crate::runtime::launch) fn sensitive_mount_prompt(
     lines.join("\n")
 }
 
-fn stage_for_step_text(text: &str) -> crate::runtime::progress::LaunchStage {
+fn stage_for_step_text(text: &str) -> jackin_runtime_progress::progress::LaunchStage {
     match text {
-        "Resolving role identity" => crate::runtime::progress::LaunchStage::Role,
-        "Preparing runtime binaries" => crate::runtime::progress::LaunchStage::AgentBinaries,
-        "Preparing derived image" => crate::runtime::progress::LaunchStage::DerivedImage,
-        "Starting Docker-in-Docker" => crate::runtime::progress::LaunchStage::Sidecar,
-        "Launching role" => crate::runtime::progress::LaunchStage::Capsule,
-        _ => crate::runtime::progress::LaunchStage::Identity,
+        "Resolving role identity" => jackin_runtime_progress::progress::LaunchStage::Role,
+        "Preparing runtime binaries" => {
+            jackin_runtime_progress::progress::LaunchStage::AgentBinaries
+        }
+        "Preparing derived image" => jackin_runtime_progress::progress::LaunchStage::DerivedImage,
+        "Starting Docker-in-Docker" => jackin_runtime_progress::progress::LaunchStage::Sidecar,
+        "Launching role" => jackin_runtime_progress::progress::LaunchStage::Capsule,
+        _ => jackin_runtime_progress::progress::LaunchStage::Identity,
     }
 }
 
-const fn completion_label(stage: crate::runtime::progress::LaunchStage) -> &'static str {
+const fn completion_label(stage: jackin_runtime_progress::progress::LaunchStage) -> &'static str {
     match stage {
-        crate::runtime::progress::LaunchStage::Identity
-        | crate::runtime::progress::LaunchStage::Credentials => "resolved",
-        crate::runtime::progress::LaunchStage::Role => "trusted source",
-        crate::runtime::progress::LaunchStage::Construct => "online",
-        crate::runtime::progress::LaunchStage::AgentBinaries => "cached",
-        crate::runtime::progress::LaunchStage::DerivedImage
-        | crate::runtime::progress::LaunchStage::Capsule => "ready",
-        crate::runtime::progress::LaunchStage::Workspace => "materialized",
-        crate::runtime::progress::LaunchStage::Network => "isolated",
-        crate::runtime::progress::LaunchStage::Sidecar => "awake",
-        crate::runtime::progress::LaunchStage::Hardline => "open",
+        jackin_runtime_progress::progress::LaunchStage::Identity
+        | jackin_runtime_progress::progress::LaunchStage::Credentials => "resolved",
+        jackin_runtime_progress::progress::LaunchStage::Role => "trusted source",
+        jackin_runtime_progress::progress::LaunchStage::Construct => "online",
+        jackin_runtime_progress::progress::LaunchStage::AgentBinaries => "cached",
+        jackin_runtime_progress::progress::LaunchStage::DerivedImage
+        | jackin_runtime_progress::progress::LaunchStage::Capsule => "ready",
+        jackin_runtime_progress::progress::LaunchStage::Workspace => "materialized",
+        jackin_runtime_progress::progress::LaunchStage::Network => "isolated",
+        jackin_runtime_progress::progress::LaunchStage::Sidecar => "awake",
+        jackin_runtime_progress::progress::LaunchStage::Hardline => "open",
     }
 }
 
-pub(in crate::runtime::launch) const fn launch_target_kind(
+pub const fn launch_target_kind(
     workspace_name: Option<&str>,
-) -> crate::runtime::progress::LaunchTargetKind {
+) -> jackin_runtime_progress::progress::LaunchTargetKind {
     if workspace_name.is_some() {
-        crate::runtime::progress::LaunchTargetKind::Workspace
+        jackin_runtime_progress::progress::LaunchTargetKind::Workspace
     } else {
-        crate::runtime::progress::LaunchTargetKind::Directory
+        jackin_runtime_progress::progress::LaunchTargetKind::Directory
     }
 }
 
-pub(in crate::runtime::launch) fn launch_target_label(
+pub fn launch_target_label(
     workspace_name: Option<&str>,
     workspace: &jackin_config::ResolvedWorkspace,
 ) -> String {
@@ -333,9 +339,7 @@ pub(in crate::runtime::launch) fn launch_target_label(
 /// container destination. Same-path mounts (the current-directory launch
 /// case) carry no information for the operator and are omitted entirely, so
 /// a directory launch shows no mount line at all.
-pub(in crate::runtime::launch) fn launch_mount_lines(
-    workspace: &jackin_config::ResolvedWorkspace,
-) -> Vec<String> {
+pub fn launch_mount_lines(workspace: &jackin_config::ResolvedWorkspace) -> Vec<String> {
     workspace
         .mounts
         .iter()
