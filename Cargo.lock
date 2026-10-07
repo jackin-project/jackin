@@ -3579,6 +3579,7 @@ dependencies = [
  "jackin-otlp-testbed",
  "jackin-process",
  "jackin-protocol",
+ "jackin-runtime-coordination",
  "jackin-runtime-exec-host",
  "jackin-runtime-host-daemon",
  "jackin-runtime-isolation",
@@ -3598,6 +3599,18 @@ dependencies = [
  "toml",
  "toml_edit",
  "tracing",
+]
+
+[[package]]
+name = "jackin-runtime-coordination"
+version = "0.6.4"
+dependencies = [
+ "hex",
+ "jackin-core",
+ "jackin-telemetry",
+ "nix 0.31.3",
+ "sha2 0.11.0",
+ "tempfile",
 ]
 
 [[package]]

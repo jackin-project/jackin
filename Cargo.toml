@@ -28,6 +28,7 @@ members = [
     "crates/services/jackin-instance-roles",
     "crates/services/jackin-isolation",
     "crates/services/jackin-runtime",
+    "crates/services/jackin-runtime-coordination",
     "crates/services/jackin-runtime-exec-host",
     "crates/services/jackin-runtime-host-daemon",
     "crates/services/jackin-runtime-isolation",
@@ -137,6 +138,7 @@ jackin-process = { version = "0.6.4", path = "crates/core/jackin-process" }
 jackin-process-directory = { version = "0.6.4", path = "crates/core/jackin-process-directory" }
 jackin-protocol = { version = "0.6.4", path = "crates/core/jackin-protocol" }
 jackin-runtime = { version = "0.6.4", path = "crates/services/jackin-runtime" }
+jackin-runtime-coordination = { version = "0.6.4", path = "crates/services/jackin-runtime-coordination" }
 jackin-runtime-exec-host = { version = "0.6.4", path = "crates/services/jackin-runtime-exec-host" }
 jackin-runtime-host-daemon = { version = "0.6.4", path = "crates/services/jackin-runtime-host-daemon" }
 jackin-runtime-isolation = { version = "0.6.4", path = "crates/services/jackin-runtime-isolation" }
