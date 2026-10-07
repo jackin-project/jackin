@@ -9525,3 +9525,204 @@ bound 720.
   `/tmp/jackin-s31-{before,after}-*.txt`
   (kept out of the
   repo).
+
+### Split 92: runtime-launch-dind extraction (M53)
+
+- `jackin-runtime`
+  ->
+  `jackin-runtime`
+  +
+  `jackin-runtime-launch-dind`
+  (T6, landed as
+  `94d989ec`: the
+  whole
+  `launch/launch_dind`
+  module moves --
+  role network +
+  TLS `DinD` sidecar
+  launch plus the
+  kept-sidecar prewarm
+  and its
+  `prewarm-dind.json`
+  retained identity.
+  Max deps are
+  `attach-capsule-ready`
+  / `naming` (T5;
+  `docker`, `instance`
+  T3; `diagnostics`
+  T2; `core`,
+  `telemetry` T0),
+  so the leaf
+  takes T6 per the
+  1+max rule --
+  inside the slice
+  <=T6 target. Zero
+  true hub edges:
+  the three apparent
+  ones resolve through
+  hub re-exports
+  (`super::emit_prewarm_launch_plan`
+  -> `launch-plan`
+  T3;
+  `attach::wait_for_dind`
+  -> `capsule-ready`
+  T5;
+  `cleanup::resolve_optional_container_handle`
+  -> `cleanup-resolve`
+  T4) -- the prior
+  scan graded them
+  T8 because it did
+  not resolve
+  re-exports. Eight
+  items widen
+  (`pub(crate)` /
+  `pub(super)` ->
+  `pub`, forced) plus
+  `PREWARM_STATE_FILE`
+  -> `pub` (the hub
+  `launch_dind`
+  suite names it
+  through `super::*`)
+  plus one
+  `#[derive(Debug)]`
+  on
+  `AdoptedDindSidecar`
+  (forced: the
+  workspace denies
+  missing-debug-implementations
+  on pub types).
+  Shim keeps every
+  `launch_dind::*`
+  path (`pub use`
+  glob: `launch.rs`
+  re-exports four
+  items at full
+  `pub`); both suites
+  (`launch_dind/tests.rs`
+  + `launch` cases)
+  stay byte-identical
+  in the hub. Three
+  hub re-exports lose
+  their last prod
+  user and are pruned
+  (`emit_prewarm_launch_plan`,
+  `resolve_optional_container_handle`
+  retired;
+  `wait_for_dind`
+  stays `#[cfg(test)]`
+  for the attach
+  suite). Triage:
+  per-file tier scan
+  with brace-import
+  expansion and
+  re-export resolution.
+  Next scoped target:
+  `cleanup/dind_gc`
+  -- its single hub
+  edge
+  (`prewarmed_dind_state_container_name`)
+  now resolves to
+  this T6 leaf, so
+  the module grades
+  T7 (max dep
+  `discovery` T6).
+  `failure.rs`
+  `render_exit` stays
+  (universe T7 ->
+  T8; extraction
+  would need
+  observation-inversion).
+  No hub renumber.)
+
+- Verify: `cargo check
+  --locked --workspace
+  --all-targets`
+  green; `cargo fmt
+  --all --check`
+  clean; `cargo clippy`
+  0 errors/warnings
+  on the leaf
+  (`--all-targets -D
+  warnings`) + hub
+  lib (`-D warnings`;
+  hub `--all-targets`
+  keeps its 6
+  pre-existing
+  test-only errors,
+  byte-identical to
+  base). `cargo nextest
+  list --workspace
+  --all-targets`: 7277
+  -> 7277,
+  byte-identical (0
+  relocations; 0
+  dropped, 0 added).
+  `nextest run`:
+  433/433 runtime
+  green (1 skipped,
+  pre-existing; one
+  full-suite pass
+  flagged 1 LEAK in
+  the untouched
+  `agent_mounts_for_codex`
+  test, isolated PASS
+  + clean rerun
+  proved a load
+  flake) + 31/31 app
+  `load_cmd` /
+  `prewarm` green;
+  the leaf has no
+  tests (coverage in
+  the hub suites).
+  `alint check`:
+  180 violations /
+  11 failing,
+  counts steady (1
+  relocation: the
+  size-file-400
+  finding moves with
+  `launch_dind.rs`
+  hub -> leaf path;
+  zero new rows).
+  `check-gaps`:
+  12 -> 12 (hub
+  10094 -> 9348
+  prod code lines,
+  78 prod files
+  unchanged; xtask
+  26304 -> 26305
+  (+1 TIERS row);
+  leaf fits both
+  budgets, no SIZE
+  finding).
+  `ratchet.toml`: 3
+  new rows (README
+  bytes 1726,
+  public-surface 1,
+  too-many-lines 1)
+  + hub
+  too-many-lines
+  tighten 4 -> 3;
+  gate output
+  identical to base
+  (56 pre-existing).
+  `lint arch
+  --strict`: 3
+  pre-existing
+  no-tier
+  byte-identical,
+  zero direction
+  violations;
+  `lint headers`
+  stays at the
+  base 2; `lint
+  tests` OK; `lint
+  readme-freshness` /
+  `files` / `agents` /
+  `suppressions`
+  unchanged.
+
+- Raw outputs:
+  `/tmp/jackin-s32-{before,after}-*.txt`
+  (kept out of the
+  repo).
