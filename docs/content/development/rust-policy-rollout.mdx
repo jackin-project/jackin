@@ -3132,3 +3132,87 @@ bound 720.
 - Raw outputs:
   `/tmp/s7-s43-{pre,post}-*.txt`
   (kept out of the repo).
+
+### Split 44: runtime-coordination extraction (M6)
+
+- `jackin-runtime` ->
+  `jackin-runtime` +
+  `jackin-runtime-coordination`
+  (T1: the whole
+  `runtime::coordination`
+  module moves — roots,
+  locks, `tests.rs`, the 1
+  suite + support). First
+  M-split under
+  `runtime/`: zero
+  `crate::`/`super::`
+  escapes, so no cross-leaf
+  edges at all. Visibility
+  widens mechanically
+  (`pub(crate)` -> `pub`,
+  8 fns); the shim keeps
+  `pub(crate)` (parent mod
+  is crate-local, so a
+  `pub` glob trips
+  `unreachable_pub`).
+  `runtime/src/runtime/coordination.rs`
+  becomes a 1-line
+  re-export shim, so every
+  `jackin_runtime::runtime::coordination::*`
+  path stays stable. Tier:
+  names only T0 core +
+  telemetry, so it takes
+  T1; `jackin-runtime`
+  stays T8, no renumber
+  cascade. New-crate deps:
+  core, telemetry, hex,
+  sha2, unix-gated nix
+  (`fs`, `user`); dev-deps
+  add tempfile (lockfile
+  +1 package, +7 edges).
+  Policy registries: +1 owned
+  package (`library`).
+- Verify: `cargo check --locked --workspace
+  --all-targets` green; `cargo fmt --all
+  --check` clean; `cargo clippy` 0
+  errors on the new crate,
+  `jackin-runtime` drops 8
+  -> 7 pre-existing errors
+  (the stale
+  `#[expect(clippy::unwrap_used)]`
+  in the moved support file
+  — already unfulfilled at
+  baseline, replaced by a
+  comment since
+  `allow-unwrap-in-tests`
+  covers it and
+  `allow_attributes`
+  forbids `#[allow]`).
+  `cargo nextest list --workspace --all-targets`:
+  7277 -> 7277 (11 relocations map
+  1:1 by name: runtime ->
+  coordination; 0 dropped, 0 added).
+  `nextest run`: 857/857 runtime
+  (846) + coordination (11).
+  `alint check`: 192 violations /
+  11 failing unchanged.
+  `check-gaps`: 22 -> 22
+  (runtime `SIZE-001/002` persist:
+  56092 -> 55437 code lines, 278 ->
+  275 files; new crate fits at 738
+  raw / 6 files).
+  `GAP-TEST-001/002/003` stay 0/0/0.
+  `ratchet.toml`: +3 rows
+  (agent-doc-bytes README 869,
+  public-surface 1,
+  rust-function-complexity 23),
+  failures back to baseline
+  61 -> 61 (drifted from 58
+  via other branch activity).
+  `lint arch`: missing tiers stay 3, zero
+  direction violations; `lint
+  headers` stays at the base 2; `lint
+  tests` OK.
+- Raw outputs:
+  `/tmp/s7-s44-{pre,post}-*.txt`
+  (kept out of the repo).

@@ -647,6 +647,9 @@ bound = 2507
 key = "crates/services/jackin-runtime/README.md"
 bound = 3545
 [[family.entry]]
+key = "crates/services/jackin-runtime-coordination/README.md"
+bound = 869
+[[family.entry]]
 key = "crates/services/jackin-runtime-exec-host/README.md"
 bound = 965
 [[family.entry]]
@@ -895,6 +898,9 @@ bound = 7
 key = "jackin-runtime"
 bound = 8
 [[family.entry]]
+key = "jackin-runtime-coordination"
+bound = 1
+[[family.entry]]
 key = "jackin-runtime-exec-host"
 bound = 1
 [[family.entry]]
@@ -1046,6 +1052,9 @@ bound = 27
 [[family.entry]]
 key = "jackin-protocol"
 bound = 74
+[[family.entry]]
+key = "jackin-runtime-coordination"
+bound = 23
 [[family.entry]]
 key = "jackin-runtime"
 bound = 86

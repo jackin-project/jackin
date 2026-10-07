@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-#[expect(
-    clippy::unwrap_used,
-    reason = "filesystem race fixture must fail immediately if the expected syscall boundary is absent"
-)]
+
+// Filesystem race fixture: must fail immediately (unwrap) if the expected
+// syscall boundary is absent. `allow-unwrap-in-tests` covers the lint;
+// no attribute needed here.
 pub(super) fn canonicalize_with_appearing_directory(
     ancestor: &Path,
     raced: &Path,
