@@ -4,8 +4,8 @@
 
 use jackin_protocol::control::FocusedUsageView;
 
-use super::super::HostSurfaceId;
 use super::CanonicalAccountIdentity;
+use jackin_usage_host_presentation::HostSurfaceId;
 
 /// Stable key for a focused usage view after exact provider canonicalization.
 #[must_use]

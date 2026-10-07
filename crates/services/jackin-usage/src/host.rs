@@ -6,7 +6,7 @@
 //! Provider work and shared state are owned by the host usage broker. This
 //! runtime holds presentation state only.
 
-mod accounts;
+mod account_catalog_stores;
 mod broker;
 mod config;
 mod credential_resolver;
@@ -42,13 +42,10 @@ use jackin_protocol::usage_broker::{
     UsageAccountCapability, UsageGenerationView, UsageProjectionV1, UsageRefreshPhase,
 };
 
+use jackin_usage_host_accounts as accounts;
 use jackin_usage_provider_core::{UsageCache, UsageFormatPrefs};
 
-pub use accounts::{
-    AccountLifecycle, AccountProvenance, CanonicalAccountIdentity, CanonicalAccountSubject,
-    HostAccountDescriptor, account_key_for_view, canonical_account_id_for_view, min_remaining,
-    short_account_identity,
-};
+pub(crate) use account_catalog_stores::HostAccountCatalogStores;
 pub use broker::{
     ForwardedUsageSources, UsageBrokerClient, UsageBrokerConfig, UsageBrokerHandle,
     ensure_usage_broker, ensure_usage_broker_process, ensure_usage_broker_with_executor,
@@ -77,6 +74,11 @@ pub use discovery::{
     UsageDiscoveryCatalog, UsageDiscoveryDiagnostic, UsageDiscoveryIssue, UsageDiscoveryScope,
     UsageSourceCandidateDescriptor, ValidatedUsageDiscovery, discover_usage_sources,
     host_credential_root_matrix, validate_usage_sources,
+};
+pub use jackin_usage_host_accounts::{
+    AccountLifecycle, AccountProvenance, CanonicalAccountIdentity, CanonicalAccountSubject,
+    HostAccountDescriptor, account_key_for_view, canonical_account_id_for_view, min_remaining,
+    short_account_identity,
 };
 pub use jackin_usage_host_presentation::{HostEventBatch, HostUsageEvent};
 pub use jackin_usage_host_presentation::{HostOverviewRow, HostProviderGlanceRow};

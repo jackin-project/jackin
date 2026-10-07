@@ -3651,6 +3651,7 @@ dependencies = [
  "jackin-telemetry",
  "jackin-usage-coordinator",
  "jackin-usage-credential-snapshots",
+ "jackin-usage-host-accounts",
  "jackin-usage-host-credentials",
  "jackin-usage-host-presentation",
  "jackin-usage-output",
@@ -3725,6 +3726,19 @@ dependencies = [
  "jackin-usage",
  "jackin-usage-provider-core",
  "tempfile",
+]
+
+[[package]]
+name = "jackin-usage-host-accounts"
+version = "0.6.4"
+dependencies = [
+ "chrono",
+ "jackin-core",
+ "jackin-protocol",
+ "jackin-usage-host-presentation",
+ "jackin-usage-provider-core",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

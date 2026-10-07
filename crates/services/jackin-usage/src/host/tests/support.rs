@@ -344,3 +344,7 @@ pub(super) fn full_broker_socket_path(data_dir: &Path) -> PathBuf {
         .join("run")
         .join("usage-broker.sock")
 }
+
+pub(super) fn selected_accounts_path(dir: &Path) -> PathBuf {
+    accounts::selected_accounts_path(dir, HOST_USAGE_STATE_REL)
+}

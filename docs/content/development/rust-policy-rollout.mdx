@@ -2035,3 +2035,64 @@ passes.
 - Raw outputs:
   `/tmp/s11-split25-{before,after}.txt`
   (kept out of the repo).
+
+### Split 26: usage-host-accounts extraction (H3)
+
+- `jackin-usage` -> `jackin-usage` +
+  `jackin-usage-host-accounts` (T3:
+  `host/accounts.rs` -> `lib.rs`
+  re-export root + 5 module files moved
+  flat; `lib.rs` carries the ownership
+  header). Two same-tier/upward edges
+  move behind seams, V16-style: durable
+  reads go through `AccountCatalogStores`
+  (the T4 host projects stored rows to
+  their views, the only field the
+  catalog ever consumed) and the
+  membership parameter becomes generic
+  over `AccountMembershipDescriptor`
+  (five getters over discovery
+  descriptors, implemented once by the
+  T4 host, which alone may read the
+  `pub(crate)` identity field). Both
+  implementations live in a new tiny
+  `host/account_catalog_stores.rs`. The
+  state-dir suffix becomes a
+  `selected_accounts_path` parameter
+  (8 call sites pass the unchanged
+  const); in-crate `accounts::` paths
+  keep working through a private
+  re-export alias, and the flattened
+  public paths are unchanged.
+- Verify: `cargo check --locked --workspace
+  --all-targets` green; `cargo fmt --all
+  --check` clean; `cargo clippy` 0
+  errors, 0 warnings on both touched
+  packages. `cargo nextest list
+  --workspace --all-targets`: 7276 ->
+  7277, delta is exactly +1 (one new
+  seam test proving durable rows
+  materialize through the projection;
+  zero moved, zero dropped).
+  `nextest run`: 407/407 usage + 0/0
+  accounts. No contract fixture
+  entries name accounts paths, so no
+  remap. `alint check`: 197 -> 197
+  (the new test and a `rustfmt` wrap
+  briefly pushed two case files over
+  400 lines; a shared test helper and
+  a smaller host file keep every file
+  at or under the bound).
+  `check-gaps`: 27 -> 27 (usage
+  `SIZE-001` 26524 -> 26079 lines,
+  `SIZE-002` 141 -> 136 files);
+  `GAP-TEST-001/002/003` stay 0/0/0.
+  `ratchet.toml`: +1 row (agent-doc
+  1238); violations 60 -> 60 with zero
+  new failures. `lint arch`: missing
+  tiers stay 3, zero direction
+  violations; `lint headers` stays at
+  the base 2; `lint tests` OK.
+- Raw outputs:
+  `/tmp/s11-split26-{before,after}.txt`
+  (kept out of the repo).

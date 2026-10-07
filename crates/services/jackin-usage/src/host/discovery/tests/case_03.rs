@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use crate::host::HostAccountCatalogStores;
 
 #[test]
 fn disc_kimi_missing_selected_credentials_never_uses_other_home_profile() {
@@ -175,12 +176,14 @@ fn disc_dedup_legacy_shared_snapshot_never_creates_active_row() {
     .unwrap();
     let store = temp.path().join("missing.db");
 
+    let empty_membership: &[DiscoveredAccountDescriptor] = &[];
     let catalog = crate::host::accounts::materialize_account_catalog(
         &[],
         &BTreeMap::new(),
         &BTreeMap::new(),
         &store,
-        Some(&[]),
+        Some(empty_membership),
+        &HostAccountCatalogStores,
     )
     .unwrap();
 

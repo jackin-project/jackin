@@ -11,8 +11,8 @@ use serde::{Deserialize, Serialize};
 
 use jackin_usage_provider_core::atomic_write_usage_json;
 
-use super::super::HostSurfaceId;
 use super::{AccountLifecycle, AccountProvenance, CanonicalAccountIdentity};
+use jackin_usage_host_presentation::HostSurfaceId;
 
 /// One account known for a host surface (current broker state or durable history).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -48,7 +48,7 @@ pub struct HostAccountDescriptor {
 
 /// Internal source-complete account record.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct AccountCatalogEntry {
+pub struct AccountCatalogEntry {
     pub identity: CanonicalAccountIdentity,
     pub account_key: String,
     pub account_label: String,
@@ -63,13 +63,13 @@ pub(crate) struct AccountCatalogEntry {
 
 /// One materialization of every durable/shared/live source.
 #[derive(Debug, Default)]
-pub(crate) struct AccountCatalog {
+pub struct AccountCatalog {
     pub(crate) entries: BTreeMap<(HostSurfaceId, String), AccountCatalogEntry>,
     pub(crate) provider_states: BTreeMap<HostSurfaceId, FocusedUsageView>,
 }
 
 impl AccountCatalog {
-    pub(crate) fn entries_for_surface(&self, surface: HostSurfaceId) -> Vec<&AccountCatalogEntry> {
+    pub fn entries_for_surface(&self, surface: HostSurfaceId) -> Vec<&AccountCatalogEntry> {
         let mut entries: Vec<_> = self
             .entries
             .iter()
@@ -84,15 +84,15 @@ impl AccountCatalog {
         entries
     }
 
-    pub(crate) fn entry(&self, surface: HostSurfaceId, key: &str) -> Option<&AccountCatalogEntry> {
+    pub fn entry(&self, surface: HostSurfaceId, key: &str) -> Option<&AccountCatalogEntry> {
         self.entries.get(&(surface, key.to_owned()))
     }
 
-    pub(crate) fn provider_state(&self, surface: HostSurfaceId) -> Option<&FocusedUsageView> {
+    pub fn provider_state(&self, surface: HostSurfaceId) -> Option<&FocusedUsageView> {
         self.provider_states.get(&surface)
     }
 
-    pub(crate) fn preferred_current_key(&self, surface: HostSurfaceId) -> Option<String> {
+    pub fn preferred_current_key(&self, surface: HostSurfaceId) -> Option<String> {
         self.entries_for_surface(surface)
             .into_iter()
             .filter(|entry| entry.lifecycle == AccountLifecycle::Current)
@@ -115,13 +115,11 @@ pub(crate) struct SelectedAccountsFile {
     selected: HashMap<String, String>,
 }
 
-pub(crate) fn selected_accounts_path(data_dir: &Path) -> PathBuf {
-    data_dir
-        .join(super::super::HOST_USAGE_STATE_REL)
-        .join("selected-accounts.json")
+pub fn selected_accounts_path(data_dir: &Path, state_rel: &str) -> PathBuf {
+    data_dir.join(state_rel).join("selected-accounts.json")
 }
 
-pub(crate) fn load_selected_accounts(path: &Path) -> HashMap<String, String> {
+pub fn load_selected_accounts(path: &Path) -> HashMap<String, String> {
     let Ok(bytes) = fs::read(path) else {
         return HashMap::new();
     };
@@ -130,7 +128,7 @@ pub(crate) fn load_selected_accounts(path: &Path) -> HashMap<String, String> {
         .unwrap_or_default()
 }
 
-pub(crate) fn save_selected_accounts(
+pub fn save_selected_accounts(
     path: &Path,
     selected: &HashMap<String, String>,
 ) -> Result<(), String> {

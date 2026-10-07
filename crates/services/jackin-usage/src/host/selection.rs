@@ -3,9 +3,9 @@
 //! `HostUsageRuntime` account selection and catalog.
 
 use super::{
-    HostAccountDescriptor, HostSelectedAccountRoute, HostSurfaceId, HostUsageRuntime,
-    SELECTED_ACCOUNT_UNAVAILABLE_NOTICE, account_descriptor, accounts, host_snapshot_store_path,
-    selected_account_unavailable_view,
+    HOST_USAGE_STATE_REL, HostAccountCatalogStores, HostAccountDescriptor,
+    HostSelectedAccountRoute, HostSurfaceId, HostUsageRuntime, SELECTED_ACCOUNT_UNAVAILABLE_NOTICE,
+    account_descriptor, accounts, host_snapshot_store_path, selected_account_unavailable_view,
 };
 
 use jackin_protocol::control::FocusedUsageView;
@@ -69,7 +69,7 @@ impl HostUsageRuntime {
                 .insert(surface.id().to_owned(), account_key.to_owned());
         }
         if let Some(dir) = &self.data_dir {
-            let path = accounts::selected_accounts_path(dir);
+            let path = accounts::selected_accounts_path(dir, HOST_USAGE_STATE_REL);
             accounts::save_selected_accounts(&path, &self.selected_accounts)?;
         }
         self.push_event(
@@ -103,6 +103,7 @@ impl HostUsageRuntime {
             self.discovery
                 .as_ref()
                 .map(|discovery| discovery.accounts.as_slice()),
+            &HostAccountCatalogStores,
         )
     }
 
@@ -127,7 +128,7 @@ impl HostUsageRuntime {
             && let Some(data_dir) = &self.data_dir
         {
             accounts::save_selected_accounts(
-                &accounts::selected_accounts_path(data_dir),
+                &accounts::selected_accounts_path(data_dir, HOST_USAGE_STATE_REL),
                 &self.selected_accounts,
             )?;
         }

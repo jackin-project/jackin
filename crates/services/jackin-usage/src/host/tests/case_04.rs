@@ -85,8 +85,7 @@ fn removed_last_selected_account_keeps_unavailable_provider_and_restores_exact_k
                 .all(|row| row.surface_id != "codex")
         );
         assert_eq!(
-            accounts::load_selected_accounts(&accounts::selected_accounts_path(dir.path()))
-                .get("codex"),
+            accounts::load_selected_accounts(&selected_accounts_path(dir.path())).get("codex"),
             Some(&key)
         );
 
@@ -366,7 +365,7 @@ fn canon_sel_stale_persisted_key_remains_explicitly_unavailable() {
     let dir = tempfile::tempdir().expect("tempdir");
     let mut selected = HashMap::new();
     selected.insert("codex".to_owned(), "sha256:unknown".to_owned());
-    accounts::save_selected_accounts(&accounts::selected_accounts_path(dir.path()), &selected)
+    accounts::save_selected_accounts(&selected_accounts_path(dir.path()), &selected)
         .expect("seed stale selection");
 
     let mut runtime = open_runtime(dir.path());
@@ -388,6 +387,6 @@ fn canon_sel_stale_persisted_key_remains_explicitly_unavailable() {
         snapshot.last_error.as_deref(),
         Some(SELECTED_ACCOUNT_UNAVAILABLE_NOTICE)
     );
-    let persisted = accounts::load_selected_accounts(&accounts::selected_accounts_path(dir.path()));
+    let persisted = accounts::load_selected_accounts(&selected_accounts_path(dir.path()));
     assert_eq!(persisted.get("codex"), Some(&"sha256:unknown".to_owned()));
 }

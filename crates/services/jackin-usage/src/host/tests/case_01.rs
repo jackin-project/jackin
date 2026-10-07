@@ -303,7 +303,7 @@ fn selected_account_route_resolves_during_cold_placeholder_without_sibling_fallb
     let dir = tempfile::tempdir().expect("tempdir");
     let key = "persisted-codex-key";
     let selected = HashMap::from([("codex".to_owned(), key.to_owned())]);
-    accounts::save_selected_accounts(&accounts::selected_accounts_path(dir.path()), &selected)
+    accounts::save_selected_accounts(&selected_accounts_path(dir.path()), &selected)
         .expect("seed persisted selection");
     let mut runtime = open_runtime(dir.path());
 

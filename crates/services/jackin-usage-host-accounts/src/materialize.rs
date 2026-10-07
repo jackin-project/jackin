@@ -8,21 +8,50 @@ use std::path::Path;
 
 use jackin_protocol::control::FocusedUsageView;
 
-use crate::usage_snapshot_store;
-
-use super::super::HostSurfaceId;
 use super::{
     AccountCatalog, AccountCatalogEntry, AccountLifecycle, AccountProvenance,
     CanonicalAccountIdentity, lifecycle_rank, surface_for_view,
 };
+use jackin_usage_host_presentation::HostSurfaceId;
+
+/// Durable snapshot reads for catalog materialization.
+///
+/// The snapshot store is a same-tier sibling, so the T4 host implements
+/// this seam by projecting stored rows to their views.
+pub trait AccountCatalogStores {
+    /// Load every stored account view under `store_path`.
+    fn load_stored_views(
+        &self,
+        store_path: &Path,
+        now_epoch: i64,
+    ) -> Result<Vec<FocusedUsageView>, String>;
+}
+
+/// Current-membership account evidence consumed during materialization.
+///
+/// Implemented once by the T4 host for discovery descriptors; the
+/// catalog only reads these accessors, never discovery types.
+pub trait AccountMembershipDescriptor {
+    /// Exact provider surface id.
+    fn surface_id(&self) -> &str;
+    /// Stable canonical account key.
+    fn account_key(&self) -> &str;
+    /// Authenticated provider label.
+    fn account_label(&self) -> &str;
+    /// Effective config scopes contributing this account.
+    fn provenance(&self) -> &[String];
+    /// Canonical identity evidence.
+    fn identity(&self) -> CanonicalAccountIdentity;
+}
 
 /// Build one catalog by scanning each external source exactly once.
-pub(crate) fn materialize_account_catalog(
+pub fn materialize_account_catalog<M: AccountMembershipDescriptor>(
     live_views: &[(HostSurfaceId, FocusedUsageView, bool)],
     discovered_views: &BTreeMap<(HostSurfaceId, String), FocusedUsageView>,
     discovered_provider_views: &BTreeMap<HostSurfaceId, FocusedUsageView>,
     store_path: &Path,
-    membership: Option<&[super::super::DiscoveredAccountDescriptor]>,
+    membership: Option<&[M]>,
+    stores: &dyn AccountCatalogStores,
 ) -> Result<AccountCatalog, String> {
     let mut catalog = AccountCatalog::default();
     let include_external: BTreeMap<_, _> = live_views
@@ -31,24 +60,21 @@ pub(crate) fn materialize_account_catalog(
         .collect();
 
     if store_path.exists() {
-        for stored in usage_snapshot_store::load_all_account_usage_views(
-            store_path,
-            chrono::Utc::now().timestamp(),
-        )? {
-            let Some(surface) = surface_for_view(&stored.view) else {
+        for view in stores.load_stored_views(store_path, chrono::Utc::now().timestamp())? {
+            let Some(surface) = surface_for_view(&view) else {
                 continue;
             };
             if !include_external.get(&surface).copied().unwrap_or(true) {
                 continue;
             }
-            let identity = membership_identity(membership, surface, &stored.view);
+            let identity = membership_identity(membership, surface, &view);
             if membership.is_some() && identity.is_none() {
                 continue;
             }
             merge_view(
                 &mut catalog,
                 surface,
-                stored.view,
+                view,
                 if membership.is_some() {
                     AccountLifecycle::Current
                 } else {
@@ -83,7 +109,7 @@ pub(crate) fn materialize_account_catalog(
     if let Some(membership) = membership {
         for ((surface, account_key), view) in discovered_views {
             let Some(account) = membership.iter().find(|account| {
-                account.surface_id == surface.id() && account.account_key == *account_key
+                account.surface_id() == surface.id() && account.account_key() == *account_key
             }) else {
                 continue;
             };
@@ -93,7 +119,7 @@ pub(crate) fn materialize_account_catalog(
                 view.clone(),
                 AccountLifecycle::Current,
                 AccountProvenance::ConfiguredSource,
-                Some(account.identity.clone()),
+                Some(account.identity()),
             );
         }
     }
@@ -103,8 +129,8 @@ pub(crate) fn materialize_account_catalog(
     Ok(catalog)
 }
 
-pub(crate) fn membership_identity(
-    membership: Option<&[super::super::DiscoveredAccountDescriptor]>,
+pub(crate) fn membership_identity<M: AccountMembershipDescriptor>(
+    membership: Option<&[M]>,
     surface: HostSurfaceId,
     view: &FocusedUsageView,
 ) -> Option<CanonicalAccountIdentity> {
@@ -115,40 +141,42 @@ pub(crate) fn membership_identity(
     let routing_key = CanonicalAccountIdentity::from_view(surface, view)?.account_key();
     membership
         .iter()
-        .find(|account| account.surface_id == surface.id() && account.account_key == routing_key)
-        .map(|account| account.identity.clone())
+        .find(|account| {
+            account.surface_id() == surface.id() && account.account_key() == routing_key
+        })
+        .map(AccountMembershipDescriptor::identity)
 }
 
-pub(crate) fn merge_discovered_placeholders(
+pub(crate) fn merge_discovered_placeholders<M: AccountMembershipDescriptor>(
     catalog: &mut AccountCatalog,
-    membership: &[super::super::DiscoveredAccountDescriptor],
+    membership: &[M],
 ) {
     for account in membership {
-        let surface = account.identity.surface;
-        let key = (surface, account.account_key.clone());
+        let surface = account.identity().surface;
+        let key = (surface, account.account_key().to_owned());
         if let Some(entry) = catalog.entries.get_mut(&key) {
             entry
                 .discovery_provenance
-                .extend(account.provenance.iter().cloned());
+                .extend(account.provenance().iter().cloned());
             entry.lifecycle = AccountLifecycle::Current;
             continue;
         }
         let mut view =
             FocusedUsageView::refreshing(surface.provider_label(), chrono::Utc::now().timestamp());
         view.focused_agent = Some(surface.agent_slug().to_owned());
-        view.account.account_label = account.account_label.clone();
+        view.account.account_label = account.account_label().to_owned();
         view.updated_label = "Not refreshed".to_owned();
         view.last_error = None;
         catalog.entries.insert(
             key,
             AccountCatalogEntry {
-                identity: account.identity.clone(),
-                account_key: account.account_key.clone(),
-                account_label: account.account_label.clone(),
+                identity: account.identity(),
+                account_key: account.account_key().to_owned(),
+                account_label: account.account_label().to_owned(),
                 username: None,
                 plan_label: None,
                 provenance: BTreeSet::new(),
-                discovery_provenance: account.provenance.iter().cloned().collect(),
+                discovery_provenance: account.provenance().iter().cloned().collect(),
                 lifecycle: AccountLifecycle::Current,
                 fetched_at_epoch: view.fetched_at_epoch,
                 view,

@@ -3,10 +3,10 @@
 //! `HostUsageRuntime` open and shutdown lifecycle.
 
 use super::{
-    HostProbePolicy, HostRuntimeConfig, HostSurfaceId, HostUsageEvent, HostUsageRuntime,
-    MAX_EVENT_LOG, ProviderCredentialEnvResolver, ValidatedUsageDiscovery, accounts,
-    canonical_instance_id, discover_usage_sources, enabled_surface_ids, host_accounts_path,
-    validate_usage_sources,
+    HOST_USAGE_STATE_REL, HostProbePolicy, HostRuntimeConfig, HostSurfaceId, HostUsageEvent,
+    HostUsageRuntime, MAX_EVENT_LOG, ProviderCredentialEnvResolver, ValidatedUsageDiscovery,
+    accounts, canonical_instance_id, discover_usage_sources, enabled_surface_ids,
+    host_accounts_path, validate_usage_sources,
 };
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
@@ -110,7 +110,8 @@ impl HostUsageRuntime {
                 agent.slug()
             );
         }
-        let selected_path = accounts::selected_accounts_path(&config.data_dir);
+        let selected_path =
+            accounts::selected_accounts_path(&config.data_dir, HOST_USAGE_STATE_REL);
         self.selected_accounts = accounts::load_selected_accounts(&selected_path);
         self.probe_policy = config.probe_policy;
         self.discovery_scope = Some(config.discovery_scope);

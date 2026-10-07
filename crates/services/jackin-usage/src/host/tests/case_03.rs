@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use crate::usage_snapshot_store::store_usage_snapshots;
 
 #[test]
 fn compact_depleted_with_and_without_resets_at() {
@@ -249,7 +250,7 @@ fn multi_account_list_select_and_snapshot() {
         Some(SELECTED_ACCOUNT_UNAVAILABLE_NOTICE)
     );
     assert_ne!(unavailable.account.account_label, "work@company.com");
-    let persisted = accounts::load_selected_accounts(&accounts::selected_accounts_path(dir.path()));
+    let persisted = accounts::load_selected_accounts(&selected_accounts_path(dir.path()));
     assert_eq!(persisted.get("claude"), Some(&key_a));
 
     let glance = runtime
@@ -327,4 +328,26 @@ fn multi_account_list_select_and_snapshot() {
     let snap_b = runtime.snapshot("claude").expect("snapshot B");
     assert_eq!(snap_b.account.account_label, "work@company.com");
     assert_eq!(snap_b.buckets[0].remaining_percent, Some(20));
+}
+
+#[test]
+fn materialize_account_catalog_reads_durable_history_through_snapshot_seam() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let view = codex_fixture_view();
+    let store_path = host_snapshot_store_path(dir.path());
+    store_usage_snapshots(&store_path, std::slice::from_ref(&view)).expect("seed store");
+
+    let mut runtime = open_runtime(dir.path());
+    let catalog = runtime
+        .materialize_account_catalog()
+        .expect("account catalog");
+
+    let entries = catalog.entries_for_surface(HostSurfaceId::Codex);
+    let historical: Vec<_> = entries
+        .iter()
+        .filter(|entry| entry.lifecycle == AccountLifecycle::Historical)
+        .collect();
+    assert_eq!(historical.len(), 1, "durable rows must materialize once");
+    assert_eq!(historical[0].account_label, "codex@example.com");
+    assert!(!historical[0].view.buckets.is_empty());
 }
