@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 use std::path::Path;
 
-use crate::store_backend::{self, DbOperation};
+use jackin_usage_store_backend::{self, DbOperation};
 
 use jackin_protocol::control::{
     FocusedAccountHeader, FocusedUsageView, QuotaBucketView, UsageConfidence, UsageSnapshotStatus,
@@ -239,7 +239,7 @@ pub(crate) fn load_all_account_snapshot_rows(
     let path = path.to_path_buf();
     block_on_store(async move {
         let conn = open_store(&path).await?;
-        let mut rows = store_backend::operation(
+        let mut rows = jackin_usage_store_backend::operation(
             DbOperation::Select,
             conn.query(
                 "

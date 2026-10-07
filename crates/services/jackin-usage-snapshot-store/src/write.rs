@@ -7,7 +7,7 @@ use std::future::Future;
 use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 
-use crate::store_backend::{Connection, connect_local};
+use jackin_usage_store_backend::{Connection, connect_local};
 
 use jackin_protocol::control::FocusedUsageView;
 
@@ -15,7 +15,7 @@ use jackin_protocol::control::FocusedUsageView;
 use super::CONNECTION_BUILDS;
 use super::{account_snapshot_rows, initialize_schema, upsert_account_snapshot_rows};
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn store_usage_snapshot(path: &Path, view: &FocusedUsageView) -> Result<(), String> {
     store_usage_snapshots(path, std::slice::from_ref(view))
 }

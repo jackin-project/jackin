@@ -4,12 +4,12 @@
 
 use std::collections::HashSet;
 
-use crate::store_backend::{self, Connection, DbOperation};
+use jackin_usage_store_backend::{self, Connection, DbOperation};
 
 use super::{SCHEMA_VERSION, row_string};
 
 pub(crate) async fn initialize_schema(conn: &Connection) -> Result<(), String> {
-    store_backend::operation(
+    jackin_usage_store_backend::operation(
         DbOperation::Update,
         conn.execute_batch(
             "
@@ -56,7 +56,7 @@ pub(crate) async fn initialize_schema(conn: &Connection) -> Result<(), String> {
     .await
     .map_err(|err| format!("initialize usage snapshot store schema failed: {err}"))?;
     ensure_account_snapshot_columns(conn).await?;
-    store_backend::operation(
+    jackin_usage_store_backend::operation(
         DbOperation::Upsert,
         conn.execute(
             "INSERT INTO _meta (key, value) VALUES ('schema_version', ?1)
@@ -70,7 +70,7 @@ pub(crate) async fn initialize_schema(conn: &Connection) -> Result<(), String> {
 }
 
 pub(crate) async fn ensure_account_snapshot_columns(conn: &Connection) -> Result<(), String> {
-    let mut rows = store_backend::operation(
+    let mut rows = jackin_usage_store_backend::operation(
         DbOperation::Select,
         conn.query("PRAGMA table_info(account_usage_snapshots)", ()),
     )
@@ -127,7 +127,7 @@ pub(crate) async fn ensure_account_snapshot_columns(conn: &Connection) -> Result
         ),
     ] {
         if !columns.contains(name) {
-            store_backend::operation(DbOperation::Update, conn.execute(ddl, ()))
+            jackin_usage_store_backend::operation(DbOperation::Update, conn.execute(ddl, ()))
                 .await
                 .map_err(|err| format!("upgrade telemetry snapshot schema failed: {err}"))?;
         }

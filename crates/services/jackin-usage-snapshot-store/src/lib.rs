@@ -1,7 +1,7 @@
-// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
-// SPDX-License-Identifier: Apache-2.0
-
-//! Capsule-local structured usage telemetry cache.
+//! jackin-usage-snapshot-store: capsule-local usage snapshot cache.
+//!
+//! **Architecture Invariant:** T3.
+//! Entry point: [`store_usage_snapshots`] — persist quota snapshots.
 //!
 //! This is a daemon-owned store under `/jackin/state/`: Capsule writes quota
 //! snapshots after provider refresh and renderers read through the daemon cache,
@@ -17,9 +17,9 @@ mod views;
 mod write;
 
 #[cfg(test)]
-use crate::store_backend::connect_local;
-#[cfg(test)]
 use jackin_core::account_key_hash;
+#[cfg(test)]
+use jackin_usage_store_backend::connect_local;
 
 #[cfg(test)]
 pub(crate) use buckets::{
@@ -44,7 +44,7 @@ pub use views::{
 };
 #[cfg(test)]
 pub(crate) use write::connection_build_count;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub use write::store_usage_snapshot;
 pub use write::store_usage_snapshots;
 pub(crate) use write::{block_on_store, open_store};

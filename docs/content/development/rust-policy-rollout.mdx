@@ -1828,3 +1828,60 @@ passes.
 - Raw outputs:
   `/tmp/s11-split21-{before,after}.txt`
   (kept out of the repo).
+
+### Split 22: usage-snapshot-store extraction (C3)
+
+- `jackin-usage` -> `jackin-usage` +
+  `jackin-usage-snapshot-store` (T3:
+  `usage_snapshot_store.rs` -> `lib.rs`
+  re-export root + 11 module files
+  moved flat; `lib.rs` carries the
+  ownership header). Production code
+  names diagnostics and provider-core
+  (both T2), so T3 is the lowest legal
+  tier. Seven `store_backend` paths
+  re-point at the T1 chokepoint crate
+  (plus import re-sorting from `cargo
+  fmt`). The one `#[cfg(test)] pub`
+  helper used across the boundary
+  (`store_usage_snapshot`, used by
+  host tests) moves behind the
+  established `test-support` feature
+  (`cfg(any(test, feature))` on both
+  definition and re-export, following
+  the provider-codex precedent);
+  production API paths unchanged, and
+  the local `block_on`/`open_store`
+  helpers stay `pub(crate)` (no
+  outside users).
+- Verify: `cargo check --locked --workspace
+  --all-targets` green, plus the new
+  lib checked with the feature both
+  off and on; `cargo fmt --all
+  --check` clean; `cargo clippy` 0
+  errors, 0 warnings on both touched
+  packages. `cargo nextest list
+  --workspace --all-targets`: 7276 ->
+  7276, delta is exactly 12 moved
+  (zero dropped, zero added).
+  `nextest run`: 436/436 usage + 12/12
+  snapshot-store. No contract fixture
+  entries name snapshot-store paths,
+  so no remap. `alint check`: 197 ->
+  197. `check-gaps`: 27 -> 27 (usage
+  `SIZE-001` 29930 -> 28227 lines,
+  `SIZE-002` 178 -> 166 files);
+  `GAP-TEST-001/002/003` stay 0/0/0.
+  `ratchet.toml`: +2 rows (agent-doc
+  1214, complexity snapshot-store 29)
+  and two shrinks (usage public-surface
+  6 -> 5, usage complexity 29 -> 23:
+  the max-29 function moved out);
+  violations 60 -> 60 with zero new
+  failures. `lint arch`: missing tiers
+  stay 3, zero direction violations;
+  `lint headers` stays at the base 2;
+  `lint tests` OK.
+- Raw outputs:
+  `/tmp/s11-split22-{before,after}.txt`
+  (kept out of the repo).

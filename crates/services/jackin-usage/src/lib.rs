@@ -15,7 +15,7 @@ pub use jackin_usage_store_backend as store_backend;
 pub mod telemetry;
 pub mod token_monitor;
 pub mod usage;
-pub mod usage_snapshot_store;
+pub use jackin_usage_snapshot_store as usage_snapshot_store;
 
 #[cfg(test)]
 mod tests;

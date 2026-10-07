@@ -5,9 +5,9 @@
 #[cfg(test)]
 use std::path::Path;
 
-use crate::store_backend::Row;
+use jackin_usage_store_backend::Row;
 #[cfg(test)]
-use crate::store_backend::{self, DbOperation};
+use jackin_usage_store_backend::{self, DbOperation};
 
 #[cfg(test)]
 use jackin_protocol::control::{
@@ -112,7 +112,7 @@ pub(crate) fn stored_account_snapshots(
     let path = path.to_path_buf();
     block_on_store(async move {
         let conn = open_store(&path).await?;
-        let mut rows = store_backend::operation(
+        let mut rows = jackin_usage_store_backend::operation(
             DbOperation::Select,
             conn.query(
                 "
@@ -193,7 +193,7 @@ pub fn schema_version(path: &Path) -> Result<Option<String>, String> {
     let path = path.to_path_buf();
     block_on_store(async move {
         let conn = open_store(&path).await?;
-        let mut rows = store_backend::operation(
+        let mut rows = jackin_usage_store_backend::operation(
             DbOperation::Select,
             conn.query("SELECT value FROM _meta WHERE key = 'schema_version'", ()),
         )

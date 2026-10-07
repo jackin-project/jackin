@@ -3,22 +3,22 @@
 //! Row upsert and quota mapping.
 
 use super::StoredAccountUsageSnapshot;
-use crate::store_backend::{self, Connection, DbOperation, params};
 use jackin_core::account_key_hash;
 use jackin_protocol::control::{FocusedUsageView, QuotaBucketView};
 use jackin_telemetry::ResultTelemetryExt as _;
+use jackin_usage_store_backend::{self, Connection, DbOperation, params};
 
 pub(crate) async fn upsert_account_snapshot_rows(
     conn: &Connection,
     rows: Vec<StoredAccountUsageSnapshot>,
 ) -> Result<(), String> {
     jackin_diagnostics::incr_db_statement("begin");
-    store_backend::operation(DbOperation::Begin, conn.execute("BEGIN", ()))
+    jackin_usage_store_backend::operation(DbOperation::Begin, conn.execute("BEGIN", ()))
         .await
         .map_err(|err| format!("begin telemetry snapshot transaction failed: {err}"))?;
     for row in rows {
         jackin_diagnostics::incr_db_statement("upsert_account_usage_snapshot");
-        if let Err(err) = store_backend::operation(
+        if let Err(err) = jackin_usage_store_backend::operation(
             DbOperation::Upsert,
             conn.execute(
             "
@@ -107,13 +107,13 @@ pub(crate) async fn upsert_account_snapshot_rows(
             // Roll the whole batch back so a mid-batch failure never leaves a
             // partially-written snapshot set; surface the original row error.
             let _rollback =
-                store_backend::operation(DbOperation::Rollback, conn.execute("ROLLBACK", ()))
+                jackin_usage_store_backend::operation(DbOperation::Rollback, conn.execute("ROLLBACK", ()))
                     .await
                     .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::DbError);
             return Err(format!("upsert telemetry account snapshot failed: {err}"));
         }
     }
-    store_backend::operation(DbOperation::Commit, conn.execute("COMMIT", ()))
+    jackin_usage_store_backend::operation(DbOperation::Commit, conn.execute("COMMIT", ()))
         .await
         .map_err(|err| format!("commit telemetry snapshot transaction failed: {err}"))?;
     Ok(())

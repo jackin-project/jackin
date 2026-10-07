@@ -713,6 +713,9 @@ bound = 1408
 key = "crates/services/jackin-usage-store-backend/README.md"
 bound = 894
 [[family.entry]]
+key = "crates/services/jackin-usage-snapshot-store/README.md"
+bound = 1214
+[[family.entry]]
 key = "crates/tools/jackin-xtask/README.md"
 bound = 6113
 [[family.entry]]
@@ -836,7 +839,7 @@ key = "jackin-test-support"
 bound = 7
 [[family.entry]]
 key = "jackin-usage"
-bound = 6
+bound = 5
 [[family.entry]]
 key = "jackin-usage-coordinator"
 bound = 1
@@ -964,6 +967,9 @@ key = "jackin-telemetry"
 bound = 30
 [[family.entry]]
 key = "jackin-usage"
+bound = 23
+[[family.entry]]
+key = "jackin-usage-snapshot-store"
 bound = 29
 [[family.entry]]
 key = "jackin-usage-provider-core"

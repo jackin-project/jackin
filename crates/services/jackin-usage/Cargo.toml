@@ -44,6 +44,7 @@ jackin-usage-output = { workspace = true }
 jackin-usage-credential-snapshots = { workspace = true }
 jackin-usage-coordinator = { workspace = true }
 jackin-usage-store-backend = { workspace = true }
+jackin-usage-snapshot-store = { workspace = true }
 base64 = { workspace = true }
 chrono = { workspace = true, features = ["clock"] }
 httpdate = { workspace = true }
@@ -72,6 +73,7 @@ jackin-diagnostics = { workspace = true, features = ["test-support"] }
 jackin-otlp-testbed = { workspace = true }
 jackin-usage-provider-codex = { workspace = true, features = ["test-support"] }
 jackin-usage-provider-claude = { workspace = true, features = ["test-support"] }
+jackin-usage-snapshot-store = { workspace = true, features = ["test-support"] }
 ratatui = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
