@@ -34,7 +34,7 @@ pub(super) fn production_projection_runtime()
         source: ValidatedCredentialSource::Capability,
     };
     let capability =
-        crate::host::broker::capability_for_binding(&binding, Some("projection-revision"));
+        jackin_usage_discovery::capability_for_binding(&binding, Some("projection-revision"));
     let discovery = ValidatedUsageDiscovery {
         config_generation: Some("projection-revision".to_owned()),
         accounts: vec![DiscoveredAccountDescriptor {

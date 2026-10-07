@@ -12,7 +12,7 @@ use jackin_protocol::usage_broker::{
 
 use super::super::HostUsageRuntime;
 use super::super::discovery::ValidatedCredentialBinding;
-use super::capability_for_binding;
+use jackin_usage_discovery::capability_for_binding;
 
 impl HostUsageRuntime {
     /// Whether this runtime permits host broker provider work.

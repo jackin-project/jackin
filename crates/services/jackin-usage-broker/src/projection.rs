@@ -9,9 +9,9 @@ use jackin_protocol::usage_broker::{
     UsageProjectionSchemaV1, UsageProjectionV1,
 };
 
-use crate::coordinator::{FileProjectionStateStore, ProjectionStateEnvelope};
+use jackin_usage_coordinator::{FileProjectionStateStore, ProjectionStateEnvelope};
 
-use super::{UsageBrokerConfig, unavailable};
+use crate::{UsageBrokerConfig, unavailable};
 
 pub(crate) fn empty_projection(build_id: &str) -> UsageProjectionV1 {
     UsageProjectionV1 {
@@ -46,8 +46,8 @@ pub(crate) fn load_projection(
         // v1 and invalid v2 envelopes are quarantined by the store. The
         // broker deliberately rebuilds an empty projection from current
         // discovery; unavailable state is not safe to overwrite.
-        Err(crate::coordinator::StateStoreError::Corrupt) => None,
-        Err(crate::coordinator::StateStoreError::Unavailable) => return Err(unavailable()),
+        Err(jackin_usage_coordinator::StateStoreError::Corrupt) => None,
+        Err(jackin_usage_coordinator::StateStoreError::Unavailable) => return Err(unavailable()),
     };
     let projection = loaded.as_ref().map_or_else(
         || empty_projection(&config.build_id),

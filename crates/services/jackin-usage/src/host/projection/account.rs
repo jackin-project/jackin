@@ -108,9 +108,9 @@ pub(crate) fn apply_generation_metadata(account: &mut UsageAccountV1, state: &Us
             account.lifecycle = failure_lifecycle(error.kind);
         }
         account.issues = vec![UsageIssueV1 {
-            code: super::super::broker::publish::issue_code(error.kind),
+            code: jackin_usage_broker_publish::issue_code(error.kind),
             scope: UsageIssueScopeV1::Account,
-            recoverability: super::super::broker::publish::issue_recoverability(error.kind),
+            recoverability: jackin_usage_broker_publish::issue_recoverability(error.kind),
             message: error.message.clone(),
             retry_at_epoch: state.retry_at_epoch,
         }];

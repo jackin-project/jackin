@@ -6,9 +6,8 @@ use std::collections::BTreeSet;
 
 use jackin_protocol::usage_broker::UsageAccountCapability;
 
-use super::super::ValidatedUsageDiscovery;
-use super::super::discovery::ValidatedCredentialSource;
-use super::{ForwardedUsageSources, capability_for_binding, forwarding_requirement};
+use crate::{ForwardedUsageSources, capability_for_binding, forwarding_requirement};
+use jackin_usage_discovery::{ValidatedCredentialSource, ValidatedUsageDiscovery};
 /// Derive an exact per-container capability allowlist before broker startup.
 #[must_use]
 pub fn forwarded_usage_capabilities(

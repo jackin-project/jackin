@@ -15,9 +15,9 @@ use jackin_protocol::usage_broker::{
     USAGE_BROKER_MAX_FRAME_BYTES, UsageBrokerRequest, UsageBrokerResponse, UsageCoordinationError,
 };
 
-use crate::coordinator::UsageCoordinator;
+use jackin_usage_coordinator::UsageCoordinator;
 
-use super::{
+use crate::{
     BROKER_CONNECTION_QUEUE, BROKER_CONNECTION_WORKERS, BrokerStartupCleanup, PUBLISH_TICK,
     ServePolicy, dispatch, protocol_error, publish, unavailable, waits,
 };

@@ -6,10 +6,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use jackin_protocol::usage_broker::{UsageAccountCapability, UsageIdentityKindV1};
 
-use super::super::accounts::CanonicalAccountSubject;
-
-use super::super::ValidatedUsageDiscovery;
-use super::{capability_for_binding, publish};
+use crate::{capability_for_binding, publish};
+use jackin_usage_discovery::ValidatedUsageDiscovery;
+use jackin_usage_host_accounts::CanonicalAccountSubject;
 
 /// Preserve the canonical identity evidence that host discovery already
 /// merged before the broker publisher turns generation views into the

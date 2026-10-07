@@ -7,11 +7,11 @@ use std::os::unix::net::UnixStream;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use super::{dispatch, unavailable, write_response};
-use crate::coordinator::UsageCoordinator;
+use crate::{dispatch, unavailable, write_response};
 use jackin_protocol::usage_broker::{
     UsageBrokerOperation, UsageBrokerRequest, UsageBrokerResponse,
 };
+use jackin_usage_coordinator::UsageCoordinator;
 
 // The broker contract includes twenty simultaneous Capsule clients plus Desktop.
 // Excess admission fails immediately; no short wait can queue behind a long one.
@@ -20,7 +20,7 @@ const MAX_WAIT_TASKS: usize = 32;
 pub(super) struct WaitPool {
     coordinator: Arc<UsageCoordinator>,
     build_id: Arc<str>,
-    publisher: super::publish::ProjectionPublisher,
+    publisher: crate::publish::ProjectionPublisher,
     workers: Mutex<Vec<std::thread::JoinHandle<()>>>,
 }
 
@@ -28,7 +28,7 @@ impl WaitPool {
     pub(super) fn new(
         coordinator: Arc<UsageCoordinator>,
         build_id: Arc<str>,
-        publisher: super::publish::ProjectionPublisher,
+        publisher: crate::publish::ProjectionPublisher,
     ) -> Self {
         Self {
             coordinator,

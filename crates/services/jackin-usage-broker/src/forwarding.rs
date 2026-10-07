@@ -4,9 +4,9 @@
 
 use std::collections::BTreeSet;
 
-use super::super::discovery::{ValidatedCredentialBinding, ValidatedCredentialSource};
+use jackin_usage_discovery::{ValidatedCredentialBinding, ValidatedCredentialSource};
 
-use super::{ForwardedUsageSources, ForwardingRequirement, credential_scope_has_matching_proof};
+use crate::{ForwardedUsageSources, ForwardingRequirement, credential_scope_has_matching_proof};
 
 /// Compare the authority that a refresh would actually use. Launch aliases
 /// may differ, but canonical identity, semantic dispatch, opaque handle, and

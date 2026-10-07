@@ -151,46 +151,6 @@ impl ProviderCredentialEnvResolver for TypedRateLimitResolver {
     }
 }
 
-pub(super) struct FixedHandleResolver;
-
-impl ProviderCredentialEnvResolver for FixedHandleResolver {
-    fn resolve_provider_credentials(
-        &self,
-        config: &AppConfig,
-        _workspace: Option<&WorkspaceName>,
-        _role: Option<&str>,
-        keys: &[UsageCredentialEnvName],
-    ) -> Vec<ProviderCredentialEnvResolution> {
-        keys.iter()
-            .filter(|entry| config.env.contains_key(entry.name))
-            .map(|entry| ProviderCredentialEnvResolution {
-                key: entry.name.to_owned(),
-                outcome: crate::host::ProviderCredentialEnvOutcome::Resolved(
-                    OpaqueCredentialHandle::new("fixture-credential-1"),
-                ),
-            })
-            .collect()
-    }
-}
-
-pub(super) fn failed_generation(
-    capability: &UsageAccountCapability,
-    kind: UsageCoordinationErrorKind,
-    message: &str,
-) -> UsageGenerationView {
-    UsageGenerationView {
-        capability: capability.clone(),
-        generation: 1,
-        phase: UsageRefreshPhase::Failed,
-        snapshot: None,
-        error: Some(UsageCoordinationError {
-            kind,
-            message: message.to_owned(),
-        }),
-        retry_at_epoch: None,
-    }
-}
-
 #[derive(Default)]
 pub(super) struct RecordingRefreshResolver {
     pub(super) calls: Mutex<Vec<(String, OpaqueCredentialHandle)>>,
@@ -263,7 +223,7 @@ pub(super) fn scripted_discovery(
     generation: Option<&str>,
     members: &[(&str, HostSurfaceId)],
 ) -> ValidatedUsageDiscovery {
-    use crate::host::{CanonicalAccountIdentity, CanonicalAccountSubject};
+    use jackin_usage_host_accounts::{CanonicalAccountIdentity, CanonicalAccountSubject};
 
     ValidatedUsageDiscovery {
         config_generation: generation.map(str::to_owned),

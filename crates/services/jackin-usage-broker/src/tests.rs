@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use super::super::discovery;
+use jackin_usage_discovery as discovery;
 use std::collections::{BTreeMap, BTreeSet};
 
 use std::os::unix::fs::symlink;
@@ -14,7 +14,8 @@ use std::sync::{Arc, Barrier, Mutex};
 
 use std::thread;
 
-use crate::host::{HostSurfaceId, OpaqueCredentialHandle};
+use jackin_usage_host_credentials::OpaqueCredentialHandle;
+use jackin_usage_host_presentation::HostSurfaceId;
 
 use jackin_config::AppConfig;
 
@@ -31,16 +32,18 @@ use jackin_protocol::usage_broker::{
     UsageProjectionRefreshStateV1, UsageRefreshPhase, usage_credential_material_fingerprint,
 };
 
-use crate::coordinator::{ProviderProbeOutcome, UsageProviderExecutor};
-use crate::host::discovery::{
-    ProviderCredentialEnvResolver, ProviderCredentialRefreshOutcome,
-    ProviderCredentialSourceMaterial, ValidatedCredentialBinding, ValidatedCredentialSource,
-    discover_usage_sources, validate_usage_sources,
-};
-use crate::host::{HostUsageRuntime, UsageDiscoveryScope, ValidatedUsageDiscovery};
 use jackin_protocol::usage_broker::{
     USAGE_BROKER_PROTOCOL_VERSION, UsageBrokerOperation, UsageBrokerRequest, UsageBrokerResponse,
-    UsageCoordinationError, UsageCoordinationErrorKind, UsageGenerationView, UsageProjectionV1,
+    UsageCoordinationError, UsageCoordinationErrorKind, UsageProjectionV1,
+};
+use jackin_usage_coordinator::{ProviderProbeOutcome, UsageProviderExecutor};
+use jackin_usage_discovery::{
+    UsageDiscoveryScope, ValidatedCredentialBinding, ValidatedCredentialSource,
+    ValidatedUsageDiscovery, discover_usage_sources, validate_usage_sources,
+};
+use jackin_usage_host_credentials::{
+    ProviderCredentialEnvResolver, ProviderCredentialRefreshOutcome,
+    ProviderCredentialSourceMaterial,
 };
 use std::fs;
 use std::io::Write as _;
@@ -50,14 +53,13 @@ use std::path::Path;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-use super::*;
+use crate::*;
 
-use super::{
+use crate::{
     ensure_usage_broker_with_hooks, probe_with_scope, provider_probe_outcome,
     provider_probe_outcome_with_rate_limit, write_with_deadline,
 };
-
-use crate::host::{ForwardedUsageAccount, ProviderCredentialEnvResolution};
+use jackin_usage_host_credentials::{ForwardedUsageAccount, ProviderCredentialEnvResolution};
 
 mod support;
 use support::*;

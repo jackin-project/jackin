@@ -13,9 +13,9 @@ use std::time::Duration;
 use nix::unistd::geteuid;
 use sha2::{Digest as _, Sha256};
 
-use crate::coordinator::UsageCoordinatorConfig;
+use jackin_usage_coordinator::UsageCoordinatorConfig;
 
-use super::{
+use crate::{
     BROKER_DIR, BROKER_IDLE_EXIT, BROKER_LEASE_DURATION, BROKER_LEASE_RENEWAL, BROKER_RUN_DIR,
     BROKER_SOCKET, BROKER_SOCKET_ALIAS_DIR_PREFIX, UNIX_SOCKET_PATH_LIMIT, UsageBrokerClient,
 };
@@ -80,7 +80,7 @@ impl UsageBrokerConfig {
 /// socket file itself keeps the existing `0600` + ownership checks at bind
 /// time. Distinct data directories map to distinct alias names via the
 /// 64-bit SHA-256 prefix of the full path.
-pub(crate) fn short_socket_alias(full: &Path) -> Option<PathBuf> {
+pub fn short_socket_alias(full: &Path) -> Option<PathBuf> {
     if full.as_os_str().len() < UNIX_SOCKET_PATH_LIMIT {
         return None;
     }

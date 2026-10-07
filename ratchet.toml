@@ -743,6 +743,9 @@ bound = 761
 key = "crates/services/jackin-usage-discovery/README.md"
 bound = 1324
 [[family.entry]]
+key = "crates/services/jackin-usage-broker/README.md"
+bound = 1276
+[[family.entry]]
 key = "crates/tools/jackin-xtask/README.md"
 bound = 6113
 [[family.entry]]
@@ -999,13 +1002,13 @@ bound = 86
 key = "jackin-telemetry"
 bound = 30
 [[family.entry]]
-key = "jackin-usage"
-bound = 23
-[[family.entry]]
 key = "jackin-usage-snapshot-store"
 bound = 29
 [[family.entry]]
 key = "jackin-usage-provider-core"
+bound = 23
+[[family.entry]]
+key = "jackin-usage-broker"
 bound = 23
 [[family.entry]]
 key = "jackin-xtask"

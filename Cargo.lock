@@ -3649,6 +3649,7 @@ dependencies = [
  "jackin-otlp-testbed",
  "jackin-protocol",
  "jackin-telemetry",
+ "jackin-usage-broker",
  "jackin-usage-broker-publish",
  "jackin-usage-broker-wire",
  "jackin-usage-capsule-telemetry",
@@ -3692,6 +3693,30 @@ dependencies = [
  "tower",
  "tracing",
  "url",
+]
+
+[[package]]
+name = "jackin-usage-broker"
+version = "0.6.4"
+dependencies = [
+ "chrono",
+ "jackin-config",
+ "jackin-core",
+ "jackin-protocol",
+ "jackin-telemetry",
+ "jackin-usage-broker-publish",
+ "jackin-usage-broker-wire",
+ "jackin-usage-coordinator",
+ "jackin-usage-discovery",
+ "jackin-usage-host-accounts",
+ "jackin-usage-host-credentials",
+ "jackin-usage-host-presentation",
+ "jackin-usage-provider-core",
+ "nix 0.31.3",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tempfile",
 ]
 
 [[package]]

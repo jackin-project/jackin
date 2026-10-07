@@ -244,7 +244,7 @@ fn probe_budget_propagates_worker_panic_to_coordinator_classification() {
 
 #[test]
 fn slow_activator_stale_caller_catalog_never_wins() {
-    use crate::host::HostSurfaceId;
+    use jackin_usage_host_presentation::HostSurfaceId;
 
     let temp = tempfile::tempdir().unwrap();
     let config = UsageBrokerConfig::for_data_dir(temp.path().to_owned());
@@ -323,7 +323,7 @@ fn slow_activator_stale_caller_catalog_never_wins() {
 
 #[test]
 fn catalog_conflict_retries_with_rediscovery_then_succeeds() {
-    use crate::host::HostSurfaceId;
+    use jackin_usage_host_presentation::HostSurfaceId;
 
     let temp = tempfile::tempdir().unwrap();
     let config = UsageBrokerConfig::for_data_dir(temp.path().to_owned());

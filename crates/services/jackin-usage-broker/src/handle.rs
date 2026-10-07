@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use jackin_protocol::usage_broker::{UsageAccountCapability, UsageCredentialScope};
 
-use super::{ScopedCapability, UsageBrokerClient};
+use crate::{ScopedCapability, UsageBrokerClient};
 
 /// Attached broker plus every host-discovered canonical capability.
 #[derive(Debug, Clone)]

@@ -12,16 +12,18 @@ use jackin_protocol::usage_broker::{
     UsageCredentialScope,
 };
 
-use crate::coordinator::{ProviderProbeOutcome, UsageProviderExecutor};
+use jackin_usage_coordinator::{ProviderProbeOutcome, UsageProviderExecutor};
 
-use super::super::discovery::{ProviderCredentialEnvResolver, ValidatedCredentialBinding};
-use super::super::{UsageDiscoveryScope, ValidatedUsageDiscovery};
-use super::{
+use crate::{
     authorize_credential_binding_group, catalog_discovery_mismatch, catalog_entry_map,
     credential_scope_mismatch, ensure_catalog_matches, grouped_bindings, probe,
     rediscover_all_bindings, rediscover_bindings, rediscover_discovery, refresh_binding_outcome,
     unavailable, unscoped_refresh_binding, usage_catalog_entries,
 };
+use jackin_usage_discovery::{
+    UsageDiscoveryScope, ValidatedCredentialBinding, ValidatedUsageDiscovery,
+};
+use jackin_usage_host_credentials::ProviderCredentialEnvResolver;
 
 pub(crate) struct DiscoveryProviderExecutor {
     pub(crate) bindings: Mutex<BTreeMap<UsageAccountCapability, Vec<ValidatedCredentialBinding>>>,

@@ -19,7 +19,7 @@ use jackin_protocol::usage_broker::{
     UsageAccountCapability, UsageCoordinationError, UsageGenerationView,
 };
 
-use super::UsageBrokerClient;
+use crate::UsageBrokerClient;
 
 impl UsageBrokerClient {
     /// Screen-open path: subscribe to every enabled account and request due

@@ -86,7 +86,7 @@ pub(crate) fn build_canonical_projection(
                     .iter()
                     .find(|binding| binding.identity.as_ref() == Some(&entry.identity))
                     .and_then(|binding| {
-                        broker_generations.get(&super::super::broker::capability_for_binding(
+                        broker_generations.get(&jackin_usage_discovery::capability_for_binding(
                             binding,
                             discovery.config_generation.as_deref(),
                         ))
@@ -162,7 +162,7 @@ pub(crate) fn project_unresolved_capabilities(
                     binding.capability_id == candidate.capability_id && binding.identity.is_none()
                 })
                 .and_then(|binding| {
-                    broker_generations.get(&super::super::broker::capability_for_binding(
+                    broker_generations.get(&jackin_usage_discovery::capability_for_binding(
                         binding,
                         discovery.config_generation.as_deref(),
                     ))
@@ -170,9 +170,9 @@ pub(crate) fn project_unresolved_capabilities(
             let issues = broker_state
                 .and_then(|state| {
                     state.error.as_ref().map(|error| UsageIssueV1 {
-                        code: super::super::broker::publish::issue_code(error.kind),
+                        code: jackin_usage_broker_publish::issue_code(error.kind),
                         scope: UsageIssueScopeV1::Provider,
-                        recoverability: super::super::broker::publish::issue_recoverability(
+                        recoverability: jackin_usage_broker_publish::issue_recoverability(
                             error.kind,
                         ),
                         message: error.message.clone(),

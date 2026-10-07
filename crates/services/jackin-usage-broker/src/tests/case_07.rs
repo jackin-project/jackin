@@ -5,7 +5,7 @@ use super::*;
 
 #[test]
 fn catalog_conflict_fails_closed_after_bounded_retries() {
-    use crate::host::HostSurfaceId;
+    use jackin_usage_host_presentation::HostSurfaceId;
 
     let temp = tempfile::tempdir().unwrap();
     let config = UsageBrokerConfig::for_data_dir(temp.path().to_owned());
@@ -64,7 +64,7 @@ fn catalog_conflict_fails_closed_after_bounded_retries() {
 
 #[test]
 fn transient_empty_scan_does_not_wipe_live_catalog() {
-    use crate::host::HostSurfaceId;
+    use jackin_usage_host_presentation::HostSurfaceId;
 
     let temp = tempfile::tempdir().unwrap();
     let config = UsageBrokerConfig::for_data_dir(temp.path().to_owned());
@@ -127,7 +127,7 @@ fn transient_empty_scan_does_not_wipe_live_catalog() {
 
 #[test]
 fn confirmed_empty_scan_still_revokes_live_catalog() {
-    use crate::host::HostSurfaceId;
+    use jackin_usage_host_presentation::HostSurfaceId;
 
     let temp = tempfile::tempdir().unwrap();
     let config = UsageBrokerConfig::for_data_dir(temp.path().to_owned());
@@ -172,7 +172,7 @@ fn confirmed_empty_scan_still_revokes_live_catalog() {
 
 #[test]
 fn ensure_usage_broker_publishes_fresh_discovery_not_stale_caller_input() {
-    use crate::host::HostSurfaceId;
+    use jackin_usage_host_presentation::HostSurfaceId;
 
     let data_dir = tempfile::tempdir().unwrap();
     let config_root = tempfile::tempdir().unwrap();

@@ -14,19 +14,19 @@ use jackin_protocol::usage_broker::{
     UsageAccountCapability, UsageCatalogEntry, UsageCoordinationError,
 };
 
-use crate::coordinator::{
+use jackin_usage_coordinator::{
     FileAccountStateStore, FileProjectionStateStore, UsageCoordinator, UsageProviderExecutor,
 };
 
-use super::super::discovery::ProviderCredentialEnvResolver;
-use super::super::{UsageDiscoveryScope, ValidatedUsageDiscovery};
-use super::{
+use crate::{
     BROKER_LEADER, BrokerStartupCleanup, DiscoveryProviderExecutor, LoadedProjection, ServeConfig,
     ServePolicy, UsageBrokerClient, UsageBrokerConfig, claim_leader, connect_probe,
     grouped_bindings, load_projection, publication_identity_metadata, publish,
     secure_run_directory, serve, unavailable, usage_catalog_entries, validate_owned_mode,
     wait_for_leader,
 };
+use jackin_usage_discovery::{UsageDiscoveryScope, ValidatedUsageDiscovery};
+use jackin_usage_host_credentials::ProviderCredentialEnvResolver;
 
 /// Run the process-owned service until its idle lease expires.
 pub fn run_usage_broker_service(

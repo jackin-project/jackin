@@ -9,12 +9,5 @@
 mod stage;
 
 #[cfg(test)]
-pub(crate) use jackin_usage_discovery::{ProfileCredentialMaterial, UsageDiscoveryDiagnostic};
-pub(crate) use jackin_usage_discovery::{
-    UsageDiscoveryIssue, ValidatedCredentialBinding, ValidatedCredentialSource,
-    discover_usage_sources, refresh_credential_binding, validate_usage_sources,
-};
-pub(crate) use jackin_usage_host_credentials::{
-    ProviderCredentialEnvResolver, ProviderCredentialRefreshOutcome,
-    ProviderCredentialSourceMaterial,
-};
+pub(crate) use jackin_usage_discovery::{UsageDiscoveryDiagnostic, ValidatedCredentialSource};
+pub(crate) use jackin_usage_discovery::{UsageDiscoveryIssue, ValidatedCredentialBinding};

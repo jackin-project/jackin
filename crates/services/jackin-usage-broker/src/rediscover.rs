@@ -9,14 +9,16 @@ use jackin_protocol::usage_broker::{
     UsageAccountCapability, UsageCatalogEntry, UsageCoordinationError, UsageCoordinationErrorKind,
 };
 
-use crate::coordinator::ProviderProbeOutcome;
+use jackin_usage_coordinator::ProviderProbeOutcome;
 
-use super::super::discovery::{
-    ProviderCredentialEnvResolver, ProviderCredentialRefreshOutcome, ValidatedCredentialBinding,
+use crate::{capability_for_binding, catalog_discovery_mismatch, usage_catalog_entries};
+use jackin_usage_discovery::{
+    UsageDiscoveryScope, ValidatedCredentialBinding, ValidatedUsageDiscovery,
     discover_usage_sources, refresh_credential_binding, validate_usage_sources,
 };
-use super::super::{UsageDiscoveryScope, ValidatedUsageDiscovery};
-use super::{capability_for_binding, catalog_discovery_mismatch, usage_catalog_entries};
+use jackin_usage_host_credentials::{
+    ProviderCredentialEnvResolver, ProviderCredentialRefreshOutcome,
+};
 
 pub(crate) fn rediscover_discovery(
     scope: &UsageDiscoveryScope,

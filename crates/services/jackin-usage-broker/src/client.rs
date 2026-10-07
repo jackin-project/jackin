@@ -18,7 +18,7 @@ use jackin_protocol::usage_broker::{
     UsageCoordinationError, UsageCredentialScope, UsageGenerationView, UsageProjectionV1,
 };
 
-use super::{protocol_error, read_frame, unavailable};
+use crate::{protocol_error, read_frame, unavailable};
 
 /// Small synchronous client. Each operation uses one bounded frame/connection.
 ///

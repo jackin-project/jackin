@@ -2419,3 +2419,54 @@ passes.
 - Raw outputs:
   `/tmp/s12-s31-{before,after}.txt`
   (kept out of the repo).
+
+### Split 32: usage-broker extraction (B3)
+
+- `jackin-usage` -> `jackin-usage` +
+  `jackin-usage-broker` (T5: 18
+  modules moved flat; `runtime.rs`
+  stays as the `HostUsageRuntime`
+  glue with one import retargeted to
+  `jackin-usage-discovery`). Three
+  runtime-touching tests extract to
+  `host/tests/case_08.rs` with three
+  duplicated fakes; two fakes that
+  only served them leave the moved
+  support file. `short_socket_alias`
+  widens to `pub` for the staying
+  host suite; projection paths
+  retarget to `jackin-usage-discovery`
+  and `jackin-usage-broker-publish`
+  directly. The discovery shim trims
+  to live paths.
+- Verify: `cargo check --locked --workspace
+  --all-targets` green; `cargo fmt --all
+  --check` clean; `cargo clippy` 0
+  errors, 0 warnings on both touched
+  packages. `cargo nextest list
+  --workspace --all-targets`: 7277 ->
+  7277, delta is exactly 50 moved (47
+  `host::broker::tests::*` ->
+  `jackin-usage-broker tests::*`, 3
+  -> `host::tests::case_08`; zero
+  dropped, zero added). `nextest run`:
+  303/303 usage + 47/47 broker. No
+  contract fixture drift (no
+  allowlist symbols in the moved
+  files). `alint check`:
+  byte-identical. `check-gaps`: 27 ->
+  27 (usage `SIZE-001` 19543 -> 14578
+  lines, `SIZE-002` 97 -> 71 files;
+  the new crate fits both budgets).
+  `GAP-TEST-001/002/003` stay 0/0/0.
+  `ratchet.toml`: +2 rows (agent-doc
+  1276, complexity 23), -1 row
+  (usage complexity now under cap);
+  violations 60 -> 60 with zero new
+  failures. `lint arch`: missing
+  tiers stay 3, zero direction
+  violations; `lint headers` stays at
+  the base 2; `lint tests` OK.
+- Raw outputs:
+  `/tmp/s12-s32-{before,after}.txt`
+  (kept out of the repo).

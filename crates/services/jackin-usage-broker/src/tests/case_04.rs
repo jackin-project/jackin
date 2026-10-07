@@ -4,56 +4,9 @@
 use super::*;
 
 #[test]
-fn rotated_catalog_revision_rejects_in_flight_broker_result() {
-    use crate::host::{CanonicalAccountIdentity, CanonicalAccountSubject, HostSurfaceId};
-
-    let binding = ValidatedCredentialBinding {
-        surface: HostSurfaceId::Claude,
-        identity: Some(CanonicalAccountIdentity {
-            surface: HostSurfaceId::Claude,
-            subject: CanonicalAccountSubject::ProviderId("provider-account".to_owned()),
-        }),
-        source_id: "source-0001".to_owned(),
-        capability_id: "capability-0001".to_owned(),
-        credential_revision: "credential-revision".to_owned(),
-        provenance: BTreeSet::from(["account work".to_owned()]),
-        source: ValidatedCredentialSource::Capability,
-    };
-    let old_capability = capability_for_binding(&binding, Some("generation-old"));
-    let current_capability = capability_for_binding(&binding, Some("generation-current"));
-    assert_ne!(old_capability, current_capability);
-
-    let temp = tempfile::tempdir().unwrap();
-    let mut runtime = HostUsageRuntime::new();
-    runtime
-        .open(crate::host::HostRuntimeConfig::under_data_dir(temp.path()))
-        .unwrap();
-    runtime.discovery = Some(ValidatedUsageDiscovery {
-        config_generation: Some("generation-current".to_owned()),
-        accounts: Vec::new(),
-        diagnostics: Vec::new(),
-        candidates: Vec::new(),
-        bindings: vec![binding],
-    });
-
-    runtime
-        .apply_broker_generation(UsageGenerationView {
-            capability: old_capability,
-            generation: 1,
-            phase: UsageRefreshPhase::Completed,
-            snapshot: Some(quota_view()),
-            error: None,
-            retry_at_epoch: None,
-        })
-        .unwrap();
-
-    assert!(runtime.discovered_views.is_empty());
-    assert!(runtime.discovered_provider_views.is_empty());
-}
-
-#[test]
 fn broker_catalog_admits_current_identity_and_rejects_stale_identity() {
-    use crate::host::{CanonicalAccountIdentity, CanonicalAccountSubject, HostSurfaceId};
+    use jackin_usage_host_accounts::{CanonicalAccountIdentity, CanonicalAccountSubject};
+    use jackin_usage_host_presentation::HostSurfaceId;
 
     let binding = ValidatedCredentialBinding {
         surface: HostSurfaceId::Claude,
@@ -99,7 +52,8 @@ fn broker_catalog_admits_current_identity_and_rejects_stale_identity() {
 
 #[test]
 fn broker_catalog_match_requires_full_revision_and_entry_revisions() {
-    use crate::host::{CanonicalAccountIdentity, CanonicalAccountSubject, HostSurfaceId};
+    use jackin_usage_host_accounts::{CanonicalAccountIdentity, CanonicalAccountSubject};
+    use jackin_usage_host_presentation::HostSurfaceId;
 
     let discovery = ValidatedUsageDiscovery {
         config_generation: Some("generation-current".to_owned()),

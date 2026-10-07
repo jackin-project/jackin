@@ -5,7 +5,8 @@ use super::*;
 
 #[test]
 fn selected_routes_require_exact_source_proofs_and_same_identity() {
-    use crate::host::{CanonicalAccountIdentity, CanonicalAccountSubject, HostSurfaceId};
+    use jackin_usage_host_accounts::{CanonicalAccountIdentity, CanonicalAccountSubject};
+    use jackin_usage_host_presentation::HostSurfaceId;
 
     let identity = CanonicalAccountIdentity {
         surface: HostSurfaceId::Zai,
@@ -149,7 +150,8 @@ fn selected_routes_require_exact_source_proofs_and_same_identity() {
 
 #[test]
 fn grouped_broker_authorization_accepts_sibling_proofs_and_rejects_conflicts() {
-    use crate::host::{CanonicalAccountIdentity, CanonicalAccountSubject, HostSurfaceId};
+    use jackin_usage_host_accounts::{CanonicalAccountIdentity, CanonicalAccountSubject};
+    use jackin_usage_host_presentation::HostSurfaceId;
 
     let identity = CanonicalAccountIdentity {
         surface: HostSurfaceId::Zai,
@@ -332,7 +334,8 @@ fn mixed_profile_and_env_group_fails_closed_without_changing_pure_profile() {
 
 #[test]
 fn capability_identity_keeps_distinct_and_anonymous_sources_separate() {
-    use crate::host::{CanonicalAccountIdentity, CanonicalAccountSubject, HostSurfaceId};
+    use jackin_usage_host_accounts::{CanonicalAccountIdentity, CanonicalAccountSubject};
+    use jackin_usage_host_presentation::HostSurfaceId;
 
     let make = |identity: Option<CanonicalAccountIdentity>,
                 capability_id: &str,

@@ -8,11 +8,10 @@ use jackin_protocol::usage_broker::{
     UsageAccountCapability, UsageCredentialScope, UsageCredentialSourceIdentity,
 };
 
-use super::super::HostSurfaceId;
-use super::super::discovery::{
-    ProviderCredentialSourceMaterial, ValidatedCredentialBinding, ValidatedCredentialSource,
-};
-use super::refresh_authority_equivalent;
+use crate::refresh_authority_equivalent;
+use jackin_usage_discovery::{ValidatedCredentialBinding, ValidatedCredentialSource};
+use jackin_usage_host_credentials::ProviderCredentialSourceMaterial;
+use jackin_usage_host_presentation::HostSurfaceId;
 
 #[derive(Debug, Clone)]
 pub(crate) struct ScopedCapability {

@@ -16,7 +16,7 @@ use nix::sys::signal::kill;
 use nix::sys::stat::Mode;
 use nix::unistd::{Pid, UnlinkatFlags, fsync, geteuid, unlinkat};
 
-use super::{
+use crate::{
     BrokerLease, BrokerLeaseOwner, CONNECT_RETRY, CONNECT_RETRY_STEP, UsageBrokerClient,
     unavailable,
 };

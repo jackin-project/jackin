@@ -20,16 +20,16 @@ use nix::fcntl::{Flock, FlockArg, OFlag, open};
 use nix::sys::stat::{Mode, fchmod};
 use nix::unistd::geteuid;
 
-use super::super::discovery::{
-    ProviderCredentialEnvResolver, discover_usage_sources, validate_usage_sources,
-};
-use super::super::{UsageDiscoveryScope, ValidatedUsageDiscovery};
-use super::{
+use crate::{
     BROKER_ACTIVATE_LOCK, BROKER_ACTIVATION_ATTEMPTS, BROKER_DIR, ScopedCapability,
     UsageBrokerClient, UsageBrokerConfig, UsageBrokerHandle, capability_for_binding, connect_probe,
     forwarding_requirement, secure_run_directory, unavailable, usage_broker_capabilities,
     usage_catalog_entries, wait_for_leader,
 };
+use jackin_usage_discovery::{
+    UsageDiscoveryScope, ValidatedUsageDiscovery, discover_usage_sources, validate_usage_sources,
+};
+use jackin_usage_host_credentials::ProviderCredentialEnvResolver;
 
 /// Hold the inter-process activation lock across one
 /// discover→read-lease→reconcile sequence.

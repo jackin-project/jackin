@@ -14,8 +14,8 @@ use jackin_protocol::usage_broker::{
     UsageProjectionRefreshStateV1,
 };
 
-use super::{protocol_error, publish, unavailable};
-use crate::coordinator::UsageCoordinator;
+use crate::{protocol_error, publish, unavailable};
+use jackin_usage_coordinator::UsageCoordinator;
 
 pub(crate) fn dispatch(
     coordinator: &UsageCoordinator,
