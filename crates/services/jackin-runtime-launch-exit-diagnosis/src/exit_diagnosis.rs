@@ -9,7 +9,7 @@ use jackin_core::ContainerHandle;
 use jackin_diagnostics;
 use jackin_docker::docker_client::DockerApi;
 
-use crate::runtime::ContainerState;
+use jackin_docker::docker_client::ContainerState;
 
 /// Whether `diagnose_premature_exit` is firing before the operator's
 /// terminal was attached or after. The treatment of `exit 0` differs
@@ -19,7 +19,7 @@ use crate::runtime::ContainerState;
 /// container down because no live sessions remain (the
 /// container-lifecycle-policy happy path — swallow it).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ExitPhase {
+pub enum ExitPhase {
     PreAttach,
     PostAttach,
 }
@@ -29,8 +29,7 @@ pub(crate) enum ExitPhase {
 ///
 /// Returns `None` when the container is still running (the normal
 /// happy path) so the caller can proceed to the session exec.
-#[cfg(test)]
-pub(crate) async fn diagnose_premature_exit(
+pub async fn diagnose_premature_exit(
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
     container_name: &str,
@@ -42,7 +41,7 @@ pub(crate) async fn diagnose_premature_exit(
 
 /// Diagnose a container whose immutable ID was already captured by the
 /// lifecycle caller. Both inspect and log retrieval remain bound to that ID.
-pub(crate) async fn diagnose_premature_exit_by_id(
+pub async fn diagnose_premature_exit_by_id(
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
     container: &ContainerHandle,
@@ -53,7 +52,7 @@ pub(crate) async fn diagnose_premature_exit_by_id(
 }
 
 /// Apply exit diagnosis to state already inspected by immutable ID.
-pub(crate) async fn diagnose_with_state_by_id(
+pub async fn diagnose_with_state_by_id(
     runner: &mut impl CommandRunner,
     container: &ContainerHandle,
     state: &ContainerState,
@@ -66,8 +65,7 @@ pub(crate) async fn diagnose_with_state_by_id(
 /// inspected state passed in — callers that already inspected the
 /// container can avoid a second `docker inspect` round-trip (and the
 /// TOCTOU window between the two).
-#[cfg(test)]
-pub(crate) async fn diagnose_with_state(
+pub async fn diagnose_with_state(
     runner: &mut impl CommandRunner,
     container_name: &str,
     state: &ContainerState,
@@ -165,7 +163,7 @@ async fn diagnose_with_state_by_target(
     }
 }
 
-pub(crate) fn attach_failure_error(container_name: &str, err: &anyhow::Error) -> anyhow::Error {
+pub fn attach_failure_error(container_name: &str, err: &anyhow::Error) -> anyhow::Error {
     anyhow::anyhow!("capsule attach failed for {container_name}: {err}")
 }
 
@@ -173,7 +171,7 @@ pub(crate) fn attach_failure_error(container_name: &str, err: &anyhow::Error) ->
 /// close. Admission and generation errors must never use this recovery path,
 /// even when a concurrent container shutdown happens to make the lifecycle
 /// inspect look clean.
-pub(crate) fn is_known_socket_close(error: &anyhow::Error, state: &ContainerState) -> bool {
+pub fn is_known_socket_close(error: &anyhow::Error, state: &ContainerState) -> bool {
     if !matches!(
         state,
         ContainerState::Stopped {
@@ -204,12 +202,11 @@ pub(crate) fn is_known_socket_close(error: &anyhow::Error, state: &ContainerStat
 /// could auto-delete worktrees of containers that may actually still be
 /// running. `still_running()` instead skips the auto-cleanup path entirely
 /// and preserves records for `jackin hardline` to recover.
-#[cfg(test)]
-pub(crate) async fn inspect_attach_outcome(
+pub async fn inspect_attach_outcome(
     docker: &impl DockerApi,
     container: &str,
-) -> anyhow::Result<crate::isolation::finalize::AttachOutcome> {
-    use crate::isolation::finalize::AttachOutcome;
+) -> anyhow::Result<jackin_isolation::finalize::AttachOutcome> {
+    use jackin_isolation::finalize::AttachOutcome;
     // Only `Stopped` with a clean or non-zero exit legitimately routes through
     // finalize_clean_exit. Paused/Restarting/Created/Removing are transient
     // active states — treating them as still_running is the conservative choice
@@ -242,11 +239,11 @@ pub(crate) async fn inspect_attach_outcome(
 /// Inspect attach outcome by the immutable container ID captured for the
 /// foreground lifecycle. This avoids resolving a mutable name again after
 /// the attach command returns.
-pub(crate) async fn inspect_attach_outcome_by_id(
+pub async fn inspect_attach_outcome_by_id(
     docker: &impl DockerApi,
     container: &ContainerHandle,
-) -> anyhow::Result<crate::isolation::finalize::AttachOutcome> {
-    use crate::isolation::finalize::AttachOutcome;
+) -> anyhow::Result<jackin_isolation::finalize::AttachOutcome> {
+    use jackin_isolation::finalize::AttachOutcome;
     Ok(match docker.inspect_container_by_id(container).await {
         ContainerState::Running
         | ContainerState::Paused

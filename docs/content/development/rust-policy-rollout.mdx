@@ -6376,3 +6376,154 @@ bound 720.
 - Raw outputs:
   `/tmp/s7-s70-{pre,post}-*.txt`
   (kept out of the repo).
+
+### Split 71: runtime-launch-exit-diagnosis extraction (M33)
+
+- `jackin-runtime` ->
+  `jackin-runtime` +
+  `jackin-runtime-launch-exit-diagnosis`
+  (T5: the whole
+  `launch/exit_diagnosis`
+  module moves —
+  premature-exit
+  diagnosis,
+  attach-failure
+  helpers, and outcome
+  inspection; the
+  module carries no
+  unit suite).
+  Cross-leaf edges: 2
+  hub paths rewritten
+  to already-split
+  crates
+  (`ContainerState` ->
+  `jackin-docker` T3,
+  `AttachOutcome` ->
+  `jackin-isolation`
+  T4). Nine
+  `pub(crate)` items
+  widen to `pub`
+  (forced); three
+  `#[cfg(test)]` gates
+  dropped (forced: the
+  hub keeps `#[cfg(test)]`
+  on the re-exports,
+  the trust-crate
+  precedent). No shim
+  file: `launch.rs`
+  re-exports the module
+  itself (the split-56
+  precedent), so the
+  `launch::exit_diagnosis::*`
+  paths — including
+  the direct module use
+  in `launch_runtime.rs`
+  — keep working
+  unchanged. Tier: names
+  T4 jackin-isolation,
+  so it takes T5; no
+  renumber cascade.
+  New-crate deps: core,
+  diagnostics, docker,
+  isolation,
+  telemetry, anyhow
+  (lockfile +1
+  package, +6
+  edges). Policy
+  registries: +1
+  owned package
+  (`library`).
+
+- Tier decision
+  (slice-21 triage):
+  sibling
+  `launch/failure`
+  stays in the hub —
+  `render_exit` names
+  `jackin-runtime-universe`
+  (T7: `observe_exit`,
+  `ExitClaim`,
+  `force_boundary_outro_enabled`),
+  so extraction would
+  land at T8, the hub's
+  own tier, breaking
+  the strictly-lower
+  direction rule. The
+  T7 universe is the
+  extraction ceiling:
+  `failure` unblocks
+  when the
+  exit-observation
+  surface moves to a
+  lower-tier crate or
+  the hub renumbers.
+
+- Verify: `cargo check
+  --locked --workspace
+  --all-targets`
+  green; `cargo fmt
+  --all --check`
+  clean; `cargo
+  clippy` 0 errors on
+  the new crate,
+  `jackin-runtime`
+  holds at the 7
+  pre-existing errors
+  (all in
+  `launch_slot/tests`,
+  byte-identical
+  locations).
+  `cargo nextest list
+  --workspace
+  --all-targets`: 7277
+  -> 7277, byte-identical
+  (0 relocations — the
+  module carries no
+  tests; 0 dropped, 0
+  added). `nextest run`:
+  473/473 runtime
+  green (1 skipped,
+  pre-existing; the new
+  crate has no tests
+  yet). `alint check`:
+  182 violations / 11
+  failing unchanged.
+  `check-gaps`
+  (v0.1.3,
+  production-only):
+  12 -> 12 (runtime
+  `SIZE-001/002`
+  persist: 14806 ->
+  14626 prod code
+  lines, 91 -> 90
+  prod files; xtask
+  26284 -> 26285 from
+  the TIERS row; new
+  crate fits at 284
+  raw / 3 files,
+  no SIZE finding).
+  `GAP-TEST-001/002/003`
+  stay 0/0/0.
+  `ratchet.toml`: +2
+  rows
+  (agent-doc-bytes
+  README 1274,
+  public-surface 1);
+  remaining 53
+  violations
+  byte-identical to a
+  clean-HEAD worktree.
+  `lint arch
+  --strict`: 3
+  pre-existing no-tier
+  violations
+  byte-identical to
+  base, zero direction
+  violations; `lint
+  headers` stays at
+  the base 2; `lint
+  tests` OK.
+
+- Raw outputs:
+  `/tmp/s7-s71-{pre,post}-*.txt`
+  (kept out of the repo).

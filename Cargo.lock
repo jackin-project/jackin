@@ -3594,6 +3594,7 @@ dependencies = [
  "jackin-runtime-launch-account-identity",
  "jackin-runtime-launch-auth-error",
  "jackin-runtime-launch-capsule-setup",
+ "jackin-runtime-launch-exit-diagnosis",
  "jackin-runtime-launch-git-pull",
  "jackin-runtime-launch-image-plan",
  "jackin-runtime-launch-load-cleanup",
@@ -3825,6 +3826,18 @@ dependencies = [
  "jackin-runtime-launch-account-config",
  "tempfile",
  "toml",
+]
+
+[[package]]
+name = "jackin-runtime-launch-exit-diagnosis"
+version = "0.6.4"
+dependencies = [
+ "anyhow",
+ "jackin-core",
+ "jackin-diagnostics",
+ "jackin-docker",
+ "jackin-isolation",
+ "jackin-telemetry",
 ]
 
 [[package]]

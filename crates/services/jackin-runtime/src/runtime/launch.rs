@@ -233,7 +233,10 @@ pub(super) fn validate_agent_supported(
 }
 
 mod capsule_setup;
-mod exit_diagnosis;
+// Moved to jackin_runtime_launch_exit_diagnosis::exit_diagnosis (S7 split
+// 71); the module re-export keeps every `launch::exit_diagnosis::*` path
+// stable.
+pub(crate) use jackin_runtime_launch_exit_diagnosis::exit_diagnosis;
 // Moved to jackin_runtime_launch_git_pull::git_pull (S7 split 69); the
 // module re-export keeps every `launch::git_pull::*` path stable.
 pub(crate) use jackin_runtime_launch_git_pull::git_pull;
