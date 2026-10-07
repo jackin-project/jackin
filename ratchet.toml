@@ -804,6 +804,9 @@ bound = 907
 key = "crates/services/jackin-runtime-launch-plan/README.md"
 bound = 831
 [[family.entry]]
+key = "crates/services/jackin-runtime-launch-programmatic-selection/README.md"
+bound = 812
+[[family.entry]]
 key = "crates/services/jackin-runtime-launch-progress-helpers/README.md"
 bound = 1132
 [[family.entry]]
@@ -1176,6 +1179,9 @@ key = "jackin-runtime-launch-mounts"
 bound = 1
 [[family.entry]]
 key = "jackin-runtime-launch-plan"
+bound = 1
+[[family.entry]]
+key = "jackin-runtime-launch-programmatic-selection"
 bound = 1
 [[family.entry]]
 key = "jackin-runtime-launch-progress-helpers"

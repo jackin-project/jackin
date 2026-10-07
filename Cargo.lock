@@ -3610,6 +3610,7 @@ dependencies = [
  "jackin-runtime-launch-load-cleanup",
  "jackin-runtime-launch-mounts",
  "jackin-runtime-launch-plan",
+ "jackin-runtime-launch-programmatic-selection",
  "jackin-runtime-launch-progress-helpers",
  "jackin-runtime-launch-slot",
  "jackin-runtime-launch-trust",
@@ -4033,6 +4034,15 @@ version = "0.6.4"
 dependencies = [
  "jackin-diagnostics",
  "serde_json",
+]
+
+[[package]]
+name = "jackin-runtime-launch-programmatic-selection"
+version = "0.6.4"
+dependencies = [
+ "anyhow",
+ "jackin-config",
+ "jackin-core",
 ]
 
 [[package]]

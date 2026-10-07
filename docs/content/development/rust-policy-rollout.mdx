@@ -8512,3 +8512,153 @@ bound 720.
   `/tmp/s7-s85-{pre,post}-*.txt`
   (kept out of the
   repo).
+
+### Split 86: runtime-launch-programmatic-selection extraction (M48)
+
+- `jackin-runtime`
+  ->
+  `jackin-runtime`
+  +
+  `jackin-runtime-launch-programmatic-selection`
+  (T2: the selection
+  cluster moves out of
+  `launch/programmatic.rs`
+  --
+  `with_account_selection`
+  +
+  `with_configuration_selection`
+  + six private helpers
+  (`free_ephemeral_config_id`,
+  `ensure_account_allowed`,
+  `bind_selected_account`,
+  `write_default_launch`,
+  `replace_agent_default_launch`,
+  `ensure_account_is_selected`;
+  590 -> 333 hub lines).
+  Bodies byte-identical:
+  the region carries
+  zero hub edges (only
+  `jackin-config` /
+  `jackin-core` /
+  `anyhow`), so no path
+  rewrites and no
+  visibility widens.
+  Item re-export:
+  `programmatic.rs`
+  re-exports the two
+  names from the new
+  crate, so every
+  caller (app
+  `load_cmd.rs`,
+  `launch_pipeline`
+  x2, hub `dry_run` +
+  `programmatic`
+  suites) and the
+  `launch.rs` item
+  re-exports compile
+  unchanged. Rest of
+  `programmatic.rs`
+  stays (LoadOptions-coupled:
+  `LaunchedInstance` /
+  `IdentitySink` /
+  `LoadOptionsError` /
+  `impl LoadOptions` /
+  validate helpers,
+  plus `lane_agent_env`
+  + env consts, which
+  have no prod callers).
+  The hub suite names
+  `AgentConfiguration`
+  through `super::*`,
+  so that import drops
+  to `cfg(test)` (the
+  split-85 precedent).
+  Coverage stays in the
+  hub suite (it names
+  hub `LoadOptions`).
+  Tier: names T1 config
+  + T0 core, so it
+  takes T2; no renumber
+  cascade. New-crate
+  deps: config, core,
+  anyhow (lockfile +1
+  package, +4 edges).
+  Policy registries:
+  +1 owned package
+  (`library`).)
+
+- Verify: `cargo check
+  --locked --workspace
+  --all-targets` green
+  (after `--offline`
+  lockfile regen);
+  `cargo fmt --all
+  --check` clean; `cargo
+  clippy` 0 errors on
+  the new crate (`-D
+  warnings`),
+  `jackin-runtime`
+  holds at the 7
+  pre-existing errors
+  (same 6 lints at
+  identical locations
+  + summary). `cargo
+  nextest list
+  --workspace
+  --all-targets`: 7277
+  -> 7277,
+  byte-identical (0
+  relocations -- the
+  suites stay in the
+  hub; 0 dropped, 0
+  added). `nextest run`:
+  433/433 runtime
+  green (1 skipped,
+  pre-existing; the new
+  crate has no tests
+  yet) + 17/17 app
+  `load_cmd` green.
+  `alint check`:
+  181 -> 180
+  violations / 11
+  failing (the single
+  delta is the cured
+  `size-file-400`
+  finding on
+  `programmatic.rs`,
+  590 -> 333 lines;
+  zero new rows).
+  `check-gaps`:
+  12 -> 12 (hub 11670
+  -> 11454 prod code
+  lines, 79 prod files
+  unchanged; xtask
+  26299 -> 26300 from
+  the TIERS row; new
+  crate fits at 302 raw
+  / 3 files, no SIZE
+  finding).
+  `GAP-TEST-001/002/003`
+  stay 0/0/0.
+  `ratchet.toml`: +2
+  rows (agent-doc-bytes
+  README 812,
+  public-surface 1);
+  gate output
+  byte-identical to
+  base. `lint arch
+  --strict`: 3
+  pre-existing no-tier
+  violations
+  byte-identical, zero
+  direction violations;
+  `lint headers` stays
+  at the base 2; `lint
+  tests` OK; `lint
+  readme-freshness`
+  unchanged.
+
+- Raw outputs:
+  `/tmp/s7-s86-{pre,post}-*.txt`
+  (kept out of the
+  repo).

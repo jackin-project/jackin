@@ -88,6 +88,7 @@ pub(crate) const TIERS: &[(&str, u8)] = &[
     ("jackin-runtime-launch-load-cleanup", 6),
     ("jackin-runtime-launch-mounts", 5),
     ("jackin-runtime-launch-plan", 3),
+    ("jackin-runtime-launch-programmatic-selection", 2),
     ("jackin-runtime-launch-progress-helpers", 6),
     ("jackin-runtime-launch-slot", 5),
     ("jackin-runtime-launch-trust", 4),
