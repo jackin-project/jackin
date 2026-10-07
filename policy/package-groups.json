@@ -33,6 +33,7 @@
     "jackin-runtime-coordination": "library",
     "jackin-runtime-discovery": "library",
     "jackin-runtime-docker-profile": "library",
+    "jackin-runtime-drift": "library",
     "jackin-runtime-exec-host": "library",
     "jackin-runtime-exit-summary": "library",
     "jackin-runtime-host-daemon": "library",

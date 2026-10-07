@@ -6,7 +6,7 @@ use super::detect_workspace_edit_drift;
 
 use jackin_core::WorkspaceName;
 
-use crate::isolation::state::{CleanupStatus, IsolationRecord, write_records};
+use jackin_runtime_isolation::isolation::state::{CleanupStatus, IsolationRecord, write_records};
 
 use jackin_core::JackinPaths;
 

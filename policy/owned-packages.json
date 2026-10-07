@@ -33,6 +33,7 @@
     "jackin-runtime-coordination",
     "jackin-runtime-discovery",
     "jackin-runtime-docker-profile",
+    "jackin-runtime-drift",
     "jackin-runtime-exec-host",
     "jackin-runtime-exit-summary",
     "jackin-runtime-host-daemon",

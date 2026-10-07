@@ -3997,3 +3997,125 @@ bound 720.
 - Raw outputs:
   `/tmp/s7-s54-{pre,post}-*.txt`
   (kept out of the repo).
+
+### Split 55: runtime-drift extraction (M17)
+
+- `jackin-runtime` ->
+  `jackin-runtime` +
+  `jackin-runtime-drift`
+  (T7: the whole
+  `runtime::drift`
+  module moves —
+  `detect_workspace_edit_drift`,
+  the `DriftDetection`
+  re-export,
+  `tests.rs` + 1 suite
+  + support with 6
+  tests). Two
+  cross-leaf edges,
+  both into
+  already-extracted M
+  crates: 1x
+  `crate::isolation::state`
+  ->
+  `jackin_runtime_isolation`
+  (enabled by M3) in
+  prod + tests, 1x
+  `crate::runtime::list_role_names`
+  ->
+  `jackin_runtime_discovery`
+  (enabled by M15);
+  plus one doc-line
+  reword (the stale
+  "Lives here because"
+  placement note). No
+  visibility widening
+  needed (all prod
+  items already
+  `pub`). Parent mod
+  is `pub`, so the
+  shim keeps a plain
+  `pub` glob and the
+  two external
+  `jackin_runtime::runtime::drift::detect_workspace_edit_drift`
+  call sites
+  (`app/workspace_cmd.rs`,
+  `console/services.rs`)
+  stay stable. Tier:
+  names T6 discovery +
+  T5 isolation, so it
+  takes T7; no
+  renumber cascade.
+  New-crate deps:
+  config, core,
+  docker, discovery,
+  isolation, anyhow;
+  dev-deps add
+  test-support
+  (`FakeDockerClient`),
+  tempfile, and tokio
+  (`macros`, `rt`)
+  (lockfile +1
+  package, +10 edges).
+  Policy registries:
+  +1 owned package
+  (`library`).
+
+- Verify: `cargo check
+  --locked --workspace
+  --all-targets`
+  green; `cargo fmt
+  --all --check`
+  clean; `cargo
+  clippy` 0 errors on
+  the new crate,
+  `jackin-runtime`
+  holds at the 7
+  pre-existing errors
+  (all in
+  `launch_slot/tests`).
+  `cargo nextest list
+  --workspace
+  --all-targets`: 7277
+  -> 7277 (6
+  relocations map 1:1
+  by name: runtime ->
+  drift; 0 dropped, 0
+  added). `nextest
+  run`: 707/707
+  runtime (701) +
+  drift (6). `alint
+  check`: 192
+  violations / 11
+  failing unchanged.
+  `check-gaps`: 22 ->
+  22 (runtime
+  `SIZE-001/002`
+  persist: 50698 ->
+  50399 code lines,
+  244 -> 241 files;
+  new crate fits at
+  377 raw / 6 files).
+  `GAP-TEST-001/002/003`
+  stay 0/0/0.
+  `ratchet.toml`: +2
+  rows
+  (agent-doc-bytes
+  README 752,
+  public-surface 1),
+  failures back to
+  baseline 61 -> 61
+  with identical
+  violation keys.
+  `lint arch
+  --strict`: missing
+  tiers stay 3, zero
+  direction
+  violations; `lint
+  headers` stays at
+  the base 2; `lint
+  tests` OK.
+
+- Raw outputs:
+  `/tmp/s7-s55-{pre,post}-*.txt`
+  (kept out of the repo).
