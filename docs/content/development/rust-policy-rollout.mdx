@@ -5604,3 +5604,130 @@ bound 720.
 - Raw outputs:
   `/tmp/s7-s64-{pre,post}-*.txt`
   (kept out of the repo).
+
+### Split 65: runtime-launch-capsule-setup extraction (M27)
+
+- `jackin-runtime` ->
+  `jackin-runtime` +
+  `jackin-runtime-launch-capsule-setup`
+  (T5: the whole
+  `launch::capsule_setup`
+  module moves —
+  capsule config +
+  auth bindings +
+  model/effort resolution
+  + host env transport,
+  `tests.rs` + 2
+  suites + support
+  with 16 tests).
+  Cross-leaf edges: 4x
+  `crate::instance`
+  -> `jackin_instance`,
+  3x
+  `super::account_config::opencode_model`
+  -> the split-63
+  account-config crate.
+  Every `pub(crate)`
+  item is used outside
+  the module (launch_runtime,
+  orchestrate helpers,
+  dry_run, image_plan,
+  apple_container, launch
+  tests), so all 17 widen
+  to `pub`; struct fields
+  stay private, manual
+  `Debug` impls cover the
+  now-public types. The
+  shim is a `pub(crate)`
+  glob (`mod capsule_setup`
+  has no `launch.rs`
+  public re-export —
+  the split-63 precedent).
+  Tier: names T4
+  account-config, so it
+  takes T5; no renumber
+  cascade. New-crate deps:
+  config, core, diagnostics,
+  instance, manifest,
+  protocol, launch-account-config,
+  anyhow, tempfile, toml
+  (lockfile +1
+  package, +10
+  edges). Policy
+  registries: +1
+  owned package
+  (`library`).
+
+- Verify: `cargo check
+  --locked --workspace
+  --all-targets`
+  green; `cargo fmt
+  --all --check`
+  clean; `cargo
+  clippy` 0 errors on
+  the new crate,
+  `jackin-runtime`
+  holds at the 7
+  pre-existing errors
+  (all in
+  `launch_slot/tests`,
+  byte-identical
+  locations).
+  `cargo nextest list
+  --workspace
+  --all-targets`: 7277
+  -> 7277 (16
+  relocations map 1:1
+  by name, verified by
+  stripped-diff:
+  `launch::capsule_setup`
+  -> `capsule_setup`;
+  0 dropped, 0 added).
+  `nextest run`:
+  513/513 runtime
+  (497) +
+  capsule-setup (16).
+  `alint check`:
+  182 violations / 11
+  failing unchanged.
+  `check-gaps`
+  (v0.1.3,
+  production-only):
+  12 -> 12 (runtime
+  `SIZE-001/002`
+  persist: 16673 ->
+  16063 prod code
+  lines, 95 -> 95
+  prod files; new
+  crate fits at
+  1383 raw / 9
+  files, no SIZE
+  finding).
+  `GAP-TEST-001/002/003`
+  stay 0/0/0.
+  `ratchet.toml`: +3
+  rows
+  (agent-doc-bytes
+  README 1066,
+  public-surface 1,
+  `too_many_arguments`
+  capsule-setup 1)
+  and
+  `too_many_arguments@jackin-runtime`
+  12 -> 11; failures 56
+  -> 56 — measured
+  total preserved (12 =
+  11+1); remaining
+  keys byte-identical.
+  `lint arch
+  --strict`: missing
+  tiers stay 3, zero
+  direction
+  violations; `lint
+  headers` stays at
+  the base 2; `lint
+  tests` OK.
+
+- Raw outputs:
+  `/tmp/s7-s65-{pre,post}-*.txt`
+  (kept out of the repo).

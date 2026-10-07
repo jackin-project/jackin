@@ -433,13 +433,16 @@ key = "clippy::too_many_arguments@jackin-launch"
 bound = 1
 [[family.entry]]
 key = "clippy::too_many_arguments@jackin-runtime"
-bound = 12
+bound = 11
 [[family.entry]]
 key = "clippy::too_many_arguments@jackin-runtime-docker-profile"
 bound = 1
 [[family.entry]]
 key = "clippy::too_many_arguments@jackin-runtime-image"
 bound = 5
+[[family.entry]]
+key = "clippy::too_many_arguments@jackin-runtime-launch-capsule-setup"
+bound = 1
 [[family.entry]]
 key = "clippy::too_many_arguments@jackin-usage-provider-core"
 bound = 1
@@ -730,6 +733,9 @@ bound = 872
 [[family.entry]]
 key = "crates/services/jackin-runtime-launch-account-identity/README.md"
 bound = 1132
+[[family.entry]]
+key = "crates/services/jackin-runtime-launch-capsule-setup/README.md"
+bound = 1066
 [[family.entry]]
 key = "crates/services/jackin-runtime-launch-mounts/README.md"
 bound = 907
@@ -1040,6 +1046,9 @@ key = "jackin-runtime-launch-account-config"
 bound = 1
 [[family.entry]]
 key = "jackin-runtime-launch-account-identity"
+bound = 1
+[[family.entry]]
+key = "jackin-runtime-launch-capsule-setup"
 bound = 1
 [[family.entry]]
 key = "jackin-runtime-launch-mounts"
