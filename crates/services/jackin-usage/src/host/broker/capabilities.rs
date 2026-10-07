@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Broker capability allowlists.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
-use jackin_protocol::usage_broker::{UsageAccountCapability, UsageCatalogEntry};
+use jackin_protocol::usage_broker::UsageAccountCapability;
 
 use super::super::ValidatedUsageDiscovery;
 use super::super::discovery::ValidatedCredentialSource;
@@ -88,52 +88,4 @@ pub fn usage_capability_for_selected_account_with_sources(
     (capabilities.len() == 1)
         .then(|| capabilities.into_iter().next())
         .flatten()
-}
-
-/// Every canonical capability in one validated host discovery generation.
-#[must_use]
-pub fn usage_broker_capabilities(
-    discovery: &ValidatedUsageDiscovery,
-) -> Vec<UsageAccountCapability> {
-    discovery
-        .bindings
-        .iter()
-        .map(|binding| capability_for_binding(binding, discovery.config_generation.as_deref()))
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect()
-}
-
-pub(crate) fn usage_catalog_entries(discovery: &ValidatedUsageDiscovery) -> Vec<UsageCatalogEntry> {
-    let mut source_revisions = BTreeMap::<UsageAccountCapability, BTreeSet<String>>::new();
-    for binding in &discovery.bindings {
-        let capability = capability_for_binding(binding, discovery.config_generation.as_deref());
-        source_revisions
-            .entry(capability)
-            .or_default()
-            .insert(format!(
-                "{}:{}:{}:{}",
-                binding.capability_id.len(),
-                binding.capability_id,
-                binding.credential_revision.len(),
-                binding.credential_revision,
-            ));
-    }
-    source_revisions
-        .into_iter()
-        .map(|(capability, source_revisions)| {
-            let revision_material = source_revisions
-                .iter()
-                .map(|source_revision| format!("{}:{source_revision}", source_revision.len()))
-                .collect::<Vec<_>>()
-                .join("|");
-            UsageCatalogEntry {
-                revision: jackin_core::account_key_hash(
-                    "usage-catalog-entry-v3",
-                    &revision_material,
-                ),
-                capability,
-            }
-        })
-        .collect()
 }

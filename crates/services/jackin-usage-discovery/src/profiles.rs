@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Profile credential readers.
 
-use super::ProfileCredentialMaterial;
+use crate::ProfileCredentialMaterial;
 use std::collections::{BTreeMap, BTreeSet};
 
 use std::path::{Path, PathBuf};
@@ -108,14 +108,16 @@ impl ProfileCredentialReader for SystemProfileCredentialReader {
     }
 
     fn read_claude_keychain(&self, scope: &jackin_core::ClaudeKeychainScope) -> ProfileReadOutcome {
-        match crate::usage::read_claude_keychain_item(&scope.service) {
+        match jackin_usage_provider_claude::read_claude_keychain_item(&scope.service) {
             #[cfg(any(target_os = "macos", test))]
-            crate::usage::ClaudeKeychainRead::Payload { json } => {
+            jackin_usage_provider_claude::ClaudeKeychainRead::Payload { json } => {
                 ProfileReadOutcome::Bytes(json.into_bytes())
             }
-            crate::usage::ClaudeKeychainRead::Denied => ProfileReadOutcome::Denied,
-            crate::usage::ClaudeKeychainRead::Missing => ProfileReadOutcome::Missing,
-            crate::usage::ClaudeKeychainRead::ConsentRequired => {
+            jackin_usage_provider_claude::ClaudeKeychainRead::Denied => ProfileReadOutcome::Denied,
+            jackin_usage_provider_claude::ClaudeKeychainRead::Missing => {
+                ProfileReadOutcome::Missing
+            }
+            jackin_usage_provider_claude::ClaudeKeychainRead::ConsentRequired => {
                 ProfileReadOutcome::ConsentRequired
             }
         }
@@ -131,18 +133,26 @@ impl ProfileCredentialReader for SystemProfileCredentialReader {
             let mut options = ItemSearchOptions::new();
             options
                 .class(ItemClass::generic_password())
-                .service(crate::usage::ANTIGRAVITY_KEYCHAIN_SERVICE)
+                .service(jackin_usage_provider_antigravity::ANTIGRAVITY_KEYCHAIN_SERVICE)
                 .limit(1);
             match options.search() {
                 Ok(results) if !results.is_empty() => ProfileReadOutcome::Bytes(Vec::new()),
                 Ok(_) => ProfileReadOutcome::Missing,
-                Err(error) => match crate::usage::classify_claude_keychain_status(error.code()) {
+                Err(error) => match jackin_usage_provider_claude::classify_claude_keychain_status(
+                    error.code(),
+                ) {
                     // Unreachable: the classifier only emits Denied/Missing.
                     // Fail closed to absence either way.
-                    crate::usage::ClaudeKeychainRead::Payload { .. } => ProfileReadOutcome::Missing,
-                    crate::usage::ClaudeKeychainRead::Denied => ProfileReadOutcome::Denied,
-                    crate::usage::ClaudeKeychainRead::Missing => ProfileReadOutcome::Missing,
-                    crate::usage::ClaudeKeychainRead::ConsentRequired => {
+                    jackin_usage_provider_claude::ClaudeKeychainRead::Payload { .. } => {
+                        ProfileReadOutcome::Missing
+                    }
+                    jackin_usage_provider_claude::ClaudeKeychainRead::Denied => {
+                        ProfileReadOutcome::Denied
+                    }
+                    jackin_usage_provider_claude::ClaudeKeychainRead::Missing => {
+                        ProfileReadOutcome::Missing
+                    }
+                    jackin_usage_provider_claude::ClaudeKeychainRead::ConsentRequired => {
                         ProfileReadOutcome::ConsentRequired
                     }
                 },

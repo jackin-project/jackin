@@ -740,6 +740,9 @@ bound = 1247
 key = "crates/services/jackin-usage-destination/README.md"
 bound = 761
 [[family.entry]]
+key = "crates/services/jackin-usage-discovery/README.md"
+bound = 1324
+[[family.entry]]
 key = "crates/tools/jackin-xtask/README.md"
 bound = 6113
 [[family.entry]]

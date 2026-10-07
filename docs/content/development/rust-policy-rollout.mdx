@@ -2363,3 +2363,59 @@ passes.
 - Raw outputs:
   `/tmp/s12-prep-{before,after}.txt`
   (kept out of the repo).
+
+### Split 31: usage-discovery extraction (D1)
+
+- `jackin-usage` -> `jackin-usage` +
+  `jackin-usage-discovery` (T4: 12
+  modules + new `capabilities.rs`
+  moved flat; `stage.rs` stays as the
+  `HostUsageRuntime` glue). The
+  binding-to-capability mapping
+  (`capability_for_binding`,
+  `usage_broker_capabilities`,
+  `usage_catalog_entries`) moves down
+  from `broker/` so the T5 broker and
+  projection both name it from T4. The
+  `AccountMembershipDescriptor` impl
+  moves with its descriptor type
+  (orphan rule). Seven items widen
+  `pub(crate)` -> `pub` plus two
+  methods and two fields; the
+  secret-bearing material gains a
+  redacted manual `Debug`. Two
+  runtime-opening tests extract to
+  `host/tests/case_07.rs`; the rest
+  move with their modules. `usage.rs`
+  drops two dead re-exports (one
+  restored `cfg(test)` for the suite).
+- Verify: `cargo check --locked --workspace
+  --all-targets` green; `cargo fmt --all
+  --check` clean; `cargo clippy` 0
+  errors, 0 warnings on both touched
+  packages. `cargo nextest list
+  --workspace --all-targets`: 7277 ->
+  7277, delta is exactly 43 moved (41
+  `host::discovery::tests::*` ->
+  `jackin-usage-discovery tests::*`, 2
+  -> `host::tests::case_07`; zero
+  dropped, zero added). `nextest run`:
+  350/350 usage + 41/41 discovery.
+  The provider-call contract fixture
+  remaps 7 `refresh.rs` entries to the
+  new path and the suite is green.
+  `alint check`: byte-identical.
+  `check-gaps`: 27 -> 27 (usage
+  `SIZE-001` 23455 -> 19543 lines,
+  `SIZE-002` 115 -> 97 files; the new
+  crate fits both budgets).
+  `GAP-TEST-001/002/003` stay 0/0/0.
+  `ratchet.toml`: +1 row (agent-doc
+  1324); violations 60 -> 60 with zero
+  new failures. `lint arch`: missing
+  tiers stay 3, zero direction
+  violations; `lint headers` stays at
+  the base 2; `lint tests` OK.
+- Raw outputs:
+  `/tmp/s12-s31-{before,after}.txt`
+  (kept out of the repo).

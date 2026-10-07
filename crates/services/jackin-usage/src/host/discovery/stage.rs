@@ -2,10 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `HostUsageRuntime` discovery staging.
 
-use super::{
-    DiscoveredAccountDescriptor, ProviderCredentialEnvResolver, ValidatedCredentialBinding,
-    discover_usage_sources, validate_usage_sources,
+use jackin_usage_discovery::{
+    DiscoveredAccountDescriptor, ValidatedCredentialBinding, discover_usage_sources,
+    validate_usage_sources,
 };
+use jackin_usage_host_credentials::ProviderCredentialEnvResolver;
 
 use jackin_protocol::control::FocusedUsageView;
 
@@ -37,8 +38,8 @@ impl HostUsageRuntime {
         };
         let discovered = validate_usage_sources(catalog, resolver);
         let changed = self.discovery.as_ref().is_none_or(|current| {
-            super::super::broker::usage_catalog_entries(current)
-                != super::super::broker::usage_catalog_entries(&discovered)
+            jackin_usage_discovery::usage_catalog_entries(current)
+                != jackin_usage_discovery::usage_catalog_entries(&discovered)
         });
         Ok(Some(StagedUsageDiscovery {
             base_generation: self.discovery_generation,

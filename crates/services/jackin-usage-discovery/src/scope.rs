@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Discovery scope and credential root matrix.
 
-use super::ForwardedUsageAccount;
+use jackin_usage_host_credentials::ForwardedUsageAccount;
 
 use std::path::PathBuf;
 

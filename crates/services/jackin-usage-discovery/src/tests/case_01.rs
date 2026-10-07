@@ -302,7 +302,7 @@ fn disc_synthesized_routes_keep_launch_keys_separate() {
     );
     let validated = validate_usage_sources(catalog, &resolver);
     assert_eq!(validated.bindings.len(), 1);
-    assert_eq!(crate::host::usage_broker_capabilities(&validated).len(), 1);
+    assert_eq!(usage_broker_capabilities(&validated).len(), 1);
 }
 
 #[test]
@@ -356,7 +356,7 @@ fn disc_registry_openrouter_api_key_maps_to_usage_surface_and_governed_env() {
     assert!(!format!("{catalog:?}").contains("fixture-openrouter-key"));
 
     let validated = validate_usage_sources(catalog, &resolver);
-    let capabilities = crate::host::usage_broker_capabilities(&validated);
+    let capabilities = usage_broker_capabilities(&validated);
     assert_eq!(capabilities.len(), 1);
     assert_eq!(capabilities[0].surface_id, "openrouter");
 }

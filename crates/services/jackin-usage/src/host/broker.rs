@@ -26,9 +26,8 @@ mod serve;
 mod service;
 mod startup;
 
-pub(crate) use capabilities::usage_catalog_entries;
 pub use capabilities::{
-    forwarded_usage_capabilities, usage_broker_capabilities, usage_capability_for_selected_account,
+    forwarded_usage_capabilities, usage_capability_for_selected_account,
     usage_capability_for_selected_account_with_sources,
 };
 pub use client::UsageBrokerClient;
@@ -41,7 +40,9 @@ pub use handle::{ForwardedUsageSources, UsageBrokerHandle};
 pub(crate) use jackin_usage_broker_wire::UNIX_SOCKET_PATH_LIMIT;
 #[cfg(target_os = "macos")]
 pub(crate) use jackin_usage_broker_wire::UNIX_SOCKET_PATH_LIMIT;
-pub(crate) use leader::capability_for_binding;
+pub(crate) use jackin_usage_discovery::capability_for_binding;
+pub(crate) use jackin_usage_discovery::usage_broker_capabilities;
+pub(crate) use jackin_usage_discovery::usage_catalog_entries;
 pub use service::{
     ensure_usage_broker_with_executor, run_usage_broker_service,
     run_usage_broker_service_with_executor,

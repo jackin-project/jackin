@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Per-provider profile identity.
 
-use super::{
+use crate::{
     ProfileCredentialMaterial, ProfileCredentialReader, ProfileReadOutcome, ProfileValidation,
     first_recursive_string, read_json,
 };
@@ -25,14 +25,14 @@ pub(crate) fn cursor_profile_identity(
         Ok(None) => return ProfileValidation::Missing,
         Err(outcome) => return outcome,
     };
-    if crate::usage::cursor_auth_from_value(&value).is_none() {
+    if jackin_usage_provider_cursor::cursor_auth_from_value(&value).is_none() {
         return ProfileValidation::Malformed;
     }
     let material = Some(Box::new(ProfileCredentialMaterial::Cursor { auth_path }));
     let label = read_json(reader, &root.join("cli-config.json"))
         .ok()
         .flatten()
-        .and_then(|config| crate::usage::cursor_cli_identity_from_value(&config));
+        .and_then(|config| jackin_usage_provider_cursor::cursor_cli_identity_from_value(&config));
     match label {
         Some(label) => ProfileValidation::Authenticated {
             provider_id: None,
@@ -181,13 +181,14 @@ pub(crate) fn claude_profile_identity(
         match read_json(reader, &path) {
             Ok(Some(value)) => {
                 if credential.is_none() {
-                    credential = crate::usage::claude_oauth_from_value(&value);
+                    credential = jackin_usage_provider_claude::claude_oauth_from_value(&value);
                 }
                 if account_label.is_none() {
-                    account_label = crate::usage::claude_email_from_value(&value);
+                    account_label = jackin_usage_provider_claude::claude_email_from_value(&value);
                 }
                 if organization_type.is_none() {
-                    organization_type = crate::usage::claude_organization_type_from_value(&value);
+                    organization_type =
+                        jackin_usage_provider_claude::claude_organization_type_from_value(&value);
                 }
             }
             Ok(None) => {}
@@ -199,7 +200,7 @@ pub(crate) fn claude_profile_identity(
     if let Some(credential) = credential {
         let is_anonymous = account_label.is_none() && credential.refresh_token.is_none();
         let material = Some(Box::new(ProfileCredentialMaterial::Claude(
-            crate::usage::ClaudeResolved {
+            jackin_usage_provider_claude::ClaudeResolved {
                 access_token: credential.access_token,
                 subscription_type: credential.subscription_type,
                 account_email: account_label.clone(),
@@ -225,17 +226,19 @@ pub(crate) fn claude_profile_identity(
             let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
                 return ProfileValidation::Malformed;
             };
-            let Some(credential) = crate::usage::claude_oauth_from_value(&value) else {
+            let Some(credential) = jackin_usage_provider_claude::claude_oauth_from_value(&value)
+            else {
                 return ProfileValidation::Malformed;
             };
-            let account_label = crate::usage::claude_email_from_value(&value);
+            let account_label = jackin_usage_provider_claude::claude_email_from_value(&value);
             let is_anonymous = account_label.is_none() && credential.refresh_token.is_none();
             let material = Some(Box::new(ProfileCredentialMaterial::Claude(
-                crate::usage::ClaudeResolved {
+                jackin_usage_provider_claude::ClaudeResolved {
                     access_token: credential.access_token,
                     subscription_type: credential.subscription_type,
                     account_email: account_label.clone(),
-                    organization_type: crate::usage::claude_organization_type_from_value(&value),
+                    organization_type:
+                        jackin_usage_provider_claude::claude_organization_type_from_value(&value),
                     credential_origin: "OAuth · configured profile".to_owned(),
                     is_anonymous,
                 },
@@ -263,7 +266,7 @@ pub(crate) fn codex_profile_identity(
         Ok(None) => return ProfileValidation::Missing,
         Err(outcome) => return outcome,
     };
-    let Some(credentials) = crate::usage::codex_oauth_from_value(&value) else {
+    let Some(credentials) = jackin_usage_provider_codex::codex_oauth_from_value(&value) else {
         return ProfileValidation::Malformed;
     };
     let material = Some(Box::new(ProfileCredentialMaterial::Codex {

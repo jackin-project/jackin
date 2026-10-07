@@ -34,7 +34,7 @@ pub(crate) use jackin_usage_provider_antigravity::{
     antigravity_snapshot, fetch_antigravity_cli_credits, fetch_antigravity_cli_usage,
     parse_agy_version, parse_antigravity_credits_output, parse_antigravity_usage_output,
 };
-#[cfg(any(target_os = "macos", test))]
+#[cfg(test)]
 pub(crate) use jackin_usage_provider_claude::classify_claude_keychain_status;
 #[expect(
     unused_imports,
@@ -165,7 +165,6 @@ pub(crate) use jackin_usage_provider_muse::{
     MuseIdentity, MuseKeyExchangePolicy, MuseObservation, MuseWindow, muse_buckets,
     muse_freshness_epoch, muse_identity_from_value, muse_view, parse_muse_usage_read,
 };
-pub(crate) use jackin_usage_provider_opencode::opencode_profile_snapshot;
 #[cfg(test)]
 pub(crate) use jackin_usage_provider_opencode::{load_opencode_api_key, parse_opencode_usage};
 #[expect(

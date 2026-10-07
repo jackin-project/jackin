@@ -164,7 +164,8 @@ impl<S: ProviderCredentialSecretSource> CachedProviderCredentialResolver<S> {
         // dispatch key: OAuth and deployment routes can share an owner while
         // requiring a different provider snapshot path.
         let cache_key = canonical_usage_key(entry.owner);
-        let governed_name = super::discovery::governed_name_for_account_alias(entry.name);
+        let governed_name =
+            jackin_usage_host_credentials::governed_name_for_account_alias(entry.name);
         let dispatch_key = dispatch_key_for_route(entry.owner, governed_name);
         let mut state = self
             .state

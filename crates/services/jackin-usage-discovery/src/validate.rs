@@ -2,17 +2,18 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Usage source validation entry points.
 
-use super::{
+use crate::{
     AccountAccumulator, CachingProfileCredentialReader, DiscoveredAccountDescriptor,
-    ProfileCredentialReader, ProfileValidation, ProviderCredentialEnvResolver,
-    SystemProfileCredentialReader, UsageDiscoveryCatalog, ValidatedCredentialSource,
-    ValidatedSourceParts, ValidatedUsageDiscovery, accumulate_validated_source, validate_source,
+    ProfileCredentialReader, ProfileValidation, SystemProfileCredentialReader,
+    UsageDiscoveryCatalog, ValidatedCredentialSource, ValidatedSourceParts,
+    ValidatedUsageDiscovery, accumulate_validated_source, validate_source,
 };
+use jackin_usage_host_credentials::ProviderCredentialEnvResolver;
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::super::CanonicalAccountIdentity;
-use super::super::CanonicalAccountSubject;
-use super::super::HostSurfaceId;
+use jackin_usage_host_accounts::CanonicalAccountIdentity;
+use jackin_usage_host_accounts::CanonicalAccountSubject;
+use jackin_usage_host_presentation::HostSurfaceId;
 
 /// Validate every pre-deduplicated source and merge authenticated identities.
 ///

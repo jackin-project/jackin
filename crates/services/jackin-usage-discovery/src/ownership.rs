@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Provider ownership and catalog materialization.
 
-use super::{
+use crate::{
     CandidateAccumulator, CredentialSourceKey, DiscoveredCredentialSource, UsageDiscoveryCatalog,
     UsageDiscoveryDiagnostic, UsageDiscoveryIssue, UsageSourceCandidateDescriptor,
 };
@@ -12,7 +12,7 @@ use jackin_config::{AiProvider, ConfigSourceIssue, ReadOnlyConfigSnapshot};
 use jackin_core::UsageCredentialOwner;
 use std::path::{Component, Path, PathBuf};
 
-use super::super::HostSurfaceId;
+use jackin_usage_host_presentation::HostSurfaceId;
 
 pub(crate) fn provider_surface(provider: AiProvider) -> HostSurfaceId {
     match provider {

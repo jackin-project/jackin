@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-use crate::host::HostAccountCatalogStores;
 
 #[test]
 fn disc_kimi_missing_selected_credentials_never_uses_other_home_profile() {
@@ -157,37 +156,6 @@ fn disc_dedup_repeated_roots_read_once_and_same_identity_merges() {
             .iter()
             .any(|scope| scope == "workspace first")
     );
-}
-
-#[test]
-fn disc_dedup_legacy_shared_snapshot_never_creates_active_row() {
-    let temp = tempfile::tempdir().unwrap();
-    let shared = temp.path().join("shared");
-    std::fs::create_dir_all(&shared).unwrap();
-    let mut historical = FocusedUsageView::unavailable("stale", 1);
-    historical.focused_agent = Some("codex".to_owned());
-    historical.focused_provider = Some("Codex".to_owned());
-    historical.account.provider_label = "OpenAI / Codex".to_owned();
-    historical.account.account_label = "removed@example.test".to_owned();
-    std::fs::write(
-        shared.join("usage-old.snapshot.json"),
-        serde_json::to_vec(&historical).unwrap(),
-    )
-    .unwrap();
-    let store = temp.path().join("missing.db");
-
-    let empty_membership: &[DiscoveredAccountDescriptor] = &[];
-    let catalog = crate::host::accounts::materialize_account_catalog(
-        &[],
-        &BTreeMap::new(),
-        &BTreeMap::new(),
-        &store,
-        Some(empty_membership),
-        &HostAccountCatalogStores,
-    )
-    .unwrap();
-
-    assert!(catalog.entries_for_surface(HostSurfaceId::Codex).is_empty());
 }
 
 #[test]

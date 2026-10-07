@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Profile identity resolution.
 
-use super::{
+use crate::{
     ProfileCredentialMaterial, ProfileCredentialReader, ProfileReadOutcome, ProfileValidation,
     amp_profile_identity, antigravity_profile_identity, claude_profile_identity,
     codex_profile_identity, cursor_profile_identity, gemini_profile_identity,
@@ -125,12 +125,15 @@ pub(crate) fn profile_identity(
                 Ok(None) => return ProfileValidation::Missing,
                 Err(outcome) => return outcome,
             };
-            crate::usage::kimi_local_token_from_value(&value, chrono::Utc::now().timestamp())
-                .map_or(ProfileValidation::Malformed, |token| {
-                    ProfileValidation::Anonymous(Some(Box::new(ProfileCredentialMaterial::Kimi {
-                        token,
-                    })))
-                })
+            jackin_usage_provider_kimi::kimi_local_token_from_value(
+                &value,
+                chrono::Utc::now().timestamp(),
+            )
+            .map_or(ProfileValidation::Malformed, |token| {
+                ProfileValidation::Anonymous(Some(Box::new(ProfileCredentialMaterial::Kimi {
+                    token,
+                })))
+            })
         }
         Agent::Grok => grok_profile_identity(reader, &root.join("auth.json")),
         Agent::Opencode => opencode_profile_identity(reader, &root.join("auth.json")),

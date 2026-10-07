@@ -2,10 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Credential binding refresh.
 
-use super::{
+use crate::{
     ProfileCredentialMaterial, ProfileCredentialReader, ProfileReadOutcome, ProfileValidation,
-    ProviderCredentialEnvResolver, ProviderCredentialRefreshOutcome, ValidatedCredentialBinding,
-    ValidatedCredentialSource,
+    ValidatedCredentialBinding, ValidatedCredentialSource,
+};
+use jackin_usage_host_credentials::{
+    ProviderCredentialEnvResolver, ProviderCredentialRefreshOutcome,
 };
 
 use std::path::Path;
@@ -47,7 +49,7 @@ pub(crate) fn first_recursive_string(value: &serde_json::Value, keys: &[&str]) -
     }
 }
 
-pub(crate) fn refresh_credential_binding(
+pub fn refresh_credential_binding(
     binding: &ValidatedCredentialBinding,
     env_resolver: &dyn ProviderCredentialEnvResolver,
 ) -> ProviderCredentialRefreshOutcome {
@@ -74,24 +76,26 @@ pub(crate) fn refresh_credential_binding(
             None,
         ),
         ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Claude(resolved)) => {
-            crate::usage::claude_view_from_wave_with_rate_limit(
+            jackin_usage_provider_claude::claude_view_from_wave_with_rate_limit(
                 binding.surface.agent_slug(),
                 binding.surface.provider_label(),
                 chrono::Utc::now().timestamp(),
-                crate::usage::ClaudeWaveResolution::Resolved(Box::new(resolved.clone())),
+                jackin_usage_provider_claude::ClaudeWaveResolution::Resolved(Box::new(
+                    resolved.clone(),
+                )),
             )
         }
         ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Codex {
             credentials,
             root,
-        }) => crate::usage::codex_profile_snapshot_with_rate_limit(
+        }) => jackin_usage_provider_codex::codex_profile_snapshot_with_rate_limit(
             binding.surface.agent_slug(),
             credentials,
             root,
             chrono::Utc::now().timestamp(),
         ),
         ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Amp { key }) => (
-            crate::usage::amp_api_key_snapshot(
+            jackin_usage_provider_amp::amp_api_key_snapshot(
                 binding.surface.agent_slug(),
                 key,
                 chrono::Utc::now().timestamp(),
@@ -100,9 +104,12 @@ pub(crate) fn refresh_credential_binding(
         ),
         ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Grok { auth_path }) => {
             let now = chrono::Utc::now().timestamp();
-            let result = crate::usage::fetch_grok_rest_billing(auth_path, now)
-                .map(|response| crate::usage::GrokBillingSnapshot::Rest(Box::new(response)));
-            crate::usage::grok_snapshot_from_rpc_result_with_rate_limit(
+            let result = jackin_usage_provider_grok::fetch_grok_rest_billing(auth_path, now).map(
+                |response| {
+                    jackin_usage_provider_grok::GrokBillingSnapshot::Rest(Box::new(response))
+                },
+            );
+            jackin_usage_provider_grok::grok_snapshot_from_rpc_result_with_rate_limit(
                 binding.surface.agent_slug(),
                 now,
                 auth_path,
@@ -115,7 +122,7 @@ pub(crate) fn refresh_credential_binding(
         ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Kimi { token }) => {
             let now = chrono::Utc::now().timestamp();
             (
-                crate::usage::kimi_snapshot(
+                jackin_usage_provider_kimi::kimi_snapshot(
                     binding.surface.agent_slug(),
                     Some(token.as_str()),
                     now,
@@ -124,7 +131,7 @@ pub(crate) fn refresh_credential_binding(
             )
         }
         ValidatedCredentialSource::Profile(ProfileCredentialMaterial::OpenCode { auth_path }) => (
-            crate::usage::opencode_profile_snapshot(
+            jackin_usage_provider_opencode::opencode_profile_snapshot(
                 binding.surface.agent_slug(),
                 auth_path,
                 chrono::Utc::now().timestamp(),
@@ -132,7 +139,7 @@ pub(crate) fn refresh_credential_binding(
             None,
         ),
         ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Cursor { auth_path }) => (
-            crate::usage::cursor_profile_snapshot(
+            jackin_usage_provider_cursor::cursor_profile_snapshot(
                 binding.surface.agent_slug(),
                 auth_path,
                 chrono::Utc::now().timestamp(),
@@ -144,7 +151,7 @@ pub(crate) fn refresh_credential_binding(
             // discovery is NeedsSecret, never a stale Unsupported.
             let has_oauth = creds_path.is_file();
             (
-                crate::usage::gemini_snapshot_with_presence(
+                jackin_usage_provider_gemini::gemini_snapshot_with_presence(
                     binding.surface.agent_slug(),
                     binding.surface.provider_label(),
                     has_oauth,
@@ -158,7 +165,7 @@ pub(crate) fn refresh_credential_binding(
         // The Keychain grant needs no secret material here: `agy` owns the
         // grant and the collector shells out to it.
         ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Antigravity) => (
-            crate::usage::antigravity_snapshot(
+            jackin_usage_provider_antigravity::antigravity_snapshot(
                 binding.surface.agent_slug(),
                 binding.surface.provider_label(),
                 chrono::Utc::now().timestamp(),

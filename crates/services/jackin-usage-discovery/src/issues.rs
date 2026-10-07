@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Discovery diagnostics and candidates.
 
-use super::UsageCredentialKind;
+use jackin_usage_host_credentials::UsageCredentialKind;
 
 /// Sanitized source-level failure.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

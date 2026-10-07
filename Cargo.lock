@@ -3655,6 +3655,7 @@ dependencies = [
  "jackin-usage-coordinator",
  "jackin-usage-credential-snapshots",
  "jackin-usage-destination",
+ "jackin-usage-discovery",
  "jackin-usage-host-accounts",
  "jackin-usage-host-credentials",
  "jackin-usage-host-presentation",
@@ -3756,6 +3757,33 @@ name = "jackin-usage-destination"
 version = "0.6.4"
 dependencies = [
  "jackin-protocol",
+]
+
+[[package]]
+name = "jackin-usage-discovery"
+version = "0.6.4"
+dependencies = [
+ "chrono",
+ "jackin-config",
+ "jackin-core",
+ "jackin-protocol",
+ "jackin-usage-host-accounts",
+ "jackin-usage-host-credentials",
+ "jackin-usage-host-presentation",
+ "jackin-usage-provider-amp",
+ "jackin-usage-provider-antigravity",
+ "jackin-usage-provider-claude",
+ "jackin-usage-provider-codex",
+ "jackin-usage-provider-core",
+ "jackin-usage-provider-cursor",
+ "jackin-usage-provider-gemini",
+ "jackin-usage-provider-grok",
+ "jackin-usage-provider-kimi",
+ "jackin-usage-provider-opencode",
+ "security-framework",
+ "serde_json",
+ "tempfile",
+ "toml",
 ]
 
 [[package]]

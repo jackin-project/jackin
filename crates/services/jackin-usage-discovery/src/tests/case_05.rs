@@ -23,7 +23,7 @@ fn disc_same_env_key_through_two_accounts_dedupes_to_one_source() {
     let validated = validate_usage_sources(catalog, &resolver);
     assert_eq!(validated.accounts.len(), 1);
     assert_eq!(validated.accounts[0].provenance.len(), 2);
-    assert_eq!(crate::host::usage_broker_capabilities(&validated).len(), 1);
+    assert_eq!(usage_broker_capabilities(&validated).len(), 1);
 }
 
 #[test]
@@ -44,7 +44,7 @@ fn disc_env_key_without_profile_keeps_own_source_scoped_row() {
         validated.accounts[0].identity.subject,
         CanonicalAccountSubject::SourceCapability(_)
     ));
-    assert_eq!(crate::host::usage_broker_capabilities(&validated).len(), 1);
+    assert_eq!(usage_broker_capabilities(&validated).len(), 1);
     assert_eq!(validated.unresolved_capabilities().count(), 0);
 }
 
@@ -82,7 +82,7 @@ fn disc_env_key_with_two_provider_identities_stays_separate() {
 
     // Ambiguous targets are never guessed: the key keeps its own row.
     assert_eq!(validated.accounts.len(), 3);
-    assert_eq!(crate::host::usage_broker_capabilities(&validated).len(), 3);
+    assert_eq!(usage_broker_capabilities(&validated).len(), 3);
 }
 
 #[test]
@@ -114,7 +114,7 @@ fn disc_env_key_does_not_attach_to_label_only_profile() {
         account.identity.subject,
         CanonicalAccountSubject::SourceCapability(_)
     )));
-    assert_eq!(crate::host::usage_broker_capabilities(&validated).len(), 2);
+    assert_eq!(usage_broker_capabilities(&validated).len(), 2);
 }
 
 #[test]

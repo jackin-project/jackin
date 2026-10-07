@@ -260,7 +260,7 @@ fn disc_env_key_account_resolves_through_isolated_alias() {
             ..
         } if key == "OPENAI_API_KEY" && dispatch_key == "OPENAI_API_KEY"
     ));
-    assert_eq!(crate::host::usage_broker_capabilities(&validated).len(), 1);
+    assert_eq!(usage_broker_capabilities(&validated).len(), 1);
     assert_eq!(validated.unresolved_capabilities().count(), 0);
 }
 
@@ -358,7 +358,7 @@ fn disc_mixed_profile_and_env_same_provider_merge_to_one_identity() {
         validated.bindings[0].identity,
         validated.bindings[1].identity
     );
-    assert_eq!(crate::host::usage_broker_capabilities(&validated).len(), 1);
+    assert_eq!(usage_broker_capabilities(&validated).len(), 1);
     assert_eq!(validated.unresolved_capabilities().count(), 0);
 }
 
@@ -380,5 +380,5 @@ fn disc_distinct_env_keys_same_provider_keep_distinct_identities() {
 
     let validated = validate_usage_sources(catalog, &resolver);
     assert_eq!(validated.accounts.len(), 2);
-    assert_eq!(crate::host::usage_broker_capabilities(&validated).len(), 2);
+    assert_eq!(usage_broker_capabilities(&validated).len(), 2);
 }

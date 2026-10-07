@@ -2,15 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Validated source accumulation.
 
-use super::{
+use crate::{
     AccountAccumulator, ProfileValidation, UsageDiscoveryDiagnostic, UsageDiscoveryIssue,
     ValidatedCredentialBinding, ValidatedCredentialSource, source_diagnostic,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::super::CanonicalAccountIdentity;
-use super::super::CanonicalAccountSubject;
-use super::super::HostSurfaceId;
+use jackin_usage_host_accounts::CanonicalAccountIdentity;
+use jackin_usage_host_accounts::CanonicalAccountSubject;
+use jackin_usage_host_presentation::HostSurfaceId;
 
 pub(crate) fn accumulate_validated_source(
     parts: ValidatedSourceParts,

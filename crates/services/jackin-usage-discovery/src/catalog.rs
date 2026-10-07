@@ -2,19 +2,17 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Validated catalog types and accumulators.
 
-use super::{
+use crate::{UsageDiscoveryDiagnostic, UsageSourceCandidateDescriptor};
+use jackin_usage_host_accounts::{AccountMembershipDescriptor, CanonicalAccountIdentity};
+use jackin_usage_host_credentials::{
     OpaqueCredentialHandle, ProviderCredentialSourceMaterial, UsageCredentialKind,
-    UsageDiscoveryDiagnostic, UsageSourceCandidateDescriptor,
 };
 use std::collections::BTreeSet;
 
 use std::path::PathBuf;
 
 use jackin_core::Agent;
-
-use super::super::CanonicalAccountIdentity;
-
-use super::super::HostSurfaceId;
+use jackin_usage_host_presentation::HostSurfaceId;
 
 /// One complete source discovery generation.
 #[derive(Clone, PartialEq, Eq)]
@@ -41,7 +39,29 @@ pub struct DiscoveredAccountDescriptor {
     pub provenance: Vec<String>,
     /// Opaque source ids merged into this account.
     pub source_ids: Vec<String>,
-    pub(crate) identity: CanonicalAccountIdentity,
+    pub identity: CanonicalAccountIdentity,
+}
+
+impl AccountMembershipDescriptor for DiscoveredAccountDescriptor {
+    fn surface_id(&self) -> &str {
+        &self.surface_id
+    }
+
+    fn account_key(&self) -> &str {
+        &self.account_key
+    }
+
+    fn account_label(&self) -> &str {
+        &self.account_label
+    }
+
+    fn provenance(&self) -> &[String] {
+        &self.provenance
+    }
+
+    fn identity(&self) -> CanonicalAccountIdentity {
+        self.identity.clone()
+    }
 }
 
 /// Validated, post-auth discovery generation.
@@ -55,13 +75,11 @@ pub struct ValidatedUsageDiscovery {
     pub diagnostics: Vec<UsageDiscoveryDiagnostic>,
     /// Deduplicated source inventory used for refresh routing.
     pub candidates: Vec<UsageSourceCandidateDescriptor>,
-    pub(crate) bindings: Vec<ValidatedCredentialBinding>,
+    pub bindings: Vec<ValidatedCredentialBinding>,
 }
 
 impl ValidatedUsageDiscovery {
-    pub(crate) fn unresolved_capabilities(
-        &self,
-    ) -> impl Iterator<Item = &UsageSourceCandidateDescriptor> {
+    pub fn unresolved_capabilities(&self) -> impl Iterator<Item = &UsageSourceCandidateDescriptor> {
         self.candidates.iter().filter(|candidate| {
             self.bindings.iter().any(|binding| {
                 binding.capability_id == candidate.capability_id && binding.identity.is_none()
@@ -69,9 +87,7 @@ impl ValidatedUsageDiscovery {
         })
     }
 
-    pub(crate) fn canonical_aliases(
-        &self,
-    ) -> impl Iterator<Item = (&str, &CanonicalAccountIdentity)> {
+    pub fn canonical_aliases(&self) -> impl Iterator<Item = (&str, &CanonicalAccountIdentity)> {
         self.bindings.iter().filter_map(|binding| {
             binding
                 .identity
@@ -94,8 +110,8 @@ impl std::fmt::Debug for ValidatedUsageDiscovery {
     }
 }
 
-#[derive(Clone)]
-pub(crate) struct ValidatedCredentialBinding {
+#[derive(Clone, Debug)]
+pub struct ValidatedCredentialBinding {
     pub surface: HostSurfaceId,
     pub identity: Option<CanonicalAccountIdentity>,
     pub source_id: String,
@@ -105,8 +121,8 @@ pub(crate) struct ValidatedCredentialBinding {
     pub source: ValidatedCredentialSource,
 }
 
-#[derive(Clone)]
-pub(crate) enum ValidatedCredentialSource {
+#[derive(Clone, Debug)]
+pub enum ValidatedCredentialSource {
     Profile(ProfileCredentialMaterial),
     Env {
         handle: OpaqueCredentialHandle,
@@ -128,10 +144,11 @@ pub(crate) enum ValidatedCredentialSource {
 }
 
 #[derive(Clone)]
-pub(crate) enum ProfileCredentialMaterial {
-    Claude(crate::usage::ClaudeResolved),
+pub enum ProfileCredentialMaterial {
+    Claude(jackin_usage_provider_claude::ClaudeResolved),
+
     Codex {
-        credentials: crate::usage::CodexOAuthCredentials,
+        credentials: jackin_usage_provider_codex::CodexOAuthCredentials,
         root: PathBuf,
     },
     Amp {
@@ -155,6 +172,38 @@ pub(crate) enum ProfileCredentialMaterial {
     /// Antigravity CLI grant (Keychain singleton): presence-only, no secret
     /// material — refresh shells out to `agy`, which owns the grant.
     Antigravity,
+}
+
+impl std::fmt::Debug for ProfileCredentialMaterial {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Claude(_) => formatter.write_str("Claude(REDACTED)"),
+            Self::Codex { root, .. } => formatter
+                .debug_struct("Codex")
+                .field("credentials", &"REDACTED")
+                .field("root", root)
+                .finish(),
+            Self::Amp { .. } => formatter.write_str("Amp(REDACTED)"),
+            Self::Grok { auth_path } => formatter
+                .debug_struct("Grok")
+                .field("auth_path", auth_path)
+                .finish(),
+            Self::Kimi { .. } => formatter.write_str("Kimi(REDACTED)"),
+            Self::OpenCode { auth_path } => formatter
+                .debug_struct("OpenCode")
+                .field("auth_path", auth_path)
+                .finish(),
+            Self::Cursor { auth_path } => formatter
+                .debug_struct("Cursor")
+                .field("auth_path", auth_path)
+                .finish(),
+            Self::Gemini { creds_path } => formatter
+                .debug_struct("Gemini")
+                .field("creds_path", creds_path)
+                .finish(),
+            Self::Antigravity => formatter.write_str("Antigravity"),
+        }
+    }
 }
 
 impl std::fmt::Debug for UsageDiscoveryCatalog {

@@ -2,15 +2,17 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Per-source validation and diagnostics.
 
-use super::{
+use crate::{
     DiscoveredCredentialSource, ProfileCredentialReader, ProfileValidation,
-    ProviderCredentialEnvResolver, ProviderCredentialIdentityOutcome, UsageDiscoveryDiagnostic,
-    UsageDiscoveryIssue, ValidatedCredentialSource, ValidatedSourceParts,
+    UsageDiscoveryDiagnostic, UsageDiscoveryIssue, ValidatedCredentialSource, ValidatedSourceParts,
     opaque_credential_revision, profile_credential_revision, profile_identity,
+};
+use jackin_usage_host_credentials::{
+    ProviderCredentialEnvResolver, ProviderCredentialIdentityOutcome,
 };
 use std::collections::BTreeSet;
 
-use super::super::HostSurfaceId;
+use jackin_usage_host_presentation::HostSurfaceId;
 
 pub(crate) fn validate_source(
     source: DiscoveredCredentialSource,

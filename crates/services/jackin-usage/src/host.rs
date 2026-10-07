@@ -50,8 +50,7 @@ pub use broker::{
     ForwardedUsageSources, UsageBrokerClient, UsageBrokerConfig, UsageBrokerHandle,
     ensure_usage_broker, ensure_usage_broker_process, ensure_usage_broker_with_executor,
     forwarded_usage_capabilities, run_usage_broker_service, run_usage_broker_service_with_executor,
-    usage_broker_capabilities, usage_capability_for_selected_account,
-    usage_capability_for_selected_account_with_sources,
+    usage_capability_for_selected_account, usage_capability_for_selected_account_with_sources,
 };
 pub(crate) use config::canonical_instance_id;
 pub use config::{
@@ -66,19 +65,22 @@ pub use desktop::{
     HostDesktopInventory, HostDesktopProjection, HostDesktopProviderGroup,
     HostDesktopProviderProjection, HostDesktopProviderState, HostSelectedAccountRoute,
 };
-pub use discovery::{
-    DiscoveredAccountDescriptor, ForwardedUsageAccount, HostCredentialRootRow,
-    OpaqueCredentialHandle, ProviderCredentialEnvOutcome, ProviderCredentialEnvResolution,
-    ProviderCredentialEnvResolver, ProviderCredentialIdentityOutcome,
-    ProviderCredentialRefreshOutcome, ProviderCredentialSourceMaterial, UsageCredentialKind,
-    UsageDiscoveryCatalog, UsageDiscoveryDiagnostic, UsageDiscoveryIssue, UsageDiscoveryScope,
+pub use jackin_usage_discovery::{
+    DiscoveredAccountDescriptor, HostCredentialRootRow, UsageDiscoveryCatalog,
+    UsageDiscoveryDiagnostic, UsageDiscoveryIssue, UsageDiscoveryScope,
     UsageSourceCandidateDescriptor, ValidatedUsageDiscovery, discover_usage_sources,
-    host_credential_root_matrix, validate_usage_sources,
+    host_credential_root_matrix, usage_broker_capabilities, validate_usage_sources,
 };
 pub use jackin_usage_host_accounts::{
     AccountLifecycle, AccountProvenance, CanonicalAccountIdentity, CanonicalAccountSubject,
     HostAccountDescriptor, account_key_for_view, canonical_account_id_for_view, min_remaining,
     short_account_identity,
+};
+pub use jackin_usage_host_credentials::{
+    ForwardedUsageAccount, OpaqueCredentialHandle, ProviderCredentialEnvOutcome,
+    ProviderCredentialEnvResolution, ProviderCredentialEnvResolver,
+    ProviderCredentialIdentityOutcome, ProviderCredentialRefreshOutcome,
+    ProviderCredentialSourceMaterial, UsageCredentialKind,
 };
 pub use jackin_usage_host_presentation::{HostEventBatch, HostUsageEvent};
 pub use jackin_usage_host_presentation::{HostOverviewRow, HostProviderGlanceRow};

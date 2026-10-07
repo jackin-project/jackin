@@ -2,13 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Account source scanning and enumeration.
 
-use super::{
-    CandidateAccumulator, CredentialSourceKey, ForwardedUsageAccount, ProviderCredentialEnvOutcome,
-    ProviderCredentialEnvResolver, UsageCredentialKind, UsageDiscoveryCatalog,
-    UsageDiscoveryDiagnostic, UsageDiscoveryIssue, UsageDiscoveryScope, account_diagnostic,
-    canonical_owner_for_account, canonical_usage_env_name, config_diagnostics,
-    governed_name_for_account_alias, materialize_catalog, merge_env_candidate, provider_surface,
-    resolve_profile_root,
+use crate::{
+    CandidateAccumulator, CredentialSourceKey, UsageDiscoveryCatalog, UsageDiscoveryDiagnostic,
+    UsageDiscoveryIssue, UsageDiscoveryScope, account_diagnostic, canonical_owner_for_account,
+    canonical_usage_env_name, config_diagnostics, materialize_catalog, merge_env_candidate,
+    provider_surface, resolve_profile_root,
+};
+use jackin_usage_host_credentials::{
+    ForwardedUsageAccount, ProviderCredentialEnvOutcome, ProviderCredentialEnvResolver,
+    UsageCredentialKind, governed_name_for_account_alias,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -17,7 +19,7 @@ use jackin_core::{AuthForwardMode, JackinPaths, UsageCredentialEnvName, UsageCre
 use jackin_usage_provider_core::dispatch_key_for_route;
 use std::path::Path;
 
-use super::super::HostSurfaceId;
+use jackin_usage_host_presentation::HostSurfaceId;
 
 /// Discover and pre-deduplicate every source authorized by `scope`.
 pub fn discover_usage_sources(

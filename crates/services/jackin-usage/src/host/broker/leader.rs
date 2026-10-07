@@ -10,15 +10,11 @@ use std::path::Path;
 
 use std::time::{Duration, Instant};
 
-use jackin_protocol::usage_broker::{
-    USAGE_BROKER_PROTOCOL_VERSION, UsageAccountCapability, UsageCoordinationError,
-};
+use jackin_protocol::usage_broker::{USAGE_BROKER_PROTOCOL_VERSION, UsageCoordinationError};
 use nix::fcntl::{OFlag, open};
 use nix::sys::signal::kill;
 use nix::sys::stat::Mode;
 use nix::unistd::{Pid, UnlinkatFlags, fsync, geteuid, unlinkat};
-
-use super::super::discovery::ValidatedCredentialBinding;
 
 use super::{
     BrokerLease, BrokerLeaseOwner, CONNECT_RETRY, CONNECT_RETRY_STEP, UsageBrokerClient,
@@ -259,29 +255,4 @@ pub(crate) fn wait_for_leader(client: &UsageBrokerClient) -> Result<(), UsageCoo
 
 pub(crate) fn connect_probe(client: &UsageBrokerClient) -> bool {
     UnixStream::connect(&client.socket_path).is_ok()
-}
-
-pub(crate) fn capability_for_binding(
-    binding: &ValidatedCredentialBinding,
-    catalog_revision: Option<&str>,
-) -> UsageAccountCapability {
-    let subject = if let Some(identity) = &binding.identity {
-        identity.account_key()
-    } else {
-        format!("provisional-capability-v1:{}", binding.capability_id)
-    };
-    let subject = match catalog_revision {
-        Some(revision) => format!(
-            "usage-capability-v2:catalog-revision:{}:{revision}:subject:{}:{subject}",
-            revision.len(),
-            subject.len()
-        ),
-        None => subject,
-    };
-    let hashed = jackin_core::account_key_hash(binding.surface.id(), &subject);
-    let account_id = hashed.strip_prefix("sha256:").unwrap_or(&hashed).to_owned();
-    UsageAccountCapability {
-        account_id,
-        surface_id: binding.surface.id().to_owned(),
-    }
 }

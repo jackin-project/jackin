@@ -1,8 +1,8 @@
 use std::sync::Mutex;
 
-use jackin_protocol::control::{UsageConfidence, UsageSnapshotStatus};
+use jackin_protocol::control::UsageSnapshotStatus;
 
-use super::*;
+use crate::*;
 
 mod support;
 use support::*;
