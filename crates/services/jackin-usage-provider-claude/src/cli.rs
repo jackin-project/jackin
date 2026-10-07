@@ -16,19 +16,19 @@ use serde::Serialize;
 use std::time::Duration;
 
 #[derive(Debug, Clone, Default)]
-pub(crate) struct ClaudeCliUsage {
-    pub(crate) session_used: Option<f64>,
-    pub(crate) weekly_used: Option<f64>,
-    pub(crate) sonnet_used: Option<f64>,
+pub struct ClaudeCliUsage {
+    pub session_used: Option<f64>,
+    pub weekly_used: Option<f64>,
+    pub sonnet_used: Option<f64>,
     /// Per-model weekly windows the CLI prints as `Current week (<model>): …`
     /// (Fable today; future model codenames). Each entry is `(model label,
     /// percent used)`. Distinct from `sonnet_used`, which preserves the legacy
     /// `(Sonnet only)` line and its "Sonnet" bucket label.
-    pub(crate) scoped_weekly: Vec<(String, f64)>,
+    pub scoped_weekly: Vec<(String, f64)>,
 }
 
 impl ClaudeCliUsage {
-    pub(crate) fn buckets(&self) -> Vec<QuotaBucketView> {
+    pub fn buckets(&self) -> Vec<QuotaBucketView> {
         // The CLI fallback reuses the same unified window model + builder as
         // the OAuth path, so a CLI "Weekly" line and an OAuth `weekly_all`
         // limit render identically (headline slot, over-cap label). CLI windows
@@ -60,7 +60,7 @@ impl ClaudeCliUsage {
     }
 }
 
-pub(crate) fn claude_code_user_agent() -> String {
+pub fn claude_code_user_agent() -> String {
     // The Claude Code version is stable for the process lifetime, so resolve the
     // UA once instead of spawning `claude --version` on every usage fetch — that
     // per-probe subprocess was a measurable slice of the load latency (Bug 3).
@@ -75,7 +75,7 @@ pub(crate) fn claude_code_user_agent() -> String {
         .clone()
 }
 
-pub(crate) fn claude_code_user_agent_with<F>(mut runner: F) -> Option<String>
+pub fn claude_code_user_agent_with<F>(mut runner: F) -> Option<String>
 where
     F: FnMut(&str, &[&str], Duration) -> Result<CliOutput, String>,
 {
@@ -87,7 +87,7 @@ where
     claude_code_version_from_text(&text).map(|version| format!("claude-code/{version}"))
 }
 
-pub(crate) fn claude_code_version_from_text(text: &str) -> Option<String> {
+pub fn claude_code_version_from_text(text: &str) -> Option<String> {
     text.split(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '.' || ch == '-'))
         .find(|part| {
             let mut segments = part.split('.');
@@ -113,7 +113,7 @@ pub struct ClaudeUsageDiagnostic {
     pub fetched_at_epoch: i64,
 }
 
-pub(crate) fn fetch_claude_cli_usage() -> Result<ClaudeCliUsage, ProviderError> {
+pub fn fetch_claude_cli_usage() -> Result<ClaudeCliUsage, ProviderError> {
     let diagnostic = run_claude_usage_diagnostic().map_err(ProviderError::from)?;
     if !diagnostic.success {
         return Err(ProviderError::from(format!(

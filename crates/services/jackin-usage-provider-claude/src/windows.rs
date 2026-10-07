@@ -14,10 +14,10 @@ use super::{
 };
 
 /// Session (5-hour) window duration, shared by every source that produces one.
-pub(crate) const CLAUDE_SESSION_WINDOW_SECONDS: i64 = 5 * 60 * 60;
+pub const CLAUDE_SESSION_WINDOW_SECONDS: i64 = 5 * 60 * 60;
 /// Weekly window duration, shared by every source (`weekly_all`,
 /// `weekly_scoped`, legacy `seven_day*`).
-pub(crate) const CLAUDE_WEEKLY_WINDOW_SECONDS: i64 = 7 * 24 * 60 * 60;
+pub const CLAUDE_WEEKLY_WINDOW_SECONDS: i64 = 7 * 24 * 60 * 60;
 
 /// One normalized Claude quota window — the single intermediate shape every
 /// utilization source feeds before it becomes a [`QuotaBucketView`]. The
@@ -27,23 +27,23 @@ pub(crate) const CLAUDE_WEEKLY_WINDOW_SECONDS: i64 = 7 * 24 * 60 * 60;
 /// CLI "Weekly" line share one builder instead of three near-identical ones.
 /// Fable is not a special case here — it is just another `weekly_scoped` entry.
 #[derive(Debug, Clone)]
-pub(crate) struct ClaudeQuotaWindow {
-    pub(crate) label: String,
-    pub(crate) slot: Option<StatusSlot>,
+pub struct ClaudeQuotaWindow {
+    pub label: String,
+    pub slot: Option<StatusSlot>,
     /// Used fraction on the scale the shared helpers expect: a raw
     /// `utilization` (fraction-or-percent) for legacy/CLI sources, or
     /// `f64::from(percent)` for `limits`. `used_percent_label` and
     /// `remaining_from_fraction` resolve the fraction-vs-percent ambiguity, so
     /// both source shapes flow through unchanged.
-    pub(crate) used: Option<f64>,
-    pub(crate) reset_at: Option<i64>,
-    pub(crate) window_seconds: Option<i64>,
-    pub(crate) severity: UsageSeverity,
+    pub used: Option<f64>,
+    pub reset_at: Option<i64>,
+    pub window_seconds: Option<i64>,
+    pub severity: UsageSeverity,
 }
 
 impl ClaudeQuotaWindow {
     /// A non-headline window with no reset/pace data (the CLI fallback shape).
-    pub(crate) fn scoped(label: &str, used: f64) -> Self {
+    pub fn scoped(label: &str, used: f64) -> Self {
         Self {
             label: label.to_owned(),
             slot: None,
@@ -56,12 +56,7 @@ impl ClaudeQuotaWindow {
 
     /// A headline window with a duration (so pace can be computed when the
     /// source also carries a reset). Used by the CLI Session/Weekly lines.
-    pub(crate) fn headline(
-        label: &str,
-        slot: StatusSlot,
-        used: f64,
-        window_seconds: Option<i64>,
-    ) -> Self {
+    pub fn headline(label: &str, slot: StatusSlot, used: f64, window_seconds: Option<i64>) -> Self {
         Self {
             label: label.to_owned(),
             slot: Some(slot),
@@ -76,7 +71,7 @@ impl ClaudeQuotaWindow {
     /// label is uncapped (a window over its limit renders `150% used` while
     /// `remaining` clamps at 0); pace is computed only when both a reset and a
     /// window duration are known; severity mirrors the API for meter color.
-    pub(crate) fn into_bucket(self, now: i64) -> QuotaBucketView {
+    pub fn into_bucket(self, now: i64) -> QuotaBucketView {
         let remaining = self.used.and_then(remaining_from_fraction);
         let pace = quota_pace_label(remaining, self.reset_at, self.window_seconds, now);
         let mut view = timed_bucket(
@@ -101,7 +96,7 @@ impl ClaudeOAuthUsageWindow {
     /// fixed field name can't (Session/Weekly headline + duration for pace), so
     /// a legacy weekly Sonnet window is paced the same way as a `weekly_scoped`
     /// Fable limit — uniform handling across API generations.
-    pub(crate) fn into_quota(
+    pub fn into_quota(
         self,
         label: &str,
         slot: Option<StatusSlot>,
@@ -127,7 +122,7 @@ impl ClaudeOAuthLimit {
     /// name (omitted, never fabricated into an empty-label row). The API's
     /// `is_active` flag is deliberately NOT a render gate — live responses
     /// send `false` on headline limits that still carry quota.
-    pub(crate) fn as_quota(&self) -> Option<ClaudeQuotaWindow> {
+    pub fn as_quota(&self) -> Option<ClaudeQuotaWindow> {
         let percent = json_number(self.percent.as_ref()?)?;
         let (label, slot, window_seconds) = match self.kind.as_deref()? {
             "session" => (
@@ -159,7 +154,7 @@ impl ClaudeOAuthLimit {
 
     /// The model display name for a `weekly_scoped` limit, trimmed and
     /// non-empty; `None` when the API supplied no name.
-    pub(crate) fn scoped_label(&self) -> Option<String> {
+    pub fn scoped_label(&self) -> Option<String> {
         self.scope
             .as_ref()
             .and_then(|scope| scope.model.as_ref())
@@ -171,7 +166,7 @@ impl ClaudeOAuthLimit {
 }
 
 impl ClaudeOAuthUsageResponse {
-    pub(crate) fn into_buckets(self, now: i64) -> Vec<QuotaBucketView> {
+    pub fn into_buckets(self, now: i64) -> Vec<QuotaBucketView> {
         // Destructure so the spend/dollar data is moved out before the
         // utilization windows consume the rest — one source of truth, one
         // builder, regardless of whether the windows came from `limits` or the
@@ -216,7 +211,7 @@ impl ClaudeOAuthUsageResponse {
     }
 }
 
-pub(crate) fn has_equivalent_claude_window(
+fn has_equivalent_claude_window(
     windows: &[ClaudeQuotaWindow],
     candidate: &ClaudeQuotaWindow,
 ) -> bool {
@@ -237,7 +232,7 @@ pub(crate) fn has_equivalent_claude_window(
 /// they share one builder with `limits`-sourced windows. Weekly-scoped windows
 /// (Sonnet/Opus/Routines) get the weekly duration so they are paced uniformly
 /// with a `weekly_scoped` Fable limit.
-pub(crate) fn legacy_claude_quota_windows(
+fn legacy_claude_quota_windows(
     five_hour: Option<ClaudeOAuthUsageWindow>,
     seven_day: Option<ClaudeOAuthUsageWindow>,
     seven_day_sonnet: Option<ClaudeOAuthUsageWindow>,

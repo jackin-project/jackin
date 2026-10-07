@@ -1548,3 +1548,74 @@ passes.
 - Raw outputs:
   `/tmp/s10-opencode-{before,after}.txt`
   (kept out of the repo).
+
+### Split 17: usage-provider-claude extraction (V14)
+
+- `jackin-usage` -> `jackin-usage` +
+  `jackin-usage-provider-claude` (T3 leaf:
+  `usage/claude.rs` -> `lib.rs` re-export
+  root + `cli`, `credentials`,
+  `diagnostic`, `keychain`, `oauth_types`,
+  `refresh`, `snapshot`, `spend`, `wave`,
+  `windows`, `tests` + `tests/main.rs`
+  placeholder; `lib.rs` carries the
+  ownership header). `usage.rs` re-exports
+  the vendor surface from the new crate
+  (blocks moved into the sorted
+  extracted-crate region), including the
+  two `pub` diagnostic items so
+  `jackin-usage`'s public API is unchanged.
+  Visibility deltas: `pub(crate)` -> `pub`
+  on the adapter surface, with five
+  `missing_debug_implementations` expects
+  on the credential types (cursor/codex
+  pattern: tokens and keychain payloads
+  never format), `Debug` derives on the
+  secret-free keychain state, internal
+  helpers demoted to private/`pub(crate)`
+  (`claude_keychain_state`,
+  `claude_scope_file_probe`, and the
+  wave/windows/refresh locals stay out of
+  the public API), and a `test-support`
+  feature (the diagnostics pattern)
+  exposing `load_claude_oauth_credentials`,
+  `load_claude_organization_type`, and
+  `ClaudeKeychainState::read_count` to the
+  staying `usage/tests` harness. New deps:
+  `jackin-core` + `jackin-telemetry` (both
+  T0) and macOS `security-framework`.
+  `usage.rs` drops its `#![expect(dead_code)]`
+  — claude held the last dead item.
+- Verify: `cargo check --locked --workspace
+  --all-targets` green; `cargo fmt --all
+  --check` clean; `cargo clippy` 0 errors,
+  0 warnings on both touched packages.
+  `cargo nextest list --workspace
+  --all-targets`: 7272 -> 7272, bijection
+  exact (2 claude tests move
+  `jackin-usage usage::claude::tests::` ->
+  `jackin-usage-provider-claude tests::`;
+  zero dropped, zero added).
+  `nextest run`: 490/490 usage + 2/2
+  claude. The provider-call contract
+  fixture remaps 3 entries to the new
+  crate path (entries stay 33, symbols
+  identical) and the suite is green.
+  `alint check`: 198 -> 198,
+  byte-identical. `check-gaps`: 27 -> 27
+  (usage `SIZE-001` 35388 -> 34040
+  lines, `SIZE-002` 226 -> 214 files;
+  xtask +1 line for the tier row);
+  `GAP-TEST-001/002/003` stay 0/0/0.
+  `ratchet.toml`: +3 claude rows
+  (agent-doc 1819, `cast_sign_loss` 1,
+  `missing_debug_implementations` 5), 2
+  usage rows deleted (`cast_sign_loss`
+  and `dead_code`, both at 0); violations
+  60 -> 60 with zero new failures. `lint
+  arch`: missing tiers stay 3, zero
+  direction violations; `lint headers`
+  stays at the base 2; `lint tests` OK.
+- Raw outputs:
+  `/tmp/s10-claude-{before,after}.txt`
+  (kept out of the repo).

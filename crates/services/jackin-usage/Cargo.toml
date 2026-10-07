@@ -39,6 +39,7 @@ jackin-usage-provider-hermes = { workspace = true }
 jackin-usage-provider-gemini = { workspace = true }
 jackin-usage-provider-muse = { workspace = true }
 jackin-usage-provider-opencode = { workspace = true }
+jackin-usage-provider-claude = { workspace = true }
 base64 = { workspace = true }
 chrono = { workspace = true, features = ["clock"] }
 httpdate = { workspace = true }
@@ -67,6 +68,7 @@ jackin-console = { workspace = true }
 jackin-diagnostics = { workspace = true, features = ["test-support"] }
 jackin-otlp-testbed = { workspace = true }
 jackin-usage-provider-codex = { workspace = true, features = ["test-support"] }
+jackin-usage-provider-claude = { workspace = true, features = ["test-support"] }
 ratatui = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread"] }

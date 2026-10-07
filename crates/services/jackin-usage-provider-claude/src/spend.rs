@@ -21,7 +21,7 @@ use super::{
 /// those carrying a positive `limit_dollars` are real allocations and become a
 /// (non-headline) dollar bucket labelled by the title-cased codename (the API
 /// supplies no human name for these windows).
-pub(crate) fn push_claude_dollar_windows(
+pub fn push_claude_dollar_windows(
     buckets: &mut Vec<QuotaBucketView>,
     other: BTreeMap<String, serde_json::Value>,
     now: i64,
@@ -65,14 +65,15 @@ pub(crate) fn push_claude_dollar_windows(
 
 /// The normalized inputs for the monetary "Extra usage" bucket, derived from
 /// whichever source the API provided.
-pub(crate) struct ClaudeSpend {
-    pub(crate) used: Money,
-    pub(crate) limit: Option<Money>,
+#[derive(Debug)]
+pub struct ClaudeSpend {
+    pub used: Money,
+    pub limit: Option<Money>,
     /// Percent of the cap already spent (0..=100).
-    pub(crate) used_percent: Option<u8>,
-    pub(crate) enabled: bool,
-    pub(crate) disabled_reason: Option<String>,
-    pub(crate) severity: UsageSeverity,
+    pub used_percent: Option<u8>,
+    pub enabled: bool,
+    pub disabled_reason: Option<String>,
+    pub severity: UsageSeverity,
 }
 
 /// Build the monetary spend bucket from the API response.
@@ -84,7 +85,7 @@ pub(crate) struct ClaudeSpend {
 /// regardless of source. A disabled (e.g. out-of-credits) bucket is still
 /// surfaced — with its reason — rather than silently dropped, so the cap stays
 /// visible the way the web console shows it.
-pub(crate) fn claude_spend_bucket(
+pub fn claude_spend_bucket(
     spend: Option<ClaudeOAuthSpend>,
     extra: Option<ClaudeOAuthExtraUsage>,
 ) -> Option<QuotaBucketView> {
@@ -116,7 +117,7 @@ pub(crate) fn claude_spend_bucket(
     Some(view)
 }
 
-pub(crate) fn normalize_claude_spend(
+pub fn normalize_claude_spend(
     spend: Option<ClaudeOAuthSpend>,
     extra: Option<ClaudeOAuthExtraUsage>,
 ) -> Option<ClaudeSpend> {
@@ -150,7 +151,7 @@ pub(crate) fn normalize_claude_spend(
     })
 }
 
-pub(crate) fn fetch_claude_oauth_usage(
+pub fn fetch_claude_oauth_usage(
     access_token: &str,
 ) -> Result<ClaudeOAuthUsageResponse, ProviderHttpError> {
     let user_agent = claude_code_user_agent();

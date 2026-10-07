@@ -9,7 +9,11 @@ use super::{
 /// Result of resolving the Claude credential for one refresh wave. Secret-safe:
 /// never `Debug`/`Display`. The access token rides in `Resolved` for the fetch;
 /// the opaque `discriminator` is the only identity carried into coordination.
-pub(crate) enum ClaudeWaveResolution {
+#[expect(
+    missing_debug_implementations,
+    reason = "credential type: the resolved access token must never be formatted into a log or error"
+)]
+pub enum ClaudeWaveResolution {
     Resolved(Box<ClaudeResolved>),
     /// Operator denied the Keychain consent for this service — terminal,
     /// local-only. No file/env read, no cached-quota restoration.
@@ -18,25 +22,33 @@ pub(crate) enum ClaudeWaveResolution {
     Missing,
 }
 
+#[expect(
+    missing_debug_implementations,
+    reason = "credential type: the resolved access token must never be formatted into a log or error"
+)]
 #[derive(Clone)]
-pub(crate) struct ClaudeResolved {
-    pub(crate) access_token: String,
-    pub(crate) subscription_type: Option<String>,
-    pub(crate) account_email: Option<String>,
-    pub(crate) organization_type: Option<String>,
-    pub(crate) credential_origin: String,
+pub struct ClaudeResolved {
+    pub access_token: String,
+    pub subscription_type: Option<String>,
+    pub account_email: Option<String>,
+    pub organization_type: Option<String>,
+    pub credential_origin: String,
     /// `true` when the credential carries no proven cross-account identity (no
     /// account metadata and no refresh token) — a local-only credential.
-    pub(crate) is_anonymous: bool,
+    pub is_anonymous: bool,
 }
 
 /// One credential candidate probe result: the parsed OAuth credential (if any)
 /// plus same-scope account/tier metadata.
-pub(crate) struct ClaudeFileProbe {
-    pub(crate) credential: Option<ClaudeOAuthCredentials>,
-    pub(crate) origin: Option<String>,
-    pub(crate) account_email: Option<String>,
-    pub(crate) organization_type: Option<String>,
+#[expect(
+    missing_debug_implementations,
+    reason = "credential type: the probed OAuth credential must never be formatted into a log or error"
+)]
+pub struct ClaudeFileProbe {
+    pub credential: Option<ClaudeOAuthCredentials>,
+    pub origin: Option<String>,
+    pub account_email: Option<String>,
+    pub organization_type: Option<String>,
 }
 
 /// Resolve the Claude wave for `scope`: Keychain first, then scope-appropriate
@@ -44,7 +56,7 @@ pub(crate) struct ClaudeFileProbe {
 /// read; `file_probe` returns the scope's file credential + metadata in one
 /// call; `env_reader` yields an OAuth env token. No process-global env
 /// mutation — all inputs are injected so the whole path is unit-testable.
-pub(crate) fn resolve_claude_refresh_wave_with<K, P, E>(
+pub fn resolve_claude_refresh_wave_with<K, P, E>(
     scope: &jackin_core::ClaudeKeychainScope,
     state: &ClaudeKeychainState,
     keychain_reader: K,
@@ -87,7 +99,7 @@ where
     }
 }
 
-pub(crate) fn resolve_claude_fallback(
+fn resolve_claude_fallback(
     scope: &jackin_core::ClaudeKeychainScope,
     probe: ClaudeFileProbe,
     env_token: Option<ClaudeOAuthEnvToken>,
@@ -121,15 +133,15 @@ pub(crate) fn resolve_claude_fallback(
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ClaudeOAuthEnvToken(String);
+pub struct ClaudeOAuthEnvToken(String);
 
 impl ClaudeOAuthEnvToken {
-    pub(crate) fn new(value: String) -> Self {
+    pub fn new(value: String) -> Self {
         Self(value)
     }
 }
 
-pub(crate) fn claude_resolved(
+fn claude_resolved(
     credential: ClaudeOAuthCredentials,
     origin: String,
     account_email: Option<String>,

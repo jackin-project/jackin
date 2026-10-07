@@ -16,9 +16,7 @@ pub fn run_claude_usage_diagnostic() -> Result<ClaudeUsageDiagnostic, String> {
     })
 }
 
-pub(crate) fn run_claude_usage_diagnostic_with<F>(
-    mut runner: F,
-) -> Result<ClaudeUsageDiagnostic, String>
+pub fn run_claude_usage_diagnostic_with<F>(mut runner: F) -> Result<ClaudeUsageDiagnostic, String>
 where
     F: FnMut(&str, &[&str], Duration) -> Result<CliOutput, String>,
 {
@@ -35,7 +33,7 @@ where
     })
 }
 
-pub(crate) fn parse_claude_usage_output(text: &str) -> Option<ClaudeCliUsage> {
+pub fn parse_claude_usage_output(text: &str) -> Option<ClaudeCliUsage> {
     let mut usage = ClaudeCliUsage::default();
     for line in text.lines().map(str::trim).filter(|line| !line.is_empty()) {
         if line.starts_with("Current session:") {

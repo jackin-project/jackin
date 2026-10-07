@@ -4,7 +4,11 @@
 
 /// Raw Keychain lookup outcome for one service. Secret-free in its own labels
 /// (`json` carries the payload but the type is never formatted/logged).
-pub(crate) enum ClaudeKeychainRead {
+#[expect(
+    missing_debug_implementations,
+    reason = "credential type: the keychain payload must never be formatted into a log or error"
+)]
+pub enum ClaudeKeychainRead {
     #[cfg(any(target_os = "macos", test))]
     Payload {
         json: String,
@@ -22,7 +26,7 @@ pub(crate) enum ClaudeKeychainRead {
 /// `Missing` (absence). Pure and cross-platform so tests never touch the real
 /// Keychain.
 #[cfg(any(target_os = "macos", test))]
-pub(crate) fn classify_claude_keychain_status(code: i32) -> ClaudeKeychainRead {
+pub fn classify_claude_keychain_status(code: i32) -> ClaudeKeychainRead {
     match code {
         -128 | -25293 => ClaudeKeychainRead::Denied,
         -25308 => ClaudeKeychainRead::ConsentRequired,
@@ -31,7 +35,7 @@ pub(crate) fn classify_claude_keychain_status(code: i32) -> ClaudeKeychainRead {
 }
 
 #[cfg(target_os = "macos")]
-pub(crate) fn read_claude_keychain_item(service: &str) -> ClaudeKeychainRead {
+pub fn read_claude_keychain_item(service: &str) -> ClaudeKeychainRead {
     use security_framework::item::{ItemClass, ItemSearchOptions, SearchResult};
 
     let mut options = ItemSearchOptions::new();
@@ -63,7 +67,7 @@ pub(crate) fn read_claude_keychain_item(service: &str) -> ClaudeKeychainRead {
 }
 
 #[cfg(not(target_os = "macos"))]
-pub(crate) fn read_claude_keychain_item(_service: &str) -> ClaudeKeychainRead {
+pub fn read_claude_keychain_item(_service: &str) -> ClaudeKeychainRead {
     ClaudeKeychainRead::Missing
 }
 
@@ -72,12 +76,12 @@ pub(crate) fn read_claude_keychain_item(_service: &str) -> ClaudeKeychainRead {
 /// explicitly denied so a denial is terminal for that service for the process
 /// (no retry-prompt storm). A *missing* item is never cached, so a later
 /// `claude /login` is picked up without an app restart (flow W5).
-#[derive(Default)]
-pub(crate) struct ClaudeKeychainState {
+#[derive(Debug, Default)]
+pub struct ClaudeKeychainState {
     inner: std::sync::Mutex<ClaudeKeychainInner>,
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub(crate) struct ClaudeKeychainInner {
     denied_services: std::collections::HashSet<String>,
     /// Count of reader invocations — a test seam proving reads are shared and
@@ -88,7 +92,7 @@ pub(crate) struct ClaudeKeychainInner {
 impl ClaudeKeychainState {
     /// Resolve one Keychain read for `service` through `reader`, honoring the
     /// process-terminal denial cache and serializing reader I/O.
-    pub(crate) fn read_with<F>(&self, service: &str, reader: F) -> ClaudeKeychainRead
+    pub fn read_with<F>(&self, service: &str, reader: F) -> ClaudeKeychainRead
     where
         F: FnOnce(&str) -> ClaudeKeychainRead,
     {
@@ -118,8 +122,8 @@ impl ClaudeKeychainState {
         read
     }
 
-    #[cfg(test)]
-    pub(crate) fn read_count(&self) -> u64 {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn read_count(&self) -> u64 {
         self.inner
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)

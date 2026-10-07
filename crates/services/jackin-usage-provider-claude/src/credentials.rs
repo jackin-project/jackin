@@ -7,20 +7,24 @@ use std::path::Path;
 
 // No `Debug`/`Display`: this carries a live access token and (optionally) the
 // stable refresh token, so it must never be formatted into a log or error.
+#[expect(
+    missing_debug_implementations,
+    reason = "credential type: live access/refresh tokens must never be formatted into a log or error"
+)]
 #[derive(Clone)]
-pub(crate) struct ClaudeOAuthCredentials {
-    pub(crate) access_token: String,
-    pub(crate) subscription_type: Option<String>,
+pub struct ClaudeOAuthCredentials {
+    pub access_token: String,
+    pub subscription_type: Option<String>,
     /// Stable rotation-independent identity input. Consumed only inside wave
     /// resolution to derive the opaque account discriminator, then dropped —
     /// never carried into a view, log, snapshot, or coordination key raw.
-    pub(crate) refresh_token: Option<String>,
+    pub refresh_token: Option<String>,
 }
 
 /// Claude account email (F12): `~/.claude.json` carries `oauthAccount` metadata
 /// (never the token), and `CodexBar` reads the address from there. Returns the
 /// trimmed `oauthAccount.emailAddress`, or `None` when absent.
-pub(crate) fn claude_email_from_value(value: &serde_json::Value) -> Option<String> {
+pub fn claude_email_from_value(value: &serde_json::Value) -> Option<String> {
     let oauth = value.get("oauthAccount")?;
     oauth
         .get("emailAddress")
@@ -37,7 +41,7 @@ pub(crate) fn claude_email_from_value(value: &serde_json::Value) -> Option<Strin
 /// ("API Usage Billing"), not the account tier. `organizationType` carries the
 /// tier directly (e.g. `"claude_enterprise"`, `"claude_max"`, `"claude_team"`) and is
 /// the authoritative source for the plan label shown in the TUI header.
-pub(crate) fn claude_organization_type_from_value(value: &serde_json::Value) -> Option<String> {
+pub fn claude_organization_type_from_value(value: &serde_json::Value) -> Option<String> {
     value
         .get("oauthAccount")?
         .get("organizationType")
@@ -47,16 +51,16 @@ pub(crate) fn claude_organization_type_from_value(value: &serde_json::Value) -> 
         .map(humanize_plan_label)
 }
 
-pub(crate) fn load_claude_account_email(path: &Path) -> Option<String> {
+pub fn load_claude_account_email(path: &Path) -> Option<String> {
     claude_email_from_value(&read_json_file(path)?)
 }
 
-#[cfg(test)]
-pub(crate) fn load_claude_organization_type(path: &Path) -> Option<String> {
+#[cfg(any(test, feature = "test-support"))]
+pub fn load_claude_organization_type(path: &Path) -> Option<String> {
     claude_organization_type_from_value(&read_json_file(path)?)
 }
 
-pub(crate) fn claude_oauth_from_value(value: &serde_json::Value) -> Option<ClaudeOAuthCredentials> {
+pub fn claude_oauth_from_value(value: &serde_json::Value) -> Option<ClaudeOAuthCredentials> {
     let oauth = value.get("claudeAiOauth")?;
     let access_token = oauth
         .get("accessToken")
@@ -90,8 +94,8 @@ pub(crate) fn claude_oauth_from_value(value: &serde_json::Value) -> Option<Claud
     })
 }
 
-#[cfg(test)]
-pub(crate) fn load_claude_oauth_credentials(path: &Path) -> Option<ClaudeOAuthCredentials> {
+#[cfg(any(test, feature = "test-support"))]
+pub fn load_claude_oauth_credentials(path: &Path) -> Option<ClaudeOAuthCredentials> {
     claude_oauth_from_value(&read_json_file(path)?)
 }
 

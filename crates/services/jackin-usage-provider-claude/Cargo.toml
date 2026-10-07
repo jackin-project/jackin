@@ -1,0 +1,38 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "jackin-usage-provider-claude"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
+description = "Claude/Anthropic usage snapshot collection: OAuth, CLI fallback, spend windows, and refresh waves."
+license.workspace = true
+readme = "README.md"
+publish = false
+
+repository.workspace = true
+
+[lib]
+name = "jackin_usage_provider_claude"
+path = "src/lib.rs"
+
+[features]
+test-support = []
+
+[dependencies]
+jackin-core = { workspace = true }
+jackin-protocol = { workspace = true }
+jackin-telemetry = { workspace = true }
+jackin-usage-provider-core = { workspace = true }
+
+reqwest = { workspace = true, features = ["blocking", "json", "rustls"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+security-framework = { workspace = true }
+
+[lints]
+workspace = true

@@ -1,47 +1,14 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-#![expect(
-    dead_code,
-    reason = "provider-adapter fixtures remain testable while production dispatch is broker-only"
-)]
-
 //! Focused-agent usage snapshots for Capsule.
 //!
 //! The TUI reads normalized cached snapshots from this module. Provider-specific
 //! details stay here so status chrome and dialogs render strings, not API
 //! branches.
 
-mod claude;
 mod credential_snapshots;
 
-#[cfg(any(target_os = "macos", test))]
-pub(crate) use self::claude::classify_claude_keychain_status;
-#[expect(
-    unused_imports,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
-pub(crate) use self::claude::{
-    ClaudeCliUsage, ClaudeKeychainRead, ClaudeOAuthCredentials, ClaudeOAuthEnvToken,
-    ClaudeOAuthExtraUsage, ClaudeOAuthLimit, ClaudeOAuthLimitModel, ClaudeOAuthLimitScope,
-    ClaudeOAuthMoney, ClaudeOAuthSpend, ClaudeOAuthUsageResponse, ClaudeOAuthUsageWindow,
-    ClaudeQuotaWindow, ClaudeResolved, ClaudeSpend, ClaudeWavePolicy, ClaudeWaveResolution,
-    claude_account_identity, claude_api_key_snapshot, claude_code_user_agent,
-    claude_code_user_agent_with, claude_code_version_from_text, claude_email_from_value,
-    claude_error_is_scope_restriction, claude_oauth_candidates, claude_oauth_from_value,
-    claude_organization_type_from_value, claude_provider_error_label, claude_snapshot,
-    claude_spend_bucket, claude_view_from_wave_with_rate_limit, claude_wave_policy,
-    fetch_claude_cli_usage, fetch_claude_oauth_usage, load_claude_account_email,
-    normalize_claude_spend, parse_claude_usage_output, push_claude_dollar_windows,
-    read_claude_keychain_item, resolve_claude_wave,
-};
-#[cfg(test)]
-pub(crate) use self::claude::{
-    ClaudeFileProbe, ClaudeKeychainState, load_claude_oauth_credentials,
-    load_claude_organization_type, read_claude_oauth_env_token, resolve_claude_refresh_wave_with,
-    run_claude_usage_diagnostic_with,
-};
-pub use self::claude::{ClaudeUsageDiagnostic, run_claude_usage_diagnostic};
 pub use self::credential_snapshots::provider_credential_snapshot;
 pub(crate) use self::credential_snapshots::provider_credential_snapshot_with_rate_limit;
 #[cfg(test)]
@@ -67,6 +34,33 @@ pub(crate) use jackin_usage_provider_antigravity::{
     antigravity_snapshot, fetch_antigravity_cli_credits, fetch_antigravity_cli_usage,
     parse_agy_version, parse_antigravity_credits_output, parse_antigravity_usage_output,
 };
+#[cfg(any(target_os = "macos", test))]
+pub(crate) use jackin_usage_provider_claude::classify_claude_keychain_status;
+#[expect(
+    unused_imports,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
+pub(crate) use jackin_usage_provider_claude::{
+    ClaudeCliUsage, ClaudeKeychainRead, ClaudeOAuthCredentials, ClaudeOAuthEnvToken,
+    ClaudeOAuthExtraUsage, ClaudeOAuthLimit, ClaudeOAuthLimitModel, ClaudeOAuthLimitScope,
+    ClaudeOAuthMoney, ClaudeOAuthSpend, ClaudeOAuthUsageResponse, ClaudeOAuthUsageWindow,
+    ClaudeQuotaWindow, ClaudeResolved, ClaudeSpend, ClaudeWavePolicy, ClaudeWaveResolution,
+    claude_account_identity, claude_api_key_snapshot, claude_code_user_agent,
+    claude_code_user_agent_with, claude_code_version_from_text, claude_email_from_value,
+    claude_error_is_scope_restriction, claude_oauth_candidates, claude_oauth_from_value,
+    claude_organization_type_from_value, claude_provider_error_label, claude_snapshot,
+    claude_spend_bucket, claude_view_from_wave_with_rate_limit, claude_wave_policy,
+    fetch_claude_cli_usage, fetch_claude_oauth_usage, load_claude_account_email,
+    normalize_claude_spend, parse_claude_usage_output, push_claude_dollar_windows,
+    read_claude_keychain_item, resolve_claude_wave,
+};
+#[cfg(test)]
+pub(crate) use jackin_usage_provider_claude::{
+    ClaudeFileProbe, ClaudeKeychainState, load_claude_oauth_credentials,
+    load_claude_organization_type, read_claude_oauth_env_token, resolve_claude_refresh_wave_with,
+    run_claude_usage_diagnostic_with,
+};
+pub use jackin_usage_provider_claude::{ClaudeUsageDiagnostic, run_claude_usage_diagnostic};
 #[cfg(test)]
 pub(crate) use jackin_usage_provider_codex::load_codex_oauth_credentials;
 #[expect(

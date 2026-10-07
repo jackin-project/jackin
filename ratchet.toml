@@ -75,9 +75,6 @@ bound = 1
 key = "clippy::cast_sign_loss@jackin-launch"
 bound = 9
 [[family.entry]]
-key = "clippy::cast_sign_loss@jackin-usage"
-bound = 1
-[[family.entry]]
 key = "clippy::cast_sign_loss@jackin-usage-provider-cursor"
 bound = 6
 [[family.entry]]
@@ -91,6 +88,9 @@ key = "clippy::cast_sign_loss@jackin-usage-provider-muse"
 bound = 1
 [[family.entry]]
 key = "clippy::cast_sign_loss@jackin-usage-provider-opencode"
+bound = 1
+[[family.entry]]
+key = "clippy::cast_sign_loss@jackin-usage-provider-claude"
 bound = 1
 [[family.entry]]
 key = "clippy::cast_sign_loss@jackin-usage-provider-antigravity"
@@ -469,9 +469,6 @@ key = "dead_code@jackin-runtime"
 # 4th entry: repo_cache RepoLock guard-only Arc<std::fs::File> (flock releases on last drop).
 bound = 4
 [[family.entry]]
-key = "dead_code@jackin-usage"
-bound = 1
-[[family.entry]]
 key = "dead_code@jackin-usage-provider-core"
 bound = 1
 [[family.entry]]
@@ -519,6 +516,9 @@ bound = 1
 [[family.entry]]
 key = "missing_debug_implementations@jackin-usage-provider-cursor"
 bound = 2
+[[family.entry]]
+key = "missing_debug_implementations@jackin-usage-provider-claude"
+bound = 5
 [[family.entry]]
 key = "private_bounds@jackin-core"
 bound = 1
@@ -697,6 +697,9 @@ bound = 1371
 [[family.entry]]
 key = "crates/services/jackin-usage-provider-opencode/README.md"
 bound = 1264
+[[family.entry]]
+key = "crates/services/jackin-usage-provider-claude/README.md"
+bound = 1819
 [[family.entry]]
 key = "crates/tools/jackin-xtask/README.md"
 bound = 6113

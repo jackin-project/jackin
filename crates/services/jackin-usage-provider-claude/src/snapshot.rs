@@ -20,7 +20,7 @@ use super::{
 /// Claude OAuth credential candidates, home-first — the single source of truth
 /// for the path precedence, shared by `claude_snapshot` (token + identity) and
 /// `claude_account_identity` (the shared-cache key) so the list can't drift.
-pub(crate) fn claude_oauth_candidates(config: &Path) -> [PathBuf; 4] {
+pub fn claude_oauth_candidates(config: &Path) -> [PathBuf; 4] {
     [
         config.join(".credentials.json"),
         home_path(".claude/.credentials.json"),
@@ -31,21 +31,21 @@ pub(crate) fn claude_oauth_candidates(config: &Path) -> [PathBuf; 4] {
 
 /// Claude account identity (the `oauthAccount` email) from the same credential
 /// candidates `claude_snapshot` uses, without fetching usage.
-pub(crate) fn claude_account_identity() -> Option<String> {
+pub fn claude_account_identity() -> Option<String> {
     let config = env_dir_or_home("CLAUDE_CONFIG_DIR", ".claude");
     claude_oauth_candidates(&config)
         .iter()
         .find_map(|path| load_claude_account_email(path))
 }
 
-pub(crate) fn claude_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsageView {
+pub fn claude_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsageView {
     claude_view_from_wave_with_rate_limit(agent, provider, now, resolve_claude_wave()).0
 }
 
 /// Claude API keys do not authenticate the OAuth quota endpoint. Keep this
 /// route explicit and unsupported rather than feeding an API key into the
 /// OAuth adapter and reporting a misleading login/error state.
-pub(crate) fn claude_api_key_snapshot(
+pub fn claude_api_key_snapshot(
     agent: &str,
     provider: Option<&str>,
     key_name: &str,
@@ -91,7 +91,7 @@ pub(crate) fn claude_api_key_snapshot(
 /// Production Claude wave resolution: derive the Keychain scope from the
 /// effective `CLAUDE_CONFIG_DIR`, then resolve Keychain-first with
 /// scope-appropriate file/env fallback.
-pub(crate) fn resolve_claude_wave() -> ClaudeWaveResolution {
+pub fn resolve_claude_wave() -> ClaudeWaveResolution {
     let config = env_dir_or_home("CLAUDE_CONFIG_DIR", ".claude");
     let home = home_path("");
     let current_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));

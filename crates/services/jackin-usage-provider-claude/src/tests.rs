@@ -3,6 +3,7 @@
 
 use super::*;
 use jackin_protocol::control::UsageSnapshotStatus;
+use jackin_usage_provider_core::{ProviderError, ProviderHttpError};
 
 #[test]
 fn cli_fallback_last_error_uses_normalized_scope_message() {

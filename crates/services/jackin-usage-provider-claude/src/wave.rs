@@ -20,7 +20,7 @@ use super::{
 /// Read only the Claude Code OAuth environment credential. Anthropic API keys
 /// use a different authentication protocol and must never reach the OAuth
 /// usage endpoint through the standalone resolver.
-pub(crate) fn read_claude_oauth_env_token<F>(mut read: F) -> Option<ClaudeOAuthEnvToken>
+pub fn read_claude_oauth_env_token<F>(mut read: F) -> Option<ClaudeOAuthEnvToken>
 where
     F: FnMut(&str) -> Result<String, std::env::VarError>,
 {
@@ -63,7 +63,7 @@ pub(crate) fn claude_scope_file_probe(
 
 /// Classify the typed cache/coordination policy for a resolved wave. Denied,
 /// Missing, and anonymous-credential resolutions are local-only.
-pub(crate) fn claude_wave_policy(resolution: &ClaudeWaveResolution) -> ClaudeWavePolicy {
+pub fn claude_wave_policy(resolution: &ClaudeWaveResolution) -> ClaudeWavePolicy {
     match resolution {
         ClaudeWaveResolution::Denied => ClaudeWavePolicy::LocalDenied,
         ClaudeWaveResolution::Missing => ClaudeWavePolicy::LocalMissing,
@@ -77,14 +77,14 @@ pub(crate) fn claude_wave_policy(resolution: &ClaudeWaveResolution) -> ClaudeWav
 /// Typed policy outcome for a Claude wave — the source of the cache/coordination
 /// policy so downstream code never inspects error text.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ClaudeWavePolicy {
+pub enum ClaudeWavePolicy {
     Shared,
     LocalDenied,
     LocalMissing,
     LocalAnonymous,
 }
 
-pub(crate) fn claude_view_from_wave_with_rate_limit(
+pub fn claude_view_from_wave_with_rate_limit(
     agent: &str,
     provider: Option<&str>,
     now: i64,
@@ -102,11 +102,7 @@ pub(crate) fn claude_view_from_wave_with_rate_limit(
 /// Terminal denial view: `NeedsLogin` with no bucket/account/plan/origin and the
 /// exact non-secret error. Cached quota is never restored onto this (the typed
 /// local-only policy blocks preservation in the refresh cache).
-pub(crate) fn claude_denied_view(
-    agent: &str,
-    provider: Option<&str>,
-    now: i64,
-) -> FocusedUsageView {
+fn claude_denied_view(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsageView {
     usage_view(UsageViewInput {
         agent,
         provider,
@@ -124,7 +120,7 @@ pub(crate) fn claude_denied_view(
     })
 }
 
-pub(crate) fn claude_pending_buckets(
+fn claude_pending_buckets(
     status: UsageSnapshotStatus,
     provider_error: Option<&str>,
 ) -> Vec<QuotaBucketView> {
@@ -144,11 +140,7 @@ pub(crate) fn claude_pending_buckets(
         .collect()
 }
 
-pub(crate) fn claude_missing_view(
-    agent: &str,
-    provider: Option<&str>,
-    now: i64,
-) -> FocusedUsageView {
+fn claude_missing_view(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsageView {
     usage_view(UsageViewInput {
         agent,
         provider,
@@ -170,7 +162,7 @@ pub(crate) fn claude_missing_view(
 /// scope (an inference-only grant): only a typed HTTP 403. A 401, another
 /// status, or any transport/decode/CLI failure is not scope restriction. Pure
 /// so the inference-only state is unit-testable without provider I/O.
-pub(crate) fn claude_error_is_scope_restriction(error: &ProviderError) -> bool {
+pub fn claude_error_is_scope_restriction(error: &ProviderError) -> bool {
     error.status() == Some(403)
 }
 
@@ -178,7 +170,7 @@ pub(crate) fn claude_error_is_scope_restriction(error: &ProviderError) -> bool {
 /// A scope-restricted OAuth failure normalizes to the explicit inference-only
 /// message so the operator sees *why* quota is unavailable instead of a bare
 /// HTTP status; every other error passes through verbatim.
-pub(crate) fn claude_provider_error_label(
+pub fn claude_provider_error_label(
     oauth_error: Option<&ProviderError>,
     cli_error: Option<&ProviderError>,
 ) -> Option<String> {
@@ -191,7 +183,7 @@ pub(crate) fn claude_provider_error_label(
     Some(error.message().to_owned())
 }
 
-pub(crate) fn claude_resolved_view(
+fn claude_resolved_view(
     agent: &str,
     provider: Option<&str>,
     now: i64,

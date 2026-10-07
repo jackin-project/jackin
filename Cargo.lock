@@ -3651,6 +3651,7 @@ dependencies = [
  "jackin-telemetry",
  "jackin-usage-provider-amp",
  "jackin-usage-provider-antigravity",
+ "jackin-usage-provider-claude",
  "jackin-usage-provider-codex",
  "jackin-usage-provider-core",
  "jackin-usage-provider-cursor",
@@ -3713,6 +3714,20 @@ dependencies = [
  "jackin-protocol",
  "jackin-telemetry",
  "jackin-usage-provider-core",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "jackin-usage-provider-claude"
+version = "0.6.4"
+dependencies = [
+ "jackin-core",
+ "jackin-protocol",
+ "jackin-telemetry",
+ "jackin-usage-provider-core",
+ "reqwest",
+ "security-framework",
  "serde",
  "serde_json",
 ]
