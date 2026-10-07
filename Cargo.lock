@@ -3585,6 +3585,7 @@ dependencies = [
  "jackin-runtime-host-daemon",
  "jackin-runtime-identity",
  "jackin-runtime-isolation",
+ "jackin-runtime-naming",
  "jackin-runtime-process-telemetry",
  "jackin-runtime-repo-cache",
  "jackin-runtime-session-control",
@@ -3678,6 +3679,15 @@ version = "0.6.4"
 dependencies = [
  "jackin-core",
  "jackin-isolation",
+]
+
+[[package]]
+name = "jackin-runtime-naming"
+version = "0.6.4"
+dependencies = [
+ "jackin-core",
+ "jackin-image",
+ "jackin-instance",
 ]
 
 [[package]]
