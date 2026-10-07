@@ -2470,3 +2470,53 @@ passes.
 - Raw outputs:
   `/tmp/s12-s32-{before,after}.txt`
   (kept out of the repo).
+
+### Split 33: usage-projection extraction (J1)
+
+- `jackin-usage` -> `jackin-usage` +
+  `jackin-usage-projection` (T5: two
+  modules moved flat; `runtime.rs`
+  stays as the `HostUsageRuntime`
+  glue, importing the builder from
+  the new crate and metadata from
+  `jackin-usage-destination`
+  directly). `build_canonical_projection`
+  widens to `pub`; four
+  runtime-opening tests extract to
+  `host/tests/case_09.rs` with two
+  duplicated view fixtures, and one
+  pure test stays behind in the
+  moved `case_06`. `host.rs`
+  re-exports the destination types
+  directly.
+- Verify: `cargo check --locked --workspace
+  --all-targets` green; `cargo fmt --all
+  --check` clean; `cargo clippy` 0
+  errors, 0 warnings on both touched
+  packages. `cargo nextest list
+  --workspace --all-targets`: 7277 ->
+  7277, delta is exactly 41 moved (37
+  `host::projection::tests::*` ->
+  `jackin-usage-projection tests::*`,
+  4 -> `host::tests::case_09`; zero
+  dropped, zero added). `nextest run`:
+  266/266 usage + 37/37 projection.
+  No contract fixture drift. `alint
+  check`: 197 -> 196 (one stale
+  `policy-gaps` manifest-format
+  finding resolved, zero added).
+  `check-gaps`: 27 -> 26 (usage
+  `SIZE-001` 14578 -> 11506 lines,
+  `SIZE-002` 71 -> 60 files, at
+  budget; the new crate fits both
+  budgets). `GAP-TEST-001/002/003`
+  stay 0/0/0. `ratchet.toml`: +1 row
+  (agent-doc 756); violations 60 ->
+  60 with zero new failures. `lint
+  arch`: missing tiers stay 3, zero
+  direction violations; `lint
+  headers` stays at the base 2; `lint
+  tests` OK.
+- Raw outputs:
+  `/tmp/s12-s33-{before,after}.txt`
+  (kept out of the repo).

@@ -13,14 +13,15 @@ use jackin_protocol::usage_broker::{
     UsageProjectionV1, UsageProviderV1, UsageUnresolvedV1,
 };
 
-use super::super::accounts::AccountCatalog;
-use super::super::{HostSurfaceId, ValidatedUsageDiscovery};
-use super::{
+use crate::{
     ProjectionMetadata, apply_generation_metadata, discovery_issue, failure_lifecycle,
     project_account, provider_freshness,
 };
+use jackin_usage_discovery::ValidatedUsageDiscovery;
+use jackin_usage_host_accounts::AccountCatalog;
+use jackin_usage_host_presentation::HostSurfaceId;
 
-pub(crate) fn build_canonical_projection(
+pub fn build_canonical_projection(
     catalog: &AccountCatalog,
     discovery: &ValidatedUsageDiscovery,
     broker_generations: &BTreeMap<UsageAccountCapability, UsageGenerationView>,

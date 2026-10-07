@@ -7,7 +7,8 @@ use jackin_core::account_key_hash;
 use jackin_protocol::usage_broker::UsageProjectionV1;
 
 use super::super::HostUsageRuntime;
-use super::{ProjectionMetadata, build_canonical_projection};
+use jackin_usage_destination::ProjectionMetadata;
+use jackin_usage_projection::build_canonical_projection;
 
 impl HostUsageRuntime {
     /// Build the immutable surface-neutral V1 publication from current discovery.

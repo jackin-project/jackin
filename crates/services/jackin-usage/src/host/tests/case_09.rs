@@ -3,6 +3,99 @@
 
 use super::*;
 
+use std::collections::BTreeSet;
+
+use jackin_protocol::usage_broker::{
+    UsageAccountCapability, UsageFreshnessPhaseV1, UsageGenerationView, UsageIssueRecoverabilityV1,
+    UsageIssueScopeV1, UsageIssueV1, UsageLifecycleV1, UsageProjectionRefreshStateV1,
+};
+use jackin_usage_discovery::{
+    DiscoveredAccountDescriptor, UsageDiscoveryDiagnostic, UsageDiscoveryIssue,
+    ValidatedCredentialBinding, ValidatedCredentialSource, ValidatedUsageDiscovery,
+};
+
+fn bucket(label: &str) -> QuotaBucketView {
+    QuotaBucketView {
+        label: label.into(),
+        used_label: None,
+        limit_label: None,
+        remaining_percent: None,
+        reset_label: None,
+        resets_at: None,
+        status_slot: None,
+        pace_label: None,
+        status: UsageSnapshotStatus::Fresh,
+        used_money: None,
+        limit_money: None,
+        severity: UsageSeverity::Normal,
+    }
+}
+
+fn view_with_buckets(
+    status: UsageSnapshotStatus,
+    buckets: Vec<QuotaBucketView>,
+) -> FocusedUsageView {
+    FocusedUsageView {
+        focused_agent: None,
+        focused_provider: None,
+        account: FocusedAccountHeader {
+            provider_label: "Codex".into(),
+            account_label: "work@example.test".into(),
+            username: None,
+            plan_label: None,
+            credential_origin: None,
+        },
+        buckets,
+        status,
+        source: UsageSource::ProviderApi,
+        confidence: UsageConfidence::Authoritative,
+        fetched_at_epoch: 1_800_000_000,
+        updated_label: "now".into(),
+        status_bar_label: "ok".into(),
+        tabs: Vec::new(),
+        last_error: None,
+    }
+}
+
+fn production_projection_runtime() -> (tempfile::TempDir, HostUsageRuntime, UsageAccountCapability)
+{
+    let temp = tempfile::tempdir().unwrap();
+    let identity = CanonicalAccountIdentity {
+        surface: HostSurfaceId::Codex,
+        subject: CanonicalAccountSubject::ProviderId("projection-account".to_owned()),
+    };
+    let binding = ValidatedCredentialBinding {
+        surface: HostSurfaceId::Codex,
+        identity: Some(identity.clone()),
+        source_id: "projection-source".to_owned(),
+        capability_id: "projection-capability".to_owned(),
+        credential_revision: "revision".to_owned(),
+        provenance: BTreeSet::from(["account work".to_owned()]),
+        source: ValidatedCredentialSource::Capability,
+    };
+    let capability =
+        jackin_usage_discovery::capability_for_binding(&binding, Some("projection-revision"));
+    let discovery = ValidatedUsageDiscovery {
+        config_generation: Some("projection-revision".to_owned()),
+        accounts: vec![DiscoveredAccountDescriptor {
+            surface_id: "codex".to_owned(),
+            account_key: identity.account_key(),
+            account_label: "work@example.test".to_owned(),
+            provenance: vec!["account work".to_owned()],
+            source_ids: vec!["projection-source".to_owned()],
+            identity,
+        }],
+        diagnostics: Vec::new(),
+        candidates: Vec::new(),
+        bindings: vec![binding],
+    };
+    let mut runtime = HostUsageRuntime::new();
+    runtime
+        .open_with_validated_discovery(HostRuntimeConfig::under_data_dir(temp.path()), discovery)
+        .unwrap();
+    (temp, runtime, capability)
+}
+
 #[test]
 fn canonical_runtime_preserves_broker_failure_retry_and_recovery() {
     use jackin_protocol::usage_broker::{
@@ -60,7 +153,6 @@ fn canonical_runtime_preserves_broker_failure_retry_and_recovery() {
     assert_eq!(account.freshness.retry_at_epoch, None);
     assert!(account.issues.is_empty());
 }
-
 #[test]
 fn canonical_runtime_preserves_action_required_failure_without_snapshot() {
     use jackin_protocol::usage_broker::{
@@ -94,22 +186,7 @@ fn canonical_runtime_preserves_action_required_failure_without_snapshot() {
 }
 
 #[test]
-fn account_projection_preserves_error_text_without_inventing_retry_policy() {
-    let mut view = view_with_buckets(UsageSnapshotStatus::Stale, vec![bucket("Weekly")]);
-    view.last_error = Some("Provider message mentions HTTP 429 retry at 999999".to_owned());
-    let account = project_account(&catalog_entry(view, None), 0, 1).unwrap();
-    assert_eq!(account.issues[0].code, "provider_unavailable");
-    assert_eq!(
-        account.issues[0].message,
-        "Provider message mentions HTTP 429 retry at 999999"
-    );
-    assert_eq!(account.issues[0].retry_at_epoch, None);
-    assert_eq!(account.freshness.retry_at_epoch, None);
-}
-
-#[test]
 fn canonical_runtime_projects_discovery_diagnostics_without_account_rows() {
-    use crate::host::discovery::{UsageDiscoveryDiagnostic, UsageDiscoveryIssue};
     let (_temp, mut runtime, _capability) = production_projection_runtime();
     let discovery = runtime.discovery.as_mut().unwrap();
     discovery.accounts.clear();
@@ -144,7 +221,6 @@ fn canonical_runtime_projects_discovery_diagnostics_without_account_rows() {
     assert_eq!(projection.issues[0].code, "config_invalid");
     assert_eq!(projection.issues[0].scope, UsageIssueScopeV1::Projection);
 }
-
 #[test]
 fn canonical_runtime_projects_coordination_failure_and_retains_last_good() {
     use jackin_protocol::usage_broker::{

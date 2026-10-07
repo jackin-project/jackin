@@ -65,6 +65,9 @@ pub use desktop::{
     HostDesktopInventory, HostDesktopProjection, HostDesktopProviderGroup,
     HostDesktopProviderProjection, HostDesktopProviderState, HostSelectedAccountRoute,
 };
+pub use jackin_usage_destination::{
+    NormalizedUsageDestination, UsageDestination, normalize_destination,
+};
 pub use jackin_usage_discovery::{
     DiscoveredAccountDescriptor, HostCredentialRootRow, UsageDiscoveryCatalog,
     UsageDiscoveryDiagnostic, UsageDiscoveryIssue, UsageDiscoveryScope,
@@ -86,7 +89,6 @@ pub use jackin_usage_host_presentation::{HostEventBatch, HostUsageEvent};
 pub use jackin_usage_host_presentation::{HostOverviewRow, HostProviderGlanceRow};
 pub use jackin_usage_host_presentation::{HostSurfaceDescriptor, HostSurfaceId};
 pub(crate) use jackin_usage_host_presentation::{MAX_EVENT_BATCH, MAX_EVENT_LOG};
-pub use projection::{NormalizedUsageDestination, UsageDestination, normalize_destination};
 pub use render::STATUS_BAR_MAX_CHIPS;
 pub(crate) use render::{
     DrivingBucket, account_descriptor, build_provider_glance_row, drive_label_prefix,

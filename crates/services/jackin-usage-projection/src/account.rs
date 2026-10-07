@@ -8,9 +8,9 @@ use jackin_protocol::usage_broker::{
     UsageIssueRecoverabilityV1, UsageIssueScopeV1, UsageIssueV1,
 };
 
-use super::super::accounts::{AccountCatalogEntry, CanonicalAccountSubject};
+use jackin_usage_host_accounts::{AccountCatalogEntry, CanonicalAccountSubject};
 
-use super::{
+use crate::{
     failure_lifecycle, freshness, lifecycle, project_groups, project_window, status_label,
     view_is_usable,
 };
@@ -61,10 +61,10 @@ pub(crate) fn project_account(
 }
 
 pub(crate) fn discovery_issue(
-    issue: super::super::discovery::UsageDiscoveryIssue,
+    issue: jackin_usage_discovery::UsageDiscoveryIssue,
     scope: UsageIssueScopeV1,
 ) -> UsageIssueV1 {
-    use super::super::discovery::UsageDiscoveryIssue;
+    use jackin_usage_discovery::UsageDiscoveryIssue;
     let recoverability = match issue {
         UsageDiscoveryIssue::ConfigVersionUnsupported => UsageIssueRecoverabilityV1::Unsupported,
         UsageDiscoveryIssue::ConfigTransientConflict => UsageIssueRecoverabilityV1::Retryable,

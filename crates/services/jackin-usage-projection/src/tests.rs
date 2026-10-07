@@ -5,12 +5,12 @@ use std::collections::BTreeSet;
 
 use jackin_protocol::control::{FocusedAccountHeader, FocusedUsageView, UsageSource};
 
-use super::super::accounts::{
+use jackin_usage_host_accounts::{
     AccountCatalogEntry, AccountLifecycle, AccountProvenance, CanonicalAccountIdentity,
     CanonicalAccountSubject,
 };
 
-use super::*;
+use crate::*;
 
 use std::collections::HashMap;
 
@@ -20,7 +20,7 @@ use jackin_protocol::control::{UsageActivityKind, UsageDetailRowKind};
 
 use jackin_protocol::usage_broker::{UsageIssueRecoverabilityV1, UsageIssueScopeV1, UsageIssueV1};
 
-use crate::host::HostSurfaceId;
+use jackin_usage_host_presentation::HostSurfaceId;
 
 use jackin_usage_provider_core::{
     CachedUsage, UsageSurface, UsageViewInput, enrich_provider_tabs, mark_active_tab,
@@ -31,8 +31,6 @@ use jackin_usage_provider_core::{
 use jackin_console::tui::screens::usage::{
     UsageScreenState, UsageWindow, freshness_age_label, group_freshness_label,
 };
-
-use jackin_protocol::usage_broker::{UsageAccountCapability, UsageGenerationView};
 
 mod support_01;
 use support_01::*;

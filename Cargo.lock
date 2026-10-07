@@ -3661,6 +3661,7 @@ dependencies = [
  "jackin-usage-host-credentials",
  "jackin-usage-host-presentation",
  "jackin-usage-output",
+ "jackin-usage-projection",
  "jackin-usage-provider-amp",
  "jackin-usage-provider-antigravity",
  "jackin-usage-provider-claude",
@@ -3860,6 +3861,24 @@ dependencies = [
 [[package]]
 name = "jackin-usage-output"
 version = "0.6.4"
+
+[[package]]
+name = "jackin-usage-projection"
+version = "0.6.4"
+dependencies = [
+ "icu_collator",
+ "icu_locale",
+ "jackin-config",
+ "jackin-console",
+ "jackin-protocol",
+ "jackin-usage-broker-publish",
+ "jackin-usage-destination",
+ "jackin-usage-discovery",
+ "jackin-usage-host-accounts",
+ "jackin-usage-host-presentation",
+ "jackin-usage-provider-core",
+ "ratatui",
+]
 
 [[package]]
 name = "jackin-usage-provider-amp"

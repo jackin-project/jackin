@@ -8,6 +8,6 @@
 
 mod stage;
 
+pub(crate) use jackin_usage_discovery::ValidatedCredentialBinding;
 #[cfg(test)]
-pub(crate) use jackin_usage_discovery::{UsageDiscoveryDiagnostic, ValidatedCredentialSource};
-pub(crate) use jackin_usage_discovery::{UsageDiscoveryIssue, ValidatedCredentialBinding};
+pub(crate) use jackin_usage_discovery::ValidatedCredentialSource;
