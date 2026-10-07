@@ -3580,6 +3580,7 @@ dependencies = [
  "jackin-process",
  "jackin-protocol",
  "jackin-runtime-apple-container-client",
+ "jackin-runtime-attach-sessions",
  "jackin-runtime-coordination",
  "jackin-runtime-discovery",
  "jackin-runtime-docker-profile",
@@ -3640,6 +3641,15 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
+]
+
+[[package]]
+name = "jackin-runtime-attach-sessions"
+version = "0.6.4"
+dependencies = [
+ "jackin-core",
+ "jackin-docker",
+ "jackin-protocol",
 ]
 
 [[package]]

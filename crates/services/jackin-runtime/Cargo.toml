@@ -34,6 +34,7 @@ jackin-telemetry = { workspace = true }
 jackin-isolation = { workspace = true }
 jackin-instance = { workspace = true }
 jackin-runtime-apple-container-client = { workspace = true }
+jackin-runtime-attach-sessions = { workspace = true }
 jackin-runtime-coordination = { workspace = true }
 jackin-runtime-discovery = { workspace = true }
 jackin-runtime-docker-profile = { workspace = true }

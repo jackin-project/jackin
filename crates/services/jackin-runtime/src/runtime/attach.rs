@@ -22,7 +22,10 @@ mod hardline_start;
 mod inspect;
 mod reconnect;
 mod reconnect_lease;
-mod sessions;
+// Moved to jackin_runtime_attach_sessions::sessions (S7
+// split 73); the module re-export keeps every
+// `attach::sessions::*` path stable.
+pub(crate) use jackin_runtime_attach_sessions::sessions;
 mod spawn;
 mod transport;
 

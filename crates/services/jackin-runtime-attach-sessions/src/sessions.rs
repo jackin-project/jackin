@@ -3,9 +3,7 @@
 //! `AgentSession` inventory inspection and parsing.
 
 use jackin_core::ContainerHandle;
-use jackin_docker::docker_client::DockerApi;
-
-use super::ContainerState;
+use jackin_docker::docker_client::{ContainerState, DockerApi};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentSession {
@@ -66,7 +64,7 @@ pub async fn inspect_agent_sessions(
 /// `[`-prefixed lines are dropped by the `skip_while` synchronisation
 /// on the header — that matches the capsule's print order, where the
 /// header is always the first non-blank line.
-pub(crate) fn parse_jackin_sessions(output: &str) -> Result<Vec<AgentSession>, String> {
+pub fn parse_jackin_sessions(output: &str) -> Result<Vec<AgentSession>, String> {
     let expected = jackin_core::parse_session_count(output).ok_or_else(|| {
         "jackin-capsule status emitted no parsable `Sessions: N` header — daemon may be unreachable".to_owned()
     })?;
@@ -114,6 +112,6 @@ pub fn docker_unavailable_msg(clause: &str, reason: &str) -> String {
     )
 }
 
-pub(crate) fn inspect_unavailable_message(container_name: &str, reason: &str) -> String {
+pub fn inspect_unavailable_message(container_name: &str, reason: &str) -> String {
     docker_unavailable_msg(&format!("inspect container `{container_name}`"), reason)
 }

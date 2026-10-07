@@ -6700,3 +6700,118 @@ bound 720.
 - Raw outputs:
   `/tmp/s7-s72-{pre,post}-*.txt`
   (kept out of the repo).
+
+### Split 73: runtime-attach-sessions extraction (M35)
+
+- `jackin-runtime` ->
+  `jackin-runtime` +
+  `jackin-runtime-attach-sessions`
+  (T4: the whole
+  `attach/sessions`
+  submodule moves —
+  agent session
+  inventory query +
+  parse, with the shared
+  `docker
+  inspect`-failure
+  message builders; the
+  module carries no unit
+  suite of its own,
+  coverage stays in the
+  hub `attach` suite).
+  Cross-leaf edges: 1
+  hub path rewritten to
+  an already-split crate
+  (`ContainerState` ->
+  `jackin-docker` T3,
+  the split-71
+  precedent). Two
+  `pub(crate)` fns widen
+  to `pub` (forced). No
+  shim file: `attach.rs`
+  re-exports the module
+  itself (the split-56
+  precedent), so the
+  `attach::sessions::*`
+  paths — including the
+  `pub use` item
+  re-exports every
+  caller names — keep
+  working unchanged.
+  Tier: names T3
+  `jackin-docker`, so it
+  takes T4; no renumber
+  cascade. New-crate
+  deps: core, docker,
+  protocol (lockfile +1
+  package, +4 edges).
+  Policy registries: +1
+  owned package
+  (`library`).
+
+- Verify: `cargo check
+  --locked --workspace
+  --all-targets` green;
+  `cargo fmt --all
+  --check` clean; `cargo
+  clippy` 0 errors on
+  the new crate (`-D
+  warnings`),
+  `jackin-runtime` holds
+  at the 7 pre-existing
+  errors (all in
+  `launch_slot/tests`,
+  byte-identical
+  locations). `cargo
+  nextest list
+  --workspace
+  --all-targets`: 7277
+  -> 7277,
+  byte-identical (0
+  relocations — the
+  module carries no
+  tests; 0 dropped, 0
+  added). `nextest run`:
+  468/468 runtime green
+  (1 skipped,
+  pre-existing; the new
+  crate has no tests
+  yet). `alint check`:
+  182 violations / 11
+  failing,
+  byte-identical.
+  `check-gaps` (v0.1.3,
+  production-only): 12
+  -> 12 (runtime
+  `SIZE-001/002`
+  persist: 14316 ->
+  14236 prod code lines,
+  89 -> 88 prod files;
+  xtask 26286 -> 26287
+  from the TIERS row;
+  new crate fits at 137
+  raw / 3 files, no SIZE
+  finding).
+  `GAP-TEST-001/002/003`
+  stay 0/0/0.
+  `ratchet.toml`: +2
+  rows (agent-doc-bytes
+  README 949,
+  public-surface 1);
+  remaining 56
+  violations
+  byte-identical to a
+  clean-HEAD worktree.
+  `lint arch --strict`:
+  3 pre-existing no-tier
+  violations
+  byte-identical to
+  base, zero direction
+  violations; `lint
+  headers` stays at the
+  base 2; `lint tests`
+  OK.
+
+- Raw outputs:
+  `/tmp/s7-s73-{pre,post}-*.txt`
+  (kept out of the repo).
