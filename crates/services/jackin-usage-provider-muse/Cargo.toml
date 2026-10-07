@@ -1,0 +1,29 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "jackin-usage-provider-muse"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
+description = "Muse (Meta) usage observation: MSP usage/read parsing, cached-observation views, and the key-exchange no-poll policy."
+license.workspace = true
+readme = "README.md"
+publish = false
+
+repository.workspace = true
+
+[lib]
+name = "jackin_usage_provider_muse"
+path = "src/lib.rs"
+
+[dependencies]
+jackin-protocol = { workspace = true }
+jackin-usage-provider-core = { workspace = true }
+
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+
+[lints]
+workspace = true

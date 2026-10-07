@@ -14,7 +14,6 @@
 
 mod claude;
 mod credential_snapshots;
-mod muse;
 mod opencode;
 
 #[cfg(any(target_os = "macos", test))]
@@ -50,8 +49,7 @@ pub(crate) use self::opencode::opencode_profile_snapshot;
 #[cfg(test)]
 pub(crate) use self::opencode::{load_opencode_api_key, parse_opencode_usage};
 use jackin_protocol::control::{
-    FocusedAccountHeader, FocusedUsageView, QuotaBucketView, StatusSlot, UsageConfidence,
-    UsageSnapshotStatus, UsageSource,
+    FocusedUsageView, QuotaBucketView, UsageConfidence, UsageSnapshotStatus, UsageSource,
 };
 #[cfg(test)]
 use jackin_protocol::control::{UsageProviderTab, UsageSeverity};
@@ -171,6 +169,14 @@ pub(crate) use jackin_usage_provider_minimax::{
     minimax_bucket_label, minimax_is_general_model, minimax_operation_path, minimax_remains_host,
     minimax_reset_epoch, minimax_snapshot, minimax_usage_count_line, resolve_minimax_remains_urls,
     resolve_minimax_remains_urls_from,
+};
+#[expect(
+    unused_imports,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
+pub(crate) use jackin_usage_provider_muse::{
+    MuseIdentity, MuseKeyExchangePolicy, MuseObservation, MuseWindow, muse_buckets,
+    muse_freshness_epoch, muse_identity_from_value, muse_view, parse_muse_usage_read,
 };
 #[expect(
     unused_imports,

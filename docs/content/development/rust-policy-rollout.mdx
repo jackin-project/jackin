@@ -1428,3 +1428,60 @@ passes.
 - Raw outputs:
   `/tmp/s10-gemini-{before,after}.txt`
   (kept out of the repo).
+
+### Split 15: usage-provider-muse extraction (V12)
+
+- `jackin-usage` -> `jackin-usage` +
+  `jackin-usage-provider-muse` (T3 leaf:
+  `usage/muse.rs` -> `lib.rs` re-export
+  root + `adapter` (MSP parsing, buckets,
+  views, key-exchange policy) +
+  `tests`/`tests/{support,case_01}` +
+  `tests/main.rs` placeholder; `lib.rs`
+  carries the ownership header).
+  `usage.rs` re-exports the vendor surface
+  from the new crate. Visibility deltas:
+  `pub(crate)` -> `pub` on the adapter
+  surface; the `use super::{...}` block
+  becomes a direct
+  `jackin_protocol::control` import;
+  `usage.rs` drops its now-unused
+  `FocusedAccountHeader`/`StatusSlot`
+  imports while the `usage/tests` shim
+  gains them for the staying case files;
+  the unit suite imports protocol view
+  types directly. Zero consumers outside
+  tests, so no `test-support` feature and
+  no allowlist entries move.
+- Verify: `cargo check --locked --workspace
+  --all-targets` green; `cargo fmt --all
+  --check` clean; `cargo clippy` 0 errors,
+  0 warnings on both touched packages.
+  `cargo nextest list --workspace
+  --all-targets`: 7272 -> 7272, bijection
+  exact (13 muse tests move
+  `jackin-usage usage::muse::` ->
+  `jackin-usage-provider-muse tests::`;
+  zero dropped, zero added).
+  `nextest run`: 498/498 usage + 13/13
+  muse. The provider-call contract
+  fixture is untouched (no muse entries)
+  and the suite is green. `alint check`:
+  198 -> 198, byte-identical.
+  `check-gaps`: 27 -> 27 (usage
+  `SIZE-001` 36298 -> 35862 lines,
+  `SIZE-002` 234 -> 230 files; xtask +1
+  line for the tier row);
+  `GAP-TEST-001/002/003` stay 0/0/0.
+  `ratchet.toml`: +2 muse rows (agent-doc
+  1371, `cast_sign_loss` 1), 1 usage
+  shrink (`cast_sign_loss` 3 -> 2), 1
+  usage bump (`unused_imports` 13 -> 14);
+  violations 60 -> 60 with zero new
+  failures. `lint arch`: missing tiers
+  stay 3, zero direction violations;
+  `lint headers` stays at the base 2;
+  `lint tests` OK.
+- Raw outputs:
+  `/tmp/s10-muse-{before,after}.txt`
+  (kept out of the repo).

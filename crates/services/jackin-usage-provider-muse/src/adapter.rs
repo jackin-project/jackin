@@ -1,20 +1,17 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! `Muse` (Meta) usage observation via MSP `usage/read` + `usage/changed`.
+//! `Muse` (Meta) usage observation logic via MSP `usage/read` + `usage/changed`
+//! (see `lib.rs`).
 //!
-//! Preferred official observation: the subscription payload carries
-//! `observedAtMs`, a tier label, a rolling window
-//! (`usedPercent`/`resetsAtMs`/`windowDurationMins`) and a weekly window. The
-//! response may omit `usage` when no observation exists, and percentages above
-//! 100 are valid over-cap readings — preserved raw, never clamped. Re-reading
+//! The response may omit `usage` when no observation exists, and re-reading
 //! cached data must not reset its freshness timestamp.
 //!
 //! omp's `POST https://api.meta.ai/muse-code/key` is a *documented
 //! conditional* only: the response can mint/return an API key, so it must never
 //! be enabled as a read-only polling fallback. See [`MuseKeyExchangePolicy`].
 
-use super::{
+use jackin_protocol::control::{
     FocusedAccountHeader, FocusedUsageView, QuotaBucketView, StatusSlot, UsageConfidence,
     UsageSnapshotStatus, UsageSource,
 };
@@ -58,28 +55,28 @@ struct MuseUsageReadRaw {
 
 /// Parsed Muse window with the reset normalized to epoch seconds.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct MuseWindow {
-    pub(crate) used_percent: f64,
-    pub(crate) resets_at: Option<i64>,
-    pub(crate) window_duration_mins: Option<i64>,
+pub struct MuseWindow {
+    pub used_percent: f64,
+    pub resets_at: Option<i64>,
+    pub window_duration_mins: Option<i64>,
 }
 
 /// Parsed Muse cached observation.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct MuseObservation {
-    pub(crate) observed_at_ms: i64,
-    pub(crate) tier: Option<String>,
-    pub(crate) window: Option<MuseWindow>,
-    pub(crate) weekly: Option<MuseWindow>,
+pub struct MuseObservation {
+    pub observed_at_ms: i64,
+    pub tier: Option<String>,
+    pub window: Option<MuseWindow>,
+    pub weekly: Option<MuseWindow>,
 }
 
 /// Muse login identity from `~/.config/muse/auth.json`
 /// (`providers.meta.user_email` / `user_full_name`). The secret itself lives in
 /// the platform credential store, never in this file.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct MuseIdentity {
-    pub(crate) email: Option<String>,
-    pub(crate) full_name: Option<String>,
+pub struct MuseIdentity {
+    pub email: Option<String>,
+    pub full_name: Option<String>,
 }
 
 fn trimmed_string(value: Option<&serde_json::Value>) -> Option<String> {
@@ -90,7 +87,7 @@ fn trimmed_string(value: Option<&serde_json::Value>) -> Option<String> {
         .map(str::to_owned)
 }
 
-pub(crate) fn muse_identity_from_value(value: &serde_json::Value) -> Option<MuseIdentity> {
+pub fn muse_identity_from_value(value: &serde_json::Value) -> Option<MuseIdentity> {
     let meta = value.get("providers")?.get("meta")?;
     let identity = MuseIdentity {
         email: trimmed_string(meta.get("user_email")),
@@ -101,9 +98,7 @@ pub(crate) fn muse_identity_from_value(value: &serde_json::Value) -> Option<Muse
 
 /// Parse one MSP `usage/read` response. `Ok(None)` is the honest
 /// no-observation state (usage omitted), never an error.
-pub(crate) fn parse_muse_usage_read(
-    value: serde_json::Value,
-) -> Result<Option<MuseObservation>, String> {
+pub fn parse_muse_usage_read(value: serde_json::Value) -> Result<Option<MuseObservation>, String> {
     let raw: MuseUsageReadRaw = serde_json::from_value(value)
         .map_err(|_| "Muse usage/read response is malformed".to_owned())?;
     raw.usage.map(parse_muse_usage).transpose()
@@ -186,7 +181,7 @@ fn muse_window_bucket(
     )
 }
 
-pub(crate) fn muse_buckets(observation: &MuseObservation, now: i64) -> Vec<QuotaBucketView> {
+pub fn muse_buckets(observation: &MuseObservation, now: i64) -> Vec<QuotaBucketView> {
     let mut buckets = Vec::with_capacity(2);
     if let Some(window) = &observation.window {
         let label = window
@@ -210,7 +205,7 @@ pub(crate) fn muse_buckets(observation: &MuseObservation, now: i64) -> Vec<Quota
 /// the same `observedAtMs` as the cached one, the cached `fetched_at_epoch` is
 /// kept — a re-read must not advance freshness. Only a new observation stamps
 /// `now`.
-pub(crate) fn muse_freshness_epoch(
+pub fn muse_freshness_epoch(
     cached_fetched: i64,
     cached_observed_ms: i64,
     reread_observed_ms: i64,
@@ -223,7 +218,7 @@ pub(crate) fn muse_freshness_epoch(
     }
 }
 
-pub(crate) fn muse_view(
+pub fn muse_view(
     agent: &str,
     account_label: &str,
     observation: Option<&MuseObservation>,
@@ -296,21 +291,21 @@ pub(crate) fn muse_view(
 /// design; a future conditional one-shot must whitelist only non-secret usage
 /// fields, never send onboarding flags, and respect 429/backoff.
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct MuseKeyExchangePolicy;
+pub struct MuseKeyExchangePolicy;
 
 impl MuseKeyExchangePolicy {
     /// Key-exchange endpoint. Request shape: `POST` with
     /// `Authorization: Bearer <Meta OAuth access>`, `x-api-version: 1.0.0`,
     /// body `{}`.
-    pub(crate) const URL: &str = "https://api.meta.ai/muse-code/key";
+    pub const URL: &str = "https://api.meta.ai/muse-code/key";
 
     /// Always `false`: the key exchange must never be enabled as a poller.
-    pub(crate) fn polling_enabled() -> bool {
+    pub fn polling_enabled() -> bool {
         false
     }
 
     /// Non-secret fields a conditional one-shot read may retain (whitelist).
-    pub(crate) const ALLOWED_FIELDS: &[&str] = &[
+    pub const ALLOWED_FIELDS: &[&str] = &[
         "user_email",
         "user_id",
         "is_subs_active",
@@ -323,7 +318,7 @@ impl MuseKeyExchangePolicy {
     /// Fields that must never be persisted, logged, or rendered. Payment
     /// action URLs are likewise dropped (absent from the whitelist) — a
     /// monitor never needs them.
-    pub(crate) const SECRET_FIELDS: &[&str] = &[
+    pub const SECRET_FIELDS: &[&str] = &[
         "api_key",
         "apiKey",
         "oauthAccessToken",
@@ -331,6 +326,3 @@ impl MuseKeyExchangePolicy {
         "refresh_token",
     ];
 }
-
-#[cfg(test)]
-mod tests;

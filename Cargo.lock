@@ -3659,6 +3659,7 @@ dependencies = [
  "jackin-usage-provider-hermes",
  "jackin-usage-provider-kimi",
  "jackin-usage-provider-minimax",
+ "jackin-usage-provider-muse",
  "jackin-usage-provider-openrouter",
  "jackin-usage-provider-zai",
  "nix 0.31.3",
@@ -3815,6 +3816,16 @@ dependencies = [
  "serde",
  "serde_json",
  "url",
+]
+
+[[package]]
+name = "jackin-usage-provider-muse"
+version = "0.6.4"
+dependencies = [
+ "jackin-protocol",
+ "jackin-usage-provider-core",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

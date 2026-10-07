@@ -6,7 +6,7 @@ use super::{
     parse_muse_usage_read,
 };
 
-use super::{UsageConfidence, UsageSnapshotStatus, UsageSource};
+use jackin_protocol::control::{UsageConfidence, UsageSnapshotStatus, UsageSource};
 
 mod support;
 use support::*;
