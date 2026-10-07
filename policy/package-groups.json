@@ -39,6 +39,7 @@
     "jackin-runtime-exit-summary": "library",
     "jackin-runtime-host-daemon": "library",
     "jackin-runtime-identity": "library",
+    "jackin-runtime-image": "library",
     "jackin-runtime-isolation": "library",
     "jackin-runtime-launch-plan": "library",
     "jackin-runtime-naming": "library",

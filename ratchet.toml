@@ -154,7 +154,10 @@ key = "clippy::disallowed_methods@jackin-instance-roles"
 bound = 1
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-runtime"
-bound = 7
+bound = 5
+[[family.entry]]
+key = "clippy::disallowed_methods@jackin-runtime-image"
+bound = 2
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-runtime-snapshot"
 bound = 2
@@ -264,7 +267,7 @@ bound = 1
 key = "clippy::let_underscore_must_use@jackin-core"
 bound = 1
 [[family.entry]]
-key = "clippy::manual_async_fn@jackin-runtime"
+key = "clippy::manual_async_fn@jackin-runtime-image"
 bound = 3
 [[family.entry]]
 key = "clippy::manual_async_fn@jackin-runtime-universe"
@@ -423,6 +426,9 @@ bound = 12
 key = "clippy::too_many_arguments@jackin-runtime-docker-profile"
 bound = 1
 [[family.entry]]
+key = "clippy::too_many_arguments@jackin-runtime-image"
+bound = 5
+[[family.entry]]
 key = "clippy::too_many_arguments@jackin-usage-provider-core"
 bound = 1
 [[family.entry]]
@@ -443,6 +449,9 @@ bound = 1
 [[family.entry]]
 key = "clippy::too_many_lines@jackin-runtime"
 bound = 6
+[[family.entry]]
+key = "clippy::too_many_lines@jackin-runtime-image"
+bound = 1
 [[family.entry]]
 key = "clippy::too_many_lines@jackin-runtime-repo-cache"
 bound = 1
@@ -566,7 +575,7 @@ key = "unused_imports@jackin-console"
 bound = 10
 [[family.entry]]
 key = "unused_imports@jackin-runtime"
-bound = 2
+bound = 1
 [[family.entry]]
 key = "unused_imports@jackin-usage"
 bound = 14
@@ -694,6 +703,9 @@ bound = 978
 [[family.entry]]
 key = "crates/services/jackin-runtime-identity/README.md"
 bound = 779
+[[family.entry]]
+key = "crates/services/jackin-runtime-image/README.md"
+bound = 1098
 [[family.entry]]
 key = "crates/services/jackin-runtime-isolation/README.md"
 bound = 963
@@ -989,6 +1001,9 @@ key = "jackin-runtime-host-daemon"
 bound = 1
 [[family.entry]]
 key = "jackin-runtime-identity"
+bound = 1
+[[family.entry]]
+key = "jackin-runtime-image"
 bound = 1
 [[family.entry]]
 key = "jackin-runtime-isolation"

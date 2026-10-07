@@ -4788,3 +4788,229 @@ bound 720.
 - Raw outputs: `/tmp/jackin-repin-v012-gaps.txt`,
   `/tmp/jackin-repin-v013-gaps.txt`,
   `/tmp/jackin-repin-v013-alint.txt`.
+
+### Split 60: runtime-image extraction (M22)
+
+- `jackin-runtime` ->
+  `jackin-runtime` +
+  `jackin-runtime-image`
+  (T6: the whole
+  `runtime::image`
+  module moves —
+  role-image decide /
+  build / prewarm /
+  refresh / staleness,
+  `tests.rs` + 5
+  suites + support
+  with 44 tests;
+  biggest M-split by
+  far at 4251 raw
+  lines). Five
+  cross-leaf edges
+  into
+  already-extracted M
+  crates: 8x
+  `repo_cache` (M10),
+  6x `naming` (M12),
+  2x `progress`
+  (M13), 2x
+  `launch::emit_prewarm_launch_plan`
+  -> `launch_plan`
+  (M18), 1x
+  `identity::host_uid`
+  (M7); plus `cargo
+  fmt` reflow of the
+  lengthened paths.
+  Visibility widens
+  mechanically: 21
+  defs (`pub(crate)`
+  -> `pub`, 19 fns +
+  `PreparedRuntimeBinaries`
+  +
+  `SiblingImagePrewarmOutcome`)
+  plus every
+  `image.rs`
+  re-export; the 2
+  newly-`pub` types
+  gain `#[derive(Debug)]`
+  for
+  `missing-debug-implementations`,
+  and the
+  `image_build`
+  `unused_imports`
+  `#[expect]` drops
+  (a `pub use` never
+  warns). Two
+  re-export cfgs
+  flatten to
+  unconditional:
+  the 3 test-only
+  `build` helpers
+  (used only by the
+  moved case_02) and
+  — reverted, kept
+  `not(test)` — the
+  `validated` pair
+  (whole file is
+  `#![cfg(not(test))]`,
+  so the gate stays
+  exact). One
+  `include_str!`
+  loses a `../`
+  (new crate nests
+  one level
+  shallower). One
+  test-hook crossing:
+  the `image_recipe`
+  re-exports
+  (`#[cfg(test)]`,
+  used by
+  `launch/tests/case_12..17`)
+  become
+  `#[cfg(any(test,
+  feature =
+  "test-support"))]`
+  with a new
+  `test-support`
+  feature + runtime
+  dev-dep (the
+  split-58
+  precedent), so prod
+  stays hook-free.
+  Parent mod is `pub`,
+  so the shim keeps a
+  plain `pub` glob
+  and every
+  `runtime::image::*`
+  path (incl. the
+  `runtime.rs` /
+  `lib.rs`
+  `not(test)`-gated
+  re-exports) stays
+  stable. Tier: names
+  T5 naming + T5
+  progress + T4
+  repo-cache, so it
+  takes T6; no
+  renumber cascade.
+  New-crate deps:
+  core, diagnostics,
+  docker, image,
+  launch, manifest,
+  telemetry,
+  identity,
+  launch-plan,
+  naming, progress,
+  repo-cache, anyhow,
+  futures-util,
+  serde_json, tokio
+  (`macros`, `rt`);
+  dev-deps add
+  test-support,
+  tempfile (lockfile
+  +1 package, +19
+  edges). Policy
+  registries: +1
+  owned package
+  (`library`).
+
+- Verify: `cargo check
+  --locked --workspace
+  --all-targets`
+  green; `cargo fmt
+  --all --check`
+  clean; `cargo
+  clippy` 0 errors on
+  the new crate,
+  `jackin-runtime`
+  holds at the 7
+  pre-existing errors
+  (all in
+  `launch_slot/tests`,
+  byte-identical
+  locations).
+  `cargo nextest list
+  --workspace
+  --all-targets`: 7277
+  -> 7277 (44
+  relocations map 1:1
+  by name, verified by
+  stripped-diff:
+  `runtime::image` ->
+  `image`; 0 dropped,
+  0 added). `nextest
+  run`: 645/645
+  runtime (601) +
+  image (44).
+  `alint check`:
+  182 violations / 11
+  failing unchanged
+  (v0.1.3 re-pin
+  baseline;
+  `policy-gaps` 12 ==
+  direct `check-gaps`
+  12, reconciles).
+  `check-gaps`
+  (v0.1.3,
+  production-only):
+  12 -> 12 (runtime
+  `SIZE-001/002`
+  persist: 21499 ->
+  19482 prod code
+  lines, 108 -> 96
+  prod files; new
+  crate fits at
+  4251 raw / 22
+  files, no SIZE
+  finding).
+  `GAP-TEST-001/002/003`
+  stay 0/0/0.
+  `ratchet.toml`: +6
+  rows (agent-doc-bytes
+  README 1098,
+  public-surface 1,
+  `disallowed_methods`
+  image 2,
+  `manual_async_fn`
+  image 3,
+  `too_many_arguments`
+  image 5,
+  `too_many_lines`
+  image 1),
+  `disallowed_methods@jackin-runtime`
+  7 -> 5,
+  `manual_async_fn@jackin-runtime`
+  row deleted (0
+  remain),
+  `unused_imports@jackin-runtime`
+  2 -> 1; failures 59
+  -> 58 — the
+  `too_many_arguments@jackin-runtime`
+  violation
+  self-heals (12
+  remain at bound 12)
+  and
+  `too_many_lines`
+  narrows 8 -> 7;
+  measured debt
+  totals preserved
+  exactly
+  (disallowed 7 =
+  5+2, manual 4 =
+  0+3+1 universe,
+  args 17 = 12+5,
+  lines 8 = 7+1);
+  remaining keys
+  byte-identical.
+  `lint arch
+  --strict`: missing
+  tiers stay 3, zero
+  direction
+  violations; `lint
+  headers` stays at
+  the base 2; `lint
+  tests` OK.
+
+- Raw outputs:
+  `/tmp/s7-s60-{pre,post}-*.txt`
+  (kept out of the repo).

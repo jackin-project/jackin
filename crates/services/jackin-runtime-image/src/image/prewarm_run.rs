@@ -15,12 +15,12 @@ use jackin_docker::{ShellRunner, docker_client::BollardDockerClient};
 
 use jackin_image::version_check;
 
-use crate::runtime::repo_cache::{RepoResolveOptions, resolve_agent_repo_with};
+use jackin_runtime_repo_cache::repo_cache::{RepoResolveOptions, resolve_agent_repo_with};
 
 use super::{ImageInvalidationReason, RoleImagePrewarmRow, role_git_sha_for_recipe};
 use super::{prewarm_agent_image_from_validated_repo, refresh_agent_image_from_validated_repo};
 
-pub(crate) async fn prewarm_agent_image(
+pub async fn prewarm_agent_image(
     paths: &JackinPaths,
     selector: &RoleSelector,
     role_git: &str,
@@ -56,7 +56,7 @@ pub(crate) async fn prewarm_agent_image(
     .await
 }
 
-pub(crate) async fn reuse_staleness_sentinel(
+pub async fn reuse_staleness_sentinel(
     paths: &JackinPaths,
     selector: &RoleSelector,
     role_git: &str,

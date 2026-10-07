@@ -15,14 +15,14 @@ use jackin_image::image_recipe::expected_image_recipes;
 
 use jackin_manifest::repo::CachedRepo;
 
-use crate::runtime::naming::{image_name, image_name_for_branch, role_base_image_name};
+use jackin_runtime_naming::naming::{image_name, image_name_for_branch, role_base_image_name};
 
 use super::{
     ImageDecision, ImageInvalidationReason, build_decision, classify_image_labels,
     decision_base_image_override, emit_image_decision, emit_image_reuse, role_git_sha_for_recipe,
 };
 
-pub(crate) fn local_image_build_args() -> Vec<&'static str> {
+pub fn local_image_build_args() -> Vec<&'static str> {
     // Runtime image builds consume local-only base tags such as
     // `jk_<role>__base:<sha>` and PR-local construct images, so they must
     // run against the host image store of the daemon jackin launches
@@ -45,7 +45,7 @@ pub(crate) fn local_image_build_args() -> Vec<&'static str> {
               runner. Named-arg reads match the per-input propagation idiom; \
               bundling into a config struct is the deferred-parallel-pass."
 )]
-pub(crate) async fn decide_role_image(
+pub async fn decide_role_image(
     paths: &JackinPaths,
     selector: &RoleSelector,
     cached_repo: &CachedRepo,

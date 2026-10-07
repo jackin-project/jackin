@@ -16,7 +16,7 @@ use jackin_docker::{ShellRunner, docker_client::BollardDockerClient};
 use jackin_manifest::repo::CachedRepo;
 
 #[cfg(not(test))]
-use crate::runtime::repo_cache::{RepoResolveOptions, resolve_agent_repo_with};
+use jackin_runtime_repo_cache::repo_cache::{RepoResolveOptions, resolve_agent_repo_with};
 
 #[cfg(not(test))]
 use super::ImagePrewarmStatus;
@@ -25,7 +25,7 @@ use super::git_head_sha;
 use super::{SiblingImagePrewarmOutcome, prewarm_agent_image_from_validated_repo};
 
 #[cfg(not(test))]
-pub(crate) async fn prewarm_sibling_image(
+pub async fn prewarm_sibling_image(
     paths: &JackinPaths,
     selector: &RoleSelector,
     role_git: &str,
@@ -66,7 +66,7 @@ pub(crate) async fn prewarm_sibling_image(
     }
 }
 
-pub(crate) async fn role_git_sha_for_recipe(
+pub async fn role_git_sha_for_recipe(
     cached_repo: &CachedRepo,
     known_head_sha: Option<&str>,
     runner: &mut impl CommandRunner,

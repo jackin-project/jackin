@@ -26,7 +26,7 @@ use super::{
               that requires restructuring the image-build path. Named-arg reads \
               match the per-input propagation idiom."
 )]
-pub(crate) async fn prewarm_agent_image_from_validated_repo(
+pub async fn prewarm_agent_image_from_validated_repo(
     paths: &JackinPaths,
     selector: &RoleSelector,
     cached_repo: &CachedRepo,
@@ -35,7 +35,7 @@ pub(crate) async fn prewarm_agent_image_from_validated_repo(
     agent: Agent,
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
-    repo_lock: crate::runtime::repo_cache::RepoLock,
+    repo_lock: jackin_runtime_repo_cache::repo_cache::RepoLock,
     debug: bool,
 ) -> anyhow::Result<RoleImagePrewarmRow> {
     let decision = decide_role_image(
@@ -50,7 +50,9 @@ pub(crate) async fn prewarm_agent_image_from_validated_repo(
         runner,
     )
     .await?;
-    crate::runtime::launch::emit_prewarm_launch_plan(&prewarm_launch_plan_reason(&decision));
+    jackin_runtime_launch_plan::launch_plan::emit_prewarm_launch_plan(&prewarm_launch_plan_reason(
+        &decision,
+    ));
     match decision {
         ImageDecision::Reuse { image, .. } => {
             drop(repo_lock);
@@ -148,7 +150,7 @@ pub(crate) async fn prewarm_agent_image_from_validated_repo(
     reason = "Background refresh needs the full build-agent-image context plus \
               the confirmed staleness reason."
 )]
-pub(crate) async fn refresh_agent_image_from_validated_repo(
+pub async fn refresh_agent_image_from_validated_repo(
     paths: &JackinPaths,
     selector: &RoleSelector,
     cached_repo: &CachedRepo,
@@ -157,12 +159,15 @@ pub(crate) async fn refresh_agent_image_from_validated_repo(
     agent: Agent,
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
-    repo_lock: crate::runtime::repo_cache::RepoLock,
+    repo_lock: jackin_runtime_repo_cache::repo_cache::RepoLock,
     debug: bool,
     reason: ImageInvalidationReason,
     role_git_sha: Option<&str>,
 ) -> anyhow::Result<RoleImagePrewarmRow> {
-    crate::runtime::launch::emit_prewarm_launch_plan(&format!("image_refresh:{}", reason.as_str()));
+    jackin_runtime_launch_plan::launch_plan::emit_prewarm_launch_plan(&format!(
+        "image_refresh:{}",
+        reason.as_str()
+    ));
     let runtime_binaries =
         prepare_runtime_binaries_for_agents(paths, validated_repo, &[agent], None).await?;
     let image = build_agent_image(

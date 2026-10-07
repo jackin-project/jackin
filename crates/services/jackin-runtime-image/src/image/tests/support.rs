@@ -125,12 +125,12 @@ pub(super) async fn build_test_agent_image(runner: &mut BuildSecurityRunner) -> 
 
     let source_url = "https://github.com/example/agent-smith.git";
     let (cached_repo, validated_repo, repo_lock) =
-        crate::runtime::repo_cache::resolve_agent_repo_with(
+        jackin_runtime_repo_cache::repo_cache::resolve_agent_repo_with(
             &paths,
             &selector,
             source_url,
             runner,
-            crate::runtime::repo_cache::RepoResolveOptions::interactive(false),
+            jackin_runtime_repo_cache::repo_cache::RepoResolveOptions::interactive(false),
             || Ok(false),
         )
         .await?;
@@ -174,7 +174,7 @@ pub(super) const IMAGE_VERSION_SOURCE: &str = include_str!("../version.rs");
 pub(super) const IMAGE_MODULE_SOURCE: &str = include_str!("../../image.rs");
 
 pub(super) const SHARED_IMAGE_BUILD_SOURCE: &str =
-    include_str!("../../../../../../adapters/jackin-image/src/image_build.rs");
+    include_str!("../../../../../adapters/jackin-image/src/image_build.rs");
 
 pub(super) struct RichSurfaceTestGuard {
     _guard: MutexGuard<'static, ()>,

@@ -57,6 +57,7 @@ pub(crate) const TIERS: &[(&str, u8)] = &[
     ("jackin-runtime-coordination", 1),
     ("jackin-runtime-docker-profile", 1),
     ("jackin-runtime-identity", 3),
+    ("jackin-runtime-image", 6),
     ("jackin-runtime-snapshot", 4),
     ("jackin-runtime-session-control", 5),
     ("jackin-runtime-repo-cache", 4),

@@ -1,25 +1,22 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Selected image refresh and reuse staleness checks.
+//! Reuse staleness sentinel and sibling agents.
 
 use jackin_core::Agent;
 
 use jackin_core::JackinPaths;
 use jackin_core::RoleSelector;
 
-use jackin_image::version_check;
-
-use super::ImageInvalidationReason;
 #[cfg(not(test))]
-use super::prewarm_agent_image;
+use super::reuse_staleness_sentinel;
 
-pub(crate) fn spawn_selected_image_refresh(
+pub fn spawn_reuse_staleness_sentinel(
     paths: &JackinPaths,
     selector: &RoleSelector,
     role_git: &str,
     branch_override: Option<&str>,
     selected_agent: Agent,
-    reason: ImageInvalidationReason,
+    image: &str,
     debug: bool,
 ) {
     #[cfg(test)]
@@ -27,10 +24,10 @@ pub(crate) fn spawn_selected_image_refresh(
         let _ = (paths, selector, role_git, branch_override, debug);
         if let Some(run) = jackin_diagnostics::active_run() {
             run.stage(
-                "selected_image_refresh_skipped",
+                "reuse_staleness_sentinel_skipped",
                 jackin_diagnostics::DiagnosticStage::DerivedImage,
-                "selected image refresh disabled in unit tests",
-                Some(&format!("{}:{}", selected_agent.slug(), reason.as_str())),
+                "reuse staleness sentinel disabled in unit tests",
+                Some(&format!("{}:{image}", selected_agent.slug())),
             );
         }
     }
@@ -41,49 +38,36 @@ pub(crate) fn spawn_selected_image_refresh(
         let selector = selector.clone();
         let role_git = role_git.to_owned();
         let branch_override = branch_override.map(str::to_owned);
+        let image = image.to_owned();
         jackin_telemetry::spawn::spawn_prewarm_job(
             jackin_telemetry::schema::enums::JobType::ImagePrewarm,
             async move {
                 if let Some(run) = jackin_diagnostics::active_run() {
                     run.stage(
-                        "selected_image_refresh_started",
+                        "reuse_staleness_sentinel_started",
                         jackin_diagnostics::DiagnosticStage::DerivedImage,
-                        "refreshing selected runtime image in background",
-                        Some(&format!("{}:{}", selected_agent.slug(), reason.as_str())),
+                        "checking reused runtime image staleness in background",
+                        Some(&format!("{}:{image}", selected_agent.slug())),
                     );
                 }
 
-                let timing_detail = format!("{}:{}", selected_agent.slug(), reason.as_str());
-                jackin_diagnostics::active_timing_started(
-                    jackin_diagnostics::DiagnosticStage::DerivedImage,
-                    "selected_image_refresh",
-                    Some(&timing_detail),
-                );
-                let result = prewarm_agent_image(
+                let result = reuse_staleness_sentinel(
                     &paths,
                     &selector,
                     &role_git,
                     branch_override.as_deref(),
                     selected_agent,
+                    &image,
                     debug,
                 )
                 .await;
-                let timing_done = match &result {
-                    Ok(row) => format!("{}:{:?}", row.agent.slug(), row.status),
-                    Err(error) => format!("{}: failed: {error:#}", selected_agent.slug()),
-                };
-                jackin_diagnostics::active_timing_done(
-                    jackin_diagnostics::DiagnosticStage::DerivedImage,
-                    "selected_image_refresh",
-                    Some(&timing_done),
-                );
 
                 if let Some(run) = jackin_diagnostics::active_run() {
                     match &result {
-                        Ok(row) => run.stage(
-                            "selected_image_refresh_done",
+                        Ok(Some(row)) => run.stage(
+                            "reuse_staleness_sentinel_done",
                             jackin_diagnostics::DiagnosticStage::DerivedImage,
-                            "refreshed selected runtime image in background",
+                            "refreshed reused runtime image in background",
                             Some(&format!(
                                 "{}:{:?}:{}",
                                 row.agent.slug(),
@@ -91,10 +75,16 @@ pub(crate) fn spawn_selected_image_refresh(
                                 row.image
                             )),
                         ),
-                        Err(error) => run.stage(
-                            "selected_image_refresh_failed",
+                        Ok(None) => run.stage(
+                            "reuse_staleness_sentinel_done",
                             jackin_diagnostics::DiagnosticStage::DerivedImage,
-                            "selected runtime image refresh failed",
+                            "reused runtime image is still fresh",
+                            Some(&format!("{}:{image}", selected_agent.slug())),
+                        ),
+                        Err(error) => run.stage(
+                            "reuse_staleness_sentinel_failed",
+                            jackin_diagnostics::DiagnosticStage::DerivedImage,
+                            "reuse staleness sentinel failed",
                             Some(&format!("{}: {error:#}", selected_agent.slug())),
                         ),
                     }
@@ -112,15 +102,21 @@ pub(crate) fn spawn_selected_image_refresh(
     }
 }
 
-pub(crate) fn reuse_needs_background_staleness_check(
-    paths: &JackinPaths,
+pub fn sibling_agents(
     validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
-    image: &str,
-) -> bool {
-    validated_repo.manifest.published_image.is_some()
-        || validated_repo
-            .manifest
-            .supported_agents()
-            .into_iter()
-            .any(|agent| version_check::stored_version(paths, agent, image).is_some())
+    selected_agent: Agent,
+) -> Vec<Agent> {
+    validated_repo
+        .manifest
+        .supported_agents()
+        .into_iter()
+        .filter(|agent| *agent != selected_agent)
+        .collect()
+}
+
+#[cfg(not(test))]
+#[derive(Debug)]
+pub enum SiblingImagePrewarmOutcome {
+    Reused,
+    Built,
 }

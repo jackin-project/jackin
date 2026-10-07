@@ -3588,6 +3588,7 @@ dependencies = [
  "jackin-runtime-exit-summary",
  "jackin-runtime-host-daemon",
  "jackin-runtime-identity",
+ "jackin-runtime-image",
  "jackin-runtime-isolation",
  "jackin-runtime-launch-plan",
  "jackin-runtime-naming",
@@ -3726,6 +3727,30 @@ dependencies = [
  "jackin-core",
  "jackin-diagnostics",
  "nix 0.31.3",
+]
+
+[[package]]
+name = "jackin-runtime-image"
+version = "0.6.4"
+dependencies = [
+ "anyhow",
+ "futures-util",
+ "jackin-core",
+ "jackin-diagnostics",
+ "jackin-docker",
+ "jackin-image",
+ "jackin-launch",
+ "jackin-manifest",
+ "jackin-runtime-identity",
+ "jackin-runtime-launch-plan",
+ "jackin-runtime-naming",
+ "jackin-runtime-progress",
+ "jackin-runtime-repo-cache",
+ "jackin-telemetry",
+ "jackin-test-support",
+ "serde_json",
+ "tempfile",
+ "tokio",
 ]
 
 [[package]]

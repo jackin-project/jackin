@@ -14,7 +14,7 @@ use jackin_telemetry::spawn::JoinSetExt as _;
 use super::{SiblingImagePrewarmOutcome, prewarm_sibling_image};
 use super::{agent_binary_prepare_summary, prepare_agent_binaries, sibling_agents};
 
-pub(crate) fn spawn_sibling_runtime_prewarm(
+pub fn spawn_sibling_runtime_prewarm(
     paths: &JackinPaths,
     validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
     selected_agent: Agent,
@@ -135,7 +135,7 @@ pub(crate) fn spawn_sibling_runtime_prewarm(
     ))
 }
 
-pub(crate) fn spawn_sibling_image_prewarm(
+pub fn spawn_sibling_image_prewarm(
     paths: &JackinPaths,
     selector: &RoleSelector,
     role_git: &str,

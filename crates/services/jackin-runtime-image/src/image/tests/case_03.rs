@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-use crate::runtime::naming::{image_name, role_base_image_name};
 use jackin_core::RoleSelector;
 use jackin_manifest::repo::CachedRepo;
+use jackin_runtime_naming::naming::{image_name, role_base_image_name};
 
 #[test]
 fn image_label_classifier_reports_precise_invalidation_reasons() {

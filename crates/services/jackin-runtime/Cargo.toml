@@ -42,6 +42,7 @@ jackin-runtime-exec-host = { workspace = true }
 jackin-runtime-exit-summary = { workspace = true }
 jackin-runtime-host-daemon = { workspace = true }
 jackin-runtime-identity = { workspace = true }
+jackin-runtime-image = { workspace = true }
 jackin-runtime-isolation = { workspace = true }
 jackin-runtime-launch-plan = { workspace = true }
 jackin-runtime-naming = { workspace = true }
@@ -81,6 +82,7 @@ nix = { workspace = true, features = ["user", "socket", "poll", "process", "sign
 jackin-diagnostics = { workspace = true, features = ["test-support"] }
 jackin-runtime-apple-container-client = { workspace = true, features = ["test-support"] }
 jackin-runtime-identity = { workspace = true, features = ["test-support"] }
+jackin-runtime-image = { workspace = true, features = ["test-support"] }
 jackin-runtime-universe = { workspace = true, features = ["test-support"] }
 jackin-otlp-testbed = { workspace = true }
 jackin-test-support = { workspace = true }

@@ -39,6 +39,7 @@
     "jackin-runtime-exit-summary",
     "jackin-runtime-host-daemon",
     "jackin-runtime-identity",
+    "jackin-runtime-image",
     "jackin-runtime-isolation",
     "jackin-runtime-launch-plan",
     "jackin-runtime-naming",

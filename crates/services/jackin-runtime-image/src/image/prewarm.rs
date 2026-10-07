@@ -40,8 +40,8 @@ pub async fn prewarm_role_images(
     agents: &[Agent],
     debug: bool,
 ) -> anyhow::Result<Vec<RoleImagePrewarmRow>> {
-    use crate::runtime::repo_cache::{RepoResolveOptions, resolve_agent_repo_with};
     use jackin_docker::ShellRunner;
+    use jackin_runtime_repo_cache::repo_cache::{RepoResolveOptions, resolve_agent_repo_with};
 
     let mut resolve_runner = ShellRunner { debug };
     let (_cached_repo, validated_repo, repo_lock) = resolve_agent_repo_with(

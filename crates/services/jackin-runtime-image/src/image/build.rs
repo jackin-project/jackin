@@ -23,11 +23,11 @@ use jackin_image::version_check;
 use jackin_launch::build_log::DiagnosticsBuildLogSink;
 use jackin_manifest::repo::CachedRepo;
 
-use crate::runtime::naming::{
+use jackin_runtime_naming::naming::{
     LABEL_IMAGE_AGENT_VERSION_PREFIX, LABEL_IMAGE_CONSTRUCT, LABEL_IMAGE_ROLE_GIT_SHA, image_name,
     image_name_for_branch, role_base_image_name, short_git_sha,
 };
-use crate::runtime::progress::{LaunchProgress, LaunchStage};
+use jackin_runtime_progress::progress::{LaunchProgress, LaunchStage};
 
 use super::{
     PreparedRuntimeBinaries, docker_build_env, dockerfile_body_requests_role_git_sha_arg,
@@ -37,14 +37,11 @@ use super::{
     should_stream_build_output,
 };
 
-pub(crate) fn should_mint_fresh_cache_bust(
-    rebuild: bool,
-    build_reason: ImageInvalidationReason,
-) -> bool {
+pub fn should_mint_fresh_cache_bust(rebuild: bool, build_reason: ImageInvalidationReason) -> bool {
     rebuild || build_reason == ImageInvalidationReason::AgentVersionChanged
 }
 
-pub(crate) fn cache_bust_value_for_build(
+pub fn cache_bust_value_for_build(
     paths: &JackinPaths,
     image: &str,
     manifest: &jackin_core::RoleManifest,
@@ -88,7 +85,7 @@ pub(crate) fn cache_bust_value_for_build(
               or-build branch. Named-arg reads match the per-input propagation \
               idiom the role-base resolver walks."
 )]
-pub(crate) async fn ensure_local_role_base(
+pub async fn ensure_local_role_base(
     selector: &RoleSelector,
     branch_override: Option<&str>,
     head_sha: Option<&str>,
@@ -259,7 +256,7 @@ pub(crate) async fn ensure_local_role_base(
               image carries every caller-supplied input through the build \
               pipeline. Inline shape preserves captured-locals across phases."
 )]
-pub(crate) async fn build_agent_image(
+pub async fn build_agent_image(
     paths: &JackinPaths,
     selector: &RoleSelector,
     cached_repo: &CachedRepo,
@@ -273,7 +270,7 @@ pub(crate) async fn build_agent_image(
     branch_override: Option<&str>,
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
-    repo_lock: crate::runtime::repo_cache::RepoLock,
+    repo_lock: jackin_runtime_repo_cache::repo_cache::RepoLock,
     known_head_sha: Option<&str>,
     mut progress: Option<&mut LaunchProgress>,
 ) -> anyhow::Result<String> {
@@ -394,7 +391,7 @@ pub(crate) async fn build_agent_image(
         format!("ROLE_GIT_SHA={}", head_sha.as_deref().unwrap_or("unknown"));
     let build_arg_run_uid = format!(
         "JACKIN_RUN_UID={}",
-        crate::runtime::identity::host_uid().unwrap_or(1000)
+        jackin_runtime_identity::identity::host_uid().unwrap_or(1000)
     );
     // Always pass the cache-bust arg so Docker matches the correct layer.
     //
@@ -549,7 +546,7 @@ pub(crate) async fn build_agent_image(
 
 /// Returns the HEAD commit SHA of the git repo at `dir`, or `None` if the
 /// directory is not a git repo or the command fails.
-pub(crate) async fn git_head_sha(
+pub async fn git_head_sha(
     dir: &std::path::Path,
     runner: &mut impl CommandRunner,
 ) -> Option<String> {

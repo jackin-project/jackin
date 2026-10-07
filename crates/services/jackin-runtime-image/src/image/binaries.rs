@@ -12,15 +12,16 @@ use jackin_core::JackinPaths;
 use jackin_image::capsule_binary;
 use jackin_image::derived_image::AgentInstall;
 
-use crate::runtime::progress::{LaunchProgress, LaunchStage};
+use jackin_runtime_progress::progress::{LaunchProgress, LaunchStage};
 
-pub(crate) struct PreparedRuntimeBinaries {
+#[derive(Debug)]
+pub struct PreparedRuntimeBinaries {
     pub(crate) agent_installs: BTreeMap<Agent, AgentInstall<PathBuf>>,
     pub(crate) prefetched_agent_versions: BTreeMap<Agent, String>,
     pub(crate) jackin_capsule_src: String,
 }
 
-pub(crate) async fn prepare_runtime_binaries_for_agents(
+pub async fn prepare_runtime_binaries_for_agents(
     paths: &JackinPaths,
     _validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
     agents: &[Agent],
@@ -97,7 +98,7 @@ pub(crate) async fn prepare_runtime_binaries_for_agents(
     })
 }
 
-pub(crate) async fn prepare_agent_binaries(
+pub async fn prepare_agent_binaries(
     paths: &JackinPaths,
     agents: &[Agent],
     timing_stage: jackin_diagnostics::DiagnosticStage,
@@ -143,7 +144,7 @@ pub(crate) async fn prepare_agent_binaries(
     try_join_all(agent_futures).await
 }
 
-pub(crate) fn agent_binary_prepare_summary(
+pub fn agent_binary_prepare_summary(
     prepared: &[(Agent, AgentInstall<PathBuf>, Option<String>)],
 ) -> String {
     let prefetched = prepared
