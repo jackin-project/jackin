@@ -26,7 +26,6 @@ mod minimax;
 mod muse;
 mod opencode;
 mod openrouter;
-mod zai;
 
 use std::fs;
 
@@ -188,15 +187,6 @@ pub(crate) use self::openrouter::{
     openrouter_snapshot_with_base, openrouter_snapshot_with_rate_limit, parse_openrouter_credits,
     parse_openrouter_key_usage,
 };
-#[expect(
-    unused_imports,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
-pub(crate) use self::zai::{
-    ZaiLimitRaw, ZaiQuotaData, ZaiQuotaResponse, fetch_zai_usage, json_epoch_seconds,
-    provider_key_snapshot, resolve_zai_quota_url, resolve_zai_quota_url_from, zai_bucket,
-    zai_count_line, zai_quota_host,
-};
 use base64::Engine as _;
 use jackin_protocol::control::{
     FocusedAccountHeader, FocusedUsageView, Money, QuotaBucketView, StatusSlot, UsageConfidence,
@@ -205,6 +195,15 @@ use jackin_protocol::control::{
 #[cfg(test)]
 use jackin_protocol::control::{UsageProviderTab, UsageSeverity};
 use jackin_telemetry::ResultTelemetryExt as _;
+pub(crate) use jackin_usage_provider_core::json_epoch_seconds;
+#[expect(
+    unused_imports,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
+pub(crate) use jackin_usage_provider_zai::{
+    ZaiLimitRaw, ZaiQuotaData, ZaiQuotaResponse, fetch_zai_usage, provider_key_snapshot,
+    resolve_zai_quota_url, resolve_zai_quota_url_from, zai_bucket, zai_count_line, zai_quota_host,
+};
 #[cfg(test)]
 use std::collections::HashMap;
 #[cfg(test)]

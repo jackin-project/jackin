@@ -42,8 +42,8 @@ pub use self::format::{
     PROCESS_OUTPUT_MAX, codex_account_from_value, codex_limit_label, collect_cli_output,
     compact_count, dollar_amounts, env_value, expiry_label, first_string_key,
     format_amount_with_unit, format_cents, format_currency, home_path, humanize_plan_label,
-    humanize_words_with, json_number, local_timestamp_label, oauth_origin, parse_iso_epoch,
-    quota_pace_label, read_process_pipe, remaining_from_fraction, reset_label,
+    humanize_words_with, json_epoch_seconds, json_number, local_timestamp_label, oauth_origin,
+    parse_iso_epoch, quota_pace_label, read_process_pipe, remaining_from_fraction, reset_label,
     run_cli_with_timeout, titlecase_ascii, used_percent_from_fraction, used_percent_label,
     window_minutes_label,
 };

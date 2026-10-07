@@ -3650,6 +3650,7 @@ dependencies = [
  "jackin-protocol",
  "jackin-telemetry",
  "jackin-usage-provider-core",
+ "jackin-usage-provider-zai",
  "nix 0.31.3",
  "ratatui",
  "reqwest",
@@ -3699,6 +3700,20 @@ dependencies = [
  "tempfile",
  "tower",
  "tracing",
+]
+
+[[package]]
+name = "jackin-usage-provider-zai"
+version = "0.6.4"
+dependencies = [
+ "chrono",
+ "jackin-protocol",
+ "jackin-telemetry",
+ "jackin-usage-provider-core",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "url",
 ]
 
 [[package]]

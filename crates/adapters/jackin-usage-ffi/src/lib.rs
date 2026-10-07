@@ -1,6 +1,6 @@
 //! jackin-usage-ffi: synchronous boltffi facade for the macOS usage menu bar.
 //!
-//! **Architecture Invariant:** T4.
+//! **Architecture Invariant:** T5.
 //! Entry point: [`UsageMenuBarBridge`] — coarse host runtime ops for Swift.
 //!
 //! Swift never owns probes, OAuth, or provider matrices. Every entry point is

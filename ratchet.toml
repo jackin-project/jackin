@@ -70,10 +70,13 @@ key = "clippy::cast_sign_loss@jackin-launch"
 bound = 9
 [[family.entry]]
 key = "clippy::cast_sign_loss@jackin-usage"
-bound = 30
+bound = 28
 [[family.entry]]
 key = "clippy::cast_sign_loss@jackin-usage-provider-core"
 bound = 1
+[[family.entry]]
+key = "clippy::cast_sign_loss@jackin-usage-provider-zai"
+bound = 2
 [[family.entry]]
 key = "clippy::cognitive_complexity@jackin-runtime"
 bound = 1
@@ -601,6 +604,9 @@ bound = 3078
 [[family.entry]]
 key = "crates/services/jackin-usage-provider-core/README.md"
 bound = 2050
+[[family.entry]]
+key = "crates/services/jackin-usage-provider-zai/README.md"
+bound = 1202
 [[family.entry]]
 key = "crates/tools/jackin-xtask/README.md"
 bound = 6113

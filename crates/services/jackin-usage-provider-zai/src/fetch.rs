@@ -3,7 +3,7 @@
 //! `Z.AI` quota fetch, team scope, and endpoint resolution.
 
 use jackin_usage_provider_core::{
-    env_value, json_number, normalize_url_or_host, provider_http_client, provider_request,
+    env_value, normalize_url_or_host, provider_http_client, provider_request,
 };
 
 use super::ZaiQuotaResponse;
@@ -11,13 +11,13 @@ use super::ZaiQuotaResponse;
 /// CN team scope: `?type=2` on the quota path plus the
 /// `Bigmodel-Organization` / `Bigmodel-Project` headers.
 #[derive(Debug, Clone, Default)]
-pub(crate) struct ZaiTeamScope {
-    pub(crate) quota_type: Option<String>,
-    pub(crate) organization: Option<String>,
-    pub(crate) project: Option<String>,
+pub struct ZaiTeamScope {
+    pub quota_type: Option<String>,
+    pub organization: Option<String>,
+    pub project: Option<String>,
 }
 
-pub(crate) fn resolve_zai_team_scope() -> ZaiTeamScope {
+pub fn resolve_zai_team_scope() -> ZaiTeamScope {
     zai_team_scope_from(
         env_value("ZAI_QUOTA_TYPE").as_deref(),
         env_value("BIGMODEL_ORGANIZATION")
@@ -48,16 +48,16 @@ pub(crate) fn zai_team_scope_from(
 }
 
 impl ZaiTeamScope {
-    pub(crate) fn active(&self) -> bool {
+    pub fn active(&self) -> bool {
         self.quota_type.is_some() || self.organization.is_some() || self.project.is_some()
     }
 
-    pub(crate) fn query(&self) -> Option<&str> {
+    pub fn query(&self) -> Option<&str> {
         self.quota_type.as_deref()
     }
 }
 
-pub(crate) fn fetch_zai_usage(token: &str) -> Result<ZaiQuotaResponse, String> {
+pub fn fetch_zai_usage(token: &str) -> Result<ZaiQuotaResponse, String> {
     let mut url = resolve_zai_quota_url();
     let scope = resolve_zai_team_scope();
     if let Some(quota_type) = scope.query() {
@@ -117,7 +117,7 @@ pub(crate) fn fetch_zai_usage(token: &str) -> Result<ZaiQuotaResponse, String> {
     Ok(quota)
 }
 
-pub(crate) fn resolve_zai_quota_url() -> String {
+pub fn resolve_zai_quota_url() -> String {
     let override_url = env_value("ZAI_QUOTA_URL").or_else(|| env_value("Z_AI_QUOTA_URL"));
     let host = env_value("ZAI_API_HOST")
         .or_else(|| env_value("Z_AI_API_HOST"))
@@ -125,7 +125,7 @@ pub(crate) fn resolve_zai_quota_url() -> String {
     resolve_zai_quota_url_from(override_url.as_deref(), Some(&host))
 }
 
-pub(crate) fn resolve_zai_quota_url_from(override_url: Option<&str>, host: Option<&str>) -> String {
+pub fn resolve_zai_quota_url_from(override_url: Option<&str>, host: Option<&str>) -> String {
     if let Some(url) = override_url {
         return normalize_url_or_host(url, "");
     }
@@ -133,7 +133,7 @@ pub(crate) fn resolve_zai_quota_url_from(override_url: Option<&str>, host: Optio
     normalize_url_or_host(&zai_quota_host(host), "api/monitor/usage/quota/limit")
 }
 
-pub(crate) fn zai_quota_host(value: &str) -> String {
+pub fn zai_quota_host(value: &str) -> String {
     let normalized = normalize_url_or_host(value, "");
     let Ok(mut url) = url::Url::parse(&normalized) else {
         return normalized;
@@ -142,13 +142,4 @@ pub(crate) fn zai_quota_host(value: &str) -> String {
     url.set_query(None);
     url.set_fragment(None);
     url.to_string().trim_end_matches('/').to_owned()
-}
-
-pub(crate) fn json_epoch_seconds(value: &serde_json::Value) -> Option<i64> {
-    let number = json_number(value)?;
-    if number > 1_000_000_000_000.0 {
-        Some((number / 1000.0).floor() as i64)
-    } else {
-        Some(number.floor() as i64)
-    }
 }

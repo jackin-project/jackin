@@ -10,7 +10,7 @@ use jackin_usage_provider_core::{
 
 use super::{ZaiQuotaResponse, fetch_zai_usage, resolve_zai_team_scope};
 
-pub(crate) fn provider_key_snapshot(
+pub fn provider_key_snapshot(
     agent: &str,
     surface: UsageSurface,
     key_name: &str,

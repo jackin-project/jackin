@@ -785,3 +785,61 @@ passes.
 - Raw outputs: `/tmp/s7-{head,new}-nextest.txt`
   (7277), `/tmp/s7-{head,new}-{gaps,alint,
   ratchet}.txt` (kept out of the repo).
+
+### Split 4: usage-provider-zai extraction (V1)
+
+- `jackin-usage` -> `jackin-usage` +
+  `jackin-usage-provider-zai` (T3 leaf:
+  `usage/zai.rs` -> `lib.rs` re-export
+  root + `buckets`, `fetch`, `quota`,
+  `snapshot`, `tests`; `lib.rs` carries
+  the ownership header). The one
+  cross-vendor helper `json_epoch_seconds`
+  (defined in `zai/fetch.rs`, consumed by
+  `kimi/local.rs`) is promoted to
+  provider-core `format/numbers` next to
+  `json_number` and re-exported through
+  the core root; `usage.rs` re-exports the
+  vendor surface from the new crate and
+  the helper from core. Tier cascade (the
+  arch rule needs strictly lower tiers):
+  `jackin-usage` T3 -> T4, `jackin-capsule`
+  / `jackin-usage-ffi` T4 -> T5, including
+  the `lib.rs` / capsule `main.rs`
+  invariant headers. New-crate kit mirrors
+  U1: workspace-inherit manifest, README,
+  `tests/main.rs` placeholder.
+- Verify: `cargo check --locked --workspace
+  --all-targets` green; `cargo fmt --all
+  --check` clean; `cargo clippy` 0 errors,
+  warnings identical to base (xtask 1,
+  runtime 7). `cargo nextest list
+  --workspace --all-targets`: 7272 ->
+  7272, bijection exact (5 zai tests move
+  `jackin-usage usage::zai::` ->
+  `jackin-usage-provider-zai` root; zero
+  dropped, zero added; this host lists
+  7272 where U1 listed 7277, a
+  platform-gated-test delta, not churn).
+  `nextest run`: 603/603 usage + 5/5 zai
+  + 9/9 core. The provider-call contract
+  fixture is untouched (no zai call-site
+  entries) and the suite is green. `alint
+  check`: 198 -> 198, byte-identical.
+  `check-gaps`: 28 -> 28 (usage `SIZE-001`
+  46648 -> 46055 lines, `SIZE-002` 321 ->
+  315 files; xtask +1 line for the tier
+  row); `GAP-TEST-001/002/003` stay 0/0/0.
+  `ratchet.toml`: +2 zai rows (agent-doc
+  1202, `cast_sign_loss` 2), 1 usage
+  shrink (cast 30 -> 28); owed rows 62 ->
+  62 with zero new failures. `lint arch`:
+  missing tiers stay 3 (pre-existing
+  instance crates), zero direction
+  violations; `lint headers` back to the
+  base 2 (pre-existing omp-store +
+  process-directory).
+- Raw outputs: `/tmp/s9-base-nextest.txt`
+  (7272), `/tmp/s9-zai-{nextest,gaps,
+  alint,lint2}.txt` (kept out of the
+  repo).

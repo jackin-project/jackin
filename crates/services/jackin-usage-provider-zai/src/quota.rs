@@ -9,56 +9,56 @@ use super::zai_bucket;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct ZaiQuotaResponse {
-    pub(crate) code: Option<i64>,
-    pub(crate) msg: Option<String>,
-    pub(crate) success: Option<bool>,
-    pub(crate) data: Option<ZaiQuotaData>,
+pub struct ZaiQuotaResponse {
+    pub code: Option<i64>,
+    pub msg: Option<String>,
+    pub success: Option<bool>,
+    pub data: Option<ZaiQuotaData>,
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct ZaiQuotaData {
+pub struct ZaiQuotaData {
     #[serde(default)]
-    pub(crate) limits: Vec<ZaiLimitRaw>,
+    pub limits: Vec<ZaiLimitRaw>,
     #[serde(
         rename = "planName",
         alias = "plan",
         alias = "plan_type",
         alias = "packageName"
     )]
-    pub(crate) plan_name: Option<String>,
+    pub plan_name: Option<String>,
     // Separate field, not another `plan_name` alias: serde raises a
     // duplicate-field error if two aliased keys co-occur, which would fail
     // the whole parse when a response carries both `planName` and `level`.
-    pub(crate) level: Option<String>,
+    pub level: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub(crate) struct ZaiLimitRaw {
+pub struct ZaiLimitRaw {
     #[serde(rename = "type")]
-    pub(crate) limit_type: String,
-    pub(crate) unit: Option<i64>,
-    pub(crate) number: Option<i64>,
-    pub(crate) usage: Option<i64>,
+    pub limit_type: String,
+    pub unit: Option<i64>,
+    pub number: Option<i64>,
+    pub usage: Option<i64>,
     #[serde(rename = "currentValue")]
-    pub(crate) current_value: Option<i64>,
-    pub(crate) remaining: Option<i64>,
-    pub(crate) percentage: Option<f64>,
+    pub current_value: Option<i64>,
+    pub remaining: Option<i64>,
+    pub percentage: Option<f64>,
     #[serde(rename = "nextResetTime")]
-    pub(crate) next_reset_time: Option<i64>,
+    pub next_reset_time: Option<i64>,
     #[serde(rename = "usageDetails", default)]
-    pub(crate) usage_details: Vec<ZaiUsageDetail>,
+    pub usage_details: Vec<ZaiUsageDetail>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub(crate) struct ZaiUsageDetail {
+pub struct ZaiUsageDetail {
     #[serde(rename = "modelCode", alias = "model_code", alias = "model")]
-    pub(crate) model_code: Option<String>,
-    pub(crate) usage: Option<i64>,
+    pub model_code: Option<String>,
+    pub usage: Option<i64>,
 }
 
 impl ZaiQuotaResponse {
-    pub(crate) fn buckets(&self, now: i64) -> Vec<QuotaBucketView> {
+    pub fn buckets(&self, now: i64) -> Vec<QuotaBucketView> {
         let limits = self
             .data
             .as_ref()
@@ -82,7 +82,7 @@ impl ZaiQuotaResponse {
         buckets
     }
 
-    pub(crate) fn plan_name(&self) -> Option<String> {
+    pub fn plan_name(&self) -> Option<String> {
         let data = self.data.as_ref()?;
         data.plan_name
             .as_deref()
@@ -99,7 +99,7 @@ impl ZaiQuotaResponse {
 }
 
 impl ZaiLimitRaw {
-    pub(crate) fn used_percent(&self) -> Option<u8> {
+    pub fn used_percent(&self) -> Option<u8> {
         if let Some(limit) = self.usage.filter(|limit| *limit > 0) {
             let used = if let Some(remaining) = self.remaining {
                 let from_remaining = limit.saturating_sub(remaining);
@@ -125,7 +125,7 @@ impl ZaiLimitRaw {
     /// Window length in minutes from the `(unit, number)` period pair:
     /// `1` = day, `3` = hour, `5` = minute, `6` = week. Unknown unit codes
     /// yield no window (never a guessed duration).
-    pub(crate) fn window_minutes(&self) -> Option<i64> {
+    pub fn window_minutes(&self) -> Option<i64> {
         let number = self.number?;
         if number <= 0 {
             return None;
@@ -144,7 +144,7 @@ impl ZaiLimitRaw {
     /// split is a window-size heuristic with a known residual risk: a 28d+
     /// MCP window would mislabel. No sharper signal exists in the quota
     /// payload, so the guess stays, documented.
-    pub(crate) fn time_label(&self) -> &'static str {
+    pub fn time_label(&self) -> &'static str {
         if self
             .window_minutes()
             .is_some_and(|minutes| minutes >= 28 * 24 * 60)

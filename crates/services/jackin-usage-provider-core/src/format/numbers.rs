@@ -69,6 +69,17 @@ pub fn json_number(value: &serde_json::Value) -> Option<f64> {
         .or_else(|| value.as_str().and_then(|value| value.parse().ok()))
 }
 
+/// Epoch seconds from a JSON number that may carry milliseconds: values
+/// above the ms threshold are floored to seconds.
+pub fn json_epoch_seconds(value: &serde_json::Value) -> Option<i64> {
+    let number = json_number(value)?;
+    if number > 1_000_000_000_000.0 {
+        Some((number / 1000.0).floor() as i64)
+    } else {
+        Some(number.floor() as i64)
+    }
+}
+
 pub fn format_amount_with_unit(value: f64, unit: &str) -> String {
     let amount = if value.fract().abs() < f64::EPSILON {
         format!("{}", value as i64)

@@ -72,7 +72,7 @@ pub(crate) fn zai_model_note(limit: &ZaiLimitRaw) -> Option<String> {
     Some(format!("top {}", parts.join(" · ")))
 }
 
-pub(crate) fn zai_bucket(label: &str, limit: &ZaiLimitRaw, now: i64) -> QuotaBucketView {
+pub fn zai_bucket(label: &str, limit: &ZaiLimitRaw, now: i64) -> QuotaBucketView {
     let used_percent = limit.used_percent();
     let remaining = used_percent.map(|used| 100u8.saturating_sub(used));
     let reset_at = limit.next_reset_time.map(epoch_seconds_from_maybe_ms);
@@ -100,7 +100,7 @@ pub(crate) fn zai_bucket(label: &str, limit: &ZaiLimitRaw, now: i64) -> QuotaBuc
     )
 }
 
-pub(crate) fn zai_count_line(limit: &ZaiLimitRaw) -> Option<String> {
+pub fn zai_count_line(limit: &ZaiLimitRaw) -> Option<String> {
     let total = limit.usage.filter(|value| *value > 0)?;
     let used = if let Some(remaining) = limit.remaining {
         let from_remaining = total.saturating_sub(remaining);
