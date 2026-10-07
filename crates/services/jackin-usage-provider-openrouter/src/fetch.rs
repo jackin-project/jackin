@@ -10,9 +10,9 @@ use jackin_usage_provider_core::{
 
 use super::{OpenRouterCreditsOutcome, OpenRouterModelCheck, parse_openrouter_credits};
 
-pub(crate) const OPENROUTER_DEFAULT_BASE_URL: &str = "https://openrouter.ai/api/v1";
+pub const OPENROUTER_DEFAULT_BASE_URL: &str = "https://openrouter.ai/api/v1";
 
-pub(crate) fn openrouter_base_url() -> String {
+pub fn openrouter_base_url() -> String {
     openrouter_base_url_from(
         env_value("OPENROUTER_API_URL").as_deref(),
         env_value("OPENROUTER_BASE_URL").as_deref(),
@@ -22,7 +22,7 @@ pub(crate) fn openrouter_base_url() -> String {
 /// Pure base-URL resolution: `OPENROUTER_API_URL` wins over
 /// `OPENROUTER_BASE_URL`, blank inputs fall through to the next candidate.
 /// The hermetic seam tests use so live env can never vacate assertions.
-pub(crate) fn openrouter_base_url_from(api_url: Option<&str>, base_url: Option<&str>) -> String {
+pub fn openrouter_base_url_from(api_url: Option<&str>, base_url: Option<&str>) -> String {
     [api_url, base_url]
         .into_iter()
         .flatten()
@@ -31,7 +31,7 @@ pub(crate) fn openrouter_base_url_from(api_url: Option<&str>, base_url: Option<&
         .map_or_else(|| OPENROUTER_DEFAULT_BASE_URL.to_owned(), str::to_owned)
 }
 
-pub(crate) fn check_openrouter_model_in_catalog(
+pub fn check_openrouter_model_in_catalog(
     catalog: &serde_json::Value,
     model_id: &str,
 ) -> OpenRouterModelCheck {
@@ -58,7 +58,7 @@ pub(crate) fn check_openrouter_model_in_catalog(
     }
 }
 
-pub(crate) fn fetch_openrouter_key_usage(
+pub fn fetch_openrouter_key_usage(
     base_url: &str,
     key: &str,
 ) -> Result<serde_json::Value, ProviderHttpError> {
@@ -72,7 +72,7 @@ pub(crate) fn fetch_openrouter_key_usage(
     )
 }
 
-pub(crate) fn openrouter_key_error_status(error: &ProviderError) -> UsageSnapshotStatus {
+pub fn openrouter_key_error_status(error: &ProviderError) -> UsageSnapshotStatus {
     match error.status() {
         Some(401) => UsageSnapshotStatus::NeedsLogin,
         _ => UsageSnapshotStatus::Error,
@@ -81,7 +81,7 @@ pub(crate) fn openrouter_key_error_status(error: &ProviderError) -> UsageSnapsho
 
 /// `/credits` never fails the snapshot: every outcome (including the typed 403
 /// management-scope mismatch) is a value, so `/key` rows always survive it.
-pub(crate) fn fetch_openrouter_credits(base_url: &str, key: &str) -> OpenRouterCreditsOutcome {
+pub fn fetch_openrouter_credits(base_url: &str, key: &str) -> OpenRouterCreditsOutcome {
     provider_request(
         jackin_telemetry::schema::enums::ProviderName::Openrouter,
         "GET",
@@ -110,7 +110,7 @@ pub(crate) fn fetch_openrouter_credits(base_url: &str, key: &str) -> OpenRouterC
 
 /// Catalog validation never errors: any fetch failure degrades to `Unverified`
 /// (a stale catalog must not reject a configured model).
-pub(crate) fn fetch_openrouter_model_check(base_url: &str, model_id: &str) -> OpenRouterModelCheck {
+pub fn fetch_openrouter_model_check(base_url: &str, model_id: &str) -> OpenRouterModelCheck {
     let unverified = |reason: String| OpenRouterModelCheck::Unverified {
         model_id: model_id.to_owned(),
         reason,

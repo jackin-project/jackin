@@ -16,12 +16,12 @@ use super::{
     parse_openrouter_key_usage,
 };
 
-pub(crate) fn openrouter_snapshot(agent: &str, key: Option<&str>, now: i64) -> FocusedUsageView {
+pub fn openrouter_snapshot(agent: &str, key: Option<&str>, now: i64) -> FocusedUsageView {
     openrouter_snapshot_with_rate_limit(agent, key, now).0
 }
 
 /// Key snapshot against an explicit base.
-pub(crate) fn openrouter_snapshot_with_base(
+pub fn openrouter_snapshot_with_base(
     agent: &str,
     key: Option<&str>,
     base_url: &str,
@@ -30,7 +30,7 @@ pub(crate) fn openrouter_snapshot_with_base(
     openrouter_snapshot_with_key_fetch(agent, key, base_url, now, fetch_openrouter_key_usage).0
 }
 
-pub(crate) fn openrouter_snapshot_with_rate_limit(
+pub fn openrouter_snapshot_with_rate_limit(
     agent: &str,
     key: Option<&str>,
     now: i64,

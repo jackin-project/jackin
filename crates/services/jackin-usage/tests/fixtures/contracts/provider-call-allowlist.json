@@ -33,6 +33,6 @@
     { "path": "crates/services/jackin-usage/src/usage/grok/billing.rs", "symbol": "fetch_grok_rpc_billing", "classification": "adapter_internal" },
     { "path": "crates/services/jackin-usage/src/usage/grok/snapshot.rs", "symbol": "fetch_grok_billing", "classification": "adapter_internal" },
     { "path": "crates/services/jackin-usage/src/usage/grok/snapshot.rs", "symbol": "grok_snapshot_from_rpc_result_with_rate_limit", "classification": "adapter_internal" },
-    { "path": "crates/services/jackin-usage/src/usage/openrouter/snapshot.rs", "symbol": "openrouter_snapshot_with_rate_limit", "classification": "adapter_internal" }
+    { "path": "crates/services/jackin-usage-provider-openrouter/src/snapshot.rs", "symbol": "openrouter_snapshot_with_rate_limit", "classification": "adapter_internal" }
   ]
 }

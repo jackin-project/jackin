@@ -1,7 +1,7 @@
-// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
-// SPDX-License-Identifier: Apache-2.0
-
-//! `OpenRouter` key/account usage snapshot.
+//! jackin-usage-provider-openrouter: `OpenRouter` key/account usage snapshot collection.
+//!
+//! **Architecture Invariant:** T3.
+//! Entry point: [`openrouter_snapshot`] — `OpenRouter` key/account snapshot.
 //!
 //! An ordinary inference key reads `GET {base}/key` (key cap, remaining,
 //! period spend, BYOK attribution, expiry). Account balance reads
@@ -16,33 +16,33 @@
 //! separate Management key, so history remains explicitly unavailable rather
 //! than being fetched with the wrong scope or inferred from live key usage.
 
+#![expect(
+    dead_code,
+    reason = "provider-adapter fixtures remain testable while production dispatch is broker-only"
+)]
+
 mod fetch;
 mod parse;
 mod snapshot;
 mod types;
 
-#[cfg(test)]
-use super::*;
-#[cfg(test)]
-use jackin_usage_provider_core::ProviderError;
-
-pub(crate) use fetch::openrouter_key_error_status;
-pub(crate) use fetch::{
+pub use fetch::openrouter_key_error_status;
+pub use fetch::{
     OPENROUTER_DEFAULT_BASE_URL, check_openrouter_model_in_catalog, fetch_openrouter_credits,
     fetch_openrouter_key_usage, fetch_openrouter_model_check, openrouter_base_url,
     openrouter_base_url_from,
 };
-pub(crate) use parse::{
+pub use parse::{
     OpenRouterKeyQuota, openrouter_credits_bucket, parse_openrouter_credits,
     parse_openrouter_key_usage,
 };
 #[cfg(test)]
 pub(crate) use snapshot::openrouter_snapshot_with_key_fetch;
-pub(crate) use snapshot::{
+pub use snapshot::{
     openrouter_snapshot, openrouter_snapshot_with_base, openrouter_snapshot_with_rate_limit,
 };
-pub(crate) use types::{OpenRouterCreditsOutcome, OpenRouterModelCheck};
-pub(crate) use types::{OpenRouterCreditsResponse, OpenRouterKeyData};
+pub use types::{OpenRouterCreditsOutcome, OpenRouterModelCheck};
+pub use types::{OpenRouterCreditsResponse, OpenRouterKeyData};
 
 #[cfg(test)]
 mod tests;

@@ -22,7 +22,6 @@ mod grok;
 mod hermes;
 mod muse;
 mod opencode;
-mod openrouter;
 
 use std::fs;
 
@@ -143,18 +142,6 @@ pub(crate) use self::grok::{
 pub(crate) use self::opencode::opencode_profile_snapshot;
 #[cfg(test)]
 pub(crate) use self::opencode::{load_opencode_api_key, parse_opencode_usage};
-#[expect(
-    unused_imports,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
-pub(crate) use self::openrouter::{
-    OPENROUTER_DEFAULT_BASE_URL, OpenRouterCreditsOutcome, OpenRouterKeyQuota,
-    OpenRouterModelCheck, check_openrouter_model_in_catalog, fetch_openrouter_credits,
-    fetch_openrouter_key_usage, fetch_openrouter_model_check, openrouter_base_url,
-    openrouter_base_url_from, openrouter_credits_bucket, openrouter_snapshot,
-    openrouter_snapshot_with_base, openrouter_snapshot_with_rate_limit, parse_openrouter_credits,
-    parse_openrouter_key_usage,
-};
 use base64::Engine as _;
 use jackin_protocol::control::{
     FocusedAccountHeader, FocusedUsageView, Money, QuotaBucketView, StatusSlot, UsageConfidence,
@@ -191,6 +178,18 @@ pub(crate) use jackin_usage_provider_minimax::{
     minimax_bucket_label, minimax_is_general_model, minimax_operation_path, minimax_remains_host,
     minimax_reset_epoch, minimax_snapshot, minimax_usage_count_line, resolve_minimax_remains_urls,
     resolve_minimax_remains_urls_from,
+};
+#[expect(
+    unused_imports,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
+pub(crate) use jackin_usage_provider_openrouter::{
+    OPENROUTER_DEFAULT_BASE_URL, OpenRouterCreditsOutcome, OpenRouterKeyQuota,
+    OpenRouterModelCheck, check_openrouter_model_in_catalog, fetch_openrouter_credits,
+    fetch_openrouter_key_usage, fetch_openrouter_model_check, openrouter_base_url,
+    openrouter_base_url_from, openrouter_credits_bucket, openrouter_snapshot,
+    openrouter_snapshot_with_base, openrouter_snapshot_with_rate_limit, parse_openrouter_credits,
+    parse_openrouter_key_usage,
 };
 #[expect(
     unused_imports,

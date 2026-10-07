@@ -99,12 +99,12 @@ fn openrouter_key_reset(data: &serde_json::Value) -> Option<i64> {
 }
 
 #[derive(Debug)]
-pub(crate) struct OpenRouterKeyQuota {
+pub struct OpenRouterKeyQuota {
     pub(crate) buckets: Vec<QuotaBucketView>,
     pub(crate) plan_label: Option<String>,
 }
 
-pub(crate) fn parse_openrouter_key_usage(
+pub fn parse_openrouter_key_usage(
     value: serde_json::Value,
     now: i64,
 ) -> Result<OpenRouterKeyQuota, String> {
@@ -199,7 +199,7 @@ pub(crate) fn parse_openrouter_key_usage(
     })
 }
 
-pub(crate) fn parse_openrouter_credits(
+pub fn parse_openrouter_credits(
     value: serde_json::Value,
 ) -> Result<OpenRouterCreditsOutcome, String> {
     let response: OpenRouterCreditsResponse = serde_json::from_value(value)
@@ -220,7 +220,7 @@ pub(crate) fn parse_openrouter_credits(
 /// fields retain the provider's `total_usage`. A real zero balance renders as
 /// `$0` remaining (never "No data"). The percentage meter exists only when the
 /// ceiling is positive.
-pub(crate) fn openrouter_credits_bucket(spent_cents: i64, ceiling_cents: i64) -> QuotaBucketView {
+pub fn openrouter_credits_bucket(spent_cents: i64, ceiling_cents: i64) -> QuotaBucketView {
     let balance = ceiling_cents.saturating_sub(spent_cents);
     let overage = ceiling_cents > 0 && spent_cents > ceiling_cents;
     let remaining_percent = (ceiling_cents > 0 && !overage).then(|| {

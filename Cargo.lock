@@ -3653,6 +3653,7 @@ dependencies = [
  "jackin-usage-provider-core",
  "jackin-usage-provider-kimi",
  "jackin-usage-provider-minimax",
+ "jackin-usage-provider-openrouter",
  "jackin-usage-provider-zai",
  "nix 0.31.3",
  "ratatui",
@@ -3739,6 +3740,18 @@ dependencies = [
  "serde",
  "serde_json",
  "url",
+]
+
+[[package]]
+name = "jackin-usage-provider-openrouter"
+version = "0.6.4"
+dependencies = [
+ "jackin-protocol",
+ "jackin-telemetry",
+ "jackin-usage-provider-core",
+ "reqwest",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

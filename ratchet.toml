@@ -51,14 +51,17 @@ provider = "expect_per_lint_crate"
 cap = 0
 mode = "enforce"
 [[family.entry]]
-key = "clippy::cast_possible_truncation@jackin-usage"
+key = "clippy::cast_possible_truncation@jackin-usage-provider-openrouter"
 bound = 2
 [[family.entry]]
 key = "clippy::cast_precision_loss@jackin-launch"
 bound = 2
 [[family.entry]]
 key = "clippy::cast_precision_loss@jackin-usage"
-bound = 3
+bound = 1
+[[family.entry]]
+key = "clippy::cast_precision_loss@jackin-usage-provider-openrouter"
+bound = 2
 [[family.entry]]
 key = "clippy::cast_precision_loss@jackin-usage-provider-kimi"
 bound = 2
@@ -73,7 +76,10 @@ key = "clippy::cast_sign_loss@jackin-launch"
 bound = 9
 [[family.entry]]
 key = "clippy::cast_sign_loss@jackin-usage"
-bound = 20
+bound = 18
+[[family.entry]]
+key = "clippy::cast_sign_loss@jackin-usage-provider-openrouter"
+bound = 2
 [[family.entry]]
 key = "clippy::cast_sign_loss@jackin-usage-provider-minimax"
 bound = 1
@@ -137,6 +143,9 @@ bound = 2
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-usage-provider-core"
 bound = 2
+[[family.entry]]
+key = "clippy::disallowed_methods@jackin-usage-provider-openrouter"
+bound = 1
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-xtask"
 bound = 4
@@ -454,6 +463,9 @@ bound = 1
 key = "dead_code@jackin-usage-provider-minimax"
 bound = 1
 [[family.entry]]
+key = "dead_code@jackin-usage-provider-openrouter"
+bound = 1
+[[family.entry]]
 key = "dead_code@jackin-xtask"
 bound = 4
 [[family.entry]]
@@ -634,6 +646,9 @@ bound = 1202
 [[family.entry]]
 key = "crates/services/jackin-usage-provider-minimax/README.md"
 bound = 1409
+[[family.entry]]
+key = "crates/services/jackin-usage-provider-openrouter/README.md"
+bound = 1133
 [[family.entry]]
 key = "crates/tools/jackin-xtask/README.md"
 bound = 6113

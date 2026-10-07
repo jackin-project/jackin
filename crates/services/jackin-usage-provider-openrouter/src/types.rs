@@ -5,7 +5,7 @@
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize, Default)]
-pub(crate) struct OpenRouterKeyData {
+pub struct OpenRouterKeyData {
     #[serde(default)]
     pub(crate) usage: Option<f64>,
     #[serde(default)]
@@ -35,14 +35,14 @@ pub(crate) struct OpenRouterCreditsData {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct OpenRouterCreditsResponse {
+pub struct OpenRouterCreditsResponse {
     pub(crate) data: OpenRouterCreditsData,
 }
 
 /// Typed `/credits` outcome. A 403 means the ordinary key lacks the Management
 /// scope — the `/key` rows still render.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) enum OpenRouterCreditsOutcome {
+pub enum OpenRouterCreditsOutcome {
     Available {
         spent_cents: i64,
         ceiling_cents: i64,
@@ -67,7 +67,7 @@ impl OpenRouterCreditsOutcome {
 /// Model-ID check against a catalog snapshot. Stale omission is `Unverified`,
 /// never a rejection.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum OpenRouterModelCheck {
+pub enum OpenRouterModelCheck {
     Verified { model_id: String },
     Unverified { model_id: String, reason: String },
 }
