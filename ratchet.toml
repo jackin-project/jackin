@@ -837,8 +837,11 @@ bound = 848
 key = "crates/services/jackin-runtime-spin-wait/README.md"
 bound = 723
 [[family.entry]]
+key = "crates/services/jackin-runtime-universe-claims/README.md"
+bound = 884
+[[family.entry]]
 key = "crates/services/jackin-runtime-universe/README.md"
-bound = 981
+bound = 1047
 [[family.entry]]
 key = "crates/services/jackin-runtime-usage-relay/README.md"
 bound = 1108
@@ -1204,6 +1207,9 @@ bound = 1
 [[family.entry]]
 key = "jackin-runtime-universe"
 bound = 1
+[[family.entry]]
+key = "jackin-runtime-universe-claims"
+bound = 2
 [[family.entry]]
 key = "jackin-runtime-usage-relay"
 bound = 1

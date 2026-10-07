@@ -66,7 +66,7 @@ fn entry_reobserves_container_started_after_stale_empty_snapshot_before_owner_ki
     let entrant = entrant.join().unwrap();
     assert_eq!(entrant.start_kind(), StartKind::ResumeExisting);
     assert!(
-        entrant.pending_file.as_ref().unwrap().exists(),
+        entrant.pending_file().unwrap().exists(),
         "the reobserving entrant owns its pending lease"
     );
     assert!(!stale_pending.exists(), "the orphan token was reclaimed");

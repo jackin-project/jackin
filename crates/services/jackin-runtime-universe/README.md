@@ -7,11 +7,14 @@ the operator span.
 ## What this crate owns
 
 - Entry (`universe`):
-  `claim_entry`,
-  `EntryClaim`,
-  `StartKind` — pending
-  leases until the role
+  `claim_entry` —
+  pending leases
+  until the role
   container exists.
+  `EntryClaim` /
+  `StartKind` live in
+  `jackin-runtime-universe-claims`,
+  re-exported here.
 - Exit (`universe`):
   `observe_exit`,
   `release_entry_if_idle`,

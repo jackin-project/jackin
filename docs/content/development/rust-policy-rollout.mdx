@@ -8034,3 +8034,190 @@ bound 720.
   `/tmp/s7-s82-{pre,post}-*.txt`
   (kept out of the
   repo).
+
+### Split 83: runtime-universe-claims extraction (M45)
+
+- `jackin-runtime-universe`
+  ->
+  `jackin-runtime-universe`
+  +
+  `jackin-runtime-universe-claims`
+  (T2: the claim
+  types `EntryClaim` /
+  `ExitClaim` /
+  `StartKind` move
+  with their inherent
+  impls (`activate`,
+  `Drop`, accessors)
+  plus the shared
+  boundary file
+  machinery both sides
+  need (lock,
+  generation, state
+  and pending files;
+  `universe_authority`
+  moves too, so the
+  leaf takes
+  `jackin-core`).
+  `Drop`'s eager
+  pending-file removal
+  is test-enforced, so
+  the types cannot
+  split from the
+  machinery; nothing
+  duplicates. Two
+  private items widen
+  to `pub` (forced:
+  `none`,
+  `release_pending_lease`);
+  one constructor
+  (`pending`) and one
+  accessor
+  (`pending_file`)
+  land.
+  `release_if_idle`
+  needs discovery
+  (T6), so it inlines
+  into the `universe`
+  free fn
+  `release_entry_if_idle`
+  (same body, same
+  call sites). Item
+  re-export:
+  `universe.rs`
+  re-exports the three
+  types, so all hub
+  files and the app
+  compile unchanged.
+  `take_exit_claim`
+  stays behind its
+  `cfg(any(test,
+  feature =
+  "test-support"))`
+  gate (audited: gate
+  text untouched,
+  universe suite
+  covers cfg(test),
+  hub case_28 covers
+  the feature path).
+  Universe drops
+  `tokio`/`tracing`
+  from prod deps
+  (`tracing` moves to
+  dev-deps for one
+  test). Tier: names
+  T1 coordination +
+  T0 core, so it
+  takes T2; no
+  renumber cascade.
+  New-crate deps:
+  core, coordination,
+  tokio (rt),
+  tracing, nix (fs,
+  unix) (lockfile +1
+  package, +6 edges).
+  Policy registries:
+  +1 owned package
+  (`library`).)
+
+- Verify: `cargo check
+  --locked --workspace
+  --all-targets` green;
+  `cargo fmt --all
+  --check` clean; `cargo
+  clippy` 0 errors on
+  the new crate (`-D
+  warnings`),
+  `jackin-runtime-universe`
+  clean,
+  `jackin-runtime`
+  holds at the 7
+  pre-existing errors
+  (same 6 lints at
+  identical locations
+  + summary). `cargo
+  nextest list
+  --workspace
+  --all-targets`: 7277
+  -> 7277,
+  byte-identical (0
+  relocations -- the
+  suites stay in
+  `universe`; 0
+  dropped, 0 added).
+  `nextest run`:
+  49/49 universe
+  green, 433/433
+  runtime green (1
+  skipped,
+  pre-existing; the new
+  crate has no tests
+  yet). `alint check`:
+  182 violations / 11
+  failing,
+  byte-identical.
+  `check-gaps`
+  (production-only):
+  12 -> 12 (hub
+  untouched at 11816
+  prod code lines /
+  79 prod files --
+  this split moves
+  code between
+  universe and the
+  leaf; xtask 26296
+  -> 26297 from the
+  TIERS row; new
+  crate fits at 334
+  raw / 3 files, no
+  SIZE finding).
+  `GAP-TEST-001/002/003`
+  stay 0/0/0.
+  `ratchet.toml`: +2
+  rows (agent-doc-bytes
+  README 884,
+  public-surface 2)
+  + universe README
+  981 -> 1047;
+  remaining 56
+  violations
+  byte-identical.
+  `lint arch --strict`:
+  3 pre-existing no-tier
+  violations
+  byte-identical,
+  zero direction
+  violations; `lint
+  headers` stays at the
+  base 2; `lint tests`
+  OK; `lint
+  readme-freshness`
+  unchanged.
+
+- Tier decision
+  (slice-25 triage):
+  the attach remainder
+  signatures
+  (`reconnect`,
+  `reconnect_lease`,
+  `hardline`,
+  `hardline_start`)
+  and `LoadOptions`
+  now name the T2
+  leaf instead of T7
+  `universe`.
+  `launch/failure`
+  still names T7
+  `universe` for
+  `observe_exit` (its
+  `ExitClaim` edge is
+  cured) -- failure
+  unblocks when the
+  exit observation
+  moves down or the
+  claim is passed in.
+
+- Raw outputs:
+  `/tmp/s7-s83-{pre,post}-*.txt`
+  (kept out of the
+  repo).

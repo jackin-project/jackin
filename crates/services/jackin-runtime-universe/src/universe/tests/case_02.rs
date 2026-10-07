@@ -51,7 +51,7 @@ async fn stale_idle_observation_cannot_remove_a_newer_live_marker() {
     let observed_generation = {
         let _lock = boundary_lock(&authority(&paths)).unwrap();
         let generation = advance_generation(&authority(&paths)).unwrap();
-        std::fs::remove_file(first.pending_file.as_ref().unwrap()).unwrap();
+        std::fs::remove_file(first.pending_file().unwrap()).unwrap();
         generation
     };
     // A new launch completes while the first release's Docker request is in
@@ -78,7 +78,7 @@ async fn exit_claim_does_not_consume_a_pending_launch_boundary() {
     let claim = claim_entry(&paths, &FakeDockerClient::default()).await;
 
     assert_eq!(take_exit_claim(&paths), ExitClaim::Missing);
-    assert!(claim.pending_file.as_ref().unwrap().exists());
+    assert!(claim.pending_file().unwrap().exists());
     assert!(marker_path(&authority(&paths)).exists());
     drop(claim);
     assert!(matches!(take_exit_claim(&paths), ExitClaim::Claimed { .. }));
@@ -96,7 +96,7 @@ fn pending_owner_process_worker() {
         .build()
         .unwrap();
     let claim = runtime.block_on(claim_entry(&paths, &FakeDockerClient::default()));
-    assert!(claim.pending_file.is_some());
+    assert!(claim.pending_file().is_some());
     std::fs::write(root.join("pending-owner-ready"), "").unwrap();
     wait_for_fixture_path(
         &root.join("pending-owner-release"),

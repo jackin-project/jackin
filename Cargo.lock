@@ -4193,10 +4193,22 @@ dependencies = [
  "jackin-docker",
  "jackin-runtime-coordination",
  "jackin-runtime-discovery",
+ "jackin-runtime-universe-claims",
  "jackin-telemetry",
  "jackin-test-support",
  "nix 0.31.3",
  "tempfile",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "jackin-runtime-universe-claims"
+version = "0.6.4"
+dependencies = [
+ "jackin-core",
+ "jackin-runtime-coordination",
+ "nix 0.31.3",
  "tokio",
  "tracing",
 ]

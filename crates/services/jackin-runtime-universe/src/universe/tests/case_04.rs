@@ -25,7 +25,7 @@ async fn claim_entry_resumes_when_container_running() {
         "resume writes missing marker"
     );
     assert!(
-        claim.pending_file.as_ref().unwrap().exists(),
+        claim.pending_file().unwrap().exists(),
         "joining launch owns pending coverage even when peers currently run"
     );
     // The peer can leave while this joining launch is still preparing.
@@ -110,7 +110,7 @@ async fn idle_release_derives_its_root_from_the_owned_pending_file() {
     let docker = FakeDockerClient::default();
     let first = claim_entry(&first_paths, &docker).await;
     let second = claim_entry(&second_paths, &docker).await;
-    let second_pending = second.pending_file.clone().unwrap();
+    let second_pending = second.pending_file().cloned().unwrap();
     let second_marker = std::fs::read_to_string(marker_path(&authority(&second_paths))).unwrap();
     let second_generation = generation(&authority(&second_paths)).unwrap();
 
@@ -144,9 +144,9 @@ async fn dropping_entry_removes_only_its_owned_pending_file() {
     };
 
     let first = claim_entry(&paths, &docker).await;
-    let first_file = first.pending_file.clone().unwrap();
+    let first_file = first.pending_file().cloned().unwrap();
     let second = claim_entry(&paths, &docker).await;
-    let second_file = second.pending_file.clone().unwrap();
+    let second_file = second.pending_file().cloned().unwrap();
     let marker = std::fs::read_to_string(marker_path(&authority(&paths))).unwrap();
     assert_eq!(second.start_kind(), StartKind::ResumeExisting);
 
@@ -215,7 +215,7 @@ async fn dropping_explicitly_released_entry_keeps_a_later_claim() {
     let first = claim_entry(&paths, &docker).await;
     release_entry_if_idle(&docker, &first).await;
     let second = claim_entry(&paths, &docker).await;
-    let second_file = second.pending_file.clone().unwrap();
+    let second_file = second.pending_file().cloned().unwrap();
     let marker = std::fs::read_to_string(marker_path(&authority(&paths))).unwrap();
 
     drop(first);
@@ -298,12 +298,12 @@ async fn entry_without_pending_file_never_releases_another_launch() {
         ..Default::default()
     };
     let unowned = claim_entry(&paths, &unavailable).await;
-    assert!(unowned.pending_file.is_none());
+    assert!(unowned.pending_file().is_none());
 
     release_entry_if_idle(&idle, &unowned).await;
     drop(unowned);
 
-    assert!(owner.pending_file.as_ref().unwrap().exists());
+    assert!(owner.pending_file().unwrap().exists());
     assert_eq!(count_pending_claims(&authority(&paths)), Some(1));
     assert!(marker_path(&authority(&paths)).exists());
 }
@@ -323,7 +323,7 @@ async fn pending_write_failure_keeps_no_token_release_semantics() {
 
     let claim = claim_entry(&paths, &docker).await;
     assert_eq!(claim.start_kind(), StartKind::ResumeExisting);
-    assert!(claim.pending_file.is_none());
+    assert!(claim.pending_file().is_none());
     release_entry_if_idle(&docker, &claim).await;
     drop(claim);
 
@@ -341,7 +341,7 @@ async fn generation_failure_prevents_destructive_cleanup() {
     paths.ensure_base_dirs().unwrap();
     let docker = FakeDockerClient::default();
     let claim = claim_entry(&paths, &docker).await;
-    let pending_file = claim.pending_file.clone().unwrap();
+    let pending_file = claim.pending_file().cloned().unwrap();
     std::fs::remove_file(authority(&paths).join("universe-generation")).unwrap();
     std::fs::create_dir(authority(&paths).join("universe-generation")).unwrap();
 

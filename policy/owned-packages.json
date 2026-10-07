@@ -73,6 +73,7 @@
     "jackin-runtime-snapshot",
     "jackin-runtime-spin-wait",
     "jackin-runtime-universe",
+    "jackin-runtime-universe-claims",
     "jackin-runtime-usage-relay",
     "jackin-telemetry",
     "jackin-test-support",

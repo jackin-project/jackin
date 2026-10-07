@@ -46,7 +46,7 @@ async fn universe_auxiliary_symlinks_cannot_redirect_state_operations() {
             "unsafe {key}"
         );
         assert!(
-            claim.pending_file.is_none(),
+            claim.pending_file().is_none(),
             "unsafe {key} must not own a redirected token"
         );
         assert_eq!(exit, ExitClaim::Missing);
@@ -83,7 +83,7 @@ async fn universe_auxiliary_nonregular_inodes_fail_closed() {
             let (_, exit) = observe_exit(&paths, &docker).await.unwrap();
 
             assert_eq!(claim.start_kind(), StartKind::ResumeExisting);
-            assert!(claim.pending_file.is_none());
+            assert!(claim.pending_file().is_none());
             assert_eq!(exit, ExitClaim::Missing);
             std::fs::symlink_metadata(&invalid).unwrap();
         }
@@ -109,7 +109,7 @@ async fn universe_auxiliary_hardlinks_cannot_modify_external_state() {
         mark_start(&paths, StartKind::FreshConstruct).await;
 
         assert_eq!(claim.start_kind(), StartKind::ResumeExisting);
-        assert!(claim.pending_file.is_none());
+        assert!(claim.pending_file().is_none());
         assert_eq!(std::fs::read_to_string(&sentinel).unwrap(), "untouched");
     }
 }
@@ -127,7 +127,7 @@ async fn universe_auxiliary_state_is_private_and_owned() {
     for file in [
         directory.join("universe-generation"),
         marker_path(&directory),
-        claim.pending_file.clone().unwrap(),
+        claim.pending_file().cloned().unwrap(),
     ] {
         let metadata = std::fs::metadata(file).unwrap();
         assert_eq!(metadata.mode() & 0o777, 0o600);
@@ -150,7 +150,7 @@ async fn redirected_owned_pending_token_blocks_lifecycle_mutation() {
     let docker = FakeDockerClient::default();
     let claim = claim_entry(&paths, &docker).await;
     let directory = authority(&paths);
-    let pending = claim.pending_file.clone().unwrap();
+    let pending = claim.pending_file().cloned().unwrap();
     let before = generation(&directory).unwrap();
     let sentinel = tmp.path().join("sentinel");
     std::fs::write(&sentinel, "untouched").unwrap();
@@ -226,7 +226,7 @@ async fn universe_pending_generation_and_marker_survive_data_prune() {
     let docker = FakeDockerClient::default();
     let first = claim_entry(&paths, &docker).await;
     let directory = authority(&paths);
-    let pending = first.pending_file.clone().unwrap();
+    let pending = first.pending_file().cloned().unwrap();
     let previous_generation = generation(&directory).unwrap();
     let marker = std::fs::read_to_string(marker_path(&directory)).unwrap();
     coordination::ensure_prunable(&paths, &paths.data_dir).unwrap();
@@ -244,7 +244,7 @@ async fn universe_pending_generation_and_marker_survive_data_prune() {
     let second = claim_entry(&paths, &docker).await;
     assert_eq!(second.start_kind(), StartKind::ResumeExisting);
     release_entry_if_idle(&docker, &first).await;
-    assert!(second.pending_file.as_ref().unwrap().exists());
+    assert!(second.pending_file().unwrap().exists());
     assert_eq!(
         std::fs::read_to_string(marker_path(&directory)).unwrap(),
         marker
@@ -270,7 +270,7 @@ async fn entry_observation_churn_keeps_an_owned_pending_lease() {
     DOCKER_GENERATION_CHURN.with(|slot| *slot.borrow_mut() = None);
     assert_eq!(docker.recorded.borrow().len(), ENTRY_OBSERVATION_ATTEMPTS);
     assert_eq!(claim.start_kind(), StartKind::ResumeExisting);
-    assert!(claim.pending_file.as_ref().unwrap().exists());
+    assert!(claim.pending_file().unwrap().exists());
     assert_eq!(count_pending_claims(&authority(&paths)), Some(1));
     drop(claim);
     assert_eq!(count_pending_claims(&authority(&paths)), Some(0));
@@ -305,7 +305,7 @@ async fn activated_entry_allows_exit_before_the_owned_launch_lease_drops() {
     paths.ensure_base_dirs().unwrap();
     let docker = FakeDockerClient::default();
     let claim = claim_entry(&paths, &docker).await;
-    let pending_file = claim.pending_file.clone().unwrap();
+    let pending_file = claim.pending_file().cloned().unwrap();
 
     claim.activate().await.unwrap();
 
