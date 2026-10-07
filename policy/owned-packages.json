@@ -33,6 +33,7 @@
     "jackin-runtime-coordination",
     "jackin-runtime-exec-host",
     "jackin-runtime-host-daemon",
+    "jackin-runtime-identity",
     "jackin-runtime-isolation",
     "jackin-runtime-process-telemetry",
     "jackin-runtime-spin-wait",

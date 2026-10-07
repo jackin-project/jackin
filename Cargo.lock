@@ -3582,6 +3582,7 @@ dependencies = [
  "jackin-runtime-coordination",
  "jackin-runtime-exec-host",
  "jackin-runtime-host-daemon",
+ "jackin-runtime-identity",
  "jackin-runtime-isolation",
  "jackin-runtime-process-telemetry",
  "jackin-runtime-spin-wait",
@@ -3649,6 +3650,15 @@ dependencies = [
  "tempfile",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "jackin-runtime-identity"
+version = "0.6.4"
+dependencies = [
+ "jackin-core",
+ "jackin-diagnostics",
+ "nix 0.31.3",
 ]
 
 [[package]]

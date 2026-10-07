@@ -33,6 +33,7 @@
     "jackin-runtime-coordination": "library",
     "jackin-runtime-exec-host": "library",
     "jackin-runtime-host-daemon": "library",
+    "jackin-runtime-identity": "library",
     "jackin-runtime-isolation": "library",
     "jackin-runtime-process-telemetry": "library",
     "jackin-runtime-spin-wait": "library",
