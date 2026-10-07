@@ -15,7 +15,6 @@
 mod claude;
 mod credential_snapshots;
 mod gemini;
-mod hermes;
 mod muse;
 mod opencode;
 
@@ -146,6 +145,15 @@ pub(crate) use jackin_usage_provider_grok::{
     grok_snapshot_from_rpc_result, grok_snapshot_from_rpc_result_with_rate_limit,
     grpc_web_data_frames, parse_grok_rest_billing_response, parse_grok_web_billing_response,
     scan_protobuf,
+};
+#[expect(
+    unused_imports,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
+pub(crate) use jackin_usage_provider_hermes::{
+    HermesRuntime, HermesSubscription, hermes_auth_status, hermes_renews_label,
+    hermes_subscription_bucket, hermes_tracker_counter_buckets, hermes_view,
+    parse_hermes_subscription,
 };
 #[expect(
     unused_imports,

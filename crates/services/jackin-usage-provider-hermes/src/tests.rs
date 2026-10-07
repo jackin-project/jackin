@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{
-    HermesRuntime, UsageConfidence, UsageSnapshotStatus, UsageSource, hermes_auth_status,
-    hermes_tracker_counter_buckets, hermes_view, parse_hermes_subscription,
+    HermesRuntime, hermes_auth_status, hermes_tracker_counter_buckets, hermes_view,
+    parse_hermes_subscription,
 };
+use jackin_protocol::control::{UsageConfidence, UsageSnapshotStatus, UsageSource};
 
 /// Sanitized Portal subscription fixture: plan shape only, no secrets.
 const HERMES_SUBSCRIPTION_FIXTURE: &str = r#"{

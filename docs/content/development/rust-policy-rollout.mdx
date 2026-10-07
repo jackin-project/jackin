@@ -1311,3 +1311,61 @@ passes.
 - Raw outputs:
   `/tmp/s9-codex-{nextest,gaps,alint,
   lint3}.txt` (kept out of the repo).
+
+### Split 13: usage-provider-hermes extraction (V10)
+
+- `jackin-usage` ->
+  `jackin-usage` +
+  `jackin-usage-provider-hermes` (T3 leaf:
+  `usage/hermes.rs` -> `lib.rs` re-export
+  root + `adapter` (Portal subscription
+  parse, attributed views) + `tests` +
+  `tests/main.rs` placeholder; `lib.rs`
+  carries the ownership header).
+  `usage.rs` re-exports the vendor surface
+  from the new crate. Visibility deltas:
+  `pub(crate)` -> `pub` on the adapter
+  surface (`HermesRuntime::{profile,
+  exclusive}`, `HermesSubscription`
+  fields, `parse_hermes_subscription`,
+  `hermes_view`, buckets, auth mapping);
+  the single-file module is split into
+  `lib.rs` + `adapter.rs` for the
+  `size-lib-main-150` alint rule, and the
+  unit suite imports protocol view types
+  directly instead of via `super::*`. No
+  staying-harness use, so no
+  `test-support` feature and no allowlist
+  entries move.
+- Verify: `cargo check --locked --workspace
+  --all-targets` green; `cargo fmt --all
+  --check` clean; `cargo clippy` 0 errors,
+  0 warnings on both touched packages.
+  `cargo nextest list --workspace
+  --all-targets`: 7272 -> 7272, bijection
+  exact (9 hermes tests move
+  `jackin-usage usage::hermes::tests::` ->
+  `jackin-usage-provider-hermes tests::`;
+  zero dropped, zero added).
+  `nextest run`: 517/517 usage + 9/9
+  hermes. The provider-call contract
+  fixture is untouched (no hermes
+  entries) and the suite is green.
+  `alint check`: 198 -> 198,
+  byte-identical. `check-gaps`: 27 -> 27
+  (usage `SIZE-001` 36970 -> 36669
+  lines, `SIZE-002` 238 -> 236 files;
+  xtask +1 line for the tier row);
+  `GAP-TEST-001/002/003` stay 0/0/0.
+  `ratchet.toml`: +1 hermes row
+  (agent-doc 1252), 1 usage bump
+  (`unused_imports` 12 -> 13 for the new
+  re-export block); violations 60 -> 60
+  with zero new failures. `lint arch`:
+  missing tiers stay 3, zero direction
+  violations; `lint headers` stays at the
+  base 2; `lint tests` OK.
+- Raw outputs:
+  `/tmp/s10-hermes-{before,after,nextest,
+  alint,ratchet}.txt` (kept out of the
+  repo).

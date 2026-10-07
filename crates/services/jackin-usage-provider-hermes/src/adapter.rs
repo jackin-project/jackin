@@ -1,15 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! `Hermes` TUI attribution adapter.
-//!
-//! No Hermes-native quota API exists: usage is attributed to underlying
-//! provider accounts, or to the Nous Portal subscription for Portal-billed
-//! usage. Local rate-limit tracker counters are display state, never a
-//! subscription budget. Profiles are exclusively owned — concurrent processes
-//! must never share one, and clones deliberately drop rotating OAuth grants.
+//! `Hermes` TUI attribution adapter logic (see `lib.rs`).
 
-use super::{
+use jackin_protocol::control::{
     FocusedAccountHeader, FocusedUsageView, QuotaBucketView, UsageConfidence, UsageSnapshotStatus,
     UsageSource,
 };
@@ -19,13 +13,13 @@ use serde::Deserialize;
 /// Exclusively owned Hermes runtime profile: concurrent processes must never
 /// share one profile, and cloned state drops rotating OAuth credentials.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct HermesRuntime {
-    pub(crate) profile: String,
-    pub(crate) exclusive: bool,
+pub struct HermesRuntime {
+    pub profile: String,
+    pub exclusive: bool,
 }
 
 impl HermesRuntime {
-    pub(crate) fn for_profile(profile: &str) -> Self {
+    pub fn for_profile(profile: &str) -> Self {
         Self {
             profile: profile.to_owned(),
             exclusive: true,
@@ -56,11 +50,11 @@ struct HermesSubscriptionRaw {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct HermesSubscription {
-    pub(crate) tier_name: Option<String>,
-    pub(crate) monthly_credits: Option<String>,
-    pub(crate) credits_remaining: Option<String>,
-    pub(crate) cycle_ends_at: Option<i64>,
+pub struct HermesSubscription {
+    pub tier_name: Option<String>,
+    pub monthly_credits: Option<String>,
+    pub credits_remaining: Option<String>,
+    pub cycle_ends_at: Option<i64>,
 }
 
 fn non_empty(value: Option<String>) -> Option<String> {
@@ -71,7 +65,7 @@ fn non_empty(value: Option<String>) -> Option<String> {
 
 /// Parse one Portal subscription response. `Ok(None)` is the honest
 /// no-subscription state (current null/absent), never an error.
-pub(crate) fn parse_hermes_subscription(
+pub fn parse_hermes_subscription(
     value: serde_json::Value,
 ) -> Result<Option<HermesSubscription>, String> {
     let raw: HermesSubscriptionRaw = serde_json::from_value(value)
@@ -97,7 +91,7 @@ pub(crate) fn parse_hermes_subscription(
 
 /// Renewal note for a Portal billing cycle end, e.g. `renews 2026-10-17`.
 /// UTC-explicit: the cycle timestamp is a date, not a local clock reading.
-pub(crate) fn hermes_renews_label(cycle_ends_at: i64) -> Option<String> {
+pub fn hermes_renews_label(cycle_ends_at: i64) -> Option<String> {
     let date = chrono::DateTime::from_timestamp(cycle_ends_at, 0)?;
     Some(format!("renews {}", date.format("%Y-%m-%d")))
 }
@@ -107,10 +101,7 @@ pub(crate) fn hermes_renews_label(cycle_ends_at: i64) -> Option<String> {
 /// `cycle_ends_at` is a renewal date, not a reset (F07 reset ≠ renewal): it
 /// renders as a `renews <date>` pace note with no reset stamp, never as
 /// "Resets in N days".
-pub(crate) fn hermes_subscription_bucket(
-    subscription: &HermesSubscription,
-    now: i64,
-) -> QuotaBucketView {
+pub fn hermes_subscription_bucket(subscription: &HermesSubscription, now: i64) -> QuotaBucketView {
     timed_bucket(
         "Credits",
         subscription
@@ -134,9 +125,7 @@ pub(crate) fn hermes_subscription_bucket(
 
 /// Local rate-limit tracker counters are display state, never quota: mapping
 /// them always yields zero buckets.
-pub(crate) fn hermes_tracker_counter_buckets(
-    _counters: &serde_json::Value,
-) -> Vec<QuotaBucketView> {
+pub fn hermes_tracker_counter_buckets(_counters: &serde_json::Value) -> Vec<QuotaBucketView> {
     Vec::new()
 }
 
@@ -144,14 +133,14 @@ pub(crate) fn hermes_tracker_counter_buckets(
 /// (`insufficient_scope` / `remote_spending_revoked`) need a fresh login or device
 /// step-up; anything else (429/503 carry `retry_after`) surfaces as an error,
 /// never as fabricated quota.
-pub(crate) fn hermes_auth_status(status_code: u16) -> UsageSnapshotStatus {
+pub fn hermes_auth_status(status_code: u16) -> UsageSnapshotStatus {
     match status_code {
         401 | 403 => UsageSnapshotStatus::NeedsLogin,
         _ => UsageSnapshotStatus::Error,
     }
 }
 
-pub(crate) fn hermes_view(
+pub fn hermes_view(
     agent: &str,
     runtime: &HermesRuntime,
     provider: &str,
@@ -218,6 +207,3 @@ pub(crate) fn hermes_view(
         },
     }
 }
-
-#[cfg(test)]
-mod tests;

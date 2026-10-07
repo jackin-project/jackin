@@ -3655,6 +3655,7 @@ dependencies = [
  "jackin-usage-provider-core",
  "jackin-usage-provider-cursor",
  "jackin-usage-provider-grok",
+ "jackin-usage-provider-hermes",
  "jackin-usage-provider-kimi",
  "jackin-usage-provider-minimax",
  "jackin-usage-provider-openrouter",
@@ -3766,6 +3767,17 @@ dependencies = [
  "jackin-telemetry",
  "jackin-usage-provider-core",
  "reqwest",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "jackin-usage-provider-hermes"
+version = "0.6.4"
+dependencies = [
+ "chrono",
+ "jackin-protocol",
+ "jackin-usage-provider-core",
  "serde",
  "serde_json",
 ]

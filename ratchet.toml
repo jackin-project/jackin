@@ -536,7 +536,7 @@ key = "unused_imports@jackin-runtime"
 bound = 2
 [[family.entry]]
 key = "unused_imports@jackin-usage"
-bound = 12
+bound = 13
 [[family.entry]]
 key = "unused_qualifications@jackin-runtime"
 bound = 1
@@ -679,6 +679,9 @@ bound = 1636
 [[family.entry]]
 key = "crates/services/jackin-usage-provider-codex/README.md"
 bound = 1635
+[[family.entry]]
+key = "crates/services/jackin-usage-provider-hermes/README.md"
+bound = 1252
 [[family.entry]]
 key = "crates/tools/jackin-xtask/README.md"
 bound = 6113
