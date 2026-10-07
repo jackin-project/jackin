@@ -662,6 +662,9 @@ bound = 3545
 key = "crates/services/jackin-runtime-coordination/README.md"
 bound = 869
 [[family.entry]]
+key = "crates/services/jackin-runtime-discovery/README.md"
+bound = 836
+[[family.entry]]
 key = "crates/services/jackin-runtime-docker-profile/README.md"
 bound = 941
 [[family.entry]]
@@ -935,6 +938,9 @@ key = "jackin-runtime"
 bound = 8
 [[family.entry]]
 key = "jackin-runtime-coordination"
+bound = 1
+[[family.entry]]
+key = "jackin-runtime-discovery"
 bound = 1
 [[family.entry]]
 key = "jackin-runtime-docker-profile"
