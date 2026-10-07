@@ -3654,6 +3654,7 @@ dependencies = [
  "jackin-usage-capsule-telemetry",
  "jackin-usage-coordinator",
  "jackin-usage-credential-snapshots",
+ "jackin-usage-destination",
  "jackin-usage-host-accounts",
  "jackin-usage-host-credentials",
  "jackin-usage-host-presentation",
@@ -3748,6 +3749,13 @@ dependencies = [
  "jackin-core",
  "jackin-protocol",
  "jackin-usage-provider-core",
+]
+
+[[package]]
+name = "jackin-usage-destination"
+version = "0.6.4"
+dependencies = [
+ "jackin-protocol",
 ]
 
 [[package]]

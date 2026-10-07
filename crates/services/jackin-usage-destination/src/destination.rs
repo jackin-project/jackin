@@ -4,7 +4,8 @@
 
 use jackin_protocol::usage_broker::UsageProjectionV1;
 
-pub(crate) struct ProjectionMetadata<'a> {
+#[derive(Debug, Clone)]
+pub struct ProjectionMetadata<'a> {
     pub projection_id: &'a str,
     pub generated_at_epoch: i64,
     pub broker_instance_id: &'a str,

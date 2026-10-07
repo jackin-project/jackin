@@ -2279,3 +2279,48 @@ passes.
 - Raw outputs:
   `/tmp/s11-split29-{before,after}.txt`
   (kept out of the repo).
+
+### Split 30: usage-destination extraction (P1)
+
+- `jackin-usage` -> `jackin-usage` +
+  `jackin-usage-destination` (T2: sole
+  dep is protocol T1). Moves
+  `projection/destination.rs` whole
+  (72 lines, the last protocol-pure
+  leaf): `UsageDestination`,
+  `NormalizedUsageDestination`,
+  `normalize_destination` keep their
+  public `usage::host::*` paths
+  through re-exports, and
+  `ProjectionMetadata` (gaining
+  `Debug`+`Clone` for the new-`pub`
+  lint) keeps its `pub(crate)` path
+  for the staying projection runtime.
+  No external users name these paths
+  yet. No behavior changes.
+- Verify: `cargo check --locked --workspace
+  --all-targets` green; `cargo fmt --all
+  --check` clean; `cargo clippy` 0
+  errors, 0 warnings on both touched
+  packages. `cargo nextest list
+  --workspace --all-targets`: 7277 ->
+  7277, byte-identical (the file
+  carries no unit tests; host cases
+  exercise it in place). `nextest
+  run`: 391/391 usage + 0/0
+  destination. No contract fixture
+  entries name destination paths, so
+  no remap. `alint check`: 197 ->
+  197. `check-gaps`: 27 -> 27 (usage
+  `SIZE-001` 23546 -> 23489 lines,
+  `SIZE-002` 116 -> 115 files);
+  `GAP-TEST-001/002/003` stay 0/0/0.
+  `ratchet.toml`: +1 row (agent-doc
+  761); violations 60 -> 60 with zero
+  new failures. `lint arch`: missing
+  tiers stay 3, zero direction
+  violations; `lint headers` stays at
+  the base 2; `lint tests` OK.
+- Raw outputs:
+  `/tmp/s11-split30-{before,after}.txt`
+  (kept out of the repo).

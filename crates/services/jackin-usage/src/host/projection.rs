@@ -5,7 +5,6 @@
 
 mod account;
 mod canonical;
-mod destination;
 mod runtime;
 
 #[cfg(test)]
@@ -28,14 +27,16 @@ use jackin_protocol::usage_broker::{
 
 pub(crate) use account::{apply_generation_metadata, discovery_issue, project_account};
 pub(crate) use canonical::build_canonical_projection;
-pub(crate) use destination::ProjectionMetadata;
-pub use destination::{NormalizedUsageDestination, UsageDestination, normalize_destination};
 pub(in crate::host) use jackin_usage_broker_publish::{failure_lifecycle, lifecycle};
 pub(crate) use jackin_usage_broker_publish::{
     freshness, project_groups, project_window, provider_freshness, status_label, view_is_usable,
 };
 #[cfg(test)]
 pub(crate) use jackin_usage_broker_publish::{quota_state, spend_quota_state};
+pub(crate) use jackin_usage_destination::ProjectionMetadata;
+pub use jackin_usage_destination::{
+    NormalizedUsageDestination, UsageDestination, normalize_destination,
+};
 
 #[cfg(test)]
 mod tests;

@@ -52,6 +52,7 @@ jackin-usage-host-accounts = { workspace = true }
 jackin-usage-capsule-telemetry = { workspace = true }
 jackin-usage-broker-publish = { workspace = true }
 jackin-usage-broker-wire = { workspace = true }
+jackin-usage-destination = { workspace = true }
 base64 = { workspace = true }
 chrono = { workspace = true, features = ["clock"] }
 httpdate = { workspace = true }
