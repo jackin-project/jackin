@@ -18,7 +18,7 @@ use super::{AccountIdentityMetadata, account_for_view};
 /// Providers and accounts are rebuilt in settled `(surface_id, account_id)`
 /// order with canonical ranks. Projection-level `unresolved`, `issues`, and
 /// the catalog revision are preserved untouched.
-pub(crate) fn merge_views(
+pub fn merge_views(
     projection: &mut UsageProjectionV1,
     views: &[UsageGenerationView],
     identity_metadata: &BTreeMap<UsageAccountCapability, AccountIdentityMetadata>,
@@ -82,10 +82,7 @@ pub(crate) fn merge_views(
     projection.providers = providers;
 }
 
-pub(crate) fn aggregate_freshness(
-    any_active: bool,
-    accounts: &[UsageAccountV1],
-) -> UsageFreshnessV1 {
+pub fn aggregate_freshness(any_active: bool, accounts: &[UsageAccountV1]) -> UsageFreshnessV1 {
     let mut freshness = UsageFreshnessV1 {
         generation: 0,
         phase: UsageFreshnessPhaseV1::Failed,

@@ -24,7 +24,7 @@ use super::project_window;
 /// last success is set exactly when the view holds usable data. Scope labels,
 /// balances, token totals, and rate limits stay unset until provider
 /// collectors supply them; nothing is inferred.
-pub(crate) fn metric_groups_for_view(
+pub fn metric_groups_for_view(
     canonical_account_id: &str,
     view: &jackin_protocol::control::FocusedUsageView,
     plan_label: Option<&str>,
@@ -32,7 +32,7 @@ pub(crate) fn metric_groups_for_view(
     project_groups(view, plan_label, canonical_account_id)
 }
 
-pub(crate) fn project_groups(
+pub fn project_groups(
     view: &jackin_protocol::control::FocusedUsageView,
     plan_label: Option<&str>,
     canonical_account_id: &str,
@@ -74,22 +74,22 @@ pub(crate) fn project_groups(
     Ok(groups)
 }
 
-pub(crate) fn group_id(canonical_account_id: &str, rank: usize) -> String {
+pub fn group_id(canonical_account_id: &str, rank: usize) -> String {
     account_key_hash(canonical_account_id, &format!("canonical-group-v1:{rank}"))
 }
 
-pub(crate) fn group_rank(rank: usize) -> Result<u32, String> {
+pub fn group_rank(rank: usize) -> Result<u32, String> {
     u32::try_from(rank).map_err(|_| "metric group rank overflow".to_owned())
 }
 
 /// Per-group timestamps from a view that reports transport completion only.
-pub(crate) fn group_epochs(view_fetched_at: i64, usable: bool) -> (Option<i64>, Option<i64>) {
+pub fn group_epochs(view_fetched_at: i64, usable: bool) -> (Option<i64>, Option<i64>) {
     let observed = Some(view_fetched_at);
     let last_success = usable.then_some(view_fetched_at);
     (observed, last_success)
 }
 
-pub(crate) fn project_window_group(
+pub fn project_window_group(
     canonical_account_id: &str,
     bucket: &QuotaBucketView,
     view_status: UsageSnapshotStatus,
@@ -126,7 +126,7 @@ pub(crate) fn project_window_group(
     })
 }
 
-pub(crate) fn project_spend_group(
+pub fn project_spend_group(
     canonical_account_id: &str,
     bucket: &QuotaBucketView,
     view_status: UsageSnapshotStatus,
@@ -160,7 +160,7 @@ pub(crate) fn project_spend_group(
     })
 }
 
-pub(crate) fn project_plan_group(
+pub fn project_plan_group(
     canonical_account_id: &str,
     view_status: UsageSnapshotStatus,
     view_fetched_at: i64,
@@ -194,14 +194,14 @@ pub(crate) fn project_plan_group(
     })
 }
 
-pub(crate) fn view_is_usable(status: UsageSnapshotStatus) -> bool {
+pub fn view_is_usable(status: UsageSnapshotStatus) -> bool {
     matches!(
         status,
         UsageSnapshotStatus::Fresh | UsageSnapshotStatus::Stale
     )
 }
 
-pub(crate) fn group_phase(
+pub fn group_phase(
     bucket_status: UsageSnapshotStatus,
     view_status: UsageSnapshotStatus,
 ) -> UsageFreshnessPhaseV1 {
@@ -215,7 +215,7 @@ pub(crate) fn group_phase(
     }
 }
 
-pub(crate) fn group_period(status_slot: Option<StatusSlot>) -> UsageMetricPeriodV1 {
+pub fn group_period(status_slot: Option<StatusSlot>) -> UsageMetricPeriodV1 {
     match status_slot {
         Some(StatusSlot::Session) => UsageMetricPeriodV1::ProviderDefined,
         Some(StatusSlot::Daily) => UsageMetricPeriodV1::Calendar {
@@ -232,7 +232,7 @@ pub(crate) fn group_period(status_slot: Option<StatusSlot>) -> UsageMetricPeriod
 /// denominations only; over-spend clamps at zero here because a Money amount
 /// cannot express negative remaining, while the over-100% raw percent on the
 /// sibling window payload preserves the overage magnitude.
-pub(crate) fn spend_remaining(bucket: &QuotaBucketView) -> Option<Money> {
+pub fn spend_remaining(bucket: &QuotaBucketView) -> Option<Money> {
     let used = bucket.used_money.as_ref()?;
     let limit = bucket.limit_money.as_ref()?;
     if used.currency != limit.currency || used.exponent != limit.exponent {
@@ -249,7 +249,7 @@ pub(crate) fn spend_remaining(bucket: &QuotaBucketView) -> Option<Money> {
 /// Quota state for a spend-cap group from its money ratio. A missing or
 /// unusable cap is [`UsageQuotaStateV1::Unknown`], never fabricated credit;
 /// an uncapped tracker is [`UsageQuotaStateV1::NotApplicable`].
-pub(crate) fn spend_quota_state(bucket: &QuotaBucketView) -> UsageQuotaStateV1 {
+pub fn spend_quota_state(bucket: &QuotaBucketView) -> UsageQuotaStateV1 {
     match bucket.status {
         UsageSnapshotStatus::NeedsLogin | UsageSnapshotStatus::NeedsSecret => {
             UsageQuotaStateV1::NoPermission
@@ -270,7 +270,7 @@ pub(crate) fn spend_quota_state(bucket: &QuotaBucketView) -> UsageQuotaStateV1 {
 }
 
 /// Quota state from a spend/cap money ratio with checked math.
-pub(crate) fn spend_ratio_state(used: &Money, limit: &Money) -> UsageQuotaStateV1 {
+pub fn spend_ratio_state(used: &Money, limit: &Money) -> UsageQuotaStateV1 {
     if used.currency != limit.currency || used.exponent != limit.exponent || limit.amount_minor <= 0
     {
         return UsageQuotaStateV1::Unknown;
@@ -284,10 +284,7 @@ pub(crate) fn spend_ratio_state(used: &Money, limit: &Money) -> UsageQuotaStateV
     }
 }
 
-pub(in crate::host) fn lifecycle(
-    status: UsageSnapshotStatus,
-    confidence: UsageConfidence,
-) -> UsageLifecycleV1 {
+pub fn lifecycle(status: UsageSnapshotStatus, confidence: UsageConfidence) -> UsageLifecycleV1 {
     if confidence == UsageConfidence::PresenceOnly {
         return UsageLifecycleV1::AgentUninitialized;
     }

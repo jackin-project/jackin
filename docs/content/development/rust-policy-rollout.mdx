@@ -2152,3 +2152,73 @@ passes.
 - Raw outputs:
   `/tmp/s11-split27-{before,after}.txt`
   (kept out of the repo).
+
+### Split 28: usage-broker-publish extraction (B1)
+
+- `jackin-usage` -> `jackin-usage` +
+  `jackin-usage-broker-publish` (T3:
+  deps are coordinator T2 + protocol
+  T1 + core T0 only). Moves the whole
+  `broker/publish/` unit (errors,
+  merge, publisher, quota, revoke,
+  windows + its 12 tests) plus the
+  projection builders it closes over
+  (`projection/groups.rs` and
+  `projection/freshness.rs` whole, and
+  a 4-function split of
+  `projection/account.rs` into
+  `account_windows.rs`:
+  `failure_lifecycle`, `project_window`,
+  `window_category`, and the private
+  `money_used_raw_percent` copy that
+  file already carried next to
+  `quota.rs`'s differently-guarded
+  twin). The T4-entangled account
+  functions (`project_account`,
+  `discovery_issue`,
+  `apply_generation_metadata`,
+  `view_issues`) stay; `broker.rs`
+  keeps a `publish` alias so every
+  `publish::ProjectionPublisher` path
+  in serve/dispatch/service/errors
+  compiles unchanged, and
+  `projection.rs` re-exports the moved
+  builders (two names with zero
+  remaining users,
+  `metric_groups_for_view` and the
+  prod `quota_state`, drop to a
+  test-only `quota_state` the staying
+  projection cases still call). Two
+  builder methods gain `#[must_use]`
+  (new-`pub` clippy requirement); no
+  behavior changes.
+- Verify: `cargo check --locked --workspace
+  --all-targets` green; `cargo fmt --all
+  --check` clean; `cargo clippy` 0
+  errors, 0 warnings on both touched
+  packages. `cargo nextest list
+  --workspace --all-targets`: 7277 ->
+  7277, delta is exactly the 12
+  `host::broker::publish::tests::*`
+  IDs rehoming to
+  `jackin-usage-broker-publish
+  tests::*` (zero added, zero
+  dropped). `nextest run`: 391/391
+  usage + 12/12 broker-publish (one
+  usage run flagged a transient leaky
+  test; clean on re-run). No contract
+  fixture entries name publish paths,
+  so no remap. `alint check`: 197 ->
+  197. `check-gaps`: 27 -> 27 (usage
+  `SIZE-001` 25815 -> 23741 lines,
+  `SIZE-002` 133 -> 120 files);
+  `GAP-TEST-001/002/003` stay 0/0/0.
+  `ratchet.toml`: +1 row (agent-doc
+  1584); violations 60 -> 60 with zero
+  new failures. `lint arch`: missing
+  tiers stay 3, zero direction
+  violations; `lint headers` stays at
+  the base 2; `lint tests` OK.
+- Raw outputs:
+  `/tmp/s11-split28-{before,after}.txt`
+  (kept out of the repo).

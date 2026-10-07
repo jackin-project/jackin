@@ -10,7 +10,9 @@ use jackin_protocol::usage_broker::{
     UsageProjectionRefreshStateV1, UsageProjectionV1, UsageRefreshPhase,
 };
 
-use crate::coordinator::{FileProjectionStateStore, ProjectionStateEnvelope, UsageCoordinator};
+use jackin_usage_coordinator::{
+    FileProjectionStateStore, ProjectionStateEnvelope, UsageCoordinator,
+};
 
 /// Server-side incremental publisher. Cheap to clone; all state is shared.
 use super::{
@@ -21,7 +23,7 @@ use super::{
 
 /// Server-side incremental publisher. Cheap to clone; all state is shared.
 #[derive(Debug, Clone)]
-pub(crate) struct ProjectionPublisher {
+pub struct ProjectionPublisher {
     coordinator: Arc<UsageCoordinator>,
     projection: Arc<Mutex<UsageProjectionV1>>,
     store: FileProjectionStateStore,
@@ -44,14 +46,14 @@ pub(crate) struct PublishedAccount {
 /// Canonical identity evidence captured by host discovery and carried into
 /// the Capsule-facing projection. A display label is not identity evidence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct AccountIdentityMetadata {
+pub struct AccountIdentityMetadata {
     pub identity_kind: UsageIdentityKindV1,
     pub provenance_count: u32,
 }
 
 impl ProjectionPublisher {
     /// Attach a publisher to one broker-owned coordinator and projection.
-    pub(crate) fn new(
+    pub fn new(
         coordinator: Arc<UsageCoordinator>,
         projection: Arc<Mutex<UsageProjectionV1>>,
         store: FileProjectionStateStore,
@@ -71,7 +73,8 @@ impl ProjectionPublisher {
     /// Attach the last durable catalog. Existing materialized projection rows
     /// are observed; newly admitted catalog members are not, so discovery
     /// cannot expand the manifest/tab surface by itself.
-    pub(crate) fn with_catalog(self, entries: impl IntoIterator<Item = UsageCatalogEntry>) -> Self {
+    #[must_use]
+    pub fn with_catalog(self, entries: impl IntoIterator<Item = UsageCatalogEntry>) -> Self {
         let catalog = entries
             .into_iter()
             .map(|entry| (entry.capability, entry.revision))
@@ -102,7 +105,8 @@ impl ProjectionPublisher {
     /// Attach the immutable host-discovery identity evidence used by the
     /// Capsule/FFI publication. Missing entries remain conservative fallback
     /// rows for synthetic broker seams only.
-    pub(crate) fn with_identity_metadata(
+    #[must_use]
+    pub fn with_identity_metadata(
         mut self,
         identity_metadata: BTreeMap<UsageAccountCapability, AccountIdentityMetadata>,
     ) -> Self {
@@ -112,7 +116,7 @@ impl ProjectionPublisher {
 
     /// Record one capability served by the broker. Only observed capabilities
     /// are ever merged into a publication.
-    pub(crate) fn observe(&self, capability: &UsageAccountCapability) {
+    pub fn observe(&self, capability: &UsageAccountCapability) {
         let Ok(_catalog_lifecycle) = self.catalog_lifecycle.lock() else {
             return;
         };
@@ -127,14 +131,14 @@ impl ProjectionPublisher {
     }
 
     /// Capabilities observed so far, in settled order.
-    pub(crate) fn known_capabilities(&self) -> Vec<UsageAccountCapability> {
+    pub fn known_capabilities(&self) -> Vec<UsageAccountCapability> {
         let Ok(_catalog_lifecycle) = self.catalog_lifecycle.lock() else {
             return Vec::new();
         };
         self.known_capabilities_locked()
     }
 
-    pub(crate) fn known_capabilities_locked(&self) -> Vec<UsageAccountCapability> {
+    pub fn known_capabilities_locked(&self) -> Vec<UsageAccountCapability> {
         let Ok(catalog) = self.catalog.lock() else {
             return Vec::new();
         };
@@ -152,7 +156,7 @@ impl ProjectionPublisher {
     }
 
     /// Replace the broker catalog and publish the revocation transaction.
-    pub(crate) fn reconcile_catalog(
+    pub fn reconcile_catalog(
         &self,
         catalog_revision: String,
         entries: Vec<UsageCatalogEntry>,
@@ -165,7 +169,7 @@ impl ProjectionPublisher {
     /// publication lease. Every shared lock is acquired before durable or
     /// coordinator mutation; the old envelope is restored if coordinator
     /// reconciliation fails.
-    pub(crate) fn reconcile_catalog_if_projection(
+    pub fn reconcile_catalog_if_projection(
         &self,
         expected_projection_id: Option<&str>,
         catalog_revision: String,
@@ -250,7 +254,7 @@ impl ProjectionPublisher {
 
     /// Read one publication under the same boundary used for catalog
     /// replacement and observed-capability admission.
-    pub(crate) fn current_projection(&self) -> Result<UsageProjectionV1, UsageCoordinationError> {
+    pub fn current_projection(&self) -> Result<UsageProjectionV1, UsageCoordinationError> {
         let _catalog_lifecycle = self
             .catalog_lifecycle
             .lock()
@@ -266,7 +270,7 @@ impl ProjectionPublisher {
     ///
     /// Each account is read independently: one unreadable account is skipped
     /// without affecting the others.
-    pub(crate) fn publish_due(&self, now_epoch: i64) -> bool {
+    pub fn publish_due(&self, now_epoch: i64) -> bool {
         let Ok(_catalog_lifecycle) = self.catalog_lifecycle.lock() else {
             return false;
         };

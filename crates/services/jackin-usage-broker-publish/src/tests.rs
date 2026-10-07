@@ -20,7 +20,7 @@ use jackin_protocol::usage_broker::{
 
 use super::*;
 
-use crate::coordinator::{
+use jackin_usage_coordinator::{
     AccountStateEnvelope, AccountStateStore, ProviderProbeOutcome, StateStoreError,
     UsageCoordinatorConfig, UsageProviderExecutor,
 };

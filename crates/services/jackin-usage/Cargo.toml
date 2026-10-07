@@ -50,6 +50,7 @@ jackin-usage-host-presentation = { workspace = true }
 jackin-usage-host-credentials = { workspace = true }
 jackin-usage-host-accounts = { workspace = true }
 jackin-usage-capsule-telemetry = { workspace = true }
+jackin-usage-broker-publish = { workspace = true }
 base64 = { workspace = true }
 chrono = { workspace = true, features = ["clock"] }
 httpdate = { workspace = true }

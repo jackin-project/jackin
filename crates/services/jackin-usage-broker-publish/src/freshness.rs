@@ -7,11 +7,7 @@ use jackin_protocol::usage_broker::{
     UsageAccountV1, UsageFreshnessPhaseV1, UsageFreshnessV1, UsageQuotaStateV1,
 };
 
-pub(crate) fn freshness(
-    status: UsageSnapshotStatus,
-    last_good: i64,
-    generation: u64,
-) -> UsageFreshnessV1 {
+pub fn freshness(status: UsageSnapshotStatus, last_good: i64, generation: u64) -> UsageFreshnessV1 {
     let phase = match status {
         UsageSnapshotStatus::Fresh => UsageFreshnessPhaseV1::Current,
         UsageSnapshotStatus::Stale => UsageFreshnessPhaseV1::Stale,
@@ -30,7 +26,7 @@ pub(crate) fn freshness(
     }
 }
 
-pub(crate) fn provider_freshness(accounts: &[UsageAccountV1], generation: u64) -> UsageFreshnessV1 {
+pub fn provider_freshness(accounts: &[UsageAccountV1], generation: u64) -> UsageFreshnessV1 {
     let is_stale = accounts.iter().any(|account| account.freshness.is_stale);
     let phase = if accounts
         .iter()
@@ -68,7 +64,7 @@ pub(crate) fn provider_freshness(accounts: &[UsageAccountV1], generation: u64) -
 /// and a fresh bucket with no usable quantity stays
 /// [`UsageQuotaStateV1::Unknown`] (never a fabricated `0%` bar or an
 /// [`UsageQuotaStateV1::Available`] claim).
-pub(crate) fn quota_state(bucket: &QuotaBucketView) -> UsageQuotaStateV1 {
+pub fn quota_state(bucket: &QuotaBucketView) -> UsageQuotaStateV1 {
     match bucket.status {
         UsageSnapshotStatus::NeedsLogin | UsageSnapshotStatus::NeedsSecret => {
             UsageQuotaStateV1::NoPermission
@@ -98,7 +94,7 @@ pub(crate) fn quota_state(bucket: &QuotaBucketView) -> UsageQuotaStateV1 {
 
 /// Whether a monetary bucket reports spend at or over its cap on a compatible
 /// denomination. Incompatible or unusable money never reads as exhausted.
-pub(crate) fn money_is_exhausted(bucket: &QuotaBucketView) -> bool {
+pub fn money_is_exhausted(bucket: &QuotaBucketView) -> bool {
     match (bucket.used_money.as_ref(), bucket.limit_money.as_ref()) {
         (Some(used), Some(limit)) => {
             used.currency == limit.currency
@@ -113,7 +109,7 @@ pub(crate) fn money_is_exhausted(bucket: &QuotaBucketView) -> bool {
 /// Whether a bucket carries any usable quantity: a percent, a money amount,
 /// or a provider quantity label. Buckets with none of these are unknown, not
 /// available.
-pub(crate) fn bucket_has_quantity(bucket: &QuotaBucketView) -> bool {
+pub fn bucket_has_quantity(bucket: &QuotaBucketView) -> bool {
     bucket.remaining_percent.is_some()
         || bucket.used_money.is_some()
         || bucket.limit_money.is_some()
@@ -121,7 +117,7 @@ pub(crate) fn bucket_has_quantity(bucket: &QuotaBucketView) -> bool {
         || bucket.limit_label.is_some()
 }
 
-pub(crate) const fn status_label(status: UsageSnapshotStatus) -> &'static str {
+pub const fn status_label(status: UsageSnapshotStatus) -> &'static str {
     match status {
         UsageSnapshotStatus::Fresh => "Available",
         UsageSnapshotStatus::Stale => "Stale",

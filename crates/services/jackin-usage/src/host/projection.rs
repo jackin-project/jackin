@@ -6,8 +6,6 @@
 mod account;
 mod canonical;
 mod destination;
-mod freshness;
-mod groups;
 mod runtime;
 
 #[cfg(test)]
@@ -28,19 +26,16 @@ use jackin_protocol::usage_broker::{
     UsageProjectionV1, UsageProviderV1, UsageQuotaStateV1, UsageUnresolvedV1,
 };
 
-pub(in crate::host) use account::failure_lifecycle;
-pub(crate) use account::{
-    apply_generation_metadata, discovery_issue, project_account, project_window,
-};
+pub(crate) use account::{apply_generation_metadata, discovery_issue, project_account};
 pub(crate) use canonical::build_canonical_projection;
 pub(crate) use destination::ProjectionMetadata;
 pub use destination::{NormalizedUsageDestination, UsageDestination, normalize_destination};
-pub(crate) use freshness::{freshness, provider_freshness, quota_state, status_label};
-pub(in crate::host) use groups::lifecycle;
-pub(crate) use groups::metric_groups_for_view;
+pub(in crate::host) use jackin_usage_broker_publish::{failure_lifecycle, lifecycle};
+pub(crate) use jackin_usage_broker_publish::{
+    freshness, project_groups, project_window, provider_freshness, status_label, view_is_usable,
+};
 #[cfg(test)]
-pub(crate) use groups::spend_quota_state;
-pub(crate) use groups::{project_groups, view_is_usable};
+pub(crate) use jackin_usage_broker_publish::{quota_state, spend_quota_state};
 
 #[cfg(test)]
 mod tests;

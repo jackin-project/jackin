@@ -11,7 +11,7 @@ use jackin_protocol::usage_broker::{
     UsagePercent, UsageRefreshPhase, UsageWindowCategoryV1,
 };
 
-use super::super::super::projection::{failure_lifecycle, lifecycle, metric_groups_for_view};
+use super::{failure_lifecycle, lifecycle, metric_groups_for_view};
 
 /// Server-side incremental publisher. Cheap to clone; all state is shared.
 use super::{
@@ -19,7 +19,7 @@ use super::{
     quota_state_for_bucket,
 };
 
-pub(crate) fn account_for_view(
+pub fn account_for_view(
     view: &UsageGenerationView,
     rank: usize,
     identity_metadata: Option<&AccountIdentityMetadata>,
@@ -124,7 +124,7 @@ pub(crate) fn account_for_view(
     }
 }
 
-pub(crate) fn windows_for_snapshot(
+pub fn windows_for_snapshot(
     account_id: &str,
     snapshot: &FocusedUsageView,
 ) -> Vec<UsageLimitWindowV1> {
@@ -136,7 +136,7 @@ pub(crate) fn windows_for_snapshot(
         .collect()
 }
 
-pub(crate) fn window_for_bucket(
+pub fn window_for_bucket(
     account_id: &str,
     rank: usize,
     bucket: &QuotaBucketView,

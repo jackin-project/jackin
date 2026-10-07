@@ -4,7 +4,7 @@
 //! Host-only usage broker lifecycle and bounded Unix-socket transport.
 
 mod probe;
-pub(super) mod publish;
+pub(super) use jackin_usage_broker_publish as publish;
 mod view;
 mod waits;
 

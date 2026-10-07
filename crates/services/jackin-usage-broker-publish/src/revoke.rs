@@ -9,7 +9,7 @@ use jackin_protocol::usage_broker::{
     UsageLifecycleV1, UsageProjectionV1,
 };
 
-pub(crate) fn retain_revoked_accounts(
+pub fn retain_revoked_accounts(
     projection: &mut UsageProjectionV1,
     previous: &UsageProjectionV1,
     catalog: &BTreeMap<UsageAccountCapability, String>,
@@ -115,7 +115,7 @@ pub(crate) fn is_revoked_tombstone(account: &UsageAccountV1) -> bool {
         && account.freshness.is_stale
 }
 
-pub(crate) fn catalog_entries(
+pub fn catalog_entries(
     catalog: &BTreeMap<UsageAccountCapability, String>,
 ) -> Vec<UsageCatalogEntry> {
     catalog

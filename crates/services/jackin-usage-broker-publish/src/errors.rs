@@ -6,16 +6,16 @@ use jackin_protocol::usage_broker::{
     UsageCoordinationError, UsageCoordinationErrorKind, UsageIssueRecoverabilityV1,
 };
 
-use crate::coordinator::StateStoreError;
+use jackin_usage_coordinator::StateStoreError;
 
-pub(crate) fn publisher_unavailable() -> UsageCoordinationError {
+pub fn publisher_unavailable() -> UsageCoordinationError {
     UsageCoordinationError {
         kind: UsageCoordinationErrorKind::Unavailable,
         message: "usage projection publisher is unavailable".to_owned(),
     }
 }
 
-pub(crate) fn projection_store_error(error: StateStoreError) -> UsageCoordinationError {
+pub fn projection_store_error(error: StateStoreError) -> UsageCoordinationError {
     match error {
         StateStoreError::Unavailable => publisher_unavailable(),
         StateStoreError::Corrupt => UsageCoordinationError {
@@ -25,7 +25,7 @@ pub(crate) fn projection_store_error(error: StateStoreError) -> UsageCoordinatio
     }
 }
 
-pub(crate) fn first_publisher_rollback_error(
+pub fn first_publisher_rollback_error(
     projection: Result<(), StateStoreError>,
     coordinator: Result<(), UsageCoordinationError>,
 ) -> Result<(), UsageCoordinationError> {
@@ -36,7 +36,7 @@ pub(crate) fn first_publisher_rollback_error(
     }
 }
 
-pub(crate) fn preserve_publisher_error(
+pub fn preserve_publisher_error(
     primary: UsageCoordinationError,
     rollback: Result<(), UsageCoordinationError>,
 ) -> UsageCoordinationError {
@@ -52,23 +52,21 @@ pub(crate) fn preserve_publisher_error(
     }
 }
 
-pub(crate) fn publisher_corrupt_state() -> UsageCoordinationError {
+pub fn publisher_corrupt_state() -> UsageCoordinationError {
     UsageCoordinationError {
         kind: UsageCoordinationErrorKind::CorruptState,
         message: "usage broker catalog is invalid".to_owned(),
     }
 }
 
-pub(crate) fn catalog_revision_conflict() -> UsageCoordinationError {
+pub fn catalog_revision_conflict() -> UsageCoordinationError {
     UsageCoordinationError {
         kind: UsageCoordinationErrorKind::CatalogRevisionConflict,
         message: "usage broker catalog publication lease is stale".to_owned(),
     }
 }
 
-pub(in crate::host) const fn issue_recoverability(
-    kind: UsageCoordinationErrorKind,
-) -> UsageIssueRecoverabilityV1 {
+pub const fn issue_recoverability(kind: UsageCoordinationErrorKind) -> UsageIssueRecoverabilityV1 {
     match kind {
         UsageCoordinationErrorKind::NeedsSecret | UsageCoordinationErrorKind::Unauthorized => {
             UsageIssueRecoverabilityV1::ActionRequired

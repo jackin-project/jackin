@@ -8,7 +8,7 @@ use jackin_protocol::usage_broker::{UsageCoordinationErrorKind, UsageQuotaStateV
 /// Raw used percentage for money-backed quota windows. The broker publisher
 /// must preserve overage just like the desktop projection; only bar geometry
 /// is clamped.
-pub(crate) fn money_used_raw_percent(bucket: &QuotaBucketView) -> Option<i32> {
+pub fn money_used_raw_percent(bucket: &QuotaBucketView) -> Option<i32> {
     let used = bucket.used_money.as_ref()?;
     let limit = bucket.limit_money.as_ref()?;
     if used.currency != limit.currency || used.exponent != limit.exponent || limit.amount_minor <= 0
@@ -20,7 +20,7 @@ pub(crate) fn money_used_raw_percent(bucket: &QuotaBucketView) -> Option<i32> {
     Some(i32::try_from(raw).unwrap_or(if raw < 0 { i32::MIN } else { i32::MAX }))
 }
 
-pub(crate) fn quota_state_for_bucket(bucket: &QuotaBucketView) -> UsageQuotaStateV1 {
+pub fn quota_state_for_bucket(bucket: &QuotaBucketView) -> UsageQuotaStateV1 {
     match bucket.status {
         UsageSnapshotStatus::Fresh | UsageSnapshotStatus::Stale => {
             if bucket.remaining_percent == Some(0) || money_is_exhausted(bucket) {
@@ -68,7 +68,7 @@ pub(crate) fn bucket_has_quantity(bucket: &QuotaBucketView) -> bool {
         || bucket.limit_label.is_some()
 }
 
-pub(in crate::host) fn issue_code(kind: UsageCoordinationErrorKind) -> String {
+pub fn issue_code(kind: UsageCoordinationErrorKind) -> String {
     match kind {
         UsageCoordinationErrorKind::Unavailable => "unavailable",
         UsageCoordinationErrorKind::Unauthorized => "unauthorized",
