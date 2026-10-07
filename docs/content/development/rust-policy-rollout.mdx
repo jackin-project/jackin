@@ -7070,3 +7070,174 @@ bound 720.
 - Raw outputs:
   `/tmp/s7-s75-{pre,post}-*.txt`
   (kept out of the repo).
+
+### Split 76: runtime-host-attach extraction (M38)
+
+- `jackin-runtime` ->
+  `jackin-runtime` +
+  `jackin-runtime-host-attach`
+  (T7: the whole
+  top-level
+  `host_attach` module
+  moves — the host-owned
+  attach client session
+  plus its
+  `terminal_input`
+  child, with the 4-case
+  unit suite and the
+  `terminal_input`
+  suite). Cross-leaf
+  edges: 3 hub paths
+  rewritten to
+  already-split crates
+  (the
+  `attach::transport`
+  trio ->
+  `jackin-runtime-attach-transport`
+  T6,
+  `snapshot::ensure_capsule_protocol_via_docker_exec`
+  ->
+  `jackin-runtime-snapshot`
+  T4, `spawn_async` ->
+  `jackin-runtime-process-telemetry`
+  T1). One `pub(super)`
+  fn widens to `pub`
+  (forced:
+  `run_host_attach_session`
+  has hub callers in
+  `attach/`; the two
+  `terminal_input`
+  `pub(super)` items
+  stay — same-crate
+  visibility, semantics
+  unchanged). Shim file
+  (the split-60
+  runtime-level
+  precedent): the hub
+  keeps
+  `runtime/host_attach.rs`
+  as a glob re-export,
+  so the
+  `runtime::host_attach::*`
+  paths — including the
+  external integration
+  test in
+  `crates/apps/jackin` —
+  keep working
+  unchanged. Tier: names
+  T6
+  `jackin-runtime-attach-transport`,
+  so it takes T7 (at the
+  extraction ceiling,
+  still strictly under
+  the T8 hub); no
+  renumber cascade.
+  New-crate deps: core,
+  diagnostics, host,
+  process, protocol,
+  runtime-attach-transport,
+  runtime-process-telemetry,
+  runtime-snapshot,
+  telemetry, anyhow,
+  crossterm,
+  directories,
+  nix/poll+socket, sha2,
+  tokio, tracing
+  (lockfile +1 package,
+  +18 edges;
+  diagnostics/test-support
+  + tempfile land in
+  dev-dependencies for
+  the moved suite).
+  Policy registries: +1
+  owned package
+  (`library`).
+
+- Verify: `cargo check
+  --locked --workspace
+  --all-targets` green;
+  `cargo fmt --all
+  --check` clean; `cargo
+  clippy` 0 errors on
+  the new crate (`-D
+  warnings`),
+  `jackin-runtime` holds
+  at the 7 pre-existing
+  errors (all in
+  `launch_slot/tests`,
+  byte-identical
+  locations). `cargo
+  nextest list
+  --workspace
+  --all-targets`: 7277
+  -> 7277 (35
+  relocations map 1:1 by
+  stripped name,
+  `jackin-runtime
+  runtime::host_attach::...`
+  ->
+  `jackin-runtime-host-attach
+  host_attach::...`; 0
+  dropped, 0 added).
+  `nextest run`: 433/433
+  runtime + 35/35
+  host-attach green (1
+  skipped,
+  pre-existing). `alint
+  check`: 182 violations
+  / 11 failing — the
+  sorted diff is a
+  single path relocation
+  (`size-file-400` on
+  `host_attach.rs`
+  travels with the
+  file), zero new
+  findings. `check-gaps`
+  (v0.1.3,
+  production-only): 12
+  -> 12 (runtime
+  `SIZE-001/002`
+  persist: 14037 ->
+  12726 prod code lines,
+  86 -> 85 prod files;
+  xtask 26289 -> 26290
+  from the TIERS row;
+  new crate fits at 2932
+  raw / 10 files, no
+  SIZE finding).
+  `GAP-TEST-001/002/003`
+  stay 0/0/0.
+  `ratchet.toml`: +5
+  rows (agent-doc-bytes
+  README 962,
+  public-surface 1,
+  three
+  `expect-per-lint-crate`
+  rows the moved
+  `#[expect]`s carry)
+  and three tightenings
+  (`jackin-runtime`
+  disallowed_methods 3
+  -> 2,
+  too_many_arguments 11
+  -> 10, too_many_lines
+  6 -> 5 — expectation
+  counts conserved
+  across the move);
+  remaining 56
+  violations
+  byte-identical to a
+  clean-HEAD worktree.
+  `lint arch --strict`:
+  3 pre-existing no-tier
+  violations
+  byte-identical to
+  base, zero direction
+  violations; `lint
+  headers` stays at the
+  base 2; `lint tests`
+  OK.
+
+- Raw outputs:
+  `/tmp/s7-s76-{pre,post}-*.txt`
+  (kept out of the repo).

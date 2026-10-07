@@ -43,6 +43,7 @@ jackin-runtime-docker-profile = { workspace = true }
 jackin-runtime-drift = { workspace = true }
 jackin-runtime-exec-host = { workspace = true }
 jackin-runtime-exit-summary = { workspace = true }
+jackin-runtime-host-attach = { workspace = true }
 jackin-runtime-host-daemon = { workspace = true }
 jackin-runtime-identity = { workspace = true }
 jackin-runtime-image = { workspace = true }

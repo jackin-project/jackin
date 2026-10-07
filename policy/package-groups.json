@@ -40,6 +40,7 @@
     "jackin-runtime-drift": "library",
     "jackin-runtime-exec-host": "library",
     "jackin-runtime-exit-summary": "library",
+    "jackin-runtime-host-attach": "library",
     "jackin-runtime-host-daemon": "library",
     "jackin-runtime-identity": "library",
     "jackin-runtime-image": "library",

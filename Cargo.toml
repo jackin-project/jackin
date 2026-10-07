@@ -38,6 +38,7 @@ members = [
     "crates/services/jackin-runtime-drift",
     "crates/services/jackin-runtime-exec-host",
     "crates/services/jackin-runtime-exit-summary",
+    "crates/services/jackin-runtime-host-attach",
     "crates/services/jackin-runtime-host-daemon",
     "crates/services/jackin-runtime-identity",
     "crates/services/jackin-runtime-image",
@@ -179,6 +180,7 @@ jackin-runtime-docker-profile = { version = "0.6.4", path = "crates/services/jac
 jackin-runtime-drift = { version = "0.6.4", path = "crates/services/jackin-runtime-drift" }
 jackin-runtime-exec-host = { version = "0.6.4", path = "crates/services/jackin-runtime-exec-host" }
 jackin-runtime-exit-summary = { version = "0.6.4", path = "crates/services/jackin-runtime-exit-summary" }
+jackin-runtime-host-attach = { version = "0.6.4", path = "crates/services/jackin-runtime-host-attach" }
 jackin-runtime-host-daemon = { version = "0.6.4", path = "crates/services/jackin-runtime-host-daemon" }
 jackin-runtime-identity = { version = "0.6.4", path = "crates/services/jackin-runtime-identity" }
 jackin-runtime-image = { version = "0.6.4", path = "crates/services/jackin-runtime-image" }

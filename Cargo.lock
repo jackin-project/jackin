@@ -3589,6 +3589,7 @@ dependencies = [
  "jackin-runtime-drift",
  "jackin-runtime-exec-host",
  "jackin-runtime-exit-summary",
+ "jackin-runtime-host-attach",
  "jackin-runtime-host-daemon",
  "jackin-runtime-identity",
  "jackin-runtime-image",
@@ -3747,6 +3748,29 @@ name = "jackin-runtime-exit-summary"
 version = "0.6.4"
 dependencies = [
  "jackin-instance",
+]
+
+[[package]]
+name = "jackin-runtime-host-attach"
+version = "0.6.4"
+dependencies = [
+ "anyhow",
+ "crossterm",
+ "directories",
+ "jackin-core",
+ "jackin-diagnostics",
+ "jackin-host",
+ "jackin-process",
+ "jackin-protocol",
+ "jackin-runtime-attach-transport",
+ "jackin-runtime-process-telemetry",
+ "jackin-runtime-snapshot",
+ "jackin-telemetry",
+ "nix 0.31.3",
+ "sha2 0.11.0",
+ "tempfile",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

@@ -40,6 +40,7 @@
     "jackin-runtime-drift",
     "jackin-runtime-exec-host",
     "jackin-runtime-exit-summary",
+    "jackin-runtime-host-attach",
     "jackin-runtime-host-daemon",
     "jackin-runtime-identity",
     "jackin-runtime-image",

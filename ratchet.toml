@@ -154,7 +154,10 @@ key = "clippy::disallowed_methods@jackin-instance-roles"
 bound = 1
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-runtime"
-bound = 3
+bound = 2
+[[family.entry]]
+key = "clippy::disallowed_methods@jackin-runtime-host-attach"
+bound = 1
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-runtime-image"
 bound = 2
@@ -436,9 +439,12 @@ key = "clippy::too_many_arguments@jackin-launch"
 bound = 1
 [[family.entry]]
 key = "clippy::too_many_arguments@jackin-runtime"
-bound = 11
+bound = 10
 [[family.entry]]
 key = "clippy::too_many_arguments@jackin-runtime-docker-profile"
+bound = 1
+[[family.entry]]
+key = "clippy::too_many_arguments@jackin-runtime-host-attach"
 bound = 1
 [[family.entry]]
 key = "clippy::too_many_arguments@jackin-runtime-image"
@@ -466,7 +472,10 @@ key = "clippy::too_many_lines@jackin-protocol"
 bound = 1
 [[family.entry]]
 key = "clippy::too_many_lines@jackin-runtime"
-bound = 6
+bound = 5
+[[family.entry]]
+key = "clippy::too_many_lines@jackin-runtime-host-attach"
+bound = 1
 [[family.entry]]
 key = "clippy::too_many_lines@jackin-runtime-launch-account-identity"
 bound = 1
@@ -727,6 +736,9 @@ bound = 965
 [[family.entry]]
 key = "crates/services/jackin-runtime-exit-summary/README.md"
 bound = 781
+[[family.entry]]
+key = "crates/services/jackin-runtime-host-attach/README.md"
+bound = 962
 [[family.entry]]
 key = "crates/services/jackin-runtime-host-daemon/README.md"
 bound = 978
@@ -1070,6 +1082,9 @@ key = "jackin-runtime-exec-host"
 bound = 1
 [[family.entry]]
 key = "jackin-runtime-exit-summary"
+bound = 1
+[[family.entry]]
+key = "jackin-runtime-host-attach"
 bound = 1
 [[family.entry]]
 key = "jackin-runtime-host-daemon"
