@@ -3654,6 +3654,7 @@ dependencies = [
  "jackin-usage-provider-codex",
  "jackin-usage-provider-core",
  "jackin-usage-provider-cursor",
+ "jackin-usage-provider-gemini",
  "jackin-usage-provider-grok",
  "jackin-usage-provider-hermes",
  "jackin-usage-provider-kimi",
@@ -3757,6 +3758,15 @@ dependencies = [
  "reqwest",
  "serde_json",
  "tempfile",
+]
+
+[[package]]
+name = "jackin-usage-provider-gemini"
+version = "0.6.4"
+dependencies = [
+ "jackin-protocol",
+ "jackin-usage-provider-core",
+ "serde_json",
 ]
 
 [[package]]

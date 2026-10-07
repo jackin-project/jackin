@@ -36,6 +36,7 @@ jackin-usage-provider-antigravity = { workspace = true }
 jackin-usage-provider-cursor = { workspace = true }
 jackin-usage-provider-codex = { workspace = true }
 jackin-usage-provider-hermes = { workspace = true }
+jackin-usage-provider-gemini = { workspace = true }
 base64 = { workspace = true }
 chrono = { workspace = true, features = ["clock"] }
 httpdate = { workspace = true }

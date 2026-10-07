@@ -1369,3 +1369,62 @@ passes.
   `/tmp/s10-hermes-{before,after,nextest,
   alint,ratchet}.txt` (kept out of the
   repo).
+
+### Split 14: usage-provider-gemini extraction (V11)
+
+- `jackin-usage` -> `jackin-usage` +
+  `jackin-usage-provider-gemini` (T3 leaf:
+  `usage/gemini.rs` -> `lib.rs` re-export
+  root + `adapter` (retirement,
+  entitlement, project quotas, snapshots)
+  + `tests` + `tests/main.rs` placeholder;
+  `lib.rs` carries the ownership header).
+  `usage.rs` re-exports the vendor surface
+  from the new crate (block moved into the
+  sorted extracted-crate region).
+  Visibility deltas: `pub(crate)` -> `pub`
+  on the adapter surface; the `use
+  super::*` wildcard (plus its
+  `wildcard_imports` expect) becomes
+  explicit `jackin_protocol::control` +
+  `std::path::PathBuf` imports; `usage.rs`
+  drops its now-unused `PathBuf` import
+  while the `usage/tests` shim gains
+  `PathBuf` for the staying support file;
+  the unit suite imports `parse_iso_epoch`
+  and `UsageSnapshotStatus` directly. No
+  staying-harness use, so no
+  `test-support` feature and no allowlist
+  entries move.
+- Verify: `cargo check --locked --workspace
+  --all-targets` green; `cargo fmt --all
+  --check` clean; `cargo clippy` 0 errors,
+  0 warnings on both touched packages.
+  `cargo nextest list --workspace
+  --all-targets`: 7272 -> 7272, bijection
+  exact (6 gemini tests move
+  `jackin-usage usage::gemini::tests::` ->
+  `jackin-usage-provider-gemini tests::`;
+  zero dropped, zero added).
+  `nextest run`: 511/511 usage + 6/6
+  gemini. The provider-call contract
+  fixture is untouched (no gemini
+  entries) and the suite is green.
+  `alint check`: 198 -> 198,
+  byte-identical. `check-gaps`: 27 -> 27
+  (usage `SIZE-001` 36669 -> 36298
+  lines, `SIZE-002` 236 -> 234 files;
+  xtask +1 line for the tier row);
+  `GAP-TEST-001/002/003` stay 0/0/0.
+  `ratchet.toml`: +2 gemini rows
+  (agent-doc 1475, `cast_sign_loss` 2),
+  1 usage shrink (`cast_sign_loss` 5 ->
+  3), 1 row deleted (`wildcard_imports`
+  at 0); violations 60 -> 60 with zero
+  new failures. `lint arch`: missing
+  tiers stay 3, zero direction
+  violations; `lint headers` stays at the
+  base 2; `lint tests` OK.
+- Raw outputs:
+  `/tmp/s10-gemini-{before,after}.txt`
+  (kept out of the repo).

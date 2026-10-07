@@ -14,11 +14,8 @@
 
 mod claude;
 mod credential_snapshots;
-mod gemini;
 mod muse;
 mod opencode;
-
-use std::path::PathBuf;
 
 #[cfg(any(target_os = "macos", test))]
 pub(crate) use self::claude::classify_claude_keychain_status;
@@ -49,16 +46,6 @@ pub(crate) use self::claude::{
 pub use self::claude::{ClaudeUsageDiagnostic, run_claude_usage_diagnostic};
 pub use self::credential_snapshots::provider_credential_snapshot;
 pub(crate) use self::credential_snapshots::provider_credential_snapshot_with_rate_limit;
-#[expect(
-    unused_imports,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
-pub(crate) use self::gemini::{
-    GEMINI_CONSUMER_OAUTH_END, GeminiEntitlement, GeminiProjectQuota,
-    gemini_consumer_oauth_retired, gemini_credential_origin, gemini_credential_presence,
-    gemini_migration_action, gemini_oauth_creds_path, gemini_quota_buckets, gemini_snapshot,
-    gemini_snapshot_with_presence, parse_gemini_entitlement, parse_gemini_project_quotas,
-};
 pub(crate) use self::opencode::opencode_profile_snapshot;
 #[cfg(test)]
 pub(crate) use self::opencode::{load_opencode_api_key, parse_opencode_usage};
@@ -131,6 +118,16 @@ pub(crate) use jackin_usage_provider_cursor::{
     parse_cursor_period_usage, parse_cursor_plan_info, parse_cursor_request_usage,
     parse_cursor_sand_usage, parse_cursor_stripe_balance, parse_cursor_team_spend,
     parse_cursor_usage_events, parse_cursor_usage_summary,
+};
+#[expect(
+    unused_imports,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
+pub(crate) use jackin_usage_provider_gemini::{
+    GEMINI_CONSUMER_OAUTH_END, GeminiEntitlement, GeminiProjectQuota,
+    gemini_consumer_oauth_retired, gemini_credential_origin, gemini_credential_presence,
+    gemini_migration_action, gemini_oauth_creds_path, gemini_quota_buckets, gemini_snapshot,
+    gemini_snapshot_with_presence, parse_gemini_entitlement, parse_gemini_project_quotas,
 };
 #[expect(
     unused_imports,

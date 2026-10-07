@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use jackin_protocol::control::UsageSnapshotStatus;
+use jackin_usage_provider_core::parse_iso_epoch;
 
 #[test]
 fn retirement_instant_matches_deprecation_notice() {

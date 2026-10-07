@@ -1,14 +1,13 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! `Gemini CLI` eligibility + project-quota snapshot.
+//! `Gemini CLI` eligibility + project-quota snapshot logic (see `lib.rs`).
 //!
-//! Gemini CLI is a separate account from Antigravity even though both ride
-//! Google OAuth. Eligibility changed: consumer Google OAuth access through
-//! Gemini CLI ended 2026-06-18 (targeted deprecation notice); Standard and
-//! Enterprise remain supported. A discovered old consumer login therefore gets
-//! a concrete reconnect/migration action — a 403 on a managed route must never
-//! be blind-mapped to that migration.
+//! Eligibility changed: consumer Google OAuth access through Gemini CLI ended
+//! 2026-06-18 (targeted deprecation notice); Standard and Enterprise remain
+//! supported. A discovered old consumer login therefore gets a concrete
+//! reconnect/migration action — a 403 on a managed route must never be
+//! blind-mapped to that migration.
 //!
 //! Gemini/Vertex API-key billing is separate again: quotas are project-scoped
 //! RPM/TPM/daily/model limits, keys in one project share quota, and
@@ -17,11 +16,11 @@
 //! denominators, and classifies credential routes so the broker never attaches
 //! a project observation to the wrong billing identity.
 
-#[cfg_attr(
-    not(test),
-    expect(clippy::wildcard_imports, reason = "target-dependent")
-)]
-use super::*;
+use jackin_protocol::control::{
+    FocusedUsageView, QuotaBucketView, UsageConfidence, UsageSnapshotStatus, UsageSource,
+};
+use std::path::PathBuf;
+
 use jackin_usage_provider_core::{
     UsageSurface, UsageViewInput, bucket, compact_count, env_value, epoch_seconds_from_maybe_ms,
     home_path, humanize_plan_label, json_number, parse_iso_epoch, timed_bucket, usage_view,
@@ -29,15 +28,15 @@ use jackin_usage_provider_core::{
 
 /// 2026-06-18T00:00:00Z: consumer Google OAuth through Gemini CLI ended.
 /// (`parse_iso_epoch` cross-checks this constant in tests.)
-pub(crate) const GEMINI_CONSUMER_OAUTH_END: i64 = 1_781_740_800;
+pub const GEMINI_CONSUMER_OAUTH_END: i64 = 1_781_740_800;
 
 /// True once consumer OAuth is retired (at/after the deprecation instant).
-pub(crate) fn gemini_consumer_oauth_retired(now: i64) -> bool {
+pub fn gemini_consumer_oauth_retired(now: i64) -> bool {
     now >= GEMINI_CONSUMER_OAUTH_END
 }
 
 /// `GEMINI_CLI_HOME` is the parent to which `.gemini` is appended.
-pub(crate) fn gemini_oauth_creds_path() -> PathBuf {
+pub fn gemini_oauth_creds_path() -> PathBuf {
     let dir = env_value("GEMINI_CLI_HOME").map_or_else(
         || home_path(".gemini"),
         |home| PathBuf::from(home).join(".gemini"),
@@ -49,7 +48,7 @@ pub(crate) fn gemini_oauth_creds_path() -> PathBuf {
 /// secret values are never read here. The `GOOGLE_API_KEY` alias is the
 /// S1-recorded decision (`accounts/discovery.rs` recognizes it as the same
 /// key), not a lane invention.
-pub(crate) fn gemini_credential_presence() -> (bool, bool) {
+pub fn gemini_credential_presence() -> (bool, bool) {
     let oauth = gemini_oauth_creds_path().is_file();
     let api_key = env_value("GEMINI_API_KEY")
         .or_else(|| env_value("GOOGLE_API_KEY"))
@@ -57,7 +56,7 @@ pub(crate) fn gemini_credential_presence() -> (bool, bool) {
     (oauth, api_key)
 }
 
-pub(crate) fn gemini_credential_origin(oauth: bool, api_key: bool) -> String {
+pub fn gemini_credential_origin(oauth: bool, api_key: bool) -> String {
     if oauth && api_key {
         "OAuth · oauth_creds.json + API key env".to_owned()
     } else if oauth {
@@ -72,19 +71,19 @@ pub(crate) fn gemini_credential_origin(oauth: bool, api_key: bool) -> String {
 /// Parsed entitlement response: tier/plan identity, project scope, and any
 /// consumer-unsupported markers the server sent.
 #[derive(Debug, Clone, Default)]
-pub(crate) struct GeminiEntitlement {
-    pub(crate) tier_name: Option<String>,
-    pub(crate) plan_name: Option<String>,
-    pub(crate) project: Option<String>,
+pub struct GeminiEntitlement {
+    pub tier_name: Option<String>,
+    pub plan_name: Option<String>,
+    pub project: Option<String>,
     /// True when the response explicitly marks consumer/individual access
     /// unsupported, deprecated, or retired.
-    pub(crate) consumer_unsupported: bool,
+    pub consumer_unsupported: bool,
 }
 
 /// Parse an entitlement response. Tier names come from the Google tier object
 /// (`userTier`/`currentTier`/`paidTier`); the inherited `planInfo.planName` is
 /// kept only as a plan label, never as tier evidence.
-pub(crate) fn parse_gemini_entitlement(value: &serde_json::Value) -> GeminiEntitlement {
+pub fn parse_gemini_entitlement(value: &serde_json::Value) -> GeminiEntitlement {
     let tier_name = ["userTier", "currentTier", "paidTier", "tier"]
         .into_iter()
         .filter_map(|key| value.get(key))
@@ -159,7 +158,7 @@ fn gemini_consumer_unsupported(value: &serde_json::Value) -> bool {
 /// Standard/Enterprise login that is already eligible, so credential
 /// presence + wall-clock alone must never classify it as a to-be-migrated
 /// consumer login.
-pub(crate) fn gemini_migration_action(entitlement: Option<&GeminiEntitlement>) -> Option<String> {
+pub fn gemini_migration_action(entitlement: Option<&GeminiEntitlement>) -> Option<String> {
     const ACTION: &str = "Consumer Google OAuth ended 2026-06-18; reconnect Gemini CLI with Code Assist Standard/Enterprise";
     entitlement
         .is_some_and(|entitlement| entitlement.consumer_unsupported)
@@ -169,15 +168,15 @@ pub(crate) fn gemini_migration_action(entitlement: Option<&GeminiEntitlement>) -
 /// One project-scoped quota entry (RPM/TPM/daily/model limit). Counts stay
 /// counts: `remaining` exists only when the response supplies a denominator.
 #[derive(Debug, Clone)]
-pub(crate) struct GeminiProjectQuota {
-    pub(crate) model: Option<String>,
-    pub(crate) kind: String,
-    pub(crate) limit: Option<f64>,
-    pub(crate) used: Option<f64>,
-    pub(crate) reset_at: Option<i64>,
+pub struct GeminiProjectQuota {
+    pub model: Option<String>,
+    pub kind: String,
+    pub limit: Option<f64>,
+    pub used: Option<f64>,
+    pub reset_at: Option<i64>,
 }
 
-pub(crate) fn parse_gemini_project_quotas(value: &serde_json::Value) -> Vec<GeminiProjectQuota> {
+pub fn parse_gemini_project_quotas(value: &serde_json::Value) -> Vec<GeminiProjectQuota> {
     let entries = ["quotas", "limits", "quota"]
         .into_iter()
         .find_map(|key| value.get(key).and_then(serde_json::Value::as_array));
@@ -230,10 +229,7 @@ pub(crate) fn parse_gemini_project_quotas(value: &serde_json::Value) -> Vec<Gemi
         .collect()
 }
 
-pub(crate) fn gemini_quota_buckets(
-    quotas: &[GeminiProjectQuota],
-    now: i64,
-) -> Vec<QuotaBucketView> {
+pub fn gemini_quota_buckets(quotas: &[GeminiProjectQuota], now: i64) -> Vec<QuotaBucketView> {
     quotas
         .iter()
         .map(|quota| gemini_quota_bucket(quota, now))
@@ -276,7 +272,7 @@ fn gemini_quota_bucket(quota: &GeminiProjectQuota, now: i64) -> QuotaBucketView 
     )
 }
 
-pub(crate) fn gemini_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsageView {
+pub fn gemini_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsageView {
     let (has_oauth, has_api_key) = gemini_credential_presence();
     let origin = gemini_credential_origin(has_oauth, has_api_key);
     gemini_snapshot_with_presence(agent, provider, has_oauth, has_api_key, &origin, now)
@@ -286,7 +282,7 @@ pub(crate) fn gemini_snapshot(agent: &str, provider: Option<&str>, now: i64) -> 
 /// refresh passes the discovery-proven OAuth presence, the env arm the
 /// configured key. The result stays a typed gap (never a zero balance) until
 /// an entitlement endpoint lands.
-pub(crate) fn gemini_snapshot_with_presence(
+pub fn gemini_snapshot_with_presence(
     agent: &str,
     provider: Option<&str>,
     has_oauth: bool,
@@ -338,6 +334,3 @@ pub(crate) fn gemini_snapshot_with_presence(
         last_error: Some(message.to_owned()),
     })
 }
-
-#[cfg(test)]
-mod tests;
