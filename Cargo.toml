@@ -31,6 +31,7 @@ members = [
     "crates/services/jackin-runtime-apple-container-client",
     "crates/services/jackin-runtime-attach-capsule-ready",
     "crates/services/jackin-runtime-attach-sessions",
+    "crates/services/jackin-runtime-attach-transport",
     "crates/services/jackin-runtime-coordination",
     "crates/services/jackin-runtime-discovery",
     "crates/services/jackin-runtime-docker-profile",
@@ -171,6 +172,7 @@ jackin-runtime = { version = "0.6.4", path = "crates/services/jackin-runtime" }
 jackin-runtime-apple-container-client = { version = "0.6.4", path = "crates/services/jackin-runtime-apple-container-client" }
 jackin-runtime-attach-capsule-ready = { version = "0.6.4", path = "crates/services/jackin-runtime-attach-capsule-ready" }
 jackin-runtime-attach-sessions = { version = "0.6.4", path = "crates/services/jackin-runtime-attach-sessions" }
+jackin-runtime-attach-transport = { version = "0.6.4", path = "crates/services/jackin-runtime-attach-transport" }
 jackin-runtime-coordination = { version = "0.6.4", path = "crates/services/jackin-runtime-coordination" }
 jackin-runtime-discovery = { version = "0.6.4", path = "crates/services/jackin-runtime-discovery" }
 jackin-runtime-docker-profile = { version = "0.6.4", path = "crates/services/jackin-runtime-docker-profile" }

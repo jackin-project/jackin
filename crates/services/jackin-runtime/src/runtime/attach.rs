@@ -30,7 +30,10 @@ mod reconnect_lease;
 // `attach::sessions::*` path stable.
 pub(crate) use jackin_runtime_attach_sessions::sessions;
 mod spawn;
-mod transport;
+// Moved to jackin_runtime_attach_transport::transport (S7
+// split 75); the module re-export keeps every
+// `attach::transport::*` path stable.
+pub(crate) use jackin_runtime_attach_transport::transport;
 
 pub use hardline::{hardline_agent, hardline_agent_with_focus};
 pub use inspect::{describe_agent_session_count, inspect_hardline_instance};
@@ -48,9 +51,10 @@ pub(crate) use admission::{
     require_current_instance_admission, validate_current_account_admission,
     validate_recorded_role_handle,
 };
-pub(crate) use capsule_ready::{
-    capsule_socket_negotiates, wait_for_capsule_daemon_with_handle, wait_for_dind,
-};
+// `capsule_socket_negotiates` had its hub re-export retired by S7
+// split 75: the moved `transport` module was its sole consumer and
+// now names it through `jackin-runtime-attach-capsule-ready`.
+pub(crate) use capsule_ready::{wait_for_capsule_daemon_with_handle, wait_for_dind};
 pub(crate) use exec_args::{
     git_policy_env_pairs, host_alt_screen_exec_flag, insert_run_as_user, set_role_terminal_title,
 };

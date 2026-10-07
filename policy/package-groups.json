@@ -33,6 +33,7 @@
     "jackin-runtime-apple-container-client": "library",
     "jackin-runtime-attach-capsule-ready": "library",
     "jackin-runtime-attach-sessions": "library",
+    "jackin-runtime-attach-transport": "library",
     "jackin-runtime-coordination": "library",
     "jackin-runtime-discovery": "library",
     "jackin-runtime-docker-profile": "library",

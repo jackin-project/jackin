@@ -8,7 +8,7 @@ use jackin_core::container_paths;
 use jackin_core::JackinPaths;
 use std::path::PathBuf;
 
-use super::capsule_socket_negotiates;
+use jackin_runtime_attach_capsule_ready::capsule_ready::capsule_socket_negotiates;
 
 /// Shell command for querying the in-container daemon's session
 /// inventory.
@@ -53,13 +53,13 @@ pub fn attach_proxy_exec_args(container: &ContainerHandle) -> Vec<String> {
 /// targets (macOS/BSD = 104, Linux = 108). A socket path at or above this cannot
 /// be `connect`ed directly — the kernel rejects it — so the direct transport is
 /// impossible regardless of whether the socket exists.
-pub(crate) const MAX_UNIX_SOCKET_PATH_LEN: usize = 104;
+pub const MAX_UNIX_SOCKET_PATH_LEN: usize = 104;
 
 pub fn select_host_attach_transport(
     paths: &JackinPaths,
     container_name: &str,
 ) -> HostAttachTransportPlan {
-    let socket_path = crate::runtime::snapshot::socket_path(paths, container_name);
+    let socket_path = jackin_runtime_snapshot::snapshot::socket_path(paths, container_name);
 
     // A path at/over the `sun_path` limit can never bind/connect directly; the OS
     // returns a generic error that reads like "connection refused", silently
