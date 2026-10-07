@@ -1,7 +1,16 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+//! Name-lock ownership suite (relocated from
+//! `launch_slot/tests/case_01` by S7 split 77).
+
+#![cfg(unix)]
+
 use super::*;
+
+use std::io::{BufRead as _, Write as _};
+
+use std::os::unix::fs::MetadataExt as _;
 
 #[test]
 #[ignore = "child fixture invoked explicitly by the parent scenario"]
@@ -46,7 +55,7 @@ fn name_lock_child() {
 
 #[test]
 fn three_process_contenders_preserve_lock_inode_until_and_after_owner_exit() {
-    let temp = tempdir().unwrap();
+    let temp = canonical_tempdir().unwrap();
     let paths = jackin_core::JackinPaths::for_tests(temp.path());
     let lock_path = crate::runtime::coordination::root(&paths)
         .unwrap()
@@ -97,7 +106,7 @@ fn three_process_contenders_preserve_lock_inode_until_and_after_owner_exit() {
 async fn prune_paths_preserve_three_process_name_lock_ownership() {
     use jackin_test_support::{FakeDockerClient, FakeRunner};
     for operation in ["container", "instances", "all-instances", "home"] {
-        let temp = tempdir().unwrap();
+        let temp = canonical_tempdir().unwrap();
         let paths = jackin_core::JackinPaths::for_tests(temp.path());
         std::fs::create_dir_all(&paths.data_dir).unwrap();
         let lock_path = crate::runtime::coordination::root(&paths)

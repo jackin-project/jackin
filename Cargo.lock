@@ -3605,6 +3605,7 @@ dependencies = [
  "jackin-runtime-launch-mounts",
  "jackin-runtime-launch-plan",
  "jackin-runtime-launch-progress-helpers",
+ "jackin-runtime-launch-slot",
  "jackin-runtime-launch-trust",
  "jackin-runtime-naming",
  "jackin-runtime-process-telemetry",
@@ -3977,6 +3978,23 @@ dependencies = [
  "jackin-runtime-progress",
  "jackin-telemetry",
  "tokio",
+]
+
+[[package]]
+name = "jackin-runtime-launch-slot"
+version = "0.6.4"
+dependencies = [
+ "anyhow",
+ "fs4",
+ "jackin-config",
+ "jackin-core",
+ "jackin-diagnostics",
+ "jackin-docker",
+ "jackin-env",
+ "jackin-instance",
+ "jackin-runtime-attach-sessions",
+ "jackin-runtime-coordination",
+ "jackin-telemetry",
 ]
 
 [[package]]

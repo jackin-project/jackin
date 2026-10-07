@@ -57,7 +57,7 @@ pub(crate) async fn resolve_environment<D: DockerApi>(
     let resolved = if skipped {
         Ok(std::collections::BTreeMap::new())
     } else {
-        resolve_github_env_map(&required, opts)
+        resolve_github_env_map(&required, opts.op_runner.as_deref(), opts.host_env.as_ref())
     };
     let github_resolved_env = match resolved {
         Ok(env) => {

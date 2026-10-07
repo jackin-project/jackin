@@ -7241,3 +7241,185 @@ bound 720.
 - Raw outputs:
   `/tmp/s7-s76-{pre,post}-*.txt`
   (kept out of the repo).
+
+### Split 77: runtime-launch-slot extraction (M39)
+
+- `jackin-runtime` ->
+  `jackin-runtime` +
+  `jackin-runtime-launch-slot`
+  (T5: the whole
+  `launch/launch_slot`
+  module moves --
+  container name slot
+  claims plus the github
+  token preflight and
+  env resolution).
+  Cross-leaf edges: 4
+  hub paths rewritten to
+  already-split crates
+  (`ContainerState` ->
+  `jackin-docker` T3,
+  the split-71
+  precedent;
+  `docker_unavailable_msg`
+  ->
+  `jackin-runtime-attach-sessions`
+  T4, the M35 unblock;
+  `coordination::open_lock`
+  ->
+  `jackin-runtime-coordination`
+  T1;
+  `new_container_name`
+  -> `jackin-instance`
+  T3).
+  `resolve_github_env_map`
+  drops its
+  `&LoadOptions` hub
+  parameter for two
+  plain seam params
+  (`Option<&dyn
+  OpRunner>`,
+  `Option<&host-env
+  map>`): the hub prod
+  caller forwards its
+  own seams and the hub
+  github tests pass
+  seams directly (forced
+  -- `LoadOptions` stays
+  hub-owned). Five
+  `pub(crate)` fns widen
+  to `pub`, plus private
+  `try_acquire_name_lock`
+  (forced: the hub suite
+  names it). The
+  module's 3-test
+  lock-ownership suite
+  does NOT move with it:
+  that suite pins hub
+  `cleanup` behavior
+  (tier-blocked), so it
+  relocates into the hub
+  `launch` suite as
+  `case_29` +
+  `support_04`, with the
+  child-fixture
+  `--exact` path
+  re-pointed at the new
+  location (forced); the
+  `tempdir` helper
+  renames to
+  `canonical_tempdir`
+  (forced: the hub suite
+  already imports
+  `tempfile::tempdir`).
+  No shim file:
+  `launch.rs` re-exports
+  the module itself (the
+  split-56 precedent),
+  so the
+  `launch::launch_slot::*`
+  paths -- including the
+  direct module uses in
+  `launch_pipeline.rs`
+  and
+  `environment_resolve.rs`
+  -- keep working
+  unchanged. Tier: names
+  T4
+  `jackin-runtime-attach-sessions`,
+  so it takes T5; no
+  renumber cascade.
+  New-crate deps:
+  config, core,
+  diagnostics, docker,
+  env, instance,
+  runtime-attach-sessions,
+  runtime-coordination,
+  telemetry, anyhow, fs4
+  (lockfile +1 package,
+  +12 edges; no
+  dev-dependencies --
+  coverage stays in the
+  hub `launch` suite).
+  Policy registries: +1
+  owned package
+  (`library`).
+
+- Verify: `cargo check
+  --locked --workspace
+  --all-targets` green;
+  `cargo fmt --all
+  --check` clean; `cargo
+  clippy` 0 errors on
+  the new crate (`-D
+  warnings`),
+  `jackin-runtime` holds
+  at the 7 pre-existing
+  errors (same 6 lints +
+  summary, at the
+  relocated
+  `case_29`/`support_04`
+  paths). `cargo nextest
+  list --workspace
+  --all-targets`: 7277
+  -> 7277 (2 listed
+  relocations map 1:1 by
+  test name,
+  `jackin-runtime
+  runtime::launch::launch_slot::tests::case_01::...`
+  -> `jackin-runtime
+  runtime::launch::tests::case_29::...`;
+  0 dropped, 0 added;
+  the ignored child
+  fixture travels with
+  the suite, outside
+  `nextest list`).
+  `nextest run`: 433/433
+  runtime green (1
+  skipped, pre-existing;
+  the new crate has no
+  tests yet; the
+  child-fixture
+  `--exact` path
+  verified genuine --
+  the new path matches
+  exactly 1 test, the
+  old path 0). `alint
+  check`: 182 violations
+  / 11 failing,
+  byte-identical.
+  `check-gaps` (v0.1.3,
+  production-only): 12
+  -> 12 (runtime
+  `SIZE-001/002`
+  persist: 12726 ->
+  12462 prod code lines,
+  85 -> 84 prod files;
+  xtask 26290 -> 26291
+  from the TIERS row;
+  new crate fits at 325
+  raw / 3 files, no SIZE
+  finding).
+  `GAP-TEST-001/002/003`
+  stay 0/0/0.
+  `ratchet.toml`: +2
+  rows (agent-doc-bytes
+  README 885,
+  public-surface 1);
+  remaining 56
+  violations
+  byte-identical to a
+  clean-HEAD worktree.
+  `lint arch --strict`:
+  3 pre-existing no-tier
+  violations
+  byte-identical to
+  base, zero direction
+  violations; `lint
+  headers` stays at the
+  base 2; `lint tests`
+  OK.
+
+- Raw outputs:
+  `/tmp/s7-s77-{pre,post}-*.txt`
+  (kept out of the repo).

@@ -40,10 +40,14 @@ use launch_dind::{adopt_prewarmed_dind_sidecar, run_dind_sidecar_headless};
 #[cfg(not(test))]
 pub(crate) use launch_dind::{prewarmed_dind_state_is_live, try_lock_prewarmed_dind};
 
-mod launch_slot;
+// Moved to jackin_runtime_launch_slot::launch_slot (S7
+// split 77); the module re-export keeps every
+// `launch::launch_slot::*` path stable.
+pub(crate) use jackin_runtime_launch_slot::launch_slot;
 #[cfg(test)]
 pub(crate) use launch_slot::{
-    claim_container_name, resolve_github_env_map, verify_github_token_present,
+    claim_container_name, resolve_github_env_map, try_acquire_name_lock,
+    verify_github_token_present,
 };
 
 mod trust;

@@ -315,7 +315,7 @@ async fn verify_github_token_present_errors_when_token_empty_string() {
 async fn resolve_github_env_map_returns_empty_for_no_declarations() {
     use std::collections::BTreeMap;
     let decls: BTreeMap<String, jackin_core::EnvValue> = BTreeMap::new();
-    let resolved = resolve_github_env_map(&decls, &LoadOptions::default()).unwrap();
+    let resolved = resolve_github_env_map(&decls, None, None).unwrap();
     assert!(resolved.is_empty());
 }
 
@@ -331,7 +331,7 @@ async fn resolve_github_env_map_resolves_plain_values() {
         "GH_HOST".into(),
         jackin_core::EnvValue::Plain("ghe.acme.com".into()),
     );
-    let resolved = resolve_github_env_map(&decls, &LoadOptions::default()).unwrap();
+    let resolved = resolve_github_env_map(&decls, None, None).unwrap();
     assert_eq!(
         resolved.get("GH_TOKEN").map(String::as_str),
         Some("ghp_test")
@@ -356,12 +356,9 @@ async fn resolve_github_env_map_aggregates_failures() {
         "GH_HOST".into(),
         jackin_core::EnvValue::Plain("$JACKIN_TEST_MISSING_HOST".into()),
     );
-    let opts = LoadOptions {
-        // Empty host-env map so `$NAME` references fail to resolve.
-        host_env: Some(BTreeMap::new()),
-        ..LoadOptions::default()
-    };
-    let err = resolve_github_env_map(&decls, &opts).unwrap_err();
+    // Empty host-env map so `$NAME` references fail to resolve.
+    let host_env = BTreeMap::new();
+    let err = resolve_github_env_map(&decls, None, Some(&host_env)).unwrap_err();
     let s = err.to_string();
     assert!(
         s.contains("github env resolution failed for 2 var(s)"),

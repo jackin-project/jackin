@@ -5,11 +5,12 @@
 
 use fs4::FileExt;
 
-use super::super::attach::{ContainerState, docker_unavailable_msg};
 use jackin_core::JackinPaths;
 use jackin_core::RoleSelector;
 use jackin_core::WorkspaceName;
+use jackin_docker::docker_client::ContainerState;
 use jackin_docker::docker_client::DockerApi;
+use jackin_runtime_attach_sessions::sessions::docker_unavailable_msg;
 
 /// Cap retries so a filesystem without working flock (NFS without
 /// lockd, exotic mount) surfaces as an actionable error instead of an
@@ -21,7 +22,7 @@ const CLAIM_MAX_ATTEMPTS: u32 = 64;
 /// Claim a unique DNS-safe container name by acquiring an exclusive lock file.
 /// Random IDs avoid deterministic role slots; the lock still protects the
 /// vanishingly small random-collision window and concurrent launch races.
-pub(crate) async fn claim_container_name(
+pub async fn claim_container_name(
     paths: &JackinPaths,
     workspace_name: Option<&WorkspaceName>,
     selector: &RoleSelector,
@@ -31,7 +32,7 @@ pub(crate) async fn claim_container_name(
     let mut occupied_attempts = 0u32;
 
     for _ in 0..CLAIM_MAX_ATTEMPTS {
-        let name = crate::instance::new_container_name(workspace_name, selector);
+        let name = jackin_instance::new_container_name(workspace_name, selector);
 
         let inspection = docker.inspect_container_by_name(&name).await;
         let slot_free = match inspection.state {
@@ -98,7 +99,7 @@ pub(crate) async fn claim_container_name(
     );
 }
 
-pub(crate) async fn claim_known_container_name(
+pub async fn claim_known_container_name(
     paths: &JackinPaths,
     container_name: &str,
     docker: &impl DockerApi,
@@ -142,8 +143,9 @@ async fn acquire_name_lock(paths: &JackinPaths, name: &str) -> std::io::Result<s
 
 /// Acquire a persistent name inode outside every prunable runtime root.
 /// Closing the handle releases ownership; maintenance never removes its inode.
-fn try_acquire_name_lock(paths: &JackinPaths, name: &str) -> std::io::Result<std::fs::File> {
-    let lock_file = crate::runtime::coordination::open_lock(paths, &format!("name-{name}"))?;
+pub fn try_acquire_name_lock(paths: &JackinPaths, name: &str) -> std::io::Result<std::fs::File> {
+    let lock_file =
+        jackin_runtime_coordination::coordination::open_lock(paths, &format!("name-{name}"))?;
     FileExt::try_lock(&lock_file).map_err(std::io::Error::from)?;
     Ok(lock_file)
 }
@@ -155,7 +157,7 @@ fn try_acquire_name_lock(paths: &JackinPaths, name: &str) -> std::io::Result<std
 /// Extracted from `load_role_with` so the bail-message shape and
 /// trigger condition can be unit-pinned without orchestrating the
 /// full launch flow.
-pub(crate) fn verify_github_token_present(
+pub fn verify_github_token_present(
     github_mode: jackin_config::GithubAuthMode,
     resolved_token: Option<&str>,
     workspace: &WorkspaceName,
@@ -179,11 +181,12 @@ pub(crate) fn verify_github_token_present(
 
 /// Resolve the `[…github.env]` declarations through the same
 /// `op://` + host-env dispatch as regular operator env. Honors the
-/// `op_runner` / `host_env` test seams on `LoadOptions` so tests stay
-/// hermetic.
-pub(crate) fn resolve_github_env_map(
+/// caller-supplied `op_runner` / `host_env` test seams (the hub
+/// forwards its `LoadOptions` seams) so tests stay hermetic.
+pub fn resolve_github_env_map(
     declarations: &std::collections::BTreeMap<String, jackin_core::EnvValue>,
-    opts: &super::LoadOptions,
+    op_runner: Option<&dyn jackin_env::OpRunner>,
+    host_env: Option<&std::collections::BTreeMap<String, String>>,
 ) -> anyhow::Result<std::collections::BTreeMap<String, String>> {
     let mut resolved: std::collections::BTreeMap<String, String> =
         std::collections::BTreeMap::new();
@@ -191,9 +194,9 @@ pub(crate) fn resolve_github_env_map(
         return Ok(resolved);
     }
     let default_runner = jackin_env::OpCli::new_launch_env();
-    let runner: &dyn jackin_env::OpRunner = opts.op_runner.as_deref().unwrap_or(&default_runner);
+    let runner: &dyn jackin_env::OpRunner = op_runner.unwrap_or(&default_runner);
     let host_env_fn = |name: &str| -> Result<String, std::env::VarError> {
-        opts.host_env.as_ref().map_or_else(
+        host_env.map_or_else(
             || std::env::var(name),
             |map| map.get(name).cloned().ok_or(std::env::VarError::NotPresent),
         )
@@ -260,7 +263,7 @@ pub(crate) fn resolve_github_env_map(
     Ok(resolved)
 }
 
-pub(crate) fn github_env_declarations_for_mode(
+pub fn github_env_declarations_for_mode(
     declarations: &std::collections::BTreeMap<String, jackin_core::EnvValue>,
     mode: jackin_config::GithubAuthMode,
 ) -> std::collections::BTreeMap<String, jackin_core::EnvValue> {
@@ -308,6 +311,3 @@ fn github_env_value_kind(value: &jackin_core::EnvValue) -> &'static str {
         jackin_core::EnvValue::Extended(_) => "literal",
     }
 }
-
-#[cfg(test)]
-mod tests;

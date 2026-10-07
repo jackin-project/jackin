@@ -6,6 +6,10 @@
     unused_qualifications,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
+#![expect(
+    clippy::disallowed_methods,
+    reason = "isolated filesystem and child-process fixtures run only on test threads"
+)]
 
 use super::super::universe;
 use super::mounts::AppleContainerMountError;
@@ -50,6 +54,8 @@ mod support_02;
 use support_02::*;
 mod support_03;
 use support_03::*;
+mod support_04;
+use support_04::*;
 mod case_01;
 mod case_02;
 mod case_03;
@@ -78,3 +84,4 @@ mod case_25;
 mod case_26;
 mod case_27;
 mod case_28;
+mod case_29;

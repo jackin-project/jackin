@@ -24,12 +24,7 @@ async fn resolve_github_env_map_reads_independent_op_refs_concurrently() {
         active,
         max_active: Arc::clone(&max_active),
     };
-    let opts = LoadOptions {
-        op_runner: Some(Box::new(runner)),
-        ..LoadOptions::default()
-    };
-
-    let resolved = resolve_github_env_map(&decls, &opts).unwrap();
+    let resolved = resolve_github_env_map(&decls, Some(&runner), None).unwrap();
 
     assert_eq!(resolved.len(), 3);
     assert!(

@@ -1,0 +1,35 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "jackin-runtime-launch-slot"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
+description = "Container name slot claims plus github token preflight for launch."
+license.workspace = true
+readme = "README.md"
+publish = false
+
+repository.workspace = true
+
+[lib]
+name = "jackin_runtime_launch_slot"
+path = "src/lib.rs"
+
+[dependencies]
+jackin-config = { workspace = true }
+jackin-core = { workspace = true }
+jackin-diagnostics = { workspace = true }
+jackin-docker = { workspace = true }
+jackin-env = { workspace = true }
+jackin-instance = { workspace = true }
+jackin-runtime-attach-sessions = { workspace = true }
+jackin-runtime-coordination = { workspace = true }
+jackin-telemetry = { workspace = true }
+anyhow = { workspace = true }
+fs4 = { workspace = true }
+
+[lints]
+workspace = true

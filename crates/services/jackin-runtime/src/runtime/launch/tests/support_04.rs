@@ -1,16 +1,29 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
+//! Name-lock child-process harness (relocated from
+//! `launch_slot/tests` by S7 split 77: the suite pins hub
+//! `cleanup` behavior, so it stays hub-side).
+
+#![cfg(unix)]
+
+use std::io::{BufRead as _, Write as _};
+
+use std::process::{Child, Command, Stdio};
+
+use std::sync::mpsc::{Receiver, channel};
+
+use std::time::{Duration, Instant};
+
 pub(super) const CHILD_ROOT: &str = "JACKIN_TEST_NAME_LOCK_ROOT";
 
-pub(super) const CHILD_TEST: &str = "runtime::launch::launch_slot::tests::case_01::name_lock_child";
+pub(super) const CHILD_TEST: &str = "runtime::launch::tests::case_29::name_lock_child";
 
 pub(super) const REPORT: &str = "NAME_LOCK_REPORT ";
 
 pub(super) const NAME: &str = "same-container-name";
 
-pub(super) fn tempdir() -> std::io::Result<tempfile::TempDir> {
+pub(super) fn canonical_tempdir() -> std::io::Result<tempfile::TempDir> {
     tempfile::tempdir_in(std::fs::canonicalize(std::env::temp_dir())?)
 }
 
