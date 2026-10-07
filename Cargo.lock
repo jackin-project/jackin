@@ -3580,6 +3580,7 @@ dependencies = [
  "jackin-process",
  "jackin-protocol",
  "jackin-runtime-apple-container-client",
+ "jackin-runtime-attach-capsule-ready",
  "jackin-runtime-attach-sessions",
  "jackin-runtime-coordination",
  "jackin-runtime-discovery",
@@ -3640,6 +3641,21 @@ dependencies = [
  "jackin-runtime-process-telemetry",
  "serde_json",
  "tempfile",
+ "tokio",
+]
+
+[[package]]
+name = "jackin-runtime-attach-capsule-ready"
+version = "0.6.4"
+dependencies = [
+ "anyhow",
+ "jackin-core",
+ "jackin-diagnostics",
+ "jackin-docker",
+ "jackin-protocol",
+ "jackin-runtime-snapshot",
+ "jackin-runtime-spin-wait",
+ "jackin-telemetry",
  "tokio",
 ]
 

@@ -14,7 +14,10 @@
 pub use jackin_docker::docker_client::ContainerState;
 
 mod admission;
-mod capsule_ready;
+// Moved to jackin_runtime_attach_capsule_ready::capsule_ready
+// (S7 split 74); the module re-export keeps every
+// `attach::capsule_ready::*` path stable.
+pub(crate) use jackin_runtime_attach_capsule_ready::capsule_ready;
 mod exec_args;
 mod finalize;
 mod hardline;

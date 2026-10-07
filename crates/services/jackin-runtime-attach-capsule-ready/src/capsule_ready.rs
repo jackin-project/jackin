@@ -9,7 +9,7 @@ use jackin_docker::docker_client::DockerApi;
 
 use jackin_core::JackinPaths;
 
-pub(crate) async fn wait_for_capsule_daemon_with_handle(
+pub async fn wait_for_capsule_daemon_with_handle(
     paths: &JackinPaths,
     container: &ContainerHandle,
     docker: &impl DockerApi,
@@ -51,7 +51,7 @@ pub(crate) async fn wait_for_capsule_daemon_with_handle(
     wait_result
 }
 
-pub(crate) async fn wait_for_capsule_daemon_ready(
+pub async fn wait_for_capsule_daemon_ready(
     paths: &JackinPaths,
     container: &ContainerHandle,
     docker: &impl DockerApi,
@@ -89,12 +89,12 @@ pub(crate) async fn wait_for_capsule_daemon_ready(
     }
 }
 
-pub(crate) fn capsule_daemon_socket_connects(paths: &JackinPaths, container_name: &str) -> bool {
-    let socket_path = crate::runtime::snapshot::socket_path(paths, container_name);
+pub fn capsule_daemon_socket_connects(paths: &JackinPaths, container_name: &str) -> bool {
+    let socket_path = jackin_runtime_snapshot::snapshot::socket_path(paths, container_name);
     socket_path.exists() && capsule_socket_negotiates(&socket_path).is_ok()
 }
 
-pub(crate) fn capsule_socket_negotiates(socket_path: &std::path::Path) -> anyhow::Result<()> {
+pub fn capsule_socket_negotiates(socket_path: &std::path::Path) -> anyhow::Result<()> {
     let mut stream = jackin_diagnostics::operation::connection_attempt_sync(
         jackin_telemetry::schema::enums::ConnectionPeerType::CapsuleAttach,
         || std::os::unix::net::UnixStream::connect(socket_path),
@@ -113,7 +113,7 @@ pub(crate) fn capsule_socket_negotiates(socket_path: &std::path::Path) -> anyhow
     .context("negotiating Capsule readiness protocol")
 }
 
-pub(crate) async fn wait_for_dind(
+pub async fn wait_for_dind(
     dind: &ContainerHandle,
     certs_volume: &str,
     docker: &impl DockerApi,
@@ -125,7 +125,7 @@ pub(crate) async fn wait_for_dind(
     // Shared spinner helper: it suppresses its own stderr output while the
     // rich launch cockpit owns the screen, so the sidecar stage shows only
     // in the rail rather than streaming "Waiting for ..." over the frame.
-    crate::spin_wait::spin_wait_ramped(
+    jackin_runtime_spin_wait::spin_wait::spin_wait_ramped(
         "Waiting for Docker-in-Docker to be ready",
         MAX_ATTEMPTS,
         INITIAL_INTERVAL,
