@@ -154,10 +154,13 @@ key = "clippy::disallowed_methods@jackin-instance-roles"
 bound = 1
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-runtime"
-bound = 6
+bound = 7
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-runtime-snapshot"
 bound = 2
+[[family.entry]]
+key = "clippy::disallowed_methods@jackin-runtime-universe"
+bound = 5
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-test-support"
 bound = 5
@@ -259,6 +262,12 @@ key = "clippy::let_underscore_must_use@jackin-console"
 bound = 1
 [[family.entry]]
 key = "clippy::let_underscore_must_use@jackin-core"
+bound = 1
+[[family.entry]]
+key = "clippy::manual_async_fn@jackin-runtime"
+bound = 3
+[[family.entry]]
+key = "clippy::manual_async_fn@jackin-runtime-universe"
 bound = 1
 [[family.entry]]
 key = "clippy::map_unwrap_or@jackin"
@@ -716,6 +725,9 @@ bound = 848
 key = "crates/services/jackin-runtime-spin-wait/README.md"
 bound = 723
 [[family.entry]]
+key = "crates/services/jackin-runtime-universe/README.md"
+bound = 981
+[[family.entry]]
 key = "crates/services/jackin-telemetry/README.md"
 bound = 2149
 [[family.entry]]
@@ -1004,6 +1016,9 @@ key = "jackin-runtime-snapshot"
 bound = 1
 [[family.entry]]
 key = "jackin-runtime-spin-wait"
+bound = 1
+[[family.entry]]
+key = "jackin-runtime-universe"
 bound = 1
 [[family.entry]]
 key = "jackin-tui"

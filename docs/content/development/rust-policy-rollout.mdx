@@ -4377,3 +4377,171 @@ bound 720.
 - Raw outputs:
   `/tmp/s7-s57-{pre,post}-*.txt`
   (kept out of the repo).
+
+### Split 58: runtime-universe extraction (M20)
+
+- `jackin-runtime` ->
+  `jackin-runtime` +
+  `jackin-runtime-universe`
+  (T7: the whole
+  `runtime::universe`
+  module moves —
+  entry/exit boundary
+  claims, `tests.rs` +
+  4 suites + support
+  with 49 tests;
+  biggest M-split so
+  far). Two cross-leaf
+  edges into
+  already-extracted M
+  crates: 13x
+  `super::coordination`
+  ->
+  `jackin_runtime_coordination`
+  (enabled by M6), 3x
+  `super::discovery`
+  ->
+  `jackin_runtime_discovery`
+  (enabled by M15) in
+  prod + 1x in tests;
+  plus `cargo fmt`
+  reflow of the
+  lengthened paths.
+  Visibility widens
+  mechanically
+  (`pub(super)` ->
+  `pub`, 2 fns + 1
+  enum + 1 async fn +
+  1 cfg(test) fn). One
+  test-hook crossing:
+  `take_exit_claim`
+  (`#[cfg(test)]`,
+  called by
+  `launch/tests/case_28.rs`)
+  becomes
+  `#[cfg(any(test,
+  feature =
+  "test-support"))]`
+  with a new
+  `test-support`
+  feature + runtime
+  dev-dep (the
+  `jackin-config` /
+  `usage-snapshot-store`
+  precedent), so prod
+  stays hook-free. Two
+  test-only self-path
+  strings retargeted
+  (`--exact
+  runtime::universe::...`
+  -> `universe::...`
+  in the
+  process-spawning
+  fixtures; caught by
+  execution, not the
+  listing). Parent mod
+  is `pub`, so the
+  shim keeps a plain
+  `pub` glob and every
+  `runtime::universe::*`
+  path (incl. the
+  `runtime.rs`
+  re-exports) stays
+  stable. Tier: names
+  T6 discovery + T1
+  coordination, so it
+  takes T7; no
+  renumber cascade.
+  New-crate deps:
+  core, docker,
+  coordination,
+  discovery,
+  telemetry, anyhow,
+  tokio (`rt`),
+  tracing, unix nix
+  (`fs`, `dir`);
+  dev-deps add
+  diagnostics
+  (`test-support`),
+  test-support,
+  tempfile, tokio
+  (`macros`, `rt`,
+  `sync`) (lockfile +1
+  package, +13 edges).
+  Policy registries:
+  +1 owned package
+  (`library`).
+
+- Verify: `cargo check
+  --locked --workspace
+  --all-targets`
+  green; `cargo fmt
+  --all --check`
+  clean; `cargo
+  clippy` 0 errors on
+  the new crate,
+  `jackin-runtime`
+  holds at the 7
+  pre-existing errors
+  (all in
+  `launch_slot/tests`).
+  `cargo nextest list
+  --workspace
+  --all-targets`: 7277
+  -> 7277 (49
+  relocations map 1:1
+  by name, verified by
+  stripped-diff:
+  runtime -> universe;
+  0 dropped, 0 added).
+  `nextest run`:
+  701/701 runtime
+  (652) + universe
+  (49). `alint check`:
+  192 violations / 11
+  failing unchanged.
+  `check-gaps`: 22 ->
+  22 (runtime
+  `SIZE-001/002`
+  persist: 49926 ->
+  47850 code lines,
+  239 -> 233 files;
+  new crate fits at
+  2430 raw / 9 files).
+  `GAP-TEST-001/002/003`
+  stay 0/0/0.
+  `ratchet.toml`: +5
+  rows
+  (agent-doc-bytes
+  README 981,
+  public-surface 1,
+  `disallowed_methods`
+  universe 5,
+  `manual_async_fn`
+  runtime 3 + universe
+  1) and
+  `disallowed_methods@jackin-runtime`
+  6 -> 7; failures 61
+  -> 59 — the only
+  delta is absorption
+  of the 2
+  moved-expect lines
+  (measured debt
+  totals preserved
+  exactly: disallowed
+  12 = 7+5, manual 4 =
+  3+1); remaining 59
+  keys byte-identical,
+  zero additions.
+  `lint arch
+  --strict`: missing
+  tiers stay 3, zero
+  direction
+  violations; `lint
+  headers` stays at
+  the base 2; `lint
+  tests` OK.
+
+- Raw outputs:
+  `/tmp/s7-s58-{pre,post}-*.txt`
+  (kept out of the repo).

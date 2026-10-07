@@ -159,7 +159,7 @@ fn independent_processes_elect_one_fresh_entry() {
             std::process::Command::new(&executable)
                 .args([
                     "--exact",
-                    "runtime::universe::tests::case_03::entry_claim_process_worker",
+                    "universe::tests::case_03::entry_claim_process_worker",
                     "--nocapture",
                 ])
                 .env("JACKIN_TEST_ENTRY_PROCESS_ROOT", tmp.path())

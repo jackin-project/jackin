@@ -49,6 +49,7 @@
     "jackin-runtime-session-control",
     "jackin-runtime-snapshot",
     "jackin-runtime-spin-wait",
+    "jackin-runtime-universe",
     "jackin-telemetry",
     "jackin-test-support",
     "jackin-tui",

@@ -3,8 +3,8 @@
 
 //! Tests for `universe`.
 
-use super::super::coordination;
 use super::*;
+use jackin_runtime_coordination::coordination;
 
 use jackin_docker::docker_client::{
     ContainerHandle, ContainerInspection, ContainerRow, ContainerSpec, ContainerState, DockerApi,

@@ -63,7 +63,7 @@ pub(super) fn spawn_pending_owner(root: &Path) -> PendingOwnerProcess {
     let child = std::process::Command::new(executable)
         .args([
             "--exact",
-            "runtime::universe::tests::case_02::pending_owner_process_worker",
+            "universe::tests::case_02::pending_owner_process_worker",
             "--nocapture",
         ])
         .env("JACKIN_TEST_PENDING_OWNER_ROOT", root)
