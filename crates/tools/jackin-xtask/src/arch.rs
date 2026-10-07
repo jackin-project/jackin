@@ -69,6 +69,7 @@ pub(crate) const TIERS: &[(&str, u8)] = &[
     ("jackin-runtime-drift", 7),
     ("jackin-runtime-launch-account-config", 4),
     ("jackin-runtime-launch-account-identity", 4),
+    ("jackin-runtime-launch-auth-error", 0),
     ("jackin-runtime-launch-capsule-setup", 5),
     ("jackin-runtime-launch-image-plan", 7),
     ("jackin-runtime-launch-mounts", 5),

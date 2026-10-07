@@ -328,10 +328,12 @@ pub(in crate::runtime) use restore::{
     preserved_instance_status, record_instance_attach_outcome, write_instance_status,
 };
 
-mod auth_error;
+// Moved to jackin_runtime_launch_auth_error::auth_error (S7 split 67); the
+// module re-export keeps every `launch::auth_error::*` path stable.
 #[cfg(test)]
 pub(crate) use auth_error::append_no_proxy_host;
 use auth_error::auth_token_source_reference;
+pub(crate) use jackin_runtime_launch_auth_error::auth_error;
 
 #[cfg(test)]
 mod tests;

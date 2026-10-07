@@ -5851,3 +5851,114 @@ bound 720.
 - Raw outputs:
   `/tmp/s7-s66-{pre,post}-*.txt`
   (kept out of the repo).
+
+### Split 67: runtime-launch-auth-error extraction (M29)
+
+- `jackin-runtime` ->
+  `jackin-runtime` +
+  `jackin-runtime-launch-auth-error`
+  (T0: the whole
+  `launch::auth_error`
+  module moves —
+  credential source
+  display + proxy env
+  helpers, zero
+  workspace deps, no
+  tests). Cross-leaf
+  edges: none. Three
+  `pub(super)` fns +
+  three consts and one
+  `pub(crate)` fn widen
+  to `pub` (forced: the
+  module was crate-local
+  and stays used
+  cross-crate). No shim
+  file: `launch.rs`
+  re-exports the module
+  itself
+  (`pub(crate) use ...::auth_error;`,
+  the split-56
+  precedent), so every
+  `super::auth_error::`
+  path in
+  `launch_runtime.rs`
+  and the item
+  re-exports below it
+  keep working
+  unchanged. New-crate
+  deps: none (lockfile
+  +1 package, +0
+  edges). Policy
+  registries: +1
+  owned package
+  (`library`).
+
+- Verify: `cargo check
+  --locked --workspace
+  --all-targets`
+  green; `cargo fmt
+  --all --check`
+  clean; `cargo
+  clippy` 0 errors on
+  the new crate,
+  `jackin-runtime`
+  holds at the 7
+  pre-existing errors
+  (all in
+  `launch_slot/tests`,
+  byte-identical
+  locations).
+  `cargo nextest list
+  --workspace
+  --all-targets`: 7277
+  -> 7277 (byte-identical
+  output: the moved
+  module carries no
+  tests, 0 dropped,
+  0 added).
+  `nextest run`:
+  492/492 runtime +
+  new crate (1 skipped,
+  pre-existing).
+  `alint check`:
+  182 violations / 11
+  failing unchanged.
+  `check-gaps`
+  (v0.1.3,
+  production-only):
+  12 -> 12 (runtime
+  `SIZE-001/002`
+  persist: 15959 ->
+  15919 prod code
+  lines, 95 -> 94
+  prod files — both
+  fall, the file goes
+  with the module;
+  new crate fits at
+  62 raw / 1 file, no
+  SIZE finding).
+  `GAP-TEST-001/002/003`
+  stay 0/0/0.
+  `ratchet.toml`: +2
+  rows
+  (agent-doc-bytes
+  README 900,
+  public-surface 1;
+  no lint rows move,
+  complexity under
+  the default cap);
+  failures 56
+  -> 56 — remaining
+  keys byte-identical.
+  `lint arch
+  --strict`: output
+  byte-identical, zero
+  direction
+  violations; `lint
+  headers` stays at
+  the base 2; `lint
+  tests` OK.
+
+- Raw outputs:
+  `/tmp/s7-s67-{pre,post}-*.txt`
+  (kept out of the repo).

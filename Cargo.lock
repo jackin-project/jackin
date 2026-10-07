@@ -3592,6 +3592,7 @@ dependencies = [
  "jackin-runtime-isolation",
  "jackin-runtime-launch-account-config",
  "jackin-runtime-launch-account-identity",
+ "jackin-runtime-launch-auth-error",
  "jackin-runtime-launch-capsule-setup",
  "jackin-runtime-launch-image-plan",
  "jackin-runtime-launch-mounts",
@@ -3802,6 +3803,10 @@ dependencies = [
  "tempfile",
  "toml",
 ]
+
+[[package]]
+name = "jackin-runtime-launch-auth-error"
+version = "0.6.4"
 
 [[package]]
 name = "jackin-runtime-launch-capsule-setup"
