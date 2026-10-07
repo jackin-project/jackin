@@ -7,12 +7,9 @@
 //! details stay here so status chrome and dialogs render strings, not API
 //! branches.
 
-mod vendor_dispatch;
-
-pub use self::vendor_dispatch::provider_credential_snapshot;
-pub(crate) use self::vendor_dispatch::provider_credential_snapshot_with_rate_limit;
 #[cfg(test)]
 use jackin_protocol::control::{UsageProviderTab, UsageSeverity};
+pub use jackin_usage_credential_resolver::provider_credential_snapshot;
 #[expect(
     unused_imports,
     reason = "documented residual allow; prefer expect when site is lint-true"

@@ -752,6 +752,9 @@ bound = 756
 key = "crates/services/jackin-usage-host-glance/README.md"
 bound = 720
 [[family.entry]]
+key = "crates/services/jackin-usage-credential-resolver/README.md"
+bound = 821
+[[family.entry]]
 key = "crates/tools/jackin-xtask/README.md"
 bound = 6113
 [[family.entry]]

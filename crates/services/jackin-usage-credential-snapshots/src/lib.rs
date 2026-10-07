@@ -5,8 +5,9 @@
 //!
 //! Tier-3 probe body used by tier-4 protected-source adapters; the secret is
 //! never returned or persisted. Vendor calls stay behind
-//! [`CredentialSnapshotVendors`], implemented once by the `jackin-usage`
-//! coordinator: a T3 crate cannot name its T3 siblings (dependency direction
+//! [`CredentialSnapshotVendors`], implemented once by
+//! `jackin-usage-credential-resolver`: a T3 crate cannot name its T3 siblings
+//! (dependency direction
 //! is strictly lower-tier), so the per-vendor arms live with the caller and
 //! this crate owns only the surface routing.
 

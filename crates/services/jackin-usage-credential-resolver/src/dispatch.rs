@@ -4,8 +4,8 @@
 //! Coordinator-side vendor arms for configured-provider credential snapshots.
 //!
 //! Implements [`CredentialSnapshotVendors`](jackin_usage_credential_snapshots::CredentialSnapshotVendors)
-//! over the T3 vendor crates (only the T4 coordinator may name them) and
-//! exposes the historical [`provider_credential_snapshot`] paths.
+//! over the T3 vendor crates (this T4 crate names them for coordinator-side
+//! dispatch) and exposes the historical [`provider_credential_snapshot`] paths.
 
 use std::path::Path;
 
@@ -15,12 +15,17 @@ use jackin_usage_provider_core::{
     GROK_HANDOFF_AUTH_PATH, ProviderError, ProviderRateLimit, UsageSurface,
 };
 
-use super::{
-    ClaudeResolved, ClaudeWaveResolution, amp_api_key_snapshot, claude_api_key_snapshot,
-    claude_view_from_wave_with_rate_limit, gemini_snapshot_with_presence,
-    grok_snapshot_from_rpc_result, kimi_snapshot, minimax_snapshot,
-    openrouter_snapshot_with_rate_limit, provider_key_snapshot,
+use jackin_usage_provider_amp::amp_api_key_snapshot;
+use jackin_usage_provider_claude::{
+    ClaudeResolved, ClaudeWaveResolution, claude_api_key_snapshot,
+    claude_view_from_wave_with_rate_limit,
 };
+use jackin_usage_provider_gemini::gemini_snapshot_with_presence;
+use jackin_usage_provider_grok::grok_snapshot_from_rpc_result;
+use jackin_usage_provider_kimi::kimi_snapshot;
+use jackin_usage_provider_minimax::minimax_snapshot;
+use jackin_usage_provider_openrouter::openrouter_snapshot_with_rate_limit;
+use jackin_usage_provider_zai::provider_key_snapshot;
 
 struct UsageCredentialVendors;
 

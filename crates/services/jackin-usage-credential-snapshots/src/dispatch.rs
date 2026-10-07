@@ -10,8 +10,8 @@ use jackin_usage_provider_core::{
 };
 
 /// Per-vendor snapshot arms for [`provider_credential_snapshot_with_rate_limit`].
-/// Implemented once by the `jackin-usage` coordinator, which alone may name
-/// the T3 vendor crates. Each arm receives only the routing inputs plus the
+/// Implemented once by `jackin-usage-credential-resolver`, which names the
+/// T3 vendor crates from T4. Each arm receives only the routing inputs plus the
 /// caller-retained secret, and returns a view that never embeds the secret.
 pub trait CredentialSnapshotVendors {
     /// `claude` arm with an OAuth token: wave view over the resolved grant.

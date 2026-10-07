@@ -3654,6 +3654,7 @@ dependencies = [
  "jackin-usage-broker-wire",
  "jackin-usage-capsule-telemetry",
  "jackin-usage-coordinator",
+ "jackin-usage-credential-resolver",
  "jackin-usage-credential-snapshots",
  "jackin-usage-destination",
  "jackin-usage-discovery",
@@ -3768,6 +3769,27 @@ dependencies = [
  "serde_json",
  "tempfile",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "jackin-usage-credential-resolver"
+version = "0.6.4"
+dependencies = [
+ "jackin-config",
+ "jackin-core",
+ "jackin-protocol",
+ "jackin-usage-credential-snapshots",
+ "jackin-usage-host-credentials",
+ "jackin-usage-host-presentation",
+ "jackin-usage-provider-amp",
+ "jackin-usage-provider-claude",
+ "jackin-usage-provider-core",
+ "jackin-usage-provider-gemini",
+ "jackin-usage-provider-grok",
+ "jackin-usage-provider-kimi",
+ "jackin-usage-provider-minimax",
+ "jackin-usage-provider-openrouter",
+ "jackin-usage-provider-zai",
 ]
 
 [[package]]

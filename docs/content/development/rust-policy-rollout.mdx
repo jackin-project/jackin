@@ -244,20 +244,6 @@ passes.
   toolchain, lock, gates); the step-10 registries slice may fold it
   into the canonical registry set.
 
-### Split 34: selected-account + host glances -> `jackin-usage-host-glance` (G2)
-
-The T4 `jackin-usage-host-glance` crate now owns `build_provider_glance_row`
-(all provider-viewport row rendering) plus `account_descriptor` and the
-`SELECTED_ACCOUNT_UNAVAILABLE_NOTICE` / `glance_label_flag_symbols` selected-account
-surface; `jackin-usage` keeps only a same-name re-export shim and the tests.
-`SELECTED_ACCOUNT_UNAVAILABLE_NOTICE` moved down to `notices.rs` so both T4 crates
-name it from a shared below-tier home. `nextest list` byte-identical before/after;
-`nextest run` passes 266/266 across `jackin-usage`, `-host-glance`, and
-`-host-presentation`; `check`, `fmt --check`, `clippy -D warnings`, `alint`,
-`lint arch` (3 pre-existing missing-tier rows; 0 direction), `lint headers` (base
-2), and `lint tests` all hold; ratchet holds 60 with the one new agent-doc row
-bound 720.
-
 ### Group map + justification
 
 - `apps` (shipped deployables): `jackin` (host CLI, 4 bins),
@@ -2533,4 +2519,70 @@ bound 720.
   tests` OK.
 - Raw outputs:
   `/tmp/s12-s33-{before,after}.txt`
+  (kept out of the repo).
+
+### Split 34: selected-account + host glances -> `jackin-usage-host-glance` (G2)
+
+The T4 `jackin-usage-host-glance` crate now owns `build_provider_glance_row`
+(all provider-viewport row rendering) plus `account_descriptor` and the
+`SELECTED_ACCOUNT_UNAVAILABLE_NOTICE` / `glance_label_flag_symbols` selected-account
+surface; `jackin-usage` keeps only a same-name re-export shim and the tests.
+`SELECTED_ACCOUNT_UNAVAILABLE_NOTICE` moved down to `notices.rs` so both T4 crates
+name it from a shared below-tier home. `nextest list` byte-identical before/after;
+`nextest run` passes 266/266 across `jackin-usage`, `-host-glance`, and
+`-host-presentation`; `check`, `fmt --check`, `clippy -D warnings`, `alint`,
+`lint arch` (3 pre-existing missing-tier rows; 0 direction), `lint headers` (base
+2), and `lint tests` all hold; ratchet holds 60 with the one new agent-doc row
+bound 720.
+(Relocated here from the S4 section by the S35 slice; text verbatim.)
+
+### Split 35: usage-credential-resolver extraction (R1)
+
+- `jackin-usage` -> `jackin-usage` +
+  `jackin-usage-credential-resolver` (T4:
+  `host/credential_resolver.rs` + its
+  `tests/` subtree move to `resolver.rs`,
+  `usage/vendor_dispatch.rs` moves to
+  `dispatch.rs`; the
+  `CredentialSnapshotVendors` arms now
+  live in the new crate instead of the
+  coordinator, so the T3 snapshots crate
+  keeps only surface routing). `host.rs`
+  and `usage.rs` keep same-name
+  re-exports; the `pub(crate)`
+  `provider_credential_snapshot_with_rate_limit`
+  re-export drops (sole caller moved
+  with it). The 10 moved call sites are
+  rewritten in place in
+  `provider-call-allowlist.json` (same
+  symbols, same classifications).
+- Verify: `cargo check --locked --workspace
+  --all-targets` green; `cargo fmt --all
+  --check` clean; `cargo clippy` 0
+  errors, 0 warnings on the three
+  touched packages. `cargo nextest list
+  --workspace --all-targets`: 7277 ->
+  7277 (5 resolver tests relocate
+  `jackin-usage host::credential_resolver::`
+  -> `jackin-usage-credential-resolver
+  resolver::`, 0 dropped, 0 added).
+  `nextest run`: 269/269 usage +
+  resolver + snapshots (contract
+  baseline green after the allowlist
+  path rewrite). `alint check`:
+  byte-identical 196 -> 196.
+  `check-gaps`: 26 -> 26 (usage
+  `SIZE-001` 11238 -> 10583 lines,
+  `SIZE-002` 59 -> 54 files, under
+  budget; the new crate fits both
+  budgets). `GAP-TEST-001/002/003`
+  stay 0/0/0. `ratchet.toml`: +1 row
+  (agent-doc 821); violations 60 ->
+  60 byte-identical, zero new failures.
+  `lint arch`: missing tiers stay 3,
+  zero direction violations; `lint
+  headers` stays at the base 2; `lint
+  tests` OK.
+- Raw outputs:
+  `/tmp/s12-s35-{before,after}.txt`
   (kept out of the repo).

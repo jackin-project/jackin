@@ -8,15 +8,15 @@ use std::sync::Mutex;
 use jackin_config::{AppConfig, EnvValue};
 use jackin_core::{UsageCredentialEnvName, UsageCredentialOwner, WorkspaceName};
 
-use super::{
-    HostSurfaceId, OpaqueCredentialHandle, ProviderCredentialEnvOutcome,
-    ProviderCredentialEnvResolution, ProviderCredentialEnvResolver,
-    ProviderCredentialIdentityOutcome, ProviderCredentialRefreshOutcome,
-    ProviderCredentialSourceMaterial,
-};
 use jackin_protocol::usage_broker::{
     UsageCredentialSourceIdentity, usage_credential_material_fingerprint,
 };
+use jackin_usage_host_credentials::{
+    OpaqueCredentialHandle, ProviderCredentialEnvOutcome, ProviderCredentialEnvResolution,
+    ProviderCredentialEnvResolver, ProviderCredentialIdentityOutcome,
+    ProviderCredentialRefreshOutcome, ProviderCredentialSourceMaterial,
+};
+use jackin_usage_host_presentation::HostSurfaceId;
 use jackin_usage_provider_core::{canonical_usage_key, dispatch_key_for_route};
 
 /// Secret-source result retained only long enough to enter the opaque cache.
@@ -294,8 +294,11 @@ impl<S: ProviderCredentialSecretSource> ProviderCredentialEnvResolver
         let Some(secret) = secret else {
             return ProviderCredentialRefreshOutcome::Missing;
         };
-        let (view, rate_limit) =
-            crate::usage::provider_credential_snapshot_with_rate_limit(surface.id(), key, &secret);
+        let (view, rate_limit) = super::dispatch::provider_credential_snapshot_with_rate_limit(
+            surface.id(),
+            key,
+            &secret,
+        );
         ProviderCredentialRefreshOutcome::Snapshot {
             view: Box::new(view),
             rate_limit,

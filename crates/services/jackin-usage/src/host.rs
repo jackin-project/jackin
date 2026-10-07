@@ -9,7 +9,6 @@
 mod account_catalog_stores;
 mod broker;
 mod config;
-mod credential_resolver;
 mod desktop;
 mod discovery;
 mod event_log;
@@ -56,13 +55,13 @@ pub use config::{
     HOST_USAGE_STATE_REL, HostProbePolicy, HostRuntimeConfig, SELECTED_ACCOUNT_UNAVAILABLE_NOTICE,
     host_accounts_path, host_snapshot_store_path, request_usage_batch,
 };
-pub use credential_resolver::{
-    CachedProviderCredentialResolver, ProviderCredentialSecretOutcome,
-    ProviderCredentialSecretResolution, ProviderCredentialSecretSource,
-};
 pub use desktop::{
     HostDesktopInventory, HostDesktopProjection, HostDesktopProviderGroup,
     HostDesktopProviderProjection, HostDesktopProviderState, HostSelectedAccountRoute,
+};
+pub use jackin_usage_credential_resolver::{
+    CachedProviderCredentialResolver, ProviderCredentialSecretOutcome,
+    ProviderCredentialSecretResolution, ProviderCredentialSecretSource,
 };
 pub use jackin_usage_destination::{
     NormalizedUsageDestination, UsageDestination, normalize_destination,
