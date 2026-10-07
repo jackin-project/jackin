@@ -67,6 +67,7 @@ pub(crate) const TIERS: &[(&str, u8)] = &[
     ("jackin-runtime-discovery", 6),
     ("jackin-runtime-exit-summary", 4),
     ("jackin-runtime-drift", 7),
+    ("jackin-runtime-launch-mounts", 5),
     ("jackin-runtime-launch-plan", 3),
     ("jackin-runtime-reactive-daemon", 2),
     ("jackin-runtime-universe", 7),

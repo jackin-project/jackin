@@ -44,6 +44,7 @@ jackin-runtime-host-daemon = { workspace = true }
 jackin-runtime-identity = { workspace = true }
 jackin-runtime-image = { workspace = true }
 jackin-runtime-isolation = { workspace = true }
+jackin-runtime-launch-mounts = { workspace = true }
 jackin-runtime-launch-plan = { workspace = true }
 jackin-runtime-naming = { workspace = true }
 jackin-runtime-process-telemetry = { workspace = true }

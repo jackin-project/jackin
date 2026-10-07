@@ -9,7 +9,7 @@ use jackin_isolation::materialize::{MaterializedMount, MaterializedWorkspace, Wo
 
 use super::*;
 
-use crate::instance::{
+use jackin_instance::{
     AgentRuntimeState, GithubProvisionOutcome, ProvisionedAuth, ProvisionedInstanceAuth, RoleState,
 };
 

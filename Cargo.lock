@@ -3590,6 +3590,7 @@ dependencies = [
  "jackin-runtime-identity",
  "jackin-runtime-image",
  "jackin-runtime-isolation",
+ "jackin-runtime-launch-mounts",
  "jackin-runtime-launch-plan",
  "jackin-runtime-naming",
  "jackin-runtime-process-telemetry",
@@ -3759,6 +3760,21 @@ version = "0.6.4"
 dependencies = [
  "jackin-core",
  "jackin-isolation",
+]
+
+[[package]]
+name = "jackin-runtime-launch-mounts"
+version = "0.6.4"
+dependencies = [
+ "anyhow",
+ "jackin-config",
+ "jackin-core",
+ "jackin-instance",
+ "jackin-isolation",
+ "jackin-protocol",
+ "jackin-runtime-apple-container-client",
+ "tempfile",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

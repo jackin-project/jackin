@@ -5014,3 +5014,151 @@ bound 720.
 - Raw outputs:
   `/tmp/s7-s60-{pre,post}-*.txt`
   (kept out of the repo).
+
+### Split 61: runtime-launch-mounts extraction (M23)
+
+- `jackin-runtime` ->
+  `jackin-runtime` +
+  `jackin-runtime-launch-mounts`
+  (T5: the whole
+  `launch::mounts`
+  module moves —
+  backend resolve +
+  workspace / agent /
+  provider mount
+  assembly, `tests.rs`
+  + 2 suites +
+  support with 24
+  tests; first
+  `launch/` child
+  extraction). Cross-leaf
+  edges: 5x
+  `crate::apple_container_client`
+  ->
+  `jackin_runtime_apple_container_client`
+  (enabled by M21),
+  3x
+  `crate::isolation::materialize`
+  ->
+  `jackin_isolation::materialize`
+  direct (the M
+  facade is a pure
+  re-export; tests
+  already name
+  `jackin_isolation`
+  directly), 17x
+  `crate::instance`
+  -> `jackin_instance`;
+  plus `cargo fmt`
+  reflow of the
+  lengthened paths.
+  Visibility widens
+  mechanically
+  (`pub(crate)` ->
+  `pub`, 8 fns + 2
+  enums, both
+  already `Debug`).
+  `mod mounts` is
+  private, so the
+  shim keeps a
+  `pub(crate)` glob
+  and both
+  `mounts::*`
+  in-launch paths
+  (`ensure_provider_authority_not_writable`,
+  `AppleContainerMountError`)
+  plus the 8-item
+  `launch.rs`
+  re-export (retargeted
+  at the use) stay
+  stable. Tier: names
+  T4 isolation + T4
+  M21 + T3 instance,
+  so it takes T5; no
+  renumber cascade.
+  New-crate deps:
+  config, core,
+  instance,
+  isolation,
+  protocol,
+  apple-container-client,
+  anyhow, thiserror;
+  dev-deps add
+  tempfile (lockfile
+  +1 package, +10
+  edges). Policy
+  registries: +1
+  owned package
+  (`library`).
+
+- Verify: `cargo check
+  --locked --workspace
+  --all-targets`
+  green; `cargo fmt
+  --all --check`
+  clean; `cargo
+  clippy` 0 errors on
+  the new crate,
+  `jackin-runtime`
+  holds at the 7
+  pre-existing errors
+  (all in
+  `launch_slot/tests`,
+  byte-identical
+  locations).
+  `cargo nextest list
+  --workspace
+  --all-targets`: 7277
+  -> 7277 (24
+  relocations map 1:1
+  by name, verified by
+  stripped-diff:
+  `launch::mounts` ->
+  `mounts`; 0 dropped,
+  0 added). `nextest
+  run`: 601/601
+  runtime (577) +
+  mounts (24).
+  `alint check`:
+  182 violations / 11
+  failing unchanged.
+  `check-gaps`
+  (v0.1.3,
+  production-only):
+  12 -> 12 (runtime
+  `SIZE-001/002`
+  persist: 19482 ->
+  18786 prod code
+  lines, 96 -> 96
+  prod files — the
+  shim keeps the
+  file; new crate
+  fits at 1660 raw /
+  7 files, no SIZE
+  finding).
+  `GAP-TEST-001/002/003`
+  stay 0/0/0.
+  `ratchet.toml`: +2
+  rows
+  (agent-doc-bytes
+  README 907,
+  public-surface 1);
+  failures 58 -> 58,
+  remaining keys
+  byte-identical,
+  zero moved-expect
+  lines (moved code
+  carries no
+  suppressions).
+  `lint arch
+  --strict`: missing
+  tiers stay 3, zero
+  direction
+  violations; `lint
+  headers` stays at
+  the base 2; `lint
+  tests` OK.
+
+- Raw outputs:
+  `/tmp/s7-s61-{pre,post}-*.txt`
+  (kept out of the repo).

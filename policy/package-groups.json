@@ -41,6 +41,7 @@
     "jackin-runtime-identity": "library",
     "jackin-runtime-image": "library",
     "jackin-runtime-isolation": "library",
+    "jackin-runtime-launch-mounts": "library",
     "jackin-runtime-launch-plan": "library",
     "jackin-runtime-naming": "library",
     "jackin-runtime-process-telemetry": "library",

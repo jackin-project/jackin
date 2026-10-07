@@ -710,6 +710,9 @@ bound = 1098
 key = "crates/services/jackin-runtime-isolation/README.md"
 bound = 963
 [[family.entry]]
+key = "crates/services/jackin-runtime-launch-mounts/README.md"
+bound = 907
+[[family.entry]]
 key = "crates/services/jackin-runtime-launch-plan/README.md"
 bound = 831
 [[family.entry]]
@@ -1007,6 +1010,9 @@ key = "jackin-runtime-image"
 bound = 1
 [[family.entry]]
 key = "jackin-runtime-isolation"
+bound = 1
+[[family.entry]]
+key = "jackin-runtime-launch-mounts"
 bound = 1
 [[family.entry]]
 key = "jackin-runtime-launch-plan"

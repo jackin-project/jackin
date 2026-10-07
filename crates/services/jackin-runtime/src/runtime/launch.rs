@@ -242,7 +242,7 @@ use progress_helpers::{
     sensitive_mount_prompt,
 };
 
-pub(crate) use mounts::{
+pub(crate) use jackin_runtime_launch_mounts::mounts::{
     Backend, agent_mounts, apple_agent_mounts, build_workspace_mount_strings,
     build_workspace_mounts, ensure_apple_provider_authority_not_exposed, github_config_mount,
     resolve_backend,
