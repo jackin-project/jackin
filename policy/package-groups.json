@@ -36,6 +36,7 @@
     "jackin-runtime-identity": "library",
     "jackin-runtime-isolation": "library",
     "jackin-runtime-process-telemetry": "library",
+    "jackin-runtime-snapshot": "library",
     "jackin-runtime-spin-wait": "library",
     "jackin-telemetry": "library",
     "jackin-test-support": "library",

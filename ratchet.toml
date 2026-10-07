@@ -156,6 +156,9 @@ bound = 1
 key = "clippy::disallowed_methods@jackin-runtime"
 bound = 6
 [[family.entry]]
+key = "clippy::disallowed_methods@jackin-runtime-snapshot"
+bound = 2
+[[family.entry]]
 key = "clippy::disallowed_methods@jackin-test-support"
 bound = 5
 [[family.entry]]
@@ -665,6 +668,9 @@ bound = 963
 key = "crates/services/jackin-runtime-process-telemetry/README.md"
 bound = 1056
 [[family.entry]]
+key = "crates/services/jackin-runtime-snapshot/README.md"
+bound = 848
+[[family.entry]]
 key = "crates/services/jackin-runtime-spin-wait/README.md"
 bound = 723
 [[family.entry]]
@@ -917,6 +923,9 @@ key = "jackin-runtime-isolation"
 bound = 1
 [[family.entry]]
 key = "jackin-runtime-process-telemetry"
+bound = 1
+[[family.entry]]
+key = "jackin-runtime-snapshot"
 bound = 1
 [[family.entry]]
 key = "jackin-runtime-spin-wait"
