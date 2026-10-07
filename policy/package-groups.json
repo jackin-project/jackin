@@ -61,6 +61,7 @@
     "jackin-runtime-snapshot": "library",
     "jackin-runtime-spin-wait": "library",
     "jackin-runtime-universe": "library",
+    "jackin-runtime-usage-relay": "library",
     "jackin-telemetry": "library",
     "jackin-test-support": "library",
     "jackin-tui": "library",

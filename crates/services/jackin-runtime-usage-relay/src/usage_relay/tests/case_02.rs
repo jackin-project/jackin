@@ -255,10 +255,10 @@ fn docker_usage_tunnel_binds_the_immutable_container_id() {
 
 #[test]
 fn forwarded_sources_include_only_provisioned_profiles_and_governed_env() {
-    use crate::instance::{
+    use jackin_core::Agent;
+    use jackin_instance::{
         AgentRuntimeState, AuthProvisionOutcome, GithubProvisionOutcome, ProvisionedAuth, RoleState,
     };
-    use jackin_core::Agent;
 
     let temp = tempfile::tempdir().unwrap();
     let state = RoleState {

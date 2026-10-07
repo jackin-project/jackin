@@ -791,6 +791,9 @@ bound = 723
 key = "crates/services/jackin-runtime-universe/README.md"
 bound = 981
 [[family.entry]]
+key = "crates/services/jackin-runtime-usage-relay/README.md"
+bound = 1108
+[[family.entry]]
 key = "crates/services/jackin-telemetry/README.md"
 bound = 2149
 [[family.entry]]
@@ -1022,7 +1025,7 @@ key = "jackin-protocol"
 bound = 7
 [[family.entry]]
 key = "jackin-runtime"
-bound = 8
+bound = 7
 [[family.entry]]
 key = "jackin-runtime-apple-container-client"
 bound = 1
@@ -1115,6 +1118,9 @@ key = "jackin-runtime-spin-wait"
 bound = 1
 [[family.entry]]
 key = "jackin-runtime-universe"
+bound = 1
+[[family.entry]]
+key = "jackin-runtime-usage-relay"
 bound = 1
 [[family.entry]]
 key = "jackin-tui"

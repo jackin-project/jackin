@@ -64,6 +64,7 @@ jackin-runtime-session-control = { workspace = true }
 jackin-runtime-snapshot = { workspace = true }
 jackin-runtime-spin-wait = { workspace = true }
 jackin-runtime-universe = { workspace = true }
+jackin-runtime-usage-relay = { workspace = true }
 jackin-usage = { workspace = true }
 
 tokio = { workspace = true, features = ["rt", "process", "io-util", "io-std", "net", "signal", "sync", "macros", "time", "fs"] }

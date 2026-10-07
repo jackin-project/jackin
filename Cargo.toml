@@ -59,6 +59,7 @@ members = [
     "crates/services/jackin-runtime-snapshot",
     "crates/services/jackin-runtime-spin-wait",
     "crates/services/jackin-runtime-universe",
+    "crates/services/jackin-runtime-usage-relay",
     "crates/services/jackin-telemetry",
     "crates/services/jackin-usage",
     "crates/services/jackin-usage-provider-core",
@@ -194,6 +195,7 @@ jackin-runtime-session-control = { version = "0.6.4", path = "crates/services/ja
 jackin-runtime-snapshot = { version = "0.6.4", path = "crates/services/jackin-runtime-snapshot" }
 jackin-runtime-spin-wait = { version = "0.6.4", path = "crates/services/jackin-runtime-spin-wait" }
 jackin-runtime-universe = { version = "0.6.4", path = "crates/services/jackin-runtime-universe" }
+jackin-runtime-usage-relay = { version = "0.6.4", path = "crates/services/jackin-runtime-usage-relay" }
 jackin-telemetry = { version = "0.6.4", path = "crates/services/jackin-telemetry" }
 jackin-tui = { version = "0.6.4", path = "crates/ui/jackin-tui" }
 jackin-test-support = { version = "0.6.4", path = "crates/testing/jackin-test-support" }

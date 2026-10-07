@@ -13,7 +13,9 @@ mod process_telemetry;
 pub mod reactive_daemon;
 pub mod runtime;
 pub mod spin_wait;
-pub mod usage_relay;
+// Moved to jackin_runtime_usage_relay::usage_relay (S7 split 70); the
+// module re-export keeps every `jackin_runtime::usage_relay::*` path stable.
+pub use jackin_runtime_usage_relay::usage_relay;
 
 // Re-export jackin_instance as `instance` so existing call sites
 // (crate::instance::X) continue to compile unchanged.

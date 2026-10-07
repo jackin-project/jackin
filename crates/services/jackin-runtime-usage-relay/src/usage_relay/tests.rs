@@ -25,9 +25,9 @@ use jackin_protocol::usage_broker::{
     UsageRefreshPhase, usage_credential_material_fingerprint,
 };
 
-use jackin_usage::coordinator::{ProviderProbeOutcome, UsageCapabilitySet, UsageProviderExecutor};
+use jackin_usage_coordinator::{ProviderProbeOutcome, UsageCapabilitySet, UsageProviderExecutor};
 
-use jackin_usage::host::{
+use jackin_usage_host_runtime::host::{
     CachedProviderCredentialResolver, UsageDiscoveryScope, discover_usage_sources,
     ensure_usage_broker_with_executor, validate_usage_sources,
 };

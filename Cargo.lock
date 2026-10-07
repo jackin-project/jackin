@@ -3610,6 +3610,7 @@ dependencies = [
  "jackin-runtime-snapshot",
  "jackin-runtime-spin-wait",
  "jackin-runtime-universe",
+ "jackin-runtime-usage-relay",
  "jackin-telemetry",
  "jackin-test-support",
  "jackin-usage",
@@ -4031,6 +4032,29 @@ dependencies = [
  "tempfile",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "jackin-runtime-usage-relay"
+version = "0.6.4"
+dependencies = [
+ "anyhow",
+ "jackin-config",
+ "jackin-core",
+ "jackin-env",
+ "jackin-instance",
+ "jackin-process",
+ "jackin-protocol",
+ "jackin-runtime-apple-container-client",
+ "jackin-runtime-process-telemetry",
+ "jackin-telemetry",
+ "jackin-usage-coordinator",
+ "jackin-usage-host-runtime",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "toml",
 ]
 
 [[package]]

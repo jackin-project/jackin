@@ -17,8 +17,8 @@ use jackin_protocol::usage_broker::{
     UsageCredentialScope, UsageCredentialSourceIdentity, UsageCredentialSourceProof,
     UsageRelayTunnelRequest, UsageRelayTunnelResponse, usage_credential_material_fingerprint,
 };
-use jackin_usage::coordinator::UsageCapabilitySet;
-use jackin_usage::host::{
+use jackin_usage_coordinator::UsageCapabilitySet;
+use jackin_usage_host_runtime::host::{
     CachedProviderCredentialResolver, ForwardedUsageSources, HostSurfaceId,
     ProviderCredentialSecretOutcome, ProviderCredentialSecretResolution,
     ProviderCredentialSecretSource, UsageBrokerClient, UsageBrokerConfig, discover_usage_sources,
@@ -33,7 +33,7 @@ use tokio::sync::{mpsc, oneshot};
 
 const TUNNEL_SHUTDOWN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
 
-pub(crate) fn docker_runtime_mount(socket_dir: &Path) -> Result<String> {
+pub fn docker_runtime_mount(socket_dir: &Path) -> Result<String> {
     let source = socket_dir.to_str().ok_or_else(|| {
         anyhow::anyhow!(
             "socket dir {} contains non-UTF-8 bytes; cannot pass to docker -v",
@@ -46,10 +46,10 @@ pub(crate) fn docker_runtime_mount(socket_dir: &Path) -> Result<String> {
     ))
 }
 
-pub(crate) fn apple_runtime_mount(
+pub fn apple_runtime_mount(
     socket_dir: PathBuf,
-) -> crate::apple_container_client::AppleContainerMount {
-    crate::apple_container_client::AppleContainerMount::new(
+) -> jackin_runtime_apple_container_client::apple_container_client::AppleContainerMount {
+    jackin_runtime_apple_container_client::apple_container_client::AppleContainerMount::new(
         socket_dir.join(jackin_protocol::CAPSULE_CONFIG_FILENAME),
         jackin_protocol::CAPSULE_CONFIG_PATH,
         true,
@@ -208,12 +208,12 @@ pub struct PreparedUsageRelay {
 /// so discovery can select the right binding; this map replaces those aliases
 /// with the exact opaque authorities accepted by the relay.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(crate) struct CanonicalLaunchUsageCapabilities {
+pub struct CanonicalLaunchUsageCapabilities {
     by_account_surface: BTreeMap<(String, String), UsageAccountCapability>,
 }
 
 impl CanonicalLaunchUsageCapabilities {
-    pub(crate) fn apply_to_launch_config(&self, launch_config: &mut CapsuleConfig) -> Result<()> {
+    pub fn apply_to_launch_config(&self, launch_config: &mut CapsuleConfig) -> Result<()> {
         let replacements = launch_config
             .instances
             .iter()
@@ -267,13 +267,13 @@ fn ensure_distinct_usage_unix_identities(launch_config: &CapsuleConfig) -> Resul
 /// Derive source proof from credentials actually provisioned for this launch.
 #[must_use]
 pub fn forwarded_sources_from_launch(
-    state: &crate::instance::RoleState,
+    state: &jackin_instance::RoleState,
     resolved_env: &jackin_env::ResolvedEnv,
 ) -> ForwardedUsageSources {
     let profile_surface_ids = state
         .auth_outcomes
         .iter()
-        .filter(|(_, outcome)| **outcome == crate::instance::AuthProvisionOutcome::Synced)
+        .filter(|(_, outcome)| **outcome == jackin_instance::AuthProvisionOutcome::Synced)
         .map(|(agent, _)| HostSurfaceId::from_agent(*agent).id().to_owned())
         .collect();
     let env_names = resolved_env
@@ -353,7 +353,7 @@ pub fn usage_credential_scope_for_staged_launch(
 /// relay capability allowlist is created.
 #[must_use]
 pub fn forwarded_sources_from_launch_config(
-    state: &crate::instance::RoleState,
+    state: &jackin_instance::RoleState,
     resolved_env: &jackin_env::ResolvedEnv,
     launch_config: &CapsuleConfig,
     credential_scope: &UsageCredentialScope,
@@ -435,7 +435,7 @@ pub async fn prepare_for_stdio_tunnel(launch: UsageRelayLaunch<'_>) -> Result<Pr
 }
 
 impl PreparedUsageRelay {
-    pub(crate) fn apply_to_launch_config(&self, launch_config: &mut CapsuleConfig) -> Result<()> {
+    pub fn apply_to_launch_config(&self, launch_config: &mut CapsuleConfig) -> Result<()> {
         self.canonical_launch_usage_capabilities
             .apply_to_launch_config(launch_config)
     }
@@ -532,8 +532,9 @@ fn start_tunnel_process(
     capabilities: Vec<UsageAccountCapability>,
     credential_scope: UsageCredentialScope,
 ) -> Result<UsageRelayGuard> {
-    let (operation, mut child) = crate::process_telemetry::spawn_async(&request)
-        .context("starting scoped usage stdio tunnel")?;
+    let (operation, mut child) =
+        jackin_runtime_process_telemetry::process_telemetry::spawn_async(&request)
+            .context("starting scoped usage stdio tunnel")?;
     let reader = child
         .stdout
         .take()
@@ -594,7 +595,7 @@ fn prepare_broker_client(
         ));
     }
     let resolver = Arc::new(CachedProviderCredentialResolver::new(RuntimeSecretSource));
-    let scope = jackin_usage::host::UsageDiscoveryScope::HostDesktop {
+    let scope = jackin_usage_host_runtime::host::UsageDiscoveryScope::HostDesktop {
         config_root: paths.config_dir.clone(),
         operator_home: paths.home_dir.clone(),
     };
@@ -609,9 +610,14 @@ fn prepare_broker_client(
     let allowed = capabilities.iter().cloned().collect::<BTreeSet<_>>();
     let canonical_launch_usage_capabilities =
         canonical_capabilities_for_launch(&discovery, forwarded_sources, &allowed);
-    let client = jackin_usage::host::ensure_usage_broker(broker_config, scope, discovery, resolver)
-        .map(|handle| handle.client)
-        .map_err(|error| anyhow::anyhow!("usage broker activation failed: {}", error.message))?;
+    let client = jackin_usage_host_runtime::host::ensure_usage_broker(
+        broker_config,
+        scope,
+        discovery,
+        resolver,
+    )
+    .map(|handle| handle.client)
+    .map_err(|error| anyhow::anyhow!("usage broker activation failed: {}", error.message))?;
     if capabilities.is_empty() {
         return Ok((
             client,
@@ -623,7 +629,7 @@ fn prepare_broker_client(
 }
 
 fn canonical_capabilities_for_launch(
-    discovery: &jackin_usage::host::ValidatedUsageDiscovery,
+    discovery: &jackin_usage_host_runtime::host::ValidatedUsageDiscovery,
     forwarded_sources: &ForwardedUsageSources,
     allowed: &BTreeSet<UsageAccountCapability>,
 ) -> CanonicalLaunchUsageCapabilities {
