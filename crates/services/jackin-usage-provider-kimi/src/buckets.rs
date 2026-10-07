@@ -11,7 +11,7 @@ use super::{
 };
 
 impl KimiUsageResponse {
-    pub(crate) fn buckets(&self, now: i64) -> Vec<QuotaBucketView> {
+    pub fn buckets(&self, now: i64) -> Vec<QuotaBucketView> {
         // The pools object is the precise per-window meter set; when present
         // it supersedes the coarser `usage` summary and `limits[]` shapes so
         // the same window is never rendered twice.
@@ -198,7 +198,7 @@ impl KimiWindow {
     }
 }
 
-pub(crate) fn kimi_bucket(
+pub fn kimi_bucket(
     label: &str,
     detail: &KimiUsageDetail,
     window: Option<&KimiWindow>,
@@ -230,7 +230,7 @@ pub(crate) fn kimi_bucket(
     )
 }
 
-pub(crate) fn kimi_window_seconds(label: &str, window: Option<&KimiWindow>) -> Option<i64> {
+pub fn kimi_window_seconds(label: &str, window: Option<&KimiWindow>) -> Option<i64> {
     (label == "Rate Limit")
         .then(|| window.and_then(KimiWindow::seconds))
         .flatten()

@@ -21,7 +21,6 @@ mod cursor;
 mod gemini;
 mod grok;
 mod hermes;
-mod kimi;
 mod minimax;
 mod muse;
 mod opencode;
@@ -156,15 +155,6 @@ pub(crate) use self::grok::{
     unused_imports,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
-pub(crate) use self::kimi::{
-    KimiRateLimit, KimiUsageDetail, KimiUsageItem, KimiUsageResponse, KimiWindow, fetch_kimi_usage,
-    kimi_bucket, kimi_local_token_from_value, kimi_snapshot, kimi_window_seconds,
-    load_kimi_local_token, load_kimi_local_token_from_home,
-};
-#[expect(
-    unused_imports,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
 pub(crate) use self::minimax::{
     MiniMaxBaseResponse, MiniMaxComboCard, MiniMaxModelRemain, MiniMaxUsageData,
     MiniMaxUsageResponse, MiniMaxWindow, fetch_minimax_usage, first_minimax_usage, minimax_bucket,
@@ -195,7 +185,15 @@ use jackin_protocol::control::{
 #[cfg(test)]
 use jackin_protocol::control::{UsageProviderTab, UsageSeverity};
 use jackin_telemetry::ResultTelemetryExt as _;
-pub(crate) use jackin_usage_provider_core::json_epoch_seconds;
+#[expect(
+    unused_imports,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
+pub(crate) use jackin_usage_provider_kimi::{
+    KimiRateLimit, KimiUsageDetail, KimiUsageItem, KimiUsageResponse, KimiWindow, fetch_kimi_usage,
+    kimi_bucket, kimi_local_token_from_value, kimi_snapshot, kimi_window_seconds,
+    load_kimi_local_token, load_kimi_local_token_from_home,
+};
 #[expect(
     unused_imports,
     reason = "documented residual allow; prefer expect when site is lint-true"

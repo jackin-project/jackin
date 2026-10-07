@@ -58,7 +58,10 @@ key = "clippy::cast_precision_loss@jackin-launch"
 bound = 2
 [[family.entry]]
 key = "clippy::cast_precision_loss@jackin-usage"
-bound = 5
+bound = 3
+[[family.entry]]
+key = "clippy::cast_precision_loss@jackin-usage-provider-kimi"
+bound = 2
 [[family.entry]]
 key = "clippy::cast_sign_loss@jackin-capsule"
 bound = 6
@@ -70,7 +73,10 @@ key = "clippy::cast_sign_loss@jackin-launch"
 bound = 9
 [[family.entry]]
 key = "clippy::cast_sign_loss@jackin-usage"
-bound = 28
+bound = 25
+[[family.entry]]
+key = "clippy::cast_sign_loss@jackin-usage-provider-kimi"
+bound = 3
 [[family.entry]]
 key = "clippy::cast_sign_loss@jackin-usage-provider-core"
 bound = 1
@@ -436,6 +442,9 @@ bound = 1
 key = "dead_code@jackin-usage-provider-core"
 bound = 1
 [[family.entry]]
+key = "dead_code@jackin-usage-provider-kimi"
+bound = 1
+[[family.entry]]
 key = "dead_code@jackin-xtask"
 bound = 4
 [[family.entry]]
@@ -607,6 +616,9 @@ bound = 2050
 [[family.entry]]
 key = "crates/services/jackin-usage-provider-zai/README.md"
 bound = 1202
+[[family.entry]]
+key = "crates/services/jackin-usage-provider-kimi/README.md"
+bound = 1320
 [[family.entry]]
 key = "crates/tools/jackin-xtask/README.md"
 bound = 6113

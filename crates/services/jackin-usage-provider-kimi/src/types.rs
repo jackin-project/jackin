@@ -6,7 +6,7 @@ use jackin_usage_provider_core::{epoch_seconds_from_maybe_ms, parse_iso_epoch};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct KimiUsageResponse {
+pub struct KimiUsageResponse {
     #[serde(default)]
     pub(crate) usages: Option<KimiUsages>,
     pub(crate) usage: Option<KimiUsageDetail>,
@@ -20,13 +20,13 @@ pub(crate) struct KimiUsageResponse {
 /// while the Code API sends the rolling/weekly/monthly pools object.
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
-pub(crate) enum KimiUsages {
+pub enum KimiUsages {
     Pools(Box<KimiPools>),
     List(Vec<KimiUsageItem>),
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct KimiPools {
+pub struct KimiPools {
     pub(crate) limit_5h: Option<KimiPool>,
     pub(crate) limit_7d: Option<KimiPool>,
     pub(crate) limit_month_total: Option<KimiPool>,
@@ -39,7 +39,7 @@ impl KimiPools {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct KimiPool {
+pub struct KimiPool {
     pub(crate) limit: Option<KimiCount>,
     pub(crate) used: Option<KimiCount>,
     pub(crate) remaining: Option<KimiCount>,
@@ -112,7 +112,7 @@ impl KimiPool {
 /// gateway); both families are accepted so neither fails the whole parse.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
-pub(crate) enum KimiCount {
+pub enum KimiCount {
     Num(i64),
     Text(String),
 }
@@ -130,7 +130,7 @@ impl KimiCount {
 /// milliseconds); unparseable text yields no reset rather than failing.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
-pub(crate) enum KimiReset {
+pub enum KimiReset {
     Text(String),
     Num(i64),
 }
@@ -151,7 +151,7 @@ impl KimiReset {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct KimiUsageItem {
+pub struct KimiUsageItem {
     pub(crate) scope: Option<String>,
     pub(crate) detail: KimiUsageDetail,
     #[serde(default)]
@@ -159,7 +159,7 @@ pub(crate) struct KimiUsageItem {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub(crate) struct KimiUsageDetail {
+pub struct KimiUsageDetail {
     pub(crate) limit: Option<KimiCount>,
     pub(crate) used: Option<KimiCount>,
     pub(crate) remaining: Option<KimiCount>,
@@ -176,7 +176,7 @@ pub(crate) struct KimiUsageDetail {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct KimiUser {
+pub struct KimiUser {
     pub(crate) id: Option<String>,
     pub(crate) email: Option<String>,
     pub(crate) name: Option<String>,
@@ -184,18 +184,18 @@ pub(crate) struct KimiUser {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct KimiMembership {
+pub struct KimiMembership {
     pub(crate) level: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct KimiRateLimit {
+pub struct KimiRateLimit {
     pub(crate) window: Option<KimiWindow>,
     pub(crate) detail: KimiUsageDetail,
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct KimiWindow {
+pub struct KimiWindow {
     pub(crate) duration: Option<i64>,
     #[serde(rename = "timeUnit")]
     pub(crate) time_unit: Option<String>,

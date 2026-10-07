@@ -10,7 +10,7 @@ use jackin_usage_provider_core::{
 
 use super::{KimiUsageResponse, fetch_kimi_usage};
 
-pub(crate) fn kimi_snapshot(agent: &str, token: Option<&str>, now: i64) -> FocusedUsageView {
+pub fn kimi_snapshot(agent: &str, token: Option<&str>, now: i64) -> FocusedUsageView {
     let has_local = home_path(".kimi-code").exists() || home_path(".kimi").exists();
     let has_token = token.is_some_and(|value| !value.is_empty());
     let (provider_usage, provider_error) = split_fetch(token.map(fetch_kimi_usage));

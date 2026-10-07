@@ -1,10 +1,7 @@
-// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
-// SPDX-License-Identifier: Apache-2.0
-
-//! `Kimi` usage snapshot.
+//! jackin-usage-provider-kimi: `Kimi` usage snapshot collection.
 //!
-//! Carved out of `usage.rs` for the file-size ratchet. Items in this module
-//! are `pub(crate)` so the coordinator (`usage.rs`) can re-export them.
+//! **Architecture Invariant:** T3.
+//! Entry point: [`kimi_snapshot`] — `Kimi` usage snapshot.
 //!
 //! Response families (see `ref-contracts-B.md` §1):
 //!
@@ -17,6 +14,11 @@
 //!   Extra Usage wallet (`KimiLocalUsage`); `/api/v1/oauth/userinfo` carries
 //!   the shared billing identity also present as Code API `user`.
 
+#![expect(
+    dead_code,
+    reason = "provider-adapter fixtures remain testable while production dispatch is broker-only"
+)]
+
 mod buckets;
 mod fetch;
 mod local;
@@ -24,25 +26,22 @@ mod snapshot;
 mod types;
 
 #[cfg(test)]
-use super::*;
-
-#[cfg(test)]
 pub(crate) use buckets::kimi_over_cap_label;
-pub(crate) use buckets::{kimi_bucket, kimi_window_seconds};
-pub(crate) use fetch::fetch_kimi_usage;
+pub use buckets::{kimi_bucket, kimi_window_seconds};
+pub use fetch::fetch_kimi_usage;
 #[cfg(test)]
 pub(crate) use fetch::kimi_usages_url_from_base;
 #[cfg(test)]
 pub(crate) use local::{KimiLocalUsage, kimi_extra_usage_bucket};
-pub(crate) use local::{
+pub use local::{
     kimi_local_token_from_value, load_kimi_local_token, load_kimi_local_token_from_home,
 };
-pub(crate) use snapshot::kimi_snapshot;
+pub use snapshot::kimi_snapshot;
 #[cfg(test)]
 pub(crate) use snapshot::{kimi_account_identity, kimi_membership_plan};
-pub(crate) use types::{
-    KimiCount, KimiPool, KimiPools, KimiRateLimit, KimiReset, KimiUsageDetail, KimiUsageItem,
-    KimiUsageResponse, KimiUsages, KimiWindow,
+pub use types::{
+    KimiCount, KimiMembership, KimiPool, KimiPools, KimiRateLimit, KimiReset, KimiUsageDetail,
+    KimiUsageItem, KimiUsageResponse, KimiUsages, KimiUser, KimiWindow,
 };
 
 #[cfg(test)]

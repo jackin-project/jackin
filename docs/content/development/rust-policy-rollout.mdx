@@ -843,3 +843,60 @@ passes.
   (7272), `/tmp/s9-zai-{nextest,gaps,
   alint,lint2}.txt` (kept out of the
   repo).
+
+### Split 5: usage-provider-kimi extraction (V2)
+
+- `jackin-usage` -> `jackin-usage` +
+  `jackin-usage-provider-kimi` (T3 leaf:
+  `usage/kimi.rs` -> `lib.rs` re-export
+  root + `buckets`, `fetch`, `local`,
+  `snapshot`, `types`, `tests` +
+  `tests/case_01`; `lib.rs` carries the
+  ownership header). `local.rs` drops its
+  `super::super::json_epoch_seconds` use
+  for the V1 core promotion; `usage.rs`
+  re-exports the vendor surface from the
+  new crate and drops the now-unused core
+  helper re-export. Visibility deltas:
+  `pub` on the re-exported surface +
+  `KimiUser`/`KimiMembership` (named in
+  `pub` fields) + `buckets()` (called by
+  the `usage/tests` suite that stays
+  behind); one crate-root
+  `#![expect(dead_code)]` carries the
+  `usage.rs` residual for the
+  undispatched surface (`fetch_kimi_local_usage`
+  is uncalled in every build, the wallet
+  cluster + snapshot identity helpers are
+  test-only-alive — all green under the
+  old module-level expect, now explicit).
+- Verify: `cargo check --locked --workspace
+  --all-targets` green; `cargo fmt --all
+  --check` clean; `cargo clippy` 0 errors,
+  warnings identical to base (xtask 1,
+  runtime 7). `cargo nextest list
+  --workspace --all-targets`: 7272 ->
+  7272, bijection exact (8 kimi tests move
+  `jackin-usage usage::kimi::` ->
+  `jackin-usage-provider-kimi` root; zero
+  dropped, zero added).
+  `nextest run`: 595/595 usage + 8/8 kimi.
+  The provider-call contract fixture is
+  untouched (call sites unmoved) and the
+  suite is green. `alint check`: 198 ->
+  198, byte-identical. `check-gaps`: 28 ->
+  28 (usage `SIZE-001` 46055 -> 45020
+  lines, `SIZE-002` 315 -> 307 files;
+  xtask +1 line for the tier row);
+  `GAP-TEST-001/002/003` stay 0/0/0.
+  `ratchet.toml`: +4 kimi rows (agent-doc
+  1320, `cast_precision_loss` 2,
+  `cast_sign_loss` 3, `dead_code` 1), 2
+  usage shrinks (precision 5 -> 3, cast 28
+  -> 25); owed rows 62 -> 62 with zero new
+  failures. `lint arch`: missing tiers
+  stay 3, zero direction violations;
+  `lint headers` stays at the base 2.
+- Raw outputs:
+  `/tmp/s9-kimi-{nextest,gaps,alint,
+  lint2}.txt` (kept out of the repo).

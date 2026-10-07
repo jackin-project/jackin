@@ -2,11 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `Kimi` local-server usage and token loading.
 
-use super::super::json_epoch_seconds;
 use jackin_protocol::control::{Money, QuotaBucketView, StatusSlot, UsageSnapshotStatus};
 use jackin_usage_provider_core::{
-    bucket, home_path, json_number, normalize_url_or_host, provider_http_client, provider_request,
-    read_json_file,
+    bucket, home_path, json_epoch_seconds, json_number, normalize_url_or_host,
+    provider_http_client, provider_request, read_json_file,
 };
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -204,11 +203,11 @@ pub(crate) fn kimi_unknown_scale_bucket(extra: &KimiExtraUsage) -> Option<QuotaB
     ))
 }
 
-pub(crate) fn load_kimi_local_token(now: i64) -> Option<String> {
+pub fn load_kimi_local_token(now: i64) -> Option<String> {
     load_kimi_local_token_from_home(&home_path(""), now)
 }
 
-pub(crate) fn load_kimi_local_token_from_home(home: &Path, now: i64) -> Option<String> {
+pub fn load_kimi_local_token_from_home(home: &Path, now: i64) -> Option<String> {
     [
         home.join(".kimi-code/credentials/kimi-code.json"),
         home.join(".kimi/credentials/kimi-code.json"),
@@ -220,7 +219,7 @@ pub(crate) fn load_kimi_local_token_from_home(home: &Path, now: i64) -> Option<S
     })
 }
 
-pub(crate) fn kimi_local_token_from_value(value: &serde_json::Value, now: i64) -> Option<String> {
+pub fn kimi_local_token_from_value(value: &serde_json::Value, now: i64) -> Option<String> {
     if let Some(expires_at) = value.get("expires_at").and_then(json_epoch_seconds)
         && expires_at <= now
     {

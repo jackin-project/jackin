@@ -8,7 +8,7 @@ use jackin_usage_provider_core::{
 
 use super::KimiUsageResponse;
 
-pub(crate) fn fetch_kimi_usage(token: &str) -> Result<KimiUsageResponse, String> {
+pub fn fetch_kimi_usage(token: &str) -> Result<KimiUsageResponse, String> {
     let url = resolve_kimi_usages_url();
     provider_request(
         jackin_telemetry::schema::enums::ProviderName::Kimi,
