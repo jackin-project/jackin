@@ -1,0 +1,25 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "jackin-runtime-prune-output"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
+description = "Formatted prune and cleanup terminal output."
+license.workspace = true
+readme = "README.md"
+publish = false
+
+repository.workspace = true
+
+[lib]
+name = "jackin_runtime_prune_output"
+path = "src/lib.rs"
+
+[dependencies]
+owo-colors = { workspace = true, features = ["supports-colors"] }
+
+[lints]
+workspace = true

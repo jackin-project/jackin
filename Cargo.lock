@@ -3588,6 +3588,7 @@ dependencies = [
  "jackin-runtime-naming",
  "jackin-runtime-process-telemetry",
  "jackin-runtime-progress",
+ "jackin-runtime-prune-output",
  "jackin-runtime-repo-cache",
  "jackin-runtime-session-control",
  "jackin-runtime-snapshot",
@@ -3713,6 +3714,13 @@ dependencies = [
  "jackin-diagnostics",
  "jackin-host",
  "jackin-launch",
+]
+
+[[package]]
+name = "jackin-runtime-prune-output"
+version = "0.6.4"
+dependencies = [
+ "owo-colors 4.3.0",
 ]
 
 [[package]]

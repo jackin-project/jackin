@@ -686,6 +686,9 @@ bound = 1056
 key = "crates/services/jackin-runtime-progress/README.md"
 bound = 690
 [[family.entry]]
+key = "crates/services/jackin-runtime-prune-output/README.md"
+bound = 769
+[[family.entry]]
 key = "crates/services/jackin-runtime-repo-cache/README.md"
 bound = 831
 [[family.entry]]
@@ -956,6 +959,9 @@ key = "jackin-runtime-process-telemetry"
 bound = 1
 [[family.entry]]
 key = "jackin-runtime-progress"
+bound = 1
+[[family.entry]]
+key = "jackin-runtime-prune-output"
 bound = 1
 [[family.entry]]
 key = "jackin-runtime-repo-cache"

@@ -42,6 +42,7 @@ jackin-runtime-isolation = { workspace = true }
 jackin-runtime-naming = { workspace = true }
 jackin-runtime-process-telemetry = { workspace = true }
 jackin-runtime-progress = { workspace = true }
+jackin-runtime-prune-output = { workspace = true }
 jackin-runtime-repo-cache = { workspace = true }
 jackin-runtime-session-control = { workspace = true }
 jackin-runtime-snapshot = { workspace = true }

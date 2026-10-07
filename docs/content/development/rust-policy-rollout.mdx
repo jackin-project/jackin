@@ -3765,3 +3765,70 @@ bound 720.
 - Raw outputs:
   `/tmp/s7-s51-{pre,post}-*.txt`
   (kept out of the repo).
+
+### Split 52: runtime-prune-output extraction (M14)
+
+- `jackin-runtime` ->
+  `jackin-runtime` +
+  `jackin-runtime-prune-output`
+  (T0: the whole
+  `runtime::prune_output`
+  module moves — status
+  rows, `PendingRow`,
+  `tests.rs` with 1
+  test). No cross-leaf
+  edges; no visibility
+  widening needed (all
+  prod items already
+  `pub`; the 2
+  `cleanup` users keep
+  their
+  `use crate::runtime::prune_output`
+  paths through the
+  plain `pub` glob
+  shim). Tier: names no
+  internal crate (only
+  `owo-colors`), so it
+  takes T0 like
+  `jackin-brand`; no
+  renumber cascade.
+  New-crate deps:
+  owo-colors only; no
+  dev-deps (lockfile +1
+  package, +2 edges).
+  Policy registries: +1
+  owned package
+  (`library`).
+- Verify: `cargo check --locked --workspace
+  --all-targets` green; `cargo fmt --all
+  --check` clean; `cargo clippy` 0
+  errors on the new crate,
+  `jackin-runtime` holds at
+  the 7 pre-existing errors.
+  `cargo nextest list --workspace --all-targets`:
+  7277 -> 7277 (1 relocation maps
+  1:1 by name: runtime ->
+  prune-output; 0 dropped, 0 added).
+  `nextest run`: 714/714 runtime
+  (713) + prune-output (1).
+  `alint check`: 192 violations /
+  11 failing unchanged.
+  `check-gaps`: 22 -> 22
+  (runtime `SIZE-001/002` persist:
+  51047 -> 50926 code lines, 247 ->
+  246 files; new crate fits at 177
+  raw / 4 files).
+  `GAP-TEST-001/002/003` stay 0/0/0.
+  `ratchet.toml`: +2 rows
+  (agent-doc-bytes README 769,
+  public-surface 1),
+  failures back to baseline
+  61 -> 61 with identical
+  violation keys. `lint
+  arch --strict`: missing tiers stay
+  3, zero direction violations;
+  `lint headers` stays at the base 2;
+  `lint tests` OK.
+- Raw outputs:
+  `/tmp/s7-s52-{pre,post}-*.txt`
+  (kept out of the repo).
