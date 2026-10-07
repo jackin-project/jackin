@@ -31,6 +31,7 @@
     "jackin-protocol": "library",
     "jackin-runtime": "library",
     "jackin-runtime-coordination": "library",
+    "jackin-runtime-docker-profile": "library",
     "jackin-runtime-exec-host": "library",
     "jackin-runtime-host-daemon": "library",
     "jackin-runtime-identity": "library",

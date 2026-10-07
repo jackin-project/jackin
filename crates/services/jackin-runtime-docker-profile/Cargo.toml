@@ -1,0 +1,25 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "jackin-runtime-docker-profile"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
+description = "Docker security profile resolution and flag emission."
+license.workspace = true
+readme = "README.md"
+publish = false
+
+repository.workspace = true
+
+[lib]
+name = "jackin_runtime_docker_profile"
+path = "src/lib.rs"
+
+[dependencies]
+jackin-core = { workspace = true }
+
+[lints]
+workspace = true

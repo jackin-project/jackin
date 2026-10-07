@@ -31,6 +31,7 @@
     "jackin-protocol",
     "jackin-runtime",
     "jackin-runtime-coordination",
+    "jackin-runtime-docker-profile",
     "jackin-runtime-exec-host",
     "jackin-runtime-host-daemon",
     "jackin-runtime-identity",

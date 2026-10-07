@@ -3580,6 +3580,7 @@ dependencies = [
  "jackin-process",
  "jackin-protocol",
  "jackin-runtime-coordination",
+ "jackin-runtime-docker-profile",
  "jackin-runtime-exec-host",
  "jackin-runtime-host-daemon",
  "jackin-runtime-identity",
@@ -3615,6 +3616,13 @@ dependencies = [
  "nix 0.31.3",
  "sha2 0.11.0",
  "tempfile",
+]
+
+[[package]]
+name = "jackin-runtime-docker-profile"
+version = "0.6.4"
+dependencies = [
+ "jackin-core",
 ]
 
 [[package]]

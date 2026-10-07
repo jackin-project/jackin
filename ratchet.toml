@@ -411,6 +411,9 @@ bound = 1
 key = "clippy::too_many_arguments@jackin-runtime"
 bound = 12
 [[family.entry]]
+key = "clippy::too_many_arguments@jackin-runtime-docker-profile"
+bound = 1
+[[family.entry]]
 key = "clippy::too_many_arguments@jackin-usage-provider-core"
 bound = 1
 [[family.entry]]
@@ -658,6 +661,9 @@ bound = 3545
 [[family.entry]]
 key = "crates/services/jackin-runtime-coordination/README.md"
 bound = 869
+[[family.entry]]
+key = "crates/services/jackin-runtime-docker-profile/README.md"
+bound = 941
 [[family.entry]]
 key = "crates/services/jackin-runtime-exec-host/README.md"
 bound = 965
@@ -920,6 +926,9 @@ key = "jackin-runtime"
 bound = 8
 [[family.entry]]
 key = "jackin-runtime-coordination"
+bound = 1
+[[family.entry]]
+key = "jackin-runtime-docker-profile"
 bound = 1
 [[family.entry]]
 key = "jackin-runtime-exec-host"
