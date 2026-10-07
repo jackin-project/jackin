@@ -1,6 +1,6 @@
 //! jackin-usage: usage totals, usage snapshot store, and agent handoff paths.
 //!
-//! **Architecture Invariant:** T4.
+//! **Architecture Invariant:** T6.
 //! Entry point: [`UsageTotals`] — usage aggregation surface.
 //! Host menu-bar / CLI: [`host::HostUsageRuntime`] (Capsule-free).
 

@@ -2324,3 +2324,42 @@ passes.
 - Raw outputs:
   `/tmp/s11-split30-{before,after}.txt`
   (kept out of the repo).
+
+### S12 pre-split: tier renumber + key-fn relocation
+
+- Tier renumber for the T4/T5 usage-subcrate
+  layer: `jackin-usage` 4 -> 6,
+  `jackin-usage-ffi`/`jackin-capsule`/`jackin-runtime`
+  5 -> 7, `jackin` 6 -> 8 (lib + bin
+  ownership headers follow). Lowest-legal
+  tiering keeps every production edge
+  strictly lower with zero direction
+  violations; no trait seam needed. Move
+  `canonical_usage_key` +
+  `dispatch_key_for_route`
+  (`credential_resolver.rs` ->
+  `provider-core/credentials.rs`, verbatim)
+  so discovery and the resolver share them
+  from T2; callers (`scan.rs`, resolver,
+  one discovery test) import directly.
+- Verify: `cargo check --locked --workspace
+  --all-targets` green; `cargo fmt --all
+  --check` clean; `cargo clippy` 0
+  errors, 0 warnings on both touched
+  packages. `cargo nextest list
+  --workspace --all-targets`: 7277 ->
+  7277, byte-identical. `nextest run`:
+  400/400 usage + provider-core. No
+  fixture drift (moved fns are not
+  allowlist symbols). `alint check`:
+  byte-identical. `check-gaps`: 27 ->
+  27 (usage `SIZE-001` 23489 -> 23455
+  lines, `SIZE-002` stays 115 files).
+  `ratchet.toml`: untouched, output
+  byte-identical. `lint arch`: missing
+  tiers stay 3, zero direction
+  violations; `lint headers` stays at
+  the base 2; `lint tests` OK.
+- Raw outputs:
+  `/tmp/s12-prep-{before,after}.txt`
+  (kept out of the repo).

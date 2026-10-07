@@ -14,6 +14,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use jackin_config::{AccountCredential, AppConfig};
 use jackin_core::{AuthForwardMode, JackinPaths, UsageCredentialEnvName, UsageCredentialOwner};
+use jackin_usage_provider_core::dispatch_key_for_route;
 use std::path::Path;
 
 use super::super::HostSurfaceId;
@@ -256,12 +257,11 @@ pub(crate) fn enumerate_registered_accounts(
                             surface,
                             handle,
                             key: canonical_usage_env_name(surface).to_owned(),
-                            dispatch_key:
-                                super::super::credential_resolver::dispatch_key_for_route(
-                                    canonical_owner,
-                                    governed_name_for_account_alias(entry.name),
-                                )
-                                .to_owned(),
+                            dispatch_key: dispatch_key_for_route(
+                                canonical_owner,
+                                governed_name_for_account_alias(entry.name),
+                            )
+                            .to_owned(),
                         })
                         .and_modify(|candidate| {
                             merge_env_candidate(

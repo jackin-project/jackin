@@ -6,6 +6,7 @@ use std::fs;
 
 use std::path::{Path, PathBuf};
 
+use jackin_core::UsageCredentialOwner;
 use jackin_telemetry::ResultTelemetryExt as _;
 
 /// Resolve a credential from an ordered candidate list, returning the first path
@@ -94,4 +95,42 @@ pub fn resolve_identity_with_extra<T>(
         }
     }
     (credential, label, extra)
+}
+
+/// Canonical provider usage key for one credential owner.
+pub fn canonical_usage_key(owner: UsageCredentialOwner) -> &'static str {
+    match owner {
+        UsageCredentialOwner::Claude => jackin_core::ANTHROPIC_API_KEY_ENV_NAME,
+        UsageCredentialOwner::Codex => jackin_core::OPENAI_API_KEY_ENV_NAME,
+        UsageCredentialOwner::Amp => jackin_core::AMP_API_KEY_ENV_NAME,
+        UsageCredentialOwner::Kimi => jackin_core::KIMI_CODE_API_KEY_ENV_NAME,
+        UsageCredentialOwner::Grok => jackin_core::XAI_API_KEY_ENV_NAME,
+        UsageCredentialOwner::Zai => jackin_core::ZAI_API_KEY_ENV_NAME,
+        UsageCredentialOwner::Minimax => jackin_core::MINIMAX_API_KEY_ENV_NAME,
+        UsageCredentialOwner::OpenCode => jackin_core::OPENCODE_API_KEY_ENV_NAME,
+        UsageCredentialOwner::Google => jackin_core::GEMINI_API_KEY_ENV_NAME,
+        UsageCredentialOwner::Cursor => jackin_core::CURSOR_API_KEY_ENV_NAME,
+        UsageCredentialOwner::Meta => jackin_core::META_API_KEY_ENV_NAME,
+        UsageCredentialOwner::OpenRouter => jackin_core::OPENROUTER_API_KEY_ENV_NAME,
+    }
+}
+
+/// Normalize launch aliases to the provider route that controls refresh
+/// semantics. API-key aliases share their owner's route; OAuth and Grok
+/// deployment credentials remain distinct because the provider adapter treats
+/// them differently.
+pub fn dispatch_key_for_route(owner: UsageCredentialOwner, governed_name: &str) -> &'static str {
+    match owner {
+        UsageCredentialOwner::Claude
+            if governed_name == jackin_core::CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME =>
+        {
+            jackin_core::CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME
+        }
+        UsageCredentialOwner::Grok
+            if governed_name == jackin_core::GROK_DEPLOYMENT_KEY_ENV_NAME =>
+        {
+            jackin_core::GROK_DEPLOYMENT_KEY_ENV_NAME
+        }
+        _ => canonical_usage_key(owner),
+    }
 }

@@ -211,7 +211,7 @@ fn disc_zai_aliases_keep_one_canonical_owner_and_dispatch_route() {
         let alias = usage_account_alias_entry(entry, UsageCredentialOwner::Zai);
         assert_eq!(alias.owner, UsageCredentialOwner::Zai);
         assert_eq!(
-            credential_resolver::dispatch_key_for_route(
+            jackin_usage_provider_core::dispatch_key_for_route(
                 alias.owner,
                 governed_name_for_account_alias(alias.name),
             ),

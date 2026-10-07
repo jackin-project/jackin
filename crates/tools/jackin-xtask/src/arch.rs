@@ -85,15 +85,15 @@ pub(crate) const TIERS: &[(&str, u8)] = &[
     ("jackin-otlp-testbed", 3),
     ("jackin-launch", 3),
     ("jackin-test-support", 3),
-    ("jackin-usage", 4),
+    ("jackin-usage", 6),
     ("jackin-console", 4),
     ("jackin-host", 4),
     ("jackin-image", 4),
     ("jackin-isolation", 4),
-    ("jackin-usage-ffi", 5),
-    ("jackin-capsule", 5),
-    ("jackin-runtime", 5),
-    ("jackin", 6),
+    ("jackin-usage-ffi", 7),
+    ("jackin-capsule", 7),
+    ("jackin-runtime", 7),
+    ("jackin", 8),
 ];
 
 /// Grandfathered production+dev cycles. Each entry is a dev-edge

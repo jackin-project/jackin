@@ -92,7 +92,8 @@ pub use consts::{
 pub use consts::{GROK_HANDOFF_AUTH_PATH, PROVIDER_CLI_TIMEOUT, USAGE_SNAPSHOT_STORE_PATH};
 pub use credentials::first_credential;
 pub use credentials::{
-    first_credential_with_path, read_json_file, resolve_identity, resolve_identity_with_extra,
+    canonical_usage_key, dispatch_key_for_route, first_credential_with_path, read_json_file,
+    resolve_identity, resolve_identity_with_extra,
 };
 pub use diagnostic::refresh_cached_updated_label;
 pub use diagnostic::{now_epoch, relative_updated_label};

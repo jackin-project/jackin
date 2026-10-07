@@ -1,6 +1,6 @@
 //! jackin-capsule: in-container capsule daemon, sessions, and TUI.
 //!
-//! **Architecture Invariant:** T5.
+//! **Architecture Invariant:** T7.
 //! Entry point: [`daemon`] — capsule daemon module the binary runs.
 
 pub mod agent_status;
