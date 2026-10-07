@@ -13,7 +13,7 @@ use jackin_usage_provider_core::{
 };
 
 impl AmpUsage {
-    pub(crate) fn from_api_value(value: serde_json::Value) -> Option<Self> {
+    pub fn from_api_value(value: serde_json::Value) -> Option<Self> {
         let root = value.get("result").unwrap_or(&value);
         let display_text = root
             .get("displayText")
@@ -24,7 +24,7 @@ impl AmpUsage {
     /// The subscription plan names the funding route, so it wins; `Amp Free`
     /// only when the daily line exists; a paid/credit-only balance never
     /// infers a plan.
-    pub(crate) fn plan_label(&self) -> Option<String> {
+    pub fn plan_label(&self) -> Option<String> {
         if let Some(subscription) = &self.subscription {
             return Some(format!("Amp {}", subscription.plan));
         }
@@ -44,7 +44,7 @@ impl AmpUsage {
         (!parts.is_empty()).then(|| parts.join(" · "))
     }
 
-    pub(crate) fn buckets(&self, now: i64) -> Vec<QuotaBucketView> {
+    pub fn buckets(&self, now: i64) -> Vec<QuotaBucketView> {
         let mut buckets = Vec::new();
         if let Some(remaining) = self.daily_remaining_percent {
             buckets.push(with_status_slot(
@@ -218,16 +218,17 @@ fn format_orb_hours(hours: f64) -> String {
 
 /// Non-usage inputs the shared Amp success view builder needs: the agent, the
 /// resolved credential origin, and which fetch path produced the usage.
-pub(crate) struct AmpSuccessContext<'a> {
-    pub(crate) agent: &'a str,
-    pub(crate) credential_origin: Option<String>,
-    pub(crate) source: UsageSource,
+#[derive(Debug)]
+pub struct AmpSuccessContext<'a> {
+    pub agent: &'a str,
+    pub credential_origin: Option<String>,
+    pub source: UsageSource,
 }
 
 /// Build the Fresh, Authoritative Amp success view from parsed usage without
 /// touching credentials or provider I/O, so the plan-label and detail-only
 /// credit contract is unit-testable.
-pub(crate) fn amp_view_from_usage(
+pub fn amp_view_from_usage(
     context: AmpSuccessContext<'_>,
     usage: AmpUsage,
     now: i64,

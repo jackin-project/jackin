@@ -9,7 +9,7 @@ use jackin_usage_provider_core::{
 };
 use std::path::Path;
 
-pub(crate) fn fetch_amp_api_usage(token: &str) -> Result<AmpUsage, String> {
+pub fn fetch_amp_api_usage(token: &str) -> Result<AmpUsage, String> {
     provider_request(
         jackin_telemetry::schema::enums::ProviderName::Amp,
         "POST",
@@ -40,7 +40,7 @@ pub(crate) fn fetch_amp_api_usage(token: &str) -> Result<AmpUsage, String> {
     )
 }
 
-pub(crate) fn load_amp_api_key(path: &Path) -> Option<String> {
+pub fn load_amp_api_key(path: &Path) -> Option<String> {
     let value = read_json_file(path)?;
     value
         .as_object()?
@@ -63,7 +63,7 @@ pub(crate) fn load_amp_api_key(path: &Path) -> Option<String> {
         })
 }
 
-pub(crate) fn fetch_amp_cli_usage() -> Result<AmpUsage, String> {
+pub fn fetch_amp_cli_usage() -> Result<AmpUsage, String> {
     let output = run_cli_with_timeout("amp", &["--no-color", "usage"], PROVIDER_CLI_TIMEOUT)?;
     parse_amp_usage_output(&output)
         .ok_or_else(|| "Amp CLI usage output was not recognized".to_owned())

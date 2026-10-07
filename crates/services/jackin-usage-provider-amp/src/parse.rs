@@ -7,7 +7,7 @@ use jackin_usage_provider_core::dollar_amounts;
 
 /// The one parser for the current Amp `displayText`/CLI usage contract. Rejects
 /// the retired `$remaining/$limit (replenishes +$N/hour)` line entirely.
-pub(crate) fn parse_amp_usage_output(text: &str) -> Option<AmpUsage> {
+pub fn parse_amp_usage_output(text: &str) -> Option<AmpUsage> {
     // The API `displayText` may carry Markdown bold markers; the CLI never
     // does, and stripping them is a no-op for CLI output.
     let cleaned = text.replace("**", "");

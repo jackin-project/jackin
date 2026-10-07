@@ -3649,6 +3649,7 @@ dependencies = [
  "jackin-otlp-testbed",
  "jackin-protocol",
  "jackin-telemetry",
+ "jackin-usage-provider-amp",
  "jackin-usage-provider-core",
  "jackin-usage-provider-kimi",
  "jackin-usage-provider-zai",
@@ -3682,6 +3683,17 @@ dependencies = [
  "jackin-usage",
  "jackin-usage-provider-core",
  "tempfile",
+]
+
+[[package]]
+name = "jackin-usage-provider-amp"
+version = "0.6.4"
+dependencies = [
+ "jackin-protocol",
+ "jackin-telemetry",
+ "jackin-usage-provider-core",
+ "reqwest",
+ "serde_json",
 ]
 
 [[package]]

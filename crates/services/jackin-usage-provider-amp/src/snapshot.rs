@@ -15,7 +15,7 @@ use jackin_usage_provider_core::{
 };
 use std::path::Path;
 
-pub(crate) fn amp_snapshot(agent: &str, now: i64) -> FocusedUsageView {
+pub fn amp_snapshot(agent: &str, now: i64) -> FocusedUsageView {
     let data = home_path(".local/share/amp");
     let amp_secrets = data.join("secrets.json");
     let handoff_secrets = Path::new(AMP_HANDOFF_SECRETS_PATH);
@@ -128,7 +128,7 @@ pub(crate) fn amp_snapshot(agent: &str, now: i64) -> FocusedUsageView {
     })
 }
 
-pub(crate) fn amp_api_key_snapshot(agent: &str, key: &str, now: i64) -> FocusedUsageView {
+pub fn amp_api_key_snapshot(agent: &str, key: &str, now: i64) -> FocusedUsageView {
     match fetch_amp_api_usage(key) {
         Ok(usage) => amp_view_from_usage(
             AmpSuccessContext {

@@ -12,7 +12,6 @@
 //! details stay here so status chrome and dialogs render strings, not API
 //! branches.
 
-mod amp;
 mod antigravity;
 mod claude;
 mod codex;
@@ -34,15 +33,6 @@ use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::time::Instant;
 
-#[expect(
-    unused_imports,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
-pub(crate) use self::amp::{
-    AmpRenewal, AmpSubscription, AmpSubscriptionKind, AmpSuccessContext, AmpUsage,
-    AmpWorkspaceBalance, amp_api_key_snapshot, amp_snapshot, amp_view_from_usage,
-    fetch_amp_api_usage, fetch_amp_cli_usage, load_amp_api_key, parse_amp_usage_output,
-};
 #[expect(
     unused_imports,
     reason = "documented residual allow; prefer expect when site is lint-true"
@@ -185,6 +175,15 @@ use jackin_protocol::control::{
 #[cfg(test)]
 use jackin_protocol::control::{UsageProviderTab, UsageSeverity};
 use jackin_telemetry::ResultTelemetryExt as _;
+#[expect(
+    unused_imports,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
+pub(crate) use jackin_usage_provider_amp::{
+    AmpRenewal, AmpSubscription, AmpSubscriptionKind, AmpSuccessContext, AmpUsage,
+    AmpWorkspaceBalance, amp_api_key_snapshot, amp_snapshot, amp_view_from_usage,
+    fetch_amp_api_usage, fetch_amp_cli_usage, load_amp_api_key, parse_amp_usage_output,
+};
 #[expect(
     unused_imports,
     reason = "documented residual allow; prefer expect when site is lint-true"

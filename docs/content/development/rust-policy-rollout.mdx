@@ -900,3 +900,53 @@ passes.
 - Raw outputs:
   `/tmp/s9-kimi-{nextest,gaps,alint,
   lint2}.txt` (kept out of the repo).
+
+### Split 6: usage-provider-amp extraction (V3)
+
+- `jackin-usage` -> `jackin-usage` +
+  `jackin-usage-provider-amp` (T3 leaf:
+  `usage/amp.rs` -> `lib.rs` re-export
+  root + `fetch`, `parse`, `snapshot`,
+  `types`, `views`; `lib.rs` carries the
+  ownership header). `usage.rs`
+  re-exports the vendor surface from the
+  new crate. Visibility deltas: `pub` on
+  the re-exported surface + `AmpUsage`
+  methods (`from_api_value`,
+  `plan_label`, `buckets`) + all `Amp`
+  type fields (the `usage/tests` suite
+  that stays behind calls and constructs
+  them); `#[derive(Debug)]` on
+  `AmpSuccessContext` (newly `pub`, the
+  `missing_debug_implementations` deny
+  fires). The provider-call contract
+  fixture remaps 1 entry
+  (`usage/amp/snapshot.rs` ->
+  `provider-amp/src/snapshot.rs`,
+  `fetch_amp_api_usage`, 33 entries,
+  symbol set identical).
+- Verify: `cargo check --locked --workspace
+  --all-targets` green; `cargo fmt --all
+  --check` clean; `cargo clippy` 0 errors,
+  warnings identical to base (xtask 1,
+  runtime 7). `cargo nextest list
+  --workspace --all-targets`: 7272 ->
+  7272, bijection exact (amp owns no unit
+  tests of its own; zero dropped, zero
+  added). `nextest run`: 595/595 usage.
+  `alint check`: 198 -> 198,
+  byte-identical. `check-gaps`: 28 -> 28
+  (usage `SIZE-001` 45020 -> 44314 lines,
+  `SIZE-002` 307 -> 301 files; xtask +1
+  line for the tier row);
+  `GAP-TEST-001/002/003` stay 0/0/0.
+  `ratchet.toml`: +2 amp rows (agent-doc
+  1202, `cast_sign_loss` 4), 1 usage
+  shrink (cast 25 -> 21); owed rows 62 ->
+  62 with zero new failures. `lint arch`:
+  missing tiers stay 3, zero direction
+  violations; `lint headers` stays at the
+  base 2.
+- Raw outputs:
+  `/tmp/s9-amp-{nextest,gaps,alint,
+  lint2}.txt` (kept out of the repo).

@@ -28,6 +28,7 @@ jackin-telemetry = { workspace = true }
 jackin-usage-provider-core = { workspace = true }
 jackin-usage-provider-zai = { workspace = true }
 jackin-usage-provider-kimi = { workspace = true }
+jackin-usage-provider-amp = { workspace = true }
 base64 = { workspace = true }
 chrono = { workspace = true, features = ["clock"] }
 httpdate = { workspace = true }
