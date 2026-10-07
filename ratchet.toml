@@ -442,7 +442,7 @@ key = "clippy::too_many_arguments@jackin-launch"
 bound = 1
 [[family.entry]]
 key = "clippy::too_many_arguments@jackin-runtime"
-bound = 10
+bound = 8
 [[family.entry]]
 key = "clippy::too_many_arguments@jackin-runtime-docker-profile"
 bound = 1
@@ -455,6 +455,9 @@ bound = 5
 [[family.entry]]
 key = "clippy::too_many_arguments@jackin-runtime-launch-capsule-setup"
 bound = 1
+[[family.entry]]
+key = "clippy::too_many_arguments@jackin-runtime-launch-restore"
+bound = 2
 [[family.entry]]
 key = "clippy::too_many_arguments@jackin-usage-provider-core"
 bound = 1
@@ -475,7 +478,7 @@ key = "clippy::too_many_lines@jackin-protocol"
 bound = 1
 [[family.entry]]
 key = "clippy::too_many_lines@jackin-runtime"
-bound = 5
+bound = 4
 [[family.entry]]
 key = "clippy::too_many_lines@jackin-runtime-host-attach"
 bound = 1
@@ -487,6 +490,9 @@ key = "clippy::too_many_lines@jackin-runtime-image"
 bound = 1
 [[family.entry]]
 key = "clippy::too_many_lines@jackin-runtime-repo-cache"
+bound = 1
+[[family.entry]]
+key = "clippy::too_many_lines@jackin-runtime-launch-restore"
 bound = 1
 [[family.entry]]
 key = "clippy::trivially_copy_pass_by_ref@jackin-config"
@@ -516,6 +522,9 @@ bound = 2
 key = "clippy::unwrap_used@jackin-runtime"
 bound = 2
 [[family.entry]]
+key = "clippy::unwrap_used@jackin-runtime-launch-restore"
+bound = 1
+[[family.entry]]
 key = "clippy::unwrap_used@jackin-test-support"
 bound = 1
 [[family.entry]]
@@ -532,7 +541,7 @@ key = "dead_code@jackin-env"
 bound = 3
 [[family.entry]]
 key = "dead_code@jackin-runtime"
-bound = 2
+bound = 1
 [[family.entry]]
 key = "dead_code@jackin-runtime-repo-cache"
 # Moved with repo_cache (S7 split 48): RepoLock guard-only Arc<std::fs::File> (flock releases on last drop).
@@ -815,6 +824,9 @@ bound = 812
 [[family.entry]]
 key = "crates/services/jackin-runtime-launch-progress-helpers/README.md"
 bound = 1132
+[[family.entry]]
+key = "crates/services/jackin-runtime-launch-restore/README.md"
+bound = 1632
 [[family.entry]]
 key = "crates/services/jackin-runtime-launch-slot/README.md"
 bound = 885
@@ -1196,6 +1208,9 @@ bound = 1
 key = "jackin-runtime-launch-progress-helpers"
 bound = 1
 [[family.entry]]
+key = "jackin-runtime-launch-restore"
+bound = 2
+[[family.entry]]
 key = "jackin-runtime-launch-slot"
 bound = 1
 [[family.entry]]
@@ -1395,6 +1410,9 @@ bound = 41
 [[family.entry]]
 key = "jackin-runtime-launch-load-cleanup"
 bound = 26
+[[family.entry]]
+key = "jackin-runtime-launch-restore"
+bound = 22
 [[family.entry]]
 key = "jackin-telemetry"
 bound = 30

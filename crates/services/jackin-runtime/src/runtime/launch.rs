@@ -182,10 +182,13 @@ pub(crate) use failure::{
 };
 
 // Moved to jackin_runtime_launch_plan::launch_plan (S7 split 56); the
-// re-export keeps every `launch::LaunchPlan` / `launch::emit_*` path stable.
+// re-export keeps the remaining `launch::LaunchPlan` / `launch::emit_*`
+// paths stable. `emit_launch_plan_for_run` /
+// `emit_rejected_launch_plan_for_run` lost their last hub user when
+// `restore_resolve` moved out (S7 split 89); the leaf names them through
+// `jackin_runtime_launch_plan::launch_plan` directly.
 pub(crate) use jackin_runtime_launch_plan::launch_plan::{
-    LaunchPlan, emit_image_materialization_plan, emit_launch_plan, emit_launch_plan_for_run,
-    emit_prewarm_launch_plan, emit_rejected_launch_plan_for_run,
+    LaunchPlan, emit_image_materialization_plan, emit_launch_plan, emit_prewarm_launch_plan,
 };
 
 // Moved to jackin_runtime_launch_load_cleanup::load_cleanup (S7 split 68);

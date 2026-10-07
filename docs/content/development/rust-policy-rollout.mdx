@@ -9005,3 +9005,215 @@ bound 720.
   `/tmp/s7-s88-{pre,post}-*.txt`
   (kept out of the
   repo).
+
+### Split 89: runtime-launch-restore extraction (M50)
+
+- `jackin-runtime`
+  ->
+  `jackin-runtime`
+  +
+  `jackin-runtime-launch-restore`
+  (T7: hub
+  `launch/restore.rs`
+  (369) +
+  `launch/restore_resolve.rs`
+  (792) move to
+  the `restore` +
+  `restore_resolve`
+  leaf modules;
+  the slice-28
+  restore half
+  lands whole,
+  `related_restore_load_options`
+  included).
+  Hub keeps shims
+  (glob re-exports)
+  + both suites in
+  place
+  (`restore/tests.rs`,
+  hub `launch`
+  cases); `launch.rs`
+  re-exports
+  unchanged except
+  trimming the two
+  launch-plan
+  `emit_*_for_run`
+  idents whose last
+  hub user moved
+  out (commented).
+  Zero hub fns
+  named: attach
+  `ContainerState`
+  re-points at
+  `jackin-docker`
+  (T3),
+  `docker_unavailable_msg`
+  at
+  attach-sessions
+  (T4, launch-slot
+  precedent),
+  `LaunchProgress`
+  at
+  runtime-progress
+  (T5), isolation
+  at
+  runtime-isolation
+  (T5),
+  `LoadOptions` at
+  load-options
+  (T4), plan +
+  account-identity
+  at their leaves
+  (T3/T4).
+  Tier decision:
+  max dep is
+  attach-outcome
+  (T6:
+  `write_instance_status`),
+  so the leaf
+  takes T7 per the
+  1+max rule --
+  over the slice
+  <=T6 target but
+  under the T8 hub
+  ceiling, same as
+  the earlier
+  names-T6-takes-T7
+  leaves; no hub
+  renumber.
+  Bodies
+  byte-identical
+  apart from path
+  rewrites;
+  visibility
+  widens
+  `pub(super)` /
+  `pub(crate)` /
+  `pub(in crate::runtime)`
+  -> `pub`.
+  Two forced
+  deltas:
+  `restore_candidate_label`
+  +
+  `early_scan_skips_current_inspect`
+  un-gate per the
+  split-87
+  precedent
+  (`cfg(test)`
+  vanishes from
+  the leaf build
+  hub tests link
+  against),
+  `launch_candidate_for_manifest`
+  widens private
+  -> `pub` for the
+  hub suite, and
+  `resolve_restore_candidate`
+  drops its
+  hub-era
+  `dead_code` gate
+  (leaf-pub API
+  now). One new
+  `#[expect(clippy::unwrap_used)]`
+  rides the
+  un-gated seam
+  (unwrap
+  inherited from
+  hub test-only
+  code).
+
+- Verify: `cargo check
+  --locked --workspace
+  --all-targets` green;
+  `cargo fmt --all
+  --check` clean;
+  `cargo clippy` 0
+  errors on the
+  leaf (`-D
+  warnings`) and 0
+  on `jackin-runtime`
+  (baseline 0).
+  `cargo nextest list
+  --workspace
+  --all-targets`: 7277
+  -> 7277,
+  byte-identical (0
+  relocations; 0
+  dropped, 0 added).
+  `nextest run`:
+  433/433 runtime
+  green (1 skipped,
+  pre-existing; one
+  full-suite pass
+  flagged 1 LEAK
+  verdict in the
+  untouched
+  apple_container
+  exec-bindings
+  test, isolated
+  PASS proved a
+  load flake) +
+  17/17 app
+  `load_cmd`
+  green.
+  `alint check`:
+  180 violations /
+  11 failing,
+  counts steady (1
+  relocation: the
+  size-file-400
+  finding moves
+  with
+  `restore_resolve.rs`
+  hub -> leaf
+  path; zero new
+  rows).
+  `check-gaps`:
+  12 -> 12 (hub
+  11212 -> 10174
+  prod code lines,
+  79 prod files
+  unchanged;
+  xtask 26301 ->
+  26302 (+1 TIERS
+  row); leaf fits
+  both budgets, no
+  SIZE finding).
+  `GAP-TEST-001/002/003`
+  stay 0/0/0.
+  `ratchet.toml`: 6
+  new rows (README
+  bytes 1632,
+  too_many_arguments
+  2, too_many_lines
+  1, unwrap_used 1,
+  public-surface 2,
+  complexity 22)
+  + 3 hub tightens
+  (args 10 -> 8,
+  lines 5 -> 4,
+  dead_code 2 ->
+  1); gate output
+  back to base
+  parity (56
+  pre-existing).
+  `lint arch
+  --strict`: 3
+  pre-existing
+  no-tier
+  violations
+  byte-identical,
+  zero direction
+  violations;
+  `lint headers`
+  stays at the
+  base 2; `lint
+  tests` OK; `lint
+  readme-freshness`
+  unchanged (zero
+  restore rows).
+
+- Raw outputs:
+  `/tmp/s7-s89-{pre,post}-*.txt`
+  (kept out of the
+  repo).

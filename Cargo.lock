@@ -3613,6 +3613,7 @@ dependencies = [
  "jackin-runtime-launch-plan",
  "jackin-runtime-launch-programmatic-selection",
  "jackin-runtime-launch-progress-helpers",
+ "jackin-runtime-launch-restore",
  "jackin-runtime-launch-slot",
  "jackin-runtime-launch-trust",
  "jackin-runtime-naming",
@@ -4072,6 +4073,25 @@ dependencies = [
  "jackin-runtime-progress",
  "jackin-telemetry",
  "tokio",
+]
+
+[[package]]
+name = "jackin-runtime-launch-restore"
+version = "0.6.4"
+dependencies = [
+ "anyhow",
+ "jackin-config",
+ "jackin-core",
+ "jackin-diagnostics",
+ "jackin-docker",
+ "jackin-instance",
+ "jackin-runtime-attach-sessions",
+ "jackin-runtime-isolation",
+ "jackin-runtime-launch-account-identity",
+ "jackin-runtime-launch-attach-outcome",
+ "jackin-runtime-launch-load-options",
+ "jackin-runtime-launch-plan",
+ "jackin-runtime-progress",
 ]
 
 [[package]]
