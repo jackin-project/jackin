@@ -36,6 +36,7 @@ members = [
     "crates/services/jackin-usage-provider-amp",
     "crates/services/jackin-usage-provider-minimax",
     "crates/services/jackin-usage-provider-openrouter",
+    "crates/services/jackin-usage-provider-grok",
     "crates/testing/jackin-otlp-testbed",
     "crates/testing/jackin-test-support",
     "crates/tools/jackin-dev",
@@ -114,6 +115,7 @@ jackin-usage-provider-kimi = { version = "0.6.4", path = "crates/services/jackin
 jackin-usage-provider-amp = { version = "0.6.4", path = "crates/services/jackin-usage-provider-amp" }
 jackin-usage-provider-minimax = { version = "0.6.4", path = "crates/services/jackin-usage-provider-minimax" }
 jackin-usage-provider-openrouter = { version = "0.6.4", path = "crates/services/jackin-usage-provider-openrouter" }
+jackin-usage-provider-grok = { version = "0.6.4", path = "crates/services/jackin-usage-provider-grok" }
 nix = "0.31"
 rustix = { version = "=1.1.4", features = ["fs"] }
 opentelemetry_sdk = "0.32"

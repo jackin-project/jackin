@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `Grok` billing views and cycle labels.
 
-use super::super::*;
+use jackin_protocol::control::{
+    Money, QuotaBucketView, StatusSlot, UsageSnapshotStatus, UsageSource,
+};
 use jackin_usage_provider_core::{
     bucket, format_cents, parse_iso_epoch, quota_pace_label, timed_bucket,
 };
@@ -13,7 +15,7 @@ use super::{
 };
 
 impl GrokBillingSnapshot {
-    pub(crate) fn buckets(&self, now: i64) -> Vec<QuotaBucketView> {
+    pub fn buckets(&self, now: i64) -> Vec<QuotaBucketView> {
         match self {
             Self::Rpc(response) | Self::Rest(response) => response.buckets(now),
             Self::Web(snapshot) => snapshot.buckets(now),
@@ -30,7 +32,7 @@ impl GrokBillingSnapshot {
 
     /// Plan label from server-resolved truth: the RPC `subscription_tier`; the
     /// web-scrape path carries no tier and returns `None` (no auth heuristic).
-    pub(crate) fn plan_label(&self) -> Option<String> {
+    pub fn plan_label(&self) -> Option<String> {
         match self {
             Self::Rpc(response) | Self::Rest(response) => response.plan_label(),
             Self::Web(_) => None,
@@ -39,7 +41,7 @@ impl GrokBillingSnapshot {
 }
 
 impl GrokWebBillingSnapshot {
-    pub(crate) fn buckets(&self, now: i64) -> Vec<QuotaBucketView> {
+    pub fn buckets(&self, now: i64) -> Vec<QuotaBucketView> {
         let label = self.reset_at_epoch.map_or("Credits", |reset_at| {
             grok_cycle_label_from_reset(reset_at, now)
         });
@@ -70,7 +72,7 @@ impl GrokWebBillingSnapshot {
 
 impl GrokBillingResponse {
     /// Server-resolved plan label (trimmed, nonempty), or `None`.
-    pub(crate) fn plan_label(&self) -> Option<String> {
+    pub fn plan_label(&self) -> Option<String> {
         self.subscription_tier
             .as_deref()
             .map(str::trim)
@@ -78,7 +80,7 @@ impl GrokBillingResponse {
             .map(str::to_owned)
     }
 
-    pub(crate) fn buckets(&self, now: i64) -> Vec<QuotaBucketView> {
+    pub fn buckets(&self, now: i64) -> Vec<QuotaBucketView> {
         let mut buckets = Vec::new();
         let Some(config) = self.config.as_ref() else {
             return buckets;
@@ -251,7 +253,7 @@ pub(crate) fn weekly_billing_headline(
     view
 }
 
-pub(crate) fn grok_cycle_label_from_minutes(minutes: i64) -> &'static str {
+pub fn grok_cycle_label_from_minutes(minutes: i64) -> &'static str {
     let days = minutes / (24 * 60);
     if (6..=8).contains(&days) {
         "Weekly"
@@ -262,7 +264,7 @@ pub(crate) fn grok_cycle_label_from_minutes(minutes: i64) -> &'static str {
     }
 }
 
-pub(crate) fn grok_cycle_label_from_reset(reset_at: i64, now: i64) -> &'static str {
+pub fn grok_cycle_label_from_reset(reset_at: i64, now: i64) -> &'static str {
     let days = reset_at.saturating_sub(now) / 86_400;
     if days <= 8 {
         "Weekly"

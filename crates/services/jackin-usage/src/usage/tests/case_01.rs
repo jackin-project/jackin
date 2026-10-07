@@ -259,6 +259,31 @@ fn credential_snapshot_openrouter_arm_reads_key_quota() {
 }
 
 #[test]
+fn grok_env_key_only_snapshot_denies_billing_without_rpc() {
+    // The configured-source arm never attempts a billing RPC on an inference
+    // key: it reports the honest billing gap with zero network.
+    for (key, origin) in [
+        (
+            jackin_core::XAI_API_KEY_ENV_NAME,
+            "API token · env XAI_API_KEY",
+        ),
+        (
+            jackin_core::GROK_DEPLOYMENT_KEY_ENV_NAME,
+            "API token · env GROK_DEPLOYMENT_KEY",
+        ),
+    ] {
+        let view = provider_credential_snapshot("grok", key, "fixture-key");
+        assert_eq!(view.status, UsageSnapshotStatus::Error);
+        assert_eq!(view.source, UsageSource::None);
+        assert_eq!(
+            view.last_error.as_deref(),
+            Some("Grok billing requires an authenticated profile")
+        );
+        assert_eq!(view.account.credential_origin.as_deref(), Some(origin));
+    }
+}
+
+#[test]
 fn provider_tabs_emit_one_tab_per_account_keyed_by_stable_id() {
     let claude_stale = account_snapshot_view("Anthropic", "a@example.com", Some("Max"), 100);
     let claude_latest = account_snapshot_view("Anthropic", "a@example.com", Some("Max 20x"), 200);

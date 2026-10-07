@@ -2,19 +2,23 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `Grok` billing fetch and tier parsing.
 
-use super::super::*;
 use jackin_usage_provider_core::ProviderError;
 use jackin_usage_provider_core::{
     ChildOperation, GROK_RPC_INIT_TIMEOUT, GROK_RPC_REQUEST_TIMEOUT, ManagedCliLaunchGate,
     get_json_bearer, provider_http_client,
 };
+use std::io::{BufRead, BufReader};
+use std::path::Path;
+use std::process::{Command, Stdio};
+use std::sync::mpsc;
+use std::time::Instant;
 
 use super::{
     GrokBillingConfig, GrokBillingResponse, GrokBillingSnapshot, grok_bearer_token,
     grok_binary_path, grok_rpc_request,
 };
 
-pub(crate) fn fetch_grok_billing(
+pub fn fetch_grok_billing(
     auth_path: &Path,
     now: i64,
     gate: &mut ManagedCliLaunchGate,
@@ -34,7 +38,7 @@ pub(crate) fn fetch_grok_billing(
 /// Fetch the supported Grok CLI-proxy REST contract. The ACP adapter remains
 /// a fallback facade, but the direct grpc-web wire scan is not a production
 /// source anymore.
-pub(crate) fn fetch_grok_rest_billing(
+pub fn fetch_grok_rest_billing(
     auth_path: &Path,
     now: i64,
 ) -> Result<GrokBillingResponse, ProviderError> {
@@ -97,7 +101,7 @@ pub(crate) fn fetch_grok_rest_settings(token: &str) -> Result<serde_json::Value,
         .map_err(|error| format!("Grok settings decode failed: {error}"))
 }
 
-pub(crate) fn parse_grok_rest_billing_response(
+pub fn parse_grok_rest_billing_response(
     value: &serde_json::Value,
 ) -> Result<GrokBillingResponse, String> {
     let payload = value.get("data").unwrap_or(value);
@@ -115,7 +119,7 @@ pub(crate) fn parse_grok_rest_billing_response(
     })
 }
 
-pub(crate) fn fetch_grok_rpc_billing(
+pub fn fetch_grok_rpc_billing(
     gate: &mut ManagedCliLaunchGate,
 ) -> Result<GrokBillingResponse, String> {
     gate.can_launch("Grok ACP billing", Instant::now())?;

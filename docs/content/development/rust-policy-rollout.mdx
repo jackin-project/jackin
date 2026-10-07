@@ -1067,3 +1067,70 @@ passes.
 - Raw outputs:
   `/tmp/s9-or-{nextest,gaps,alint,
   lint2}.txt` (kept out of the repo).
+
+### Split 9: usage-provider-grok extraction (V6)
+
+- `jackin-usage` -> `jackin-usage` +
+  `jackin-usage-provider-grok` (T3 leaf:
+  `usage/grok.rs` -> `lib.rs` re-export
+  root + `billing`, `rpc`, `snapshot`,
+  `types`, `views`, `tests` +
+  `tests/case_01`; `lib.rs` carries the
+  ownership header). The two
+  `super::super::*` globs resolve to
+  explicit imports (`billing.rs`: std
+  io/process/sync/time;
+  `views.rs`: protocol control types);
+  `usage.rs` re-exports the vendor surface
+  from the new crate and drops its now
+  orphaned scope imports (`BufRead`,
+  `Command`/`Stdio`, `mpsc`, `Instant`,
+  `Money`), with explicit imports added
+  to the straggler test shims
+  (`usage/tests.rs`, `codex/tests.rs`,
+  `antigravity/tests.rs`). Visibility
+  deltas: `pub` on the re-exported
+  surface + snapshot/response view
+  methods + `GrokWebBillingSnapshot`
+  fields (used by the `usage/tests` suite
+  that stays behind). One dispatch-layer
+  test moves to `usage/tests/case_01`
+  verbatim
+  (`grok_env_key_only_snapshot_denies_billing_without_rpc`
+  calls `provider_credential_snapshot`,
+  which stays in usage — a dev-dep back
+  edge would be a prod+dev cycle). The
+  provider-call contract fixture remaps 4
+  entries (`usage/grok/{billing,
+  snapshot}.rs` -> `provider-grok/src/`,
+  33 entries, symbol set identical).
+- Verify: `cargo check --locked --workspace
+  --all-targets` green; `cargo fmt --all
+  --check` clean; `cargo clippy` 0 errors,
+  warnings identical to base (xtask 1,
+  runtime 7). `cargo nextest list
+  --workspace --all-targets`: 7272 ->
+  7272, bijection exact (8 grok tests move
+  `jackin-usage usage::grok::` ->
+  `jackin-usage-provider-grok` root + 1
+  dispatch test moves to
+  `usage::tests::case_01`; zero dropped,
+  zero added). `nextest run`: 562/562
+  usage + 8/8 grok. `alint check`: 198 ->
+  198, byte-identical. `check-gaps`: 28 ->
+  28 (usage `SIZE-001` 42287 -> 41085
+  lines, `SIZE-002` 283 -> 275 files;
+  xtask +1 line for the tier row);
+  `GAP-TEST-001/002/003` stay 0/0/0.
+  `ratchet.toml`: +3 grok rows (agent-doc
+  1206, `cast_precision_loss` 1,
+  `cast_sign_loss` 2), 1 usage shrink
+  (cast 18 -> 16), 1 usage delete
+  (`cast_precision_loss`, measured 0);
+  owed rows 61 -> 61 with zero new
+  failures. `lint arch`: missing tiers
+  stay 3, zero direction violations;
+  `lint headers` stays at the base 2.
+- Raw outputs:
+  `/tmp/s9-grok-{nextest,gaps,alint,
+  lint2}.txt` (kept out of the repo).

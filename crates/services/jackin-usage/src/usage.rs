@@ -18,18 +18,13 @@ mod codex;
 mod credential_snapshots;
 mod cursor;
 mod gemini;
-mod grok;
 mod hermes;
 mod muse;
 mod opencode;
 
 use std::fs;
 
-use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
-use std::sync::mpsc;
-use std::time::Instant;
 
 #[expect(
     unused_imports,
@@ -125,26 +120,12 @@ pub(crate) use self::gemini::{
     gemini_migration_action, gemini_oauth_creds_path, gemini_quota_buckets, gemini_snapshot,
     gemini_snapshot_with_presence, parse_gemini_entitlement, parse_gemini_project_quotas,
 };
-#[expect(
-    unused_imports,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
-pub(crate) use self::grok::{
-    GrokBillingConfig, GrokBillingResponse, GrokBillingSnapshot, GrokCent, GrokCurrentPeriod,
-    GrokWebBillingSnapshot, fetch_grok_billing, fetch_grok_rest_billing, fetch_grok_rpc_billing,
-    grok_account_label, grok_account_label_or_presence, grok_bearer_token,
-    grok_bearer_token_from_entry, grok_binary_path, grok_cycle_label_from_minutes,
-    grok_cycle_label_from_reset, grok_rpc_request, grok_rpc_request_payload, grok_snapshot,
-    grok_snapshot_from_rpc_result, grok_snapshot_from_rpc_result_with_rate_limit,
-    grpc_web_data_frames, parse_grok_rest_billing_response, parse_grok_web_billing_response,
-    scan_protobuf,
-};
 pub(crate) use self::opencode::opencode_profile_snapshot;
 #[cfg(test)]
 pub(crate) use self::opencode::{load_opencode_api_key, parse_opencode_usage};
 use base64::Engine as _;
 use jackin_protocol::control::{
-    FocusedAccountHeader, FocusedUsageView, Money, QuotaBucketView, StatusSlot, UsageConfidence,
+    FocusedAccountHeader, FocusedUsageView, QuotaBucketView, StatusSlot, UsageConfidence,
     UsageSnapshotStatus, UsageSource,
 };
 #[cfg(test)]
@@ -158,6 +139,20 @@ pub(crate) use jackin_usage_provider_amp::{
     AmpRenewal, AmpSubscription, AmpSubscriptionKind, AmpSuccessContext, AmpUsage,
     AmpWorkspaceBalance, amp_api_key_snapshot, amp_snapshot, amp_view_from_usage,
     fetch_amp_api_usage, fetch_amp_cli_usage, load_amp_api_key, parse_amp_usage_output,
+};
+#[expect(
+    unused_imports,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
+pub(crate) use jackin_usage_provider_grok::{
+    GrokBillingConfig, GrokBillingResponse, GrokBillingSnapshot, GrokCent, GrokCurrentPeriod,
+    GrokWebBillingSnapshot, fetch_grok_billing, fetch_grok_rest_billing, fetch_grok_rpc_billing,
+    grok_account_label, grok_account_label_or_presence, grok_bearer_token,
+    grok_bearer_token_from_entry, grok_binary_path, grok_cycle_label_from_minutes,
+    grok_cycle_label_from_reset, grok_rpc_request, grok_rpc_request_payload, grok_snapshot,
+    grok_snapshot_from_rpc_result, grok_snapshot_from_rpc_result_with_rate_limit,
+    grpc_web_data_frames, parse_grok_rest_billing_response, parse_grok_web_billing_response,
+    scan_protobuf,
 };
 #[expect(
     unused_imports,

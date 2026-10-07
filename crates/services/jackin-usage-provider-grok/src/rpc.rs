@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 
 use super::GrokWebBillingSnapshot;
 
-pub(crate) fn grok_binary_path() -> PathBuf {
+pub fn grok_binary_path() -> PathBuf {
     let home_bin = home_path(".grok/bin/grok");
     if home_bin.is_file() {
         home_bin
@@ -26,7 +26,7 @@ pub(crate) fn grok_binary_path() -> PathBuf {
 /// Subscription Bearer [REDACTED] the stored auth file only. This never consults
 /// `XAI_API_KEY` / `GROK_DEPLOYMENT_KEY`: ambient inference keys are not
 /// consumer-billing auth (see [`resolve_grok_billing_auth`]).
-pub(crate) fn grok_bearer_token(auth_path: &Path, now: i64) -> Result<String, String> {
+pub fn grok_bearer_token(auth_path: &Path, now: i64) -> Result<String, String> {
     let text = fs::read_to_string(auth_path).map_err(|err| format!("auth read failed: {err}"))?;
     let value: serde_json::Value =
         serde_json::from_str(&text).map_err(|err| format!("auth decode failed: {err}"))?;
@@ -52,7 +52,7 @@ pub(crate) fn grok_bearer_token(auth_path: &Path, now: i64) -> Result<String, St
     Err("no fresh Grok bearer token in auth.json".to_owned())
 }
 
-pub(crate) fn grok_bearer_token_from_entry(
+pub fn grok_bearer_token_from_entry(
     entry: &serde_json::Value,
     now: i64,
 ) -> Result<Option<String>, String> {
@@ -71,7 +71,7 @@ pub(crate) fn grok_bearer_token_from_entry(
     Ok(Some(token.to_owned()))
 }
 
-pub(crate) fn parse_grok_web_billing_response(
+pub fn parse_grok_web_billing_response(
     data: &[u8],
     now: i64,
 ) -> Result<GrokWebBillingSnapshot, String> {
@@ -120,7 +120,7 @@ pub(crate) fn parse_grok_web_billing_response(
     })
 }
 
-pub(crate) fn grpc_web_data_frames(data: &[u8]) -> Vec<Vec<u8>> {
+pub fn grpc_web_data_frames(data: &[u8]) -> Vec<Vec<u8>> {
     let mut frames = Vec::new();
     let mut index = 0;
     while index < data.len() {
@@ -145,12 +145,7 @@ pub(crate) fn grpc_web_data_frames(data: &[u8]) -> Vec<Vec<u8>> {
     frames
 }
 
-pub(crate) fn scan_protobuf(
-    data: &[u8],
-    depth: usize,
-    path: Vec<u64>,
-    order: &mut usize,
-) -> ProtobufScan {
+pub fn scan_protobuf(data: &[u8], depth: usize, path: Vec<u64>, order: &mut usize) -> ProtobufScan {
     let mut scan = ProtobufScan::default();
     let mut index = 0;
     while index < data.len() {
@@ -234,7 +229,7 @@ pub(crate) fn scan_protobuf(
     scan
 }
 
-pub(crate) fn grok_rpc_request(
+pub fn grok_rpc_request(
     stdin: &mut impl Write,
     rx: &mpsc::Receiver<String>,
     id: i64,
@@ -287,7 +282,7 @@ pub(crate) fn grok_rpc_request(
     result
 }
 
-pub(crate) fn grok_rpc_request_payload(
+pub fn grok_rpc_request_payload(
     id: i64,
     method: &str,
     params: serde_json::Value,

@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 
 use super::{GrokBillingAuth, GrokBillingSnapshot, fetch_grok_billing, resolve_grok_billing_auth};
 
-pub(crate) fn grok_snapshot(
+pub fn grok_snapshot(
     agent: &str,
     now: i64,
     rpc_gate: &mut ManagedCliLaunchGate,
@@ -57,7 +57,7 @@ pub(crate) fn grok_snapshot(
     .0
 }
 
-pub(crate) fn grok_snapshot_from_rpc_result(
+pub fn grok_snapshot_from_rpc_result(
     agent: &str,
     now: i64,
     auth: &Path,
@@ -78,7 +78,7 @@ pub(crate) fn grok_snapshot_from_rpc_result(
     .0
 }
 
-pub(crate) fn grok_snapshot_from_rpc_result_with_rate_limit<E>(
+pub fn grok_snapshot_from_rpc_result_with_rate_limit<E>(
     agent: &str,
     now: i64,
     auth: &Path,
@@ -174,14 +174,14 @@ where
     (view, rate_limit)
 }
 
-pub(crate) fn grok_account_label(path: &Path) -> Option<String> {
+pub fn grok_account_label(path: &Path) -> Option<String> {
     let value = read_json_file(path)?;
     first_string_key(&value, "email")
         .or_else(|| first_string_key(&value, "user_id"))
         .or_else(|| first_string_key(&value, "team_id"))
 }
 
-pub(crate) fn grok_account_label_or_presence(
+pub fn grok_account_label_or_presence(
     auth_path: &Path,
     has_auth: bool,
     has_xai_api_key: bool,

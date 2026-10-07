@@ -3651,6 +3651,7 @@ dependencies = [
  "jackin-telemetry",
  "jackin-usage-provider-amp",
  "jackin-usage-provider-core",
+ "jackin-usage-provider-grok",
  "jackin-usage-provider-kimi",
  "jackin-usage-provider-minimax",
  "jackin-usage-provider-openrouter",
@@ -3715,6 +3716,18 @@ dependencies = [
  "tempfile",
  "tower",
  "tracing",
+]
+
+[[package]]
+name = "jackin-usage-provider-grok"
+version = "0.6.4"
+dependencies = [
+ "jackin-protocol",
+ "jackin-telemetry",
+ "jackin-usage-provider-core",
+ "reqwest",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
