@@ -6083,3 +6083,143 @@ bound 720.
 - Raw outputs:
   `/tmp/s7-s68-{pre,post}-*.txt`
   (kept out of the repo).
+
+### Split 69: runtime-launch-git-pull extraction (M31)
+
+- `jackin-runtime` ->
+  `jackin-runtime` +
+  `jackin-runtime-launch-git-pull`
+  (T3: the whole
+  `launch::git_pull`
+  module moves —
+  workspace repo pull
+  driver + result
+  report, no tests).
+  Cross-leaf edges: 1x
+  into an already-split
+  crate
+  (`process-telemetry`;
+  `exec_sync` repathed,
+  everything else
+  already named
+  workspace crates).
+  Six `pub(crate)`
+  items widen to `pub`
+  (forced); the
+  `#[cfg(test)]` gate
+  on
+  `pull_workspace_repos_with_git`
+  drops because the
+  helper's caller
+  (`launch/tests/case_07`)
+  stays in the hub and
+  a `cfg(test)` item
+  does not survive a
+  crate boundary —
+  `launch.rs` keeps its
+  own `#[cfg(test)]`
+  re-export, so
+  non-test builds see
+  no change. New-pub
+  fallout: `#[derive(Debug)]`
+  on `GitPullResult`
+  (`-D
+  missing-debug-implementations`)
+  and three
+  `#[expect(clippy::print_stderr)]`
+  (the operator-visible
+  pull lines; the old
+  module-level expect
+  in `launch.rs` stays
+  fulfilled by
+  `launch_runtime.rs`).
+  No shim file:
+  `launch.rs`
+  re-exports the module
+  itself (the split-56
+  precedent), so
+  `super::git_pull::GitPullResult`
+  in `launch_pipeline.rs`
+  and `case_07.rs`
+  keeps resolving
+  through the glob.
+  Tier: names T2
+  diagnostics, so it
+  takes T3; no renumber
+  cascade. New-crate deps:
+  config, diagnostics,
+  process, telemetry,
+  runtime-process-telemetry,
+  anyhow (lockfile
+  +1 package, +6
+  edges). Policy
+  registries: +1
+  owned package
+  (`library`).
+
+- Verify: `cargo check
+  --locked --workspace
+  --all-targets`
+  green; `cargo fmt
+  --all --check`
+  clean; `cargo
+  clippy` 0 errors on
+  the new crate,
+  `jackin-runtime`
+  holds at the 7
+  pre-existing errors
+  (all in
+  `launch_slot/tests`,
+  byte-identical
+  locations).
+  `cargo nextest list
+  --workspace
+  --all-targets`: 7277
+  -> 7277 (byte-identical
+  output: the moved
+  module carries no
+  tests, 0 dropped,
+  0 added).
+  `nextest run`:
+  492/492 runtime +
+  new crate (1 skipped,
+  pre-existing).
+  `alint check`:
+  182 violations / 11
+  failing unchanged.
+  `check-gaps`
+  (v0.1.3,
+  production-only):
+  12 -> 12 (runtime
+  `SIZE-001/002`
+  persist: 15687 ->
+  15541 prod code
+  lines, 93 -> 92
+  prod files; new
+  crate fits at
+  172 raw / 1 file,
+  no SIZE finding).
+  `GAP-TEST-001/002/003`
+  stay 0/0/0.
+  `ratchet.toml`: +3
+  rows
+  (agent-doc-bytes
+  README 923,
+  public-surface 1,
+  expect-per-lint-crate
+  print_stderr 3);
+  failures 56
+  -> 56 — remaining
+  keys byte-identical.
+  `lint arch
+  --strict`: output
+  byte-identical, zero
+  direction
+  violations; `lint
+  headers` stays at
+  the base 2; `lint
+  tests` OK.
+
+- Raw outputs:
+  `/tmp/s7-s69-{pre,post}-*.txt`
+  (kept out of the repo).

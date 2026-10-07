@@ -351,6 +351,9 @@ bound = 2
 key = "clippy::print_stderr@jackin-runtime-launch-account-config"
 bound = 1
 [[family.entry]]
+key = "clippy::print_stderr@jackin-runtime-launch-git-pull"
+bound = 3
+[[family.entry]]
 key = "clippy::print_stderr@jackin-runtime-spin-wait"
 bound = 1
 [[family.entry]]
@@ -740,6 +743,9 @@ bound = 900
 key = "crates/services/jackin-runtime-launch-capsule-setup/README.md"
 bound = 1066
 [[family.entry]]
+key = "crates/services/jackin-runtime-launch-git-pull/README.md"
+bound = 923
+[[family.entry]]
 key = "crates/services/jackin-runtime-launch-image-plan/README.md"
 bound = 666
 [[family.entry]]
@@ -1061,6 +1067,9 @@ key = "jackin-runtime-launch-auth-error"
 bound = 1
 [[family.entry]]
 key = "jackin-runtime-launch-capsule-setup"
+bound = 1
+[[family.entry]]
+key = "jackin-runtime-launch-git-pull"
 bound = 1
 [[family.entry]]
 key = "jackin-runtime-launch-image-plan"

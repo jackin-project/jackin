@@ -234,7 +234,9 @@ pub(super) fn validate_agent_supported(
 
 mod capsule_setup;
 mod exit_diagnosis;
-mod git_pull;
+// Moved to jackin_runtime_launch_git_pull::git_pull (S7 split 69); the
+// module re-export keeps every `launch::git_pull::*` path stable.
+pub(crate) use jackin_runtime_launch_git_pull::git_pull;
 mod mounts;
 mod progress_helpers;
 use progress_helpers::{

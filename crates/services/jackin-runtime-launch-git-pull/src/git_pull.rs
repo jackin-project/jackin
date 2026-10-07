@@ -7,15 +7,15 @@ use std::path::Path;
 
 use jackin_config;
 
-pub(crate) enum GitPullResult {
+#[derive(Debug)]
+pub enum GitPullResult {
     Success { src: String, stdout: String },
     Failure { src: String, stderr: String },
     SpawnError { src: String, error: anyhow::Error },
     JoinError { src: String },
 }
 
-#[cfg(test)]
-pub(crate) fn pull_workspace_repos_with_git(
+pub fn pull_workspace_repos_with_git(
     workspace: &jackin_config::ResolvedWorkspace,
     debug: bool,
     git_program: &Path,
@@ -23,7 +23,7 @@ pub(crate) fn pull_workspace_repos_with_git(
     pull_git_sources_with_git(git_pull_sources(workspace), debug, git_program, true)
 }
 
-pub(crate) fn git_pull_sources(workspace: &jackin_config::ResolvedWorkspace) -> Vec<String> {
+pub fn git_pull_sources(workspace: &jackin_config::ResolvedWorkspace) -> Vec<String> {
     let mut sources = Vec::new();
     let mut seen = std::collections::HashSet::new();
     for mount in &workspace.mounts {
@@ -34,7 +34,11 @@ pub(crate) fn git_pull_sources(workspace: &jackin_config::ResolvedWorkspace) -> 
     sources
 }
 
-pub(crate) fn pull_git_sources_with_git(
+#[expect(
+    clippy::print_stderr,
+    reason = "git pull emits operator-visible per-repo progress lines"
+)]
+pub fn pull_git_sources_with_git(
     sources: Vec<String>,
     debug: bool,
     git_program: &Path,
@@ -62,7 +66,7 @@ pub(crate) fn pull_git_sources_with_git(
             jackin_telemetry::spawn::thread_joined(move || {
                 let request = jackin_process::ExecRequest::new(git_program, ["-C", &src, "pull"])
                     .envs([("GIT_TERMINAL_PROMPT", "0")]);
-                match crate::process_telemetry::exec_sync(&request) {
+                match jackin_runtime_process_telemetry::process_telemetry::exec_sync(&request) {
                     Ok(out) if out.success => GitPullResult::Success {
                         src,
                         stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
@@ -89,7 +93,11 @@ pub(crate) fn pull_git_sources_with_git(
     results
 }
 
-pub(crate) fn print_git_pull_results(results: &[GitPullResult]) {
+#[expect(
+    clippy::print_stderr,
+    reason = "git pull failure report is operator-visible stderr output"
+)]
+pub fn print_git_pull_results(results: &[GitPullResult]) {
     for result in results {
         match result {
             GitPullResult::Success { stdout, .. } => {
@@ -108,6 +116,10 @@ pub(crate) fn print_git_pull_results(results: &[GitPullResult]) {
     }
 }
 
+#[expect(
+    clippy::print_stderr,
+    reason = "git pull stdout relay is operator-visible stderr output"
+)]
 fn print_git_pull_stdout(stdout: &str) {
     let trimmed = stdout.trim();
     if !trimmed.is_empty() {
@@ -115,7 +127,7 @@ fn print_git_pull_stdout(stdout: &str) {
     }
 }
 
-pub(crate) fn record_git_pull_results(results: &[GitPullResult]) -> (usize, usize) {
+pub fn record_git_pull_results(results: &[GitPullResult]) -> (usize, usize) {
     let mut ok = 0;
     let mut failed = 0;
     for result in results {

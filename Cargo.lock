@@ -3594,6 +3594,7 @@ dependencies = [
  "jackin-runtime-launch-account-identity",
  "jackin-runtime-launch-auth-error",
  "jackin-runtime-launch-capsule-setup",
+ "jackin-runtime-launch-git-pull",
  "jackin-runtime-launch-image-plan",
  "jackin-runtime-launch-load-cleanup",
  "jackin-runtime-launch-mounts",
@@ -3823,6 +3824,18 @@ dependencies = [
  "jackin-runtime-launch-account-config",
  "tempfile",
  "toml",
+]
+
+[[package]]
+name = "jackin-runtime-launch-git-pull"
+version = "0.6.4"
+dependencies = [
+ "anyhow",
+ "jackin-config",
+ "jackin-diagnostics",
+ "jackin-process",
+ "jackin-runtime-process-telemetry",
+ "jackin-telemetry",
 ]
 
 [[package]]
