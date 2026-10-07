@@ -9217,3 +9217,166 @@ bound 720.
   `/tmp/s7-s89-{pre,post}-*.txt`
   (kept out of the
   repo).
+
+### Split 90: runtime-launch-failure extraction (M51)
+
+- `jackin-runtime`
+  ->
+  `jackin-runtime`
+  +
+  `jackin-runtime-launch-failure`
+  (T6: hub
+  `launch/failure.rs`
+  (139) sheds
+  `launch_failure_title`
+  +
+  `short_launch_diagnosis`
+  +
+  `launch_failure_cli_error`
+  +
+  `resolve_launch_role_source`
+  (69) to the
+  `failure` leaf
+  module;
+  `render_exit`
+  stays in the hub
+  shim).
+  Hub keeps the
+  shim (item
+  re-exports) +
+  suite in place
+  (hub `launch`
+  cases);
+  `launch.rs`
+  re-exports
+  byte-unchanged.
+  Zero hub fns
+  named:
+  `LaunchStage`
+  re-points at
+  runtime-progress
+  (T5),
+  diagnostics /
+  config / core at
+  their crates
+  (T2 / T1 /
+  T0).
+  Tier decision:
+  max dep is
+  runtime-progress
+  (T5), so the
+  leaf takes T6
+  per the 1+max
+  rule -- inside
+  the slice <=T6
+  target;
+  `render_exit`
+  stays out
+  because universe
+  (T7:
+  `observe_exit`,
+  `force_boundary_outro_enabled`,
+  `ExitClaim`)
+  would push the
+  leaf to T8; no
+  hub renumber.
+  Bodies
+  byte-identical
+  apart from path
+  rewrites;
+  visibility
+  widens
+  `pub(crate)` ->
+  `pub`. Zero
+  forced deltas:
+  no test gates,
+  no un-gating,
+  no new expects.
+
+- Verify: `cargo check
+  --locked --workspace
+  --all-targets` green;
+  `cargo fmt --all
+  --check` clean;
+  `cargo clippy` 0
+  errors/warnings on
+  the leaf + hub lib
+  (`-D warnings`,
+  baseline 0; the 6
+  lib-test clippy
+  errors in untouched
+  `case_29` /
+  `support_04` are
+  pre-existing at
+  base, proven on a
+  pristine worktree).
+  `cargo nextest list
+  --workspace
+  --all-targets`: 7277
+  -> 7277,
+  byte-identical (0
+  relocations; 0
+  dropped, 0 added).
+  `nextest run`:
+  433/433 runtime
+  green (1 skipped,
+  pre-existing; one
+  pass flagged 1
+  LEAK, two reruns
+  clean -- load
+  flake) + 17/17 app
+  `load_cmd` green;
+  the leaf has no
+  tests (coverage in
+  hub `launch` cases
+  01/08).
+  `alint check`:
+  180 violations /
+  11 failing,
+  byte-identical
+  (zero relocations --
+  no 400-line files
+  moved; zero new
+  rows).
+  `check-gaps`:
+  12 -> 12 (hub
+  10174 -> 10119
+  prod code lines,
+  79 prod files
+  unchanged;
+  xtask 26302 ->
+  26303 (+1 TIERS
+  row); leaf fits
+  both budgets, no
+  SIZE finding).
+  `GAP-TEST-001/002/003`
+  stay 0/0/0.
+  `ratchet.toml`: 2
+  new rows (README
+  bytes 1039,
+  public-surface 1)
+  + 0 hub tightens;
+  gate output
+  byte-identical to
+  base (53
+  pre-existing).
+  `lint arch
+  --strict`: 3
+  pre-existing
+  no-tier
+  violations
+  byte-identical,
+  zero direction
+  violations;
+  `lint headers`
+  stays at the
+  base 2; `lint
+  tests` OK; `lint
+  readme-freshness`
+  unchanged (zero
+  failure rows).
+
+- Raw outputs:
+  `/tmp/jackin-s30-{before,after}-*.txt`
+  (kept out of the
+  repo).

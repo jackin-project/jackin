@@ -3605,6 +3605,7 @@ dependencies = [
  "jackin-runtime-launch-capsule-setup",
  "jackin-runtime-launch-dry-run",
  "jackin-runtime-launch-exit-diagnosis",
+ "jackin-runtime-launch-failure",
  "jackin-runtime-launch-git-pull",
  "jackin-runtime-launch-image-plan",
  "jackin-runtime-launch-load-cleanup",
@@ -3975,6 +3976,17 @@ dependencies = [
  "jackin-docker",
  "jackin-isolation",
  "jackin-telemetry",
+]
+
+[[package]]
+name = "jackin-runtime-launch-failure"
+version = "0.6.4"
+dependencies = [
+ "anyhow",
+ "jackin-config",
+ "jackin-core",
+ "jackin-diagnostics",
+ "jackin-runtime-progress",
 ]
 
 [[package]]
