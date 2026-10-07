@@ -1,7 +1,7 @@
-// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
-// SPDX-License-Identifier: Apache-2.0
-
-//! Per-session token-spend monitor.
+//! jackin-usage-token-monitor: per-session token-spend monitor.
+//!
+//! **Architecture Invariant:** T2.
+//! Entry point: [`TokenMonitor`] — throttled session polling.
 //!
 //! Reads provider-specific local `JSONL` / `SQLite` files inside the container and
 //! tracks per-session input/output/cache token totals (and cost, from the

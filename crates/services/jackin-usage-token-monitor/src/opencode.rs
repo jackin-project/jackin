@@ -3,8 +3,8 @@
 //! `opencode.db`'s `message` table incrementally by `rowid`.
 
 use super::{PollStatus, TokenSession};
-use crate::store_backend::{self, DbOperation, connect_local, params};
 use jackin_telemetry::ResultTelemetryExt as _;
+use jackin_usage_store_backend::{self, DbOperation, connect_local, params};
 
 const DB_PATH: &str = "/home/agent/.local/share/opencode/opencode.db";
 
@@ -21,7 +21,7 @@ pub(crate) async fn poll_session(session: &mut TokenSession) -> PollStatus {
     };
 
     let query = "SELECT rowid, input, output, cost FROM message WHERE rowid > ? ORDER BY rowid ASC LIMIT 1000";
-    let Ok(mut rows) = store_backend::operation(
+    let Ok(mut rows) = jackin_usage_store_backend::operation(
         DbOperation::Select,
         conn.query(query, params![session.last_rowid]),
     )

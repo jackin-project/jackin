@@ -3669,6 +3669,7 @@ dependencies = [
  "jackin-usage-provider-zai",
  "jackin-usage-snapshot-store",
  "jackin-usage-store-backend",
+ "jackin-usage-token-monitor",
  "nix 0.31.3",
  "ratatui",
  "reqwest",
@@ -3940,6 +3941,22 @@ dependencies = [
  "tokio",
  "tracing",
  "turso",
+]
+
+[[package]]
+name = "jackin-usage-token-monitor"
+version = "0.6.4"
+dependencies = [
+ "jackin-core",
+ "jackin-diagnostics",
+ "jackin-otlp-testbed",
+ "jackin-protocol",
+ "jackin-telemetry",
+ "jackin-usage-store-backend",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

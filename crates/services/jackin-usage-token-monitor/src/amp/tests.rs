@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Tests for the parent module.
-use crate::token_monitor::TokenSession;
+use crate::TokenSession;
 use jackin_core::Agent;
 
 #[test]

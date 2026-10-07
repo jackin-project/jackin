@@ -1885,3 +1885,54 @@ passes.
 - Raw outputs:
   `/tmp/s11-split22-{before,after}.txt`
   (kept out of the repo).
+
+### Split 23: usage-token-monitor extraction (C4)
+
+- `jackin-usage` -> `jackin-usage` +
+  `jackin-usage-token-monitor` (T2:
+  `token_monitor.rs` -> `lib.rs`
+  re-export root + 20 module files
+  moved flat, including the six public
+  reader modules; `lib.rs` carries the
+  ownership header). Production deps
+  are core/protocol/telemetry (T0/T1)
+  plus the T1 store backend, so T2 is
+  the lowest legal tier; diagnostics,
+  otlp-testbed, tokio, and tracing
+  stay test-only dev-dependencies.
+  Path edits are mechanical: one
+  `store_backend` use re-points at
+  the chokepoint crate and the reader
+  unit tests drop the flattened
+  `token_monitor::` prefix. The
+  capsule glob re-export and the
+  `token_log_reread` bench keep
+  working through the unchanged
+  public path.
+- Verify: `cargo check --locked --workspace
+  --all-targets` green; `cargo fmt --all
+  --check` clean; `cargo clippy` 0
+  errors, 0 warnings on both touched
+  packages. `cargo nextest list
+  --workspace --all-targets`: 7276 ->
+  7276, delta is exactly 30 moved
+  (zero dropped, zero added).
+  `nextest run`: 406/406 usage + 30/30
+  token-monitor. No contract fixture
+  entries name token-monitor paths,
+  so no remap. `alint check`: 197 ->
+  197. `check-gaps`: 27 -> 27 (usage
+  `SIZE-001` 28227 -> 26926 lines,
+  `SIZE-002` 166 -> 145 files);
+  `GAP-TEST-001/002/003` stay 0/0/0.
+  `ratchet.toml`: +2 rows (agent-doc
+  1202, public-surface token-monitor
+  6) and the usage public-surface row
+  shrinks 5 -> 4; violations 60 -> 60
+  with zero new failures. `lint arch`:
+  missing tiers stay 3, zero direction
+  violations; `lint headers` stays at
+  the base 2; `lint tests` OK.
+- Raw outputs:
+  `/tmp/s11-split23-{before,after}.txt`
+  (kept out of the repo).

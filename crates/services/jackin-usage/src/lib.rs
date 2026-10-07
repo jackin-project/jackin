@@ -13,7 +13,7 @@ pub use jackin_usage_output as output;
 /// [`store_backend::connect_local`] so a turso version bump stays one file.
 pub use jackin_usage_store_backend as store_backend;
 pub mod telemetry;
-pub mod token_monitor;
+pub use jackin_usage_token_monitor as token_monitor;
 pub mod usage;
 pub use jackin_usage_snapshot_store as usage_snapshot_store;
 

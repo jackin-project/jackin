@@ -71,7 +71,7 @@ async fn conformance_wire_codex_model_is_consumed_without_export() {
     apply_line(&line, &mut acc);
     assert_eq!(acc.model.as_deref(), Some(model));
     assert!(
-        crate::token_monitor::pricing::estimate_cost_usd(model, 120, 45, 20, 0).is_some(),
+        crate::pricing::estimate_cost_usd(model, 120, 45, 20, 0).is_some(),
         "parsed model was not consumed by local pricing"
     );
 
@@ -81,16 +81,16 @@ async fn conformance_wire_codex_model_is_consumed_without_export() {
         jackin_diagnostics::ServiceIdentity::CAPSULE,
     )
     .expect("initialize wire test export");
-    let current = crate::token_monitor::TokenTotals {
+    let current = crate::TokenTotals {
         input_tokens: 120,
         output_tokens: 45,
         cache_read_tokens: 20,
         model: acc.model,
-        ..crate::token_monitor::TokenTotals::default()
+        ..crate::TokenTotals::default()
     };
-    crate::token_monitor::record_token_usage(
+    crate::record_token_usage(
         jackin_core::Agent::Codex,
-        &crate::token_monitor::TokenTotals::default(),
+        &crate::TokenTotals::default(),
         &current,
     );
     let operation =

@@ -45,6 +45,7 @@ jackin-usage-credential-snapshots = { workspace = true }
 jackin-usage-coordinator = { workspace = true }
 jackin-usage-store-backend = { workspace = true }
 jackin-usage-snapshot-store = { workspace = true }
+jackin-usage-token-monitor = { workspace = true }
 base64 = { workspace = true }
 chrono = { workspace = true, features = ["clock"] }
 httpdate = { workspace = true }
