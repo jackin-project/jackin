@@ -34,6 +34,7 @@
     "jackin-runtime-attach-admission",
     "jackin-runtime-attach-capsule-ready",
     "jackin-runtime-attach-exec-args",
+    "jackin-runtime-attach-inspect",
     "jackin-runtime-attach-sessions",
     "jackin-runtime-attach-transport",
     "jackin-runtime-coordination",

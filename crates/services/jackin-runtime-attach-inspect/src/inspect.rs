@@ -2,15 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Hardline instance inspection and state descriptions.
 
-use crate::instance::{InstanceManifest, RegistrationState};
+use jackin_instance::{InstanceManifest, RegistrationState};
 
 use jackin_docker::docker_client::DockerApi;
 
 use jackin_core::JackinPaths;
 
-use super::{
-    AgentSessionInventory, ContainerState, inspect_agent_sessions, validate_recorded_role_handle,
-};
+use jackin_docker::docker_client::ContainerState;
+use jackin_runtime_attach_admission::admission::validate_recorded_role_handle;
+use jackin_runtime_attach_sessions::sessions::{AgentSessionInventory, inspect_agent_sessions};
 
 pub async fn inspect_hardline_instance(
     paths: &JackinPaths,
@@ -24,7 +24,7 @@ pub async fn inspect_hardline_instance(
     let manifest_result: Result<Option<InstanceManifest>, String> =
         InstanceManifest::read_optional(&state_dir).map_err(|e| e.to_string());
     let manifest = manifest_result.as_ref().ok().and_then(Option::as_ref);
-    let resources = crate::instance::DockerResources::from_container_name(container_name);
+    let resources = jackin_instance::DockerResources::from_container_name(container_name);
     let dind_name = manifest.map_or_else(
         || resources.dind_container.clone(),
         |manifest| manifest.docker.dind_container.clone(),
@@ -133,7 +133,7 @@ pub fn describe_agent_session_count(sessions: &AgentSessionInventory) -> String 
     }
 }
 
-pub(crate) fn describe_agent_sessions(sessions: &AgentSessionInventory) -> String {
+pub fn describe_agent_sessions(sessions: &AgentSessionInventory) -> String {
     match sessions {
         AgentSessionInventory::NotRunning => "not running".to_owned(),
         AgentSessionInventory::Unavailable(reason) => format!("unavailable: {reason}"),
@@ -148,7 +148,7 @@ pub(crate) fn describe_agent_sessions(sessions: &AgentSessionInventory) -> Strin
     }
 }
 
-pub(crate) fn describe_network_state(state: DockerNetworkState) -> String {
+pub fn describe_network_state(state: DockerNetworkState) -> String {
     match state {
         DockerNetworkState::Present => "present".to_owned(),
         DockerNetworkState::NotFound => "missing".to_owned(),
@@ -156,24 +156,21 @@ pub(crate) fn describe_network_state(state: DockerNetworkState) -> String {
     }
 }
 
-pub(crate) fn describe_mount_state(state_dir: &std::path::Path) -> String {
-    match crate::isolation::state::MountSummary::for_state_dir(state_dir) {
+pub fn describe_mount_state(state_dir: &std::path::Path) -> String {
+    match jackin_isolation::state::MountSummary::for_state_dir(state_dir) {
         Ok(summary) => summary.inspect_label(),
         Err(e) => format!("unknown (error reading state: {e})"),
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum DockerNetworkState {
+pub enum DockerNetworkState {
     Present,
     NotFound,
     InspectUnavailable(String),
 }
 
-pub(crate) async fn inspect_docker_network(
-    docker: &impl DockerApi,
-    network: &str,
-) -> DockerNetworkState {
+pub async fn inspect_docker_network(docker: &impl DockerApi, network: &str) -> DockerNetworkState {
     match docker.inspect_network(network).await {
         Ok(Some(_)) => DockerNetworkState::Present,
         Ok(None) => DockerNetworkState::NotFound,
@@ -181,7 +178,7 @@ pub(crate) async fn inspect_docker_network(
     }
 }
 
-pub(crate) fn missing_restore_message(
+pub fn missing_restore_message(
     paths: &JackinPaths,
     container_name: &str,
 ) -> anyhow::Result<Option<String>> {

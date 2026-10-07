@@ -28,7 +28,10 @@ pub(crate) use jackin_runtime_attach_exec_args::exec_args;
 mod finalize;
 mod hardline;
 mod hardline_start;
-mod inspect;
+// Moved to jackin_runtime_attach_inspect::inspect (S7
+// split 80); the module re-export keeps every
+// `attach::inspect::*` path stable.
+pub(crate) use jackin_runtime_attach_inspect::inspect;
 mod reconnect;
 mod reconnect_lease;
 // Moved to jackin_runtime_attach_sessions::sessions (S7
