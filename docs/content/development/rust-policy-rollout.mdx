@@ -2852,3 +2852,72 @@ bound 720.
 - Raw outputs:
   `/tmp/s7-s39-{pre,post}-*.txt`
   (kept out of the repo).
+
+### Split 40: runtime-spin-wait extraction (M2)
+
+- `jackin-runtime` ->
+  `jackin-runtime` +
+  `jackin-runtime-spin-wait` (T3:
+  the whole `spin_wait` module
+  moves verbatim — `spin_wait`,
+  `spin_wait_ramped`, the private
+  ramp/interval helpers, and
+  `spin_wait/tests`). Pure leaf:
+  zero `crate::` references, one
+  internal consumer
+  (`runtime/attach/capsule_ready`)
+  untouched via the shim. Zero
+  mechanical edits (items already
+  `pub`; the module-level
+  `#![expect(clippy::print_stderr)]`
+  moves along).
+  `runtime/src/spin_wait.rs` becomes
+  a 1-line re-export shim, so every
+  `jackin_runtime::spin_wait::*`
+  path stays stable. Tier: names T2
+  diagnostics, so it takes T3;
+  `jackin-runtime` stays T8, no
+  renumber cascade. New-crate deps:
+  brand, diagnostics, anyhow,
+  owo-colors (`supports-colors`),
+  tokio (`time`); dev-deps add
+  tokio (`macros`, `rt`, `time`,
+  `test-util`) for the
+  `start_paused` test (lockfile +1
+  package, +6 edges). Policy
+  registries: +1 owned package
+  (`library`).
+- Verify: `cargo check --locked --workspace
+  --all-targets` green; `cargo fmt --all
+  --check` clean; `cargo clippy` 0
+  errors on the new crate,
+  `jackin-runtime` holds at the 8
+  pre-existing errors. `cargo nextest
+  list --workspace --all-targets`:
+  7277 -> 7277 (2 relocations map
+  1:1 by name: runtime ->
+  spin-wait; 0 dropped, 0 added).
+  `nextest run`: 899/899 runtime
+  (897) + spin-wait (2).
+  `alint check`: byte-identical at
+  192 violations / 11 failing.
+  `check-gaps`: 22 -> 22 (runtime
+  `SIZE-001/002` persist: 58795 ->
+  58656 code lines, 288 -> 287
+  files; new crate fits at 174 raw
+  / 2 files).
+  `GAP-TEST-001/002/003` stay 0/0/0.
+  `ratchet.toml`: +3 rows
+  (agent-doc-bytes README 723,
+  public-surface 1,
+  expect-per-lint-crate
+  `print_stderr` 1 for the moved
+  expect), failures back to
+  baseline 58 -> 58. `lint arch`:
+  missing tiers stay 3, zero
+  direction violations; `lint
+  headers` stays at the base 2; `lint
+  tests` OK.
+- Raw outputs:
+  `/tmp/s7-s40-{pre,post}-*.txt`
+  (kept out of the repo).

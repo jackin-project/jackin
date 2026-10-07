@@ -34,6 +34,7 @@ jackin-telemetry = { workspace = true }
 jackin-isolation = { workspace = true }
 jackin-instance = { workspace = true }
 jackin-runtime-process-telemetry = { workspace = true }
+jackin-runtime-spin-wait = { workspace = true }
 jackin-usage = { workspace = true }
 
 tokio = { workspace = true, features = ["rt", "process", "io-util", "io-std", "net", "signal", "sync", "macros", "time", "fs"] }

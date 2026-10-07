@@ -3580,6 +3580,7 @@ dependencies = [
  "jackin-process",
  "jackin-protocol",
  "jackin-runtime-process-telemetry",
+ "jackin-runtime-spin-wait",
  "jackin-telemetry",
  "jackin-test-support",
  "jackin-usage",
@@ -3606,6 +3607,17 @@ dependencies = [
  "jackin-telemetry",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "jackin-runtime-spin-wait"
+version = "0.6.4"
+dependencies = [
+ "anyhow",
+ "jackin-brand",
+ "jackin-diagnostics",
+ "owo-colors 4.3.0",
+ "tokio",
 ]
 
 [[package]]

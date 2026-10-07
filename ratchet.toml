@@ -321,6 +321,9 @@ bound = 1
 key = "clippy::print_stderr@jackin-runtime"
 bound = 10
 [[family.entry]]
+key = "clippy::print_stderr@jackin-runtime-spin-wait"
+bound = 1
+[[family.entry]]
 key = "clippy::print_stderr@jackin-xtask"
 bound = 3
 [[family.entry]]
@@ -644,6 +647,9 @@ bound = 3545
 key = "crates/services/jackin-runtime-process-telemetry/README.md"
 bound = 1056
 [[family.entry]]
+key = "crates/services/jackin-runtime-spin-wait/README.md"
+bound = 723
+[[family.entry]]
 key = "crates/services/jackin-telemetry/README.md"
 bound = 2149
 [[family.entry]]
@@ -878,6 +884,9 @@ key = "jackin-runtime"
 bound = 8
 [[family.entry]]
 key = "jackin-runtime-process-telemetry"
+bound = 1
+[[family.entry]]
+key = "jackin-runtime-spin-wait"
 bound = 1
 [[family.entry]]
 key = "jackin-tui"
