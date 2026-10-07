@@ -3,7 +3,7 @@
 
 [package]
 name = "jackin-dev"
-version = "0.1.52"
+version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
