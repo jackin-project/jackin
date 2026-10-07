@@ -59,6 +59,7 @@
     "jackin-runtime-launch-git-pull": "library",
     "jackin-runtime-launch-image-plan": "library",
     "jackin-runtime-launch-load-cleanup": "library",
+    "jackin-runtime-launch-load-options": "library",
     "jackin-runtime-launch-mounts": "library",
     "jackin-runtime-launch-plan": "library",
     "jackin-runtime-launch-programmatic-selection": "library",

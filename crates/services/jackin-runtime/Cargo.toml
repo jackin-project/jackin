@@ -62,6 +62,7 @@ jackin-runtime-launch-exit-diagnosis = { workspace = true }
 jackin-runtime-launch-git-pull = { workspace = true }
 jackin-runtime-launch-image-plan = { workspace = true }
 jackin-runtime-launch-load-cleanup = { workspace = true }
+jackin-runtime-launch-load-options = { workspace = true }
 jackin-runtime-launch-mounts = { workspace = true }
 jackin-runtime-launch-plan = { workspace = true }
 jackin-runtime-launch-programmatic-selection = { workspace = true }

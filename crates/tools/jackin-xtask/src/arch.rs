@@ -86,6 +86,7 @@ pub(crate) const TIERS: &[(&str, u8)] = &[
     ("jackin-runtime-launch-git-pull", 3),
     ("jackin-runtime-launch-image-plan", 7),
     ("jackin-runtime-launch-load-cleanup", 6),
+    ("jackin-runtime-launch-load-options", 4),
     ("jackin-runtime-launch-mounts", 5),
     ("jackin-runtime-launch-plan", 3),
     ("jackin-runtime-launch-programmatic-selection", 2),

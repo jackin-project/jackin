@@ -3608,6 +3608,7 @@ dependencies = [
  "jackin-runtime-launch-git-pull",
  "jackin-runtime-launch-image-plan",
  "jackin-runtime-launch-load-cleanup",
+ "jackin-runtime-launch-load-options",
  "jackin-runtime-launch-mounts",
  "jackin-runtime-launch-plan",
  "jackin-runtime-launch-programmatic-selection",
@@ -4011,6 +4012,18 @@ dependencies = [
  "jackin-docker",
  "jackin-runtime-progress",
  "jackin-telemetry",
+]
+
+[[package]]
+name = "jackin-runtime-launch-load-options"
+version = "0.6.4"
+dependencies = [
+ "jackin-config",
+ "jackin-core",
+ "jackin-env",
+ "jackin-protocol",
+ "jackin-runtime-docker-profile",
+ "jackin-runtime-universe-claims",
 ]
 
 [[package]]

@@ -8662,3 +8662,200 @@ bound 720.
   `/tmp/s7-s86-{pre,post}-*.txt`
   (kept out of the
   repo).
+
+### Split 87: runtime-launch-load-options extraction (M49)
+
+- `jackin-runtime`
+  ->
+  `jackin-runtime`
+  +
+  `jackin-runtime-launch-load-options`
+  (T4: the
+  `LoadOptions`
+  options bag moves
+  out of `launch.rs`
+  -- struct +
+  `for_load` /
+  `for_launch` (359
+  -> 252 hub lines)
+  -- with the
+  `programmatic.rs`
+  companions Rust
+  forces along:
+  inherent `impl
+  LoadOptions`
+  blocks must live in
+  the defining crate,
+  so `programmatic` /
+  `launched_instance`
+  /
+  `record_launched_instance`
+  /
+  `validate_programmatic`
+  +
+  `LaunchedInstance`
+  / `IdentitySink` /
+  `LoadOptionsError`
+  + the three private
+  validate helpers
+  move too (333 ->
+  85 hub lines).
+  Two hub paths
+  re-point at
+  already-split
+  leaves (T1
+  `jackin_runtime_docker_profile::docker_profile::DockerSecurityProfile`,
+  T2
+  `jackin_runtime_universe_claims::claims::EntryClaim`);
+  four qualifications
+  shorten for
+  `unused_qualifications`.
+  Two forced deltas:
+  `record_launched_instance`
+  widens `pub(super)`
+  -> `pub` (the
+  pipeline calls it
+  cross-crate now)
+  and `git_program`
+  loses its
+  `#[cfg(test)]`
+  gate (a cfg(test)
+  field would vanish
+  from the leaf's
+  non-test build the
+  hub tests link;
+  the seam is
+  write-never today).
+  Item re-exports in
+  `launch.rs` +
+  `programmatic.rs`
+  keep every path
+  stable, so all
+  callers (pipeline,
+  restore,
+  `runtime.rs`,
+  `lib.rs`, app
+  `load_cmd` /
+  `restore`, benches,
+  hub suites) compile
+  unchanged.
+  `programmatic.rs`
+  keeps the env
+  consts +
+  `lane_agent_env` +
+  the split-86
+  selection
+  re-exports; prod
+  imports narrow to
+  `Agent` /
+  `ReasoningEffort`
+  with `AppConfig` /
+  `AgentConfiguration`
+  / `RoleSelector`
+  restored under
+  `cfg(test)` (the
+  split-85 precedent).
+  Coverage stays in
+  the hub suites; the
+  new crate carries a
+  placeholder
+  `tests/main.rs`.
+  Tier: names T3 env
+  + T2
+  universe-claims +
+  T1
+  config/protocol/docker-profile
+  + T0 core, so it
+  takes T4; no
+  renumber cascade.
+  New-crate deps:
+  config, core, env,
+  protocol,
+  docker-profile,
+  universe-claims
+  (lockfile +1
+  package, +7 edges).
+  Policy registries:
+  +1 owned package
+  (`library`).)
+
+- Verify: `cargo check
+  --locked --workspace
+  --all-targets` green
+  (after `--offline`
+  lockfile regen);
+  `cargo fmt --all
+  --check` clean; `cargo
+  clippy` 0 errors on
+  the new crate (`-D
+  warnings`),
+  `jackin-runtime`
+  holds at the 7
+  pre-existing errors
+  (identical
+  locations).
+  `cargo nextest list
+  --workspace
+  --all-targets`: 7277
+  -> 7277,
+  byte-identical (0
+  relocations -- the
+  suites stay in the
+  hub; 0 dropped, 0
+  added). `nextest run`:
+  433/433 runtime
+  green (1 skipped,
+  pre-existing; the new
+  crate has no tests
+  yet) + 17/17 app
+  `load_cmd` green.
+  `alint check`:
+  180 violations / 11
+  failing,
+  byte-identical (zero
+  new rows).
+  `check-gaps`:
+  12 -> 12 (hub 11454
+  -> 11233 prod code
+  lines, 79 prod files
+  unchanged; xtask
+  26300 -> 26301 from
+  the TIERS row; new
+  crate fits at 419 raw
+  / 3 files,
+  `load_options.rs`
+  395 lines under the
+  400 file budget, no
+  SIZE finding).
+  `GAP-TEST-001/002/003`
+  stay 0/0/0.
+  `ratchet.toml`: +4/-1
+  rows (agent-doc-bytes
+  README 895,
+  public-surface 1,
+  two
+  expect-per-lint-crate
+  rows for the moved
+  `#[expect]`s; hub
+  `struct_excessive_bools`
+  shrunk 2 -> 1, hub
+  `missing_debug_implementations`
+  row deleted);
+  gate output
+  byte-identical to
+  base. `lint arch
+  --strict`: 3
+  pre-existing no-tier
+  violations
+  byte-identical, zero
+  direction violations;
+  `lint headers` stays
+  at the base 2; `lint
+  tests` OK; `lint
+  readme-freshness`
+  unchanged.
+
+- Raw outputs:
+  `/tmp/s7-s87-{pre,post}-*.txt`
+  (kept out of the
+  repo).

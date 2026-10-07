@@ -409,7 +409,10 @@ key = "clippy::struct_excessive_bools@jackin-protocol"
 bound = 3
 [[family.entry]]
 key = "clippy::struct_excessive_bools@jackin-runtime"
-bound = 2
+bound = 1
+[[family.entry]]
+key = "clippy::struct_excessive_bools@jackin-runtime-launch-load-options"
+bound = 1
 [[family.entry]]
 key = "clippy::struct_excessive_bools@jackin-xtask"
 bound = 2
@@ -578,7 +581,7 @@ bound = 1
 key = "missing_debug_implementations@jackin-launch"
 bound = 3
 [[family.entry]]
-key = "missing_debug_implementations@jackin-runtime"
+key = "missing_debug_implementations@jackin-runtime-launch-load-options"
 bound = 1
 [[family.entry]]
 key = "missing_debug_implementations@jackin-runtime-launch-progress-helpers"
@@ -797,6 +800,9 @@ bound = 666
 [[family.entry]]
 key = "crates/services/jackin-runtime-launch-load-cleanup/README.md"
 bound = 794
+[[family.entry]]
+key = "crates/services/jackin-runtime-launch-load-options/README.md"
+bound = 895
 [[family.entry]]
 key = "crates/services/jackin-runtime-launch-mounts/README.md"
 bound = 907
@@ -1173,6 +1179,9 @@ key = "jackin-runtime-launch-image-plan"
 bound = 1
 [[family.entry]]
 key = "jackin-runtime-launch-load-cleanup"
+bound = 1
+[[family.entry]]
+key = "jackin-runtime-launch-load-options"
 bound = 1
 [[family.entry]]
 key = "jackin-runtime-launch-mounts"
