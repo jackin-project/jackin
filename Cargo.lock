@@ -3585,6 +3585,7 @@ dependencies = [
  "jackin-runtime-identity",
  "jackin-runtime-isolation",
  "jackin-runtime-process-telemetry",
+ "jackin-runtime-session-control",
  "jackin-runtime-snapshot",
  "jackin-runtime-spin-wait",
  "jackin-telemetry",
@@ -3680,6 +3681,23 @@ dependencies = [
  "jackin-telemetry",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "jackin-runtime-session-control"
+version = "0.6.4"
+dependencies = [
+ "anyhow",
+ "jackin-core",
+ "jackin-diagnostics",
+ "jackin-process",
+ "jackin-protocol",
+ "jackin-runtime-identity",
+ "jackin-runtime-process-telemetry",
+ "jackin-runtime-snapshot",
+ "jackin-telemetry",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
