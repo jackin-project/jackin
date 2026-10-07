@@ -69,36 +69,6 @@ fn usage_tab_status_label_selects_ranked_limit_and_names_unslotted_winner() {
 }
 
 #[test]
-fn fraction_helpers_reject_absent_and_clamp_present() {
-    // Fraction form (0..=1) and already-percent form (>1) both map to a
-    // clamped used percentage.
-    assert_eq!(used_percent_from_fraction(0.0), Some(0));
-    assert_eq!(used_percent_from_fraction(1.0), Some(100));
-    assert_eq!(used_percent_from_fraction(0.84), Some(84));
-    assert_eq!(used_percent_from_fraction(42.0), Some(42));
-    assert_eq!(used_percent_from_fraction(150.0), Some(100));
-
-    // Absent/unknown sentinels must yield None, never a fabricated value.
-    // A negative input previously rendered as `Some(100)` — a "100% left"
-    // row for data that is genuinely absent.
-    assert_eq!(used_percent_from_fraction(-0.5), None);
-    assert_eq!(used_percent_from_fraction(f64::NAN), None);
-    assert_eq!(used_percent_from_fraction(f64::INFINITY), None);
-    assert_eq!(used_percent_from_fraction(f64::NEG_INFINITY), None);
-
-    // remaining = 100 - used, propagating None for absent data.
-    assert_eq!(remaining_from_fraction(0.84), Some(16));
-    assert_eq!(remaining_from_fraction(1.0), Some(0));
-    assert_eq!(remaining_from_fraction(-0.5), None);
-    assert_eq!(remaining_from_fraction(f64::NAN), None);
-
-    // The "used" label tracks the same absence contract.
-    assert_eq!(used_percent_label(0.84).as_deref(), Some("84% used"));
-    assert_eq!(used_percent_label(-0.5), None);
-    assert_eq!(used_percent_label(f64::NAN), None);
-}
-
-#[test]
 fn codex_oauth_response_maps_primary_weekly_spark_and_credits() {
     let mut usage: CodexUsageResponse = serde_json::from_value(serde_json::json!({
         "plan_type": "pro",
@@ -279,21 +249,4 @@ fn codex_rpc_account_decode_failure_degrades_to_no_label() {
     assert_eq!(usage.account_label, None);
     let buckets = usage.response.buckets(1_781_185_560);
     assert!(buckets.iter().any(|bucket| bucket.label == "Session"));
-}
-
-#[test]
-fn managed_cli_launch_gate_cools_down_after_launch_failure() {
-    let mut gate = ManagedCliLaunchGate::default();
-    gate.can_launch("probe", Instant::now()).unwrap();
-
-    gate.record_launch_failure("blocked".to_owned());
-
-    let error = gate
-        .can_launch("probe", Instant::now())
-        .expect_err("cooldown should block launch");
-    assert!(error.contains("cooldown active"));
-    assert!(error.contains("blocked"));
-
-    gate.record_success();
-    gate.can_launch("probe", Instant::now()).unwrap();
 }

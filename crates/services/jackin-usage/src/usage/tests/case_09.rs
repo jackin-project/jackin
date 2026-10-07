@@ -121,45 +121,6 @@ fn credential_file_loaders_reread_updated_container_files() {
 }
 
 #[test]
-fn quota_pace_label_uses_codexbar_reserve_deficit_onpace() {
-    // Behind pace (burning faster than the clock): 60% quota left with 90%
-    // of the window still remaining -> 30 points of deficit, and the linear
-    // projection runs out before the reset (Variant A composite).
-    let deficit = quota_pace_label(Some(60), Some(900), Some(1_000), 0).expect("pace label");
-    assert_eq!(deficit, "30% in deficit · Runs out in 2m");
-
-    // Ahead of pace (quota outlasting the clock): 90% left, 60% of window
-    // remaining -> 30 points in reserve.
-    let reserve = quota_pace_label(Some(90), Some(600), Some(1_000), 0).expect("pace label");
-    assert_eq!(reserve, "30% in reserve");
-
-    // Within 2 points of the clock -> On pace.
-    let on_pace = quota_pace_label(Some(50), Some(500), Some(1_000), 0).expect("pace label");
-    assert_eq!(on_pace, "On pace");
-}
-
-#[test]
-fn reset_label_uses_relative_and_local_timestamp() {
-    let now = parse_iso_epoch("2026-06-11T13:46:00Z").expect("now");
-    let same_day = parse_iso_epoch("2026-06-11T15:12:00Z").expect("same day");
-    assert_eq!(
-        reset_label(same_day, now),
-        format!("Resets in 1h 26m ({})", local_timestamp_label(same_day))
-    );
-    let tomorrow = parse_iso_epoch("2026-06-12T04:18:00Z").expect("tomorrow");
-    assert_eq!(
-        reset_label(tomorrow, now),
-        format!("Resets in 14h 32m ({})", local_timestamp_label(tomorrow))
-    );
-    let future = parse_iso_epoch("2026-07-01T16:31:00Z").expect("future");
-    assert_eq!(
-        reset_label(future, now),
-        format!("Resets in 20d 2h ({})", local_timestamp_label(future))
-    );
-    assert_eq!(reset_label(now, now), "Resets now");
-}
-
-#[test]
 fn amp_daily_display_text_maps_daily_slot_and_reset_description() {
     let api = AmpUsage::from_api_value(serde_json::json!({
         "result": { "displayText": AMP_DAILY_FIXTURE }

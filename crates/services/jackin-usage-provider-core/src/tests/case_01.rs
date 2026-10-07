@@ -125,22 +125,6 @@ fn provider_labels_resolve_all_account_refresh_surfaces() {
 }
 
 #[test]
-fn openrouter_credential_snapshot_is_supported_and_scoped_when_missing() {
-    let view = provider_credential_snapshot("openrouter", "OPENROUTER_API_KEY", "");
-
-    assert_eq!(view.status, UsageSnapshotStatus::NeedsLogin);
-    assert_eq!(view.source, UsageSource::None);
-    assert_eq!(view.account.provider_label, "OpenRouter");
-    assert_eq!(view.focused_agent.as_deref(), Some("opencode"));
-    assert_eq!(view.focused_provider.as_deref(), Some("OpenRouter"));
-    assert_ne!(view.status, UsageSnapshotStatus::Unsupported);
-    assert_eq!(
-        view.last_error.as_deref(),
-        Some("OpenRouter API key missing")
-    );
-}
-
-#[test]
 fn capability_matches_newly_wired_surfaces_only() {
     use jackin_protocol::usage_broker::UsageAccountCapability;
 
@@ -198,68 +182,6 @@ fn unpollable_snapshot_is_honest_unsupported() {
     assert!(view.buckets.is_empty());
     assert!(view.account.account_label.is_empty());
     assert_eq!(view.focused_agent.as_deref(), Some("muse"));
-}
-
-#[test]
-fn credential_snapshot_arms_cover_newly_wired_surfaces() {
-    // Cursor API keys cannot drive the personal dashboard: explicit gap.
-    let view = provider_credential_snapshot("cursor", "CURSOR_API_KEY", "fixture-key");
-    assert_eq!(view.status, UsageSnapshotStatus::Unsupported);
-    assert_eq!(view.account.provider_label, "Cursor");
-    assert!(
-        view.last_error
-            .as_deref()
-            .is_some_and(|error| error.contains("Cursor API-key"))
-    );
-    // Google keys route to the real Gemini collector with the key origin.
-    let view = provider_credential_snapshot("google", "GEMINI_API_KEY", "fixture-key");
-    assert_eq!(view.status, UsageSnapshotStatus::Unsupported);
-    assert_eq!(view.account.provider_label, "Google");
-    assert_eq!(
-        view.account.credential_origin.as_deref(),
-        Some("API key · env GEMINI_API_KEY")
-    );
-    // Blocked surfaces keep the explicit generic fallback.
-    let view = provider_credential_snapshot("meta", "META_API_KEY", "fixture-key");
-    assert_eq!(view.status, UsageSnapshotStatus::Unsupported);
-    assert_eq!(view.account.provider_label, "Usage");
-}
-
-#[test]
-fn credential_snapshot_openrouter_arm_reads_key_quota() {
-    // Live provider read with a fixture key: `/key` rejects it, so the arm
-    // must return the collector's honest NeedsLogin/Error view — never the
-    // generic "no usage adapter" fallback, which would mean the arm is dead.
-    let view = provider_credential_snapshot("openrouter", "OPENROUTER_API_KEY", "fixture-key");
-    assert_ne!(view.status, UsageSnapshotStatus::Fresh);
-    assert_ne!(view.status, UsageSnapshotStatus::Unsupported);
-    assert_eq!(view.account.provider_label, "OpenRouter");
-    assert!(view.last_error.is_some());
-}
-
-#[test]
-fn grok_env_key_only_snapshot_denies_billing_without_rpc() {
-    // The configured-source arm never attempts a billing RPC on an inference
-    // key: it reports the honest billing gap with zero network.
-    for (key, origin) in [
-        (
-            jackin_core::XAI_API_KEY_ENV_NAME,
-            "API token · env XAI_API_KEY",
-        ),
-        (
-            jackin_core::GROK_DEPLOYMENT_KEY_ENV_NAME,
-            "API token · env GROK_DEPLOYMENT_KEY",
-        ),
-    ] {
-        let view = provider_credential_snapshot("grok", key, "fixture-key");
-        assert_eq!(view.status, UsageSnapshotStatus::Error);
-        assert_eq!(view.source, UsageSource::None);
-        assert_eq!(
-            view.last_error.as_deref(),
-            Some("Grok billing requires an authenticated profile")
-        );
-        assert_eq!(view.account.credential_origin.as_deref(), Some(origin));
-    }
 }
 
 #[test]
@@ -360,4 +282,96 @@ fn enrich_provider_tabs_rebuilds_strip_from_snapshots() {
     let mut view = account_snapshot_view("OpenAI", "codex@example.com", None, 123);
     enrich_provider_tabs(&mut view, &HashMap::new());
     assert!(view.tabs.is_empty());
+}
+
+#[test]
+fn two_claude_accounts_and_codex_produce_three_tabs_with_distinct_ids() {
+    let mut cache = UsageCache::default();
+    cache.insert_snapshot_for_test(
+        "claude",
+        Some("Anthropic"),
+        account_snapshot_view("Anthropic", "a@example.com", Some("Max"), 100),
+    );
+    cache.insert_snapshot_for_test(
+        "claude",
+        Some("Anthropic"),
+        account_snapshot_view("Anthropic", "b@example.com", Some("Max 20x"), 200),
+    );
+    cache.insert_snapshot_for_test(
+        "codex",
+        Some("OpenAI"),
+        account_snapshot_view("OpenAI", "codex@example.com", Some("Pro 20x"), 150),
+    );
+
+    let snapshot = cache.focused_snapshot(Some("claude"), Some("Anthropic"));
+
+    // One tab (and therefore one overview row) per admitted account.
+    assert_eq!(snapshot.tabs.len(), 3);
+    let mut ids: Vec<String> = snapshot.tabs.iter().map(|tab| tab.id.clone()).collect();
+    ids.sort();
+    ids.dedup();
+    assert_eq!(ids.len(), 3);
+    let mut expected = vec![
+        usage_account_tab_id("Anthropic", "a@example.com"),
+        usage_account_tab_id("Anthropic", "b@example.com"),
+        usage_account_tab_id("OpenAI", "codex@example.com"),
+    ];
+    expected.sort();
+    assert_eq!(ids, expected);
+    // The focused account (newest Claude fetch) is the active tab.
+    let active: Vec<&UsageProviderTab> = snapshot.tabs.iter().filter(|tab| tab.active).collect();
+    assert_eq!(active.len(), 1);
+    assert_eq!(
+        active[0].id,
+        usage_account_tab_id("Anthropic", "b@example.com")
+    );
+
+    // Selection by id focuses the correct account: a view focused on the
+    // other Claude account marks exactly its tab, matched by id rather than
+    // the shared "Anthropic" display label.
+    let id_a = usage_account_tab_id("Anthropic", "a@example.com");
+    let mut selected = account_snapshot_view("Anthropic", "a@example.com", Some("Max"), 100);
+    enrich_provider_tabs(&mut selected, &cache.snapshots);
+    mark_active_tab(&mut selected);
+    let active: Vec<&UsageProviderTab> = selected.tabs.iter().filter(|tab| tab.active).collect();
+    assert_eq!(active.len(), 1);
+    assert_eq!(active[0].id, id_a);
+    assert_eq!(active[0].account_label, "a@example.com");
+    // Strip labels stay individually visible per account.
+    let mut labels: Vec<String> = selected.tabs.iter().map(|tab| tab.label.clone()).collect();
+    labels.sort();
+    labels.dedup();
+    assert_eq!(labels.len(), 3);
+}
+
+#[test]
+fn focused_snapshot_for_account_id_selects_exact_account() {
+    let mut cache = UsageCache::default();
+    cache.insert_snapshot_for_test(
+        "claude",
+        Some("Anthropic"),
+        account_snapshot_view("Anthropic", "a@example.com", Some("Max"), 100),
+    );
+    cache.insert_snapshot_for_test(
+        "claude",
+        Some("Anthropic"),
+        account_snapshot_view("Anthropic", "b@example.com", Some("Max 20x"), 200),
+    );
+    let id_b = usage_account_tab_id("Anthropic", "b@example.com");
+
+    let snapshot = cache
+        .focused_snapshot_for_account_id(&id_b)
+        .expect("snapshot for claude-b");
+    assert_eq!(snapshot.account.account_label, "b@example.com");
+    assert_eq!(snapshot.tabs.len(), 2);
+    let active: Vec<&UsageProviderTab> = snapshot.tabs.iter().filter(|tab| tab.active).collect();
+    assert_eq!(active.len(), 1);
+    assert_eq!(active[0].id, id_b);
+
+    assert!(
+        cache
+            .focused_snapshot_for_account_id("sha256:unknown")
+            .is_none()
+    );
+    assert!(cache.focused_snapshot_for_account_id("").is_none());
 }

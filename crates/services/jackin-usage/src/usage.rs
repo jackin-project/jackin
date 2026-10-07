@@ -7,8 +7,6 @@
 //! details stay here so status chrome and dialogs render strings, not API
 //! branches.
 
-#[cfg(test)]
-use jackin_protocol::control::{UsageProviderTab, UsageSeverity};
 pub use jackin_usage_credential_resolver::provider_credential_snapshot;
 #[expect(
     unused_imports,
@@ -178,8 +176,6 @@ pub(crate) use jackin_usage_provider_zai::{
     ZaiLimitRaw, ZaiQuotaData, ZaiQuotaResponse, fetch_zai_usage, provider_key_snapshot,
     resolve_zai_quota_url, resolve_zai_quota_url_from, zai_bucket, zai_count_line, zai_quota_host,
 };
-#[cfg(test)]
-use std::collections::HashMap;
 #[cfg(test)]
 use std::time::Duration;
 

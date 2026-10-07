@@ -35,6 +35,9 @@ tracing    = { workspace = true }
 [dev-dependencies]
 criterion = { workspace = true, features = ["html_reports"] }
 tempfile  = { workspace = true }
+jackin-diagnostics = { workspace = true, features = ["test-support"] }
+jackin-otlp-testbed = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread"] }
 
 [[bench]]
 name = "materialize_accounts"

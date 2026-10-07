@@ -24,6 +24,9 @@ mod surface;
 mod transport;
 mod view;
 
+#[cfg(test)]
+mod tests;
+
 use jackin_core::account_key_hash;
 use std::collections::HashMap;
 use std::fs;

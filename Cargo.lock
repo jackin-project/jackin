@@ -3973,6 +3973,8 @@ dependencies = [
  "criterion",
  "httpdate",
  "jackin-core",
+ "jackin-diagnostics",
+ "jackin-otlp-testbed",
  "jackin-protocol",
  "jackin-telemetry",
  "nix 0.31.3",
@@ -3980,6 +3982,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "tokio",
  "tower",
  "tracing",
 ]
