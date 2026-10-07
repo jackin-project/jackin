@@ -3650,6 +3650,7 @@ dependencies = [
  "jackin-protocol",
  "jackin-telemetry",
  "jackin-usage-broker-publish",
+ "jackin-usage-broker-wire",
  "jackin-usage-capsule-telemetry",
  "jackin-usage-coordinator",
  "jackin-usage-credential-snapshots",
@@ -3699,6 +3700,19 @@ dependencies = [
  "jackin-protocol",
  "jackin-usage-coordinator",
  "tempfile",
+]
+
+[[package]]
+name = "jackin-usage-broker-wire"
+version = "0.6.4"
+dependencies = [
+ "chrono",
+ "jackin-core",
+ "jackin-protocol",
+ "jackin-telemetry",
+ "jackin-usage-coordinator",
+ "nix 0.31.3",
+ "serde",
 ]
 
 [[package]]

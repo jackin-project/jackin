@@ -9,23 +9,23 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use jackin_protocol::usage_broker::USAGE_BROKER_PROTOCOL_VERSION;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub(crate) struct BrokerLease {
-    pub(crate) instance_id: String,
-    pub(crate) process_id: u32,
-    pub(crate) protocol_version: String,
-    pub(crate) build_id: String,
-    pub(crate) renewed_at_epoch: i64,
+pub struct BrokerLease {
+    pub instance_id: String,
+    pub process_id: u32,
+    pub protocol_version: String,
+    pub build_id: String,
+    pub renewed_at_epoch: i64,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct ServePolicy {
-    pub(crate) idle_exit: Duration,
-    pub(crate) lease_duration: Duration,
-    pub(crate) lease_renewal: Duration,
+pub struct ServePolicy {
+    pub idle_exit: Duration,
+    pub lease_duration: Duration,
+    pub lease_renewal: Duration,
 }
 
 impl BrokerLease {
-    pub(crate) fn new(build_id: &str) -> Self {
+    pub fn new(build_id: &str) -> Self {
         let now_nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_or(0, |duration| duration.as_nanos());
@@ -49,7 +49,15 @@ impl BrokerLease {
 /// operation locks this descriptor, verifies the instance, and updates or
 /// removes only the inode it opened. A stale process holding an old descriptor
 /// therefore cannot renew or unlink a replacement lease at the same path.
-pub(crate) struct BrokerLeaseOwner {
-    pub(crate) lease: BrokerLease,
-    pub(crate) file: File,
+pub struct BrokerLeaseOwner {
+    pub lease: BrokerLease,
+    pub file: File,
+}
+
+impl std::fmt::Debug for BrokerLeaseOwner {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BrokerLeaseOwner")
+            .field("lease", &self.lease)
+            .finish_non_exhaustive()
+    }
 }

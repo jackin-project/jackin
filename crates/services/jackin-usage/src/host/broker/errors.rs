@@ -4,9 +4,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use jackin_protocol::usage_broker::{
-    UsageAccountCapability, UsageCoordinationError, UsageCoordinationErrorKind, UsageIdentityKindV1,
-};
+use jackin_protocol::usage_broker::{UsageAccountCapability, UsageIdentityKindV1};
 
 use super::super::accounts::CanonicalAccountSubject;
 
@@ -57,32 +55,4 @@ pub(crate) fn publication_identity_metadata(
             )
         })
         .collect()
-}
-
-pub(crate) fn unavailable() -> UsageCoordinationError {
-    UsageCoordinationError {
-        kind: UsageCoordinationErrorKind::Unavailable,
-        message: "usage broker is unavailable".to_owned(),
-    }
-}
-
-pub(crate) fn credential_scope_mismatch() -> UsageCoordinationError {
-    UsageCoordinationError {
-        kind: UsageCoordinationErrorKind::Unauthorized,
-        message: "launch credential source no longer matches staged material".to_owned(),
-    }
-}
-
-pub(crate) fn protocol_error() -> UsageCoordinationError {
-    UsageCoordinationError {
-        kind: UsageCoordinationErrorKind::ProtocolMismatch,
-        message: "usage broker protocol mismatch".to_owned(),
-    }
-}
-
-pub(crate) fn catalog_discovery_mismatch() -> UsageCoordinationError {
-    UsageCoordinationError {
-        kind: UsageCoordinationErrorKind::CatalogRevisionConflict,
-        message: "usage broker catalog does not match current discovery".to_owned(),
-    }
 }

@@ -2222,3 +2222,60 @@ passes.
 - Raw outputs:
   `/tmp/s11-split28-{before,after}.txt`
   (kept out of the repo).
+
+### Split 29: usage-broker-wire extraction (B2)
+
+- `jackin-usage` -> `jackin-usage` +
+  `jackin-usage-broker-wire` (T3: deps
+  are coordinator T2 + protocol T1 +
+  core/telemetry T0). Moves the socket
+  and lease primitives whole
+  (`broker/consts.rs`, `broker/lease.rs`,
+  `broker/paths.rs`, `broker/probe.rs`)
+  plus a 4-function split of
+  `broker/errors.rs` (the pure wire
+  error constructors `unavailable`,
+  `credential_scope_mismatch`,
+  `protocol_error`,
+  `catalog_discovery_mismatch` move;
+  the T3/T4-entangled
+  `publication_identity_metadata`
+  stays). `broker.rs` keeps a `probe`
+  alias so `probe::run_probe_with_budget`
+  paths in the executor and broker
+  cases compile unchanged, and every
+  other name keeps its broker-root
+  re-export. `BrokerLeaseOwner` gains
+  an opaque `Debug` (holds a `File`;
+  new-`pub` lint requirement, Split 20
+  precedent); no behavior changes. The
+  client, dispatch, and serve loop
+  stay: they name the T3
+  `broker-publish` types, so no
+  lower-tier crate may hold them.
+- Verify: `cargo check --locked --workspace
+  --all-targets` green; `cargo fmt --all
+  --check` clean; `cargo clippy` 0
+  errors, 0 warnings on both touched
+  packages. `cargo nextest list
+  --workspace --all-targets`: 7277 ->
+  7277, byte-identical (the wire files
+  carry no unit tests; broker cases
+  exercise them in place). `nextest
+  run`: 391/391 usage + 0/0
+  broker-wire. No contract fixture
+  entries name wire paths, so no
+  remap. `alint check`: 197 -> 197.
+  `check-gaps`: 27 -> 27 (usage
+  `SIZE-001` 23741 -> 23546 lines,
+  `SIZE-002` 120 -> 116 files);
+  `GAP-TEST-001/002/003` stay 0/0/0.
+  `ratchet.toml`: +1 row (agent-doc
+  1247); violations 60 -> 60 with zero
+  new failures. `lint arch`: missing
+  tiers stay 3, zero direction
+  violations; `lint headers` stays at
+  the base 2; `lint tests` OK.
+- Raw outputs:
+  `/tmp/s11-split29-{before,after}.txt`
+  (kept out of the repo).

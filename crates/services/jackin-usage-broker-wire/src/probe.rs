@@ -19,11 +19,11 @@ use std::time::Duration;
 
 use jackin_protocol::usage_broker::UsageCoordinationErrorKind;
 
-use crate::coordinator::ProviderProbeOutcome;
+use jackin_usage_coordinator::ProviderProbeOutcome;
 
 /// Budget expiry marker for [`run_probe_with_budget`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct ProbeBudgetExpired;
+pub struct ProbeBudgetExpired;
 
 /// Run a blocking provider probe to completion or budget expiry.
 ///
@@ -31,10 +31,7 @@ pub(crate) struct ProbeBudgetExpired;
 /// `OwnerLost`, exactly as if the probe had run inline). On expiry the worker
 /// is detached; adapter-level timeouts bound its remaining lifetime and its
 /// late result is dropped instead of being merged.
-pub(crate) fn run_probe_with_budget<R, F>(
-    budget: Duration,
-    task: F,
-) -> Result<R, ProbeBudgetExpired>
+pub fn run_probe_with_budget<R, F>(budget: Duration, task: F) -> Result<R, ProbeBudgetExpired>
 where
     F: FnOnce() -> R + Send + 'static,
     R: Send + 'static,
@@ -60,7 +57,7 @@ where
 ///
 /// The coordinator maps this to a `Failed` generation that keeps last-good
 /// quota and its normal retry lifecycle; broker ownership is unaffected.
-pub(crate) fn probe_timeout_outcome() -> ProviderProbeOutcome {
+pub fn probe_timeout_outcome() -> ProviderProbeOutcome {
     ProviderProbeOutcome::Failure {
         kind: UsageCoordinationErrorKind::ProviderTimeout,
         message: "usage provider probe timed out".to_owned(),

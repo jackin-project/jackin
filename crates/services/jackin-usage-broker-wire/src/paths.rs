@@ -15,7 +15,7 @@ use super::{BROKER_DIR, BROKER_RUN_DIR, unavailable};
 use nix::sys::stat::{Mode, fchmod, mkdirat};
 use nix::unistd::geteuid;
 
-pub(crate) fn secure_run_directory(data_dir: &Path) -> Result<PathBuf, UsageCoordinationError> {
+pub fn secure_run_directory(data_dir: &Path) -> Result<PathBuf, UsageCoordinationError> {
     fs::create_dir_all(data_dir).map_err(|_| unavailable())?;
     let data_fd = open(
         data_dir,
@@ -31,10 +31,7 @@ pub(crate) fn secure_run_directory(data_dir: &Path) -> Result<PathBuf, UsageCoor
     Ok(data_dir.join(BROKER_DIR).join(BROKER_RUN_DIR))
 }
 
-pub(crate) fn private_child_directory(
-    parent: &File,
-    name: &str,
-) -> Result<File, UsageCoordinationError> {
+pub fn private_child_directory(parent: &File, name: &str) -> Result<File, UsageCoordinationError> {
     match mkdirat(parent, name, Mode::from_bits_truncate(0o700)) {
         Ok(()) | Err(nix::errno::Errno::EEXIST) => {}
         Err(_) => return Err(unavailable()),
@@ -52,7 +49,7 @@ pub(crate) fn private_child_directory(
     Ok(directory)
 }
 
-pub(crate) fn validate_owned_directory(directory: &File) -> Result<(), UsageCoordinationError> {
+pub fn validate_owned_directory(directory: &File) -> Result<(), UsageCoordinationError> {
     let metadata = directory.metadata().map_err(|_| unavailable())?;
     if !metadata.is_dir()
         || metadata.uid() != geteuid().as_raw()
@@ -63,9 +60,7 @@ pub(crate) fn validate_owned_directory(directory: &File) -> Result<(), UsageCoor
     Ok(())
 }
 
-pub(crate) fn validate_owned_base_directory(
-    directory: &File,
-) -> Result<(), UsageCoordinationError> {
+pub fn validate_owned_base_directory(directory: &File) -> Result<(), UsageCoordinationError> {
     let metadata = directory.metadata().map_err(|_| unavailable())?;
     if !metadata.is_dir() || metadata.uid() != geteuid().as_raw() || metadata.mode() & 0o022 != 0 {
         return Err(unavailable());
@@ -73,7 +68,7 @@ pub(crate) fn validate_owned_base_directory(
     Ok(())
 }
 
-pub(crate) fn validate_owned_mode(path: &Path, mode: u32) -> Result<(), UsageCoordinationError> {
+pub fn validate_owned_mode(path: &Path, mode: u32) -> Result<(), UsageCoordinationError> {
     let metadata = fs::symlink_metadata(path).map_err(|_| unavailable())?;
     if metadata.file_type().is_symlink()
         || metadata.uid() != geteuid().as_raw()
