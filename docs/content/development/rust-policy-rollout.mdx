@@ -244,6 +244,20 @@ passes.
   toolchain, lock, gates); the step-10 registries slice may fold it
   into the canonical registry set.
 
+### Split 34: selected-account + host glances -> `jackin-usage-host-glance` (G2)
+
+The T4 `jackin-usage-host-glance` crate now owns `build_provider_glance_row`
+(all provider-viewport row rendering) plus `account_descriptor` and the
+`SELECTED_ACCOUNT_UNAVAILABLE_NOTICE` / `glance_label_flag_symbols` selected-account
+surface; `jackin-usage` keeps only a same-name re-export shim and the tests.
+`SELECTED_ACCOUNT_UNAVAILABLE_NOTICE` moved down to `notices.rs` so both T4 crates
+name it from a shared below-tier home. `nextest list` byte-identical before/after;
+`nextest run` passes 266/266 across `jackin-usage`, `-host-glance`, and
+`-host-presentation`; `check`, `fmt --check`, `clippy -D warnings`, `alint`,
+`lint arch` (3 pre-existing missing-tier rows; 0 direction), `lint headers` (base
+2), and `lint tests` all hold; ratchet holds 60 with the one new agent-doc row
+bound 720.
+
 ### Group map + justification
 
 - `apps` (shipped deployables): `jackin` (host CLI, 4 bins),

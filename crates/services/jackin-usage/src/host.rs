@@ -16,7 +16,6 @@ mod event_log;
 mod inventory;
 mod lifecycle;
 mod projection;
-mod render;
 mod selection;
 mod snapshots;
 mod staging;
@@ -85,16 +84,16 @@ pub use jackin_usage_host_credentials::{
     ProviderCredentialIdentityOutcome, ProviderCredentialRefreshOutcome,
     ProviderCredentialSourceMaterial, UsageCredentialKind,
 };
-pub use jackin_usage_host_presentation::{HostEventBatch, HostUsageEvent};
-pub use jackin_usage_host_presentation::{HostOverviewRow, HostProviderGlanceRow};
-pub use jackin_usage_host_presentation::{HostSurfaceDescriptor, HostSurfaceId};
-pub(crate) use jackin_usage_host_presentation::{MAX_EVENT_BATCH, MAX_EVENT_LOG};
-pub use render::STATUS_BAR_MAX_CHIPS;
-pub(crate) use render::{
+pub use jackin_usage_host_glance::STATUS_BAR_MAX_CHIPS;
+pub(crate) use jackin_usage_host_glance::{
     DrivingBucket, account_descriptor, build_provider_glance_row, drive_label_prefix,
     driving_bucket_from_view, glance_bucket, selected_account_unavailable_view,
     status_bar_rank_key, view_is_auto_detected, worst_severity_label,
 };
+pub use jackin_usage_host_presentation::{HostEventBatch, HostUsageEvent};
+pub use jackin_usage_host_presentation::{HostOverviewRow, HostProviderGlanceRow};
+pub use jackin_usage_host_presentation::{HostSurfaceDescriptor, HostSurfaceId};
+pub(crate) use jackin_usage_host_presentation::{MAX_EVENT_BATCH, MAX_EVENT_LOG};
 pub use staging::StagedUsageDiscovery;
 pub(crate) use staging::{discovered_account_keys, enabled_surface_ids};
 

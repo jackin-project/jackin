@@ -3659,6 +3659,7 @@ dependencies = [
  "jackin-usage-discovery",
  "jackin-usage-host-accounts",
  "jackin-usage-host-credentials",
+ "jackin-usage-host-glance",
  "jackin-usage-host-presentation",
  "jackin-usage-output",
  "jackin-usage-projection",
@@ -3847,6 +3848,17 @@ dependencies = [
  "jackin-config",
  "jackin-core",
  "jackin-protocol",
+ "jackin-usage-host-presentation",
+ "jackin-usage-provider-core",
+]
+
+[[package]]
+name = "jackin-usage-host-glance"
+version = "0.6.4"
+dependencies = [
+ "chrono",
+ "jackin-protocol",
+ "jackin-usage-host-accounts",
  "jackin-usage-host-presentation",
  "jackin-usage-provider-core",
 ]

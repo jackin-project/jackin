@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Host label and row render helpers.
 
-use super::{
-    AccountLifecycle, HostAccountDescriptor, HostProviderGlanceRow, HostSurfaceId,
-    SELECTED_ACCOUNT_UNAVAILABLE_NOTICE, accounts,
+use jackin_usage_host_accounts::{self as accounts, AccountLifecycle, HostAccountDescriptor};
+use jackin_usage_host_presentation::{
+    HostProviderGlanceRow, HostSurfaceId, SELECTED_ACCOUNT_UNAVAILABLE_NOTICE,
 };
 
 use jackin_protocol::control::{FocusedUsageView, UsageSeverity};
@@ -17,9 +17,9 @@ use jackin_usage_provider_core::{
 
 /// Driving bucket for compact/overview labels: min remaining + its reset epoch.
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct DrivingBucket {
-    pub(crate) remaining: u8,
-    pub(crate) resets_at: Option<i64>,
+pub struct DrivingBucket {
+    pub remaining: u8,
+    pub resets_at: Option<i64>,
 }
 
 /// Hard cap for burn-first status-bar chips (SB-3 / SB-14). Never more than three.
@@ -29,14 +29,14 @@ pub const STATUS_BAR_MAX_CHIPS: usize = 3;
 /// remaining %** (invert remaining so ascending puts larger headroom first).
 /// Missing `resets_at` sorts last on the time key.
 #[must_use]
-pub(crate) fn status_bar_rank_key(remaining: u8, resets_at: Option<i64>) -> (i64, u8) {
+pub fn status_bar_rank_key(remaining: u8, resets_at: Option<i64>) -> (i64, u8) {
     let time_key = resets_at.unwrap_or(i64::MAX);
     let remaining_key = u8::MAX.saturating_sub(remaining);
     (time_key, remaining_key)
 }
 
 /// Min-`remaining_percent` bucket (same selection as the legacy compact label).
-pub(crate) fn driving_bucket_from_view(view: &FocusedUsageView) -> Option<DrivingBucket> {
+pub fn driving_bucket_from_view(view: &FocusedUsageView) -> Option<DrivingBucket> {
     let mut best: Option<(u8, Option<i64>)> = None;
     for bucket in &view.buckets {
         let Some(remaining) = bucket.remaining_percent else {
@@ -54,7 +54,7 @@ pub(crate) fn driving_bucket_from_view(view: &FocusedUsageView) -> Option<Drivin
 }
 
 /// Model-scoped bucket label when the driving bucket has no status slot.
-pub(crate) fn drive_label_prefix(view: &FocusedUsageView, remaining: u8) -> Option<&str> {
+pub fn drive_label_prefix(view: &FocusedUsageView, remaining: u8) -> Option<&str> {
     view.buckets
         .iter()
         .find(|bucket| bucket.remaining_percent == Some(remaining) && bucket.status_slot.is_none())
@@ -62,7 +62,7 @@ pub(crate) fn drive_label_prefix(view: &FocusedUsageView, remaining: u8) -> Opti
         .filter(|label| !label.is_empty())
 }
 
-pub(crate) fn selected_account_unavailable_view(surface: HostSurfaceId) -> FocusedUsageView {
+pub fn selected_account_unavailable_view(surface: HostSurfaceId) -> FocusedUsageView {
     let mut view = FocusedUsageView::unavailable(
         SELECTED_ACCOUNT_UNAVAILABLE_NOTICE,
         chrono::Utc::now().timestamp(),
@@ -78,7 +78,7 @@ pub(crate) fn selected_account_unavailable_view(surface: HostSurfaceId) -> Focus
 /// under `Unsupported` status) or at least one bucket with a numeric/formatted
 /// quota field. Bucket labels, pace/status prose, and non-Fresh status alone
 /// are never evidence.
-pub(crate) fn view_is_auto_detected(view: &FocusedUsageView) -> bool {
+pub fn view_is_auto_detected(view: &FocusedUsageView) -> bool {
     let origin_affirmative = view
         .account
         .credential_origin
@@ -101,7 +101,7 @@ pub(crate) fn view_is_auto_detected(view: &FocusedUsageView) -> bool {
 /// Select the required semantic glance bucket: Weekly for the six non-Amp
 /// providers and Daily for Amp. Never a Spend/Session/min-remaining or label
 /// match — one provider's missing slot yields `–`, never a whole-list failure.
-pub(crate) fn glance_bucket(
+pub fn glance_bucket(
     surface: HostSurfaceId,
     view: &FocusedUsageView,
 ) -> Option<&jackin_protocol::control::QuotaBucketView> {
@@ -115,7 +115,7 @@ pub(crate) fn glance_bucket(
         .find(|bucket| bucket.status_slot == Some(slot))
 }
 
-pub(crate) fn build_provider_glance_row(
+pub fn build_provider_glance_row(
     surface: HostSurfaceId,
     view: &FocusedUsageView,
     is_updating: bool,
@@ -191,7 +191,7 @@ pub(crate) fn build_provider_glance_row(
     }
 }
 
-pub(crate) fn account_descriptor(
+pub fn account_descriptor(
     surface: HostSurfaceId,
     entry: &accounts::AccountCatalogEntry,
     selected: bool,
@@ -280,7 +280,7 @@ pub(crate) fn account_descriptor(
     }
 }
 
-pub(crate) fn worst_severity_label(view: &FocusedUsageView) -> String {
+pub fn worst_severity_label(view: &FocusedUsageView) -> String {
     let mut worst = UsageSeverity::Normal;
     for bucket in &view.buckets {
         match bucket.severity {

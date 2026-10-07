@@ -15,8 +15,7 @@ use jackin_protocol::usage_broker::{
 
 /// Relative data-dir subtree for menu-bar durable state.
 pub const HOST_USAGE_STATE_REL: &str = "usage-menu-bar";
-/// Persistent notice when the requested account is absent from current membership.
-pub const SELECTED_ACCOUNT_UNAVAILABLE_NOTICE: &str = "Selected account is no longer available.";
+pub use jackin_usage_host_presentation::SELECTED_ACCOUNT_UNAVAILABLE_NOTICE;
 
 pub(crate) static CANONICAL_INSTANCE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
