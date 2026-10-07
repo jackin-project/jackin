@@ -1,5 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
+
+#![cfg(not(test))]
 //! Validated-repo image prewarm and refresh.
 
 use jackin_core::Agent;
@@ -14,12 +16,6 @@ use super::{
     ImageDecision, ImageInvalidationReason, ImagePrewarmStatus, RoleImagePrewarmRow,
     build_agent_image, decide_role_image, prepare_runtime_binaries_for_agents,
 };
-#[cfg(test)]
-use super::{
-    build_image_recipe_with_construct_image, cache_bust_value_for_build, ensure_local_role_base,
-    expected_image_recipe_for_test, image_recipe_label_map_for_install_test,
-    image_recipe_label_map_for_test, should_mint_fresh_cache_bust,
-};
 
 #[expect(
     clippy::too_many_arguments,
@@ -30,7 +26,6 @@ use super::{
               that requires restructuring the image-build path. Named-arg reads \
               match the per-input propagation idiom."
 )]
-#[cfg(not(test))]
 pub(crate) async fn prewarm_agent_image_from_validated_repo(
     paths: &JackinPaths,
     selector: &RoleSelector,
@@ -153,7 +148,6 @@ pub(crate) async fn prewarm_agent_image_from_validated_repo(
     reason = "Background refresh needs the full build-agent-image context plus \
               the confirmed staleness reason."
 )]
-#[cfg(not(test))]
 pub(crate) async fn refresh_agent_image_from_validated_repo(
     paths: &JackinPaths,
     selector: &RoleSelector,
@@ -197,7 +191,6 @@ pub(crate) async fn refresh_agent_image_from_validated_repo(
     })
 }
 
-#[cfg(not(test))]
 pub(crate) fn prewarm_launch_plan_reason(decision: &ImageDecision) -> String {
     match decision {
         ImageDecision::Reuse { .. } => "image_reuse:recipe_hash_match".to_owned(),

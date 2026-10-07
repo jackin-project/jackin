@@ -1,5 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
+
+#![cfg(not(test))]
 //! Agent image prewarm execution.
 
 use super::published::published_image_is_stale;
@@ -9,25 +11,15 @@ use jackin_core::Agent;
 use jackin_core::JackinPaths;
 use jackin_core::RoleSelector;
 use jackin_docker::docker_client::DockerApi;
-#[cfg(not(test))]
 use jackin_docker::{ShellRunner, docker_client::BollardDockerClient};
 
 use jackin_image::version_check;
 
-#[cfg(not(test))]
 use crate::runtime::repo_cache::{RepoResolveOptions, resolve_agent_repo_with};
 
 use super::{ImageInvalidationReason, RoleImagePrewarmRow, role_git_sha_for_recipe};
-#[cfg(test)]
-use super::{
-    build_image_recipe_with_construct_image, cache_bust_value_for_build, ensure_local_role_base,
-    expected_image_recipe_for_test, image_recipe_label_map_for_install_test,
-    image_recipe_label_map_for_test, should_mint_fresh_cache_bust,
-};
-#[cfg(not(test))]
 use super::{prewarm_agent_image_from_validated_repo, refresh_agent_image_from_validated_repo};
 
-#[cfg(not(test))]
 pub(crate) async fn prewarm_agent_image(
     paths: &JackinPaths,
     selector: &RoleSelector,
@@ -64,7 +56,6 @@ pub(crate) async fn prewarm_agent_image(
     .await
 }
 
-#[cfg(not(test))]
 pub(crate) async fn reuse_staleness_sentinel(
     paths: &JackinPaths,
     selector: &RoleSelector,
@@ -120,7 +111,6 @@ pub(crate) async fn reuse_staleness_sentinel(
     Ok(Some(row))
 }
 
-#[cfg(not(test))]
 pub(crate) async fn reuse_staleness_reason(
     paths: &JackinPaths,
     validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,

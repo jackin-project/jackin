@@ -52,13 +52,11 @@ pub(super) use jackin_image::image_build::{
 
 mod binaries;
 mod decision;
-#[cfg(not(test))]
 mod prewarm_run;
 mod prewarm_spawn;
 mod refresh;
 mod sibling;
 mod staleness;
-#[cfg(not(test))]
 mod validated;
 
 use crate::runtime::naming::{

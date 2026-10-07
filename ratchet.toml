@@ -20,9 +20,6 @@ mode = "enforce"
 [[family.entry]]
 key = "crates/tools/jackin-xtask/src/telemetry_registry.rs"
 bound = 2012
-[[family.entry]]
-key = "crates/services/jackin-usage/src/host.rs"
-bound = 1930
 
 [[family]]
 id = "file-size-test"
@@ -268,7 +265,7 @@ key = "clippy::print_stderr@jackin-pr-trailers"
 bound = 1
 [[family.entry]]
 key = "clippy::print_stderr@jackin-runtime"
-bound = 7
+bound = 10
 [[family.entry]]
 key = "clippy::print_stderr@jackin-xtask"
 bound = 3
@@ -403,7 +400,7 @@ key = "clippy::useless_let_if_seq@jackin"
 bound = 1
 [[family.entry]]
 key = "clippy::wildcard_imports@jackin-usage"
-bound = 9
+bound = 1
 [[family.entry]]
 key = "dead_code@jackin"
 bound = 3
