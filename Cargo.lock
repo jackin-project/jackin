@@ -3585,6 +3585,7 @@ dependencies = [
  "jackin-runtime-identity",
  "jackin-runtime-isolation",
  "jackin-runtime-process-telemetry",
+ "jackin-runtime-repo-cache",
  "jackin-runtime-session-control",
  "jackin-runtime-snapshot",
  "jackin-runtime-spin-wait",
@@ -3681,6 +3682,25 @@ dependencies = [
  "jackin-telemetry",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "jackin-runtime-repo-cache"
+version = "0.6.4"
+dependencies = [
+ "anyhow",
+ "dialoguer",
+ "fs4",
+ "jackin-core",
+ "jackin-diagnostics",
+ "jackin-instance",
+ "jackin-manifest",
+ "jackin-runtime-identity",
+ "jackin-telemetry",
+ "jackin-test-support",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
 ]
 
 [[package]]

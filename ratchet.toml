@@ -432,6 +432,9 @@ bound = 1
 key = "clippy::too_many_lines@jackin-runtime"
 bound = 6
 [[family.entry]]
+key = "clippy::too_many_lines@jackin-runtime-repo-cache"
+bound = 1
+[[family.entry]]
 key = "clippy::trivially_copy_pass_by_ref@jackin-config"
 bound = 1
 [[family.entry]]
@@ -475,8 +478,11 @@ key = "dead_code@jackin-env"
 bound = 3
 [[family.entry]]
 key = "dead_code@jackin-runtime"
-# 4th entry: repo_cache RepoLock guard-only Arc<std::fs::File> (flock releases on last drop).
-bound = 4
+bound = 3
+[[family.entry]]
+key = "dead_code@jackin-runtime-repo-cache"
+# Moved with repo_cache (S7 split 48): RepoLock guard-only Arc<std::fs::File> (flock releases on last drop).
+bound = 1
 [[family.entry]]
 key = "dead_code@jackin-usage-provider-core"
 bound = 1
@@ -667,6 +673,9 @@ bound = 963
 [[family.entry]]
 key = "crates/services/jackin-runtime-process-telemetry/README.md"
 bound = 1056
+[[family.entry]]
+key = "crates/services/jackin-runtime-repo-cache/README.md"
+bound = 831
 [[family.entry]]
 key = "crates/services/jackin-runtime-session-control/README.md"
 bound = 895
@@ -928,6 +937,9 @@ bound = 1
 key = "jackin-runtime-process-telemetry"
 bound = 1
 [[family.entry]]
+key = "jackin-runtime-repo-cache"
+bound = 1
+[[family.entry]]
 key = "jackin-runtime-session-control"
 bound = 1
 [[family.entry]]
@@ -1076,6 +1088,9 @@ bound = 74
 [[family.entry]]
 key = "jackin-runtime-coordination"
 bound = 23
+[[family.entry]]
+key = "jackin-runtime-repo-cache"
+bound = 28
 [[family.entry]]
 key = "jackin-runtime"
 bound = 86

@@ -36,6 +36,7 @@
     "jackin-runtime-identity",
     "jackin-runtime-isolation",
     "jackin-runtime-process-telemetry",
+    "jackin-runtime-repo-cache",
     "jackin-runtime-session-control",
     "jackin-runtime-snapshot",
     "jackin-runtime-spin-wait",
