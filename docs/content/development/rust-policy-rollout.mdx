@@ -2096,3 +2096,59 @@ passes.
 - Raw outputs:
   `/tmp/s11-split26-{before,after}.txt`
   (kept out of the repo).
+
+### Split 27: usage-capsule-telemetry extraction (H4)
+
+- `jackin-usage` -> `jackin-usage` +
+  `jackin-usage-capsule-telemetry` (T3:
+  OTLP/lifecycle capsule `telemetry` +
+  panic-hook `logging` move as one unit;
+  `lib.rs` carries the ownership header,
+  `telemetry` stays a private module with
+  its `tests` child so the in-crate paths
+  `telemetry::tests::*` are byte-identical
+  in the new binary). Call sites need zero
+  edits: `crate::telemetry::shutdown()`
+  and `crate::logging::init()` resolve
+  inside the new crate, and the public
+  `usage::telemetry::{init,...}` /
+  `usage::logging::{init,...}` paths keep
+  working through re-export aliases
+  consumed by `jackin-capsule`. Keeping
+  the module name also preserves the
+  self-spawning panic-hook test's baked
+  `--exact telemetry::tests::...` path.
+  Both `jackin-diagnostics` and
+  `jackin-telemetry` stay in the old
+  crate (the T4 broker and `usage`
+  facade tests still use them).
+- Verify: `cargo check --locked --workspace
+  --all-targets` green; `cargo fmt --all
+  --check` clean; `cargo clippy` 0
+  errors, 0 warnings on both touched
+  packages. `cargo nextest list
+  --workspace --all-targets`: 7277 ->
+  7277, delta is exactly the 4
+  `telemetry::tests::*` IDs changing
+  their crate prefix 1:1 (zero added,
+  zero dropped). `nextest run`: 403/403
+  usage + 4/4 capsule-telemetry
+  (including the self-spawning
+  panic-hook proof). No
+  contract fixture entries name
+  telemetry paths, so no remap. `alint
+  check`: 197 -> 197. `check-gaps`: 27
+  -> 27 (usage `SIZE-001` 26079 ->
+  25815 lines, `SIZE-002` 136 -> 133
+  files); `GAP-TEST-001/002/003` stay
+  0/0/0. `ratchet.toml`: +2 rows
+  (agent-doc 986, public-surface 1) and
+  the usage public-surface row shrinks
+  4 -> 2; violations 60 -> 60 with zero
+  new failures. `lint arch`: missing
+  tiers stay 3, zero direction
+  violations; `lint headers` stays at
+  the base 2; `lint tests` OK.
+- Raw outputs:
+  `/tmp/s11-split27-{before,after}.txt`
+  (kept out of the repo).

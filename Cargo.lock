@@ -3649,6 +3649,7 @@ dependencies = [
  "jackin-otlp-testbed",
  "jackin-protocol",
  "jackin-telemetry",
+ "jackin-usage-capsule-telemetry",
  "jackin-usage-coordinator",
  "jackin-usage-credential-snapshots",
  "jackin-usage-host-accounts",
@@ -3687,6 +3688,17 @@ dependencies = [
  "tower",
  "tracing",
  "url",
+]
+
+[[package]]
+name = "jackin-usage-capsule-telemetry"
+version = "0.6.4"
+dependencies = [
+ "anyhow",
+ "jackin-diagnostics",
+ "jackin-otlp-testbed",
+ "jackin-telemetry",
+ "tokio",
 ]
 
 [[package]]

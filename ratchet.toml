@@ -728,6 +728,9 @@ bound = 1251
 key = "crates/services/jackin-usage-host-accounts/README.md"
 bound = 1238
 [[family.entry]]
+key = "crates/services/jackin-usage-capsule-telemetry/README.md"
+bound = 986
+[[family.entry]]
 key = "crates/tools/jackin-xtask/README.md"
 bound = 6113
 [[family.entry]]
@@ -851,13 +854,16 @@ key = "jackin-test-support"
 bound = 7
 [[family.entry]]
 key = "jackin-usage"
-bound = 4
+bound = 2
 [[family.entry]]
 key = "jackin-usage-coordinator"
 bound = 1
 [[family.entry]]
 key = "jackin-usage-token-monitor"
 bound = 6
+[[family.entry]]
+key = "jackin-usage-capsule-telemetry"
+bound = 1
 
 
 # Plan 027: suite wall-time from nextest junit. The provider reports zero when
