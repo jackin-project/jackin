@@ -8,19 +8,19 @@ description: "Violation inventory and sequenced migration plan for rust-reposito
 - `main` SHA at slice start: `868ce53519234f879d26a8bd2dffaa30fae2d729`
   (identical to the Phase 1 audit SHA: focused re-diff is empty, no
   audit deltas to reconcile).
-- Policy: `tailrocks/rust-repository-policy` `v0.1.2`, tarball sha256
-  `cf688c1eeb84f74c3b673dcc57e2cafab0156313d25f64b17acf7eda6209d9b1`
-  (verified before install; re-pinned from v0.1.1 `3aeb63a9...` in
-  the slice 7 preface, tree otherwise untouched).
+- Policy: `tailrocks/rust-repository-policy` `v0.1.3`, tarball sha256
+  `104c0d8b3a827875776358f941aa88f1c5837c1009305076af9380f4e3fcda25`
+  (verified before install; re-pinned from v0.1.2 `cf688c1e...` after
+  slice 7 split 59, tree otherwise untouched).
 - Install: release materialized to `.cache/rust-policy/` (gitignored,
   re-materialized in CI before `alint check`); adapter `.alint.yml`
   extends `profiles/rust-strict-v1.yml` plus the one trust-gated
   `policy-gaps` command rule; `schemas/renovate.schema.json` vendored
-  to the repo root per the install contract (v0.1.2 copy
-  byte-identical to v0.1.1/v0.1.0: no re-vendor); helper
-  `rust-repository-policy` from the v0.1.2 artifact on `PATH`
+  to the repo root per the install contract (v0.1.3 copy
+  byte-identical to v0.1.2/v0.1.1/v0.1.0: no re-vendor); helper
+  `rust-repository-policy` from the v0.1.3 artifact on `PATH`
   (self-reports `0.1.0`: identify by artifact, macos-arm64 sha256
-  `189f61cc1fc1e91df173f405a1e4e0fbf3c45bf0d990365279d0bdf10654d1ae`).
+  `f6e0a30d2921b0bf176aea937b491f94f6a68b19238277f57f75cf09a393be54`).
 - Tool pins: alint `0.17.0`, helper at release tag, profile
   `rust-strict-v1` (36 native rules + `policy-gaps` = 37 loaded).
 - Branch: `rust-policy-rollout`. This slice commits install + inventory
@@ -4728,3 +4728,63 @@ bound 720.
 - Raw outputs:
   `/tmp/s7-s59-{pre,post}-*.txt`
   (kept out of the repo).
+
+## Re-pin to policy v0.1.3 (2026-10-07)
+
+- Base: `2837b27f` (slice 7 split 59). Clone:
+  `/tmp/jackin-repin`, branch `rust-policy-rollout`,
+  pushed, NOT merged to `main`.
+- Forward: verify the v0.1.3 tarball sha256
+  (`104c0d8b...cda25`), materialize to gitignored
+  `.cache/rust-policy/`, run the v0.1.3 helper from the
+  artifact (`PATH` override at `.cache/rust-policy-path/`;
+  the shared on-`PATH` helper stays v0.1.0 until the
+  rollout lands). `.alint.yml` needs no edit (extends
+  path unchanged, still 37 rules); vendored
+  `renovate.schema.json` is byte-identical across all
+  four releases (no re-vendor). This slice commits the
+  doc re-pin + re-baselined counts only. No compliance
+  fixes yet. Rollback: revert the commit, re-materialize
+  v0.1.2.
+- v0.1.3 delta (artifact-to-artifact diff on this tree):
+  `modules/`, `profiles/`, `schemas/` byte-identical to
+  v0.1.2 (native suite unchanged); helper binary only
+  (macos-arm64 `189f61cc...` -> `f6e0a30d...`). Per the
+  release notes, `GAP-SIZE-001/002` aggregates now count
+  production code only: `tests/` dirs, `src/**/tests.rs`
+  suites, and `src/**/tests/**` splits are excluded from
+  both the code-line and file-count budgets.
+
+### Verify (same tree, v0.1.2 -> v0.1.3)
+
+- Env: mise-shimmed cargo/rustc (`MISE_TRUSTED_CONFIG_PATHS`,
+  no global trust write), alint 0.17.0, helper from the
+  v0.1.3 artifact (self-reports 0.1.0, macos-arm64 sha256
+  `f6e0a30d...93be54`).
+- Install gate: `alint validate-config .alint.yml` green
+  (37 rules); `policy-gaps` 12 == direct `check-gaps` 12
+  (reconciles).
+- `check-gaps`: 22 -> 12 (`GAP-SIZE-001` 13 -> 7,
+  `GAP-SIZE-002` 9 -> 5; every other gap type 0 both
+  sides). Six crates clear all SIZE findings: image
+  (6798 lines), core (6742/89), protocol (6337),
+  diagnostics (11405/70), isolation (10594), launch
+  (8466/68). Config (23317 -> 9979) and telemetry
+  (12660 -> 10242) keep `SIZE-001` but clear `SIZE-002`.
+- Remaining 12 (production-only): capsule 27499 lines /
+  204 files (was 51892/358), console 46910/404 (was
+  82949/631), xtask 26273/64 (was 36285/155), runtime
+  21499/108 (was 47456/231), jackin 13288/63 (was
+  36212/196), config 9979 lines, telemetry 10242 lines.
+- Runtime hub exclusion proven by census: 231 total
+  `.rs` files minus 123 test-scope files (`tests/`,
+  `tests.rs`) = 108, exactly the v0.1.3 `SIZE-002`
+  count.
+- `alint check`: 182 findings, 26 passing / 11 failing.
+  Per-rule: `size-file-400` 136, `docs-root-only-allowed`
+  15, `size-lib-main-150` 12, `policy-gaps` 12, inherit
+  x3 (lints), `cargo-no-patch`, `ci-build-runs-on`,
+  `toolchain-*` x2.
+- Raw outputs: `/tmp/jackin-repin-v012-gaps.txt`,
+  `/tmp/jackin-repin-v013-gaps.txt`,
+  `/tmp/jackin-repin-v013-alint.txt`.
