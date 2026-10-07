@@ -38,6 +38,7 @@
     "jackin-runtime-attach-sessions",
     "jackin-runtime-attach-transport",
     "jackin-runtime-cleanup-resolve",
+    "jackin-runtime-cleanup-timing",
     "jackin-runtime-coordination",
     "jackin-runtime-discovery",
     "jackin-runtime-docker-profile",
