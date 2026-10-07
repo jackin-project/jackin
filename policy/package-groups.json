@@ -31,6 +31,7 @@
     "jackin-protocol": "library",
     "jackin-runtime": "library",
     "jackin-runtime-apple-container-client": "library",
+    "jackin-runtime-attach-admission": "library",
     "jackin-runtime-attach-capsule-ready": "library",
     "jackin-runtime-attach-sessions": "library",
     "jackin-runtime-attach-transport": "library",

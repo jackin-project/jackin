@@ -13,7 +13,10 @@
 
 pub use jackin_docker::docker_client::ContainerState;
 
-mod admission;
+// Moved to jackin_runtime_attach_admission::admission (S7
+// split 78); the module re-export keeps every
+// `attach::admission::*` path stable.
+pub(crate) use jackin_runtime_attach_admission::admission;
 // Moved to jackin_runtime_attach_capsule_ready::capsule_ready
 // (S7 split 74); the module re-export keeps every
 // `attach::capsule_ready::*` path stable.

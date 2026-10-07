@@ -710,6 +710,9 @@ bound = 3545
 key = "crates/services/jackin-runtime-apple-container-client/README.md"
 bound = 1310
 [[family.entry]]
+key = "crates/services/jackin-runtime-attach-admission/README.md"
+bound = 1050
+[[family.entry]]
 key = "crates/services/jackin-runtime-attach-capsule-ready/README.md"
 bound = 997
 [[family.entry]]
@@ -1058,6 +1061,9 @@ key = "jackin-runtime"
 bound = 7
 [[family.entry]]
 key = "jackin-runtime-apple-container-client"
+bound = 1
+[[family.entry]]
+key = "jackin-runtime-attach-admission"
 bound = 1
 [[family.entry]]
 key = "jackin-runtime-attach-capsule-ready"

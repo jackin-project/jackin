@@ -7423,3 +7423,125 @@ bound 720.
 - Raw outputs:
   `/tmp/s7-s77-{pre,post}-*.txt`
   (kept out of the repo).
+
+### Split 78: runtime-attach-admission extraction (M40)
+
+- `jackin-runtime` ->
+  `jackin-runtime` +
+  `jackin-runtime-attach-admission`
+  (T5: the whole
+  `attach/admission`
+  submodule moves --
+  reconnect admission
+  checks against current
+  host policy plus the
+  registration-state
+  refresh; the module
+  carries no unit suite
+  of its own, coverage
+  stays in the hub
+  `attach` suite).
+  Cross-leaf edges: 3
+  hub paths rewritten to
+  already-split crates
+  (`instance::{...}` ->
+  `jackin-instance` T3,
+  `AccountConfigRevision`
+  ->
+  `jackin-runtime-launch-account-identity`
+  T4,
+  `account_admission_matches`
+  -> the same T4 crate).
+  Eight `pub(crate)` fns
+  plus the
+  `ReconnectAdmissionFailure`
+  struct widen to `pub`
+  (forced). No shim
+  file: `attach.rs`
+  re-exports the module
+  itself (the split-56
+  precedent), so the
+  `attach::admission::*`
+  paths -- including the
+  `pub(crate) use` item
+  re-exports every
+  caller names -- keep
+  working unchanged.
+  Tier: names T4
+  `jackin-runtime-launch-account-identity`,
+  so it takes T5; no
+  renumber cascade.
+  New-crate deps:
+  config, core,
+  instance,
+  runtime-launch-account-identity,
+  anyhow (lockfile +1
+  package, +6 edges).
+  Policy registries: +1
+  owned package
+  (`library`).
+
+- Verify: `cargo check
+  --locked --workspace
+  --all-targets` green;
+  `cargo fmt --all
+  --check` clean; `cargo
+  clippy` 0 errors on
+  the new crate (`-D
+  warnings`),
+  `jackin-runtime` holds
+  at the 7 pre-existing
+  errors (same 6 lints +
+  summary). `cargo
+  nextest list
+  --workspace
+  --all-targets`: 7277
+  -> 7277,
+  byte-identical (0
+  relocations -- the
+  module carries no
+  tests; 0 dropped, 0
+  added). `nextest run`:
+  433/433 runtime green
+  (1 skipped,
+  pre-existing; the new
+  crate has no tests
+  yet). `alint check`:
+  182 violations / 11
+  failing,
+  byte-identical.
+  `check-gaps` (v0.1.3,
+  production-only): 12
+  -> 12 (runtime
+  `SIZE-001/002`
+  persist: 12462 ->
+  12222 prod code lines,
+  84 -> 83 prod files;
+  xtask 26291 -> 26292
+  from the TIERS row;
+  new crate fits at 289
+  raw / 3 files, no SIZE
+  finding).
+  `GAP-TEST-001/002/003`
+  stay 0/0/0.
+  `ratchet.toml`: +2
+  rows (agent-doc-bytes
+  README 1050,
+  public-surface 1);
+  remaining 56
+  violations
+  byte-identical to a
+  clean-HEAD worktree.
+  `lint arch --strict`:
+  3 pre-existing no-tier
+  violations
+  byte-identical to
+  base, zero direction
+  violations; `lint
+  headers` stays at the
+  base 2; `lint tests`
+  OK.
+
+- Raw outputs:
+  `/tmp/s7-s78-{pre,post}-*.txt`
+  (kept out of the repo).

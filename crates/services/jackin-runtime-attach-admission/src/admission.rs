@@ -2,15 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Reconnect admission types and current-account/instance admission checks.
 
-use crate::instance::{InstanceIndex, InstanceManifest, RegistrationState};
 use anyhow::Context as _;
+use jackin_instance::{InstanceIndex, InstanceManifest, RegistrationState};
 
 use jackin_core::ContainerHandle;
 
 use jackin_core::JackinPaths;
 
 #[derive(Debug)]
-pub(crate) struct ReconnectAdmissionFailure(String);
+pub struct ReconnectAdmissionFailure(String);
 
 impl std::fmt::Display for ReconnectAdmissionFailure {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -20,14 +20,14 @@ impl std::fmt::Display for ReconnectAdmissionFailure {
 
 impl std::error::Error for ReconnectAdmissionFailure {}
 
-pub(crate) fn mark_reconnect_admission_failure(error: anyhow::Error) -> anyhow::Error {
+pub fn mark_reconnect_admission_failure(error: anyhow::Error) -> anyhow::Error {
     let summary = error.to_string();
     error.context(ReconnectAdmissionFailure(summary))
 }
 
 /// A fresh inspection proves liveness, never ownership. Only the launch-recorded
 /// immutable ID authorizes use of an existing role's retained state/credentials.
-pub(crate) fn validate_recorded_role_handle(
+pub fn validate_recorded_role_handle(
     paths: &JackinPaths,
     container_name: &str,
     container: &ContainerHandle,
@@ -55,19 +55,23 @@ pub(crate) fn validate_recorded_role_handle(
 
 /// Existing containers retain credential material: every attach route must
 /// recheck their recorded admission against current host policy before use.
-pub(crate) fn require_current_account_admission(
+pub fn require_current_account_admission(
     paths: &JackinPaths,
     container_name: &str,
-) -> anyhow::Result<crate::runtime::launch::AccountConfigRevision> {
-    let admission_lease = crate::runtime::launch::AccountConfigRevision::acquire(paths)?;
+) -> anyhow::Result<jackin_runtime_launch_account_identity::account_identity::AccountConfigRevision>
+{
+    let admission_lease =
+        jackin_runtime_launch_account_identity::account_identity::AccountConfigRevision::acquire(
+            paths,
+        )?;
     validate_current_account_admission(paths, container_name, &admission_lease)?;
     Ok(admission_lease)
 }
 
-pub(crate) fn validate_current_account_admission(
+pub fn validate_current_account_admission(
     paths: &JackinPaths,
     container_name: &str,
-    admission_lease: &crate::runtime::launch::AccountConfigRevision,
+    admission_lease: &jackin_runtime_launch_account_identity::account_identity::AccountConfigRevision,
 ) -> anyhow::Result<()> {
     let root = paths.data_dir.join(container_name);
     let manifest = InstanceManifest::read(&root)
@@ -78,7 +82,7 @@ pub(crate) fn validate_current_account_admission(
     Ok(())
 }
 
-pub(crate) fn refresh_registration_states(
+pub fn refresh_registration_states(
     paths: &JackinPaths,
     root: &std::path::Path,
     mut manifest: InstanceManifest,
@@ -106,10 +110,10 @@ pub(crate) fn refresh_registration_states(
     Ok(manifest)
 }
 
-pub(crate) fn registration_state_for_admission(
+pub fn registration_state_for_admission(
     config: &jackin_config::AppConfig,
     workspace: Option<&jackin_core::WorkspaceName>,
-    admitted: &crate::instance::AdmittedInstance,
+    admitted: &jackin_instance::AdmittedInstance,
 ) -> RegistrationState {
     let Some(account) = config.accounts.get(&admitted.account_id) else {
         return RegistrationState::Removed;
@@ -142,7 +146,7 @@ pub(crate) fn registration_state_for_admission(
     }
 }
 
-pub(crate) fn current_account_admission(
+pub fn current_account_admission(
     paths: &JackinPaths,
     root: &std::path::Path,
     manifest: &InstanceManifest,
@@ -159,7 +163,7 @@ pub(crate) fn current_account_admission(
         .map(jackin_core::WorkspaceName::parse)
         .transpose()?;
     anyhow::ensure!(
-        crate::runtime::account_admission_matches(
+        jackin_runtime_launch_account_identity::account_identity::account_admission_matches(
             root,
             &snapshot.config,
             workspace.as_ref(),
@@ -175,12 +179,12 @@ pub(crate) fn current_account_admission(
 /// must carry an explicit admission set; the function never resolves an
 /// account by provider/name and never silently substitutes an unqualified
 /// same-agent row.
-pub(crate) fn require_current_instance_admission(
+pub fn require_current_instance_admission(
     paths: &JackinPaths,
     container_name: &str,
     agent: jackin_core::Agent,
     requested_instance_id: Option<&str>,
-    admission_lease: &crate::runtime::launch::AccountConfigRevision,
+    admission_lease: &jackin_runtime_launch_account_identity::account_identity::AccountConfigRevision,
 ) -> anyhow::Result<(InstanceManifest, Option<String>)> {
     let root = paths.data_dir.join(container_name);
     let manifest = InstanceManifest::read(&root).context(
