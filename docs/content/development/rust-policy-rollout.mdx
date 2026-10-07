@@ -8859,3 +8859,149 @@ bound 720.
   `/tmp/s7-s87-{pre,post}-*.txt`
   (kept out of the
   repo).
+
+### Split 88: load-options lane-env companions (M49 remainder)
+
+- No new crate: the
+  programmatic
+  remainder
+  (`lane_agent_env` +
+  four model/effort
+  env consts) moves
+  from hub
+  `programmatic.rs`
+  into the split-87
+  leaf as a new
+  `lane_env` module
+  (52 lines).
+  `load_options.rs`
+  sits at 395 lines,
+  so the file budget
+  forces a second
+  module, not an
+  append.
+  `programmatic.rs`
+  85 -> 46 lines and
+  is re-exports +
+  suite only now --
+  hub prod code in
+  that module fully
+  dissolved. Bodies
+  byte-identical,
+  zero path rewrites
+  (core-only edges),
+  no visibility
+  widens (already
+  `pub`). The
+  `programmatic.rs`
+  re-export splits in
+  two (`lane_env::`
+  + `load_options::`)
+  and keeps every
+  path stable
+  (`launch.rs` item
+  re-exports,
+  `runtime.rs`, hub
+  suite `super::*`
+  resolve unchanged).
+  Leaf deps
+  unchanged, tier
+  stays T4; no TIERS
+  / policy / lockfile
+  churn (lockfile
+  byte-identical).
+  Restore scoping:
+  `related_restore_load_options`
+  probed and left in
+  hub `restore.rs` --
+  a restore concern
+  whose siblings
+  still name hub
+  attach / progress /
+  universe edges, so
+  it rides the future
+  restore-leaf split
+  (an in-flight move
+  also tripped the
+  leaf's
+  size-file-400
+  budget, confirming
+  the geometry).
+
+- Verify: `cargo check
+  --locked --workspace
+  --all-targets` green
+  (no regen -- deps
+  unchanged); `cargo
+  fmt --all --check`
+  clean; `cargo
+  clippy` 0 errors on
+  the leaf (`-D
+  warnings`),
+  `jackin-runtime`
+  holds at the 7
+  pre-existing errors
+  (identical
+  locations).
+  `cargo nextest list
+  --workspace
+  --all-targets`: 7277
+  -> 7277,
+  byte-identical (0
+  relocations; 0
+  dropped, 0 added).
+  `nextest run`:
+  433/433 runtime
+  green (1 skipped,
+  pre-existing) +
+  17/17 app `load_cmd`
+  green (one full-suite
+  pass flagged 2 LEAK
+  verdicts in untouched
+  pipeline/cleanup
+  tests; isolated PASS
+  + clean re-run
+  proved a load flake).
+  `alint check`:
+  180 violations / 11
+  failing,
+  byte-identical (zero
+  new rows; both leaf
+  files under the 400
+  file budget).
+  `check-gaps`:
+  12 -> 12 (hub 11233
+  -> 11212 prod code
+  lines, 79 prod files
+  unchanged; xtask
+  unchanged at 26301
+  -- no TIERS row;
+  leaf fits at 472 raw
+  / 4 files, no SIZE
+  finding).
+  `GAP-TEST-001/002/003`
+  stay 0/0/0.
+  `ratchet.toml`: 2
+  modified rows
+  (agent-doc-bytes
+  README 895 -> 1315,
+  public-surface 1 ->
+  2 for the second
+  `pub mod`); gate
+  output byte-identical
+  to base. `lint arch
+  --strict`: 3
+  pre-existing no-tier
+  violations
+  byte-identical, zero
+  direction violations;
+  `lint headers` stays
+  at the base 2; `lint
+  tests` OK; `lint
+  readme-freshness`
+  unchanged.
+
+- Raw outputs:
+  `/tmp/s7-s88-{pre,post}-*.txt`
+  (kept out of the
+  repo).

@@ -12,4 +12,5 @@
 //! `jackin_runtime::runtime::launch::programmatic::*` paths keep working
 //! through item re-exports in `launch.rs` and `programmatic.rs`.
 
+pub mod lane_env;
 pub mod load_options;
