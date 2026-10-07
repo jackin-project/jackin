@@ -3649,6 +3649,7 @@ dependencies = [
  "jackin-otlp-testbed",
  "jackin-protocol",
  "jackin-telemetry",
+ "jackin-usage-output",
  "jackin-usage-provider-amp",
  "jackin-usage-provider-antigravity",
  "jackin-usage-provider-claude",
@@ -3695,6 +3696,10 @@ dependencies = [
  "jackin-usage-provider-core",
  "tempfile",
 ]
+
+[[package]]
+name = "jackin-usage-output"
+version = "0.6.4"
 
 [[package]]
 name = "jackin-usage-provider-amp"

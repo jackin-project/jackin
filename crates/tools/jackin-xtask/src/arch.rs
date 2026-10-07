@@ -41,6 +41,7 @@ pub(crate) const TIERS: &[(&str, u8)] = &[
     ("jackin-process", 0),
     ("jackin-process-directory", 0),
     ("jackin-omp-store", 0),
+    ("jackin-usage-output", 0),
     ("jackin-tui", 1),
     ("jackin-build-meta", 1),
     ("jackin-pr-trailers", 1),

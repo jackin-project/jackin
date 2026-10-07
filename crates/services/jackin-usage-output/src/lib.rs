@@ -1,7 +1,7 @@
-// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
-// SPDX-License-Identifier: Apache-2.0
-
-//! Plain stdout/stderr writers for capsule CLI and entrypoint output.
+//! jackin-usage-output: plain stdout/stderr writers for capsule CLI output.
+//!
+//! **Architecture Invariant:** T0.
+//! Entry point: [`stdout_line`] — locked stdout line writer.
 
 use std::fmt::Arguments;
 use std::io::Write as _;
@@ -25,3 +25,6 @@ pub fn stderr_line(args: Arguments<'_>) {
     let mut stderr = std::io::stderr().lock();
     drop(writeln!(stderr, "{args}"));
 }
+
+#[cfg(test)]
+mod tests;

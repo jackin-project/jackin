@@ -701,6 +701,9 @@ bound = 1264
 key = "crates/services/jackin-usage-provider-claude/README.md"
 bound = 1819
 [[family.entry]]
+key = "crates/services/jackin-usage-output/README.md"
+bound = 687
+[[family.entry]]
 key = "crates/tools/jackin-xtask/README.md"
 bound = 6113
 [[family.entry]]
@@ -824,7 +827,7 @@ key = "jackin-test-support"
 bound = 7
 [[family.entry]]
 key = "jackin-usage"
-bound = 9
+bound = 8
 
 
 # Plan 027: suite wall-time from nextest junit. The provider reports zero when

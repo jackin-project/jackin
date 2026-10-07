@@ -7,7 +7,7 @@
 pub mod coordinator;
 pub mod host;
 pub mod logging;
-pub mod output;
+pub use jackin_usage_output as output;
 /// Turso `SQLite` import chokepoint for this crate **and** host-binary usage
 /// caches. External callers (host CLI) must open connections only through
 /// [`store_backend::connect_local`] so a turso version bump stays one file.
