@@ -5290,3 +5290,163 @@ bound 720.
 - Raw outputs:
   `/tmp/s7-s62-{pre,post}-*.txt`
   (kept out of the repo).
+
+### Split 63: runtime-launch-account-config extraction (M25)
+
+- `jackin-runtime` ->
+  `jackin-runtime` +
+  `jackin-runtime-launch-account-config`
+  (T4: the whole
+  `launch::account_config`
+  module moves —
+  provider account
+  publication +
+  catalogs +
+  fingerprints,
+  `private_config_bounds`
+  + `tests.rs` + 5
+  suites + support
+  with 40 tests).
+  One cross-leaf
+  edge: 13x
+  `crate::instance`
+  -> `jackin_instance`
+  (external re-export).
+  Visibility widens
+  surgically (only
+  the 2 externally
+  used fns,
+  `configure_accounts`
+  +
+  `opencode_model`,
+  `pub(super)` ->
+  `pub`; the inline
+  `private_config_fs`
+  items and the
+  `private_config_bounds`
+  child stay
+  `pub(super)`).
+  `mod account_config`
+  is private with no
+  `launch.rs`
+  re-export, so the
+  shim keeps a
+  `pub(crate)` glob
+  and both in-launch
+  module paths stay
+  stable. Two
+  test-only breaks
+  fixed by execution:
+  the lock-holder
+  fixture's `--exact
+  runtime::launch::account_config::...`
+  self-path string
+  retargets to
+  `account_config::...`
+  (the split-58
+  precedent), and the
+  `quarantine`
+  `eprintln!` (losing
+  `launch.rs`'s
+  file-level
+  `print_stderr`
+  cover) gains a
+  narrow fn-level
+  `#[expect]`
+  instead. Tier:
+  names T3 instance,
+  so it takes T4; no
+  renumber cascade.
+  New-crate deps:
+  config, core,
+  instance, anyhow,
+  fs4, hex,
+  serde_json, sha2,
+  toml, unix nix
+  (`fs`); dev-deps
+  add env, tempfile
+  (lockfile +1
+  package, +13
+  edges). Policy
+  registries: +1
+  owned package
+  (`library`).
+
+- Verify: `cargo check
+  --locked --workspace
+  --all-targets`
+  green; `cargo fmt
+  --all --check`
+  clean; `cargo
+  clippy` 0 errors on
+  the new crate,
+  `jackin-runtime`
+  holds at the 7
+  pre-existing errors
+  (all in
+  `launch_slot/tests`,
+  byte-identical
+  locations).
+  `cargo nextest list
+  --workspace
+  --all-targets`: 7277
+  -> 7277 (40
+  relocations map 1:1
+  by name, verified by
+  stripped-diff:
+  `launch::account_config`
+  -> `account_config`;
+  0 dropped, 0 added).
+  `nextest run`:
+  571/571 runtime
+  (531) +
+  account-config (40).
+  `alint check`:
+  182 violations / 11
+  failing unchanged.
+  `check-gaps`
+  (v0.1.3,
+  production-only):
+  12 -> 12 (runtime
+  `SIZE-001/002`
+  persist: 18688 ->
+  17591 prod code
+  lines, 96 -> 95
+  prod files; new
+  crate fits at
+  3156 raw / 11
+  files, no SIZE
+  finding).
+  `GAP-TEST-001/002/003`
+  stay 0/0/0.
+  `ratchet.toml`: +5
+  rows
+  (agent-doc-bytes
+  README 872,
+  public-surface 1,
+  `disallowed_methods`
+  account-config 1,
+  `print_stderr`
+  account-config 1,
+  function-complexity
+  account-config 28)
+  and
+  `disallowed_methods@jackin-runtime`
+  5 -> 4; failures 57
+  -> 57 — measured
+  disallowed total
+  preserved (5 =
+  4+1); remaining
+  keys byte-identical.
+  `lint arch
+  --strict`: missing
+  tiers stay 3, zero
+  direction
+  violations; `lint
+  headers` stays at
+  the base 2; `lint
+  tests` OK.
+
+- Raw outputs:
+  `/tmp/s7-s63-{pre,post}-*.txt`
+  (kept out of the repo).

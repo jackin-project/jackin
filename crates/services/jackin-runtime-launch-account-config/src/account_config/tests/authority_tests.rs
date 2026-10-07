@@ -6,7 +6,7 @@ use super::*;
 fn fixture() -> (
     AppConfig,
     jackin_config::ResolvedInstance,
-    crate::instance::ProvisionedInstanceAuth,
+    jackin_instance::ProvisionedInstanceAuth,
 ) {
     let mut config = AppConfig::default();
     config.accounts.insert(
@@ -32,7 +32,7 @@ fn fixture() -> (
         label: "Selected".into(),
         synthesized: false,
     };
-    let slot = crate::instance::ProvisionedInstanceAuth {
+    let slot = jackin_instance::ProvisionedInstanceAuth {
         agent: Agent::Codex,
         account_id: "selected".into(),
         mode: jackin_config::AuthForwardMode::ApiKey,

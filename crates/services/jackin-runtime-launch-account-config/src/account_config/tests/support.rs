@@ -4,7 +4,7 @@
 use super::*;
 pub(super) fn slots_for(
     instances: &[jackin_config::ResolvedInstance],
-) -> BTreeMap<String, crate::instance::ProvisionedInstanceAuth> {
+) -> BTreeMap<String, jackin_instance::ProvisionedInstanceAuth> {
     let mut seen_agents = Vec::new();
     instances
         .iter()
@@ -20,7 +20,7 @@ pub(super) fn slots_for(
                 Agent::Opencode => (".local/share/opencode", "opencode"),
                 _ => (".unused", "unused"),
             };
-            let container_home_rel = crate::instance::slot_home_rel(home_rel, suffix.as_deref());
+            let container_home_rel = jackin_instance::slot_home_rel(home_rel, suffix.as_deref());
             let container_store_rel = suffix.as_deref().map_or_else(
                 || store_rel.to_owned(),
                 |suffix| format!("{store_rel}-{suffix}"),
@@ -32,7 +32,7 @@ pub(super) fn slots_for(
             };
             (
                 instance.config_id.clone(),
-                crate::instance::ProvisionedInstanceAuth {
+                jackin_instance::ProvisionedInstanceAuth {
                     agent: instance.agent,
                     account_id: instance.account_id.clone(),
                     mode: jackin_config::AuthForwardMode::ApiKey,

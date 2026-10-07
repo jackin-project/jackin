@@ -240,7 +240,7 @@ fn lock_holder(root: &Path) -> anyhow::Result<LockHolder> {
     let child = Command::new(std::env::current_exe().context("locate lock fixture executable")?)
         .args([
             "--exact",
-            "runtime::launch::account_config::tests::bounds::private_config_lock_holder_child",
+            "account_config::tests::bounds::private_config_lock_holder_child",
             "--nocapture",
         ])
         .env(LOCK_CHILD_ROOT, root)

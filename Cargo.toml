@@ -39,6 +39,7 @@ members = [
     "crates/services/jackin-runtime-identity",
     "crates/services/jackin-runtime-image",
     "crates/services/jackin-runtime-isolation",
+    "crates/services/jackin-runtime-launch-account-config",
     "crates/services/jackin-runtime-launch-mounts",
     "crates/services/jackin-runtime-launch-plan",
     "crates/services/jackin-runtime-launch-trust",
@@ -167,6 +168,7 @@ jackin-runtime-host-daemon = { version = "0.6.4", path = "crates/services/jackin
 jackin-runtime-identity = { version = "0.6.4", path = "crates/services/jackin-runtime-identity" }
 jackin-runtime-image = { version = "0.6.4", path = "crates/services/jackin-runtime-image" }
 jackin-runtime-isolation = { version = "0.6.4", path = "crates/services/jackin-runtime-isolation" }
+jackin-runtime-launch-account-config = { version = "0.6.4", path = "crates/services/jackin-runtime-launch-account-config" }
 jackin-runtime-launch-mounts = { version = "0.6.4", path = "crates/services/jackin-runtime-launch-mounts" }
 jackin-runtime-launch-plan = { version = "0.6.4", path = "crates/services/jackin-runtime-launch-plan" }
 jackin-runtime-launch-trust = { version = "0.6.4", path = "crates/services/jackin-runtime-launch-trust" }

@@ -154,10 +154,13 @@ key = "clippy::disallowed_methods@jackin-instance-roles"
 bound = 1
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-runtime"
-bound = 5
+bound = 4
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-runtime-image"
 bound = 2
+[[family.entry]]
+key = "clippy::disallowed_methods@jackin-runtime-launch-account-config"
+bound = 1
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-runtime-snapshot"
 bound = 2
@@ -341,6 +344,9 @@ bound = 10
 [[family.entry]]
 key = "clippy::print_stderr@jackin-runtime-exec-host"
 bound = 2
+[[family.entry]]
+key = "clippy::print_stderr@jackin-runtime-launch-account-config"
+bound = 1
 [[family.entry]]
 key = "clippy::print_stderr@jackin-runtime-spin-wait"
 bound = 1
@@ -713,6 +719,9 @@ bound = 1098
 key = "crates/services/jackin-runtime-isolation/README.md"
 bound = 963
 [[family.entry]]
+key = "crates/services/jackin-runtime-launch-account-config/README.md"
+bound = 872
+[[family.entry]]
 key = "crates/services/jackin-runtime-launch-mounts/README.md"
 bound = 907
 [[family.entry]]
@@ -1018,6 +1027,9 @@ bound = 1
 key = "jackin-runtime-isolation"
 bound = 1
 [[family.entry]]
+key = "jackin-runtime-launch-account-config"
+bound = 1
+[[family.entry]]
 key = "jackin-runtime-launch-mounts"
 bound = 1
 [[family.entry]]
@@ -1202,6 +1214,9 @@ bound = 28
 [[family.entry]]
 key = "jackin-runtime"
 bound = 86
+[[family.entry]]
+key = "jackin-runtime-launch-account-config"
+bound = 28
 [[family.entry]]
 key = "jackin-telemetry"
 bound = 30
