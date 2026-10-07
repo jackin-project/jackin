@@ -8,12 +8,12 @@ use jackin_usage_provider_core::{bucket, compact_count, json_number};
 
 /// Request allowance (`/api/usage?user=`): used/total request counts.
 #[derive(Debug, Clone)]
-pub(crate) struct CursorRequestUsage {
+pub struct CursorRequestUsage {
     pub(crate) used: i64,
     pub(crate) limit: i64,
 }
 
-pub(crate) fn fetch_cursor_request_usage(
+pub fn fetch_cursor_request_usage(
     user_id: &str,
     token: &str,
 ) -> Result<CursorRequestUsage, String> {
@@ -22,7 +22,7 @@ pub(crate) fn fetch_cursor_request_usage(
         .ok_or_else(|| "Cursor request usage was not recognized".to_owned())
 }
 
-pub(crate) fn parse_cursor_request_usage(value: &serde_json::Value) -> Option<CursorRequestUsage> {
+pub fn parse_cursor_request_usage(value: &serde_json::Value) -> Option<CursorRequestUsage> {
     // Model-keyed (`gpt-4`, …): scan top-level objects for a request counter.
     // Multi-model responses are pinned, not arbitrary: the alphabetically
     // first model key carrying a counter wins, so the pick is deterministic
@@ -57,7 +57,7 @@ pub(crate) fn parse_cursor_request_usage(value: &serde_json::Value) -> Option<Cu
     Some(CursorRequestUsage { used, limit })
 }
 
-pub(crate) fn cursor_request_bucket(usage: &CursorRequestUsage) -> QuotaBucketView {
+pub fn cursor_request_bucket(usage: &CursorRequestUsage) -> QuotaBucketView {
     #[expect(clippy::cast_sign_loss, reason = "clamped to 0.0..=100.0")]
     let remaining = Some(
         ((usage.limit - usage.used).clamp(0, usage.limit) as f64 / usage.limit as f64 * 100.0)

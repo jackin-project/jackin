@@ -6,12 +6,12 @@ use super::cursor_dashboard_post;
 use jackin_protocol::control::{Money, QuotaBucketView, UsageSnapshotStatus};
 use jackin_usage_provider_core::{bucket, format_cents, humanize_plan_label, json_number};
 
-pub(crate) fn fetch_cursor_plan_info(base: &str, token: &str) -> Result<Option<String>, String> {
+pub fn fetch_cursor_plan_info(base: &str, token: &str) -> Result<Option<String>, String> {
     let value = cursor_dashboard_post(base, token, "GetPlanInfo")?;
     Ok(parse_cursor_plan_info(&value))
 }
 
-pub(crate) fn parse_cursor_plan_info(value: &serde_json::Value) -> Option<String> {
+pub fn parse_cursor_plan_info(value: &serde_json::Value) -> Option<String> {
     // Live `GetPlanInfo` nests the label under `planInfo` (e.g.
     // `{"planInfo": {"planName": "ultra"}}`); the flat top-level keys are the
     // fallback for older/assumed shapes. Each shape is a full attempt so a
@@ -34,12 +34,12 @@ pub(crate) fn cursor_plan_label_from(node: &serde_json::Value) -> Option<&str> {
 }
 
 /// Credit-grant balance in cents (explicit minor units → safe [`Money`]).
-pub(crate) fn fetch_cursor_credit_grants(base: &str, token: &str) -> Result<i64, String> {
+pub fn fetch_cursor_credit_grants(base: &str, token: &str) -> Result<i64, String> {
     let value = cursor_dashboard_post(base, token, "GetCreditGrantsBalance")?;
     Ok(parse_cursor_credit_grants(&value))
 }
 
-pub(crate) fn parse_cursor_credit_grants(value: &serde_json::Value) -> i64 {
+pub fn parse_cursor_credit_grants(value: &serde_json::Value) -> i64 {
     // The server returns either a top-level total or the total plus its
     // itemized breakdown — never add both. A non-empty `grants[]` wins and the
     // top-level total is ignored, so the usual total+breakdown shape cannot
@@ -80,7 +80,7 @@ pub(crate) fn parse_cursor_credit_grants(value: &serde_json::Value) -> i64 {
 /// Assumption (research-unverified, near-certain): Cursor credit grants bill
 /// in USD, so the structured [`Money`] carries `USD`/exponent 2 and the label
 /// renders `$`. Revisit if a non-USD Cursor ledger is ever observed.
-pub(crate) fn cursor_credits_bucket(grant_cents: i64, stripe_cents: i64) -> QuotaBucketView {
+pub fn cursor_credits_bucket(grant_cents: i64, stripe_cents: i64) -> QuotaBucketView {
     let total = grant_cents.saturating_add(stripe_cents).max(0);
     let mut view = bucket(
         "Credits",

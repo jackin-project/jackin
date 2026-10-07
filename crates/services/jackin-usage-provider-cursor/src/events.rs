@@ -11,14 +11,14 @@ use jackin_usage_provider_core::{
 /// Hourly-aggregated usage events. The overview snapshot never fetches these
 /// (aggregation delay + hammering); the fetch exists for detail drill-down.
 #[derive(Debug, Clone, Default)]
-pub(crate) struct CursorUsageEvents {
+pub struct CursorUsageEvents {
     pub(crate) event_count: usize,
     pub(crate) total_tokens: Option<i64>,
     pub(crate) total_charged: Option<f64>,
     pub(crate) total_estimated: Option<f64>,
 }
 
-pub(crate) fn fetch_cursor_usage_events(
+pub fn fetch_cursor_usage_events(
     scope: &CursorEnterpriseScope,
     start_ms: i64,
     end_ms: i64,
@@ -58,7 +58,7 @@ pub(crate) fn fetch_cursor_usage_events(
     Ok(parse_cursor_usage_events(&value))
 }
 
-pub(crate) fn parse_cursor_usage_events(value: &serde_json::Value) -> CursorUsageEvents {
+pub fn parse_cursor_usage_events(value: &serde_json::Value) -> CursorUsageEvents {
     let events = value
         .get("events")
         .or_else(|| value.get("usageEvents"))
@@ -84,7 +84,7 @@ pub(crate) fn parse_cursor_usage_events(value: &serde_json::Value) -> CursorUsag
     }
 }
 
-pub(crate) fn cursor_events_buckets(events: &CursorUsageEvents) -> Vec<QuotaBucketView> {
+pub fn cursor_events_buckets(events: &CursorUsageEvents) -> Vec<QuotaBucketView> {
     let mut buckets = Vec::new();
     if let Some(charged) = events.total_charged {
         buckets.push(bucket(

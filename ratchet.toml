@@ -76,7 +76,10 @@ key = "clippy::cast_sign_loss@jackin-launch"
 bound = 9
 [[family.entry]]
 key = "clippy::cast_sign_loss@jackin-usage"
-bound = 12
+bound = 6
+[[family.entry]]
+key = "clippy::cast_sign_loss@jackin-usage-provider-cursor"
+bound = 6
 [[family.entry]]
 key = "clippy::cast_sign_loss@jackin-usage-provider-antigravity"
 bound = 4
@@ -472,6 +475,9 @@ bound = 1
 key = "dead_code@jackin-usage-provider-openrouter"
 bound = 1
 [[family.entry]]
+key = "dead_code@jackin-usage-provider-cursor"
+bound = 1
+[[family.entry]]
 key = "dead_code@jackin-xtask"
 bound = 4
 [[family.entry]]
@@ -501,6 +507,9 @@ bound = 1
 [[family.entry]]
 key = "missing_debug_implementations@jackin-test-support"
 bound = 1
+[[family.entry]]
+key = "missing_debug_implementations@jackin-usage-provider-cursor"
+bound = 2
 [[family.entry]]
 key = "private_bounds@jackin-core"
 bound = 1
@@ -661,6 +670,9 @@ bound = 1206
 [[family.entry]]
 key = "crates/services/jackin-usage-provider-antigravity/README.md"
 bound = 1338
+[[family.entry]]
+key = "crates/services/jackin-usage-provider-cursor/README.md"
+bound = 1636
 [[family.entry]]
 key = "crates/tools/jackin-xtask/README.md"
 bound = 6113

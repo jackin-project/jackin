@@ -15,7 +15,6 @@
 mod claude;
 mod codex;
 mod credential_snapshots;
-mod cursor;
 mod gemini;
 mod hermes;
 mod muse;
@@ -79,28 +78,6 @@ pub(crate) use self::credential_snapshots::provider_credential_snapshot_with_rat
     unused_imports,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
-pub(crate) use self::cursor::{
-    CursorAuth, CursorEnterpriseScope, CursorMemberSpend, CursorPeriodUsage, CursorRequestUsage,
-    CursorSandUsage, CursorTeamSpend, CursorUsageEvents, CursorUsageSummary,
-    cursor_auth_from_value, cursor_auth_path, cursor_cli_identity_from_value,
-    cursor_credits_bucket, cursor_dashboard_base, cursor_dashboard_post, cursor_default_base,
-    cursor_enterprise_snapshot, cursor_events_buckets, cursor_identity_from_cli_config,
-    cursor_needs_request_fallback, cursor_period_buckets, cursor_profile_snapshot,
-    cursor_request_bucket, cursor_rest_get, cursor_sand_bucket, cursor_session_cookie,
-    cursor_snapshot, cursor_snapshot_with_auth, cursor_summary_buckets, cursor_team_spend_buckets,
-    cursor_teams_events_url, cursor_teams_spend_url, cursor_user_id_from_token,
-    fetch_cursor_credit_grants, fetch_cursor_period_usage, fetch_cursor_plan_info,
-    fetch_cursor_request_usage, fetch_cursor_sand_usage, fetch_cursor_stripe_balance,
-    fetch_cursor_team_spend, fetch_cursor_usage_events, fetch_cursor_usage_summary,
-    load_cursor_auth, load_cursor_cli_identity, parse_cursor_credit_grants,
-    parse_cursor_period_usage, parse_cursor_plan_info, parse_cursor_request_usage,
-    parse_cursor_sand_usage, parse_cursor_stripe_balance, parse_cursor_team_spend,
-    parse_cursor_usage_events, parse_cursor_usage_summary,
-};
-#[expect(
-    unused_imports,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
 pub(crate) use self::gemini::{
     GEMINI_CONSUMER_OAUTH_END, GeminiEntitlement, GeminiProjectQuota,
     gemini_consumer_oauth_retired, gemini_credential_origin, gemini_credential_presence,
@@ -138,6 +115,28 @@ pub(crate) use jackin_usage_provider_antigravity::{
     antigravity_credits_bucket, antigravity_identity_from_value, antigravity_plan_from_value,
     antigravity_snapshot, fetch_antigravity_cli_credits, fetch_antigravity_cli_usage,
     parse_agy_version, parse_antigravity_credits_output, parse_antigravity_usage_output,
+};
+#[expect(
+    unused_imports,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
+pub(crate) use jackin_usage_provider_cursor::{
+    CursorAuth, CursorEnterpriseScope, CursorMemberSpend, CursorPeriodUsage, CursorRequestUsage,
+    CursorSandUsage, CursorTeamSpend, CursorUsageEvents, CursorUsageSummary,
+    cursor_auth_from_value, cursor_auth_path, cursor_cli_identity_from_value,
+    cursor_credits_bucket, cursor_dashboard_base, cursor_dashboard_post, cursor_default_base,
+    cursor_enterprise_snapshot, cursor_events_buckets, cursor_identity_from_cli_config,
+    cursor_needs_request_fallback, cursor_period_buckets, cursor_profile_snapshot,
+    cursor_request_bucket, cursor_rest_get, cursor_sand_bucket, cursor_session_cookie,
+    cursor_snapshot, cursor_snapshot_with_auth, cursor_summary_buckets, cursor_team_spend_buckets,
+    cursor_teams_events_url, cursor_teams_spend_url, cursor_user_id_from_token,
+    fetch_cursor_credit_grants, fetch_cursor_period_usage, fetch_cursor_plan_info,
+    fetch_cursor_request_usage, fetch_cursor_sand_usage, fetch_cursor_stripe_balance,
+    fetch_cursor_team_spend, fetch_cursor_usage_events, fetch_cursor_usage_summary,
+    load_cursor_auth, load_cursor_cli_identity, parse_cursor_credit_grants,
+    parse_cursor_period_usage, parse_cursor_plan_info, parse_cursor_request_usage,
+    parse_cursor_sand_usage, parse_cursor_stripe_balance, parse_cursor_team_spend,
+    parse_cursor_usage_events, parse_cursor_usage_summary,
 };
 #[expect(
     unused_imports,

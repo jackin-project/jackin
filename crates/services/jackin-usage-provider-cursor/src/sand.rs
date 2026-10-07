@@ -11,20 +11,17 @@ use jackin_usage_provider_core::{
 /// Grok Bot weekly meter. Pooled enterprise allowance or zero allowance means
 /// no meter (`None`) — never a 0% row.
 #[derive(Debug, Clone)]
-pub(crate) struct CursorSandUsage {
+pub struct CursorSandUsage {
     pub(crate) usage_percent: f64,
     pub(crate) reset_at: Option<i64>,
 }
 
-pub(crate) fn fetch_cursor_sand_usage(
-    base: &str,
-    token: &str,
-) -> Result<Option<CursorSandUsage>, String> {
+pub fn fetch_cursor_sand_usage(base: &str, token: &str) -> Result<Option<CursorSandUsage>, String> {
     let value = cursor_dashboard_post(base, token, "GetSandUsageStatus")?;
     Ok(parse_cursor_sand_usage(&value))
 }
 
-pub(crate) fn parse_cursor_sand_usage(value: &serde_json::Value) -> Option<CursorSandUsage> {
+pub fn parse_cursor_sand_usage(value: &serde_json::Value) -> Option<CursorSandUsage> {
     if value
         .get("usesPooledEnterpriseAllowance")
         .and_then(serde_json::Value::as_bool)
@@ -66,7 +63,7 @@ pub(crate) fn parse_cursor_sand_usage(value: &serde_json::Value) -> Option<Curso
     })
 }
 
-pub(crate) fn cursor_sand_bucket(sand: &CursorSandUsage, now: i64) -> QuotaBucketView {
+pub fn cursor_sand_bucket(sand: &CursorSandUsage, now: i64) -> QuotaBucketView {
     #[expect(
         clippy::cast_sign_loss,
         reason = "filtered non-negative; clamped 0..=100"

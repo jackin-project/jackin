@@ -13,7 +13,7 @@ use jackin_usage_provider_core::{
 /// percent buckets, and dollar figures. Dollar fields stay labels (scale
 /// unverified); only the cycle percent backs a meter.
 #[derive(Debug, Clone)]
-pub(crate) struct CursorUsageSummary {
+pub struct CursorUsageSummary {
     pub(crate) cycle_start: Option<i64>,
     pub(crate) cycle_end: Option<i64>,
     pub(crate) membership: Option<String>,
@@ -26,7 +26,7 @@ pub(crate) struct CursorUsageSummary {
     pub(crate) team_pooled: Option<f64>,
 }
 
-pub(crate) fn fetch_cursor_usage_summary(
+pub fn fetch_cursor_usage_summary(
     user_id: &str,
     token: &str,
 ) -> Result<CursorUsageSummary, String> {
@@ -35,7 +35,7 @@ pub(crate) fn fetch_cursor_usage_summary(
         .ok_or_else(|| "Cursor usage summary was not recognized".to_owned())
 }
 
-pub(crate) fn parse_cursor_usage_summary(value: &serde_json::Value) -> Option<CursorUsageSummary> {
+pub fn parse_cursor_usage_summary(value: &serde_json::Value) -> Option<CursorUsageSummary> {
     let epoch = |key: &str| {
         value.get(key).and_then(|node| {
             node.as_str()
@@ -84,10 +84,7 @@ pub(crate) fn parse_cursor_usage_summary(value: &serde_json::Value) -> Option<Cu
     })
 }
 
-pub(crate) fn cursor_summary_buckets(
-    summary: &CursorUsageSummary,
-    now: i64,
-) -> Vec<QuotaBucketView> {
+pub fn cursor_summary_buckets(summary: &CursorUsageSummary, now: i64) -> Vec<QuotaBucketView> {
     let mut buckets = Vec::new();
     if let Some(used) = summary.total_percent {
         #[expect(
@@ -183,12 +180,12 @@ pub(crate) fn cursor_summary_buckets(
 }
 
 /// Stripe balance in cents (`/api/auth/stripe`): explicit minor units.
-pub(crate) fn fetch_cursor_stripe_balance(user_id: &str, token: &str) -> Result<i64, String> {
+pub fn fetch_cursor_stripe_balance(user_id: &str, token: &str) -> Result<i64, String> {
     let value = cursor_rest_get(user_id, token, "/api/auth/stripe")?;
     Ok(parse_cursor_stripe_balance(&value))
 }
 
-pub(crate) fn parse_cursor_stripe_balance(value: &serde_json::Value) -> i64 {
+pub fn parse_cursor_stripe_balance(value: &serde_json::Value) -> i64 {
     ["balanceCents", "balance_cents", "balance", "total"]
         .into_iter()
         .filter_map(|key| value.get(key).and_then(json_number))

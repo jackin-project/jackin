@@ -5,11 +5,11 @@
 use super::CURSOR_SESSION_BASE;
 use jackin_usage_provider_core::provider_http_client;
 
-pub(crate) fn cursor_session_cookie(user_id: &str, token: &str) -> String {
+pub fn cursor_session_cookie(user_id: &str, token: &str) -> String {
     format!("WorkosCursorSessionToken={user_id}%3A%3A{token}")
 }
 
-pub(crate) fn cursor_rest_get(
+pub fn cursor_rest_get(
     user_id: &str,
     token: &str,
     path: &str,

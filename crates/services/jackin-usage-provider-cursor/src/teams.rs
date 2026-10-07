@@ -12,39 +12,41 @@ use jackin_usage_provider_core::{
 /// personal execution key does not imply reporting access.
 // No `Debug`: this carries a live admin token and must never be formatted
 // into a log or error.
+#[expect(
+    missing_debug_implementations,
+    reason = "credential type: a live admin token must never be formatted into a log or error"
+)]
 #[derive(Clone)]
-pub(crate) struct CursorEnterpriseScope {
+pub struct CursorEnterpriseScope {
     pub(crate) admin_token: String,
     pub(crate) team_id: Option<String>,
 }
 
-pub(crate) fn cursor_teams_spend_url() -> &'static str {
+pub fn cursor_teams_spend_url() -> &'static str {
     "https://api.cursor.com/teams/spend"
 }
 
-pub(crate) fn cursor_teams_events_url() -> &'static str {
+pub fn cursor_teams_events_url() -> &'static str {
     "https://api.cursor.com/teams/filtered-usage-events"
 }
 
 /// One member's spend row: team and member scopes stay distinct buckets.
 #[derive(Debug, Clone)]
-pub(crate) struct CursorMemberSpend {
+pub struct CursorMemberSpend {
     pub(crate) label: String,
     pub(crate) charged: Option<f64>,
 }
 
 /// Team spend report: actual charged vs estimated model cost, kept separate.
 #[derive(Debug, Clone)]
-pub(crate) struct CursorTeamSpend {
+pub struct CursorTeamSpend {
     pub(crate) charged: Option<f64>,
     pub(crate) estimated: Option<f64>,
     pub(crate) period_end: Option<i64>,
     pub(crate) members: Vec<CursorMemberSpend>,
 }
 
-pub(crate) fn fetch_cursor_team_spend(
-    scope: &CursorEnterpriseScope,
-) -> Result<CursorTeamSpend, String> {
+pub fn fetch_cursor_team_spend(scope: &CursorEnterpriseScope) -> Result<CursorTeamSpend, String> {
     let client = provider_http_client()?;
     let mut body = serde_json::Map::new();
     if let Some(team_id) = scope.team_id.as_deref() {
@@ -71,7 +73,7 @@ pub(crate) fn fetch_cursor_team_spend(
     parse_cursor_team_spend(&value).ok_or_else(|| "Cursor team spend was not recognized".to_owned())
 }
 
-pub(crate) fn parse_cursor_team_spend(value: &serde_json::Value) -> Option<CursorTeamSpend> {
+pub fn parse_cursor_team_spend(value: &serde_json::Value) -> Option<CursorTeamSpend> {
     let money = |node: &serde_json::Value, keys: &[&str]| {
         keys.iter()
             .filter_map(|key| node.get(*key).and_then(json_number))
@@ -137,7 +139,7 @@ pub(crate) fn parse_cursor_team_spend(value: &serde_json::Value) -> Option<Curso
     })
 }
 
-pub(crate) fn cursor_team_spend_buckets(spend: &CursorTeamSpend, now: i64) -> Vec<QuotaBucketView> {
+pub fn cursor_team_spend_buckets(spend: &CursorTeamSpend, now: i64) -> Vec<QuotaBucketView> {
     let mut buckets = Vec::new();
     if let Some(charged) = spend.charged {
         buckets.push(with_status_slot(

@@ -20,7 +20,7 @@ use jackin_usage_provider_core::{
 };
 use std::path::Path;
 
-pub(crate) fn cursor_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsageView {
+pub fn cursor_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsageView {
     let auth = match load_cursor_auth() {
         Ok(auth) => auth,
         Err(error) => {
@@ -46,7 +46,7 @@ pub(crate) fn cursor_snapshot(agent: &str, provider: Option<&str>, now: i64) -> 
 
 /// Broker-refresh entry: `auth.json` at a registered profile root plus the
 /// sibling `cli-config.json` identity. Never touches the default home.
-pub(crate) fn cursor_profile_snapshot(agent: &str, auth_path: &Path, now: i64) -> FocusedUsageView {
+pub fn cursor_profile_snapshot(agent: &str, auth_path: &Path, now: i64) -> FocusedUsageView {
     let auth = match read_json_file(auth_path)
         .ok_or_else(|| "Cursor auth.json is missing or unreadable".to_owned())
         .and_then(|value| {
@@ -76,7 +76,7 @@ pub(crate) fn cursor_profile_snapshot(agent: &str, auth_path: &Path, now: i64) -
 /// Personal snapshot from broker-minted material: the selected profile's
 /// token, identity, and origin — never ambient files. The dashboard base is
 /// explicit so hermetic tests can point the RPC at a dead port.
-pub(crate) fn cursor_snapshot_with_auth(
+pub fn cursor_snapshot_with_auth(
     agent: &str,
     provider: Option<&str>,
     auth: &CursorAuth,
@@ -200,7 +200,7 @@ pub(crate) fn cursor_snapshot_with_auth(
     })
 }
 
-pub(crate) fn cursor_enterprise_snapshot(
+pub fn cursor_enterprise_snapshot(
     agent: &str,
     provider: Option<&str>,
     scope: &CursorEnterpriseScope,

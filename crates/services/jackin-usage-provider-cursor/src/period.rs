@@ -9,7 +9,7 @@ use jackin_usage_provider_core::{
 };
 
 /// Connect-protocol POST: JSON body `{}`, bearer auth, protocol version 1.
-pub(crate) fn cursor_dashboard_post(
+pub fn cursor_dashboard_post(
     base: &str,
     token: &str,
     method: &str,
@@ -39,7 +39,7 @@ pub(crate) fn cursor_dashboard_post(
 /// numbers (major units); the scale is unverified, so they stay labels and
 /// never become structured [`Money`].
 #[derive(Debug, Clone)]
-pub(crate) struct CursorPeriodUsage {
+pub struct CursorPeriodUsage {
     pub(crate) enabled: bool,
     pub(crate) total_percent_used: Option<f64>,
     pub(crate) limit: Option<f64>,
@@ -47,16 +47,13 @@ pub(crate) struct CursorPeriodUsage {
     pub(crate) is_team: bool,
 }
 
-pub(crate) fn fetch_cursor_period_usage(
-    base: &str,
-    token: &str,
-) -> Result<CursorPeriodUsage, String> {
+pub fn fetch_cursor_period_usage(base: &str, token: &str) -> Result<CursorPeriodUsage, String> {
     let value = cursor_dashboard_post(base, token, "GetCurrentPeriodUsage")?;
     parse_cursor_period_usage(&value)
         .ok_or_else(|| "Cursor period usage was not recognized".to_owned())
 }
 
-pub(crate) fn parse_cursor_period_usage(value: &serde_json::Value) -> Option<CursorPeriodUsage> {
+pub fn parse_cursor_period_usage(value: &serde_json::Value) -> Option<CursorPeriodUsage> {
     // Live `GetCurrentPeriodUsage` returns `planUsage` at the top level; older
     // captures nested it under `usage`. Accept both, preferring nested.
     let usage = value.get("usage").unwrap_or(value);
@@ -96,11 +93,11 @@ pub(crate) fn parse_cursor_period_usage(value: &serde_json::Value) -> Option<Cur
 
 /// `planUsage` present but limit-less: fall back to request-based/REST meters
 /// instead of rendering a limit the server never stated.
-pub(crate) fn cursor_needs_request_fallback(usage: &CursorPeriodUsage) -> bool {
+pub fn cursor_needs_request_fallback(usage: &CursorPeriodUsage) -> bool {
     usage.limit.is_none()
 }
 
-pub(crate) fn cursor_period_buckets(
+pub fn cursor_period_buckets(
     usage: &CursorPeriodUsage,
     cycle_end: Option<i64>,
     now: i64,
