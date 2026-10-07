@@ -3593,6 +3593,7 @@ dependencies = [
  "jackin-runtime-process-telemetry",
  "jackin-runtime-progress",
  "jackin-runtime-prune-output",
+ "jackin-runtime-reactive-daemon",
  "jackin-runtime-repo-cache",
  "jackin-runtime-session-control",
  "jackin-runtime-snapshot",
@@ -3766,6 +3767,18 @@ name = "jackin-runtime-prune-output"
 version = "0.6.4"
 dependencies = [
  "owo-colors 4.3.0",
+]
+
+[[package]]
+name = "jackin-runtime-reactive-daemon"
+version = "0.6.4"
+dependencies = [
+ "anyhow",
+ "jackin-core",
+ "jackin-protocol",
+ "jackin-telemetry",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

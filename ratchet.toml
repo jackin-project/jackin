@@ -701,6 +701,9 @@ bound = 690
 key = "crates/services/jackin-runtime-prune-output/README.md"
 bound = 769
 [[family.entry]]
+key = "crates/services/jackin-runtime-reactive-daemon/README.md"
+bound = 970
+[[family.entry]]
 key = "crates/services/jackin-runtime-repo-cache/README.md"
 bound = 831
 [[family.entry]]
@@ -986,6 +989,9 @@ key = "jackin-runtime-progress"
 bound = 1
 [[family.entry]]
 key = "jackin-runtime-prune-output"
+bound = 1
+[[family.entry]]
+key = "jackin-runtime-reactive-daemon"
 bound = 1
 [[family.entry]]
 key = "jackin-runtime-repo-cache"

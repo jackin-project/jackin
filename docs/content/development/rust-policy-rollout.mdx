@@ -4237,3 +4237,143 @@ bound 720.
 - Raw outputs:
   `/tmp/s7-s56-{pre,post}-*.txt`
   (kept out of the repo).
+
+### Split 57: runtime-reactive-daemon extraction (M19)
+
+- `jackin-runtime` ->
+  `jackin-runtime` +
+  `jackin-runtime-reactive-daemon`
+  (T2: the whole
+  feature-gated
+  `reactive_daemon`
+  module moves
+  verbatim — socket
+  server, attention
+  adapter, `tests.rs`
+  with 4 tests). Zero
+  `crate::`/`super::`
+  edges and zero
+  visibility changes
+  (all prod items
+  already `pub`): the
+  module file moves
+  byte-identical.
+  First feature-gated
+  M-split (nothing
+  enables
+  `daemon-spike`
+  today): the new
+  `lib.rs` mirrors the
+  `#[cfg(all(feature =
+  "daemon-spike",
+  unix))]` gate per
+  the M5 `cfg(unix)`
+  precedent, the new
+  crate declares its
+  own `daemon-spike =
+  []` feature, and
+  `jackin-runtime`
+  forwards
+  (`daemon-spike =
+  ["jackin-runtime-reactive-daemon/daemon-spike"]`)
+  so the shim resolves
+  exactly when the
+  pre-split module
+  compiled. Tier:
+  names T1 protocol +
+  T0 core/telemetry,
+  so it takes T2; no
+  renumber cascade.
+  New-crate deps:
+  core, protocol,
+  telemetry, anyhow,
+  serde (`derive`),
+  serde_json; no
+  dev-deps (lockfile
+  +1 package, +7
+  edges). Policy
+  registries: +1 owned
+  package (`library`).
+
+- Verify: `cargo check
+  --locked --workspace
+  --all-targets`
+  green; `cargo fmt
+  --all --check`
+  clean; `cargo
+  clippy` 0 errors on
+  the new crate at
+  default and
+  `--features
+  daemon-spike`,
+  `jackin-runtime`
+  holds at the 7
+  pre-existing errors
+  (all in
+  `launch_slot/tests`).
+  `cargo nextest list
+  --workspace
+  --all-targets`: 7277
+  -> 7277
+  byte-identical at
+  default features
+  (gated module
+  contributes 0 either
+  way); gated mapping
+  proven 1:1 via a
+  pre-split worktree
+  (`-p jackin-runtime
+  --features
+  daemon-spike`: 4
+  `reactive_daemon::tests::*`)
+  vs post (`-p
+  jackin-runtime-reactive-daemon
+  --features
+  daemon-spike`: same
+  4 names; 0 dropped,
+  0 added). `nextest
+  run`: 701/701
+  runtime + 4/4
+  reactive-daemon
+  (gated). `cargo
+  check -p
+  jackin-runtime
+  --features
+  daemon-spike
+  --all-targets` green
+  (shim + forwarding
+  compile). `alint
+  check`: 192
+  violations / 11
+  failing unchanged.
+  `check-gaps`: 22 ->
+  22 (runtime
+  `SIZE-001/002`
+  persist: 50302 ->
+  49926 code lines,
+  240 -> 239 files;
+  new crate fits at
+  447 raw / 4 files).
+  `GAP-TEST-001/002/003`
+  stay 0/0/0.
+  `ratchet.toml`: +2
+  rows
+  (agent-doc-bytes
+  README 970,
+  public-surface 1),
+  failures back to
+  baseline 61 -> 61
+  with identical
+  violation keys.
+  `lint arch
+  --strict`: missing
+  tiers stay 3, zero
+  direction
+  violations; `lint
+  headers` stays at
+  the base 2; `lint
+  tests` OK.
+
+- Raw outputs:
+  `/tmp/s7-s57-{pre,post}-*.txt`
+  (kept out of the repo).
