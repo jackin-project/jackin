@@ -3579,6 +3579,7 @@ dependencies = [
  "jackin-otlp-testbed",
  "jackin-process",
  "jackin-protocol",
+ "jackin-runtime-exec-host",
  "jackin-runtime-isolation",
  "jackin-runtime-process-telemetry",
  "jackin-runtime-spin-wait",
@@ -3595,6 +3596,24 @@ dependencies = [
  "tokio",
  "toml",
  "toml_edit",
+ "tracing",
+]
+
+[[package]]
+name = "jackin-runtime-exec-host"
+version = "0.6.4"
+dependencies = [
+ "anyhow",
+ "futures-util",
+ "jackin-diagnostics",
+ "jackin-env",
+ "jackin-process",
+ "jackin-protocol",
+ "jackin-runtime-process-telemetry",
+ "jackin-telemetry",
+ "serde_json",
+ "tempfile",
+ "tokio",
  "tracing",
 ]
 

@@ -2982,3 +2982,79 @@ bound 720.
 - Raw outputs:
   `/tmp/s7-s41-{pre,post}-*.txt`
   (kept out of the repo).
+
+### Split 42: runtime-exec-host extraction (M4)
+
+- `jackin-runtime` ->
+  `jackin-runtime` +
+  `jackin-runtime-exec-host` (T4:
+  the whole `exec_host` module moves
+  — listener root, `tests.rs`, the
+  2 suites + support). First M-split
+  with a cross-leaf edge: 2x
+  `crate::process_telemetry` ->
+  `jackin_runtime_process_telemetry`
+  (production + 1 test), enabled by
+  M1; plus 1x `pub(crate)` -> `pub`
+  (`ensure_caller_auth_supported`,
+  called from
+  `runtime/apple_container`), plus
+  `cargo fmt` reflow. The internal
+  (`runtime/launch/...`) consumers
+  stay untouched via the shim.
+  `runtime/src/exec_host.rs` becomes
+  a 1-line re-export shim, so every
+  `jackin_runtime::exec_host::*`
+  path stays stable. Tier: names T3
+  env, so it takes T4 (not the T2
+  first sketched);
+  `jackin-runtime` stays T8, no
+  renumber cascade. New-crate deps:
+  env, process, protocol,
+  process-telemetry, telemetry,
+  anyhow, futures-util, serde_json,
+  tokio (`io-util`, `net`);
+  dev-deps add diagnostics
+  (`test-support`), tempfile,
+  tracing, tokio (`macros`, `rt`,
+  `rt-multi-thread`) (lockfile +1
+  package, +13 edges). Policy
+  registries: +1 owned package
+  (`library`).
+- Verify: `cargo check --locked --workspace
+  --all-targets` green; `cargo fmt --all
+  --check` clean; `cargo clippy` 0
+  errors on the new crate,
+  `jackin-runtime` holds at the 8
+  pre-existing errors. `cargo nextest
+  list --workspace --all-targets`:
+  7277 -> 7277 (16 relocations map
+  1:1 by name: runtime ->
+  exec-host; 0 dropped, 0 added).
+  `nextest run`: 891/891 runtime
+  (875) + exec-host (16).
+  `alint check`: 192 violations /
+  11 failing unchanged; the
+  `exec_host` `size-file-400`
+  finding relocates to the new path
+  (follow-up per-file split, out of
+  M-scope). `check-gaps`: 22 -> 22
+  (runtime `SIZE-001/002` persist:
+  58589 -> 57724 code lines, 286 ->
+  282 files; new crate fits at 1042
+  raw / 5 files).
+  `GAP-TEST-001/002/003` stay 0/0/0.
+  `ratchet.toml`: +3 rows
+  (agent-doc-bytes README 965,
+  public-surface 1,
+  expect-per-lint-crate
+  `print_stderr` 2 for the moved
+  expects), failures back to
+  baseline 58 -> 58. `lint arch`:
+  missing tiers stay 3, zero
+  direction violations; `lint
+  headers` stays at the base 2; `lint
+  tests` OK.
+- Raw outputs:
+  `/tmp/s7-s42-{pre,post}-*.txt`
+  (kept out of the repo).

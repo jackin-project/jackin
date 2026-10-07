@@ -30,7 +30,7 @@ async fn credential_process_exports_typed_spawn_failure_without_program_or_argum
         "operator-secret-missing-program",
         ["operator-secret-argument"],
     );
-    crate::process_telemetry::exec_async(&request)
+    jackin_runtime_process_telemetry::process_telemetry::exec_async(&request)
         .await
         .unwrap_err();
     export.force_flush();

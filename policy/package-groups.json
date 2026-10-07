@@ -30,6 +30,7 @@
     "jackin-process-directory": "library",
     "jackin-protocol": "library",
     "jackin-runtime": "library",
+    "jackin-runtime-exec-host": "library",
     "jackin-runtime-isolation": "library",
     "jackin-runtime-process-telemetry": "library",
     "jackin-runtime-spin-wait": "library",
