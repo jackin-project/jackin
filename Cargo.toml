@@ -48,6 +48,7 @@ members = [
     "crates/services/jackin-usage-output",
     "crates/services/jackin-usage-credential-snapshots",
     "crates/services/jackin-usage-coordinator",
+    "crates/services/jackin-usage-store-backend",
     "crates/testing/jackin-otlp-testbed",
     "crates/testing/jackin-test-support",
     "crates/tools/jackin-dev",
@@ -138,6 +139,7 @@ jackin-usage-provider-claude = { version = "0.6.4", path = "crates/services/jack
 jackin-usage-output = { version = "0.6.4", path = "crates/services/jackin-usage-output" }
 jackin-usage-credential-snapshots = { version = "0.6.4", path = "crates/services/jackin-usage-credential-snapshots" }
 jackin-usage-coordinator = { version = "0.6.4", path = "crates/services/jackin-usage-coordinator" }
+jackin-usage-store-backend = { version = "0.6.4", path = "crates/services/jackin-usage-store-backend" }
 nix = "0.31"
 rustix = { version = "=1.1.4", features = ["fs"] }
 opentelemetry_sdk = "0.32"

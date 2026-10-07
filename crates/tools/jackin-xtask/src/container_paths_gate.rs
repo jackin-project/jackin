@@ -419,7 +419,7 @@ fn read_allowlist(root: &Path) -> Result<Allowlist> {
     toml::from_str(&text).with_context(|| format!("parsing {}", path.display()))
 }
 
-/// Turso sole-owner rule: only `jackin-usage` may depend on or import Turso.
+/// Turso sole-owner rule: only `jackin-usage-store-backend` may depend on or import Turso.
 pub(crate) fn check_turso_sole_owner(root: &Path) -> Result<()> {
     let mut problems = Vec::new();
     let crates_dir = root.join("crates");
@@ -438,14 +438,14 @@ pub(crate) fn check_turso_sole_owner(root: &Path) -> Result<()> {
                 continue;
             }
             let text = fs::read_to_string(&cargo)?;
-            if name != "jackin-usage" && cargo_declares_turso(&text) {
+            if name != "jackin-usage-store-backend" && cargo_declares_turso(&text) {
                 let rel = cargo
                     .strip_prefix(root)
                     .unwrap_or(&cargo)
                     .to_string_lossy()
                     .replace('\\', "/");
                 problems.push(format!(
-                    "{rel}: declares turso/libsql dependency — jackin-usage is the sole Turso owner (roadmap Rust-enforcement item 8)"
+                    "{rel}: declares turso/libsql dependency — jackin-usage-store-backend is the sole Turso owner (roadmap Rust-enforcement item 8)"
                 ));
             }
         }
@@ -457,7 +457,7 @@ pub(crate) fn check_turso_sole_owner(root: &Path) -> Result<()> {
             .unwrap_or(&entry)
             .to_string_lossy()
             .replace('\\', "/");
-        if rel.starts_with("crates/services/jackin-usage/") {
+        if rel.starts_with("crates/services/jackin-usage-store-backend/") {
             continue;
         }
         if rel.contains("jackin-xtask/") {
@@ -473,7 +473,7 @@ pub(crate) fn check_turso_sole_owner(root: &Path) -> Result<()> {
             if let Some(col) = turso_import_column(trimmed) {
                 let _ = col;
                 problems.push(format!(
-                    "{rel}:{}: Turso import/path — jackin-usage is the sole Turso owner; move store code there or drop the import",
+                    "{rel}:{}: Turso import/path — jackin-usage-store-backend is the sole Turso owner; move store code there or drop the import",
                     line_no + 1
                 ));
             }
@@ -481,12 +481,12 @@ pub(crate) fn check_turso_sole_owner(root: &Path) -> Result<()> {
     }
 
     if problems.is_empty() {
-        emit("turso sole-owner gate OK — only jackin-usage owns turso/libsql");
+        emit("turso sole-owner gate OK — only jackin-usage-store-backend owns turso/libsql");
         return Ok(());
     }
     problems.sort();
     bail!(
-        "{} turso sole-owner violation(s):\n  {}\n\nfix: keep Turso confined to crates/services/jackin-usage",
+        "{} turso sole-owner violation(s):\n  {}\n\nfix: keep Turso confined to crates/services/jackin-usage-store-backend",
         problems.len(),
         problems.join("\n  ")
     )

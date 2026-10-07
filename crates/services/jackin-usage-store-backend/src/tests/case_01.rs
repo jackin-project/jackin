@@ -37,7 +37,7 @@ fn conformance_wire_sql_operations_are_bounded_and_private() -> anyhow::Result<(
     if std::env::var_os(DB_WIRE_CHILD).is_none() {
         let status = std::process::Command::new(std::env::current_exe()?)
             .arg("--exact")
-            .arg("store_backend::tests::case_01::conformance_wire_sql_operations_are_bounded_and_private")
+            .arg("tests::case_01::conformance_wire_sql_operations_are_bounded_and_private")
             .arg("--nocapture")
             .env(DB_WIRE_CHILD, "1")
             .status()?;

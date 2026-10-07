@@ -1,7 +1,10 @@
-//! Single import chokepoint for the workspace `turso` `SQLite` client.
+//! jackin-usage-store-backend: turso `SQLite` import chokepoint.
 //!
-//! All production and test code in this crate — and the host CLI usage
-//! cache under `crates/apps/jackin` — reaches turso through this module so a
+//! **Architecture Invariant:** T1.
+//! Entry point: [`connect_local`] — open a local store connection.
+//!
+//! All production and test usage-store code — and the host CLI usage
+//! cache under `crates/apps/jackin` — reaches turso through this crate so a
 //! version bump or backend swap is one-file work.
 
 use std::future::Future;

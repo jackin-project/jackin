@@ -1771,3 +1771,60 @@ passes.
 - Raw outputs:
   `/tmp/s11-split20-{before,after}.txt`
   (kept out of the repo).
+
+### Split 21: usage-store-backend extraction (C2)
+
+- `jackin-usage` -> `jackin-usage` +
+  `jackin-usage-store-backend` (T1:
+  `store_backend.rs` -> `lib.rs` +
+  `tests.rs` + `tests/` moved flat,
+  zero internal path edits; `lib.rs`
+  carries the ownership header). The
+  turso chokepoint leaves the T4 crate,
+  so the T4 `jackin-usage` keeps the
+  public path via `pub use ... as
+  store_backend` and drops its own
+  `turso` dependency (no direct
+  `turso::` uses remain anywhere in
+  the old crate). One test-only edit:
+  the self-spawning conformance case
+  names its new `--exact` path
+  (`store_backend::tests::...` ->
+  `tests::...`). The `turso sole-owner`
+  gate follows the boundary move: sole
+  owner becomes the new chokepoint
+  crate (message-only gate update; its
+  detector unit tests are untouched).
+- Verify: `cargo check --locked --workspace
+  --all-targets` green; `cargo fmt --all
+  --check` clean; `cargo clippy` 0 errors,
+  0 warnings on both usage packages
+  (xtask shows 1 pre-existing
+  `nonminimal_bool` in the untouched
+  `layout_lint.rs`). `cargo nextest list
+  --workspace --all-targets`: 7276 ->
+  7276, delta is exactly 2 moved (zero
+  dropped, zero added). `nextest run`:
+  448/448 usage + 2/2 store-backend.
+  No contract fixture entries name
+  store-backend paths, so no remap.
+  `alint check`: 197 -> 197.
+  `check-gaps`: 27 -> 27 (usage
+  `SIZE-001` 30140 -> 29930 lines,
+  `SIZE-002` 182 -> 178 files);
+  `GAP-TEST-001/002/003` stay 0/0/0.
+  `ratchet.toml`: +1 row (agent-doc
+  894) and the usage public-surface
+  row shrinks 7 -> 6 (the new crate
+  has zero root `pub mod`s, so no row);
+  violations 60 -> 60 with zero new
+  failures. `lint arch`: turso
+  sole-owner gate OK under the new
+  owner, missing tiers stay 3, zero
+  direction violations; `lint headers`
+  stays at the base 2; `lint tests`
+  OK; container-paths gate unit tests
+  5/5.
+- Raw outputs:
+  `/tmp/s11-split21-{before,after}.txt`
+  (kept out of the repo).
