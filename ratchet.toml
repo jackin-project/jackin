@@ -478,7 +478,7 @@ key = "clippy::too_many_lines@jackin-protocol"
 bound = 1
 [[family.entry]]
 key = "clippy::too_many_lines@jackin-runtime"
-bound = 4
+bound = 3
 [[family.entry]]
 key = "clippy::too_many_lines@jackin-runtime-host-attach"
 bound = 1
@@ -493,6 +493,9 @@ key = "clippy::too_many_lines@jackin-runtime-repo-cache"
 bound = 1
 [[family.entry]]
 key = "clippy::too_many_lines@jackin-runtime-launch-restore"
+bound = 1
+[[family.entry]]
+key = "clippy::too_many_lines@jackin-runtime-launch-dind"
 bound = 1
 [[family.entry]]
 key = "clippy::trivially_copy_pass_by_ref@jackin-config"
@@ -797,6 +800,9 @@ bound = 900
 [[family.entry]]
 key = "crates/services/jackin-runtime-launch-capsule-setup/README.md"
 bound = 1066
+[[family.entry]]
+key = "crates/services/jackin-runtime-launch-dind/README.md"
+bound = 1726
 [[family.entry]]
 key = "crates/services/jackin-runtime-launch-dry-run/README.md"
 bound = 888
@@ -1185,6 +1191,9 @@ key = "jackin-runtime-launch-auth-error"
 bound = 1
 [[family.entry]]
 key = "jackin-runtime-launch-capsule-setup"
+bound = 1
+[[family.entry]]
+key = "jackin-runtime-launch-dind"
 bound = 1
 [[family.entry]]
 key = "jackin-runtime-launch-dry-run"

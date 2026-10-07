@@ -82,6 +82,7 @@ pub(crate) const TIERS: &[(&str, u8)] = &[
     ("jackin-runtime-launch-attach-outcome", 6),
     ("jackin-runtime-launch-auth-error", 0),
     ("jackin-runtime-launch-capsule-setup", 5),
+    ("jackin-runtime-launch-dind", 6),
     ("jackin-runtime-launch-dry-run", 6),
     ("jackin-runtime-launch-exit-diagnosis", 5),
     ("jackin-runtime-launch-failure", 6),

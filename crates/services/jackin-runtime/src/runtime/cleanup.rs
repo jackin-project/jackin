@@ -35,8 +35,11 @@ pub(crate) use eject::{eject_docker_role, eject_docker_role_with_handles};
 pub(crate) use exile::prune_dir;
 pub(crate) use jackin_runtime_cleanup_resolve::resolve::{
     docker_resources_for_state, resolve_cleanup_handles_for_state, resolve_dind_handle_for_state,
-    resolve_optional_container_handle, resolve_role_handle_for_state,
+    resolve_role_handle_for_state,
 };
+// `resolve_optional_container_handle` had its hub re-export retired by S7
+// split 92: the moved `launch_dind` module was its sole consumer and now
+// names it through `jackin-runtime-cleanup-resolve` directly.
 pub(crate) use jackin_runtime_cleanup_timing::timing::{cleanup_failure, cleanup_timing};
 pub(crate) use purge::purge_container_filesystem;
 pub(crate) use purge_absent::{ensure_backend_absent_for_purge, remove_socket_dir};

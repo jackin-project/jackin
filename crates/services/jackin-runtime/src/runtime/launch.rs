@@ -188,8 +188,11 @@ pub(crate) use failure::{
 // `restore_resolve` moved out (S7 split 89); the leaf names them through
 // `jackin_runtime_launch_plan::launch_plan` directly.
 pub(crate) use jackin_runtime_launch_plan::launch_plan::{
-    LaunchPlan, emit_image_materialization_plan, emit_launch_plan, emit_prewarm_launch_plan,
+    LaunchPlan, emit_image_materialization_plan, emit_launch_plan,
 };
+// `emit_prewarm_launch_plan` had its hub re-export retired by S7 split 92:
+// the moved `launch_dind` module was its sole consumer and now names it
+// through `jackin-runtime-launch-plan` directly.
 
 // Moved to jackin_runtime_launch_load_cleanup::load_cleanup (S7 split 68);
 // the module re-export keeps every `launch::load_cleanup::*` path stable.

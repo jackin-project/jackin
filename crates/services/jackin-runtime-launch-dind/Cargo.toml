@@ -1,0 +1,39 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "jackin-runtime-launch-dind"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
+description = "Docker network creation, DinD sidecar launch, and retained-sidecar prewarm state for launch."
+license.workspace = true
+readme = "README.md"
+publish = false
+
+repository.workspace = true
+
+[lib]
+name = "jackin_runtime_launch_dind"
+path = "src/lib.rs"
+
+[dependencies]
+jackin-core = { workspace = true }
+jackin-diagnostics = { workspace = true }
+jackin-docker = { workspace = true }
+jackin-instance = { workspace = true }
+jackin-runtime-attach-capsule-ready = { workspace = true }
+jackin-runtime-cleanup-resolve = { workspace = true }
+jackin-runtime-coordination = { workspace = true }
+jackin-runtime-docker-profile = { workspace = true }
+jackin-runtime-launch-plan = { workspace = true }
+jackin-runtime-naming = { workspace = true }
+jackin-telemetry = { workspace = true }
+anyhow = { workspace = true }
+fs4 = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[lints]
+workspace = true

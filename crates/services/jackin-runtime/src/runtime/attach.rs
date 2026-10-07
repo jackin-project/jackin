@@ -63,7 +63,13 @@ pub(crate) use admission::{
 // `capsule_socket_negotiates` had its hub re-export retired by S7
 // split 75: the moved `transport` module was its sole consumer and
 // now names it through `jackin-runtime-attach-capsule-ready`.
-pub(crate) use capsule_ready::{wait_for_capsule_daemon_with_handle, wait_for_dind};
+pub(crate) use capsule_ready::wait_for_capsule_daemon_with_handle;
+// `wait_for_dind` lost its last prod hub user when `launch_dind` moved out
+// (S7 split 92); the leaf names it through
+// `jackin-runtime-attach-capsule-ready` directly. The re-export stays for the
+// hub attach suite below, which resolves it through `use super::*`.
+#[cfg(test)]
+pub(crate) use capsule_ready::wait_for_dind;
 pub(crate) use exec_args::{
     git_policy_env_pairs, host_alt_screen_exec_flag, insert_run_as_user, set_role_terminal_title,
 };

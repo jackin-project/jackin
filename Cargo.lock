@@ -3604,6 +3604,7 @@ dependencies = [
  "jackin-runtime-launch-attach-outcome",
  "jackin-runtime-launch-auth-error",
  "jackin-runtime-launch-capsule-setup",
+ "jackin-runtime-launch-dind",
  "jackin-runtime-launch-dry-run",
  "jackin-runtime-launch-exit-diagnosis",
  "jackin-runtime-launch-failure",
@@ -3963,6 +3964,27 @@ dependencies = [
  "jackin-runtime-launch-account-config",
  "tempfile",
  "toml",
+]
+
+[[package]]
+name = "jackin-runtime-launch-dind"
+version = "0.6.4"
+dependencies = [
+ "anyhow",
+ "fs4",
+ "jackin-core",
+ "jackin-diagnostics",
+ "jackin-docker",
+ "jackin-instance",
+ "jackin-runtime-attach-capsule-ready",
+ "jackin-runtime-cleanup-resolve",
+ "jackin-runtime-coordination",
+ "jackin-runtime-docker-profile",
+ "jackin-runtime-launch-plan",
+ "jackin-runtime-naming",
+ "jackin-telemetry",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
