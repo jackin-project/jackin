@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Op-picker test state helpers.
 
-use super::super::*;
 use super::*;
 
 pub(crate) fn wait_for_worker_poll() {

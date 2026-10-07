@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Op-picker test stub runners.
 
-use super::super::*;
+use super::*;
 
 #[derive(Default)]
 pub(crate) struct StubRunner {

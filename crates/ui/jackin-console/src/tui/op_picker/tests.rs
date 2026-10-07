@@ -28,6 +28,8 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 mod support_01;
+mod support_01_helpers;
+mod support_01_runners;
 use support_01::*;
 mod support_02;
 use support_02::*;
