@@ -686,6 +686,9 @@ bound = 779
 key = "crates/services/jackin-runtime-isolation/README.md"
 bound = 963
 [[family.entry]]
+key = "crates/services/jackin-runtime-launch-plan/README.md"
+bound = 831
+[[family.entry]]
 key = "crates/services/jackin-runtime-naming/README.md"
 bound = 815
 [[family.entry]]
@@ -968,6 +971,9 @@ key = "jackin-runtime-identity"
 bound = 1
 [[family.entry]]
 key = "jackin-runtime-isolation"
+bound = 1
+[[family.entry]]
+key = "jackin-runtime-launch-plan"
 bound = 1
 [[family.entry]]
 key = "jackin-runtime-naming"

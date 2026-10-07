@@ -276,8 +276,9 @@ pub(crate) use failure::{
     short_launch_diagnosis,
 };
 
-mod launch_plan;
-pub(crate) use launch_plan::{
+// Moved to jackin_runtime_launch_plan::launch_plan (S7 split 56); the
+// re-export keeps every `launch::LaunchPlan` / `launch::emit_*` path stable.
+pub(crate) use jackin_runtime_launch_plan::launch_plan::{
     LaunchPlan, emit_image_materialization_plan, emit_launch_plan, emit_launch_plan_for_run,
     emit_prewarm_launch_plan, emit_rejected_launch_plan_for_run,
 };

@@ -4119,3 +4119,121 @@ bound 720.
 - Raw outputs:
   `/tmp/s7-s55-{pre,post}-*.txt`
   (kept out of the repo).
+
+### Split 56: runtime-launch-plan extraction (M18)
+
+- `jackin-runtime` ->
+  `jackin-runtime` +
+  `jackin-runtime-launch-plan`
+  (T3: the
+  `launch::launch_plan`
+  subunit moves —
+  `LaunchPlan`, the
+  five `emit_*` fns;
+  no test suites).
+  First `launch/`
+  subunit extraction:
+  pure leaf with zero
+  `crate::`/`super::`
+  edges, so no
+  cross-leaf retargets
+  at all. Visibility
+  widens mechanically
+  (`pub(crate)` ->
+  `pub`, 1 enum + 1
+  method + 5 fns). The
+  shim is a re-export
+  inside `launch.rs`
+  (replacing `mod
+  launch_plan;` + the
+  `pub(crate) use`),
+  so every `super::` /
+  `crate::runtime::launch::`
+  path
+  (`restore_resolve.rs`,
+  `launch_dind.rs`,
+  `orchestrate/image.rs`,
+  `image/validated.rs`,
+  `image/prewarm_spawn.rs`)
+  stays stable.
+  Strategically
+  unblocks `image`:
+  its only `launch::`
+  edge
+  (`emit_prewarm_launch_plan`
+  x2 in
+  `validated.rs`) now
+  resolves through the
+  extracted crate.
+  Tier: names T2
+  diagnostics, so it
+  takes T3; no
+  renumber cascade.
+  New-crate deps:
+  diagnostics,
+  serde_json; no
+  dev-deps (lockfile
+  +1 package, +3
+  edges). Policy
+  registries: +1 owned
+  package (`library`).
+
+- Verify: `cargo check
+  --locked --workspace
+  --all-targets`
+  green; `cargo fmt
+  --all --check`
+  clean; `cargo
+  clippy` 0 errors on
+  the new crate,
+  `jackin-runtime`
+  holds at the 7
+  pre-existing errors
+  (all in
+  `launch_slot/tests`).
+  `cargo nextest list
+  --workspace
+  --all-targets`: 7277
+  -> 7277
+  byte-identical
+  (module carries no
+  tests; 0
+  relocations, 0
+  dropped, 0 added).
+  `nextest run`:
+  701/701 runtime
+  (701) + launch-plan
+  (0). `alint check`:
+  192 violations / 11
+  failing unchanged.
+  `check-gaps`: 22 ->
+  22 (runtime
+  `SIZE-001/002`
+  persist: 50399 ->
+  50302 code lines,
+  241 -> 240 files;
+  new crate fits at
+  127 raw / 3 files).
+  `GAP-TEST-001/002/003`
+  stay 0/0/0.
+  `ratchet.toml`: +2
+  rows
+  (agent-doc-bytes
+  README 831,
+  public-surface 1),
+  failures back to
+  baseline 61 -> 61
+  with identical
+  violation keys.
+  `lint arch
+  --strict`: missing
+  tiers stay 3, zero
+  direction
+  violations; `lint
+  headers` stays at
+  the base 2; `lint
+  tests` OK.
+
+- Raw outputs:
+  `/tmp/s7-s56-{pre,post}-*.txt`
+  (kept out of the repo).

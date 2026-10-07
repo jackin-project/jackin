@@ -39,6 +39,7 @@
     "jackin-runtime-host-daemon",
     "jackin-runtime-identity",
     "jackin-runtime-isolation",
+    "jackin-runtime-launch-plan",
     "jackin-runtime-naming",
     "jackin-runtime-process-telemetry",
     "jackin-runtime-progress",

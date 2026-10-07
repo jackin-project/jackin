@@ -6,7 +6,7 @@
 use jackin_diagnostics;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum LaunchPlan {
+pub enum LaunchPlan {
     AttachExisting,
     StartStopped,
     CreateFromValidImage,
@@ -15,7 +15,7 @@ pub(crate) enum LaunchPlan {
 }
 
 impl LaunchPlan {
-    pub(crate) const fn as_str(self) -> &'static str {
+    pub const fn as_str(self) -> &'static str {
         match self {
             Self::AttachExisting => "AttachExisting",
             Self::StartStopped => "StartStopped",
@@ -26,13 +26,13 @@ impl LaunchPlan {
     }
 }
 
-pub(crate) fn emit_launch_plan(plan: LaunchPlan, reason: &str, container: Option<&str>) {
+pub fn emit_launch_plan(plan: LaunchPlan, reason: &str, container: Option<&str>) {
     if let Some(run) = jackin_diagnostics::active_run() {
         emit_launch_plan_for_run(&run, plan, reason, container);
     }
 }
 
-pub(crate) fn emit_launch_plan_for_run(
+pub fn emit_launch_plan_for_run(
     run: &jackin_diagnostics::RunDiagnostics,
     plan: LaunchPlan,
     reason: &str,
@@ -53,11 +53,11 @@ pub(crate) fn emit_launch_plan_for_run(
     );
 }
 
-pub(crate) fn emit_prewarm_launch_plan(reason: &str) {
+pub fn emit_prewarm_launch_plan(reason: &str) {
     emit_launch_plan(LaunchPlan::PrewarmOnly, reason, None);
 }
 
-pub(crate) fn emit_image_materialization_plan(
+pub fn emit_image_materialization_plan(
     image_reused: bool,
     reason: &str,
     restoring: bool,
@@ -84,7 +84,7 @@ pub(crate) fn emit_image_materialization_plan(
     }
 }
 
-pub(crate) fn emit_rejected_launch_plan_for_run(
+pub fn emit_rejected_launch_plan_for_run(
     run: &jackin_diagnostics::RunDiagnostics,
     plan: LaunchPlan,
     reason: &str,

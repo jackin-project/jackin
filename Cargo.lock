@@ -3588,6 +3588,7 @@ dependencies = [
  "jackin-runtime-host-daemon",
  "jackin-runtime-identity",
  "jackin-runtime-isolation",
+ "jackin-runtime-launch-plan",
  "jackin-runtime-naming",
  "jackin-runtime-process-telemetry",
  "jackin-runtime-progress",
@@ -3717,6 +3718,14 @@ version = "0.6.4"
 dependencies = [
  "jackin-core",
  "jackin-isolation",
+]
+
+[[package]]
+name = "jackin-runtime-launch-plan"
+version = "0.6.4"
+dependencies = [
+ "jackin-diagnostics",
+ "serde_json",
 ]
 
 [[package]]

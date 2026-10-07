@@ -37,6 +37,7 @@ members = [
     "crates/services/jackin-runtime-host-daemon",
     "crates/services/jackin-runtime-identity",
     "crates/services/jackin-runtime-isolation",
+    "crates/services/jackin-runtime-launch-plan",
     "crates/services/jackin-runtime-naming",
     "crates/services/jackin-runtime-process-telemetry",
     "crates/services/jackin-runtime-progress",
@@ -158,6 +159,7 @@ jackin-runtime-exit-summary = { version = "0.6.4", path = "crates/services/jacki
 jackin-runtime-host-daemon = { version = "0.6.4", path = "crates/services/jackin-runtime-host-daemon" }
 jackin-runtime-identity = { version = "0.6.4", path = "crates/services/jackin-runtime-identity" }
 jackin-runtime-isolation = { version = "0.6.4", path = "crates/services/jackin-runtime-isolation" }
+jackin-runtime-launch-plan = { version = "0.6.4", path = "crates/services/jackin-runtime-launch-plan" }
 jackin-runtime-naming = { version = "0.6.4", path = "crates/services/jackin-runtime-naming" }
 jackin-runtime-process-telemetry = { version = "0.6.4", path = "crates/services/jackin-runtime-process-telemetry" }
 jackin-runtime-progress = { version = "0.6.4", path = "crates/services/jackin-runtime-progress" }
