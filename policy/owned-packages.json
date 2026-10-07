@@ -34,6 +34,7 @@
     "jackin-runtime-discovery",
     "jackin-runtime-docker-profile",
     "jackin-runtime-exec-host",
+    "jackin-runtime-exit-summary",
     "jackin-runtime-host-daemon",
     "jackin-runtime-identity",
     "jackin-runtime-isolation",

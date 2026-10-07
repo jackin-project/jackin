@@ -3897,3 +3897,103 @@ bound 720.
 - Raw outputs:
   `/tmp/s7-s53-{pre,post}-*.txt`
   (kept out of the repo).
+
+### Split 54: runtime-exit-summary extraction (M16)
+
+- `jackin-runtime` ->
+  `jackin-runtime` +
+  `jackin-runtime-exit-summary`
+  (T4: the whole
+  `runtime::exit_summary`
+  module moves —
+  `summary` plus
+  `tests.rs` with 4
+  tests). Pure leaf:
+  the only `crate::`
+  edge is 2x
+  `crate::instance` ->
+  `jackin_instance`
+  (the lib.rs alias
+  keeps the retarget
+  mechanical).
+  Visibility widens
+  mechanically
+  (`pub(super)` ->
+  `pub`, 1 fn); parent
+  mod is `pub`, so the
+  shim keeps a plain
+  `pub` glob and the
+  single
+  `crate::runtime::exit_summary::summary`
+  call site
+  (`launch/failure.rs`)
+  stays stable. Tier:
+  names T3 instance,
+  so it takes T4; no
+  renumber cascade.
+  New-crate deps:
+  instance only; no
+  dev-deps (lockfile
+  +1 package, +2
+  edges). Policy
+  registries: +1 owned
+  package (`library`).
+
+- Verify: `cargo check
+  --locked --workspace
+  --all-targets`
+  green; `cargo fmt
+  --all --check`
+  clean; `cargo
+  clippy` 0 errors on
+  the new crate,
+  `jackin-runtime`
+  holds at the 7
+  pre-existing errors
+  (all in
+  `launch_slot/tests`).
+  `cargo nextest list
+  --workspace
+  --all-targets`: 7277
+  -> 7277 (4
+  relocations map 1:1
+  by name: runtime ->
+  exit-summary; 0
+  dropped, 0 added).
+  `nextest run`:
+  711/711 runtime
+  (707) + exit-summary
+  (4). `alint check`:
+  192 violations / 11
+  failing unchanged.
+  `check-gaps`: 22 ->
+  22 (runtime
+  `SIZE-001/002`
+  persist: 50850 ->
+  50698 code lines,
+  245 -> 244 files;
+  new crate fits at
+  205 raw / 4 files).
+  `GAP-TEST-001/002/003`
+  stay 0/0/0.
+  `ratchet.toml`: +2
+  rows
+  (agent-doc-bytes
+  README 781,
+  public-surface 1),
+  failures back to
+  baseline 61 -> 61
+  with identical
+  violation keys.
+  `lint arch
+  --strict`: missing
+  tiers stay 3, zero
+  direction
+  violations; `lint
+  headers` stays at
+  the base 2; `lint
+  tests` OK.
+
+- Raw outputs:
+  `/tmp/s7-s54-{pre,post}-*.txt`
+  (kept out of the repo).

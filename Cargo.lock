@@ -3583,6 +3583,7 @@ dependencies = [
  "jackin-runtime-discovery",
  "jackin-runtime-docker-profile",
  "jackin-runtime-exec-host",
+ "jackin-runtime-exit-summary",
  "jackin-runtime-host-daemon",
  "jackin-runtime-identity",
  "jackin-runtime-isolation",
@@ -3656,6 +3657,13 @@ dependencies = [
  "tempfile",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "jackin-runtime-exit-summary"
+version = "0.6.4"
+dependencies = [
+ "jackin-instance",
 ]
 
 [[package]]

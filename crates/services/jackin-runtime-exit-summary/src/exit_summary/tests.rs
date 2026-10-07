@@ -3,7 +3,7 @@
 
 //! Tests for `exit_summary`.
 use super::*;
-use crate::instance::{InstanceIndexEntry, InstanceStatus};
+use jackin_instance::{InstanceIndexEntry, InstanceStatus};
 
 fn entry(
     id: &str,

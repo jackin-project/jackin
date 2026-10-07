@@ -37,6 +37,7 @@ jackin-runtime-coordination = { workspace = true }
 jackin-runtime-discovery = { workspace = true }
 jackin-runtime-docker-profile = { workspace = true }
 jackin-runtime-exec-host = { workspace = true }
+jackin-runtime-exit-summary = { workspace = true }
 jackin-runtime-host-daemon = { workspace = true }
 jackin-runtime-identity = { workspace = true }
 jackin-runtime-isolation = { workspace = true }
