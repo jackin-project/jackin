@@ -9380,3 +9380,148 @@ bound 720.
   `/tmp/jackin-s30-{before,after}-*.txt`
   (kept out of the
   repo).
+
+### Split 91: runtime-cleanup-timing extraction (M52)
+
+- `jackin-runtime`
+  ->
+  `jackin-runtime`
+  +
+  `jackin-runtime-cleanup-timing`
+  (T3, landed as
+  `10ce6bfa`: the
+  whole
+  `cleanup/timing`
+  leaf moves --
+  the `CleanupTiming`
+  drop guard plus
+  `cleanup_timing` /
+  `cleanup_failure`.
+  Max dep is
+  `jackin-diagnostics`
+  (T2; telemetry
+  T0), so the leaf
+  takes T3 per the
+  1+max rule --
+  inside the slice
+  <=T6 target. Zero
+  hub fns named.
+  Three `pub(crate)`
+  items widen to
+  `pub` (forced)
+  plus one
+  `#[derive(Debug)]`
+  (forced: the
+  workspace denies
+  missing-debug-implementations
+  on pub types).
+  Item re-export:
+  `cleanup.rs`
+  drops `mod timing`
+  and re-exports
+  both fns from the
+  new crate, so all
+  five hub files
+  (17 call sites:
+  `cleanup/{purge,dind_gc,exile,prune,eject}`)
+  compile unchanged.
+  Triage: per-file
+  tier scan plus
+  brace-import grep
+  (`use super::{...}`
+  hides hub edges
+  from leafgraph).
+  `failure.rs`
+  remainder stays
+  (universe T7 ->
+  T8). Every
+  `launch_pipeline` /
+  `launch_runtime` /
+  `launch_dind` /
+  `apple_container` /
+  `backend` /
+  `prewarm_trigger`
+  file names hub
+  (T8) items.
+  `cleanup/{absent,prune,purge}`
+  name hub-internal
+  `super::{...}`
+  (`exile_all`,
+  `purge_container_filesystem`,
+  `prune_dir`,
+  `ensure_backend_absent_for_purge`,
+  `remove_socket_dir`);
+  `cleanup/{dind_gc,eject,exile,purge_absent}`
+  name hub
+  attach/backend/launch
+  edges. `timing.rs`
+  is the only
+  whole-module <=T7
+  leaf. No hub
+  renumber.)
+
+- Verify: `cargo check
+  --workspace
+  --all-targets` green;
+  `cargo fmt --all
+  --check` clean;
+  `cargo clippy` 0
+  errors/warnings on
+  the leaf
+  (`--all-targets`)
+  + hub lib
+  (`-D warnings`).
+  `cargo nextest list
+  --workspace
+  --all-targets`: 7277
+  -> 7277,
+  byte-identical (0
+  relocations; 0
+  dropped, 0 added).
+  `nextest run`:
+  433/433 runtime
+  green (1 skipped,
+  pre-existing); the
+  leaf has no tests
+  (coverage in hub
+  `cleanup` cases).
+  `alint check`:
+  180 violations /
+  11 failing,
+  byte-identical.
+  `check-gaps`:
+  12 -> 12 (hub
+  10119 -> 10094
+  prod code lines,
+  79 -> 78 prod
+  files; xtask 26303
+  -> 26304 (+1 TIERS
+  row); leaf fits
+  both budgets, no
+  SIZE finding).
+  `ratchet.toml`: 2
+  new rows (README
+  bytes 781,
+  public-surface 1)
+  + 0 hub tightens;
+  gate output
+  byte-identical to
+  base. `lint arch
+  --strict`: 3
+  pre-existing
+  no-tier
+  byte-identical,
+  zero direction
+  violations;
+  `lint headers`
+  stays at the
+  base 2; `lint
+  tests` OK; `lint
+  readme-freshness`
+  unchanged (zero
+  timing rows).
+
+- Raw outputs:
+  `/tmp/jackin-s31-{before,after}-*.txt`
+  (kept out of the
+  repo).
