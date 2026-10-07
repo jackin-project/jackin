@@ -26,5 +26,5 @@ pub struct HostEventBatch {
     pub resync_required: bool,
 }
 
-pub(crate) const MAX_EVENT_LOG: usize = 4_096;
-pub(crate) const MAX_EVENT_BATCH: u32 = 256;
+pub const MAX_EVENT_LOG: usize = 4_096;
+pub const MAX_EVENT_BATCH: u32 = 256;

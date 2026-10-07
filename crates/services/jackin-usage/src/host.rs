@@ -13,10 +13,8 @@ mod credential_resolver;
 mod desktop;
 mod discovery;
 mod event_log;
-mod events;
 mod inventory;
 mod lifecycle;
-mod overview;
 mod projection;
 mod render;
 mod selection;
@@ -24,7 +22,6 @@ mod snapshots;
 mod staging;
 mod status_bar;
 mod surface_control;
-mod surfaces;
 
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 #[cfg(test)]
@@ -81,9 +78,10 @@ pub use discovery::{
     UsageSourceCandidateDescriptor, ValidatedUsageDiscovery, discover_usage_sources,
     host_credential_root_matrix, validate_usage_sources,
 };
-pub use events::{HostEventBatch, HostUsageEvent};
-pub(crate) use events::{MAX_EVENT_BATCH, MAX_EVENT_LOG};
-pub use overview::{HostOverviewRow, HostProviderGlanceRow};
+pub use jackin_usage_host_presentation::{HostEventBatch, HostUsageEvent};
+pub use jackin_usage_host_presentation::{HostOverviewRow, HostProviderGlanceRow};
+pub use jackin_usage_host_presentation::{HostSurfaceDescriptor, HostSurfaceId};
+pub(crate) use jackin_usage_host_presentation::{MAX_EVENT_BATCH, MAX_EVENT_LOG};
 pub use projection::{NormalizedUsageDestination, UsageDestination, normalize_destination};
 pub use render::STATUS_BAR_MAX_CHIPS;
 pub(crate) use render::{
@@ -93,7 +91,6 @@ pub(crate) use render::{
 };
 pub use staging::StagedUsageDiscovery;
 pub(crate) use staging::{discovered_account_keys, enabled_surface_ids};
-pub use surfaces::{HostSurfaceDescriptor, HostSurfaceId};
 
 /// Capsule-free host usage runtime.
 #[derive(Debug, Clone)]

@@ -1936,3 +1936,51 @@ passes.
 - Raw outputs:
   `/tmp/s11-split23-{before,after}.txt`
   (kept out of the repo).
+
+### Split 24: usage-host-presentation extraction (H1)
+
+- `jackin-usage` -> `jackin-usage` +
+  `jackin-usage-host-presentation` (T1:
+  `host/events.rs`, `host/overview.rs`,
+  `host/surfaces.rs` -> flat modules
+  under a new `lib.rs` re-export root;
+  `lib.rs` carries the ownership
+  header). These three are pure data
+  types with zero host edges (only
+  `jackin-core::Agent` for the surface
+  slug mapping), so the move is a pure
+  relocation: `host.rs` drops the three
+  `mod` lines and re-exports the same
+  eight paths from the new crate. The
+  two `MAX_EVENT_*` bounds widen from
+  `pub(crate)` to `pub`; every other
+  item was already `pub`. No test files
+  move (the modules have none).
+- Verify: `cargo check --locked --workspace
+  --all-targets` green; `cargo fmt --all
+  --check` clean; `cargo clippy` 0
+  errors, 0 warnings on both touched
+  packages. `cargo nextest list
+  --workspace --all-targets`: 7276 ->
+  7276 with a byte-empty delta (zero
+  moved, zero dropped, zero added).
+  `nextest run`: 406/406 usage + 0/0
+  presentation. No contract fixture
+  entries name these paths, so no
+  remap. `alint check`: 197 -> 197.
+  `check-gaps`: 27 -> 27 (usage
+  `SIZE-001` 26926 -> 26655 lines,
+  `SIZE-002` 145 -> 142 files);
+  `GAP-TEST-001/002/003` stay 0/0/0.
+  `ratchet.toml`: +1 row (agent-doc
+  1183; the new crate has zero root
+  `pub mod`s and usage keeps its root
+  `pub mod host`, so no surface rows);
+  violations 60 -> 60 with zero new
+  failures. `lint arch`: missing tiers
+  stay 3, zero direction violations;
+  `lint headers` stays at the base 2;
+  `lint tests` OK.
+- Raw outputs:
+  `/tmp/s11-split24-{before,after}.txt`
+  (kept out of the repo).
