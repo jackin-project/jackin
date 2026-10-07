@@ -945,7 +945,7 @@ pub(crate) async fn load_role_with(
             initial_account_revision.ensure_current(paths)?;
             match candidate
                 .map(|candidate| {
-                    super::account_identity::admit_restore(
+                    super::restore_resolve::admit_restore(
                         candidate,
                         &paths.data_dir,
                         config,
@@ -1017,7 +1017,7 @@ pub(crate) async fn load_role_with(
             initial_account_revision.ensure_current(paths)?;
             match candidate
                 .map(|mut candidate| -> anyhow::Result<_> {
-                    candidate.resolution = super::account_identity::admit_restore(
+                    candidate.resolution = super::restore_resolve::admit_restore(
                         candidate.resolution,
                         &paths.data_dir,
                         config,
@@ -1270,7 +1270,7 @@ pub(crate) async fn load_role_with(
         )
         .await?;
         account_revision.ensure_current(paths)?;
-        match super::account_identity::admit_restore(
+        match super::restore_resolve::admit_restore(
             restore_candidate,
             &paths.data_dir,
             config,

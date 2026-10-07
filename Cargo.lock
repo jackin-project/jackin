@@ -3591,6 +3591,7 @@ dependencies = [
  "jackin-runtime-image",
  "jackin-runtime-isolation",
  "jackin-runtime-launch-account-config",
+ "jackin-runtime-launch-account-identity",
  "jackin-runtime-launch-mounts",
  "jackin-runtime-launch-plan",
  "jackin-runtime-launch-trust",
@@ -3776,6 +3777,24 @@ dependencies = [
  "jackin-env",
  "jackin-instance",
  "nix 0.31.3",
+ "serde_json",
+ "sha2 0.11.0",
+ "tempfile",
+ "toml",
+]
+
+[[package]]
+name = "jackin-runtime-launch-account-identity"
+version = "0.6.4"
+dependencies = [
+ "anyhow",
+ "jackin-config",
+ "jackin-core",
+ "jackin-docker",
+ "jackin-env",
+ "jackin-instance",
+ "jackin-protocol",
+ "serde",
  "serde_json",
  "sha2 0.11.0",
  "tempfile",

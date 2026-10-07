@@ -42,6 +42,7 @@
     "jackin-runtime-image",
     "jackin-runtime-isolation",
     "jackin-runtime-launch-account-config",
+    "jackin-runtime-launch-account-identity",
     "jackin-runtime-launch-mounts",
     "jackin-runtime-launch-plan",
     "jackin-runtime-launch-trust",

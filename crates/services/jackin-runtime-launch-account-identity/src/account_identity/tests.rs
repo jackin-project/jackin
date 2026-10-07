@@ -3,7 +3,7 @@
 
 use super::*;
 
-use crate::instance::{
+use jackin_instance::{
     AdmittedInstance, DockerResources, InstanceManifest, NewInstanceManifest, RegistrationState,
 };
 

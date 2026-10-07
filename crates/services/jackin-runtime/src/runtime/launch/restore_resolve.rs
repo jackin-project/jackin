@@ -10,8 +10,10 @@
 use crate::instance::InstanceManifest;
 use crate::runtime::attach::ContainerState;
 
-use jackin_core::{ContainerHandle, JackinPaths};
+use jackin_config::AppConfig;
+use jackin_core::{ContainerHandle, JackinPaths, WorkspaceName};
 use jackin_docker::docker_client::DockerApi;
+use std::path::Path;
 
 use super::restore::{
     matching_current_role_manifests, matching_instance_manifests, present_restore_choice,
@@ -33,6 +35,41 @@ pub(crate) enum RestoreResolution {
     /// D21: operator deleted this instance from the launch dialog.
     /// Caller must purge the state dir then proceed as `StartFresh`.
     PurgeAndRestartFresh(String),
+}
+
+/// Admit a restore resolution against the current account configuration.
+///
+/// Moved from `account_identity` (S7 split 64): the match is over
+/// [`RestoreResolution`], so the seam lives with the resolution owner; the
+/// fingerprint check below is account-identity's public API.
+pub(crate) fn admit_restore(
+    resolution: RestoreResolution,
+    root: &Path,
+    config: &AppConfig,
+    workspace: Option<&WorkspaceName>,
+    role: &str,
+) -> anyhow::Result<RestoreResolution> {
+    let container = match &resolution {
+        RestoreResolution::StartFresh | RestoreResolution::PurgeAndRestartFresh(_) => {
+            return Ok(resolution);
+        }
+        RestoreResolution::RecreateCurrentRole(name)
+        | RestoreResolution::RestoreCurrentRole(name)
+        | RestoreResolution::RecoverRelatedRole(name) => name,
+        RestoreResolution::StartCurrentRoleWithHandle(handle)
+        | RestoreResolution::RecreateCurrentRoleWithHandle(handle) => handle.name(),
+        RestoreResolution::RebuildRelatedRole(manifest) => &manifest.container_base,
+    };
+    if super::account_identity::account_configuration_matches(
+        &root.join(container),
+        config,
+        workspace,
+        role,
+    )? {
+        Ok(resolution)
+    } else {
+        Ok(RestoreResolution::StartFresh)
+    }
 }
 
 /// Outcome of the early current-role restore scan performed before role-repo

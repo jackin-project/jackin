@@ -5450,3 +5450,157 @@ bound 720.
 - Raw outputs:
   `/tmp/s7-s63-{pre,post}-*.txt`
   (kept out of the repo).
+
+### Split 64: runtime-launch-account-identity extraction (M26)
+
+- `jackin-runtime` ->
+  `jackin-runtime` +
+  `jackin-runtime-launch-account-identity`
+  (T4: the whole
+  `launch::account_identity`
+  module moves —
+  generation leases +
+  credential publication
+  + fingerprints,
+  `tests.rs` + 2
+  suites + support
+  with 18 tests).
+  One seam relocation:
+  `admit_restore`
+  matches on
+  `restore_resolve::RestoreResolution`,
+  so it moves to
+  `restore_resolve.rs`
+  (the resolution
+  owner's side) and
+  calls account-identity's
+  public
+  `account_configuration_matches`;
+  3 call sites in
+  `launch_pipeline.rs`
+  retarget. Cross-leaf
+  edge: 1x
+  `crate::instance`
+  -> `jackin_instance`
+  (external re-export).
+  Visibility widens
+  surgically (the 7
+  externally used items
+  + record fields,
+  `pub(super)`/`pub(crate)`
+  -> `pub`;
+  internal-only
+  `current_snapshot`
+  stays `pub(crate)`;
+  `AccountConfigurationRecord`
+  gains
+  `#[derive(Debug)]`
+  for the now-public
+  type). The shim is a
+  `pub` glob (not
+  `pub(crate)`:
+  `launch.rs` re-exports
+  3 fingerprint fns
+  publicly — the
+  split-60 image
+  precedent). Tier:
+  names T3 instance/docker,
+  so it takes T4; no
+  renumber cascade.
+  New-crate deps:
+  config, core, docker,
+  instance, protocol,
+  anyhow, serde(+derive),
+  serde_json, sha2,
+  tempfile; dev-deps
+  add env, toml
+  (lockfile +1
+  package, +13
+  edges). Policy
+  registries: +1
+  owned package
+  (`library`).
+
+- Verify: `cargo check
+  --locked --workspace
+  --all-targets`
+  green; `cargo fmt
+  --all --check`
+  clean; `cargo
+  clippy` 0 errors on
+  the new crate,
+  `jackin-runtime`
+  holds at the 7
+  pre-existing errors
+  (all in
+  `launch_slot/tests`,
+  byte-identical
+  locations).
+  `cargo nextest list
+  --workspace
+  --all-targets`: 7277
+  -> 7277 (18
+  relocations map 1:1
+  by name, verified by
+  stripped-diff:
+  `launch::account_identity`
+  -> `account_identity`;
+  0 dropped, 0 added).
+  `nextest run`:
+  531/531 runtime
+  (513) +
+  account-identity (18).
+  `alint check`:
+  182 violations / 11
+  failing unchanged.
+  `check-gaps`
+  (v0.1.3,
+  production-only):
+  12 -> 12 (runtime
+  `SIZE-001/002`
+  persist: 17591 ->
+  16673 prod code
+  lines, 95 -> 95
+  prod files; new
+  crate fits at
+  1777 raw / 9
+  files, no SIZE
+  finding).
+  `GAP-TEST-001/002/003`
+  stay 0/0/0.
+  `ratchet.toml`: +5
+  rows
+  (agent-doc-bytes
+  README 1132,
+  public-surface 1,
+  `disallowed_methods`
+  account-identity 1,
+  `too_many_lines`
+  account-identity 1,
+  function-complexity
+  account-identity 41)
+  and
+  `disallowed_methods@jackin-runtime`
+  4 -> 3; failures 57
+  -> 56 — measured
+  disallowed total
+  preserved (4 =
+  3+1), and the move
+  fixes the pre-existing
+  `too_many_lines@jackin-runtime`
+  growth (7 -> 6,
+  now steady at bound
+  6); remaining
+  keys byte-identical.
+  `lint arch
+  --strict`: missing
+  tiers stay 3, zero
+  direction
+  violations; `lint
+  headers` stays at
+  the base 2; `lint
+  tests` OK.
+
+- Raw outputs:
+  `/tmp/s7-s64-{pre,post}-*.txt`
+  (kept out of the repo).

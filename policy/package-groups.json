@@ -42,6 +42,7 @@
     "jackin-runtime-image": "library",
     "jackin-runtime-isolation": "library",
     "jackin-runtime-launch-account-config": "library",
+    "jackin-runtime-launch-account-identity": "library",
     "jackin-runtime-launch-mounts": "library",
     "jackin-runtime-launch-plan": "library",
     "jackin-runtime-launch-trust": "library",
