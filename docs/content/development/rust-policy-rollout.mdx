@@ -8221,3 +8221,150 @@ bound 720.
   `/tmp/s7-s83-{pre,post}-*.txt`
   (kept out of the
   repo).
+
+### Split 84: launch-attach-outcome extraction (M46)
+
+- `jackin-runtime`
+  ->
+  `jackin-runtime`
+  +
+  `jackin-runtime-launch-attach-outcome`
+  (T6: the
+  attach-outcome
+  cluster moves --
+  `write_instance_status`
+  +
+  `write_instance_attach_outcome`
+  +
+  `record_instance_attach_outcome`
+  +
+  `format_attach_outcome`;
+  bodies unchanged
+  modulo path
+  rewrites
+  (`crate::instance::{...}`
+  -> `jackin-instance`
+  T3,
+  `crate::isolation::finalize::AttachOutcome`
+  -> the T5
+  `jackin-runtime-isolation`
+  re-export). Four
+  fns widen to `pub`
+  (forced: two were
+  `pub(in
+  crate::runtime)`,
+  two `pub(super)`).
+  Item re-export:
+  `launch.rs`
+  re-exports the four
+  names from the new
+  crate, so all nine
+  hub files (sixteen
+  prod call sites:
+  `launch_runtime`,
+  `prepare_instance`,
+  `orchestrate/{finalize,active,cleanup_classify}`,
+  `launch_phases`,
+  `launch_pipeline`,
+  `attach/finalize`,
+  `apple_container`)
+  compile unchanged;
+  the two internal
+  restore.rs callers
+  (`supersede_restore_candidates`,
+  `write_preserved_status_if_applicable`)
+  import the moved
+  `write_instance_status`
+  directly. Rest of
+  restore.rs stays
+  (LoadOptions-coupled:
+  the `super::{...}`
+  import +
+  `related_restore_load_options`).
+  Tier: names T5
+  `jackin-runtime-isolation`
+  + T3
+  `jackin-instance`,
+  so it takes T6; no
+  renumber cascade.
+  New-crate deps:
+  core, instance,
+  runtime-isolation,
+  anyhow (lockfile +1
+  package, +5 edges).
+  Policy registries:
+  +1 owned package
+  (`library`).)
+
+- Verify: `cargo check
+  --locked --workspace
+  --all-targets` green;
+  `cargo fmt --all
+  --check` clean; `cargo
+  clippy` 0 errors on
+  the new crate (`-D
+  warnings`),
+  `jackin-runtime`
+  holds at the 7
+  pre-existing errors
+  (same 6 lints at
+  identical locations
+  + summary). `cargo
+  nextest list
+  --workspace
+  --all-targets`: 7277
+  -> 7277,
+  byte-identical (0
+  relocations --
+  coverage stays in
+  the hub `launch`
+  suite (`case_26`); 0
+  dropped, 0 added).
+  `nextest run`:
+  433/433 runtime
+  green (1 skipped,
+  pre-existing; the new
+  crate has no tests
+  yet). `alint check`:
+  182 -> 181
+  violations / 11
+  failing (the single
+  delta is the cured
+  `size-file-400`
+  finding on
+  `restore.rs`, 420 ->
+  369 lines; zero new
+  rows). `check-gaps`:
+  12 -> 12 (hub 11816
+  -> 11772 prod code
+  lines, 79 prod files
+  unchanged; xtask
+  26297 -> 26298 from
+  the TIERS row; new
+  crate fits at 80 raw
+  / 3 files, no SIZE
+  finding).
+  `GAP-TEST-001/002/003`
+  stay 0/0/0.
+  `ratchet.toml`: +2
+  rows (agent-doc-bytes
+  README 924,
+  public-surface 1);
+  gate output
+  byte-identical to
+  base. `lint arch
+  --strict`: 3
+  pre-existing no-tier
+  violations
+  byte-identical, zero
+  direction violations;
+  `lint headers` stays
+  at the base 2; `lint
+  tests` OK; `lint
+  readme-freshness`
+  unchanged.
+
+- Raw outputs:
+  `/tmp/s7-s84-{pre,post}-*.txt`
+  (kept out of the
+  repo).

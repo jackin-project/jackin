@@ -6,6 +6,10 @@ use crate::instance::{InstanceIndex, InstanceManifest, InstanceQuery, InstanceSt
 use crate::runtime::attach::ContainerState;
 use jackin_core::JackinPaths;
 use jackin_docker::docker_client::DockerApi;
+// Moved to jackin_runtime_launch_attach_outcome::attach_outcome (S7
+// split 84); the direct import keeps the two internal status
+// writers compiling.
+use jackin_runtime_launch_attach_outcome::attach_outcome::write_instance_status;
 
 #[cfg(test)]
 mod tests;
@@ -300,61 +304,6 @@ pub(super) fn matching_current_role_manifests(
             agent_runtime: None,
         },
     )
-}
-
-pub(in crate::runtime) fn write_instance_status(
-    paths: &JackinPaths,
-    state_dir: &std::path::Path,
-    manifest: &mut InstanceManifest,
-    status: InstanceStatus,
-) -> anyhow::Result<()> {
-    manifest.mark_status(status);
-    manifest.write(state_dir)?;
-    InstanceIndex::update_manifest(&paths.data_dir, manifest)?;
-    Ok(())
-}
-
-pub(super) fn write_instance_attach_outcome(
-    paths: &JackinPaths,
-    state_dir: &std::path::Path,
-    manifest: &mut InstanceManifest,
-    outcome: crate::isolation::finalize::AttachOutcome,
-) -> anyhow::Result<()> {
-    if matches!(
-        outcome,
-        crate::isolation::finalize::AttachOutcome::StillRunning
-    ) {
-        manifest.mark_status(InstanceStatus::Running);
-    } else {
-        manifest.touch();
-    }
-    manifest.last_attach_outcome = Some(format_attach_outcome(outcome));
-    manifest.write(state_dir)?;
-    InstanceIndex::update_manifest(&paths.data_dir, manifest)?;
-    Ok(())
-}
-
-pub(in crate::runtime) fn record_instance_attach_outcome(
-    paths: &JackinPaths,
-    container_name: &str,
-    outcome: crate::isolation::finalize::AttachOutcome,
-) -> anyhow::Result<()> {
-    let state_dir = paths.data_dir.join(container_name);
-    // Missing manifest is a legitimate no-op; corrupt manifest is
-    // logged so the attach-outcome record is not silently dropped.
-    let Some(mut manifest) = InstanceManifest::read_optional_lossy(&state_dir) else {
-        return Ok(());
-    };
-    write_instance_attach_outcome(paths, &state_dir, &mut manifest, outcome)
-}
-
-pub(super) fn format_attach_outcome(outcome: crate::isolation::finalize::AttachOutcome) -> String {
-    use crate::isolation::finalize::AttachOutcome;
-    match outcome {
-        AttachOutcome::OomKilled => "oom_killed".to_owned(),
-        AttachOutcome::StillRunning => "running".to_owned(),
-        AttachOutcome::Stopped(code) => format!("exit:{code}"),
-    }
 }
 
 /// Persist `Preserved`-tier status when `finalize_foreground_session`

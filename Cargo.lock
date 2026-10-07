@@ -3600,6 +3600,7 @@ dependencies = [
  "jackin-runtime-isolation",
  "jackin-runtime-launch-account-config",
  "jackin-runtime-launch-account-identity",
+ "jackin-runtime-launch-attach-outcome",
  "jackin-runtime-launch-auth-error",
  "jackin-runtime-launch-capsule-setup",
  "jackin-runtime-launch-exit-diagnosis",
@@ -3918,6 +3919,16 @@ dependencies = [
  "sha2 0.11.0",
  "tempfile",
  "toml",
+]
+
+[[package]]
+name = "jackin-runtime-launch-attach-outcome"
+version = "0.6.4"
+dependencies = [
+ "anyhow",
+ "jackin-core",
+ "jackin-instance",
+ "jackin-runtime-isolation",
 ]
 
 [[package]]

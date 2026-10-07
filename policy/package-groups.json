@@ -51,6 +51,7 @@
     "jackin-runtime-isolation": "library",
     "jackin-runtime-launch-account-config": "library",
     "jackin-runtime-launch-account-identity": "library",
+    "jackin-runtime-launch-attach-outcome": "library",
     "jackin-runtime-launch-auth-error": "library",
     "jackin-runtime-launch-capsule-setup": "library",
     "jackin-runtime-launch-exit-diagnosis": "library",

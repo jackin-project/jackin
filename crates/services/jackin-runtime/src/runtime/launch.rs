@@ -331,15 +331,21 @@ pub(crate) use launch_runtime::{
 mod restore;
 #[cfg(test)]
 use restore::{
-    RelatedRestoreCandidate, format_attach_outcome, recover_related_restore_candidate,
-    restore_candidate_label, supersede_restore_candidates,
+    RelatedRestoreCandidate, recover_related_restore_candidate, restore_candidate_label,
+    supersede_restore_candidates,
 };
+// Moved to jackin_runtime_launch_attach_outcome::attach_outcome (S7
+// split 84); the item re-exports keep every `launch::*` path stable.
+#[cfg(test)]
+use jackin_runtime_launch_attach_outcome::attach_outcome::format_attach_outcome;
+use jackin_runtime_launch_attach_outcome::attach_outcome::write_instance_attach_outcome;
+pub(in crate::runtime) use jackin_runtime_launch_attach_outcome::attach_outcome::{
+    record_instance_attach_outcome, write_instance_status,
+};
+pub(in crate::runtime) use restore::preserved_instance_status;
 use restore::{
-    manifest_host_workdir_fingerprint, related_restore_load_options, write_instance_attach_outcome,
+    manifest_host_workdir_fingerprint, related_restore_load_options,
     write_preserved_status_if_applicable,
-};
-pub(in crate::runtime) use restore::{
-    preserved_instance_status, record_instance_attach_outcome, write_instance_status,
 };
 
 // Moved to jackin_runtime_launch_auth_error::auth_error (S7 split 67); the

@@ -51,6 +51,7 @@
     "jackin-runtime-isolation",
     "jackin-runtime-launch-account-config",
     "jackin-runtime-launch-account-identity",
+    "jackin-runtime-launch-attach-outcome",
     "jackin-runtime-launch-auth-error",
     "jackin-runtime-launch-capsule-setup",
     "jackin-runtime-launch-exit-diagnosis",
