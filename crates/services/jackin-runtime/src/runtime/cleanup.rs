@@ -16,7 +16,9 @@ mod exile;
 mod prune;
 mod purge;
 mod purge_absent;
-mod resolve;
+// Moved to jackin_runtime_cleanup_resolve::resolve (S7
+// split 82); the item re-export keeps every
+// `cleanup::*` path stable.
 mod timing;
 
 pub use absent::prune_all_instances;
@@ -29,12 +31,12 @@ pub(crate) use absent::ensure_role_resources_absent_for_purge;
 pub(crate) use dind_gc::gc_orphaned_resources;
 pub(crate) use eject::{eject_docker_role, eject_docker_role_with_handles};
 pub(crate) use exile::prune_dir;
-pub(crate) use purge::purge_container_filesystem;
-pub(crate) use purge_absent::{ensure_backend_absent_for_purge, remove_socket_dir};
-pub(crate) use resolve::{
+pub(crate) use jackin_runtime_cleanup_resolve::resolve::{
     docker_resources_for_state, resolve_cleanup_handles_for_state, resolve_dind_handle_for_state,
     resolve_optional_container_handle, resolve_role_handle_for_state,
 };
+pub(crate) use purge::purge_container_filesystem;
+pub(crate) use purge_absent::{ensure_backend_absent_for_purge, remove_socket_dir};
 pub(crate) use timing::{cleanup_failure, cleanup_timing};
 
 #[cfg(test)]

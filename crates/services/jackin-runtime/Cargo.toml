@@ -40,6 +40,7 @@ jackin-runtime-attach-exec-args = { workspace = true }
 jackin-runtime-attach-inspect = { workspace = true }
 jackin-runtime-attach-sessions = { workspace = true }
 jackin-runtime-attach-transport = { workspace = true }
+jackin-runtime-cleanup-resolve = { workspace = true }
 jackin-runtime-coordination = { workspace = true }
 jackin-runtime-discovery = { workspace = true }
 jackin-runtime-docker-profile = { workspace = true }

@@ -3586,6 +3586,7 @@ dependencies = [
  "jackin-runtime-attach-inspect",
  "jackin-runtime-attach-sessions",
  "jackin-runtime-attach-transport",
+ "jackin-runtime-cleanup-resolve",
  "jackin-runtime-coordination",
  "jackin-runtime-discovery",
  "jackin-runtime-docker-profile",
@@ -3717,6 +3718,16 @@ dependencies = [
  "jackin-runtime-attach-capsule-ready",
  "jackin-runtime-snapshot",
  "jackin-telemetry",
+]
+
+[[package]]
+name = "jackin-runtime-cleanup-resolve"
+version = "0.6.4"
+dependencies = [
+ "anyhow",
+ "jackin-core",
+ "jackin-docker",
+ "jackin-instance",
 ]
 
 [[package]]

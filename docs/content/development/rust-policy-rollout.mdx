@@ -7906,3 +7906,131 @@ bound 720.
   `/tmp/s7-s81-{pre,post}-*.txt`
   (kept out of the
   repo).
+
+### Split 82: runtime-cleanup-resolve extraction (M44)
+
+- `jackin-runtime` ->
+  `jackin-runtime` +
+  `jackin-runtime-cleanup-resolve`
+  (T4: the whole
+  `cleanup/resolve` leaf
+  moves --
+  ownership-checked
+  container-handle
+  resolution against
+  recorded instance
+  state; the module
+  carries no unit suite
+  of its own, coverage
+  stays in the hub
+  `cleanup` suite.
+  Cross-leaf edges: 1
+  hub path rewritten to
+  an already-split crate
+  (`crate::instance::{...}`
+  -> `jackin-instance`
+  T3, the split-71
+  precedent). Five
+  `pub(crate)` fns widen
+  to `pub` (forced; two
+  file-local helpers
+  stay `pub(crate)`).
+  Item re-export:
+  `cleanup.rs`
+  re-exports the five
+  names from the new
+  crate, so all six hub
+  files (nine call
+  sites:
+  `attach::{finalize,reconnect_lease}`,
+  `backend`,
+  `cleanup/eject`,
+  `launch::{launch_dind,launch_pipeline}`)
+  compile unchanged.
+  This cures the attach
+  remainder's
+  `cleanup::` edges; its
+  T7 (`host-attach`,
+  `universe`) and
+  remaining hub
+  (`restore`, `backend`,
+  `apple_container`)
+  edges stay for later
+  splits. Tier: names T3
+  `jackin-instance` +
+  `jackin-docker`, so it
+  takes T4; no renumber
+  cascade. New-crate
+  deps: core, docker,
+  instance, anyhow
+  (lockfile +1 package,
+  +5 edges). Policy
+  registries: +1 owned
+  package (`library`).)
+
+- Verify: `cargo check
+  --locked --workspace
+  --all-targets` green;
+  `cargo fmt --all
+  --check` clean; `cargo
+  clippy` 0 errors on
+  the new crate (`-D
+  warnings`),
+  `jackin-runtime` holds
+  at the 7 pre-existing
+  errors (same 6 lints
+  at identical locations
+  + summary). `cargo
+  nextest list
+  --workspace
+  --all-targets`: 7277
+  -> 7277,
+  byte-identical (0
+  relocations -- the
+  module carries no
+  tests; 0 dropped, 0
+  added). `nextest run`:
+  433/433 runtime green
+  (1 skipped,
+  pre-existing; the new
+  crate has no tests
+  yet). `alint check`:
+  182 violations / 11
+  failing,
+  byte-identical.
+  `check-gaps` (v0.1.3,
+  production-only): 12
+  -> 12 (runtime
+  `SIZE-001/002`
+  persist: 11949 ->
+  11816 prod code lines,
+  80 -> 79 prod files;
+  xtask 26295 -> 26296
+  from the TIERS row;
+  new crate fits at 147
+  raw / 3 files, no SIZE
+  finding).
+  `GAP-TEST-001/002/003`
+  stay 0/0/0.
+  `ratchet.toml`: +2
+  rows (agent-doc-bytes
+  README 783,
+  public-surface 1);
+  remaining 56
+  violations
+  byte-identical to a
+  clean-HEAD worktree.
+  `lint arch --strict`:
+  3 pre-existing no-tier
+  violations
+  byte-identical to
+  base, zero direction
+  violations; `lint
+  headers` stays at the
+  base 2; `lint tests`
+  OK.
+
+- Raw outputs:
+  `/tmp/s7-s82-{pre,post}-*.txt`
+  (kept out of the
+  repo).

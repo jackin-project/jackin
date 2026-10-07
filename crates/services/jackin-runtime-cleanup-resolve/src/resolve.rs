@@ -2,14 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Cleanup handle resolution for recorded state.
 
-use crate::instance::{DockerResources, InstanceManifest};
 use jackin_core::JackinPaths;
+use jackin_instance::{DockerResources, InstanceManifest};
 
 use jackin_core::ContainerHandle;
 use jackin_docker::docker_client::{ContainerState, DockerApi};
 
 /// One immutable authority snapshot for the complete destructive preflight.
-pub(crate) async fn resolve_cleanup_handles_for_state(
+pub async fn resolve_cleanup_handles_for_state(
     paths: &JackinPaths,
     container_name: &str,
     known_role: Option<&ContainerHandle>,
@@ -58,7 +58,7 @@ pub(crate) async fn resolve_cleanup_handles_for_state(
 
 /// Resolve only identities belonging to the recorded launch. A name lookup
 /// checks absence/replacement; it can never establish ownership.
-pub(crate) async fn resolve_role_handle_for_state(
+pub async fn resolve_role_handle_for_state(
     paths: &JackinPaths,
     container_name: &str,
     docker: &impl DockerApi,
@@ -81,7 +81,7 @@ pub(crate) async fn resolve_optional_role_handle_for_state(
     resolve_owned_container_handle(docker, container_name, expected_id).await
 }
 
-pub(crate) async fn resolve_dind_handle_for_state(
+pub async fn resolve_dind_handle_for_state(
     paths: &JackinPaths,
     container_name: &str,
     docker: &impl DockerApi,
@@ -120,7 +120,7 @@ pub(crate) async fn resolve_owned_container_handle(
     Ok(Some(ContainerHandle::new(name, expected_id)?))
 }
 
-pub(crate) async fn resolve_optional_container_handle(
+pub async fn resolve_optional_container_handle(
     docker: &impl DockerApi,
     name: &str,
 ) -> anyhow::Result<Option<ContainerHandle>> {
@@ -135,7 +135,7 @@ pub(crate) async fn resolve_optional_container_handle(
     }
 }
 
-pub(crate) fn docker_resources_for_state(
+pub fn docker_resources_for_state(
     paths: &JackinPaths,
     container_name: &str,
 ) -> anyhow::Result<DockerResources> {
