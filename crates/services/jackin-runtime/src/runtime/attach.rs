@@ -21,7 +21,10 @@ pub(crate) use jackin_runtime_attach_admission::admission;
 // (S7 split 74); the module re-export keeps every
 // `attach::capsule_ready::*` path stable.
 pub(crate) use jackin_runtime_attach_capsule_ready::capsule_ready;
-mod exec_args;
+// Moved to jackin_runtime_attach_exec_args::exec_args (S7
+// split 79); the module re-export keeps every
+// `attach::exec_args::*` path stable.
+pub(crate) use jackin_runtime_attach_exec_args::exec_args;
 mod finalize;
 mod hardline;
 mod hardline_start;

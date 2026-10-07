@@ -36,6 +36,7 @@ jackin-instance = { workspace = true }
 jackin-runtime-apple-container-client = { workspace = true }
 jackin-runtime-attach-admission = { workspace = true }
 jackin-runtime-attach-capsule-ready = { workspace = true }
+jackin-runtime-attach-exec-args = { workspace = true }
 jackin-runtime-attach-sessions = { workspace = true }
 jackin-runtime-attach-transport = { workspace = true }
 jackin-runtime-coordination = { workspace = true }

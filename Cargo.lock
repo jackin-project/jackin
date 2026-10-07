@@ -3582,6 +3582,7 @@ dependencies = [
  "jackin-runtime-apple-container-client",
  "jackin-runtime-attach-admission",
  "jackin-runtime-attach-capsule-ready",
+ "jackin-runtime-attach-exec-args",
  "jackin-runtime-attach-sessions",
  "jackin-runtime-attach-transport",
  "jackin-runtime-coordination",
@@ -3672,6 +3673,16 @@ dependencies = [
  "jackin-runtime-spin-wait",
  "jackin-telemetry",
  "tokio",
+]
+
+[[package]]
+name = "jackin-runtime-attach-exec-args"
+version = "0.6.4"
+dependencies = [
+ "jackin-core",
+ "jackin-diagnostics",
+ "jackin-instance",
+ "jackin-telemetry",
 ]
 
 [[package]]
