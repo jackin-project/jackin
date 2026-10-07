@@ -1661,3 +1661,58 @@ passes.
 - Raw outputs:
   `/tmp/s10-output-{before,after}.txt`
   (kept out of the repo).
+
+### Split 19: usage-credential-snapshots extraction (V16)
+
+- `jackin-usage` -> `jackin-usage` +
+  `jackin-usage-credential-snapshots` (T3:
+  `usage/credential_snapshots.rs` ->
+  `lib.rs` re-export root + `dispatch`
+  (surface routing) + `tests` +
+  `tests/main.rs` placeholder; `lib.rs`
+  carries the ownership header). The
+  dispatch fans out to eight T3 vendor
+  crates, so a plain move would be the
+  first same-tier production edge (the
+  direction rule is strictly lower-tier):
+  instead the nine per-vendor arms move
+  behind a `CredentialSnapshotVendors`
+  trait implemented once by a new
+  `usage/vendor_dispatch.rs` in the T4
+  coordinator, which also keeps the two
+  historical `provider_credential_snapshot*`
+  paths (public API unchanged). Three new
+  mock-vendor routing tests cover the
+  surface arms, the `codex`/`cursor` typed
+  gaps, and the blocked surfaces (the
+  module had none).
+- Verify: `cargo check --locked --workspace
+  --all-targets` green; `cargo fmt --all
+  --check` clean; `cargo clippy` 0 errors,
+  0 warnings on both touched packages.
+  `cargo nextest list --workspace
+  --all-targets`: 7273 -> 7276, delta is
+  exactly +3 (the new routing tests; zero
+  moved, zero dropped). `nextest run`:
+  490/490 usage + 3/3 credential-snapshots.
+  The provider-call contract fixture
+  remaps 8 entries (7 vendor calls ->
+  `vendor_dispatch.rs`, the internal edge
+  -> `dispatch.rs`) and gains 2 edges for
+  the new wrapper calls (entries 33 ->
+  35) and the suite is green. `alint
+  check`: 198 -> 198, byte-identical.
+  `check-gaps`: 27 -> 27 (usage `SIZE-001`
+  34022 -> 34016 lines, `SIZE-002` stays
+  213 files: the dispatch leaves, the
+  coordinator arms stay; xtask +1 line for
+  the tier row); `GAP-TEST-001/002/003`
+  stay 0/0/0. `ratchet.toml`: +1 row
+  (agent-doc 1096); violations 60 -> 60
+  with zero new failures. `lint arch`:
+  missing tiers stay 3, zero direction
+  violations; `lint headers` stays at the
+  base 2; `lint tests` OK.
+- Raw outputs:
+  `/tmp/s10-credsnap-{before,after}.txt`
+  (kept out of the repo).

@@ -7,10 +7,10 @@
 //! details stay here so status chrome and dialogs render strings, not API
 //! branches.
 
-mod credential_snapshots;
+mod vendor_dispatch;
 
-pub use self::credential_snapshots::provider_credential_snapshot;
-pub(crate) use self::credential_snapshots::provider_credential_snapshot_with_rate_limit;
+pub use self::vendor_dispatch::provider_credential_snapshot;
+pub(crate) use self::vendor_dispatch::provider_credential_snapshot_with_rate_limit;
 #[cfg(test)]
 use jackin_protocol::control::{UsageProviderTab, UsageSeverity};
 #[expect(

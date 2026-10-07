@@ -704,6 +704,9 @@ bound = 1819
 key = "crates/services/jackin-usage-output/README.md"
 bound = 687
 [[family.entry]]
+key = "crates/services/jackin-usage-credential-snapshots/README.md"
+bound = 1096
+[[family.entry]]
 key = "crates/tools/jackin-xtask/README.md"
 bound = 6113
 [[family.entry]]

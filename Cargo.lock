@@ -3649,6 +3649,7 @@ dependencies = [
  "jackin-otlp-testbed",
  "jackin-protocol",
  "jackin-telemetry",
+ "jackin-usage-credential-snapshots",
  "jackin-usage-output",
  "jackin-usage-provider-amp",
  "jackin-usage-provider-antigravity",
@@ -3680,6 +3681,15 @@ dependencies = [
  "tracing",
  "turso",
  "url",
+]
+
+[[package]]
+name = "jackin-usage-credential-snapshots"
+version = "0.6.4"
+dependencies = [
+ "jackin-core",
+ "jackin-protocol",
+ "jackin-usage-provider-core",
 ]
 
 [[package]]
