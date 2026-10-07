@@ -3579,6 +3579,7 @@ dependencies = [
  "jackin-otlp-testbed",
  "jackin-process",
  "jackin-protocol",
+ "jackin-runtime-process-telemetry",
  "jackin-telemetry",
  "jackin-test-support",
  "jackin-usage",
@@ -3592,6 +3593,18 @@ dependencies = [
  "tokio",
  "toml",
  "toml_edit",
+ "tracing",
+]
+
+[[package]]
+name = "jackin-runtime-process-telemetry"
+version = "0.6.4"
+dependencies = [
+ "anyhow",
+ "jackin-diagnostics",
+ "jackin-process",
+ "jackin-telemetry",
+ "tokio",
  "tracing",
 ]
 

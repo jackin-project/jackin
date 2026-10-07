@@ -641,6 +641,9 @@ bound = 2507
 key = "crates/services/jackin-runtime/README.md"
 bound = 3545
 [[family.entry]]
+key = "crates/services/jackin-runtime-process-telemetry/README.md"
+bound = 1056
+[[family.entry]]
 key = "crates/services/jackin-telemetry/README.md"
 bound = 2149
 [[family.entry]]
@@ -873,6 +876,9 @@ bound = 7
 [[family.entry]]
 key = "jackin-runtime"
 bound = 8
+[[family.entry]]
+key = "jackin-runtime-process-telemetry"
+bound = 1
 [[family.entry]]
 key = "jackin-tui"
 bound = 3

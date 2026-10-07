@@ -30,6 +30,7 @@
     "jackin-process-directory",
     "jackin-protocol",
     "jackin-runtime",
+    "jackin-runtime-process-telemetry",
     "jackin-telemetry",
     "jackin-test-support",
     "jackin-tui",
