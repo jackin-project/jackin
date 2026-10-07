@@ -76,7 +76,10 @@ key = "clippy::cast_sign_loss@jackin-launch"
 bound = 9
 [[family.entry]]
 key = "clippy::cast_sign_loss@jackin-usage"
-bound = 16
+bound = 12
+[[family.entry]]
+key = "clippy::cast_sign_loss@jackin-usage-provider-antigravity"
+bound = 4
 [[family.entry]]
 key = "clippy::cast_sign_loss@jackin-usage-provider-grok"
 bound = 2
@@ -655,6 +658,9 @@ bound = 1133
 [[family.entry]]
 key = "crates/services/jackin-usage-provider-grok/README.md"
 bound = 1206
+[[family.entry]]
+key = "crates/services/jackin-usage-provider-antigravity/README.md"
+bound = 1338
 [[family.entry]]
 key = "crates/tools/jackin-xtask/README.md"
 bound = 6113

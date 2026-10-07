@@ -4,21 +4,21 @@
 
 /// Quota family: Gemini models vs every non-Gemini model (Claude, GPT-OSS, …).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum AntigravityFamily {
+pub enum AntigravityFamily {
     Gemini,
     Other,
 }
 
 /// Quota window: the 5-hour session pool vs the weekly pool.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum AntigravityWindow {
+pub enum AntigravityWindow {
     Session,
     Weekly,
 }
 
 /// One normalized Antigravity quota pool.
 #[derive(Debug, Clone)]
-pub(crate) struct AntigravityPool {
+pub struct AntigravityPool {
     pub(crate) family: AntigravityFamily,
     pub(crate) window: Option<AntigravityWindow>,
     /// Remaining percent. `None` only when the source carried no quota signal
@@ -33,7 +33,7 @@ pub(crate) struct AntigravityPool {
 
 /// Parsed `/usage` output: quota pools plus optional identity/plan.
 #[derive(Debug, Clone, Default)]
-pub(crate) struct AntigravityUsage {
+pub struct AntigravityUsage {
     pub(crate) pools: Vec<AntigravityPool>,
     pub(crate) identity: Option<String>,
     pub(crate) plan: Option<String>,

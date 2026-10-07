@@ -12,7 +12,7 @@ use super::{
 /// Parse `agy -p /usage --output-format json` output. `Err` only when the text
 /// is not JSON at all; a well-formed response with no quota pools is `Ok` with
 /// empty pools (the snapshot renders an honest placeholder, never 100%).
-pub(crate) fn parse_antigravity_usage_output(text: &str) -> Result<AntigravityUsage, String> {
+pub fn parse_antigravity_usage_output(text: &str) -> Result<AntigravityUsage, String> {
     let value: serde_json::Value = serde_json::from_str(text.trim())
         .map_err(|_| "Antigravity /usage output was not recognized".to_owned())?;
     let identity = antigravity_identity_from_value(&value);
@@ -121,7 +121,7 @@ fn antigravity_pool_from_summary_entry(entry: &serde_json::Value) -> Option<Anti
 /// Remaining percent from a quota entry: `remainingFraction` (0-1),
 /// `remainingPercent` (0-100), or an inverted used signal. `None` when the
 /// entry carries no quota signal at all.
-pub(crate) fn antigravity_remaining_from_entry(entry: &serde_json::Value) -> Option<u8> {
+pub fn antigravity_remaining_from_entry(entry: &serde_json::Value) -> Option<u8> {
     let quota = entry.get("quotaInfo").unwrap_or(entry);
     for (key, is_fraction) in [
         ("remainingFraction", true),

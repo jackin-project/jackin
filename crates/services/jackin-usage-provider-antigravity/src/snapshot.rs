@@ -12,11 +12,7 @@ use super::{
     fetch_antigravity_cli_credits, fetch_antigravity_cli_usage,
 };
 
-pub(crate) fn antigravity_snapshot(
-    agent: &str,
-    provider: Option<&str>,
-    now: i64,
-) -> FocusedUsageView {
+pub fn antigravity_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsageView {
     match antigravity_cli_version() {
         Ok(_) => {}
         Err(error) => {

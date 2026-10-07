@@ -12,7 +12,7 @@ pub(crate) const ANTIGRAVITY_WEEKLY_WINDOW_SECONDS: i64 = 7 * 24 * 60 * 60;
 
 /// Identity from a `/usage` response, if present. The command may omit it; the
 /// caller must then bind the observation to its runtime, not to an account.
-pub(crate) fn antigravity_identity_from_value(value: &serde_json::Value) -> Option<String> {
+pub fn antigravity_identity_from_value(value: &serde_json::Value) -> Option<String> {
     for key in ["email", "emailAddress", "accountEmail", "userEmail", "user"] {
         if let Some(node) = value.get(key) {
             if let Some(text) = node.as_str()
@@ -35,7 +35,7 @@ pub(crate) fn antigravity_identity_from_value(value: &serde_json::Value) -> Opti
 
 /// Plan label: prefer the Google tier name over the Windsurf-inherited plan
 /// name (always "Pro" when paid, so it carries no tier signal).
-pub(crate) fn antigravity_plan_from_value(value: &serde_json::Value) -> Option<String> {
+pub fn antigravity_plan_from_value(value: &serde_json::Value) -> Option<String> {
     for key in ["userTier", "currentTier", "paidTier", "tier"] {
         if let Some(name) = value
             .get(key)
@@ -56,7 +56,7 @@ pub(crate) fn antigravity_plan_from_value(value: &serde_json::Value) -> Option<S
         .map(humanize_plan_label)
 }
 
-pub(crate) fn antigravity_buckets(usage: &AntigravityUsage, now: i64) -> Vec<QuotaBucketView> {
+pub fn antigravity_buckets(usage: &AntigravityUsage, now: i64) -> Vec<QuotaBucketView> {
     let mut buckets = Vec::new();
     for pool in &usage.pools {
         buckets.push(antigravity_pool_bucket(pool, now));

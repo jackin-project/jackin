@@ -32,6 +32,7 @@ jackin-usage-provider-amp = { workspace = true }
 jackin-usage-provider-minimax = { workspace = true }
 jackin-usage-provider-openrouter = { workspace = true }
 jackin-usage-provider-grok = { workspace = true }
+jackin-usage-provider-antigravity = { workspace = true }
 base64 = { workspace = true }
 chrono = { workspace = true, features = ["clock"] }
 httpdate = { workspace = true }

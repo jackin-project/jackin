@@ -3650,6 +3650,7 @@ dependencies = [
  "jackin-protocol",
  "jackin-telemetry",
  "jackin-usage-provider-amp",
+ "jackin-usage-provider-antigravity",
  "jackin-usage-provider-core",
  "jackin-usage-provider-grok",
  "jackin-usage-provider-kimi",
@@ -3696,6 +3697,17 @@ dependencies = [
  "jackin-telemetry",
  "jackin-usage-provider-core",
  "reqwest",
+ "serde_json",
+]
+
+[[package]]
+name = "jackin-usage-provider-antigravity"
+version = "0.6.4"
+dependencies = [
+ "jackin-protocol",
+ "jackin-telemetry",
+ "jackin-usage-provider-core",
+ "serde",
  "serde_json",
 ]
 

@@ -10,7 +10,7 @@ use jackin_usage_provider_core::{bucket, json_number};
 /// explicit minor-unit amount + exponent; plain numbers stay labels so an
 /// unknown scale can never render 100× off.
 #[derive(Debug, Clone, Default)]
-pub(crate) struct AntigravityCredits {
+pub struct AntigravityCredits {
     pub(crate) used_money: Option<Money>,
     pub(crate) limit_money: Option<Money>,
     pub(crate) balance_label: Option<String>,
@@ -18,7 +18,7 @@ pub(crate) struct AntigravityCredits {
     pub(crate) remaining_percent: Option<u8>,
 }
 
-pub(crate) fn parse_antigravity_credits_output(text: &str) -> Result<AntigravityCredits, String> {
+pub fn parse_antigravity_credits_output(text: &str) -> Result<AntigravityCredits, String> {
     let value: serde_json::Value = serde_json::from_str(text.trim())
         .map_err(|_| "Antigravity /credits output was not recognized".to_owned())?;
     let node = value.get("credits").unwrap_or(&value);
@@ -85,7 +85,7 @@ pub(crate) fn parse_antigravity_credits_output(text: &str) -> Result<Antigravity
     })
 }
 
-pub(crate) fn antigravity_credits_bucket(credits: &AntigravityCredits) -> Option<QuotaBucketView> {
+pub fn antigravity_credits_bucket(credits: &AntigravityCredits) -> Option<QuotaBucketView> {
     if credits.used_money.is_none()
         && credits.limit_money.is_none()
         && credits.balance_label.is_none()

@@ -10,17 +10,17 @@ use super::{
 };
 
 /// Minimum `agy` version with read-only `/usage|/credits --output-format json`.
-pub(crate) const ANTIGRAVITY_MIN_JSON_VERSION: (u64, u64, u64) = (1, 1, 11);
+pub const ANTIGRAVITY_MIN_JSON_VERSION: (u64, u64, u64) = (1, 1, 11);
 
 /// macOS Keychain service holding the Antigravity OAuth grant singleton.
 /// Discovery probes its *presence* only (never the payload): the CLI owns
 /// the secret, jackin only shells out to it.
-pub(crate) const ANTIGRAVITY_KEYCHAIN_SERVICE: &str = "gemini";
+pub const ANTIGRAVITY_KEYCHAIN_SERVICE: &str = "gemini";
 
 /// Parse `agy --version` output into `(major, minor, patch)`. Accepts a bare
 /// `1.2.5` or a decorated line (`agy version 1.2.5 (build …)`); `None` when no
 /// `N.N.N` triple is present.
-pub(crate) fn parse_agy_version(text: &str) -> Option<(u64, u64, u64)> {
+pub fn parse_agy_version(text: &str) -> Option<(u64, u64, u64)> {
     text.split(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '.' || ch == '-'))
         .find_map(|part| {
             let mut segments = part.split('.');
@@ -42,13 +42,13 @@ pub(crate) fn parse_agy_version(text: &str) -> Option<(u64, u64, u64)> {
 }
 
 /// True when `version` supports the official JSON usage commands.
-pub(crate) fn agy_version_supports_json(version: (u64, u64, u64)) -> bool {
+pub fn agy_version_supports_json(version: (u64, u64, u64)) -> bool {
     version >= ANTIGRAVITY_MIN_JSON_VERSION
 }
 
 /// Probe `agy --version` and enforce the JSON gate. `Err` carries the exact
 /// non-secret reason (binary missing, unparseable version, too old).
-pub(crate) fn antigravity_cli_version() -> Result<(u64, u64, u64), String> {
+pub fn antigravity_cli_version() -> Result<(u64, u64, u64), String> {
     let text = run_cli_with_timeout("agy", &["--version"], PROVIDER_CLI_TIMEOUT)
         .map_err(|error| format!("Antigravity CLI unavailable: {error}"))?;
     let version = parse_agy_version(&text)
@@ -62,7 +62,7 @@ pub(crate) fn antigravity_cli_version() -> Result<(u64, u64, u64), String> {
     Ok(version)
 }
 
-pub(crate) fn fetch_antigravity_cli_usage() -> Result<AntigravityUsage, String> {
+pub fn fetch_antigravity_cli_usage() -> Result<AntigravityUsage, String> {
     antigravity_cli_version()?;
     let output = run_cli_with_timeout(
         "agy",
@@ -73,7 +73,7 @@ pub(crate) fn fetch_antigravity_cli_usage() -> Result<AntigravityUsage, String> 
     parse_antigravity_usage_output(&output)
 }
 
-pub(crate) fn fetch_antigravity_cli_credits() -> Result<AntigravityCredits, String> {
+pub fn fetch_antigravity_cli_credits() -> Result<AntigravityCredits, String> {
     antigravity_cli_version()?;
     let output = run_cli_with_timeout(
         "agy",

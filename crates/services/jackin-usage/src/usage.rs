@@ -12,7 +12,6 @@
 //! details stay here so status chrome and dialogs render strings, not API
 //! branches.
 
-mod antigravity;
 mod claude;
 mod codex;
 mod credential_snapshots;
@@ -26,18 +25,6 @@ use std::fs;
 
 use std::path::{Path, PathBuf};
 
-#[expect(
-    unused_imports,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
-pub(crate) use self::antigravity::{
-    ANTIGRAVITY_KEYCHAIN_SERVICE, ANTIGRAVITY_MIN_JSON_VERSION, AntigravityCredits,
-    AntigravityFamily, AntigravityPool, AntigravityUsage, AntigravityWindow,
-    agy_version_supports_json, antigravity_buckets, antigravity_cli_version,
-    antigravity_credits_bucket, antigravity_identity_from_value, antigravity_plan_from_value,
-    antigravity_snapshot, fetch_antigravity_cli_credits, fetch_antigravity_cli_usage,
-    parse_agy_version, parse_antigravity_credits_output, parse_antigravity_usage_output,
-};
 #[cfg(any(target_os = "macos", test))]
 pub(crate) use self::claude::classify_claude_keychain_status;
 #[expect(
@@ -139,6 +126,18 @@ pub(crate) use jackin_usage_provider_amp::{
     AmpRenewal, AmpSubscription, AmpSubscriptionKind, AmpSuccessContext, AmpUsage,
     AmpWorkspaceBalance, amp_api_key_snapshot, amp_snapshot, amp_view_from_usage,
     fetch_amp_api_usage, fetch_amp_cli_usage, load_amp_api_key, parse_amp_usage_output,
+};
+#[expect(
+    unused_imports,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
+pub(crate) use jackin_usage_provider_antigravity::{
+    ANTIGRAVITY_KEYCHAIN_SERVICE, ANTIGRAVITY_MIN_JSON_VERSION, AntigravityCredits,
+    AntigravityFamily, AntigravityPool, AntigravityUsage, AntigravityWindow,
+    agy_version_supports_json, antigravity_buckets, antigravity_cli_version,
+    antigravity_credits_bucket, antigravity_identity_from_value, antigravity_plan_from_value,
+    antigravity_snapshot, fetch_antigravity_cli_credits, fetch_antigravity_cli_usage,
+    parse_agy_version, parse_antigravity_credits_output, parse_antigravity_usage_output,
 };
 #[expect(
     unused_imports,
