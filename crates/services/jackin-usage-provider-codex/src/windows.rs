@@ -17,7 +17,7 @@ impl CodexUsageResponse {
             .or_else(|| self.spend_control.as_ref()?.individual_limit.as_ref())
     }
 
-    pub(crate) fn buckets(&self, now: i64) -> Vec<QuotaBucketView> {
+    pub fn buckets(&self, now: i64) -> Vec<QuotaBucketView> {
         let mut buckets = Vec::new();
         if let Some(rate_limit) = &self.rate_limit {
             let primary = rate_limit.primary_window.as_ref();
@@ -175,10 +175,10 @@ pub(crate) fn codex_money_value(value: &serde_json::Value) -> Option<Money> {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct CodexResetCredits {
-    pub(crate) credits: Vec<CodexResetCredit>,
+pub struct CodexResetCredits {
+    pub credits: Vec<CodexResetCredit>,
     #[serde(rename = "available_count")]
-    pub(crate) available_count: i64,
+    pub available_count: i64,
 }
 
 impl CodexResetCredits {
@@ -210,13 +210,13 @@ impl CodexResetCredits {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct CodexResetCredit {
-    pub(crate) status: Option<String>,
+pub struct CodexResetCredit {
+    pub status: Option<String>,
     #[serde(rename = "expires_at")]
-    pub(crate) expires_at: Option<String>,
+    pub expires_at: Option<String>,
 }
 
-pub(crate) fn push_codex_window(
+pub fn push_codex_window(
     buckets: &mut Vec<QuotaBucketView>,
     label: &str,
     slot: Option<StatusSlot>,

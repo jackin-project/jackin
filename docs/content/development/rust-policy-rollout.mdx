@@ -1245,3 +1245,69 @@ passes.
 - Raw outputs:
   `/tmp/s9-cursor-{nextest,gaps,alint,
   lint2}.txt` (kept out of the repo).
+
+### Split 12: usage-provider-codex extraction (V9)
+
+- `jackin-usage` -> `jackin-usage` +
+  `jackin-usage-provider-codex` (T3 leaf:
+  `usage/codex.rs` -> `lib.rs` re-export
+  root + `credentials`, `endpoints`,
+  `oauth`, `rpc`, `rpc_types`,
+  `snapshot`, `types`, `views`,
+  `windows`, `tests/case_01` +
+  `tests/main.rs` placeholder;
+  `lib.rs` carries the ownership header).
+  `usage.rs` re-exports the vendor surface
+  from the new crate. Visibility deltas:
+  field promotions on the RPC/test-harness
+  surface (`CodexOAuthCredentials::{access_token,
+  account_id,account_label,refresh_token}`,
+  `CodexRpcUsage::{response,account_label}`,
+  `CodexUsageResponse::{reset_credits,plan_type}`,
+  `CodexResetCredits::{credits,available_count}`,
+  `CodexResetCredit::{status,expires_at}`)
+  plus the three `from_rpc` adapters,
+  `buckets`, and `used_percent_clamped`;
+  `#[derive(Debug)]` on `CodexRpcUsage`
+  (carries no live secrets); a
+  `test-support` feature (the diagnostics
+  pattern) exposes
+  `load_codex_oauth_credentials` to the
+  staying `usage/tests` harness, and the
+  harness shim regains `fs`, `Path`, and
+  `base64::Engine` for the case files that
+  never moved.
+- Verify: `cargo check --locked --workspace
+  --all-targets` green; `cargo fmt --all
+  --check` clean; `cargo clippy` 0 errors,
+  warnings identical to base (xtask 1,
+  runtime 7). `cargo nextest list
+  --workspace --all-targets`: 7272 ->
+  7272, bijection exact (4 codex tests
+  move `jackin-usage usage::codex::` ->
+  `jackin-usage-provider-codex` root;
+  zero dropped, zero added).
+  `nextest run`: 526/526 usage + 4/4
+  codex. The provider-call contract
+  fixture remaps 8 entries to the new
+  crate path (entries stay 33, symbols
+  identical) and the suite is green.
+  `alint check`: 198 -> 198,
+  byte-identical. `check-gaps`: 28 -> 28
+  (usage `SIZE-001` 38513 -> 36970
+  lines, `SIZE-002` 250 -> 238 files;
+  xtask +1 line for the tier row);
+  `GAP-TEST-001/002/003` stay 0/0/0.
+  `ratchet.toml`: +3 codex rows
+  (agent-doc 1635, `cast_sign_loss` 1,
+  `disallowed_methods` 2), 2 usage
+  shrinks (cast 6 -> 5, the
+  `disallowed_methods` row deleted now
+  that codex owns both sites); owed rows
+  61 -> 61 with zero new failures. `lint
+  arch`: missing tiers stay 3, zero
+  direction violations; `lint headers`
+  stays at the base 2.
+- Raw outputs:
+  `/tmp/s9-codex-{nextest,gaps,alint,
+  lint3}.txt` (kept out of the repo).

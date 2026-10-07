@@ -15,7 +15,7 @@ use super::{
     resolve_codex_usage_url,
 };
 
-pub(crate) fn fetch_codex_oauth_usage(
+pub fn fetch_codex_oauth_usage(
     credentials: &CodexOAuthCredentials,
     codex_home: &Path,
 ) -> Result<CodexUsageResponse, ProviderHttpError> {
@@ -38,7 +38,7 @@ pub(crate) fn fetch_codex_oauth_usage(
 
 /// Body for the `refresh_token` grant. Pure so the request shape is unit-tested
 /// without a live endpoint.
-pub(crate) fn codex_refresh_request_body(refresh_token: &str) -> serde_json::Value {
+pub fn codex_refresh_request_body(refresh_token: &str) -> serde_json::Value {
     serde_json::json!({
         "client_id": CODEX_OAUTH_CLIENT_ID,
         "grant_type": "refresh_token",
@@ -48,7 +48,7 @@ pub(crate) fn codex_refresh_request_body(refresh_token: &str) -> serde_json::Val
 }
 
 /// Extract the re-minted access token from a token-endpoint response. Pure.
-pub(crate) fn codex_access_token_from_response(value: &serde_json::Value) -> Option<String> {
+pub fn codex_access_token_from_response(value: &serde_json::Value) -> Option<String> {
     value
         .get("access_token")
         .and_then(serde_json::Value::as_str)
@@ -57,7 +57,7 @@ pub(crate) fn codex_access_token_from_response(value: &serde_json::Value) -> Opt
         .map(str::to_owned)
 }
 
-pub(crate) fn refresh_codex_access_token(refresh_token: &str) -> Result<String, ProviderHttpError> {
+pub fn refresh_codex_access_token(refresh_token: &str) -> Result<String, ProviderHttpError> {
     provider_request(
         jackin_telemetry::schema::enums::ProviderName::Openai,
         "POST",
@@ -109,7 +109,7 @@ pub(crate) fn refresh_codex_access_token(refresh_token: &str) -> Result<String, 
 /// for this read-only fetch and deliberately NOT written back to `auth.json`
 /// (avoiding any risk of corrupting the operator's live credential file); the
 /// CLI re-mints and persists its own copy on next launch.
-pub(crate) fn fetch_codex_oauth_usage_refreshing(
+pub fn fetch_codex_oauth_usage_refreshing(
     credentials: &CodexOAuthCredentials,
     codex_home: &Path,
 ) -> Result<CodexUsageResponse, ProviderError> {
@@ -136,7 +136,7 @@ pub(crate) fn fetch_codex_oauth_usage_refreshing(
     }
 }
 
-pub(crate) fn fetch_codex_oauth_reset_credits(
+pub fn fetch_codex_oauth_reset_credits(
     credentials: &CodexOAuthCredentials,
     codex_home: &Path,
 ) -> Result<CodexResetCredits, ProviderHttpError> {

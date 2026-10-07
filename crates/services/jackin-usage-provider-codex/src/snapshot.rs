@@ -2,12 +2,16 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `Codex` identity and profile snapshots.
 
-use super::super::*;
+use jackin_protocol::control::{
+    FocusedUsageView, UsageConfidence, UsageSnapshotStatus, UsageSource,
+};
+use jackin_telemetry::ResultTelemetryExt as _;
 use jackin_usage_provider_core::{
     CODEX_HANDOFF_AUTH_PATH, ProviderError, ProviderRateLimit, UsageSurface, UsageViewInput,
     bucket, env_dir_or_home, humanize_words_with, read_json_file, split_provider_fetch,
     titlecase_ascii, usage_error_is_unauthorized, usage_view,
 };
+use std::path::{Path, PathBuf};
 
 use super::{
     CodexOAuthCredentials, codex_oauth_from_value, fetch_codex_oauth_reset_credits,
@@ -16,7 +20,7 @@ use super::{
 
 /// Codex auth credential candidates (home auth first, forwarded handoff last) —
 /// shared by `codex_snapshot` and `codex_account_identity`.
-pub(crate) fn codex_auth_candidates(codex_home: &Path) -> [PathBuf; 2] {
+pub fn codex_auth_candidates(codex_home: &Path) -> [PathBuf; 2] {
     [
         codex_home.join("auth.json"),
         PathBuf::from(CODEX_HANDOFF_AUTH_PATH),
@@ -25,7 +29,7 @@ pub(crate) fn codex_auth_candidates(codex_home: &Path) -> [PathBuf; 2] {
 
 /// Codex account identity (`account_id`, else the account label) from the same
 /// auth candidates `codex_snapshot` uses, without fetching usage.
-pub(crate) fn codex_account_identity() -> Option<String> {
+pub fn codex_account_identity() -> Option<String> {
     let codex_home = env_dir_or_home("CODEX_HOME", ".codex");
     codex_auth_candidates(&codex_home).iter().find_map(|path| {
         let creds = codex_oauth_from_value(&read_json_file(path)?)?;
@@ -38,7 +42,7 @@ pub(crate) fn codex_account_identity() -> Option<String> {
 /// variants → `Pro 5x`, machine identifiers humanized (`enterprise_cbp_usage_based`
 /// → `Enterprise CBP Usage Based`), already-readable text preserved. Returns
 /// `None` for blank input so an unknown plan is omitted, never shown as `pro`.
-pub(crate) fn codex_plan_display_name(raw: &str) -> Option<String> {
+pub fn codex_plan_display_name(raw: &str) -> Option<String> {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
         return None;
@@ -72,7 +76,7 @@ pub(crate) fn codex_plan_display_name(raw: &str) -> Option<String> {
     Some(formatted)
 }
 
-pub(crate) fn codex_plan_exact_display(value: &str) -> Option<String> {
+pub fn codex_plan_exact_display(value: &str) -> Option<String> {
     match value.to_ascii_lowercase().as_str() {
         "pro" => Some("Pro 20x".to_owned()),
         "prolite" | "pro_lite" | "pro-lite" | "pro lite" => Some("Pro 5x".to_owned()),
@@ -80,7 +84,7 @@ pub(crate) fn codex_plan_exact_display(value: &str) -> Option<String> {
     }
 }
 
-pub(crate) fn codex_plan_word_display(raw: &str) -> String {
+pub fn codex_plan_word_display(raw: &str) -> String {
     let lower = raw.to_ascii_lowercase();
     if matches!(lower.as_str(), "cbp" | "k12") {
         return lower.to_ascii_uppercase();
@@ -94,7 +98,7 @@ pub(crate) fn codex_plan_word_display(raw: &str) -> String {
 
 /// Read-only explicit-profile probe used by host discovery. It intentionally
 /// does not refresh or rewrite `auth.json`; the agent remains credential owner.
-pub(crate) fn codex_profile_snapshot(
+pub fn codex_profile_snapshot(
     agent: &str,
     credentials: &CodexOAuthCredentials,
     codex_home: &Path,
@@ -103,7 +107,7 @@ pub(crate) fn codex_profile_snapshot(
     codex_profile_snapshot_with_rate_limit(agent, credentials, codex_home, now).0
 }
 
-pub(crate) fn codex_profile_snapshot_with_rate_limit(
+pub fn codex_profile_snapshot_with_rate_limit(
     agent: &str,
     credentials: &CodexOAuthCredentials,
     codex_home: &Path,

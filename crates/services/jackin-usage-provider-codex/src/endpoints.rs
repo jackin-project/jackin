@@ -2,10 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `Codex` endpoint resolution.
 
-use super::super::*;
+use jackin_telemetry::ResultTelemetryExt as _;
 use jackin_usage_provider_core::parse_chatgpt_base_url;
+use std::fs;
+use std::path::Path;
 
-pub(crate) fn resolve_codex_usage_url(codex_home: &Path) -> String {
+pub fn resolve_codex_usage_url(codex_home: &Path) -> String {
     let normalized = resolve_codex_base_url(codex_home);
     let path = if normalized.contains("/backend-api") {
         "/wham/usage"
@@ -15,14 +17,14 @@ pub(crate) fn resolve_codex_usage_url(codex_home: &Path) -> String {
     format!("{normalized}{path}")
 }
 
-pub(crate) fn resolve_codex_reset_credits_url(codex_home: &Path) -> String {
+pub fn resolve_codex_reset_credits_url(codex_home: &Path) -> String {
     format!(
         "{}/wham/rate-limit-reset-credits",
         resolve_codex_base_url(codex_home)
     )
 }
 
-pub(crate) fn resolve_codex_base_url(codex_home: &Path) -> String {
+pub fn resolve_codex_base_url(codex_home: &Path) -> String {
     let config_path = codex_home.join("config.toml");
     let contents = match fs::read_to_string(&config_path) {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,

@@ -34,6 +34,7 @@ jackin-usage-provider-openrouter = { workspace = true }
 jackin-usage-provider-grok = { workspace = true }
 jackin-usage-provider-antigravity = { workspace = true }
 jackin-usage-provider-cursor = { workspace = true }
+jackin-usage-provider-codex = { workspace = true }
 base64 = { workspace = true }
 chrono = { workspace = true, features = ["clock"] }
 httpdate = { workspace = true }
@@ -61,6 +62,7 @@ criterion = { workspace = true, features = ["html_reports"] }
 jackin-console = { workspace = true }
 jackin-diagnostics = { workspace = true, features = ["test-support"] }
 jackin-otlp-testbed = { workspace = true }
+jackin-usage-provider-codex = { workspace = true, features = ["test-support"] }
 ratatui = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread"] }

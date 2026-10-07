@@ -13,16 +13,13 @@
 //! branches.
 
 mod claude;
-mod codex;
 mod credential_snapshots;
 mod gemini;
 mod hermes;
 mod muse;
 mod opencode;
 
-use std::fs;
-
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 #[cfg(any(target_os = "macos", test))]
 pub(crate) use self::claude::classify_claude_keychain_status;
@@ -51,27 +48,6 @@ pub(crate) use self::claude::{
     run_claude_usage_diagnostic_with,
 };
 pub use self::claude::{ClaudeUsageDiagnostic, run_claude_usage_diagnostic};
-#[cfg(test)]
-pub(crate) use self::codex::load_codex_oauth_credentials;
-#[expect(
-    unused_imports,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
-pub(crate) use self::codex::{
-    CodexAdditionalRateLimit, CodexCreditDetails, CodexIndividualLimit, CodexOAuthCredentials,
-    CodexRateLimitDetails, CodexResetCredit, CodexResetCredits, CodexRpcAccountDetails,
-    CodexRpcAccountResponse, CodexRpcCredits, CodexRpcLimitEntry, CodexRpcRateLimitWindow,
-    CodexRpcRateLimits, CodexRpcRateLimitsResponse, CodexRpcResetCredits, CodexRpcUsage,
-    CodexSpendControl, CodexUsageResponse, CodexWindowSnapshot, codex_access_token_from_response,
-    codex_account_identity, codex_account_label_from_id_token, codex_auth_candidates,
-    codex_oauth_from_value, codex_plan_display_name, codex_plan_exact_display,
-    codex_plan_word_display, codex_profile_snapshot, codex_profile_snapshot_with_rate_limit,
-    codex_refresh_request_body, codex_rpc_notification, codex_rpc_request, codex_snapshot,
-    decode_codex_rpc_usage, fetch_codex_oauth_reset_credits, fetch_codex_oauth_usage,
-    fetch_codex_oauth_usage_refreshing, fetch_codex_rpc_usage, push_codex_window,
-    refresh_codex_access_token, resolve_codex_base_url, resolve_codex_reset_credits_url,
-    resolve_codex_usage_url,
-};
 pub use self::credential_snapshots::provider_credential_snapshot;
 pub(crate) use self::credential_snapshots::provider_credential_snapshot_with_rate_limit;
 #[expect(
@@ -87,14 +63,12 @@ pub(crate) use self::gemini::{
 pub(crate) use self::opencode::opencode_profile_snapshot;
 #[cfg(test)]
 pub(crate) use self::opencode::{load_opencode_api_key, parse_opencode_usage};
-use base64::Engine as _;
 use jackin_protocol::control::{
     FocusedAccountHeader, FocusedUsageView, QuotaBucketView, StatusSlot, UsageConfidence,
     UsageSnapshotStatus, UsageSource,
 };
 #[cfg(test)]
 use jackin_protocol::control::{UsageProviderTab, UsageSeverity};
-use jackin_telemetry::ResultTelemetryExt as _;
 #[expect(
     unused_imports,
     reason = "documented residual allow; prefer expect when site is lint-true"
@@ -115,6 +89,27 @@ pub(crate) use jackin_usage_provider_antigravity::{
     antigravity_credits_bucket, antigravity_identity_from_value, antigravity_plan_from_value,
     antigravity_snapshot, fetch_antigravity_cli_credits, fetch_antigravity_cli_usage,
     parse_agy_version, parse_antigravity_credits_output, parse_antigravity_usage_output,
+};
+#[cfg(test)]
+pub(crate) use jackin_usage_provider_codex::load_codex_oauth_credentials;
+#[expect(
+    unused_imports,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
+pub(crate) use jackin_usage_provider_codex::{
+    CodexAdditionalRateLimit, CodexCreditDetails, CodexIndividualLimit, CodexOAuthCredentials,
+    CodexRateLimitDetails, CodexResetCredit, CodexResetCredits, CodexRpcAccountDetails,
+    CodexRpcAccountResponse, CodexRpcCredits, CodexRpcLimitEntry, CodexRpcRateLimitWindow,
+    CodexRpcRateLimits, CodexRpcRateLimitsResponse, CodexRpcResetCredits, CodexRpcUsage,
+    CodexSpendControl, CodexUsageResponse, CodexWindowSnapshot, codex_access_token_from_response,
+    codex_account_identity, codex_account_label_from_id_token, codex_auth_candidates,
+    codex_oauth_from_value, codex_plan_display_name, codex_plan_exact_display,
+    codex_plan_word_display, codex_profile_snapshot, codex_profile_snapshot_with_rate_limit,
+    codex_refresh_request_body, codex_rpc_notification, codex_rpc_request, codex_snapshot,
+    decode_codex_rpc_usage, fetch_codex_oauth_reset_credits, fetch_codex_oauth_usage,
+    fetch_codex_oauth_usage_refreshing, fetch_codex_rpc_usage, push_codex_window,
+    refresh_codex_access_token, resolve_codex_base_url, resolve_codex_reset_credits_url,
+    resolve_codex_usage_url,
 };
 #[expect(
     unused_imports,

@@ -10,16 +10,16 @@ use jackin_usage_provider_core::{json_number, window_minutes_label};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct CodexUsageResponse {
+pub struct CodexUsageResponse {
     #[serde(rename = "plan_type")]
-    pub(crate) plan_type: Option<String>,
+    pub plan_type: Option<String>,
     #[serde(rename = "rate_limit")]
     pub(crate) rate_limit: Option<CodexRateLimitDetails>,
     pub(crate) credits: Option<CodexCreditDetails>,
     #[serde(rename = "additional_rate_limits")]
     pub(crate) additional_rate_limits: Option<Vec<CodexAdditionalRateLimit>>,
     #[serde(skip)]
-    pub(crate) reset_credits: Option<CodexResetCredits>,
+    pub reset_credits: Option<CodexResetCredits>,
     #[serde(default)]
     pub(crate) individual_limit: Option<CodexIndividualLimit>,
     #[serde(default)]
@@ -27,13 +27,13 @@ pub(crate) struct CodexUsageResponse {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub(crate) struct CodexSpendControl {
+pub struct CodexSpendControl {
     #[serde(default)]
     pub(crate) individual_limit: Option<CodexIndividualLimit>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub(crate) struct CodexIndividualLimit {
+pub struct CodexIndividualLimit {
     pub(crate) limit: Option<serde_json::Value>,
     pub(crate) used: Option<serde_json::Value>,
     #[serde(rename = "remaining_percent")]
@@ -43,7 +43,7 @@ pub(crate) struct CodexIndividualLimit {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct CodexRateLimitDetails {
+pub struct CodexRateLimitDetails {
     #[serde(rename = "primary_window")]
     pub(crate) primary_window: Option<CodexWindowSnapshot>,
     #[serde(rename = "secondary_window")]
@@ -51,7 +51,7 @@ pub(crate) struct CodexRateLimitDetails {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct CodexWindowSnapshot {
+pub struct CodexWindowSnapshot {
     // Untyped so a float/string `used_percent` degrades to a used-less window
     // instead of failing the whole response decode (wham shape drift).
     #[serde(rename = "used_percent")]
@@ -70,7 +70,7 @@ pub(crate) struct CodexWindowSnapshot {
 }
 
 impl CodexWindowSnapshot {
-    pub(crate) fn from_rpc(window: CodexRpcRateLimitWindow) -> Self {
+    pub fn from_rpc(window: CodexRpcRateLimitWindow) -> Self {
         Self {
             used_percent: window.used_percent.map(|used| {
                 let bounded = used.round().clamp(0.0, 100.0);
@@ -93,7 +93,7 @@ impl CodexWindowSnapshot {
 
     /// Used percent rounded and clamped to `0..=100`; `None` when the server
     /// sent no usable number (missing, float drift handled, strings parsed).
-    pub(crate) fn used_percent_clamped(&self) -> Option<u8> {
+    pub fn used_percent_clamped(&self) -> Option<u8> {
         let used = self.used_percent_raw()?;
         #[expect(clippy::cast_sign_loss, reason = "clamped to 0.0..=100.0")]
         Some(used.clamp(0.0, 100.0) as u8)
@@ -131,7 +131,7 @@ impl CodexWindowSnapshot {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct CodexCreditDetails {
+pub struct CodexCreditDetails {
     #[serde(rename = "has_credits")]
     pub(crate) has_credits: Option<bool>,
     pub(crate) unlimited: Option<bool>,
@@ -139,7 +139,7 @@ pub(crate) struct CodexCreditDetails {
 }
 
 impl CodexCreditDetails {
-    pub(crate) fn from_rpc(credits: CodexRpcCredits) -> Self {
+    pub fn from_rpc(credits: CodexRpcCredits) -> Self {
         Self {
             has_credits: Some(credits.has_credits),
             unlimited: Some(credits.unlimited),

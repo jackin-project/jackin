@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 
 use super::{CodexRpcAccountResponse, CodexRpcRateLimitsResponse, CodexRpcUsage};
 
-pub(crate) fn decode_codex_rpc_usage(
+pub fn decode_codex_rpc_usage(
     limits_value: serde_json::Value,
     account_value: Option<serde_json::Value>,
 ) -> Result<CodexRpcUsage, ProviderError> {
@@ -30,7 +30,7 @@ pub(crate) fn decode_codex_rpc_usage(
     Ok(CodexRpcUsage::from_rpc(limits, account))
 }
 
-pub(crate) fn fetch_codex_rpc_usage(
+pub fn fetch_codex_rpc_usage(
     gate: &mut ManagedCliLaunchGate,
 ) -> Result<CodexRpcUsage, ProviderError> {
     gate.can_launch("Codex app-server", Instant::now())?;
@@ -122,7 +122,7 @@ pub(crate) fn fetch_codex_rpc_usage(
     result
 }
 
-pub(crate) fn codex_rpc_request(
+pub fn codex_rpc_request(
     stdin: &mut impl Write,
     rx: &mpsc::Receiver<String>,
     id: i64,
@@ -179,7 +179,7 @@ pub(crate) fn codex_rpc_request(
     result
 }
 
-pub(crate) fn codex_rpc_notification(stdin: &mut impl Write, method: &str) -> Result<(), String> {
+pub fn codex_rpc_notification(stdin: &mut impl Write, method: &str) -> Result<(), String> {
     let operation = external_rpc_operation(
         jackin_telemetry::schema::enums::RpcSystemName::CodexAppServer,
         method,

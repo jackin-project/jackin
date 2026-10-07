@@ -39,6 +39,7 @@ members = [
     "crates/services/jackin-usage-provider-grok",
     "crates/services/jackin-usage-provider-antigravity",
     "crates/services/jackin-usage-provider-cursor",
+    "crates/services/jackin-usage-provider-codex",
     "crates/testing/jackin-otlp-testbed",
     "crates/testing/jackin-test-support",
     "crates/tools/jackin-dev",
@@ -120,6 +121,7 @@ jackin-usage-provider-openrouter = { version = "0.6.4", path = "crates/services/
 jackin-usage-provider-grok = { version = "0.6.4", path = "crates/services/jackin-usage-provider-grok" }
 jackin-usage-provider-antigravity = { version = "0.6.4", path = "crates/services/jackin-usage-provider-antigravity" }
 jackin-usage-provider-cursor = { version = "0.6.4", path = "crates/services/jackin-usage-provider-cursor" }
+jackin-usage-provider-codex = { version = "0.6.4", path = "crates/services/jackin-usage-provider-codex" }
 nix = "0.31"
 rustix = { version = "=1.1.4", features = ["fs"] }
 opentelemetry_sdk = "0.32"

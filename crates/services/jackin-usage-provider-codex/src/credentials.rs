@@ -2,18 +2,22 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `Codex` OAuth credential loading.
 
-use super::super::*;
+use base64::Engine as _;
 use jackin_usage_provider_core::first_string_key;
+#[cfg(any(test, feature = "test-support"))]
+use jackin_usage_provider_core::read_json_file;
+#[cfg(any(test, feature = "test-support"))]
+use std::path::Path;
 
 #[derive(Clone)]
-pub(crate) struct CodexOAuthCredentials {
-    pub(crate) access_token: String,
-    pub(crate) account_id: Option<String>,
-    pub(crate) account_label: Option<String>,
+pub struct CodexOAuthCredentials {
+    pub access_token: String,
+    pub account_id: Option<String>,
+    pub account_label: Option<String>,
     /// OAuth refresh token, when present, used to re-mint a rejected
     /// `access_token` in place for a single retry (see
     /// `fetch_codex_oauth_usage_refreshing`).
-    pub(crate) refresh_token: Option<String>,
+    pub refresh_token: Option<String>,
 }
 
 impl std::fmt::Debug for CodexOAuthCredentials {
@@ -22,12 +26,12 @@ impl std::fmt::Debug for CodexOAuthCredentials {
     }
 }
 
-#[cfg(test)]
-pub(crate) fn load_codex_oauth_credentials(path: &Path) -> Option<CodexOAuthCredentials> {
+#[cfg(any(test, feature = "test-support"))]
+pub fn load_codex_oauth_credentials(path: &Path) -> Option<CodexOAuthCredentials> {
     codex_oauth_from_value(&read_json_file(path)?)
 }
 
-pub(crate) fn codex_oauth_from_value(value: &serde_json::Value) -> Option<CodexOAuthCredentials> {
+pub fn codex_oauth_from_value(value: &serde_json::Value) -> Option<CodexOAuthCredentials> {
     if let Some(api_key) = value
         .get("OPENAI_API_KEY")
         .and_then(serde_json::Value::as_str)
@@ -87,7 +91,7 @@ pub(crate) fn codex_oauth_from_value(value: &serde_json::Value) -> Option<CodexO
     })
 }
 
-pub(crate) fn codex_account_label_from_id_token(token: &str) -> Option<String> {
+pub fn codex_account_label_from_id_token(token: &str) -> Option<String> {
     let payload = token.split('.').nth(1)?;
     let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
         .decode(payload)

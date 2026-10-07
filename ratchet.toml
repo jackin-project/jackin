@@ -76,10 +76,13 @@ key = "clippy::cast_sign_loss@jackin-launch"
 bound = 9
 [[family.entry]]
 key = "clippy::cast_sign_loss@jackin-usage"
-bound = 6
+bound = 5
 [[family.entry]]
 key = "clippy::cast_sign_loss@jackin-usage-provider-cursor"
 bound = 6
+[[family.entry]]
+key = "clippy::cast_sign_loss@jackin-usage-provider-codex"
+bound = 1
 [[family.entry]]
 key = "clippy::cast_sign_loss@jackin-usage-provider-antigravity"
 bound = 4
@@ -147,14 +150,14 @@ bound = 6
 key = "clippy::disallowed_methods@jackin-test-support"
 bound = 5
 [[family.entry]]
-key = "clippy::disallowed_methods@jackin-usage"
-bound = 2
-[[family.entry]]
 key = "clippy::disallowed_methods@jackin-usage-provider-core"
 bound = 2
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-usage-provider-openrouter"
 bound = 1
+[[family.entry]]
+key = "clippy::disallowed_methods@jackin-usage-provider-codex"
+bound = 2
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-xtask"
 bound = 4
@@ -673,6 +676,9 @@ bound = 1338
 [[family.entry]]
 key = "crates/services/jackin-usage-provider-cursor/README.md"
 bound = 1636
+[[family.entry]]
+key = "crates/services/jackin-usage-provider-codex/README.md"
+bound = 1635
 [[family.entry]]
 key = "crates/tools/jackin-xtask/README.md"
 bound = 6113

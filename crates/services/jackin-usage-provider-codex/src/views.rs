@@ -2,7 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `Codex` main snapshot view builder.
 
-use super::super::*;
+use jackin_protocol::control::{
+    FocusedUsageView, UsageConfidence, UsageSnapshotStatus, UsageSource,
+};
+use jackin_telemetry::ResultTelemetryExt as _;
 use jackin_usage_provider_core::{
     ManagedCliLaunchGate, UsageSurface, UsageViewInput, bucket, codex_account_from_value,
     env_dir_or_home, oauth_origin, resolve_identity, split_provider_fetch,
@@ -14,7 +17,7 @@ use super::{
     fetch_codex_oauth_reset_credits, fetch_codex_oauth_usage_refreshing, fetch_codex_rpc_usage,
 };
 
-pub(crate) fn codex_snapshot(
+pub fn codex_snapshot(
     agent: &str,
     provider: Option<&str>,
     now: i64,

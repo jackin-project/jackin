@@ -10,7 +10,7 @@ use serde::Deserialize;
 use std::collections::BTreeMap;
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct CodexAdditionalRateLimit {
+pub struct CodexAdditionalRateLimit {
     #[serde(rename = "limit_name")]
     pub(crate) limit_name: Option<String>,
     #[serde(rename = "metered_feature")]
@@ -20,13 +20,13 @@ pub(crate) struct CodexAdditionalRateLimit {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct CodexRpcAccountResponse {
+pub struct CodexRpcAccountResponse {
     pub(crate) account: Option<CodexRpcAccountDetails>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type")]
-pub(crate) enum CodexRpcAccountDetails {
+pub enum CodexRpcAccountDetails {
     #[serde(rename = "apiKey")]
     ApiKey,
     #[serde(rename = "chatgpt")]
@@ -40,7 +40,7 @@ pub(crate) enum CodexRpcAccountDetails {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct CodexRpcRateLimitsResponse {
+pub struct CodexRpcRateLimitsResponse {
     // Defaulted: a server that omits the whole object (permission/capability
     // drift) still decodes, yielding no windows instead of no snapshot.
     #[serde(rename = "rateLimits", default)]
@@ -55,7 +55,7 @@ pub(crate) struct CodexRpcRateLimitsResponse {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct CodexRpcLimitEntry {
+pub struct CodexRpcLimitEntry {
     #[serde(rename = "limitId")]
     pub(crate) limit_id: Option<String>,
     #[serde(rename = "limitName")]
@@ -65,7 +65,7 @@ pub(crate) struct CodexRpcLimitEntry {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct CodexRpcResetCredits {
+pub struct CodexRpcResetCredits {
     // Defaulted: a missing count reads as zero (no bucket) rather than failing
     // the whole rate-limit decode.
     #[serde(rename = "availableCount", default)]
@@ -73,7 +73,7 @@ pub(crate) struct CodexRpcResetCredits {
 }
 
 #[derive(Debug, Default, Deserialize)]
-pub(crate) struct CodexRpcRateLimits {
+pub struct CodexRpcRateLimits {
     pub(crate) primary: Option<CodexRpcRateLimitWindow>,
     pub(crate) secondary: Option<CodexRpcRateLimitWindow>,
     pub(crate) credits: Option<CodexRpcCredits>,
@@ -82,7 +82,7 @@ pub(crate) struct CodexRpcRateLimits {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct CodexRpcRateLimitWindow {
+pub struct CodexRpcRateLimitWindow {
     // Optional: a window without a used figure still decodes (reset/duration
     // rows stay); the bucket just carries no used/remaining percent.
     #[serde(rename = "usedPercent")]
@@ -94,7 +94,7 @@ pub(crate) struct CodexRpcRateLimitWindow {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct CodexRpcCredits {
+pub struct CodexRpcCredits {
     // Defaulted: a credits object with drifted/missing flags reads as
     // no-credits (no bucket) rather than failing the whole decode.
     #[serde(rename = "hasCredits", default)]
@@ -104,13 +104,14 @@ pub(crate) struct CodexRpcCredits {
     pub(crate) balance: Option<String>,
 }
 
-pub(crate) struct CodexRpcUsage {
-    pub(crate) response: CodexUsageResponse,
-    pub(crate) account_label: Option<String>,
+#[derive(Debug)]
+pub struct CodexRpcUsage {
+    pub response: CodexUsageResponse,
+    pub account_label: Option<String>,
 }
 
 impl CodexRpcUsage {
-    pub(crate) fn from_rpc(
+    pub fn from_rpc(
         limits: CodexRpcRateLimitsResponse,
         account: Option<CodexRpcAccountResponse>,
     ) -> Self {
