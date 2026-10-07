@@ -97,7 +97,7 @@ pub(crate) fn minimax_host_label(url: &str) -> String {
         .to_owned()
 }
 
-pub(crate) fn fetch_minimax_usage(token: &str) -> Result<MiniMaxFetched, String> {
+pub fn fetch_minimax_usage(token: &str) -> Result<MiniMaxFetched, String> {
     let product = minimax_key_product(token);
     let plan = resolve_minimax_fetch_plan(product);
     let client = provider_http_client()?;
@@ -153,13 +153,13 @@ pub(crate) fn fetch_minimax_url(
     )
 }
 
-pub(crate) fn resolve_minimax_remains_urls() -> Vec<String> {
+pub fn resolve_minimax_remains_urls() -> Vec<String> {
     let override_url = env_value("MINIMAX_REMAINS_URL");
     let host = env_value("MINIMAX_API_HOST").or_else(|| env_value("MINIMAX_HOST"));
     resolve_minimax_remains_urls_from(override_url.as_deref(), host.as_deref())
 }
 
-pub(crate) fn resolve_minimax_remains_urls_from(
+pub fn resolve_minimax_remains_urls_from(
     override_url: Option<&str>,
     host: Option<&str>,
 ) -> Vec<String> {
@@ -184,7 +184,7 @@ pub(crate) fn resolve_minimax_remains_urls_from(
 
 /// Iterate URLs in order, returning the first success or the last fetch
 /// error. Extracted so fan-out order is unit-testable without provider I/O.
-pub(crate) fn first_minimax_usage<T, F>(urls: Vec<String>, mut fetch: F) -> Result<T, String>
+pub fn first_minimax_usage<T, F>(urls: Vec<String>, mut fetch: F) -> Result<T, String>
 where
     F: FnMut(&str) -> Result<T, String>,
 {
@@ -201,7 +201,7 @@ where
 /// Governed telemetry path template for a `MiniMax` remains URL. Known
 /// endpoints map to their static path; arbitrary override URLs collapse to
 /// `"/custom"` so operator-provided paths never leak into telemetry.
-pub(crate) fn minimax_operation_path(url: &str) -> &'static str {
+pub fn minimax_operation_path(url: &str) -> &'static str {
     if url.ends_with("/v1/token_plan/remains") {
         "/v1/token_plan/remains"
     } else if url.ends_with("/v1/api/openplatform/coding_plan/remains") {
@@ -213,7 +213,7 @@ pub(crate) fn minimax_operation_path(url: &str) -> &'static str {
     }
 }
 
-pub(crate) fn minimax_remains_host(value: &str) -> String {
+pub fn minimax_remains_host(value: &str) -> String {
     let normalized = normalize_url_or_host(value, "");
     let Ok(mut url) = url::Url::parse(&normalized) else {
         return normalized;
@@ -224,11 +224,7 @@ pub(crate) fn minimax_remains_host(value: &str) -> String {
     url.to_string().trim_end_matches('/').to_owned()
 }
 
-pub(crate) fn minimax_reset_epoch(
-    end: Option<i64>,
-    remains_time: Option<i64>,
-    now: i64,
-) -> Option<i64> {
+pub fn minimax_reset_epoch(end: Option<i64>, remains_time: Option<i64>, now: i64) -> Option<i64> {
     end.map(epoch_seconds_from_maybe_ms).or_else(|| {
         remains_time.map(|duration| now.saturating_add(minimax_duration_seconds(duration).max(0)))
     })

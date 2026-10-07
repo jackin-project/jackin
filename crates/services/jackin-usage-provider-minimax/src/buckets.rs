@@ -8,7 +8,7 @@ use jackin_usage_provider_core::{compact_count, timed_bucket, titlecase_ascii};
 use super::minimax_reset_epoch;
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) enum MiniMaxWindow {
+pub enum MiniMaxWindow {
     Interval,
     Weekly,
 }
@@ -26,7 +26,7 @@ pub(crate) fn minimax_window_unlimited(status: Option<i64>) -> bool {
     clippy::too_many_arguments,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
-pub(crate) fn minimax_bucket(
+pub fn minimax_bucket(
     model_name: &str,
     window: MiniMaxWindow,
     total: Option<i64>,
@@ -148,11 +148,11 @@ pub(crate) fn minimax_boost_note(boost_permille: Option<f64>) -> Option<String> 
     }
 }
 
-pub(crate) fn minimax_is_general_model(model_name: Option<&str>) -> bool {
+pub fn minimax_is_general_model(model_name: Option<&str>) -> bool {
     model_name.is_some_and(|value| value.eq_ignore_ascii_case("general"))
 }
 
-pub(crate) fn minimax_bucket_label(model_name: &str, window: MiniMaxWindow) -> String {
+pub fn minimax_bucket_label(model_name: &str, window: MiniMaxWindow) -> String {
     let model = titlecase_ascii(model_name);
     match (minimax_is_general_model(Some(model_name)), window) {
         (true, MiniMaxWindow::Interval) => "General · 5h".to_owned(),
@@ -162,7 +162,7 @@ pub(crate) fn minimax_bucket_label(model_name: &str, window: MiniMaxWindow) -> S
     }
 }
 
-pub(crate) fn minimax_usage_count_line(
+pub fn minimax_usage_count_line(
     usage: Option<i64>,
     total: Option<i64>,
     remaining_percent: Option<u8>,

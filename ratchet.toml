@@ -73,7 +73,10 @@ key = "clippy::cast_sign_loss@jackin-launch"
 bound = 9
 [[family.entry]]
 key = "clippy::cast_sign_loss@jackin-usage"
-bound = 21
+bound = 20
+[[family.entry]]
+key = "clippy::cast_sign_loss@jackin-usage-provider-minimax"
+bound = 1
 [[family.entry]]
 key = "clippy::cast_sign_loss@jackin-usage-provider-amp"
 bound = 4
@@ -369,10 +372,10 @@ bound = 1
 key = "clippy::too_many_arguments@jackin-runtime"
 bound = 12
 [[family.entry]]
-key = "clippy::too_many_arguments@jackin-usage"
+key = "clippy::too_many_arguments@jackin-usage-provider-core"
 bound = 1
 [[family.entry]]
-key = "clippy::too_many_arguments@jackin-usage-provider-core"
+key = "clippy::too_many_arguments@jackin-usage-provider-minimax"
 bound = 1
 [[family.entry]]
 key = "clippy::too_many_lines@jackin-capsule"
@@ -446,6 +449,9 @@ key = "dead_code@jackin-usage-provider-core"
 bound = 1
 [[family.entry]]
 key = "dead_code@jackin-usage-provider-kimi"
+bound = 1
+[[family.entry]]
+key = "dead_code@jackin-usage-provider-minimax"
 bound = 1
 [[family.entry]]
 key = "dead_code@jackin-xtask"
@@ -625,6 +631,9 @@ bound = 1320
 [[family.entry]]
 key = "crates/services/jackin-usage-provider-amp/README.md"
 bound = 1202
+[[family.entry]]
+key = "crates/services/jackin-usage-provider-minimax/README.md"
+bound = 1409
 [[family.entry]]
 key = "crates/tools/jackin-xtask/README.md"
 bound = 6113

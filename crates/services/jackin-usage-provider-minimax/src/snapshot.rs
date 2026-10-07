@@ -10,7 +10,7 @@ use jackin_usage_provider_core::{
 
 use super::{MiniMaxFetched, MiniMaxKeyProduct, fetch_minimax_usage, minimax_key_product};
 
-pub(crate) fn minimax_snapshot(agent: &str, token: Option<&str>, now: i64) -> FocusedUsageView {
+pub fn minimax_snapshot(agent: &str, token: Option<&str>, now: i64) -> FocusedUsageView {
     let has_token = token.is_some_and(|value| !value.is_empty());
     let (provider_usage, provider_error) = split_fetch(token.map(fetch_minimax_usage));
     let (status, source, confidence) = provider_outcome(ProviderPresence {

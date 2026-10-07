@@ -11,7 +11,7 @@ use serde::Deserialize;
 /// Amounts are decimal strings; a balance is always shown with its region
 /// currency, never bare.
 #[derive(Debug, Clone, Deserialize)]
-pub(crate) struct MiniMaxBalanceResponse {
+pub struct MiniMaxBalanceResponse {
     #[serde(rename = "base_resp")]
     pub(crate) base_resp: Option<MiniMaxBaseResponse>,
     #[serde(rename = "available_amount")]

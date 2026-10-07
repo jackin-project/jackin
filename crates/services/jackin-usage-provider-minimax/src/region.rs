@@ -10,12 +10,12 @@ use jackin_usage_provider_core::env_value;
 /// secret `sk-api-*` keys only, selected by `selectUsageEndpoint` on the
 /// `sk-api-` prefix (`minimax-cli` `src/client/endpoints.ts:50-84`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum MiniMaxKeyProduct {
+pub enum MiniMaxKeyProduct {
     TokenPlan,
     Payg,
 }
 
-pub(crate) fn minimax_key_product(token: &str) -> MiniMaxKeyProduct {
+pub fn minimax_key_product(token: &str) -> MiniMaxKeyProduct {
     if token.trim_start().starts_with("sk-api-") {
         MiniMaxKeyProduct::Payg
     } else {
@@ -27,7 +27,7 @@ pub(crate) fn minimax_key_product(token: &str) -> MiniMaxKeyProduct {
 /// CNY). Region and currency travel together so a balance is never shown
 /// without both.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum MiniMaxRegion {
+pub enum MiniMaxRegion {
     Global,
     China,
 }
@@ -55,7 +55,7 @@ impl MiniMaxRegion {
     }
 }
 
-pub(crate) fn minimax_region_from_value(value: &str) -> MiniMaxRegion {
+pub fn minimax_region_from_value(value: &str) -> MiniMaxRegion {
     if value.to_ascii_lowercase().contains("minimaxi.com") {
         MiniMaxRegion::China
     } else {
@@ -70,7 +70,7 @@ pub(crate) fn resolve_minimax_region() -> MiniMaxRegion {
     resolve_minimax_region_from(env_value("MINIMAX_REGION").as_deref(), host.as_deref())
 }
 
-pub(crate) fn resolve_minimax_region_from(
+pub fn resolve_minimax_region_from(
     region_env: Option<&str>,
     host_override: Option<&str>,
 ) -> MiniMaxRegion {

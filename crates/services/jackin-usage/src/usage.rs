@@ -20,7 +20,6 @@ mod cursor;
 mod gemini;
 mod grok;
 mod hermes;
-mod minimax;
 mod muse;
 mod opencode;
 mod openrouter;
@@ -141,17 +140,6 @@ pub(crate) use self::grok::{
     grpc_web_data_frames, parse_grok_rest_billing_response, parse_grok_web_billing_response,
     scan_protobuf,
 };
-#[expect(
-    unused_imports,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
-pub(crate) use self::minimax::{
-    MiniMaxBaseResponse, MiniMaxComboCard, MiniMaxModelRemain, MiniMaxUsageData,
-    MiniMaxUsageResponse, MiniMaxWindow, fetch_minimax_usage, first_minimax_usage, minimax_bucket,
-    minimax_bucket_label, minimax_is_general_model, minimax_operation_path, minimax_remains_host,
-    minimax_reset_epoch, minimax_snapshot, minimax_usage_count_line, resolve_minimax_remains_urls,
-    resolve_minimax_remains_urls_from,
-};
 pub(crate) use self::opencode::opencode_profile_snapshot;
 #[cfg(test)]
 pub(crate) use self::opencode::{load_opencode_api_key, parse_opencode_usage};
@@ -192,6 +180,17 @@ pub(crate) use jackin_usage_provider_kimi::{
     KimiRateLimit, KimiUsageDetail, KimiUsageItem, KimiUsageResponse, KimiWindow, fetch_kimi_usage,
     kimi_bucket, kimi_local_token_from_value, kimi_snapshot, kimi_window_seconds,
     load_kimi_local_token, load_kimi_local_token_from_home,
+};
+#[expect(
+    unused_imports,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
+pub(crate) use jackin_usage_provider_minimax::{
+    MiniMaxBaseResponse, MiniMaxComboCard, MiniMaxModelRemain, MiniMaxUsageData,
+    MiniMaxUsageResponse, MiniMaxWindow, fetch_minimax_usage, first_minimax_usage, minimax_bucket,
+    minimax_bucket_label, minimax_is_general_model, minimax_operation_path, minimax_remains_host,
+    minimax_reset_epoch, minimax_snapshot, minimax_usage_count_line, resolve_minimax_remains_urls,
+    resolve_minimax_remains_urls_from,
 };
 #[expect(
     unused_imports,

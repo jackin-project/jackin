@@ -11,20 +11,20 @@ use serde::Deserialize;
 /// A successful `MiniMax` fetch: the decoded product payload plus the region
 /// and host label that actually served it.
 #[derive(Debug)]
-pub(crate) struct MiniMaxFetched {
+pub struct MiniMaxFetched {
     pub(crate) usage: MiniMaxUsage,
     pub(crate) region: MiniMaxRegion,
     pub(crate) host_label: String,
 }
 
 #[derive(Debug)]
-pub(crate) enum MiniMaxUsage {
+pub enum MiniMaxUsage {
     TokenPlan(MiniMaxUsageResponse),
     Balance(MiniMaxBalanceResponse),
 }
 
 impl MiniMaxFetched {
-    pub(crate) fn buckets(&self, now: i64) -> Vec<QuotaBucketView> {
+    pub fn buckets(&self, now: i64) -> Vec<QuotaBucketView> {
         match &self.usage {
             MiniMaxUsage::TokenPlan(usage) => usage.buckets(now),
             MiniMaxUsage::Balance(balance) => balance.buckets(self.region),
@@ -40,7 +40,7 @@ impl MiniMaxFetched {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct MiniMaxUsageResponse {
+pub struct MiniMaxUsageResponse {
     #[serde(rename = "base_resp")]
     pub(crate) base_resp: Option<MiniMaxBaseResponse>,
     pub(crate) data: Option<MiniMaxUsageData>,
@@ -49,7 +49,7 @@ pub(crate) struct MiniMaxUsageResponse {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub(crate) struct MiniMaxBaseResponse {
+pub struct MiniMaxBaseResponse {
     #[serde(rename = "status_code")]
     pub(crate) status_code: Option<i64>,
     #[serde(rename = "status_msg")]
@@ -57,7 +57,7 @@ pub(crate) struct MiniMaxBaseResponse {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct MiniMaxUsageData {
+pub struct MiniMaxUsageData {
     #[serde(rename = "base_resp")]
     pub(crate) base_resp: Option<MiniMaxBaseResponse>,
     #[serde(rename = "current_subscribe_title")]
@@ -75,12 +75,12 @@ pub(crate) struct MiniMaxUsageData {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct MiniMaxComboCard {
+pub struct MiniMaxComboCard {
     pub(crate) title: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub(crate) struct MiniMaxModelRemain {
+pub struct MiniMaxModelRemain {
     #[serde(rename = "model_name")]
     pub(crate) model_name: Option<String>,
     #[serde(rename = "current_interval_total_count")]
@@ -124,7 +124,7 @@ pub(crate) struct MiniMaxModelRemain {
 }
 
 impl MiniMaxUsageResponse {
-    pub(crate) fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self) -> Result<(), String> {
         let base = self
             .data
             .as_ref()
@@ -143,7 +143,7 @@ impl MiniMaxUsageResponse {
         Ok(())
     }
 
-    pub(crate) fn buckets(&self, now: i64) -> Vec<QuotaBucketView> {
+    pub fn buckets(&self, now: i64) -> Vec<QuotaBucketView> {
         let mut buckets = Vec::new();
         for remain in self.model_remains() {
             if let Some(bucket) = minimax_bucket(
@@ -180,7 +180,7 @@ impl MiniMaxUsageResponse {
         buckets
     }
 
-    pub(crate) fn plan_name(&self) -> Option<String> {
+    pub fn plan_name(&self) -> Option<String> {
         let data = self.data.as_ref()?;
         [
             data.current_subscribe_title.as_deref(),
@@ -198,7 +198,7 @@ impl MiniMaxUsageResponse {
         .map(str::to_owned)
     }
 
-    pub(crate) fn model_remains(&self) -> Vec<&MiniMaxModelRemain> {
+    pub fn model_remains(&self) -> Vec<&MiniMaxModelRemain> {
         if let Some(data) = &self.data
             && !data.model_remains.is_empty()
         {
