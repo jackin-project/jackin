@@ -14243,3 +14243,291 @@ bound 720.
   `/tmp/jackin-s51-run-*.txt`
   (kept out of the
   repo).
+
+### Split 112: runtime-apple-container-probe-version extraction (M73)
+
+- `jackin-runtime` ->
+  `jackin-runtime` +
+  `jackin-runtime-apple-container-probe-version`
+  (T2, landed as
+  `8adbcd19`:
+  `apple_container.rs`
+  version-probe
+  extraction -- the
+  14-line
+  `probe_version`
+  (15 with its doc
+  block;
+  `container --version`
+  probe through the
+  shared transport,
+  trimmed stdout,
+  `None` on missing
+  CLI or failing
+  exit) moves out of
+  the 537-line
+  apple-container
+  file. Max dep is
+  `process-telemetry`
+  T1 (plus `process`
+  T0), so the leaf
+  takes T2 per the
+  1+max rule. Zero
+  true hub edges in
+  the moved code
+  (direct leaf-crate
+  use-lines only; zero
+  `crate::` /
+  `super::` refs
+  remain; the
+  `crate::process_telemetry::exec_async`
+  edge resolves
+  through the hub
+  process-telemetry
+  glob re-export to
+  the T1 leaf;
+  `jackin_process::ExecRequest`
+  was already a
+  direct leaf-crate
+  path; capitalized-path
+  grep shows only
+  `ExecRequest` /
+  `Option` / `Some` /
+  `None` / `String`
+  plus doc prose and
+  SPDX lines). One
+  new `pub` item; the
+  hub file keeps a
+  private import so
+  the `launch` call
+  site compiles
+  unchanged (the step
+  was `pub` with no
+  external callers --
+  repo-wide sweep
+  shows only the one
+  in-file site;
+  split-111 precedent
+  family). No
+  file-level `use`
+  drops (every moved
+  edge was a
+  fully-qualified
+  path). The longer
+  leaf path reflows
+  the one `exec_async`
+  call under rustfmt;
+  semantics identical.
+  Triage: s52 manual
+  whole-file survey
+  of the s111
+  `apple_container.rs`
+  remainder plus the
+  `attach` / `cleanup`
+  submodules, over
+  `leafgraph2.py` +
+  manual
+  capitalized-path
+  grep with re-export
+  resolution +
+  repo-wide caller
+  sweeps + hub-test
+  reference grep;
+  whole-file triage
+  re-confirms all
+  remaining hub
+  modules T8-blocked
+  except parent/shim
+  files (`runtime.rs`
+  is forward-only,
+  `stubs.rs` is
+  `cfg(test)`-only,
+  `prewarm_trigger`
+  stays T7-blocked and
+  would take T8;
+  `repo_cache` /
+  `programmatic` /
+  `restore` /
+  `restore_resolve` /
+  `dry_run` /
+  `launch_dind` /
+  `host_attach` /
+  `coordination` are
+  zero-item pure
+  shims). The s111
+  landing leaves
+  `probe_version` as
+  the smallest
+  remaining
+  apple-container
+  micro-fn (15 lines,
+  single live call
+  site in `launch`,
+  T2 by honest
+  re-export-resolve
+  grading), beating
+  every remaining
+  ALONE item on line
+  count. Held
+  fragments:
+  `apple_supervisor_env`
+  (17l) /
+  `validate_exec_bindings`
+  (8l but net-zero
+  hub decrease and a
+  T4 dep) /
+  `check_dns` (28l,
+  T4) serve `launch`
+  alone;
+  `print_session_contract`
+  serves one site and
+  drags the hub-owned
+  `AppleContainerMount`
+  type; `stop` /
+  `remove` /
+  `ensure_absent_for_purge`
+  no-arg wrappers are
+  uncalled,
+  re-verified s51, so
+  `stop_with` /
+  `ensure_absent_for_purge_with`
+  serve one live site
+  each via
+  `backend.rs` and
+  `remove_with` serves
+  none;
+  `apple_container_instance_names`
+  (23l) is a
+  single-caller
+  fragment via
+  `exile_all`;
+  `validate_agent_supported`
+  (22l) is a
+  single-caller
+  fragment whose
+  caller lives in
+  claimed
+  `launch_pipeline`;
+  `launch_runtime`
+  micro-items are
+  single-flow
+  fragments, type-component
+  fragments,
+  single-caller env
+  helpers, or
+  claimed-file stubs;
+  `backend.rs` ALONE
+  items are
+  trait/struct
+  component fragments
+  whose impls stay;
+  `failure.rs`
+  `render_exit` /
+  `observe_exit` +
+  `launch_pipeline`
+  stay claimed by
+  earlier slices.
+
+- Verify: `cargo check
+  --locked --workspace
+  --all-targets`
+  green; `cargo fmt
+  --all --check`
+  clean; `cargo
+  clippy` 0
+  errors/warnings on
+  the leaf
+  (`--all-targets -D
+  warnings`) + hub lib
+  (`-D warnings`; hub
+  `--all-targets`
+  keeps its 6
+  pre-existing
+  test-only errors,
+  normalized locations
+  identical to base
+  via clean-worktree
+  re-run).
+  `cargo nextest list
+  --workspace
+  --all-targets`: 7277
+  -> 7277,
+  byte-identical (0
+  relocations; 0
+  dropped, 0 added).
+  `nextest run`:
+  433/433 runtime
+  green (1 skipped,
+  pre-existing; 1
+  flagged leaky,
+  passes);
+  18/18 app `prune`
+  green; the leaf has
+  no tests (the step
+  shells out to the
+  live `container`
+  CLI and is exercised
+  through the hub
+  launch path; no
+  dedicated suite
+  exists).
+  `alint check`: 180
+  violations / 11
+  failing,
+  byte-identical (zero
+  relocations; zero
+  new rows).
+  `check-gaps`: 12 ->
+  12 (hub 8382 -> 8369
+  prod code lines, 77
+  prod files;
+  `apple_container.rs`
+  537 -> 530; xtask
+  26324 -> 26325 (+1
+  TIERS row); leaf
+  fits both budgets,
+  no SIZE finding;
+  `leafgraph2.py` tip
+  diff empty -- the
+  moved `crate::`
+  edge stays live via
+  `check_dns`).
+  `ratchet.toml`: 2
+  new rows (README
+  bytes 765,
+  public-surface 1 --
+  no `print_stderr`
+  row: the moved fn
+  has no `eprintln`,
+  s108 precedent).
+  `lint arch
+  --strict`: 3
+  pre-existing
+  no-tier, gate
+  content identical to
+  base, zero direction
+  violations; `lint
+  headers` / `tests` /
+  `readme-freshness` /
+  `files` / `agents` /
+  `agent-status-truth`
+  / `container-paths`
+  all identical to
+  base; `lint ratchet`
+  / `suppressions`
+  identical to base;
+  `agent-links` still
+  OK with +1 scanned
+  file (160 -> 161)
+  for the new README.
+
+- Raw outputs:
+  `/tmp/jackin-s52-{before,after}-*.txt`
+  plus
+  `/tmp/jackin-s52-leafgraph2-*.txt`
+  plus
+  `/tmp/jackin-s52-run-*.txt`
+  plus
+  `/tmp/jackin-s52-base-clippy-locs.txt`
+  (kept out of the
+  repo).
