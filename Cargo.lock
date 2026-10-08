@@ -3586,6 +3586,7 @@ dependencies = [
  "jackin-runtime-attach-inspect",
  "jackin-runtime-attach-sessions",
  "jackin-runtime-attach-transport",
+ "jackin-runtime-backend-selection",
  "jackin-runtime-cleanup-dind-gc",
  "jackin-runtime-cleanup-resolve",
  "jackin-runtime-cleanup-timing",
@@ -3731,6 +3732,14 @@ dependencies = [
  "jackin-runtime-attach-capsule-ready",
  "jackin-runtime-snapshot",
  "jackin-telemetry",
+]
+
+[[package]]
+name = "jackin-runtime-backend-selection"
+version = "0.6.4"
+dependencies = [
+ "jackin-core",
+ "jackin-instance",
 ]
 
 [[package]]

@@ -753,6 +753,9 @@ bound = 949
 key = "crates/services/jackin-runtime-attach-transport/README.md"
 bound = 964
 [[family.entry]]
+key = "crates/services/jackin-runtime-backend-selection/README.md"
+bound = 920
+[[family.entry]]
 key = "crates/services/jackin-runtime-cleanup-dind-gc/README.md"
 bound = 1117
 [[family.entry]]
@@ -1158,6 +1161,9 @@ key = "jackin-runtime-attach-sessions"
 bound = 1
 [[family.entry]]
 key = "jackin-runtime-attach-transport"
+bound = 1
+[[family.entry]]
+key = "jackin-runtime-backend-selection"
 bound = 1
 [[family.entry]]
 key = "jackin-runtime-cleanup-dind-gc"

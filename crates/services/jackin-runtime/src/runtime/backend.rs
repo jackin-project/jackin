@@ -1,4 +1,7 @@
 //! Backend lifecycle dispatch for persisted runtime instances.
+//!
+//! Backend selection lives in `jackin_runtime_backend_selection` (S7 split 98),
+//! re-exported below.
 
 use anyhow::Result;
 use jackin_core::CommandRunner;
@@ -6,6 +9,10 @@ use jackin_core::JackinPaths;
 use jackin_docker::docker_client::DockerApi;
 
 use crate::apple_container_client::{AppleContainerApi, AppleContainerClient};
+// Test-only scope restoration: the hub suite below names
+// `BackendResources` / `InstanceManifest` through `use super::*`; prod
+// moved them into the leaf with the selection fns (S7 split 98).
+#[cfg(test)]
 use crate::instance::{BackendResources, InstanceManifest};
 
 /// Common lifecycle operations every persisted container backend must expose.
@@ -209,24 +216,12 @@ where
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum InstanceBackend {
-    Docker,
-    AppleContainer,
-}
-
-pub fn backend_for_manifest(manifest: Option<&InstanceManifest>) -> InstanceBackend {
-    match manifest.and_then(|manifest| manifest.backend.as_ref()) {
-        Some(BackendResources::AppleContainer(_)) => InstanceBackend::AppleContainer,
-        Some(BackendResources::Docker(_)) | None => InstanceBackend::Docker,
-    }
-}
-
-pub fn backend_for_state(paths: &JackinPaths, container_name: &str) -> InstanceBackend {
-    let state_dir = paths.data_dir.join(container_name);
-    let manifest = InstanceManifest::read_optional_lossy(&state_dir);
-    backend_for_manifest(manifest.as_ref())
-}
+// Moved to jackin_runtime_backend_selection::backend_selection (S7 split 98);
+// the item re-exports keep every `backend::InstanceBackend` /
+// `backend_for_manifest` / `backend_for_state` path stable.
+pub use jackin_runtime_backend_selection::backend_selection::{
+    InstanceBackend, backend_for_manifest, backend_for_state,
+};
 
 #[cfg(test)]
 mod tests;

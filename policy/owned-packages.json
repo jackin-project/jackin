@@ -37,6 +37,7 @@
     "jackin-runtime-attach-inspect",
     "jackin-runtime-attach-sessions",
     "jackin-runtime-attach-transport",
+    "jackin-runtime-backend-selection",
     "jackin-runtime-cleanup-dind-gc",
     "jackin-runtime-cleanup-resolve",
     "jackin-runtime-cleanup-timing",
