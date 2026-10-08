@@ -3587,6 +3587,7 @@ dependencies = [
  "jackin-runtime-attach-sessions",
  "jackin-runtime-attach-transport",
  "jackin-runtime-backend-selection",
+ "jackin-runtime-cleanup-absent-guards",
  "jackin-runtime-cleanup-dind-gc",
  "jackin-runtime-cleanup-prune-images",
  "jackin-runtime-cleanup-resolve",
@@ -3740,6 +3741,15 @@ name = "jackin-runtime-backend-selection"
 version = "0.6.4"
 dependencies = [
  "jackin-core",
+ "jackin-instance",
+]
+
+[[package]]
+name = "jackin-runtime-cleanup-absent-guards"
+version = "0.6.4"
+dependencies = [
+ "anyhow",
+ "jackin-docker",
  "jackin-instance",
 ]
 

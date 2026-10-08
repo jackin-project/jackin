@@ -62,6 +62,7 @@ pub(crate) const TIERS: &[(&str, u8)] = &[
     ("jackin-runtime-attach-sessions", 4),
     ("jackin-runtime-attach-transport", 6),
     ("jackin-runtime-backend-selection", 4),
+    ("jackin-runtime-cleanup-absent-guards", 4),
     ("jackin-runtime-cleanup-dind-gc", 7),
     ("jackin-runtime-cleanup-prune-images", 6),
     ("jackin-runtime-cleanup-resolve", 4),

@@ -38,6 +38,7 @@
     "jackin-runtime-attach-sessions": "library",
     "jackin-runtime-attach-transport": "library",
     "jackin-runtime-backend-selection": "library",
+    "jackin-runtime-cleanup-absent-guards": "library",
     "jackin-runtime-cleanup-dind-gc": "library",
     "jackin-runtime-cleanup-prune-images": "library",
     "jackin-runtime-cleanup-resolve": "library",

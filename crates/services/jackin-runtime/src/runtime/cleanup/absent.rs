@@ -1,15 +1,24 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 //! Bulk instance prune and absent-for-purge ensures.
+//!
+//! The absent-for-purge guards live in
+//! `jackin_runtime_cleanup_absent_guards` (S7 split 100),
+//! re-exported below.
 
-use crate::instance::{DockerResources, InstanceIndex};
+use crate::instance::InstanceIndex;
 use crate::runtime::prune_output;
 use jackin_core::JackinPaths;
 
 use jackin_core::CommandRunner;
-use jackin_docker::docker_client::{ContainerState, DockerApi};
+use jackin_docker::docker_client::DockerApi;
 
 use super::{exile_all, purge_container_filesystem};
+
+// Moved to jackin_runtime_cleanup_absent_guards::absent_guards (S7 split
+// 100); the item re-export keeps every
+// `cleanup::ensure_role_resources_absent_for_purge` path stable.
+pub(crate) use jackin_runtime_cleanup_absent_guards::absent_guards::ensure_role_resources_absent_for_purge;
 
 /// Force-eject all managed Docker resources then purge every instance's
 /// state directory and index entry, regardless of status.
@@ -71,40 +80,4 @@ pub async fn prune_all_instances(
         )));
     }
     Ok(())
-}
-
-pub(crate) async fn ensure_role_resources_absent_for_purge(
-    docker: &impl DockerApi,
-    resources: &DockerResources,
-) -> anyhow::Result<()> {
-    ensure_container_absent_for_purge(docker, &resources.role_container, "role container").await?;
-    if let Some(dind_container) = resources.dind_container.as_deref() {
-        ensure_container_absent_for_purge(docker, dind_container, "DinD sidecar").await?;
-    }
-    Ok(())
-}
-
-pub(crate) async fn ensure_container_absent_for_purge(
-    docker: &impl DockerApi,
-    container_name: &str,
-    resource_label: &str,
-) -> anyhow::Result<()> {
-    let state_phrase = match docker.inspect_container_by_name(container_name).await.state {
-        ContainerState::NotFound => return Ok(()),
-        ContainerState::Running => "and is running",
-        ContainerState::Paused => "and is paused",
-        ContainerState::Restarting => "and is restarting",
-        ContainerState::Created => "and is being created",
-        ContainerState::Removing => "and is being removed",
-        ContainerState::Dead => "but is dead",
-        ContainerState::Stopped { .. } => "but is stopped",
-        ContainerState::InspectUnavailable(reason) => {
-            anyhow::bail!(
-                "cannot purge local state for `{container_name}` because Docker resource state could not be inspected: {reason}"
-            )
-        }
-    };
-    anyhow::bail!(
-        "cannot purge local state because {resource_label} `{container_name}` still exists {state_phrase}; run `jackin eject {container_name} --purge` to remove Docker resources and local state together"
-    )
 }
