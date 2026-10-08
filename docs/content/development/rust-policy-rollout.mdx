@@ -16306,3 +16306,418 @@ bound 720.
   `/tmp/jackin-s58-fnscan.txt`
   (kept out of the
   repo).
+
+### Split 119: runtime-apple-container-session-contract extraction (M80)
+
+- `jackin-runtime` ->
+  `jackin-runtime` +
+  `jackin-runtime-apple-container-session-contract`
+  (T5, landed as
+  `a61bc0f0`:
+  `apple_container.rs`
+  session contract
+  printer extraction --
+  the 44-line
+  `print_session_contract`
+  (prints the
+  security-boundary
+  summary before the
+  interactive attach
+  begins) moves out of
+  the 489-line
+  apple-container file.
+  One dep
+  (`jackin-runtime-apple-container-client`,
+  T4), so the leaf takes
+  T5 per the 1+max rule.
+  Zero hub-owned edges
+  in the moved code (the
+  only non-prelude item
+  is
+  `AppleContainerMount`,
+  which lives in the
+  client leaf and is
+  touched through its
+  pub fields only; the
+  hub
+  `apple_container_client`
+  module is a pure
+  re-export of that
+  leaf). No new `pub`
+  surface beyond the
+  move (the fn was
+  already `pub` with
+  zero external
+  callers); the hub file
+  keeps a private `use`
+  import so the `launch`
+  call site compiles
+  unchanged (the step
+  had one in-file prod
+  site plus zero suite
+  refs -- repo-wide
+  sweep shows zero other
+  callers; split-112
+  precedent family). No
+  file-level `use` drops
+  (the hub still uses
+  `AppleContainerMount`
+  for
+  `AppleContainerLaunch`
+  plus the `launch`
+  body). Semantics
+  identical (moved body
+  byte-identical; only
+  the file-level `use`
+  path is rewritten
+  `crate::` -> leaf).
+  Triage: s59 fresh
+  fn-size scan over all
+  prod `runtime/**`
+  items plus manual
+  caller sweeps +
+  hub-test reference
+  grep + edge grading,
+  over `leafgraph2.py`.
+  The tree is the s58
+  after-state, so all
+  s58 dispositions hold;
+  the only delta is
+  `check_dns` gone (120
+  -> 119 fns). 3 lines
+  is the floor but both
+  3-line items are held:
+  `telemetry_runtime_envs`
+  is still a pure
+  forward to the staying
+  `telemetry_runtime_envs_for`
+  (unmovable alone; the
+  pair move at 3l+8l is
+  bigger than the pick,
+  and the target is
+  still case_07-pinned);
+  `git_pull_program`
+  (3l/5l cfg pair) is
+  `launch_pipeline`-claimed.
+  Every other item is
+  bigger, pinned, or
+  edged: `stop_with`
+  (6l, hub trait edge in
+  signature, pair with
+  dead `stop` only); the
+  tag family (6l,
+  claimed plus case_01
+  suite sites);
+  `confirm_cached_repo_removal`
+  (6l, claimed plus a
+  `StepCounter` hub
+  edge); `stop` /
+  `remove` /
+  `ensure_absent_for_purge`
+  (7l dead pub wrappers,
+  pairs only, `_with`
+  halves carry hub
+  edges);
+  `git_pull_timing_detail`
+  (7l, claimed);
+  `manifest_env_timing_detail`
+  (7l, case_14-pinned);
+  `mark_construct_ready`
+  (7l, claimed plus a
+  `StepCounter` edge);
+  `remove_with` (8l, hub
+  edge);
+  `hardline_agent` (8l,
+  attach
+  case_01/02/03/05 suite
+  sites plus a forward
+  to the staying
+  hub-edged
+  `_with_focus` half
+  plus crate-root pub
+  API);
+  `validate_exec_bindings`
+  (8l, hub edge plus
+  `tests.rs` sites);
+  `telemetry_runtime_envs_for`
+  (8l, case_07-pinned);
+  `sidecar_replenish`
+  (9l, claimed area plus
+  hub type edge);
+  `capsule_otlp_allowlist_host`
+  (9l, case_01-pinned);
+  `purge_container_state`
+  (10l, cross-crate pub
+  API plus a case_29
+  site);
+  `run_launch_core`
+  (10l, suite plus bench
+  sites);
+  `spawn_background_sidecar_prewarm`
+  (11l, `#[cfg(test)]`
+  stub body);
+  `with_admitted_*`
+  (13l, hub edges);
+  `require_container_reachable`
+  (14l, hub edges);
+  `install_all_test_stubs`
+  (14l, `stubs.rs` is
+  `cfg(test)`-only);
+  `eject_role` (15l, hub
+  edges);
+  `finalize_reconnected_foreground_session`
+  /
+  `start_or_reconnect_capsule_client`
+  (16l, hub edges);
+  `purge_or_mark_clean_exited`
+  / `with_extra_mounts`
+  /
+  `current_role_reuse_is_compatible`
+  (16l, claimed);
+  `ensure_absent_for_purge_with`
+  (17l, hub edge);
+  `capsule_otlp_propagation`
+  (17l, case_01-pinned);
+  `initial_daemon_argv`
+  (17l, case_01-pinned);
+  `eject_docker_role` /
+  `ensure_backend_absent_for_purge`
+  (18l, hub edges);
+  `classify_image_phase`
+  (18l, claimed);
+  `host_runtime_passthrough_env`
+  (18l, case_07-pinned);
+  `spawn_background_image_prewarm`
+  (18l, `#[cfg(test)]`
+  stub);
+  `reconnect_or_create_session_with_focus`
+  /
+  `start_or_reconnect_capsule_client_with_lease`
+  (19l, hub edges);
+  `prewarm_sibling_auth_before_admission`
+  (19l, claimed area);
+  `capsule_export_coverage`
+  (19l, case_01-pinned);
+  `exile_all` (20l, hub
+  edges);
+  `confirm_sensitive_mounts`
+  /
+  `persist_new_role_trust`
+  (20l, claimed);
+  `run_active_launch`
+  (20l, hub edges);
+  `start_or_hardline_agent`
+  /
+  `start_or_hardline_agent_with_container_handle`
+  (21l/22l, hub edges);
+  `render_exit` (21l,
+  forbidden `failure.rs`
+  plus hub edges);
+  `load_role_inner`
+  (21l, claimed);
+  `hardline_agent_with_focus`
+  (22l, hub edges plus
+  suite sites);
+  `validate_agent_supported`
+  (22l, case_07-pinned);
+  `breadcrumb_auth_mode`
+  (22l, claimed);
+  `reuse_sentinel` (22l,
+  hub edges);
+  `apple_container_instance_names`
+  (23l, hub edges);
+  `poll_sidecar_while` /
+  `complete_docker_launch`
+  /
+  `handle_launch_failure`
+  /
+  `mark_failed_setup_then_cleanup`
+  (23l-25l, claimed
+  area, the latter two
+  plus hub edges);
+  `emit_auth_provision_launch_plan`
+  (25l, claimed);
+  `restore_current_role_now_with_handle`
+  /
+  `teardown_recreate_container`
+  (26l/27l, claimed);
+  `finalize_reconnected_foreground_session_with_lease`
+  (27l, hub edge);
+  `emit_isolation_decision`
+  (27l, hub type edges);
+  `inspect_restore_container`
+  (28l, hub edges);
+  `confirm_role_branch`
+  (29l, claimed);
+  `emit_auth_breadcrumbs`
+  (29l, claimed area);
+  `reconnect` (31l, TWO
+  prod callers plus an
+  `EntryClaim` hub edge
+  plus case_05 suite
+  sites);
+  `validate_explicit_restore_options`
+  (32l, claimed);
+  `restart_stopped_dind_if_needed`
+  (33l, hub edges);
+  `purge_container_filesystem`
+  (33l, hub edges);
+  `finish_deferred_git_pull`
+  (33l, claimed);
+  `reconnect_or_create_session_with_focus_with_lease`
+  (34l, hub edges);
+  `select_launch_agent`
+  (35l, claimed);
+  `resolve_provision_inputs`
+  (35l, claimed area);
+  `initialize_launch_progress`
+  (37l, claimed);
+  `emit_launch_trust_decision`
+  / `ensure_role_trust`
+  (40l, claimed);
+  `finalize_reconnected_resources`
+  /
+  `eject_docker_role_with_handles`
+  / `purge_class_data`
+  (41l, hub edges).
+  `backend.rs` smalls
+  are trait decls / impl
+  methods (component
+  fragments);
+  `launch_dind.rs` /
+  `restore.rs` /
+  `restore_resolve.rs` /
+  `host_attach.rs` carry
+  zero top-level fns.
+  `print_session_contract`
+  is therefore the
+  smallest viable leaf
+  (44 lines, single live
+  call site, zero suite
+  refs, T5, zero
+  hub-owned edges).
+
+- Verify: `cargo check
+  --locked --workspace
+  --all-targets` green;
+  `cargo fmt --all
+  --check` clean; `cargo
+  clippy` 0
+  errors/warnings on the
+  leaf (`--all-targets
+  -D warnings`) + hub
+  lib (`-D warnings`;
+  hub `--all-targets`
+  keeps its 6
+  pre-existing test-only
+  errors, normalized
+  locations identical to
+  base). `cargo nextest
+  list --workspace
+  --all-targets`: 7277
+  -> 7277,
+  byte-identical (0
+  relocations; 0
+  dropped, 0 added).
+  `nextest run`: 433/433
+  runtime green (1
+  skipped, pre-existing;
+  1 pass-with-leak flag,
+  a timing-sensitive
+  annotation, all pass
+  either way); 18/18 app
+  `prune` green (656
+  skipped, no leak flags
+  this run); the leaf
+  has no tests (0 run;
+  the step prints to
+  stderr and is
+  exercised through the
+  hub launch path; no
+  dedicated suite
+  exists). `alint
+  check`: 180 violations
+  / 11 failing,
+  byte-identical (zero
+  relocations; zero new
+  rows). `check-gaps`:
+  12 -> 12 (hub 8303 ->
+  8256 prod code lines,
+  77 prod files;
+  `apple_container.rs`
+  489 -> 446 raw lines
+  (-51 doc+attr+fn out,
+  +4 doc lines +
+  moved-comment +
+  private import in);
+  xtask 26331 -> 26332
+  (+1 TIERS row); leaf
+  fits both budgets, no
+  SIZE finding;
+  `leafgraph2.py` tip
+  diff empty).
+  `ratchet.toml`: 3 new
+  rows (README bytes
+  775, public-surface 1,
+  `print_stderr` 1 --
+  the moved fn carries
+  `eprintln` sites with
+  its `#[expect]`,
+  socket-dir precedent;
+  hub `print_stderr`
+  measured 4 -> 3, still
+  under its bound 10,
+  row untouched). `lint
+  arch --strict`: 3
+  pre-existing no-tier,
+  gate content identical
+  to base, zero
+  direction violations;
+  `lint arch` /
+  `headers` / `tests` /
+  `readme-freshness` /
+  `files` /
+  `agent-status-truth`
+  identical to base (the
+  leaf `lib.rs` carries
+  no SPDX `//` lines:
+  they break the gate's
+  leading-doc scan --
+  sibling-leaf
+  precedent); `lint
+  agents` verdict
+  identical (only mbx
+  cache chatter lines
+  differ); `lint
+  ratchet` /
+  `suppressions` carry
+  only the expected hub
+  measured 4 -> 3 line
+  (still failing on
+  pre-existing
+  violations only, zero
+  new rows);
+  `agent-links` still OK
+  with +1 scanned file
+  (167 -> 168) for the
+  new README;
+  `container-paths`
+  keeps its 24
+  pre-existing
+  violations
+  byte-identical (no
+  finding in the touched
+  file).
+
+- Raw outputs:
+  `/tmp/jackin-s59-{before,after}-*.txt`
+  plus
+  `/tmp/jackin-s59-leafgraph2-*.txt`
+  plus
+  `/tmp/jackin-s59-run-*.txt`
+  plus
+  `/tmp/jackin-s59-before-clippy-locs.txt`
+  plus
+  `/tmp/jackin-s59-fnscan.txt`
+  (kept out of the
+  repo).
