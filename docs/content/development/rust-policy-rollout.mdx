@@ -9726,3 +9726,196 @@ bound 720.
   `/tmp/jackin-s32-{before,after}-*.txt`
   (kept out of the
   repo).
+
+### Split 93: runtime-cleanup-dind-gc extraction (M54)
+
+- `jackin-runtime`
+  ->
+  `jackin-runtime`
+  +
+  `jackin-runtime-cleanup-dind-gc`
+  (T7, landed as
+  `1846473f`: the
+  whole
+  `cleanup/dind_gc`
+  module moves --
+  orphaned `DinD`
+  sidecar/network GC
+  (`collect_labeled_dind`
+  / `filter_orphaned_dind`
+  / `gc_orphaned_resources`
+  / `gc_orphaned_networks`
+  / `gc_orphaned_prewarm_dind`
+  + `DindInfo`).
+  Max deps are
+  `discovery` /
+  `launch-dind` (T6;
+  `naming` T5;
+  `cleanup-timing` /
+  `docker` / `instance`
+  T3; `core` T0),
+  so the leaf
+  takes T7 per the
+  1+max rule --
+  inside the slice
+  <=T7 ceiling (T7
+  is compliant; T6
+  is impossible here
+  since both T6 deps
+  are load-bearing).
+  Zero true hub edges:
+  the three apparent
+  ones resolve through
+  hub re-exports
+  (`super::{cleanup_failure,cleanup_timing}`
+  -> `cleanup-timing`
+  T3;
+  `crate::runtime::launch::prewarmed_dind_state_container_name`
+  -> `launch-dind`
+  T6 -- the s32 triage
+  script flags all three
+  T8 without item-level
+  resolution). Six items
+  widen (`pub(crate)` ->
+  `pub`, forced) plus one
+  `#[derive(Debug)]` on
+  `DindInfo` (forced: the
+  workspace denies
+  missing-debug-implementations
+  on pub types).
+  Item re-export:
+  `cleanup.rs` drops
+  `mod dind_gc` and
+  re-exports
+  `gc_orphaned_resources`
+  from the new crate,
+  so the sole hub caller
+  (`launch_pipeline.rs:882`)
+  plus the hub `cleanup`
+  suite compile unchanged.
+  The hub `launch.rs`
+  `prewarmed_dind_state_container_name`
+  re-export loses its last
+  prod user and is pruned
+  (split-92 precedent).
+  Triage: s32 script with
+  brace-import expansion
+  + manual `super::` /
+  `crate::` grep with
+  capitals + re-export
+  resolution. Next scoped
+  target: `prewarm_trigger`
+  -- single 219-line file,
+  all five `super::` edges
+  resolve to T6 leaves
+  (`image` + 4x
+  `launch-dind`; `config`
+  T1, `docker` T3, `core`
+  T0), items already
+  `pub`, so the module
+  grades T7 with zero
+  visibility widening.
+  `failure.rs` remainder
+  stays (universe T7 ->
+  T8; extraction would need
+  observation-inversion).
+  `cleanup/{absent,eject,exile,prune,purge,purge_absent}`
+  keep true T8 edges
+  (hub `backend` /
+  hub-internal `super::{...}`).
+  No hub renumber.)
+
+- Verify: `cargo check
+  --locked --workspace
+  --all-targets`
+  green; `cargo fmt
+  --all --check`
+  clean; `cargo clippy`
+  0 errors/warnings
+  on the leaf
+  (`--all-targets -D
+  warnings`) + hub
+  lib (`-D warnings`;
+  hub `--all-targets`
+  keeps its 6
+  pre-existing
+  test-only errors,
+  byte-identical to
+  base). `cargo nextest
+  list --workspace
+  --all-targets`: 7277
+  -> 7277,
+  byte-identical (0
+  relocations; 0
+  dropped, 0 added).
+  `nextest run`:
+  433/433 runtime
+  green (1 skipped,
+  pre-existing; one
+  full-suite pass
+  flagged 1 LEAK in
+  the untouched
+  `verify_github_token_present_ok_when_token_resolves`
+  test, isolated PASS
+  proved a load
+  flake) + 53/53 app
+  `load_cmd` /
+  `prewarm` green;
+  the leaf has no
+  tests (coverage in
+  the hub `cleanup`
+  cases). `alint check`:
+  180 violations /
+  11 failing,
+  byte-identical (zero
+  relocations -- the
+  file sits under
+  400 lines; zero
+  new rows).
+  `check-gaps`:
+  12 -> 12 (hub
+  9348 -> 9087
+  prod code lines,
+  78 -> 77 prod
+  files; xtask
+  26305 -> 26306
+  (+1 TIERS row);
+  leaf fits both
+  budgets, no SIZE
+  finding).
+  `ratchet.toml`: 3
+  new rows (README
+  bytes 1117,
+  public-surface 1,
+  print_stderr 1)
+  + 0 hub tightens
+  (split-69 precedent:
+  the stale hub
+  print_stderr budget
+  stays for its owner;
+  gate count steady
+  at 56 with a
+  one-line renumber,
+  shrink-to-7 ->
+  shrink-to-6).
+  `lint arch
+  --strict`: 3
+  pre-existing
+  no-tier
+  byte-identical,
+  zero direction
+  violations;
+  `lint headers`
+  stays at the
+  base 2; `lint
+  tests` OK; `lint
+  readme-freshness` /
+  `files` / `agents` /
+  `suppressions`
+  unchanged (modulo
+  the one renumber).
+
+- Raw outputs:
+  `/tmp/jackin-s33-{before,after}-*.txt`
+  (kept out of the
+  repo).
