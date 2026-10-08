@@ -12205,3 +12205,262 @@ bound 720.
   `/tmp/jackin-s44-leafgraph2.txt`
   (kept out of the
   repo).
+
+### Split 105: runtime-cleanup-socket-dir extraction (M66)
+
+- `jackin-runtime` ->
+  `jackin-runtime` +
+  `jackin-runtime-cleanup-socket-dir`
+  (T6, landed as
+  `18b3dae3`:
+  `purge_absent.rs`
+  socket-dir
+  extraction -- the
+  20-line best-effort
+  socket-dir removal
+  (coordination gate
+  plus the contained
+  safe-remove helper
+  with socket-dir
+  warning labels)
+  moves out of the
+  60-line purge-absent
+  file. Max dep is
+  `isolation` T5 +
+  `coordination` T1 +
+  `core`/`telemetry`
+  T0, so the leaf
+  takes T6 per the
+  1+max rule. Zero
+  true hub edges in
+  the moved code
+  (`crate::runtime::coordination`
+  resolves through
+  the coordination
+  glob shim;
+  `crate::isolation`
+  resolves through
+  the top-level
+  isolation glob
+  shim; the shared
+  use-stmt siblings
+  are unreferenced
+  by this fn --
+  use-lines are not
+  deps;
+  capitalized-path
+  grep shows only
+  `JackinPaths` /
+  `Ok` / `Err` /
+  `std::io::Error`
+  plus doc prose and
+  string literals;
+  zero `crate::` /
+  `super::` refs
+  remain). One new
+  `pub` item; the hub
+  file keeps a
+  `pub(crate)` item
+  re-export so the
+  purge and eject
+  callers compile
+  unchanged
+  (split-99
+  precedent). The
+  move retires the
+  hub file's
+  `print_stderr`
+  expect with the
+  only `eprintln`
+  (unfulfilled-expect
+  would fail the hub
+  lib under `-D
+  warnings`;
+  split-92 precedent
+  family). Triage:
+  s45 re-run of the
+  s44 function-group
+  script (item
+  segmentation +
+  sibling call-graph
+  + directed-alone
+  pass) over the s44
+  resolver (CLEANUP
+  maps extended with
+  the s104 leaf) plus
+  `leafgraph2.py` +
+  manual
+  capitalized-path
+  grep with re-export
+  resolution;
+  whole-file triage
+  re-confirms all
+  remaining hub
+  modules T8-blocked
+  except parent/shim
+  files. The wider
+  scan found
+  `remove_socket_dir`
+  alone at 26l
+  ALONE-T5 (the s44
+  fallback, scoped
+  as planned);
+  `apple_container_instance_names`
+  (23l ALONE-T4)
+  held as a
+  single-caller
+  fragment of
+  `exile_all`
+  (sole consumer is
+  the hub exile
+  loop; every
+  landed leaf
+  serves 2+ sites
+  or an external
+  crate);
+  `apple_container`
+  micro-fns
+  re-verified
+  fragments by hand
+  (`activate_started_entry`
+  / `apple_supervisor_env`
+  / `validate_exec_bindings`
+  are private;
+  `with_admitted_final_apple_spec`
+  is private and
+  test-called;
+  `stop_with` /
+  `remove_with` are
+  6-8l test-seam
+  delegations;
+  `probe_version` /
+  `is_container_running`
+  / `check_dns` /
+  `attach` are
+  single-flow
+  fragments of
+  launch/reconnect;
+  `print_session_contract`
+  drags the
+  hub-owned
+  `AppleContainerMount`
+  type; consts are
+  single-line);
+  `backend.rs`
+  ALONE items are
+  trait/struct
+  component
+  fragments whose
+  impls stay;
+  `stubs.rs` is
+  `cfg(test)`-only;
+  `prewarm_trigger`
+  stays T7-blocked
+  (would take T8);
+  `launch_pipeline` +
+  `observe_exit` stay
+  claimed by earlier
+  slices.
+
+- Verify: `cargo check
+  --locked --workspace
+  --all-targets`
+  green; `cargo fmt
+  --all --check`
+  clean; `cargo
+  clippy` 0
+  errors/warnings on
+  the leaf
+  (`--all-targets -D
+  warnings`) + hub lib
+  (`-D warnings`; hub
+  `--all-targets`
+  keeps its 6
+  pre-existing
+  test-only errors,
+  normalized locations
+  identical to base).
+  `cargo nextest list
+  --workspace
+  --all-targets`: 7277
+  -> 7277,
+  byte-identical (0
+  relocations; 0
+  dropped, 0 added).
+  `nextest run`:
+  433/433 runtime
+  green (1 skipped,
+  pre-existing; 1
+  unrelated attach
+  test flagged LEAK
+  under full-suite
+  load and passes
+  clean alone);
+  18/18 app `prune`
+  green; the leaf has
+  no tests (coverage
+  in the hub `cleanup`
+  suites). `alint
+  check`: 180
+  violations / 11
+  failing,
+  byte-identical (zero
+  relocations; zero
+  new rows).
+  `check-gaps`: 12 ->
+  12 (hub 8558 -> 8535
+  prod code lines, 77
+  prod files;
+  `purge_absent.rs`
+  60 -> 36; xtask
+  26317 -> 26318 (+1
+  TIERS row); leaf
+  fits both budgets,
+  no SIZE finding).
+  `ratchet.toml`: 3
+  new rows (README
+  bytes 810,
+  public-surface 1,
+  `print_stderr`
+  bound 1 --
+  dind-gc precedent
+  for the moved
+  expect). `lint arch
+  --strict`: 3
+  pre-existing
+  no-tier, gate
+  content identical to
+  base, zero direction
+  violations; `lint
+  headers` / `tests` /
+  `readme-freshness` /
+  `files` / `agents` /
+  `agent-status-truth`
+  / `container-paths`
+  all identical to
+  base; `lint ratchet`
+  / `suppressions`
+  differ by exactly
+  the pre-existing
+  hub `print_stderr`
+  shrink-row
+  re-measurement
+  (6 -> 5, counts
+  steady 56/36, zero
+  leaf mentions --
+  the bound stays 10
+  per standing
+  precedent);
+  `agent-links`
+  still OK with +1
+  scanned file for the
+  new README.
+
+- Raw outputs:
+  `/tmp/jackin-s45-{before,after}-*.txt`
+  plus
+  `/tmp/jackin-s45-{triage,resolve,fngroup}.py`
+  plus
+  `/tmp/jackin-s45-leafgraph2.txt`
+  (kept out of the
+  repo).
