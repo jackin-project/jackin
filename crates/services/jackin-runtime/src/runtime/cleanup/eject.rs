@@ -1,6 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 //! Role ejection with docker resources.
+//!
+//! The terminal destructive step lives in
+//! `jackin_runtime_cleanup_eject_resources` (S7 split 106),
+//! re-exported below.
 
 use crate::instance::{DockerResources, InstanceManifest};
 use jackin_core::JackinPaths;
@@ -10,7 +14,12 @@ use jackin_docker::docker_client::DockerApi;
 
 use crate::runtime::backend::{ContainerBackend as _, InstanceBackend};
 
-use super::{cleanup_timing, remove_socket_dir, resolve_cleanup_handles_for_state};
+use super::{cleanup_timing, resolve_cleanup_handles_for_state};
+
+// Moved to jackin_runtime_cleanup_eject_resources::eject_resources (S7 split
+// 106); the item re-export keeps every
+// `cleanup::eject::eject_docker_role_with_resources` path stable.
+pub(crate) use jackin_runtime_cleanup_eject_resources::eject_resources::eject_docker_role_with_resources;
 
 pub async fn eject_role(
     paths: &JackinPaths,
@@ -91,57 +100,4 @@ pub(crate) async fn eject_docker_role_with_handles(
         &resources,
     )
     .await
-}
-
-pub(crate) async fn eject_docker_role_with_resources(
-    paths: &JackinPaths,
-    container_name: &str,
-    docker: &impl DockerApi,
-    role_handle: &ContainerHandle,
-    dind_handle: Option<&ContainerHandle>,
-    resources: &DockerResources,
-) -> anyhow::Result<()> {
-    anyhow::ensure!(
-        role_handle.name() == container_name,
-        "role container handle name mismatch: expected {container_name}, got {}",
-        role_handle.name()
-    );
-    if let Some(dind_container) = resources.dind_container.as_deref() {
-        let Some(dind_handle) = dind_handle else {
-            anyhow::bail!(
-                "DinD container identity unavailable; aborting destructive cleanup for {dind_container}"
-            );
-        };
-        anyhow::ensure!(
-            dind_handle.name() == dind_container,
-            "DinD container handle name mismatch: expected {dind_container}, got {}",
-            dind_handle.name()
-        );
-    }
-
-    // Remove containers first so the network has no active endpoints.
-    docker.remove_container_by_id(role_handle).await?;
-    if resources.dind_container.is_some() {
-        // The prevalidated handle is the only permitted destructive target.
-        let dind_handle = dind_handle.ok_or_else(|| {
-            anyhow::anyhow!("DinD container identity disappeared before destructive cleanup")
-        })?;
-        docker.remove_container_by_id(dind_handle).await?;
-    }
-
-    // Volume and network are independent of each other once containers are gone.
-    if let Some(certs_volume) = resources.certs_volume.as_deref() {
-        docker.remove_volume(certs_volume).await?;
-    }
-    docker.remove_network(&resources.network).await?;
-
-    // Best-effort host-side socket dir cleanup. Same reason as
-    // purge_container_filesystem above: the daemon socket and the
-    // bind-mounted Capsule launch config live under
-    // ~/.jackin/sockets/<container>/ and must be removed alongside the
-    // docker-side teardown so re-launching the same container basename
-    // does not inherit stale state.
-    remove_socket_dir(paths, container_name).await;
-
-    Ok(())
 }
