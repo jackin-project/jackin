@@ -99,6 +99,7 @@ pub(crate) const TIERS: &[(&str, u8)] = &[
     ("jackin-runtime-launch-progress-helpers", 6),
     ("jackin-runtime-launch-restore", 7),
     ("jackin-runtime-launch-slot", 5),
+    ("jackin-runtime-launch-supported-agents", 5),
     ("jackin-runtime-launch-trust", 4),
     ("jackin-runtime-reactive-daemon", 2),
     ("jackin-runtime-universe", 7),

@@ -3620,6 +3620,7 @@ dependencies = [
  "jackin-runtime-launch-progress-helpers",
  "jackin-runtime-launch-restore",
  "jackin-runtime-launch-slot",
+ "jackin-runtime-launch-supported-agents",
  "jackin-runtime-launch-trust",
  "jackin-runtime-naming",
  "jackin-runtime-prewarm-trigger",
@@ -4181,6 +4182,18 @@ dependencies = [
  "jackin-instance",
  "jackin-runtime-attach-sessions",
  "jackin-runtime-coordination",
+ "jackin-telemetry",
+]
+
+[[package]]
+name = "jackin-runtime-launch-supported-agents"
+version = "0.6.4"
+dependencies = [
+ "anyhow",
+ "jackin-config",
+ "jackin-core",
+ "jackin-manifest",
+ "jackin-runtime-repo-cache",
  "jackin-telemetry",
 ]
 

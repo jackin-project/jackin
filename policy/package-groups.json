@@ -71,6 +71,7 @@
     "jackin-runtime-launch-progress-helpers": "library",
     "jackin-runtime-launch-restore": "library",
     "jackin-runtime-launch-slot": "library",
+    "jackin-runtime-launch-supported-agents": "library",
     "jackin-runtime-launch-trust": "library",
     "jackin-runtime-naming": "library",
     "jackin-runtime-prewarm-trigger": "library",

@@ -855,6 +855,9 @@ bound = 1632
 key = "crates/services/jackin-runtime-launch-slot/README.md"
 bound = 885
 [[family.entry]]
+key = "crates/services/jackin-runtime-launch-supported-agents/README.md"
+bound = 807
+[[family.entry]]
 key = "crates/services/jackin-runtime-launch-trust/README.md"
 bound = 775
 [[family.entry]]
@@ -1254,6 +1257,9 @@ key = "jackin-runtime-launch-restore"
 bound = 2
 [[family.entry]]
 key = "jackin-runtime-launch-slot"
+bound = 1
+[[family.entry]]
+key = "jackin-runtime-launch-supported-agents"
 bound = 1
 [[family.entry]]
 key = "jackin-runtime-launch-trust"
