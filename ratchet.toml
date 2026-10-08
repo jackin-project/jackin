@@ -351,6 +351,9 @@ bound = 1
 key = "clippy::print_stderr@jackin-runtime"
 bound = 10
 [[family.entry]]
+key = "clippy::print_stderr@jackin-runtime-apple-container-check-dns"
+bound = 1
+[[family.entry]]
 key = "clippy::print_stderr@jackin-runtime-cleanup-dind-gc"
 bound = 1
 [[family.entry]]
@@ -743,6 +746,9 @@ bound = 779
 [[family.entry]]
 key = "crates/services/jackin-runtime-apple-container-attach-outcome/README.md"
 bound = 898
+[[family.entry]]
+key = "crates/services/jackin-runtime-apple-container-check-dns/README.md"
+bound = 692
 [[family.entry]]
 key = "crates/services/jackin-runtime-apple-container-client/README.md"
 bound = 1310
@@ -1209,6 +1215,9 @@ key = "jackin-runtime-apple-container-attach"
 bound = 1
 [[family.entry]]
 key = "jackin-runtime-apple-container-attach-outcome"
+bound = 1
+[[family.entry]]
+key = "jackin-runtime-apple-container-check-dns"
 bound = 1
 [[family.entry]]
 key = "jackin-runtime-apple-container-client"

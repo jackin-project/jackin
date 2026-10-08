@@ -33,6 +33,7 @@
     "jackin-runtime-apple-container-activate-entry",
     "jackin-runtime-apple-container-attach",
     "jackin-runtime-apple-container-attach-outcome",
+    "jackin-runtime-apple-container-check-dns",
     "jackin-runtime-apple-container-client",
     "jackin-runtime-apple-container-probe-version",
     "jackin-runtime-apple-container-running",

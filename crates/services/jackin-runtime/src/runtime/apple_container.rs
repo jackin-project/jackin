@@ -34,6 +34,10 @@
 //! `jackin_runtime_apple_container_supervisor_env` (S7 split 114),
 //! imported below.
 //!
+//! The DNS health check lives in
+//! `jackin_runtime_apple_container_check_dns` (S7 split 118),
+//! imported below.
+//!
 //! # Prerequisites
 //!
 //! - macOS 26 ARM with `apple/container` installed
@@ -108,40 +112,10 @@ pub fn print_session_contract(
     eprintln!();
 }
 
-/// DNS health check — an `nslookup` probe run after attach returns. macOS
-/// sleep/wake can drop DNS inside the VM; surface a "reconnect" hint if affected.
-#[expect(
-    clippy::print_stderr,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
-pub async fn check_dns(container_name: &str) {
-    let result = crate::process_telemetry::exec_async(&jackin_process::ExecRequest::new(
-        "container",
-        [
-            "exec",
-            "--user",
-            crate::runtime::identity::CAPSULE_SUPERVISOR_USER,
-            container_name,
-            "sh",
-            "-c",
-            "nslookup github.com >/dev/null 2>&1 && echo ok || echo hiccup",
-        ],
-    ))
-    .await;
-
-    match result {
-        Ok(o) if o.success => {
-            let out = String::from_utf8_lossy(&o.stdout).trim().to_owned();
-            if out == "hiccup" {
-                eprintln!(
-                    "[jackin] apple-container: DNS hiccup detected after sleep/wake. \
-                     If the agent cannot reach the network, run `jackin hardline` to reconnect."
-                );
-            }
-        }
-        _ => {}
-    }
-}
+// Moved to jackin_runtime_apple_container_check_dns::check_dns (S7
+// split 118); the private import keeps the in-file call site
+// (`launch`) compiling unchanged.
+use jackin_runtime_apple_container_check_dns::check_dns::check_dns;
 
 // Moved to jackin_runtime_apple_container_wait::wait
 // (S7 split 111); the private import keeps both in-file call sites
