@@ -72,6 +72,7 @@
     "jackin-runtime-launch-slot",
     "jackin-runtime-launch-trust",
     "jackin-runtime-naming",
+    "jackin-runtime-prewarm-trigger",
     "jackin-runtime-process-telemetry",
     "jackin-runtime-progress",
     "jackin-runtime-prune-output",

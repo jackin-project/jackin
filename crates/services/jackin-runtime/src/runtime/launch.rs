@@ -39,8 +39,10 @@ pub use launch_dind::{
     DindSidecarPrewarm, prewarm_dind_sidecar_container_with_paths, write_prewarmed_dind_state,
 };
 use launch_dind::{adopt_prewarmed_dind_sidecar, run_dind_sidecar_headless};
-#[cfg(not(test))]
-pub(crate) use launch_dind::{prewarmed_dind_state_is_live, try_lock_prewarmed_dind};
+// `prewarmed_dind_state_is_live` / `try_lock_prewarmed_dind` had their hub
+// re-export retired by S7 split 94: the moved `prewarm_trigger` module was
+// their sole consumer and now names them through
+// `jackin-runtime-launch-dind` directly.
 
 // Moved to jackin_runtime_launch_slot::launch_slot (S7
 // split 77); the module re-export keeps every

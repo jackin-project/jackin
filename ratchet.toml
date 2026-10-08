@@ -219,6 +219,9 @@ bound = 5
 key = "clippy::excessive_nesting@jackin-runtime"
 bound = 1
 [[family.entry]]
+key = "clippy::excessive_nesting@jackin-runtime-prewarm-trigger"
+bound = 1
+[[family.entry]]
 key = "clippy::excessive_nesting@jackin-xtask"
 bound = 1
 [[family.entry]]
@@ -855,6 +858,9 @@ bound = 775
 key = "crates/services/jackin-runtime-naming/README.md"
 bound = 815
 [[family.entry]]
+key = "crates/services/jackin-runtime-prewarm-trigger/README.md"
+bound = 1356
+[[family.entry]]
 key = "crates/services/jackin-runtime-process-telemetry/README.md"
 bound = 1056
 [[family.entry]]
@@ -1248,6 +1254,9 @@ key = "jackin-runtime-launch-trust"
 bound = 1
 [[family.entry]]
 key = "jackin-runtime-naming"
+bound = 1
+[[family.entry]]
+key = "jackin-runtime-prewarm-trigger"
 bound = 1
 [[family.entry]]
 key = "jackin-runtime-process-telemetry"

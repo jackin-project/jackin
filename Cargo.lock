@@ -3621,6 +3621,7 @@ dependencies = [
  "jackin-runtime-launch-slot",
  "jackin-runtime-launch-trust",
  "jackin-runtime-naming",
+ "jackin-runtime-prewarm-trigger",
  "jackin-runtime-process-telemetry",
  "jackin-runtime-progress",
  "jackin-runtime-prune-output",
@@ -4191,6 +4192,20 @@ dependencies = [
  "jackin-core",
  "jackin-image",
  "jackin-instance",
+]
+
+[[package]]
+name = "jackin-runtime-prewarm-trigger"
+version = "0.6.4"
+dependencies = [
+ "anyhow",
+ "jackin-config",
+ "jackin-core",
+ "jackin-diagnostics",
+ "jackin-docker",
+ "jackin-runtime-image",
+ "jackin-runtime-launch-dind",
+ "jackin-telemetry",
 ]
 
 [[package]]

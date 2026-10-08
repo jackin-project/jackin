@@ -72,6 +72,7 @@
     "jackin-runtime-launch-slot": "library",
     "jackin-runtime-launch-trust": "library",
     "jackin-runtime-naming": "library",
+    "jackin-runtime-prewarm-trigger": "library",
     "jackin-runtime-process-telemetry": "library",
     "jackin-runtime-progress": "library",
     "jackin-runtime-prune-output": "library",

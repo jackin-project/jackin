@@ -1,0 +1,32 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "jackin-runtime-prewarm-trigger"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
+description = "Background image and DinD sidecar prewarm triggers for runtime."
+license.workspace = true
+readme = "README.md"
+publish = false
+
+repository.workspace = true
+
+[lib]
+name = "jackin_runtime_prewarm_trigger"
+path = "src/lib.rs"
+
+[dependencies]
+jackin-config = { workspace = true }
+jackin-core = { workspace = true }
+jackin-diagnostics = { workspace = true }
+jackin-docker = { workspace = true }
+jackin-runtime-image = { workspace = true }
+jackin-runtime-launch-dind = { workspace = true }
+jackin-telemetry = { workspace = true }
+anyhow = { workspace = true }
+
+[lints]
+workspace = true

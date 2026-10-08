@@ -75,6 +75,7 @@ jackin-runtime-launch-restore = { workspace = true }
 jackin-runtime-launch-slot = { workspace = true }
 jackin-runtime-launch-trust = { workspace = true }
 jackin-runtime-naming = { workspace = true }
+jackin-runtime-prewarm-trigger = { workspace = true }
 jackin-runtime-process-telemetry = { workspace = true }
 jackin-runtime-progress = { workspace = true }
 jackin-runtime-prune-output = { workspace = true }

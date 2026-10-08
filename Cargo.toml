@@ -70,6 +70,7 @@ members = [
     "crates/services/jackin-runtime-launch-slot",
     "crates/services/jackin-runtime-launch-trust",
     "crates/services/jackin-runtime-naming",
+    "crates/services/jackin-runtime-prewarm-trigger",
     "crates/services/jackin-runtime-process-telemetry",
     "crates/services/jackin-runtime-progress",
     "crates/services/jackin-runtime-prune-output",
@@ -228,6 +229,7 @@ jackin-runtime-launch-restore = { version = "0.6.4", path = "crates/services/jac
 jackin-runtime-launch-slot = { version = "0.6.4", path = "crates/services/jackin-runtime-launch-slot" }
 jackin-runtime-launch-trust = { version = "0.6.4", path = "crates/services/jackin-runtime-launch-trust" }
 jackin-runtime-naming = { version = "0.6.4", path = "crates/services/jackin-runtime-naming" }
+jackin-runtime-prewarm-trigger = { version = "0.6.4", path = "crates/services/jackin-runtime-prewarm-trigger" }
 jackin-runtime-process-telemetry = { version = "0.6.4", path = "crates/services/jackin-runtime-process-telemetry" }
 jackin-runtime-progress = { version = "0.6.4", path = "crates/services/jackin-runtime-progress" }
 jackin-runtime-prune-output = { version = "0.6.4", path = "crates/services/jackin-runtime-prune-output" }
