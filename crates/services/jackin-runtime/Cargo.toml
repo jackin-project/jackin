@@ -42,6 +42,7 @@ jackin-runtime-attach-sessions = { workspace = true }
 jackin-runtime-attach-transport = { workspace = true }
 jackin-runtime-backend-selection = { workspace = true }
 jackin-runtime-cleanup-dind-gc = { workspace = true }
+jackin-runtime-cleanup-prune-images = { workspace = true }
 jackin-runtime-cleanup-resolve = { workspace = true }
 jackin-runtime-cleanup-timing = { workspace = true }
 jackin-runtime-coordination = { workspace = true }

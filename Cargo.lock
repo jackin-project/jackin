@@ -3588,6 +3588,7 @@ dependencies = [
  "jackin-runtime-attach-transport",
  "jackin-runtime-backend-selection",
  "jackin-runtime-cleanup-dind-gc",
+ "jackin-runtime-cleanup-prune-images",
  "jackin-runtime-cleanup-resolve",
  "jackin-runtime-cleanup-timing",
  "jackin-runtime-coordination",
@@ -3756,6 +3757,17 @@ dependencies = [
  "jackin-runtime-naming",
  "owo-colors 4.3.0",
  "tokio",
+]
+
+[[package]]
+name = "jackin-runtime-cleanup-prune-images"
+version = "0.6.4"
+dependencies = [
+ "anyhow",
+ "jackin-docker",
+ "jackin-runtime-cleanup-timing",
+ "jackin-runtime-naming",
+ "jackin-runtime-prune-output",
 ]
 
 [[package]]
