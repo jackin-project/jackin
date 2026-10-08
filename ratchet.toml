@@ -762,6 +762,9 @@ bound = 812
 key = "crates/services/jackin-runtime-cleanup-dind-gc/README.md"
 bound = 1117
 [[family.entry]]
+key = "crates/services/jackin-runtime-cleanup-prune-home/README.md"
+bound = 783
+[[family.entry]]
 key = "crates/services/jackin-runtime-cleanup-prune-images/README.md"
 bound = 795
 [[family.entry]]
@@ -1176,6 +1179,9 @@ key = "jackin-runtime-cleanup-absent-guards"
 bound = 1
 [[family.entry]]
 key = "jackin-runtime-cleanup-dind-gc"
+bound = 1
+[[family.entry]]
+key = "jackin-runtime-cleanup-prune-home"
 bound = 1
 [[family.entry]]
 key = "jackin-runtime-cleanup-prune-images"

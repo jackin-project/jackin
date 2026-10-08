@@ -3,7 +3,8 @@
 //! Role/cache/home/image/instance pruning.
 //!
 //! Image pruning lives in `jackin_runtime_cleanup_prune_images` (S7 split 99),
-//! re-exported below.
+//! home pruning in `jackin_runtime_cleanup_prune_home` (S7 split 101),
+//! both re-exported below.
 
 #![expect(
     clippy::print_stderr,
@@ -18,11 +19,15 @@ use jackin_core::CommandRunner;
 use jackin_docker::docker_client::{ContainerState, DockerApi};
 use owo_colors::OwoColorize;
 
-use super::{cleanup_failure, cleanup_timing, prune_dir, purge_container_filesystem};
+use super::{cleanup_timing, prune_dir, purge_container_filesystem};
 
 // Moved to jackin_runtime_cleanup_prune_images::prune_images (S7 split 99);
 // the item re-export keeps every `prune::prune_images` path stable.
 pub use jackin_runtime_cleanup_prune_images::prune_images::prune_images;
+
+// Moved to jackin_runtime_cleanup_prune_home::prune_home (S7 split 101);
+// the item re-export keeps every `prune::prune_jackin_home` path stable.
+pub use jackin_runtime_cleanup_prune_home::prune_home::prune_jackin_home;
 
 pub fn prune_roles(paths: &JackinPaths) -> anyhow::Result<()> {
     crate::runtime::coordination::ensure_prunable(paths, &paths.roles_dir)?;
@@ -42,22 +47,6 @@ pub fn prune_cache(paths: &JackinPaths) -> anyhow::Result<()> {
         "removing rebuildable shared cache",
         "shared cache",
     )
-}
-
-pub fn prune_jackin_home(paths: &JackinPaths) -> anyhow::Result<()> {
-    crate::runtime::coordination::ensure_prunable(paths, &paths.jackin_home)?;
-    let _timing = cleanup_timing("runtime_home");
-    prune_output::section("Runtime Home", "removing remaining runtime state");
-    let row = prune_output::start("Deleting", "runtime home");
-    match crate::isolation::safe_remove::safe_remove_dir_all(&paths.jackin_home) {
-        Err(err) => {
-            cleanup_failure(format!("could not remove runtime home: {err}"));
-            row.failed(format!("could not remove runtime home: {err}"));
-            return Err(err.into());
-        }
-        Ok(()) => row.ok(),
-    }
-    Ok(())
 }
 
 /// Purge on-disk state for terminated instances and clear their index entries.
