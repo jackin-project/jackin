@@ -354,6 +354,9 @@ bound = 10
 key = "clippy::print_stderr@jackin-runtime-cleanup-dind-gc"
 bound = 1
 [[family.entry]]
+key = "clippy::print_stderr@jackin-runtime-cleanup-socket-dir"
+bound = 1
+[[family.entry]]
 key = "clippy::print_stderr@jackin-runtime-exec-host"
 bound = 2
 [[family.entry]]
@@ -779,6 +782,9 @@ bound = 797
 [[family.entry]]
 key = "crates/services/jackin-runtime-cleanup-resolve/README.md"
 bound = 783
+[[family.entry]]
+key = "crates/services/jackin-runtime-cleanup-socket-dir/README.md"
+bound = 810
 [[family.entry]]
 key = "crates/services/jackin-runtime-cleanup-timing/README.md"
 bound = 781
@@ -1206,6 +1212,9 @@ key = "jackin-runtime-cleanup-prune-roles"
 bound = 1
 [[family.entry]]
 key = "jackin-runtime-cleanup-resolve"
+bound = 1
+[[family.entry]]
+key = "jackin-runtime-cleanup-socket-dir"
 bound = 1
 [[family.entry]]
 key = "jackin-runtime-cleanup-timing"

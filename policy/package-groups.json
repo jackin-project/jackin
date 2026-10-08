@@ -46,6 +46,7 @@
     "jackin-runtime-cleanup-prune-images": "library",
     "jackin-runtime-cleanup-prune-roles": "library",
     "jackin-runtime-cleanup-resolve": "library",
+    "jackin-runtime-cleanup-socket-dir": "library",
     "jackin-runtime-cleanup-timing": "library",
     "jackin-runtime-coordination": "library",
     "jackin-runtime-discovery": "library",

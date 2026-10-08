@@ -46,6 +46,7 @@
     "jackin-runtime-cleanup-prune-images",
     "jackin-runtime-cleanup-prune-roles",
     "jackin-runtime-cleanup-resolve",
+    "jackin-runtime-cleanup-socket-dir",
     "jackin-runtime-cleanup-timing",
     "jackin-runtime-coordination",
     "jackin-runtime-discovery",

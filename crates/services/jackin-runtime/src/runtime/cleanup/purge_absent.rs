@@ -1,17 +1,20 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Backend-absent purge guards and socket dir removal.
-
-#![expect(
-    clippy::print_stderr,
-    reason = "runtime cleanup and GC report operator-visible warnings and results"
-)]
+//! Backend-absent purge guards.
+//!
+//! Socket-dir removal lives in
+//! `jackin_runtime_cleanup_socket_dir` (S7 split 105),
+//! re-exported below.
 
 use jackin_core::JackinPaths;
 
 use jackin_docker::docker_client::DockerApi;
 
 use crate::runtime::backend::{ContainerBackend as _, InstanceBackend};
+
+// Moved to jackin_runtime_cleanup_socket_dir::socket_dir (S7 split 105);
+// the item re-export keeps every `cleanup::remove_socket_dir` path stable.
+pub(crate) use jackin_runtime_cleanup_socket_dir::socket_dir::remove_socket_dir;
 
 pub(crate) async fn ensure_backend_absent_for_purge(
     paths: &JackinPaths,
@@ -30,31 +33,4 @@ pub(crate) async fn ensure_backend_absent_for_purge(
                 .await
         }
     }
-}
-
-/// Remove the host-side bind-mount directory used to expose the daemon
-/// socket and Capsule launch config into the container. Best-effort:
-/// any failure is logged to stderr but does not abort the surrounding
-/// teardown — the docker-side resources are already gone, and a
-/// half-removed `~/.jackin/sockets/<container>/` is no worse than the
-/// pre-fix steady state.
-pub(crate) async fn remove_socket_dir(paths: &JackinPaths, container_name: &str) {
-    let paths = paths.clone();
-    let dir = paths.jackin_home.join("sockets").join(container_name);
-    let displayed = dir.clone();
-    let result = jackin_telemetry::spawn::joined_blocking(move || {
-        crate::runtime::coordination::ensure_prunable(&paths, &dir).and_then(|()| {
-            crate::isolation::safe_remove::safe_remove_dir_contained(&paths.jackin_home, &dir)
-        })
-    })
-    .await;
-    let error = match result {
-        Ok(Ok(())) => return,
-        Ok(Err(error)) => error,
-        Err(error) => std::io::Error::other(error),
-    };
-    eprintln!(
-        "jackin: warning: failed to remove socket dir {}: {error}",
-        displayed.display()
-    );
 }
