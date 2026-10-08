@@ -88,6 +88,7 @@
     "jackin-runtime-launch-programmatic-selection",
     "jackin-runtime-launch-progress-helpers",
     "jackin-runtime-launch-restore",
+    "jackin-runtime-launch-run-envs",
     "jackin-runtime-launch-sibling-auth-prewarm",
     "jackin-runtime-launch-slot",
     "jackin-runtime-launch-supported-agents",

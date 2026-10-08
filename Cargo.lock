@@ -3637,6 +3637,7 @@ dependencies = [
  "jackin-runtime-launch-programmatic-selection",
  "jackin-runtime-launch-progress-helpers",
  "jackin-runtime-launch-restore",
+ "jackin-runtime-launch-run-envs",
  "jackin-runtime-launch-sibling-auth-prewarm",
  "jackin-runtime-launch-slot",
  "jackin-runtime-launch-supported-agents",
@@ -4356,6 +4357,13 @@ dependencies = [
  "jackin-runtime-launch-load-options",
  "jackin-runtime-launch-plan",
  "jackin-runtime-progress",
+]
+
+[[package]]
+name = "jackin-runtime-launch-run-envs"
+version = "0.6.4"
+dependencies = [
+ "jackin-telemetry",
 ]
 
 [[package]]

@@ -91,6 +91,7 @@ jackin-runtime-launch-plan = { workspace = true }
 jackin-runtime-launch-programmatic-selection = { workspace = true }
 jackin-runtime-launch-progress-helpers = { workspace = true }
 jackin-runtime-launch-restore = { workspace = true }
+jackin-runtime-launch-run-envs = { workspace = true }
 jackin-runtime-launch-sibling-auth-prewarm = { workspace = true }
 jackin-runtime-launch-slot = { workspace = true }
 jackin-runtime-launch-supported-agents = { workspace = true }

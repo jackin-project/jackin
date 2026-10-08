@@ -86,6 +86,7 @@ members = [
     "crates/services/jackin-runtime-launch-programmatic-selection",
     "crates/services/jackin-runtime-launch-progress-helpers",
     "crates/services/jackin-runtime-launch-restore",
+    "crates/services/jackin-runtime-launch-run-envs",
     "crates/services/jackin-runtime-launch-sibling-auth-prewarm",
     "crates/services/jackin-runtime-launch-slot",
     "crates/services/jackin-runtime-launch-supported-agents",
@@ -266,6 +267,7 @@ jackin-runtime-launch-plan = { version = "0.6.4", path = "crates/services/jackin
 jackin-runtime-launch-programmatic-selection = { version = "0.6.4", path = "crates/services/jackin-runtime-launch-programmatic-selection" }
 jackin-runtime-launch-progress-helpers = { version = "0.6.4", path = "crates/services/jackin-runtime-launch-progress-helpers" }
 jackin-runtime-launch-restore = { version = "0.6.4", path = "crates/services/jackin-runtime-launch-restore" }
+jackin-runtime-launch-run-envs = { version = "0.6.4", path = "crates/services/jackin-runtime-launch-run-envs" }
 jackin-runtime-launch-sibling-auth-prewarm = { version = "0.6.4", path = "crates/services/jackin-runtime-launch-sibling-auth-prewarm" }
 jackin-runtime-launch-slot = { version = "0.6.4", path = "crates/services/jackin-runtime-launch-slot" }
 jackin-runtime-launch-supported-agents = { version = "0.6.4", path = "crates/services/jackin-runtime-launch-supported-agents" }

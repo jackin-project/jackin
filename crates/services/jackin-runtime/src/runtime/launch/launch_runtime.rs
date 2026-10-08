@@ -10,6 +10,10 @@
 //! The debug runtime env helper lives in
 //! `jackin_runtime_launch_debug_envs` (S7 split 115),
 //! re-exported below.
+//!
+//! The run invocation env helper lives in
+//! `jackin_runtime_launch_run_envs` (S7 split 116),
+//! re-exported below.
 
 use anyhow::Context;
 // Test-only scope restoration: the hub suite below names `AppConfig`
@@ -1478,11 +1482,11 @@ pub(crate) fn telemetry_runtime_envs(debug: bool) -> Vec<String> {
     telemetry_runtime_envs_for(jackin_diagnostics::telemetry_level(debug))
 }
 
-pub(crate) fn run_runtime_envs() -> Vec<String> {
-    jackin_telemetry::identity::current_invocation().map_or_else(Vec::new, |invocation| {
-        vec![format!("JACKIN_INVOCATION_ID={invocation}")]
-    })
-}
+// Moved to jackin_runtime_launch_run_envs::run_envs (S7 split
+// 116); the item re-export keeps every
+// `launch_runtime::run_runtime_envs` path stable (the in-file
+// `launch_role_runtime` call site).
+pub(crate) use jackin_runtime_launch_run_envs::run_envs::run_runtime_envs;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum CapsuleNetwork {
