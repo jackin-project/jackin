@@ -14531,3 +14531,306 @@ bound 720.
   `/tmp/jackin-s52-base-clippy-locs.txt`
   (kept out of the
   repo).
+
+### Split 113: runtime-apple-container-activate-entry extraction (M74)
+
+- `jackin-runtime` ->
+  `jackin-runtime` +
+  `jackin-runtime-apple-container-activate-entry`
+  (T3, landed as
+  `be58a754`:
+  `apple_container.rs`
+  started-entry
+  activation
+  extraction -- the
+  14-line
+  `activate_started_entry`
+  (fail on a bad
+  `container run`
+  result with the
+  capabilities hint,
+  else activate the
+  running launch entry
+  claim) moves out of
+  the 530-line
+  apple-container
+  file. Max dep is
+  `universe-claims` T2
+  (plus `anyhow`
+  external), so the
+  leaf takes T3 per
+  the 1+max rule. Zero
+  true hub edges in
+  the moved code (one
+  `super::` path only;
+  zero `crate::` refs
+  remain; the
+  `super::universe::EntryClaim`
+  edge resolves
+  through the hub
+  universe glob shim
+  to the T7 universe
+  leaf, which
+  re-exports the
+  symbol from the T2
+  claims leaf -- naive
+  tooling grades the
+  item T8-blocked,
+  honest re-export
+  resolution grades it
+  T3;
+  `claim.activate()`
+  lives in the claims
+  leaf;
+  capitalized-path
+  grep shows only
+  `EntryClaim` /
+  `Result` / `Option`
+  / `Some` / `Ok` /
+  `Context` plus doc
+  prose and SPDX
+  lines). One new
+  `pub` item (the fn
+  was private); the
+  hub file keeps a
+  private import so
+  the `launch` call
+  site compiles
+  unchanged (the step
+  had no external
+  callers -- repo-wide
+  sweep shows only the
+  one in-file site;
+  split-112 precedent
+  family). No
+  file-level `use`
+  drops (the moved
+  edge was a
+  fully-qualified
+  path; hub keeps
+  `super::universe`
+  via
+  `AppleContainerLaunch`
+  / `reconnect`).
+  Semantics identical.
+  Triage: s53 manual
+  whole-file survey of
+  the s112
+  `apple_container.rs`
+  remainder plus the
+  `attach` / `cleanup`
+  submodules, over
+  `leafgraph2.py` +
+  manual
+  capitalized-path
+  grep with re-export
+  resolution +
+  repo-wide caller
+  sweeps + hub-test
+  reference grep;
+  whole-file triage
+  re-confirms all
+  remaining hub
+  modules T8-blocked
+  except parent/shim
+  files (`runtime.rs`
+  is forward-only,
+  `stubs.rs` is
+  `cfg(test)`-only,
+  `prewarm_trigger`
+  stays T7-blocked and
+  would take T8;
+  `repo_cache` /
+  `programmatic` /
+  `restore` /
+  `restore_resolve` /
+  `dry_run` /
+  `launch_dind` /
+  `host_attach` /
+  `coordination` are
+  zero-item pure
+  shims). The s112
+  landing leaves
+  `activate_started_entry`
+  as the smallest
+  remaining
+  apple-container
+  micro-fn (14 lines,
+  single live call
+  site in `launch`, T3
+  by honest
+  re-export-resolve
+  grading), beating
+  every remaining
+  ALONE item on line
+  count. Held
+  fragments:
+  `apple_supervisor_env`
+  (17l, T2) serves
+  `launch` alone and
+  is now the
+  next-smallest;
+  `with_admitted_final_apple_spec`
+  (14l) ties on size
+  but is pinned by two
+  hub-test sites plus
+  a hub-`launch`
+  helper edge;
+  `validate_exec_bindings`
+  (8l but net-zero hub
+  decrease and a T4
+  dep) / `check_dns`
+  (28l, T4) serve
+  `launch` alone;
+  `print_session_contract`
+  serves one site and
+  drags the hub-owned
+  `AppleContainerMount`
+  type; `stop` /
+  `remove` /
+  `ensure_absent_for_purge`
+  no-arg wrappers are
+  uncalled,
+  re-verified s51, so
+  `stop_with` /
+  `ensure_absent_for_purge_with`
+  serve one live site
+  each via
+  `backend.rs` and
+  `remove_with` serves
+  none;
+  `apple_container_instance_names`
+  (23l) is a
+  single-caller
+  fragment via
+  `exile_all`;
+  `validate_agent_supported`
+  (22l) is a
+  single-caller
+  fragment whose
+  caller lives in
+  claimed
+  `launch_pipeline`;
+  `launch_runtime`
+  micro-items are
+  single-flow
+  fragments,
+  type-component
+  fragments,
+  single-caller env
+  helpers, or
+  claimed-file stubs;
+  `backend.rs` ALONE
+  items are
+  trait/struct
+  component fragments
+  whose impls stay;
+  `failure.rs`
+  `render_exit` /
+  `observe_exit` +
+  `launch_pipeline`
+  stay claimed by
+  earlier slices.
+
+- Verify: `cargo check
+  --locked --workspace
+  --all-targets`
+  green; `cargo fmt
+  --all --check`
+  clean; `cargo
+  clippy` 0
+  errors/warnings on
+  the leaf
+  (`--all-targets -D
+  warnings`) + hub lib
+  (`-D warnings`; hub
+  `--all-targets`
+  keeps its 6
+  pre-existing
+  test-only errors,
+  normalized locations
+  identical to base).
+  `cargo nextest list
+  --workspace
+  --all-targets`: 7277
+  -> 7277,
+  byte-identical (0
+  relocations; 0
+  dropped, 0 added).
+  `nextest run`:
+  433/433 runtime
+  green (1 skipped,
+  pre-existing; 2
+  flagged leaky,
+  pass); 18/18 app
+  `prune` green; the
+  leaf has no tests
+  (the step only folds
+  a start result into
+  a claim activation
+  and is exercised
+  through the hub
+  launch path; no
+  dedicated suite
+  exists). `alint
+  check`: 180
+  violations / 11
+  failing,
+  byte-identical (zero
+  relocations; zero
+  new rows).
+  `check-gaps`: 12 ->
+  12 (hub 8369 -> 8356
+  prod code lines, 77
+  prod files;
+  `apple_container.rs`
+  530 -> 524; xtask
+  26325 -> 26326 (+1
+  TIERS row); leaf
+  fits both budgets,
+  no SIZE finding;
+  `leafgraph2.py` tip
+  diff empty -- the
+  moved `super::` edge
+  stays live via
+  `AppleContainerLaunch`
+  / `reconnect`).
+  `ratchet.toml`: 2
+  new rows (README
+  bytes 819,
+  public-surface 1 --
+  no `print_stderr`
+  row: the moved fn
+  has no `eprintln`,
+  s108 precedent).
+  `lint arch
+  --strict`: 3
+  pre-existing
+  no-tier, gate
+  content identical to
+  base, zero direction
+  violations; `lint
+  headers` / `tests` /
+  `readme-freshness` /
+  `files` / `agents` /
+  `agent-status-truth`
+  / `container-paths`
+  all identical to
+  base; `lint ratchet`
+  / `suppressions`
+  identical to base;
+  `agent-links` still
+  OK with +1 scanned
+  file (161 -> 162)
+  for the new README.
+
+- Raw outputs:
+  `/tmp/jackin-s53-{before,after}-*.txt`
+  plus
+  `/tmp/jackin-s53-leafgraph2-*.txt`
+  plus
+  `/tmp/jackin-s53-run-*.txt`
+  plus
+  `/tmp/jackin-s53-base-clippy-locs.txt`
+  (kept out of the
+  repo).
