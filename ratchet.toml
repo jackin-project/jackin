@@ -735,6 +735,9 @@ bound = 2507
 key = "crates/services/jackin-runtime/README.md"
 bound = 3545
 [[family.entry]]
+key = "crates/services/jackin-runtime-apple-container-activate-entry/README.md"
+bound = 819
+[[family.entry]]
 key = "crates/services/jackin-runtime-apple-container-attach/README.md"
 bound = 779
 [[family.entry]]
@@ -1186,6 +1189,9 @@ bound = 7
 [[family.entry]]
 key = "jackin-runtime"
 bound = 7
+[[family.entry]]
+key = "jackin-runtime-apple-container-activate-entry"
+bound = 1
 [[family.entry]]
 key = "jackin-runtime-apple-container-attach"
 bound = 1

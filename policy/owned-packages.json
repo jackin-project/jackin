@@ -30,6 +30,7 @@
     "jackin-process-directory",
     "jackin-protocol",
     "jackin-runtime",
+    "jackin-runtime-apple-container-activate-entry",
     "jackin-runtime-apple-container-attach",
     "jackin-runtime-apple-container-attach-outcome",
     "jackin-runtime-apple-container-client",

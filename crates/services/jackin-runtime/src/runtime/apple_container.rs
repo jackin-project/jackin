@@ -26,6 +26,10 @@
 //! `jackin_runtime_apple_container_probe_version` (S7 split 112),
 //! imported below.
 //!
+//! The started-entry activation lives in
+//! `jackin_runtime_apple_container_activate_entry` (S7 split 113),
+//! imported below.
+//!
 //! # Prerequisites
 //!
 //! - macOS 26 ARM with `apple/container` installed
@@ -155,6 +159,11 @@ use jackin_runtime_apple_container_attach_outcome::attach_outcome::record_attach
 // (`launch`) compiling unchanged.
 use jackin_runtime_apple_container_probe_version::probe_version::probe_version;
 
+// Moved to jackin_runtime_apple_container_activate_entry::activate_entry
+// (S7 split 113); the private import keeps the in-file call site
+// (`launch`) compiling unchanged.
+use jackin_runtime_apple_container_activate_entry::activate_entry::activate_started_entry;
+
 /// Inputs for the apple-container launch path. Grouped into a struct so the
 /// many backend-specific parameters travel together from the `load_role_with`
 /// call site instead of as a long positional argument list.
@@ -190,21 +199,6 @@ fn validate_exec_bindings(bindings: &[jackin_protocol::ExecBinding]) -> Result<(
 
     crate::exec_host::ensure_caller_auth_supported()
         .context("apple-container does not support on-demand credential bindings")
-}
-
-async fn activate_started_entry(
-    start_result: Result<()>,
-    entry_claim: Option<&super::universe::EntryClaim>,
-) -> Result<()> {
-    start_result
-        .context("container run failed — required capabilities or image may be unavailable")?;
-    if let Some(claim) = entry_claim {
-        claim
-            .activate()
-            .await
-            .context("activating running launch entry")?;
-    }
-    Ok(())
 }
 
 fn apple_supervisor_env(debug: bool) -> Vec<(String, String)> {

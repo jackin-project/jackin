@@ -3579,6 +3579,7 @@ dependencies = [
  "jackin-otlp-testbed",
  "jackin-process",
  "jackin-protocol",
+ "jackin-runtime-apple-container-activate-entry",
  "jackin-runtime-apple-container-attach",
  "jackin-runtime-apple-container-attach-outcome",
  "jackin-runtime-apple-container-client",
@@ -3664,6 +3665,14 @@ dependencies = [
  "toml",
  "toml_edit",
  "tracing",
+]
+
+[[package]]
+name = "jackin-runtime-apple-container-activate-entry"
+version = "0.6.4"
+dependencies = [
+ "anyhow",
+ "jackin-runtime-universe-claims",
 ]
 
 [[package]]
