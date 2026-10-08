@@ -37,6 +37,7 @@
     "jackin-runtime-apple-container-client": "library",
     "jackin-runtime-apple-container-probe-version": "library",
     "jackin-runtime-apple-container-running": "library",
+    "jackin-runtime-apple-container-session-contract": "library",
     "jackin-runtime-apple-container-supervisor-env": "library",
     "jackin-runtime-apple-container-wait": "library",
     "jackin-runtime-attach-admission": "library",

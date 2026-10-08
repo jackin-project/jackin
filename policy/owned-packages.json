@@ -37,6 +37,7 @@
     "jackin-runtime-apple-container-client",
     "jackin-runtime-apple-container-probe-version",
     "jackin-runtime-apple-container-running",
+    "jackin-runtime-apple-container-session-contract",
     "jackin-runtime-apple-container-supervisor-env",
     "jackin-runtime-apple-container-wait",
     "jackin-runtime-attach-admission",
