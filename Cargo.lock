@@ -3589,6 +3589,7 @@ dependencies = [
  "jackin-runtime-backend-selection",
  "jackin-runtime-cleanup-absent-guards",
  "jackin-runtime-cleanup-dind-gc",
+ "jackin-runtime-cleanup-prune-cache",
  "jackin-runtime-cleanup-prune-dir",
  "jackin-runtime-cleanup-prune-home",
  "jackin-runtime-cleanup-prune-images",
@@ -3770,6 +3771,16 @@ dependencies = [
  "jackin-runtime-naming",
  "owo-colors 4.3.0",
  "tokio",
+]
+
+[[package]]
+name = "jackin-runtime-cleanup-prune-cache"
+version = "0.6.4"
+dependencies = [
+ "anyhow",
+ "jackin-core",
+ "jackin-runtime-cleanup-prune-dir",
+ "jackin-runtime-coordination",
 ]
 
 [[package]]

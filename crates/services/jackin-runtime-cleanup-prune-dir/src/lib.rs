@@ -9,7 +9,8 @@
 //! owned-validated deletion plus cleanup-failure recording),
 //! decoupled from the role/cache/instance pruning that stays
 //! in the hub. The old
-//! `jackin_runtime::runtime::cleanup::prune_dir` path
-//! keeps working through the hub re-export.
+//! `jackin_runtime::runtime::cleanup::prune_dir` hub path
+//! was retired by S7 split 104 once the last hub consumer
+//! moved out; callers name this leaf directly.
 
 pub mod prune_dir;

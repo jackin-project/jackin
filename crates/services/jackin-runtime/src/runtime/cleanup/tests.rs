@@ -18,6 +18,8 @@ use jackin_core::{DockerApi, JackinPaths};
 
 use jackin_docker::docker_client::{ContainerRow, ContainerState, NetworkRow};
 
+use jackin_runtime_cleanup_prune_dir::prune_dir::prune_dir;
+
 use jackin_test_support::{FakeDockerClient, FakeRunner};
 
 use std::collections::{HashMap, VecDeque};

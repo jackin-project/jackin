@@ -3,8 +3,9 @@
 //! Full exile helpers.
 //!
 //! The shared prune-one-directory helper lives in
-//! `jackin_runtime_cleanup_prune_dir` (S7 split 102),
-//! re-exported below.
+//! `jackin_runtime_cleanup_prune_dir` (S7 split 102); its hub
+//! re-export was retired by S7 split 104 once the last hub
+//! consumer moved out.
 
 use crate::instance::InstanceManifest;
 use crate::runtime::prune_output;
@@ -16,10 +17,6 @@ use crate::runtime::backend::InstanceBackend;
 use crate::runtime::discovery::list_managed_role_names;
 
 use super::{cleanup_timing, eject_role};
-
-// Moved to jackin_runtime_cleanup_prune_dir::prune_dir (S7 split 102);
-// the item re-export keeps every `cleanup::prune_dir` path stable.
-pub(crate) use jackin_runtime_cleanup_prune_dir::prune_dir::prune_dir;
 
 pub async fn exile_all(paths: &JackinPaths, docker: &impl DockerApi) -> anyhow::Result<()> {
     let _timing = cleanup_timing("exile_all");

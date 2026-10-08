@@ -38,6 +38,7 @@ members = [
     "crates/services/jackin-runtime-backend-selection",
     "crates/services/jackin-runtime-cleanup-absent-guards",
     "crates/services/jackin-runtime-cleanup-dind-gc",
+    "crates/services/jackin-runtime-cleanup-prune-cache",
     "crates/services/jackin-runtime-cleanup-prune-dir",
     "crates/services/jackin-runtime-cleanup-prune-home",
     "crates/services/jackin-runtime-cleanup-prune-images",
@@ -206,6 +207,7 @@ jackin-runtime-attach-transport = { version = "0.6.4", path = "crates/services/j
 jackin-runtime-backend-selection = { version = "0.6.4", path = "crates/services/jackin-runtime-backend-selection" }
 jackin-runtime-cleanup-absent-guards = { version = "0.6.4", path = "crates/services/jackin-runtime-cleanup-absent-guards" }
 jackin-runtime-cleanup-dind-gc = { version = "0.6.4", path = "crates/services/jackin-runtime-cleanup-dind-gc" }
+jackin-runtime-cleanup-prune-cache = { version = "0.6.4", path = "crates/services/jackin-runtime-cleanup-prune-cache" }
 jackin-runtime-cleanup-prune-dir = { version = "0.6.4", path = "crates/services/jackin-runtime-cleanup-prune-dir" }
 jackin-runtime-cleanup-prune-home = { version = "0.6.4", path = "crates/services/jackin-runtime-cleanup-prune-home" }
 jackin-runtime-cleanup-prune-images = { version = "0.6.4", path = "crates/services/jackin-runtime-cleanup-prune-images" }

@@ -1,0 +1,28 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "jackin-runtime-cleanup-prune-cache"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
+description = "Prune of rebuildable shared cache for jackin runtime cleanup."
+license.workspace = true
+readme = "README.md"
+publish = false
+
+repository.workspace = true
+
+[lib]
+name = "jackin_runtime_cleanup_prune_cache"
+path = "src/lib.rs"
+
+[dependencies]
+jackin-core = { workspace = true }
+jackin-runtime-cleanup-prune-dir = { workspace = true }
+jackin-runtime-coordination = { workspace = true }
+anyhow = { workspace = true }
+
+[lints]
+workspace = true

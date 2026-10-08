@@ -5,6 +5,7 @@
 //! Image pruning lives in `jackin_runtime_cleanup_prune_images` (S7 split 99),
 //! home pruning in `jackin_runtime_cleanup_prune_home` (S7 split 101),
 //! role pruning in `jackin_runtime_cleanup_prune_roles` (S7 split 103),
+//! cache pruning in `jackin_runtime_cleanup_prune_cache` (S7 split 104),
 //! all re-exported below.
 
 #![expect(
@@ -20,7 +21,7 @@ use jackin_core::CommandRunner;
 use jackin_docker::docker_client::{ContainerState, DockerApi};
 use owo_colors::OwoColorize;
 
-use super::{cleanup_timing, prune_dir, purge_container_filesystem};
+use super::{cleanup_timing, purge_container_filesystem};
 
 // Moved to jackin_runtime_cleanup_prune_images::prune_images (S7 split 99);
 // the item re-export keeps every `prune::prune_images` path stable.
@@ -34,15 +35,9 @@ pub use jackin_runtime_cleanup_prune_home::prune_home::prune_jackin_home;
 // the item re-export keeps every `prune::prune_roles` path stable.
 pub use jackin_runtime_cleanup_prune_roles::prune_roles::prune_roles;
 
-pub fn prune_cache(paths: &JackinPaths) -> anyhow::Result<()> {
-    crate::runtime::coordination::ensure_prunable(paths, &paths.cache_dir)?;
-    prune_dir(
-        &paths.cache_dir,
-        "Shared Cache",
-        "removing rebuildable shared cache",
-        "shared cache",
-    )
-}
+// Moved to jackin_runtime_cleanup_prune_cache::prune_cache (S7 split 104);
+// the item re-export keeps every `prune::prune_cache` path stable.
+pub use jackin_runtime_cleanup_prune_cache::prune_cache::prune_cache;
 
 /// Purge on-disk state for terminated instances and clear their index entries.
 ///

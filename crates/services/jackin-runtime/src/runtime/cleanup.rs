@@ -33,7 +33,10 @@ pub use purge::{purge_class_data, purge_container_state};
 
 pub(crate) use absent::ensure_role_resources_absent_for_purge;
 pub(crate) use eject::{eject_docker_role, eject_docker_role_with_handles};
-pub(crate) use exile::prune_dir;
+// `prune_dir` had its hub re-export retired by S7
+// split 104: the moved `prune_cache` module was its sole remaining hub
+// consumer and now names it through `jackin-runtime-cleanup-prune-dir`
+// directly, as do the hub `cleanup` tests.
 pub(crate) use jackin_runtime_cleanup_resolve::resolve::{
     docker_resources_for_state, resolve_cleanup_handles_for_state, resolve_dind_handle_for_state,
     resolve_role_handle_for_state,
