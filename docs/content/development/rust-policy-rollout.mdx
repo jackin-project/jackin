@@ -10131,3 +10131,195 @@ bound 720.
   `/tmp/jackin-s34-{before,after}-*.txt`
   (kept out of the
   repo).
+
+### Split 95: runtime-launch-exit-outro extraction (M56)
+
+- `jackin-runtime`
+  ->
+  `jackin-runtime`
+  +
+  `jackin-runtime-launch-exit-outro`
+  (T6, landed as
+  `25e439f9`:
+  `failure.rs`
+  `render_exit`
+  observation-inversion --
+  the hub keeps the
+  universe-boundary
+  observation wrapper
+  (`observe_exit` +
+  `force_boundary_outro_enabled`
+  + the running-list-failure
+  diagnostics) and the
+  outro rendering
+  (`render_exit_observation`)
+  moves: the still-running
+  summary (`InstanceIndex`
+  + `exit_summary`) plus
+  the two-screen outro
+  (`warp_out` /
+  `warp_end_caption`).
+  Max deps are
+  `progress` T5
+  (`launch_output` /
+  `rich_terminal_supported`;
+  the `LaunchOutputSink`
+  trait itself is `core`
+  T0), `exit-summary` T4,
+  `instance` T3,
+  `diagnostics` /
+  `universe-claims` T2
+  (`ExitClaim` named
+  through `universe-claims`
+  directly, not via
+  `universe` -- the s32/s34
+  re-export-resolution
+  lesson), so the leaf
+  takes T6 per the
+  1+max rule -- inside the
+  slice <=T7 ceiling (the
+  T7 `universe` edge stays
+  in the hub wrapper;
+  whole-file extraction
+  would need T8, the
+  s92-recorded blocker).
+  Zero true hub edges in
+  the moved code. One new
+  `pub` item
+  (`render_exit_observation`,
+  sync -- the `async` was
+  the observation's);
+  the hub `render_exit`
+  wrapper keeps its
+  `pub(crate)` signature,
+  so the 7
+  `launch_pipeline`
+  call sites + the
+  `launch.rs` re-export +
+  the `case_21`/`case_22`
+  suite compile unchanged.
+  The hub `failure.rs`
+  keeps the split-90
+  re-exports; the
+  `launch-failure` leaf
+  doc line claiming the
+  outro stays is updated.
+  Triage: s35 resolver
+  script with brace-import
+  expansion + manual
+  `super::` / `crate::`
+  grep with capitals +
+  re-export resolution to
+  true defining crates
+  (resolves `launch::X`
+  / `cleanup::X` /
+  `attach::X` item paths
+  the s34 script grades
+  T8). Next scoped
+  target: function-group
+  grading inside
+  `launch_pipeline.rs`
+  (1870 lines) /
+  `launch_runtime.rs`
+  (1751 lines) -- file-level
+  triage is exhausted
+  (every remaining owned
+  module carries true T8
+  edges: attach siblings
+  are mutually recursive
+  behind `host-attach` T7;
+  `backend` fans into hub
+  attach/cleanup/apple-container;
+  `cleanup/*` needs hub
+  `backend`). No hub
+  renumber.)
+
+- Verify: `cargo check
+  --locked --workspace
+  --all-targets`
+  green; `cargo fmt
+  --all --check`
+  clean; `cargo clippy`
+  0 errors/warnings
+  on the leaf
+  (`--all-targets -D
+  warnings`) + hub
+  lib (`-D warnings`;
+  hub `--all-targets`
+  keeps its 6
+  pre-existing
+  test-only errors,
+  byte-identical to
+  base). `cargo nextest
+  list --workspace
+  --all-targets`: 7277
+  -> 7277,
+  byte-identical (0
+  relocations; 0
+  dropped, 0 added).
+  `nextest run`:
+  443/443 runtime
+  green (1 skipped,
+  pre-existing; 2 LEAK
+  flags in untouched
+  attach/backend cases,
+  isolated PASS +
+  a distinct base-run
+  flake proved load
+  flakes) + 53/53 app
+  `load_cmd` (17) /
+  `prewarm` (36)
+  green + 5/5 isolated
+  outro/LEAK-check
+  green; the leaf has
+  no tests (coverage
+  in the hub `launch`
+  `case_21`/`case_22`
+  cases). `alint check`:
+  180 violations /
+  11 failing,
+  byte-identical (zero
+  relocations -- the
+  leaf file sits at
+  80 lines, under
+  400; zero new rows).
+  `check-gaps`:
+  12 -> 12 (hub
+  8956 -> 8925
+  prod code lines,
+  77 prod files;
+  xtask 26307 ->
+  26308 (+1 TIERS
+  row); leaf fits
+  both budgets, no
+  SIZE finding).
+  `ratchet.toml`: 2
+  new rows (README
+  bytes 885,
+  public-surface 1;
+  no clippy-lint row --
+  the leaf carries no
+  `expect`; no
+  `print_stderr` row --
+  measured 0,
+  split-92 precedent).
+  `lint arch
+  --strict`: 3
+  pre-existing
+  no-tier
+  byte-identical,
+  zero direction
+  violations;
+  `lint headers` /
+  `tests` /
+  `readme-freshness` /
+  `files` / `agents` /
+  `suppressions` /
+  `ratchet` all
+  byte-identical to
+  base.
+
+- Raw outputs:
+  `/tmp/jackin-s35-{before,after}-*.txt`
+  (kept out of the
+  repo).
