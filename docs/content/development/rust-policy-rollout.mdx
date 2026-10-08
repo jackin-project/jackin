@@ -11960,3 +11960,248 @@ bound 720.
   `/tmp/jackin-s43-leafgraph2.txt`
   (kept out of the
   repo).
+
+### Split 104: runtime-cleanup-prune-cache extraction (M65)
+
+- `jackin-runtime` ->
+  `jackin-runtime` +
+  `jackin-runtime-cleanup-prune-cache`
+  (T7, landed as
+  `bea9014f`:
+  `prune.rs` prune-cache
+  extraction -- the
+  9-line shared-cache
+  prune (coordination
+  gate plus the
+  shared
+  prune-one-directory
+  helper with
+  shared-cache labels)
+  moves out of the
+  174-line prune file.
+  Max dep is
+  `prune-dir` T6 +
+  `coordination` T1 +
+  `core` T0,
+  so the leaf takes T7
+  per the 1+max rule.
+  Zero true hub edges
+  in the moved code
+  (`crate::runtime::coordination`
+  resolves through
+  the coordination
+  glob shim;
+  `prune_dir`
+  resolves through
+  the cleanup->exile
+  re-export chain to
+  the s102 leaf; the
+  shared use-stmt
+  siblings are
+  unreferenced by this
+  fn -- use-lines are
+  not deps;
+  capitalized-path
+  grep shows only
+  `JackinPaths` /
+  `Result` plus string
+  literals). One new
+  `pub` item; the hub
+  file keeps a `pub`
+  item re-export so
+  the app `prune`
+  command plus the
+  hub `cleanup`
+  suites compile
+  unchanged (split-99
+  precedent). The move
+  retires the
+  `prune_dir` hub
+  re-export chain
+  (`cleanup.rs` +
+  `exile.rs`, split-92
+  precedent):
+  `prune_cache` was
+  its sole remaining
+  hub consumer, and
+  deny-unused-imports
+  fails the lib
+  otherwise; the hub
+  `cleanup` tests now
+  name the s102 leaf
+  directly, and the
+  s102 leaf doc drops
+  its stale hub-path
+  claim. Triage:
+  s44 re-run of the
+  s43 function-group
+  script (item
+  segmentation +
+  sibling call-graph +
+  directed-alone pass)
+  over the s43
+  resolver (CLEANUP
+  maps extended with
+  the s103 leaf) plus
+  `leafgraph2.py` +
+  manual
+  capitalized-path
+  grep with re-export
+  resolution;
+  whole-file triage
+  re-confirms all
+  remaining hub
+  modules T8-blocked
+  except parent/shim
+  files. The wider
+  scan found
+  `prune_cache`
+  alone at 9l
+  ALONE-T6 (the s43
+  twin, scoped as
+  planned);
+  `remove_socket_dir`
+  (T6, 26l) held as
+  fallback;
+  `apple_container_instance_names`
+  held (`pub(crate)`
+  single-caller
+  fragment of
+  `exile_all`,
+  component-level T8
+  via `eject_role`);
+  `apple_container`
+  micro-fns
+  re-verified
+  fragments by hand
+  (`stop_with` /
+  `remove_with` are
+  6-8l test-seam
+  delegations with
+  hub-owned backend
+  callers;
+  `validate_exec_bindings`
+  is private; consts
+  are single-line);
+  `launch_runtime`
+  micro-fns
+  re-verified
+  fragments of the
+  env family
+  (`debug_runtime_envs`
+  is a 3-line
+  empty-vec stub;
+  run/telemetry/otlp
+  helpers are
+  consumed together),
+  not coherent
+  leaves;
+  `validate_agent_supported`
+  stays (sole prod
+  caller in claimed
+  `launch_pipeline`);
+  `launch_pipeline` +
+  `observe_exit` stay
+  claimed by earlier
+  slices.
+
+- Verify: `cargo check
+  --locked --workspace
+  --all-targets`
+  green; `cargo fmt
+  --all --check`
+  clean; `cargo
+  clippy` 0
+  errors/warnings on
+  the leaf
+  (`--all-targets -D
+  warnings`) + hub lib
+  (`-D warnings`; hub
+  `--all-targets`
+  keeps its 6
+  pre-existing
+  test-only errors,
+  normalized locations
+  identical to base;
+  touched s102 leaf
+  also clean).
+  `cargo nextest list
+  --workspace
+  --all-targets`: 7277
+  -> 7277,
+  byte-identical (0
+  relocations; 0
+  dropped, 0 added).
+  `nextest run`:
+  433/433 runtime
+  green (1 skipped,
+  pre-existing; 1
+  unrelated
+  launch_pipeline
+  test flagged
+  LEAK under
+  full-suite load and
+  passes clean alone);
+  18/18 app `prune`
+  green; the leaf has
+  no tests (coverage
+  in the hub `cleanup`
+  case_05 suite). `alint
+  check`: 180
+  violations / 11
+  failing,
+  byte-identical (zero
+  relocations -- the
+  leaf file sits at 30
+  lines, under 400;
+  zero new rows).
+  `check-gaps`: 12 ->
+  12 (hub 8568 -> 8558
+  prod code lines, 77
+  prod files;
+  `prune.rs` 174 -> 169;
+  xtask 26316 -> 26317
+  (+1 TIERS row); leaf
+  fits both budgets,
+  no SIZE finding).
+  `ratchet.toml`: 2
+  new rows (README
+  bytes 781,
+  public-surface 1; no
+  clippy-lint row --
+  the leaf carries no
+  `expect`; no
+  `print_stderr` row
+  -- measured 0,
+  split-92 precedent;
+  the hub file keeps
+  its expect for
+  `prune_instances`).
+  `lint arch
+  --strict`: 3
+  pre-existing
+  no-tier, gate
+  content identical to
+  base, zero direction
+  violations; `lint
+  headers` / `tests` /
+  `readme-freshness` /
+  `files` / `agents` /
+  `suppressions` /
+  `ratchet` /
+  `agent-status-truth`
+  / `container-paths`
+  all identical to
+  base (`agent-links`
+  still OK with +1
+  scanned file for the
+  new README).
+
+- Raw outputs:
+  `/tmp/jackin-s44-{before,after}-*.txt`
+  plus
+  `/tmp/jackin-s44-{triage,resolve,fngroup}.py`
+  plus
+  `/tmp/jackin-s44-leafgraph2.txt`
+  (kept out of the
+  repo).
