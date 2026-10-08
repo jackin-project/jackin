@@ -3634,6 +3634,7 @@ dependencies = [
  "jackin-runtime-launch-load-options",
  "jackin-runtime-launch-mounts",
  "jackin-runtime-launch-plan",
+ "jackin-runtime-launch-post-run-failure",
  "jackin-runtime-launch-programmatic-selection",
  "jackin-runtime-launch-progress-helpers",
  "jackin-runtime-launch-restore",
@@ -4313,6 +4314,14 @@ version = "0.6.4"
 dependencies = [
  "jackin-diagnostics",
  "serde_json",
+]
+
+[[package]]
+name = "jackin-runtime-launch-post-run-failure"
+version = "0.6.4"
+dependencies = [
+ "jackin-diagnostics",
+ "jackin-telemetry",
 ]
 
 [[package]]

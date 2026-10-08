@@ -88,6 +88,7 @@ jackin-runtime-launch-load-cleanup = { workspace = true }
 jackin-runtime-launch-load-options = { workspace = true }
 jackin-runtime-launch-mounts = { workspace = true }
 jackin-runtime-launch-plan = { workspace = true }
+jackin-runtime-launch-post-run-failure = { workspace = true }
 jackin-runtime-launch-programmatic-selection = { workspace = true }
 jackin-runtime-launch-progress-helpers = { workspace = true }
 jackin-runtime-launch-restore = { workspace = true }

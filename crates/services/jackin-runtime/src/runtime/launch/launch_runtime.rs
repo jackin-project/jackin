@@ -14,6 +14,10 @@
 //! The run invocation env helper lives in
 //! `jackin_runtime_launch_run_envs` (S7 split 116),
 //! re-exported below.
+//!
+//! The post-run failure emit helper lives in
+//! `jackin_runtime_launch_post_run_failure` (S7 split 117),
+//! privately imported below.
 
 use anyhow::Context;
 // Test-only scope restoration: the hub suite below names `AppConfig`
@@ -224,13 +228,10 @@ fn initial_daemon_argv(
         .map_or(slug, String::as_str)
 }
 
-fn emit_post_run_failure(is_firewall: bool) {
-    if is_firewall {
-        jackin_diagnostics::operation::isolation_firewall_failed(
-            jackin_telemetry::schema::enums::NetworkMode::Allowlist,
-        );
-    }
-}
+// Moved to jackin_runtime_launch_post_run_failure::post_run_failure (S7
+// split 117); the private import keeps the in-file call site
+// (the post-run steps loop) compiling unchanged.
+use jackin_runtime_launch_post_run_failure::post_run_failure::emit_post_run_failure;
 
 /// Whether launch returned from a foreground session or handed off a live daemon.
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -85,6 +85,7 @@
     "jackin-runtime-launch-load-options": "library",
     "jackin-runtime-launch-mounts": "library",
     "jackin-runtime-launch-plan": "library",
+    "jackin-runtime-launch-post-run-failure": "library",
     "jackin-runtime-launch-programmatic-selection": "library",
     "jackin-runtime-launch-progress-helpers": "library",
     "jackin-runtime-launch-restore": "library",

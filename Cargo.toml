@@ -83,6 +83,7 @@ members = [
     "crates/services/jackin-runtime-launch-load-options",
     "crates/services/jackin-runtime-launch-mounts",
     "crates/services/jackin-runtime-launch-plan",
+    "crates/services/jackin-runtime-launch-post-run-failure",
     "crates/services/jackin-runtime-launch-programmatic-selection",
     "crates/services/jackin-runtime-launch-progress-helpers",
     "crates/services/jackin-runtime-launch-restore",
@@ -264,6 +265,7 @@ jackin-runtime-launch-load-cleanup = { version = "0.6.4", path = "crates/service
 jackin-runtime-launch-load-options = { version = "0.6.4", path = "crates/services/jackin-runtime-launch-load-options" }
 jackin-runtime-launch-mounts = { version = "0.6.4", path = "crates/services/jackin-runtime-launch-mounts" }
 jackin-runtime-launch-plan = { version = "0.6.4", path = "crates/services/jackin-runtime-launch-plan" }
+jackin-runtime-launch-post-run-failure = { version = "0.6.4", path = "crates/services/jackin-runtime-launch-post-run-failure" }
 jackin-runtime-launch-programmatic-selection = { version = "0.6.4", path = "crates/services/jackin-runtime-launch-programmatic-selection" }
 jackin-runtime-launch-progress-helpers = { version = "0.6.4", path = "crates/services/jackin-runtime-launch-progress-helpers" }
 jackin-runtime-launch-restore = { version = "0.6.4", path = "crates/services/jackin-runtime-launch-restore" }
