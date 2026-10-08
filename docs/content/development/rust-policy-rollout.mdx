@@ -15650,3 +15650,278 @@ bound 720.
   `/tmp/jackin-s56-fnscan.txt`
   (kept out of the
   repo).
+
+### Split 117: runtime-launch-post-run-failure extraction (M78)
+
+- `jackin-runtime` ->
+  `jackin-runtime` +
+  `jackin-runtime-launch-post-run-failure`
+  (T3, landed as
+  `3f7db1a1`:
+  `launch_runtime.rs`
+  post-run failure emit
+  extraction -- the
+  7-line
+  `emit_post_run_failure`
+  (isolation-firewall
+  breach report in
+  allowlist network mode
+  when `is_firewall` is
+  set, otherwise a
+  no-op) moves out of
+  the 1606-line
+  launch-runtime file.
+  Two deps
+  (`jackin-diagnostics`,
+  T2, +
+  `jackin-telemetry`,
+  T0), so the leaf takes
+  T3 per the 1+max rule.
+  Zero hub edges in the
+  moved code (zero
+  `super::` / `crate::`
+  refs; the only
+  qualified paths are
+  dep calls;
+  capitalized-path grep
+  shows only the two dep
+  paths plus doc prose
+  and SPDX lines). One
+  new `pub` item (the fn
+  was private); the hub
+  file keeps a private
+  `use` import so the
+  post-run steps loop
+  call site compiles
+  unchanged (the step
+  had one in-file prod
+  site plus zero suite
+  refs -- repo-wide
+  sweep shows zero other
+  callers; split-108
+  precedent family). No
+  file-level `use` drops
+  (the moved fn used
+  qualified dep paths
+  plus prelude only).
+  Semantics identical
+  (moved body
+  byte-identical modulo
+  `pub`). Triage: s57
+  fresh fn-size scan
+  over all prod
+  `runtime/**` items
+  plus manual caller
+  sweeps + hub-test
+  reference grep + edge
+  grading, over
+  `leafgraph2.py`. 3
+  lines is the floor but
+  both 3-line items are
+  held:
+  `telemetry_runtime_envs`
+  is still a pure
+  forward to the staying
+  `telemetry_runtime_envs_for`
+  (unmovable alone; the
+  pair move at 3l+8l is
+  bigger than the pick,
+  and the target is
+  still case_07-pinned);
+  `git_pull_program`
+  (3l/5l cfg pair) is
+  `launch_pipeline`-claimed.
+  Every other item is
+  bigger or pinned:
+  `stop_with` (6l, hub
+  trait edge in
+  signature, pair with
+  dead `stop` only); the
+  tag family (6l,
+  launch_pipeline-claimed
+  plus case_01 suite
+  sites);
+  `confirm_cached_repo_removal`
+  (6l, claimed plus a
+  `StepCounter` hub
+  edge); `stop` /
+  `remove` /
+  `ensure_absent_for_purge`
+  (7l dead pub wrappers,
+  pairs only, `_with`
+  halves carry hub
+  edges);
+  `git_pull_timing_detail`
+  (7l, claimed);
+  `manifest_env_timing_detail`
+  (7l, case_14-pinned);
+  `mark_construct_ready`
+  (7l, claimed plus a
+  `StepCounter` edge);
+  `remove_with` /
+  `hardline_agent` /
+  `validate_exec_bindings`
+  /
+  `telemetry_runtime_envs_for`
+  (8l, hub edges /
+  forward-to-staying /
+  test-pinned /
+  case_07-pinned);
+  `sidecar_replenish`
+  (9l, hub type edge);
+  `capsule_otlp_allowlist_host`
+  (9l, case_01-pinned);
+  `purge_container_state`
+  (10l, cross-crate pub
+  API plus a case_29
+  site);
+  `run_launch_core`
+  (10l, suite plus bench
+  sites); the rest is
+  bigger or pinned
+  (`with_admitted_*` 13l
+  T6+ test-pinned,
+  `eject_role` 15l hub
+  edges,
+  `initial_daemon_argv`
+  17l T4 plus test
+  sites,
+  `host_runtime_passthrough_env`
+  18l test-pinned);
+  `backend.rs` smalls
+  are trait decls / impl
+  methods (component
+  fragments);
+  `launch.rs` is
+  re-exports only;
+  `prewarm_trigger`
+  `spawn_*` are
+  test-stub bodies;
+  `stubs.rs` is
+  `cfg(test)`-only.
+  `emit_post_run_failure`
+  is therefore the
+  smallest viable leaf
+  (7 lines, single live
+  call site, zero suite
+  refs, T3, zero hub
+  edges).
+
+- Verify: `cargo check
+  --locked --workspace
+  --all-targets` green;
+  `cargo fmt --all
+  --check` clean; `cargo
+  clippy` 0
+  errors/warnings on the
+  leaf (`--all-targets
+  -D warnings`) + hub
+  lib (`-D warnings`;
+  hub `--all-targets`
+  keeps its 6
+  pre-existing test-only
+  errors, normalized
+  locations identical to
+  base). `cargo nextest
+  list --workspace
+  --all-targets`: 7277
+  -> 7277,
+  byte-identical (0
+  relocations; 0
+  dropped, 0 added).
+  `nextest run`: 433/433
+  runtime green (1
+  skipped, pre-existing;
+  1 pass-with-leak flag
+  on a launch-phases
+  post-start test, a
+  timing-sensitive
+  annotation that moves
+  between runs, all pass
+  either way); 18/18 app
+  `prune` green (656
+  skipped; 1
+  pass-with-leak flag on
+  a prune parse test,
+  same timing note); the
+  leaf has no tests (0
+  run; the step only
+  reports the post-run
+  failure to diagnostics
+  and is exercised
+  through the hub launch
+  path; no dedicated
+  suite exists). `alint
+  check`: 180 violations
+  / 11 failing,
+  byte-identical (zero
+  relocations; zero new
+  rows). `check-gaps`:
+  12 -> 12 (hub 8338 ->
+  8332 prod code lines,
+  77 prod files;
+  `launch_runtime.rs`
+  1606 -> 1607 raw lines
+  (+4 doc lines, +1 net
+  at the import site);
+  xtask 26329 -> 26330
+  (+1 TIERS row); leaf
+  fits both budgets, no
+  SIZE finding;
+  `leafgraph2.py` tip
+  diff empty).
+  `ratchet.toml`: 2 new
+  rows (README bytes
+  841, public-surface 1
+  -- no `print_stderr`
+  row: the moved fn has
+  no `eprintln`, s108
+  precedent). `lint arch
+  --strict`: 3
+  pre-existing no-tier,
+  gate content identical
+  to base, zero
+  direction violations;
+  `lint headers` /
+  `tests` /
+  `readme-freshness` /
+  `files` / `agents` /
+  `agent-status-truth`
+  identical to base (the
+  leaf `lib.rs` carries
+  no SPDX `//` lines:
+  they break the gate's
+  leading-doc scan --
+  sibling-leaf
+  precedent); `lint
+  arch` content
+  identical to base;
+  `lint ratchet` /
+  `suppressions`
+  identical to base;
+  `agent-links` still OK
+  with +1 scanned file
+  (165 -> 166) for the
+  new README;
+  `container-paths`
+  keeps its 24
+  pre-existing
+  violations with zero
+  new rows (one
+  `launch_runtime.rs`
+  finding renumbered
+  1083 -> 1084 under the
+  +1 net line).
+
+- Raw outputs:
+  `/tmp/jackin-s57-{before,after}-*.txt`
+  plus
+  `/tmp/jackin-s57-leafgraph2-*.txt`
+  plus
+  `/tmp/jackin-s57-run-*.txt`
+  plus
+  `/tmp/jackin-s57-base-clippy-locs.txt`
+  plus
+  `/tmp/jackin-s57-fnscan.txt`
+  (kept out of the
+  repo).
