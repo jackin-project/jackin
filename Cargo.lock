@@ -3584,6 +3584,7 @@ dependencies = [
  "jackin-runtime-apple-container-attach-outcome",
  "jackin-runtime-apple-container-check-dns",
  "jackin-runtime-apple-container-client",
+ "jackin-runtime-apple-container-ensure-absent",
  "jackin-runtime-apple-container-probe-version",
  "jackin-runtime-apple-container-running",
  "jackin-runtime-apple-container-session-contract",
@@ -3724,6 +3725,14 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
+]
+
+[[package]]
+name = "jackin-runtime-apple-container-ensure-absent"
+version = "0.6.4"
+dependencies = [
+ "anyhow",
+ "jackin-runtime-apple-container-client",
 ]
 
 [[package]]

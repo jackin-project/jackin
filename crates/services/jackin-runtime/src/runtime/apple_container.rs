@@ -46,6 +46,10 @@
 //! `jackin_runtime_apple_container_stop` (S7 split 120),
 //! re-exported below.
 //!
+//! The purge-absence guard helper lives in
+//! `jackin_runtime_apple_container_ensure_absent` (S7 split 121),
+//! re-exported below.
+//!
 //! # Prerequisites
 //!
 //! - macOS 26 ARM with `apple/container` installed
@@ -72,6 +76,11 @@ use jackin_core::JackinPaths;
 // the re-export keeps the `apple_container::stop_with` path stable for
 // the backend `eject` caller plus the in-file `stop` wrapper.
 pub use jackin_runtime_apple_container_stop::stop::stop_with;
+
+// Moved to jackin_runtime_apple_container_ensure_absent::ensure_absent (S7 split 121);
+// the re-export keeps the `apple_container::ensure_absent_for_purge_with` path stable for
+// the backend purge caller plus the in-file `ensure_absent_for_purge` wrapper.
+pub use jackin_runtime_apple_container_ensure_absent::ensure_absent::ensure_absent_for_purge_with;
 
 // Moved to jackin_runtime_apple_container_session_contract::session_contract
 // (S7 split 119); the private import keeps the in-file call site
@@ -382,24 +391,6 @@ pub async fn ensure_absent_for_purge(container_name: &str) -> Result<()> {
         container_name,
     )
     .await
-}
-
-pub async fn ensure_absent_for_purge_with(
-    client: &impl crate::apple_container_client::AppleContainerApi,
-    container_name: &str,
-) -> Result<()> {
-    let exists = client
-        .list_containers(container_name)
-        .await?
-        .iter()
-        .any(|c| c.name == container_name);
-    if exists {
-        bail!(
-            "cannot purge local state: apple-container `{container_name}` still exists; \
-             run `jackin eject {container_name} --purge` to remove the container and state together"
-        );
-    }
-    Ok(())
 }
 
 /// Stop the container (eject — preserves manifest).
