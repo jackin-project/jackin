@@ -3586,6 +3586,7 @@ dependencies = [
  "jackin-runtime-attach-inspect",
  "jackin-runtime-attach-sessions",
  "jackin-runtime-attach-transport",
+ "jackin-runtime-cleanup-dind-gc",
  "jackin-runtime-cleanup-resolve",
  "jackin-runtime-cleanup-timing",
  "jackin-runtime-coordination",
@@ -3726,6 +3727,22 @@ dependencies = [
  "jackin-runtime-attach-capsule-ready",
  "jackin-runtime-snapshot",
  "jackin-telemetry",
+]
+
+[[package]]
+name = "jackin-runtime-cleanup-dind-gc"
+version = "0.6.4"
+dependencies = [
+ "anyhow",
+ "jackin-core",
+ "jackin-docker",
+ "jackin-instance",
+ "jackin-runtime-cleanup-timing",
+ "jackin-runtime-discovery",
+ "jackin-runtime-launch-dind",
+ "jackin-runtime-naming",
+ "owo-colors 4.3.0",
+ "tokio",
 ]
 
 [[package]]

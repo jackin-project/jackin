@@ -13,21 +13,21 @@ use jackin_core::ContainerHandle;
 use jackin_docker::docker_client::{ContainerState, DockerApi};
 use owo_colors::OwoColorize;
 
-use crate::instance::naming::{dind_certs_volume, role_network_name};
-use crate::runtime::discovery::list_role_names;
-use crate::runtime::naming::{
+use jackin_instance::naming::{dind_certs_volume, role_network_name};
+use jackin_runtime_cleanup_timing::timing::{cleanup_failure, cleanup_timing};
+use jackin_runtime_discovery::discovery::list_role_names;
+use jackin_runtime_naming::naming::{
     LABEL_KIND_DIND, LABEL_KIND_PREWARM_DIND, LABEL_KIND_ROLE, LABEL_MANAGED, LABEL_ROLE_KEY,
 };
 
-use super::{cleanup_failure, cleanup_timing};
-
 /// Parsed row from `docker ps` for a `DinD` sidecar.
-pub(crate) struct DindInfo {
+#[derive(Debug)]
+pub struct DindInfo {
     handle: ContainerHandle,
     role: String,
 }
 
-pub(crate) async fn collect_labeled_dind(docker: &impl DockerApi) -> anyhow::Result<Vec<DindInfo>> {
+pub async fn collect_labeled_dind(docker: &impl DockerApi) -> anyhow::Result<Vec<DindInfo>> {
     let rows = docker.list_containers(&[LABEL_KIND_DIND], true).await?;
     let mut sidecars = Vec::new();
     for row in rows {
@@ -55,7 +55,7 @@ pub(crate) async fn collect_labeled_dind(docker: &impl DockerApi) -> anyhow::Res
 /// Return `DinD` sidecar containers whose corresponding role container is no
 /// longer running.  These are leftovers from hard kills, terminal closures,
 /// or startup failures.
-pub(crate) fn filter_orphaned_dind(sidecars: Vec<DindInfo>, existing: &[String]) -> Vec<DindInfo> {
+pub fn filter_orphaned_dind(sidecars: Vec<DindInfo>, existing: &[String]) -> Vec<DindInfo> {
     sidecars
         .into_iter()
         .filter(|info| !existing.contains(&info.role))
@@ -65,7 +65,7 @@ pub(crate) fn filter_orphaned_dind(sidecars: Vec<DindInfo>, existing: &[String])
 /// Remove orphaned `DinD` containers, their associated role containers, cert
 /// volumes, and networks.  Errors are logged but do not abort the launch — GC
 /// is best-effort.
-pub(crate) async fn gc_orphaned_resources(paths: &JackinPaths, docker: &impl DockerApi) {
+pub async fn gc_orphaned_resources(paths: &JackinPaths, docker: &impl DockerApi) {
     let _timing = cleanup_timing("orphaned_resources");
     let sidecars = match collect_labeled_dind(docker).await {
         Ok(v) => v,
@@ -162,8 +162,9 @@ pub(crate) async fn gc_orphaned_resources(paths: &JackinPaths, docker: &impl Doc
     gc_orphaned_prewarm_dind(paths, docker).await;
 }
 
-pub(crate) async fn gc_orphaned_prewarm_dind(paths: &JackinPaths, docker: &impl DockerApi) {
-    let state_dind = crate::runtime::launch::prewarmed_dind_state_container_name(paths);
+pub async fn gc_orphaned_prewarm_dind(paths: &JackinPaths, docker: &impl DockerApi) {
+    let state_dind =
+        jackin_runtime_launch_dind::launch_dind::prewarmed_dind_state_container_name(paths);
     let rows = match docker
         .list_containers(&[LABEL_KIND_PREWARM_DIND], true)
         .await
@@ -228,7 +229,7 @@ pub(crate) async fn gc_orphaned_prewarm_dind(paths: &JackinPaths, docker: &impl 
 /// exists. Pass `Some(existing)` to reuse an already-fetched set of existing
 /// role names; pass `None` to fetch fresh (used when no `DinD` sidecars were
 /// found and the list was never retrieved).
-pub(crate) async fn gc_orphaned_networks(
+pub async fn gc_orphaned_networks(
     docker: &impl DockerApi,
     existing: Option<&std::collections::HashSet<String>>,
 ) {

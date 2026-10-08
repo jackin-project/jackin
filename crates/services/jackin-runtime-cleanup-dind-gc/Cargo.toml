@@ -1,0 +1,34 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "jackin-runtime-cleanup-dind-gc"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
+description = "Orphaned DinD sidecar and network garbage collection for cleanup."
+license.workspace = true
+readme = "README.md"
+publish = false
+
+repository.workspace = true
+
+[lib]
+name = "jackin_runtime_cleanup_dind_gc"
+path = "src/lib.rs"
+
+[dependencies]
+jackin-core = { workspace = true }
+jackin-docker = { workspace = true }
+jackin-instance = { workspace = true }
+jackin-runtime-cleanup-timing = { workspace = true }
+jackin-runtime-discovery = { workspace = true }
+jackin-runtime-launch-dind = { workspace = true }
+jackin-runtime-naming = { workspace = true }
+anyhow = { workspace = true }
+owo-colors = { workspace = true, features = ["supports-colors"] }
+tokio = { workspace = true, features = ["macros"] }
+
+[lints]
+workspace = true

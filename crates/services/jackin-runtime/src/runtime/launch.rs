@@ -32,7 +32,9 @@ pub(crate) use account_identity::{
 mod launch_dind;
 pub use launch_dind::DIND_IMAGE;
 pub(super) use launch_dind::create_role_network;
-pub(crate) use launch_dind::prewarmed_dind_state_container_name;
+// `prewarmed_dind_state_container_name` had its hub re-export retired by S7
+// split 93: the moved `dind_gc` module was its sole consumer and now
+// names it through `jackin-runtime-launch-dind` directly.
 pub use launch_dind::{
     DindSidecarPrewarm, prewarm_dind_sidecar_container_with_paths, write_prewarmed_dind_state,
 };

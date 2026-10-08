@@ -37,6 +37,7 @@
     "jackin-runtime-attach-inspect": "library",
     "jackin-runtime-attach-sessions": "library",
     "jackin-runtime-attach-transport": "library",
+    "jackin-runtime-cleanup-dind-gc": "library",
     "jackin-runtime-cleanup-resolve": "library",
     "jackin-runtime-cleanup-timing": "library",
     "jackin-runtime-coordination": "library",
