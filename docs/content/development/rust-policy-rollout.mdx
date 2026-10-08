@@ -11094,3 +11094,194 @@ bound 720.
   `/tmp/jackin-s39-{triage,resolve,fngroup}.py`
   (kept out of the
   repo).
+
+### Split 100: runtime-cleanup-absent-guards extraction (M61)
+
+- `jackin-runtime` ->
+  `jackin-runtime` +
+  `jackin-runtime-cleanup-absent-guards`
+  (T4, landed as
+  `05adffb0`:
+  `absent.rs` guard-group
+  extraction -- the
+  absent-for-purge
+  guards move out of
+  the 110-line absent
+  file: refuse
+  local-state purge
+  while the role
+  container or `DinD`
+  sidecar still exists;
+  uninspectable state
+  also refuses,
+  directing the
+  operator to `jackin
+  eject --purge`. Max
+  dep is `docker` T3 +
+  `instance` T3, so
+  the leaf takes T4
+  per the 1+max rule.
+  Zero true hub edges
+  in the moved code
+  (no `super::` /
+  `crate::` refs; the
+  `DockerResources`
+  type resolves to the
+  T3 instance leaf via
+  the hub `lib.rs`
+  re-export). One new
+  `pub` item (the role
+  guard; the container
+  helper stays
+  `pub(crate)`
+  internal); the hub
+  file keeps an item
+  re-export so the
+  `backend.rs` caller
+  + the hub `cleanup`
+  suite compile
+  unchanged (split-98
+  precedent).
+  Triage: s40 re-path
+  of the s39
+  function-group
+  script (item
+  segmentation +
+  sibling call-graph
+  + directed-alone
+  pass) over the s35
+  resolver plus
+  `leafgraph2.py` +
+  manual
+  capitalized-path
+  grep with re-export
+  resolution;
+  whole-file triage
+  re-confirms all
+  remaining hub
+  modules T8-blocked
+  except parent/shim
+  files. Caution: the
+  script splits
+  `apple_container.rs`
+  helpers into bogus
+  clean components
+  (its
+  string-stripper
+  swallows call sites
+  across unbalanced
+  quotes) -- verified
+  by hand that
+  `launch` calls them
+  in-file. Next scoped
+  targets (still
+  verified clean
+  post-split):
+  `prune_dir` (T6),
+  `remove_socket_dir`
+  (T6);
+  `launch_pipeline` +
+  `observe_exit`
+  stay claimed by
+  earlier slices;
+  ceiling-max T7
+  groups held as
+  fallback.
+
+- Verify: `cargo check
+  --locked --workspace
+  --all-targets`
+  green; `cargo fmt
+  --all --check`
+  clean; `cargo
+  clippy` 0
+  errors/warnings on
+  the leaf
+  (`--all-targets -D
+  warnings`) + hub
+  lib (`-D warnings`;
+  hub `--all-targets`
+  keeps its 6
+  pre-existing
+  test-only errors,
+  byte-identical to
+  base). `cargo
+  nextest list
+  --workspace
+  --all-targets`:
+  7277 -> 7277,
+  byte-identical (0
+  relocations; 0
+  dropped, 0 added).
+  `nextest run`:
+  433/433 runtime
+  green (1 skipped,
+  pre-existing);
+  18/18 app `prune`
+  green; the leaf has
+  no tests (guards
+  exercised via the
+  hub `cleanup`
+  purge path in the
+  case_05 suite).
+  `alint check`: 180
+  violations / 11
+  failing,
+  byte-identical
+  (zero relocations
+  -- the leaf file
+  sits at 50 lines,
+  under 400; zero new
+  rows). `check-gaps`:
+  12 -> 12 (hub 8644
+  -> 8611 prod code
+  lines, 77 prod
+  files; `absent.rs`
+  110 -> 83; xtask
+  26312 -> 26313 (+1
+  TIERS row); leaf
+  fits both budgets,
+  no SIZE finding).
+  `ratchet.toml`: 2
+  new rows (README
+  bytes 812,
+  public-surface 1;
+  no clippy-lint row
+  -- the leaf carries
+  no `expect`; no
+  `print_stderr` row
+  -- measured 0,
+  split-92
+  precedent). `lint
+  arch --strict`: 3
+  pre-existing
+  no-tier
+  byte-identical,
+  zero direction
+  violations; `lint
+  headers` / `tests`
+  / `readme-freshness`
+  / `files` /
+  `agents` /
+  `suppressions` /
+  `ratchet` /
+  `agent-status-truth`
+  / `container-paths`
+  all byte-identical
+  to base (`files`
+  keeps its 1
+  pre-existing xtask
+  violation;
+  `agent-links` still
+  OK with +1 scanned
+  file for the new
+  README).
+
+- Raw outputs:
+  `/tmp/jackin-s40-{before,after}-*.txt`
+  plus
+  `/tmp/jackin-s40-{triage,resolve,fngroup}.py`
+  plus
+  `/tmp/jackin-s40-leafgraph2.txt`
+  (kept out of the
+  repo).
