@@ -73,6 +73,7 @@
     "jackin-runtime-launch-attach-outcome": "library",
     "jackin-runtime-launch-auth-error": "library",
     "jackin-runtime-launch-capsule-setup": "library",
+    "jackin-runtime-launch-debug-envs": "library",
     "jackin-runtime-launch-dind": "library",
     "jackin-runtime-launch-dry-run": "library",
     "jackin-runtime-launch-exit-diagnosis": "library",

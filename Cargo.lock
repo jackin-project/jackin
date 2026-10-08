@@ -3622,6 +3622,7 @@ dependencies = [
  "jackin-runtime-launch-attach-outcome",
  "jackin-runtime-launch-auth-error",
  "jackin-runtime-launch-capsule-setup",
+ "jackin-runtime-launch-debug-envs",
  "jackin-runtime-launch-dind",
  "jackin-runtime-launch-dry-run",
  "jackin-runtime-launch-exit-diagnosis",
@@ -4170,6 +4171,10 @@ dependencies = [
  "tempfile",
  "toml",
 ]
+
+[[package]]
+name = "jackin-runtime-launch-debug-envs"
+version = "0.6.4"
 
 [[package]]
 name = "jackin-runtime-launch-dind"

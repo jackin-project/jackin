@@ -6,6 +6,10 @@
 //! All items `pub(crate)` re-exported from the coordinator to preserve `super::` / `use super::*` .
 //! Sibling auth prewarm lives in `jackin_runtime_launch_sibling_auth_prewarm` (S7 split 97),
 //! re-exported below.
+//!
+//! The debug runtime env helper lives in
+//! `jackin_runtime_launch_debug_envs` (S7 split 115),
+//! re-exported below.
 
 use anyhow::Context;
 // Test-only scope restoration: the hub suite below names `AppConfig`
@@ -1454,9 +1458,12 @@ pub(crate) fn host_runtime_passthrough_env(
         .collect()
 }
 
-pub(crate) fn debug_runtime_envs(_debug: bool) -> Vec<String> {
-    Vec::new()
-}
+// Moved to jackin_runtime_launch_debug_envs::debug_envs (S7 split
+// 115); the item re-export keeps every
+// `launch_runtime::debug_runtime_envs` path stable (the in-file
+// `launch_role_runtime` call site plus the hub launch suite,
+// which names it through `tests.rs`).
+pub(crate) use jackin_runtime_launch_debug_envs::debug_envs::debug_runtime_envs;
 
 pub(crate) fn telemetry_runtime_envs_for(level: jackin_diagnostics::TelemetryLevel) -> Vec<String> {
     let level = match level {
