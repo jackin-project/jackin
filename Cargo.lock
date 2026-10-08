@@ -3608,6 +3608,7 @@ dependencies = [
  "jackin-runtime-launch-dind",
  "jackin-runtime-launch-dry-run",
  "jackin-runtime-launch-exit-diagnosis",
+ "jackin-runtime-launch-exit-outro",
  "jackin-runtime-launch-failure",
  "jackin-runtime-launch-git-pull",
  "jackin-runtime-launch-image-plan",
@@ -4025,6 +4026,17 @@ dependencies = [
  "jackin-docker",
  "jackin-isolation",
  "jackin-telemetry",
+]
+
+[[package]]
+name = "jackin-runtime-launch-exit-outro"
+version = "0.6.4"
+dependencies = [
+ "jackin-diagnostics",
+ "jackin-instance",
+ "jackin-runtime-exit-summary",
+ "jackin-runtime-progress",
+ "jackin-runtime-universe-claims",
 ]
 
 [[package]]

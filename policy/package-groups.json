@@ -59,6 +59,7 @@
     "jackin-runtime-launch-dind": "library",
     "jackin-runtime-launch-dry-run": "library",
     "jackin-runtime-launch-exit-diagnosis": "library",
+    "jackin-runtime-launch-exit-outro": "library",
     "jackin-runtime-launch-failure": "library",
     "jackin-runtime-launch-git-pull": "library",
     "jackin-runtime-launch-image-plan": "library",

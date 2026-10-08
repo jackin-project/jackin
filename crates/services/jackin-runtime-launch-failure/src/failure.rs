@@ -8,10 +8,10 @@
 //! and the CLI error passes the failure through untouched (failures arrive
 //! fully rendered; wrapping would only double prefixes). Role-source
 //! resolution lives here too — the pipeline resolves it on the failure path
-//! next to the rendering. The exit outro (`render_exit`) stays in
-//! `jackin-runtime`: it observes the universe exit boundary
-//! (`jackin-runtime-universe`, T7), which would push this leaf over the T6
-//! tier ceiling.
+//! next to the rendering. The exit outro rendering moved to
+//! `jackin-runtime-launch-exit-outro` (S7 split 95, observation-inversion:
+//! the hub keeps the universe-boundary observation and the leaf renders
+//! from the already-observed outcome).
 
 use jackin_config::AppConfig;
 use jackin_core::RoleSelector;

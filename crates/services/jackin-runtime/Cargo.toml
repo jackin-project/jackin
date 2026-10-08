@@ -62,6 +62,7 @@ jackin-runtime-launch-capsule-setup = { workspace = true }
 jackin-runtime-launch-dind = { workspace = true }
 jackin-runtime-launch-dry-run = { workspace = true }
 jackin-runtime-launch-exit-diagnosis = { workspace = true }
+jackin-runtime-launch-exit-outro = { workspace = true }
 jackin-runtime-launch-failure = { workspace = true }
 jackin-runtime-launch-git-pull = { workspace = true }
 jackin-runtime-launch-image-plan = { workspace = true }
