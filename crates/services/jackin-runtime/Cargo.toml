@@ -34,6 +34,7 @@ jackin-telemetry = { workspace = true }
 jackin-isolation = { workspace = true }
 jackin-instance = { workspace = true }
 jackin-runtime-apple-container-client = { workspace = true }
+jackin-runtime-apple-container-running = { workspace = true }
 jackin-runtime-attach-admission = { workspace = true }
 jackin-runtime-attach-capsule-ready = { workspace = true }
 jackin-runtime-attach-exec-args = { workspace = true }

@@ -6,6 +6,10 @@
 //! All lifecycle operations shell out to the `container` CLI via
 //! the shared process transport, unlike the Docker backend which uses bollard.
 //!
+//! The running-state probe lives in
+//! `jackin_runtime_apple_container_running` (S7 split 108),
+//! imported below.
+//!
 //! # Prerequisites
 //!
 //! - macOS 26 ARM with `apple/container` installed
@@ -468,18 +472,10 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
     Ok(())
 }
 
-/// Check whether an apple/container container is currently running.
-/// Delegates to `AppleContainerClient::list_containers` which owns all
-/// JSON parsing for `container ps` output.
-async fn is_container_running(container_name: &str) -> bool {
-    match crate::apple_container_client::AppleContainerClient::new()
-        .list_containers(container_name)
-        .await
-    {
-        Ok(v) => v.iter().any(|c| c.name == container_name && c.is_running()),
-        Err(_) => false,
-    }
-}
+// Moved to jackin_runtime_apple_container_running::running (S7 split
+// 108); the private import keeps both in-file call sites
+// (`reconnect`, `record_attach_outcome`) compiling unchanged.
+use jackin_runtime_apple_container_running::running::is_container_running;
 
 /// Reconnect to a stopped or running apple/container container.
 pub async fn reconnect(

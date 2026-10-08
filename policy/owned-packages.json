@@ -31,6 +31,7 @@
     "jackin-protocol",
     "jackin-runtime",
     "jackin-runtime-apple-container-client",
+    "jackin-runtime-apple-container-running",
     "jackin-runtime-attach-admission",
     "jackin-runtime-attach-capsule-ready",
     "jackin-runtime-attach-exec-args",

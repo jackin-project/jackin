@@ -55,6 +55,7 @@ pub(crate) const TIERS: &[(&str, u8)] = &[
     ("jackin-runtime-host-attach", 7),
     ("jackin-runtime-host-daemon", 3),
     ("jackin-runtime-apple-container-client", 4),
+    ("jackin-runtime-apple-container-running", 5),
     ("jackin-runtime-attach-admission", 5),
     ("jackin-runtime-attach-capsule-ready", 5),
     ("jackin-runtime-attach-exec-args", 4),

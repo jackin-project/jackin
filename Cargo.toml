@@ -29,6 +29,7 @@ members = [
     "crates/services/jackin-isolation",
     "crates/services/jackin-runtime",
     "crates/services/jackin-runtime-apple-container-client",
+    "crates/services/jackin-runtime-apple-container-running",
     "crates/services/jackin-runtime-attach-admission",
     "crates/services/jackin-runtime-attach-capsule-ready",
     "crates/services/jackin-runtime-attach-exec-args",
@@ -201,6 +202,7 @@ jackin-process-directory = { version = "0.6.4", path = "crates/core/jackin-proce
 jackin-protocol = { version = "0.6.4", path = "crates/core/jackin-protocol" }
 jackin-runtime = { version = "0.6.4", path = "crates/services/jackin-runtime" }
 jackin-runtime-apple-container-client = { version = "0.6.4", path = "crates/services/jackin-runtime-apple-container-client" }
+jackin-runtime-apple-container-running = { version = "0.6.4", path = "crates/services/jackin-runtime-apple-container-running" }
 jackin-runtime-attach-admission = { version = "0.6.4", path = "crates/services/jackin-runtime-attach-admission" }
 jackin-runtime-attach-capsule-ready = { version = "0.6.4", path = "crates/services/jackin-runtime-attach-capsule-ready" }
 jackin-runtime-attach-exec-args = { version = "0.6.4", path = "crates/services/jackin-runtime-attach-exec-args" }
