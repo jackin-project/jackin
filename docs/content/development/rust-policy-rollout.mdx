@@ -10323,3 +10323,227 @@ bound 720.
   `/tmp/jackin-s35-{before,after}-*.txt`
   (kept out of the
   repo).
+
+### Split 96: runtime-launch-supported-agents extraction (M57)
+
+- `jackin-runtime` ->
+  `jackin-runtime` +
+  `jackin-runtime-launch-supported-agents`
+  (T5, landed as
+  `ea745a31`:
+  `launch_pipeline.rs`
+  `resolve_supported_agents_for_console`
+  function-group
+  extraction -- the
+  console role-picker
+  agent lookup moves out
+  of the 1870-line
+  pipeline file:
+  cached-manifest fast
+  path (`CachedRepo` +
+  `load_role_manifest`)
+  with `RoleRepository`
+  Hit/Stale/Miss
+  telemetry, falling
+  back to a
+  non-interactive
+  `resolve_agent_repo_with`.
+  Max deps are
+  `repo-cache` T4,
+  `manifest` T2,
+  `config` T1, `core` /
+  `telemetry` T0
+  (`anyhow` ext), so the
+  leaf takes T5 per the
+  1+max rule. Zero true
+  hub edges in the moved
+  code (no `super::` /
+  `crate::` / sibling
+  refs; the only in-file
+  neighbors are the
+  pipeline core it never
+  names). One new `pub`
+  item (async, same
+  signature); the hub
+  file keeps an item
+  re-export so the
+  `launch.rs` /
+  `runtime.rs` /
+  `lib.rs` re-exports +
+  the `jackin` app
+  `console::services::agents`
+  caller + the hub
+  `case_10` suite
+  compile unchanged.
+  Triage: s36
+  function-group script
+  (item segmentation +
+  sibling call-graph +
+  directed-alone pass)
+  over the s35 resolver
+  with true-grade fixes:
+  `crate::isolation::*`
+  glob resolves to the
+  T5 leaf (not T8
+  nomod), shim
+  `(childmod)` paths
+  resolve to their leaf
+  crates, private-import
+  scope chains resolve
+  (`launch::StepCounter`
+  is the T6
+  `progress-helpers`
+  import, not
+  hub-owned), string
+  literals excluded from
+  sibling matching,
+  untiered
+  `instance-{roles,agents,credentials}`
+  graded at would-be
+  T4/T3/T2. File-level
+  triage stays
+  exhausted: the
+  `failure.rs`
+  `render_exit` wrapper
+  is T8-blocked (its T7
+  `universe` edge forces
+  a T8 leaf = hub tier,
+  the s92-recorded
+  blocker -- no further
+  inversion exists, the
+  wrapper IS the
+  observation); the
+  1682-line pipeline
+  core carries true hub
+  edges
+  (`attach::hardline_start`,
+  `cleanup::purge`,
+  `launch_phases`,
+  `launch_runtime`
+  types) plus T7 leaves
+  (`dind-gc`,
+  `universe`,
+  `restore`); attach
+  siblings stay mutually
+  recursive behind T7;
+  `cleanup/*` file-level
+  needs hub `backend` /
+  siblings. Next scoped
+  targets (all verified
+  clean): `backend`
+  selection
+  (`InstanceBackend` +
+  `backend_for_{manifest,state}`,
+  T4), `prune_images`
+  (T6), apple-container
+  teardown six (`stop` /
+  `remove` /
+  `ensure_absent_for_purge`
+  + `_with`, T5),
+  grant-error trio
+  (`tag_errors` /
+  `tagged_grant_errors`
+  /
+  `bail_on_grant_errors`,
+  T2), `absent` purge
+  guards (T4),
+  `workspace_launch_config`
+  (T6); ceiling-max T7
+  groups
+  (`select_launch_agent`,
+  confirm dialogs,
+  `classify_image_phase`,
+  `handle_launch_failure`)
+  held as fallback. No
+  hub renumber.)
+
+- Verify: `cargo check
+  --locked --workspace
+  --all-targets` green;
+  `cargo fmt --all
+  --check` clean; `cargo
+  clippy` 0
+  errors/warnings on the
+  leaf (`--all-targets
+  -D warnings`) + hub
+  lib (`-D warnings`;
+  hub `--all-targets`
+  keeps its 6
+  pre-existing test-only
+  errors, byte-identical
+  to base). `cargo
+  nextest list
+  --workspace
+  --all-targets`: 7277
+  -> 7277,
+  byte-identical (0
+  relocations; 0
+  dropped, 0 added).
+  `nextest run`: 433/433
+  runtime green (1
+  skipped, pre-existing;
+  1 LEAK flag in
+  untouched `attach`
+  case_03, isolated PASS
+  proved load flake) +
+  32/32 app
+  console-adapter-state
+  + 2/2 app
+  sentinel-role green;
+  the leaf has no tests
+  (coverage in the hub
+  `launch` `case_10`
+  agent-resolution
+  cases). `alint check`:
+  180 violations / 11
+  failing,
+  byte-identical (zero
+  relocations -- the
+  leaf file sits at 79
+  lines, under 400; zero
+  new rows).
+  `check-gaps`: 12 -> 12
+  (hub 8925 -> 8880 prod
+  code lines, 77 prod
+  files; xtask 26308 ->
+  26309 (+1 TIERS row);
+  leaf fits both
+  budgets, no SIZE
+  finding).
+  `ratchet.toml`: 2 new
+  rows (README bytes
+  807, public-surface 1;
+  no clippy-lint row --
+  the leaf carries no
+  `expect`; no
+  `print_stderr` row --
+  measured 0, split-92
+  precedent). `lint arch
+  --strict`: 3
+  pre-existing no-tier
+  byte-identical, zero
+  direction violations;
+  `lint headers` /
+  `tests` /
+  `readme-freshness` /
+  `agents` /
+  `suppressions`
+  byte-identical to
+  base; `lint files` 2
+  -> 1 and `lint
+  ratchet` 57 -> 56 --
+  `launch_pipeline.rs`
+  1870 -> 1820 lines
+  drops below the 1850
+  file-size cap,
+  retiring that
+  violation.
+
+- Raw outputs:
+  `/tmp/jackin-s36-{before,after}-*.txt`
+  plus
+  `/tmp/jackin-s36-{triage,resolve,fngroup}.py`
+  and
+  `/tmp/jackin-s36-{resolve,fngroup}-out*.txt`
+  (kept out of the
+  repo).
