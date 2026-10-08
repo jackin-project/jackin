@@ -41,6 +41,7 @@ jackin-runtime-apple-container-client = { workspace = true }
 jackin-runtime-apple-container-probe-version = { workspace = true }
 jackin-runtime-apple-container-running = { workspace = true }
 jackin-runtime-apple-container-session-contract = { workspace = true }
+jackin-runtime-apple-container-stop = { workspace = true }
 jackin-runtime-apple-container-supervisor-env = { workspace = true }
 jackin-runtime-apple-container-wait = { workspace = true }
 jackin-runtime-attach-admission = { workspace = true }

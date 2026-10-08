@@ -3587,6 +3587,7 @@ dependencies = [
  "jackin-runtime-apple-container-probe-version",
  "jackin-runtime-apple-container-running",
  "jackin-runtime-apple-container-session-contract",
+ "jackin-runtime-apple-container-stop",
  "jackin-runtime-apple-container-supervisor-env",
  "jackin-runtime-apple-container-wait",
  "jackin-runtime-attach-admission",
@@ -3744,6 +3745,14 @@ dependencies = [
 name = "jackin-runtime-apple-container-session-contract"
 version = "0.6.4"
 dependencies = [
+ "jackin-runtime-apple-container-client",
+]
+
+[[package]]
+name = "jackin-runtime-apple-container-stop"
+version = "0.6.4"
+dependencies = [
+ "anyhow",
  "jackin-runtime-apple-container-client",
 ]
 

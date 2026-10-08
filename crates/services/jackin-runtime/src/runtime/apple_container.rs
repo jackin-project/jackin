@@ -42,6 +42,10 @@
 //! `jackin_runtime_apple_container_session_contract` (S7 split 119),
 //! imported below.
 //!
+//! The container stop helper lives in
+//! `jackin_runtime_apple_container_stop` (S7 split 120),
+//! re-exported below.
+//!
 //! # Prerequisites
 //!
 //! - macOS 26 ARM with `apple/container` installed
@@ -63,6 +67,11 @@ use crate::instance::{
     NewInstanceManifest,
 };
 use jackin_core::JackinPaths;
+
+// Moved to jackin_runtime_apple_container_stop::stop (S7 split 120);
+// the re-export keeps the `apple_container::stop_with` path stable for
+// the backend `eject` caller plus the in-file `stop` wrapper.
+pub use jackin_runtime_apple_container_stop::stop::stop_with;
 
 // Moved to jackin_runtime_apple_container_session_contract::session_contract
 // (S7 split 119); the private import keeps the in-file call site
@@ -400,13 +409,6 @@ pub async fn stop(container_name: &str) -> Result<()> {
         container_name,
     )
     .await
-}
-
-pub async fn stop_with(
-    client: &impl crate::apple_container_client::AppleContainerApi,
-    container_name: &str,
-) -> Result<()> {
-    client.stop_container(container_name).await
 }
 
 /// Remove the container (purge).
