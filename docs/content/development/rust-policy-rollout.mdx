@@ -10725,3 +10725,191 @@ bound 720.
   `/tmp/jackin-s37-{resolve,fngroup}-out*.txt`
   (kept out of the
   repo).
+
+### Split 98: runtime-backend-selection extraction (M59)
+
+- `jackin-runtime` ->
+  `jackin-runtime` +
+  `jackin-runtime-backend-selection`
+  (T4, landed as
+  `0a8c410f`:
+  `backend.rs`
+  `InstanceBackend` /
+  `backend_for_manifest` /
+  `backend_for_state`
+  function-group
+  extraction -- the
+  persisted container
+  backend selector
+  moves out of the
+  232-line backend
+  file: the
+  Docker-vs-Apple-Container
+  enum, the manifest
+  read
+  (`BackendResources`
+  match, legacy
+  default Docker),
+  and the on-disk
+  state read
+  (`JackinPaths`
+  data dir +
+  `read_optional_lossy`).
+  Max dep is
+  `instance` T3
+  (`core` T0), so the
+  leaf takes T4 per
+  the 1+max rule.
+  Zero true hub
+  edges in the moved
+  code (no `super::` /
+  `crate::` / sibling
+  refs;
+  `crate::instance::*`
+  resolves to the
+  T3 `jackin-instance`
+  re-export per
+  `lib.rs`; the only
+  in-file neighbors
+  are the
+  `ContainerBackend`
+  dispatch impls it
+  never names).
+  Three new `pub`
+  items (same
+  visibility as the
+  hub); the hub
+  file keeps item
+  re-exports so the
+  `exile` /
+  `purge_absent` /
+  `eject` /
+  `hardline_start` /
+  `hardline` callers
+  + the hub
+  `backend` suite
+  compile unchanged
+  (plus a `#[cfg(test)]`
+  scope restoration
+  for the
+  `BackendResources` /
+  `InstanceManifest`
+  names the suite
+  reaches through
+  `use super::*`,
+  split-97
+  precedent).
+  Triage: s38
+  re-path of the s37
+  function-group script
+  (item segmentation +
+  sibling call-graph +
+  directed-alone pass)
+  over the s35 resolver
+  plus `leafgraph2.py` +
+  manual capitalized-path
+  grep with re-export
+  resolution; whole-file
+  triage re-confirms all
+  remaining hub modules
+  T8-blocked except
+  parent/shim files, and
+  the `failure.rs`
+  `render_exit` wrapper
+  grades T8 (universe
+  T7) so it stays.
+  Next scoped targets
+  (still verified
+  clean post-split):
+  grant-error trio
+  (T2), `prune_images`
+  (T6), apple-container
+  teardown six (T5),
+  `absent` purge
+  guards (T4),
+  `workspace_launch_config`
+  (T6); ceiling-max T7
+  groups held as
+  fallback.
+
+- Verify: `cargo check
+  --locked --workspace
+  --all-targets` green;
+  `cargo fmt --all
+  --check` clean; `cargo
+  clippy` 0
+  errors/warnings on the
+  leaf (`--all-targets
+  -D warnings`) + hub
+  lib (`-D warnings`;
+  hub `--all-targets`
+  keeps its 6
+  pre-existing test-only
+  errors, byte-identical
+  to base). `cargo
+  nextest list
+  --workspace
+  --all-targets`: 7277
+  -> 7277,
+  byte-identical (0
+  relocations; 0
+  dropped, 0 added).
+  `nextest run`:
+  433/433 runtime green
+  (1 skipped,
+  pre-existing; 2 LEAK
+  flags in untouched
+  `attach` case_03 +
+  `launch` case_04,
+  isolated PASS proved
+  load flakes); the leaf
+  has no tests
+  (coverage in the hub
+  `backend` suite).
+  `alint check`:
+  180 violations / 11
+  failing,
+  byte-identical (zero
+  relocations -- the
+  leaf file sits at 31
+  lines, under 400; zero
+  new rows).
+  `check-gaps`: 12 -> 12
+  (hub 8731 -> 8719 prod
+  code lines, 77 prod
+  files; `backend.rs`
+  232 -> 227; xtask
+  26310 -> 26311 (+1
+  TIERS row); leaf fits
+  both budgets, no SIZE
+  finding).
+  `ratchet.toml`: 2 new
+  rows (README bytes
+  920, public-surface 1;
+  no clippy-lint row --
+  the leaf carries no
+  `expect`; no
+  `print_stderr` row --
+  measured 0, split-92
+  precedent). `lint arch
+  --strict`: 3
+  pre-existing no-tier
+  byte-identical, zero
+  direction violations;
+  `lint headers` /
+  `tests` /
+  `readme-freshness` /
+  `files` / `agents` /
+  `suppressions` /
+  `ratchet` all
+  byte-identical to
+  base.
+
+- Raw outputs:
+  `/tmp/jackin-s38-{before,after}-*.txt`
+  plus
+  `/tmp/jackin-s38-{triage,resolve,fngroup}.py`
+  and
+  `/tmp/jackin-s38-{resolve,fngroup}-out*.txt`
+  (kept out of the
+  repo).
