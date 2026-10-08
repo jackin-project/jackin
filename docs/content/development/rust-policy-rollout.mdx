@@ -11285,3 +11285,226 @@ bound 720.
   `/tmp/jackin-s40-leafgraph2.txt`
   (kept out of the
   repo).
+
+### Split 101: runtime-cleanup-prune-home extraction (M62)
+
+- `jackin-runtime` ->
+  `jackin-runtime` +
+  `jackin-runtime-cleanup-prune-home`
+  (T6, landed as
+  `a878db9d`:
+  `prune.rs`
+  home-prune
+  extraction -- the
+  guarded
+  runtime-home
+  removal moves out
+  of the 190-line
+  prune file:
+  coordination-gated
+  deletion of the
+  remaining runtime
+  home state through
+  prune-output rows,
+  with deletion
+  failure reported
+  and propagated with
+  path context. Max
+  dep is `isolation`
+  T5 + `timing` T3 +
+  `coordination` T1 +
+  `prune-output` T0,
+  so the leaf takes
+  T6 per the 1+max
+  rule. Zero true hub
+  edges in the moved
+  code (every
+  `super::` /
+  `crate::` path
+  resolves through a
+  hub re-export shim
+  to its leaf; the
+  shared use-stmt
+  siblings are
+  unreferenced by
+  this fn --
+  use-lines are not
+  deps). One new
+  `pub` item; the hub
+  file keeps an item
+  re-export so the
+  app `prune` caller
+  plus the hub
+  `cleanup` and
+  `launch` suites
+  compile unchanged
+  (split-99
+  precedent). Triage:
+  s41 re-path of the
+  s40 function-group
+  script (item
+  segmentation +
+  sibling call-graph
+  + directed-alone
+  pass) over the s40
+  resolver (CLEANUP
+  maps extended with
+  the s99/s100
+  leaves) plus
+  `leafgraph2.py` +
+  manual
+  capitalized-path
+  grep with re-export
+  resolution;
+  whole-file triage
+  re-confirms all
+  remaining hub
+  modules T8-blocked
+  except parent/shim
+  files. The wider
+  scan found this
+  15-line
+  `prune_jackin_home`
+  (T6) smaller than
+  the s40 scoped pair
+  and equally clean,
+  so it went first
+  per the
+  smallest-leaf
+  directive. Next
+  scoped targets
+  (still verified
+  clean post-split):
+  `prune_dir` (T6),
+  `remove_socket_dir`
+  (T6);
+  `launch_pipeline` +
+  `observe_exit` stay
+  claimed by earlier
+  slices; ceiling-max
+  T7 groups held as
+  fallback. Caution
+  carried from s40:
+  the script still
+  splits
+  `apple_container.rs`
+  helpers into bogus
+  clean components
+  (its
+  string-stripper
+  swallows in-file
+  call sites);
+  `launch_runtime`
+  micro-fns are
+  likewise fragments
+  of a larger env
+  family, not
+  coherent leaves --
+  both areas need
+  hand verification
+  before scoping.
+
+- Verify: `cargo
+  check --locked
+  --workspace
+  --all-targets`
+  green; `cargo fmt
+  --all --check`
+  clean; `cargo
+  clippy` 0
+  errors/warnings on
+  the leaf
+  (`--all-targets -D
+  warnings`) + hub
+  lib (`-D warnings`;
+  hub `--all-targets`
+  keeps its 6
+  pre-existing
+  test-only errors,
+  identical to base
+  modulo
+  build-progress
+  ordering). `cargo
+  nextest list
+  --workspace
+  --all-targets`:
+  7277 -> 7277,
+  byte-identical (0
+  relocations; 0
+  dropped, 0 added).
+  `nextest run`:
+  433/433 runtime
+  green (1 skipped,
+  pre-existing; 1
+  unrelated attach
+  socket test flagged
+  LEAK under
+  full-suite load and
+  passes clean
+  alone); 18/18 app
+  `prune` green; the
+  leaf has no tests
+  (coverage in the
+  hub `cleanup`
+  case_05 suite plus
+  `launch` case_29).
+  `alint check`: 180
+  violations / 11
+  failing,
+  byte-identical
+  (zero relocations
+  -- the leaf file
+  sits at 37 lines,
+  under 400; zero new
+  rows).
+  `check-gaps`: 12 ->
+  12 (hub 8611 ->
+  8597 prod code
+  lines, 77 prod
+  files; `prune.rs`
+  190 -> 179; xtask
+  26313 -> 26314 (+1
+  TIERS row); leaf
+  fits both budgets,
+  no SIZE finding).
+  `ratchet.toml`: 2
+  new rows (README
+  bytes 783,
+  public-surface 1;
+  no clippy-lint row
+  -- the leaf carries
+  no `expect`; no
+  `print_stderr` row
+  -- measured 0,
+  split-92
+  precedent). `lint
+  arch --strict`: 3
+  pre-existing
+  no-tier, gate
+  content identical
+  to base, zero
+  direction
+  violations; `lint
+  headers` / `tests`
+  /
+  `readme-freshness`
+  / `files` /
+  `agents` /
+  `suppressions` /
+  `ratchet` /
+  `agent-status-truth`
+  / `container-paths`
+  all identical to
+  base (`agent-links`
+  still OK with +1
+  scanned file for
+  the new README).
+
+- Raw outputs:
+  `/tmp/jackin-s41-{before,after}-*.txt`
+  plus
+  `/tmp/jackin-s41-{triage,resolve,fngroup}.py`
+  plus
+  `/tmp/jackin-s41-leafgraph2.txt`
+  (kept out of the
+  repo).
