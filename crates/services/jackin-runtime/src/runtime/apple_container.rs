@@ -10,6 +10,10 @@
 //! `jackin_runtime_apple_container_running` (S7 split 108),
 //! imported below.
 //!
+//! The post-attach outcome recorder lives in
+//! `jackin_runtime_apple_container_attach_outcome` (S7 split 109),
+//! imported below.
+//!
 //! # Prerequisites
 //!
 //! - macOS 26 ARM with `apple/container` installed
@@ -200,24 +204,10 @@ pub async fn attach(container_name: &str, focus_session: Option<u64>) -> Result<
     Ok(status.code)
 }
 
-/// Record the post-attach outcome into the instance manifest so
-/// `jackin --inspect` can show whether a role crashed. This records the outcome
-/// only; unlike the Docker reconnect path it does not run session
-/// finalization/teardown — apple-container finalization is not yet wired.
-/// Best-effort: a missing/corrupt manifest is a no-op (logged downstream).
-async fn record_attach_outcome(paths: &JackinPaths, container_name: &str, exit_code: Option<i32>) {
-    use crate::isolation::finalize::AttachOutcome;
-    let outcome = if is_container_running(container_name).await {
-        AttachOutcome::still_running()
-    } else {
-        AttachOutcome::stopped(exit_code.unwrap_or(-1))
-    };
-    drop(super::launch::record_instance_attach_outcome(
-        paths,
-        container_name,
-        outcome,
-    ));
-}
+// Moved to jackin_runtime_apple_container_attach_outcome::attach_outcome
+// (S7 split 109); the private import keeps both in-file call sites
+// (`launch`, `reconnect`) compiling unchanged.
+use jackin_runtime_apple_container_attach_outcome::attach_outcome::record_attach_outcome;
 
 /// Inputs for the apple-container launch path. Grouped into a struct so the
 /// many backend-specific parameters travel together from the `load_role_with`
