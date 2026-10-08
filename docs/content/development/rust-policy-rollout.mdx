@@ -9919,3 +9919,215 @@ bound 720.
   `/tmp/jackin-s33-{before,after}-*.txt`
   (kept out of the
   repo).
+
+### Split 94: runtime-prewarm-trigger extraction (M55)
+
+- `jackin-runtime`
+  ->
+  `jackin-runtime`
+  +
+  `jackin-runtime-prewarm-trigger`
+  (T7, landed as
+  `35fc9f4f`: the
+  whole
+  `runtime/prewarm_trigger`
+  module moves --
+  background prewarm
+  targets
+  (`BackgroundPrewarmTarget`
+  /
+  `background_prewarm_targets`)
+  + image/sidecar
+  sweeps
+  (`spawn_background_image_prewarm`
+  /
+  `spawn_background_sidecar_prewarm`)
+  + attempt
+  vocabulary
+  (`SidecarPrewarmOutcome`
+  /
+  `classify_sidecar_prewarm_attempt`).
+  Max deps are
+  `image` /
+  `launch-dind` (T6;
+  `docker` T3;
+  `diagnostics` T2;
+  `config` T1; `core`
+  / `telemetry` T0),
+  so the leaf
+  takes T7 per the
+  1+max rule --
+  inside the slice
+  <=T7 ceiling (T6
+  is impossible here
+  since both T6 deps
+  are load-bearing).
+  Zero true hub edges:
+  all five `super::`
+  edges resolve through
+  hub shims
+  (`super::image::prewarm_role_images`
+  -> `image` T6;
+  4x `super::launch::{...}`
+  -> `launch-dind`
+  T6 -- the s34 triage
+  script flags all five
+  T8 without item-level
+  resolution). Two items
+  widen (`private` ->
+  `pub`, forced: the hub
+  suite names
+  `SidecarPrewarmOutcome`
+  /
+  `classify_sidecar_prewarm_attempt`
+  through the shim)
+  with docs; no new
+  derives (`Debug`
+  already present).
+  Hub keeps `pub mod
+  prewarm_trigger` as a
+  shim + `#[cfg(test)]
+  mod tests` + test-only
+  scope restoration
+  (`AppConfig`, `Agent`,
+  `JackinPaths`,
+  split-92 `launch_dind`
+  precedent) + test-only
+  `spawn_*` wrappers:
+  the `#[cfg(test)]`
+  disabled-in-unit-tests
+  branches keyed off the
+  hub's own test build,
+  which the leaf no
+  longer observes (first
+  split attempt failed
+  `sidecar_spawn_is_a_noop_in_unit_tests`
+  with a no-Tokio-reactor
+  panic in the leaf's
+  `not(test)` branch).
+  Production builds
+  re-export the leaf
+  implementations
+  unchanged. The hub
+  `launch.rs`
+  `prewarmed_dind_state_is_live`
+  / `try_lock_prewarmed_dind`
+  re-export loses its last
+  prod user and is pruned
+  (split-92/93 precedent).
+  Triage: s34 script with
+  brace-import expansion
+  + manual `super::` /
+  `crate::` grep with
+  capitals + re-export
+  resolution. Next scoped
+  target: `failure.rs`
+  `render_exit` via
+  observation-inversion
+  (whole-file T8 through
+  `universe`; inverted
+  leaf renders the outro
+  from `(running,
+  ExitClaim, force_outro,
+  data_dir)` and grades
+  T6 via
+  `universe-claims` T2 /
+  `exit-summary` T4 /
+  `progress` T5). No hub
+  renumber.)
+
+- Verify: `cargo check
+  --locked --workspace
+  --all-targets`
+  green; `cargo fmt
+  --all --check`
+  clean; `cargo clippy`
+  0 errors/warnings
+  on the leaf
+  (`--all-targets -D
+  warnings`) + hub
+  lib (`-D warnings`;
+  hub `--all-targets`
+  keeps its 6
+  pre-existing
+  test-only errors,
+  byte-identical to
+  base). `cargo nextest
+  list --workspace
+  --all-targets`: 7277
+  -> 7277,
+  byte-identical (0
+  relocations; 0
+  dropped, 0 added).
+  `nextest run`:
+  433/433 runtime
+  green (1 skipped,
+  pre-existing; one
+  full-suite pass
+  flagged 1 LEAK in
+  the untouched
+  `prune_instances_is_ok_when_data_dir_absent`
+  test, isolated PASS
+  proved a load
+  flake) + 53/53 app
+  `load_cmd` (17) /
+  `prewarm` (36)
+  green; the leaf has
+  no tests (coverage
+  in the hub
+  `prewarm_trigger`
+  cases). `alint check`:
+  180 violations /
+  11 failing,
+  byte-identical (zero
+  relocations -- the
+  leaf file sits at
+  236 lines, under
+  400; zero new rows).
+  `check-gaps`:
+  12 -> 12 (hub
+  9087 -> 8956
+  prod code lines,
+  77 prod files;
+  xtask 26306 ->
+  26307 (+1 TIERS
+  row); leaf fits
+  both budgets, no
+  SIZE finding).
+  `ratchet.toml`: 3
+  new rows (README
+  bytes 1356,
+  public-surface 1,
+  excessive_nesting 1;
+  no print_stderr row
+  -- measured 0,
+  split-92 precedent)
+  + 0 hub tightens
+  (split-69 precedent:
+  the stale hub
+  excessive_nesting
+  budget stays for its
+  owner; `suppressions`
+  35 -> 36 with the
+  measured-0
+  grandfather notice).
+  `lint arch
+  --strict`: 3
+  pre-existing
+  no-tier
+  byte-identical,
+  zero direction
+  violations;
+  `lint headers`
+  stays at the
+  base 2; `lint
+  tests` OK; `lint
+  readme-freshness` /
+  `files` / `agents`
+  byte-identical to
+  base.
+
+- Raw outputs:
+  `/tmp/jackin-s34-{before,after}-*.txt`
+  (kept out of the
+  repo).
