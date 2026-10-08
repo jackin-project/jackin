@@ -852,6 +852,9 @@ bound = 1132
 key = "crates/services/jackin-runtime-launch-restore/README.md"
 bound = 1632
 [[family.entry]]
+key = "crates/services/jackin-runtime-launch-sibling-auth-prewarm/README.md"
+bound = 1058
+[[family.entry]]
 key = "crates/services/jackin-runtime-launch-slot/README.md"
 bound = 885
 [[family.entry]]
@@ -1255,6 +1258,9 @@ bound = 1
 [[family.entry]]
 key = "jackin-runtime-launch-restore"
 bound = 2
+[[family.entry]]
+key = "jackin-runtime-launch-sibling-auth-prewarm"
+bound = 1
 [[family.entry]]
 key = "jackin-runtime-launch-slot"
 bound = 1

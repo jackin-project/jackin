@@ -3619,6 +3619,7 @@ dependencies = [
  "jackin-runtime-launch-programmatic-selection",
  "jackin-runtime-launch-progress-helpers",
  "jackin-runtime-launch-restore",
+ "jackin-runtime-launch-sibling-auth-prewarm",
  "jackin-runtime-launch-slot",
  "jackin-runtime-launch-supported-agents",
  "jackin-runtime-launch-trust",
@@ -4166,6 +4167,22 @@ dependencies = [
  "jackin-runtime-launch-load-options",
  "jackin-runtime-launch-plan",
  "jackin-runtime-progress",
+]
+
+[[package]]
+name = "jackin-runtime-launch-sibling-auth-prewarm"
+version = "0.6.4"
+dependencies = [
+ "anyhow",
+ "jackin-config",
+ "jackin-core",
+ "jackin-diagnostics",
+ "jackin-instance",
+ "jackin-manifest",
+ "jackin-runtime-launch-capsule-setup",
+ "jackin-telemetry",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]
