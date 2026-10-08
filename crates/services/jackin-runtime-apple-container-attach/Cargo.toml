@@ -1,0 +1,30 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "jackin-runtime-apple-container-attach"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
+description = "Interactive attach step for the jackin apple-container backend."
+license.workspace = true
+readme = "README.md"
+publish = false
+
+repository.workspace = true
+
+[lib]
+name = "jackin_runtime_apple_container_attach"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+jackin-core = { workspace = true }
+jackin-diagnostics = { workspace = true }
+jackin-process = { workspace = true }
+jackin-runtime-identity = { workspace = true }
+jackin-runtime-process-telemetry = { workspace = true }
+
+[lints]
+workspace = true

@@ -14,6 +14,10 @@
 //! `jackin_runtime_apple_container_attach_outcome` (S7 split 109),
 //! imported below.
 //!
+//! The interactive attach step lives in
+//! `jackin_runtime_apple_container_attach` (S7 split 110),
+//! imported below.
+//!
 //! # Prerequisites
 //!
 //! - macOS 26 ARM with `apple/container` installed
@@ -35,7 +39,6 @@ use crate::instance::{
     NewInstanceManifest,
 };
 use jackin_core::JackinPaths;
-use jackin_core::container_paths;
 
 const ATTACH_MAX_WAIT_MS: u64 = 60_000;
 const ATTACH_POLL_MS: u64 = 500;
@@ -168,41 +171,10 @@ pub async fn wait_for_capsule(container_name: &str) -> Result<()> {
     }
 }
 
-/// Attach interactively to a running apple/container container.
-/// Uses `container exec -it <name> /jackin/runtime/jackin-capsule` which
-/// provides a proper PTY with SIGWINCH forwarding via the vminitd gRPC/vsock layer.
-///
-/// Returns the capsule's exit code (`None` if it was signalled) so the caller
-/// can record an attach outcome — a non-zero exit distinguishes a crash from a
-/// clean detach.
-pub async fn attach(container_name: &str, focus_session: Option<u64>) -> Result<Option<i32>> {
-    let mut args: Vec<&str> = vec![
-        "exec",
-        "--user",
-        crate::runtime::identity::CAPSULE_SUPERVISOR_USER,
-        "-it",
-        container_name,
-        container_paths::CAPSULE_BIN,
-    ];
-
-    let focus_str;
-    if let Some(id) = focus_session {
-        focus_str = id.to_string();
-        args.push("--focus");
-        args.push(&focus_str);
-    }
-
-    let request = jackin_process::ExecRequest::new("container", &args)
-        .stdin_mode(jackin_process::StdioMode::Inherit)
-        .stdout_mode(jackin_process::StdioMode::Inherit)
-        .stderr_mode(jackin_process::StdioMode::Inherit);
-    let status = crate::process_telemetry::exec_async(&request)
-        .await
-        .context("container exec failed — is apple/container installed?")?;
-
-    jackin_diagnostics::reassert_alt_screen();
-    Ok(status.code)
-}
+// Moved to jackin_runtime_apple_container_attach::attach
+// (S7 split 110); the private import keeps both in-file call sites
+// (`launch`, `reconnect`) compiling unchanged.
+use jackin_runtime_apple_container_attach::attach::attach;
 
 // Moved to jackin_runtime_apple_container_attach_outcome::attach_outcome
 // (S7 split 109); the private import keeps both in-file call sites

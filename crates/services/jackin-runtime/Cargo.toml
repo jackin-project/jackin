@@ -33,6 +33,7 @@ jackin-protocol = { workspace = true }
 jackin-telemetry = { workspace = true }
 jackin-isolation = { workspace = true }
 jackin-instance = { workspace = true }
+jackin-runtime-apple-container-attach = { workspace = true }
 jackin-runtime-apple-container-attach-outcome = { workspace = true }
 jackin-runtime-apple-container-client = { workspace = true }
 jackin-runtime-apple-container-running = { workspace = true }

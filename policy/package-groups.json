@@ -30,6 +30,7 @@
     "jackin-process-directory": "library",
     "jackin-protocol": "library",
     "jackin-runtime": "library",
+    "jackin-runtime-apple-container-attach": "library",
     "jackin-runtime-apple-container-attach-outcome": "library",
     "jackin-runtime-apple-container-client": "library",
     "jackin-runtime-apple-container-running": "library",
