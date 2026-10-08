@@ -46,6 +46,7 @@ jackin-runtime-cleanup-dind-gc = { workspace = true }
 jackin-runtime-cleanup-prune-dir = { workspace = true }
 jackin-runtime-cleanup-prune-home = { workspace = true }
 jackin-runtime-cleanup-prune-images = { workspace = true }
+jackin-runtime-cleanup-prune-roles = { workspace = true }
 jackin-runtime-cleanup-resolve = { workspace = true }
 jackin-runtime-cleanup-timing = { workspace = true }
 jackin-runtime-coordination = { workspace = true }

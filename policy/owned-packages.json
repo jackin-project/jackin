@@ -43,6 +43,7 @@
     "jackin-runtime-cleanup-prune-dir",
     "jackin-runtime-cleanup-prune-home",
     "jackin-runtime-cleanup-prune-images",
+    "jackin-runtime-cleanup-prune-roles",
     "jackin-runtime-cleanup-resolve",
     "jackin-runtime-cleanup-timing",
     "jackin-runtime-coordination",

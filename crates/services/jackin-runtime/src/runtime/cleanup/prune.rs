@@ -4,7 +4,8 @@
 //!
 //! Image pruning lives in `jackin_runtime_cleanup_prune_images` (S7 split 99),
 //! home pruning in `jackin_runtime_cleanup_prune_home` (S7 split 101),
-//! both re-exported below.
+//! role pruning in `jackin_runtime_cleanup_prune_roles` (S7 split 103),
+//! all re-exported below.
 
 #![expect(
     clippy::print_stderr,
@@ -29,15 +30,9 @@ pub use jackin_runtime_cleanup_prune_images::prune_images::prune_images;
 // the item re-export keeps every `prune::prune_jackin_home` path stable.
 pub use jackin_runtime_cleanup_prune_home::prune_home::prune_jackin_home;
 
-pub fn prune_roles(paths: &JackinPaths) -> anyhow::Result<()> {
-    crate::runtime::coordination::ensure_prunable(paths, &paths.roles_dir)?;
-    prune_dir(
-        &paths.roles_dir,
-        "Role Cache",
-        "removing cached role repositories",
-        "role cache",
-    )
-}
+// Moved to jackin_runtime_cleanup_prune_roles::prune_roles (S7 split 103);
+// the item re-export keeps every `prune::prune_roles` path stable.
+pub use jackin_runtime_cleanup_prune_roles::prune_roles::prune_roles;
 
 pub fn prune_cache(paths: &JackinPaths) -> anyhow::Result<()> {
     crate::runtime::coordination::ensure_prunable(paths, &paths.cache_dir)?;

@@ -67,6 +67,7 @@ pub(crate) const TIERS: &[(&str, u8)] = &[
     ("jackin-runtime-cleanup-prune-dir", 6),
     ("jackin-runtime-cleanup-prune-home", 6),
     ("jackin-runtime-cleanup-prune-images", 6),
+    ("jackin-runtime-cleanup-prune-roles", 7),
     ("jackin-runtime-cleanup-resolve", 4),
     ("jackin-runtime-cleanup-timing", 3),
     ("jackin-runtime-coordination", 1),

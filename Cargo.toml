@@ -41,6 +41,7 @@ members = [
     "crates/services/jackin-runtime-cleanup-prune-dir",
     "crates/services/jackin-runtime-cleanup-prune-home",
     "crates/services/jackin-runtime-cleanup-prune-images",
+    "crates/services/jackin-runtime-cleanup-prune-roles",
     "crates/services/jackin-runtime-cleanup-resolve",
     "crates/services/jackin-runtime-cleanup-timing",
     "crates/services/jackin-runtime-coordination",
@@ -208,6 +209,7 @@ jackin-runtime-cleanup-dind-gc = { version = "0.6.4", path = "crates/services/ja
 jackin-runtime-cleanup-prune-dir = { version = "0.6.4", path = "crates/services/jackin-runtime-cleanup-prune-dir" }
 jackin-runtime-cleanup-prune-home = { version = "0.6.4", path = "crates/services/jackin-runtime-cleanup-prune-home" }
 jackin-runtime-cleanup-prune-images = { version = "0.6.4", path = "crates/services/jackin-runtime-cleanup-prune-images" }
+jackin-runtime-cleanup-prune-roles = { version = "0.6.4", path = "crates/services/jackin-runtime-cleanup-prune-roles" }
 jackin-runtime-cleanup-resolve = { version = "0.6.4", path = "crates/services/jackin-runtime-cleanup-resolve" }
 jackin-runtime-cleanup-timing = { version = "0.6.4", path = "crates/services/jackin-runtime-cleanup-timing" }
 jackin-runtime-coordination = { version = "0.6.4", path = "crates/services/jackin-runtime-coordination" }

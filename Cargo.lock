@@ -3592,6 +3592,7 @@ dependencies = [
  "jackin-runtime-cleanup-prune-dir",
  "jackin-runtime-cleanup-prune-home",
  "jackin-runtime-cleanup-prune-images",
+ "jackin-runtime-cleanup-prune-roles",
  "jackin-runtime-cleanup-resolve",
  "jackin-runtime-cleanup-timing",
  "jackin-runtime-coordination",
@@ -3802,6 +3803,16 @@ dependencies = [
  "jackin-runtime-cleanup-timing",
  "jackin-runtime-naming",
  "jackin-runtime-prune-output",
+]
+
+[[package]]
+name = "jackin-runtime-cleanup-prune-roles"
+version = "0.6.4"
+dependencies = [
+ "anyhow",
+ "jackin-core",
+ "jackin-runtime-cleanup-prune-dir",
+ "jackin-runtime-coordination",
 ]
 
 [[package]]
