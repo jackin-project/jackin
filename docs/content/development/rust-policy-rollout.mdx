@@ -14834,3 +14834,287 @@ bound 720.
   `/tmp/jackin-s53-base-clippy-locs.txt`
   (kept out of the
   repo).
+
+### Split 114: runtime-apple-container-supervisor-env extraction (M75)
+
+- `jackin-runtime` ->
+  `jackin-runtime` +
+  `jackin-runtime-apple-container-supervisor-env`
+  (T2, landed as
+  `f6f7987d`:
+  `apple_container.rs`
+  supervisor env
+  builder extraction
+  -- the 17-line
+  `apple_supervisor_env`
+  (daemon-mode +
+  supervisor-PID
+  entries, plus the
+  debug telemetry
+  level when
+  requested) moves
+  out of the
+  524-line
+  apple-container
+  file. Max dep is
+  `jackin-protocol`
+  T1, so the leaf
+  takes T2 per the
+  1+max rule. Zero
+  hub edges in the
+  moved code (zero
+  `super::` /
+  `crate::` refs;
+  fully-qualified
+  `jackin_protocol::`
+  paths only;
+  capitalized-path
+  grep shows only
+  the two protocol
+  consts / `Vec` /
+  `String` plus doc
+  prose and SPDX
+  lines). One new
+  `pub` item (the fn
+  was private); the
+  hub file keeps a
+  private import so
+  the `launch` call
+  site compiles
+  unchanged (the step
+  had no external
+  callers -- repo-wide
+  sweep shows only the
+  one in-file site,
+  zero hub-test refs;
+  split-112 precedent
+  family). No
+  file-level `use`
+  drops (the moved
+  edges were
+  fully-qualified
+  paths; hub keeps
+  `jackin_protocol`
+  via
+  `validate_exec_bindings`
+  / `launch`).
+  Semantics identical
+  (moved body
+  byte-identical
+  modulo `pub`).
+  Triage: s54 fresh
+  fn-size scan over
+  all prod
+  `runtime/**`
+  items plus manual
+  caller sweeps +
+  hub-test reference
+  grep + edge
+  grading, over
+  `leafgraph2.py`.
+  Every item under
+  17 lines is held:
+  `backend.rs`
+  smalls are trait
+  decls / impl
+  methods (component
+  fragments);
+  `hardline_agent`
+  (8l) /
+  `telemetry_runtime_envs`
+  (3l) /
+  `register_agent_repo`
+  (12l) /
+  `stop_with` (6l)
+  are pure forwards
+  to staying items;
+  `debug_runtime_envs`
+  (3l) /
+  `telemetry_runtime_envs_for`
+  (8l) /
+  `validate_exec_bindings`
+  (8l) /
+  `with_admitted_final_apple_spec`
+  (13l) /
+  `with_admitted_final_docker_spec`
+  (13l) /
+  `start_or_reconnect_capsule_client`
+  (16l) /
+  `spawn_background_sidecar_prewarm`
+  (14l) are pinned
+  by hub-test sites;
+  `remove_with`
+  (11l) / `stop` /
+  `remove` /
+  `ensure_absent_for_purge`
+  (7l) serve none
+  (dead wrappers);
+  `require_container_reachable`
+  (14l) /
+  `purge_container_state`
+  (10l) /
+  `eject_role` (15l)
+  / `exile` /
+  `purge_absent`
+  items carry hub
+  sibling / backend /
+  index edges
+  (T8-blocked);
+  `launch_pipeline`
+  smalls /
+  `render_exit` /
+  `observe_exit` stay
+  claimed by earlier
+  slices; `stubs.rs`
+  is `cfg(test)`-only.
+  Ties at 17 lines:
+  `ensure_absent_for_purge_with`
+  needs a
+  cross-module
+  `pub(crate)`
+  re-export for its
+  `backend.rs` site
+  and grades T5 via
+  the client leaf;
+  `production` is an
+  impl constructor;
+  `initial_daemon_argv`
+  is pinned by four
+  hub-test sites.
+  `apple_supervisor_env`
+  is therefore the
+  smallest viable
+  leaf (17 lines,
+  single live call
+  site, T2, zero hub
+  edges). Larger
+  held items:
+  `check_dns` (28l,
+  T4) /
+  `print_session_contract`
+  (44l, drags the
+  hub-owned
+  `AppleContainerMount`
+  type) serve
+  `launch` alone;
+  `host_runtime_passthrough_env`
+  (18l) is
+  test-pinned;
+  `spawn_background_image_prewarm`
+  (18l) is a
+  test-stub body.
+
+- Verify: `cargo check
+  --locked --workspace
+  --all-targets`
+  green; `cargo fmt
+  --all --check`
+  clean; `cargo
+  clippy` 0
+  errors/warnings on
+  the leaf
+  (`--all-targets -D
+  warnings`) + hub lib
+  (`-D warnings`; hub
+  `--all-targets`
+  keeps its 6
+  pre-existing
+  test-only errors,
+  normalized locations
+  identical to base).
+  `cargo nextest list
+  --workspace
+  --all-targets`: 7277
+  -> 7277,
+  byte-identical (0
+  relocations; 0
+  dropped, 0 added).
+  `nextest run`:
+  433/433 runtime
+  green (1 skipped,
+  pre-existing; 0
+  leaky flags this
+  run -- s53 noted 2
+  pass-with-leak in
+  `launch_pipeline`
+  tests, a
+  timing-sensitive
+  annotation, all
+  pass either way);
+  18/18 app `prune`
+  green (656 skipped);
+  the leaf has no
+  tests (the step
+  only builds
+  supervisor env
+  pairs and is
+  exercised through
+  the hub launch
+  path; no dedicated
+  suite exists).
+  `alint check`: 180
+  violations / 11
+  failing,
+  byte-identical (zero
+  relocations; zero
+  new rows).
+  `check-gaps`: 12 ->
+  12 (hub 8356 -> 8344
+  prod code lines, 77
+  prod files;
+  `apple_container.rs`
+  524 -> 515; xtask
+  26326 -> 26327 (+1
+  TIERS row); leaf
+  fits both budgets,
+  no SIZE finding;
+  `leafgraph2.py` tip
+  diff empty).
+  `ratchet.toml`: 2
+  new rows (README
+  bytes 859,
+  public-surface 1 --
+  no `print_stderr`
+  row: the moved fn
+  has no `eprintln`,
+  s108 precedent).
+  `lint arch
+  --strict`: 3
+  pre-existing
+  no-tier, gate
+  content identical to
+  base, zero direction
+  violations; `lint
+  headers` / `tests` /
+  `readme-freshness` /
+  `files` / `agents` /
+  `agent-status-truth`
+  / `container-paths`
+  all identical to
+  base (the leaf
+  `lib.rs` carries no
+  SPDX `//` lines:
+  they break the
+  gate's leading-doc
+  scan -- sibling-leaf
+  precedent); `lint
+  ratchet` /
+  `suppressions`
+  identical to base;
+  `agent-links` still
+  OK with +1 scanned
+  file (162 -> 163)
+  for the new README.
+
+- Raw outputs:
+  `/tmp/jackin-s54-{before,after}-*.txt`
+  plus
+  `/tmp/jackin-s54-leafgraph2-*.txt`
+  plus
+  `/tmp/jackin-s54-run-*.txt`
+  plus
+  `/tmp/jackin-s54-base-clippy-locs.txt`
+  plus
+  `/tmp/jackin-s54-fnscan.txt`
+  (kept out of the
+  repo).
