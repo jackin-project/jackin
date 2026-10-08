@@ -12464,3 +12464,223 @@ bound 720.
   `/tmp/jackin-s45-leafgraph2.txt`
   (kept out of the
   repo).
+
+### Split 106: runtime-cleanup-eject-resources extraction (M67)
+
+- `jackin-runtime` ->
+  `jackin-runtime` +
+  `jackin-runtime-cleanup-eject-resources`
+  (T7, landed as
+  `e4032109`:
+  `eject.rs`
+  destructive-step
+  extraction -- the
+  52-line
+  `eject_docker_role_with_resources`
+  (prevalidated-handle
+  checks plus role /
+  DinD container,
+  certs volume, and
+  network removal
+  with the
+  best-effort
+  socket-dir tail)
+  moves out of the
+  147-line eject
+  file. Max dep is
+  `socket-dir` T6 +
+  `instance` / `docker`
+  T3 + `core` T0,
+  so the leaf
+  takes T7 per the
+  1+max rule. Zero
+  true hub edges in
+  the moved code
+  (direct leaf-crate
+  use-lines only;
+  zero `crate::` /
+  `super::` refs
+  remain; the
+  `super::remove_socket_dir`
+  edge resolves to
+  the s105 leaf).
+  One new `pub`
+  item; the hub
+  file keeps a
+  `pub(crate)` item
+  re-export so the
+  eject and attach
+  callers compile
+  unchanged
+  (split-99
+  precedent). The
+  move keeps the
+  hub file's
+  `DockerResources`
+  import (still used
+  by the staying
+  `with_handles`
+  resolver) and
+  drops only the
+  now-unused
+  `remove_socket_dir`
+  super-import.
+  Triage: s46 re-run
+  of the s45
+  function-group
+  script (item
+  segmentation +
+  sibling call-graph
+  + directed-alone
+  pass) over the s45
+  resolver (CLEANUP
+  maps extended with
+  the s105 leaf)
+  plus `leafgraph2.py`
+  + manual
+  capitalized-path
+  grep with
+  re-export
+  resolution. The
+  scan held every
+  smaller ALONE item
+  as a fragment per
+  standing precedent
+  (landed leaves
+  serve 2+ sites or
+  an external crate):
+  `register_agent_repo`
+  (12l) is a pure
+  repo-cache
+  forward;
+  `stop_with` (6l)
+  is a pure client
+  forward;
+  `apple_container`
+  micro-fns are
+  private or
+  single-flow
+  fragments
+  (`validate_exec_bindings`
+  / `remove_with` at
+  8l uncalled or
+  single-caller);
+  `apple_container_instance_names`
+  (23l) and
+  `validate_agent_supported`
+  (22l) are
+  single-caller
+  fragments;
+  `launch_runtime`
+  micro-items are
+  stubs or env
+  builders whose
+  callers live in
+  claimed files;
+  `launch_pipeline` +
+  `observe_exit` stay
+  claimed by earlier
+  slices. The
+  52-line
+  `eject_docker_role_with_resources`
+  (ALONE-T6) is the
+  smallest shared
+  step: two hub
+  call sites across
+  the eject/exile
+  and attach
+  reconnect-lease
+  flows.
+
+- Verify: `cargo check
+  --locked --workspace
+  --all-targets`
+  green; `cargo fmt
+  --all --check`
+  clean; `cargo
+  clippy` 0
+  errors/warnings on
+  the leaf
+  (`--all-targets -D
+  warnings`) + hub lib
+  (`-D warnings`; hub
+  `--all-targets`
+  keeps its 6
+  pre-existing
+  test-only errors,
+  normalized locations
+  identical to base).
+  `cargo nextest list
+  --workspace
+  --all-targets`: 7277
+  -> 7277,
+  byte-identical (0
+  relocations; 0
+  dropped, 0 added).
+  `nextest run`:
+  433/433 runtime
+  green (1 skipped,
+  pre-existing; 1
+  unrelated attach
+  test flagged LEAK
+  under full-suite
+  load and passes
+  clean alone);
+  18/18 app `prune`
+  green; the leaf has
+  no tests (coverage
+  in the hub `cleanup`
+  suite `case_01.rs`).
+  `alint check`: 180
+  violations / 11
+  failing,
+  byte-identical (zero
+  relocations; zero
+  new rows).
+  `check-gaps`: 12 ->
+  12 (hub 8535 -> 8497
+  prod code lines, 77
+  prod files;
+  `eject.rs`
+  147 -> 103; xtask
+  26318 -> 26319 (+1
+  TIERS row); leaf
+  fits both budgets,
+  no SIZE finding).
+  `ratchet.toml`: 2
+  new rows (README
+  bytes 884,
+  public-surface 1 --
+  no `print_stderr`
+  row: the moved fn
+  has no `eprintln`,
+  prune-cache
+  precedent). `lint arch
+  --strict`: 3
+  pre-existing
+  no-tier, gate
+  content identical to
+  base, zero direction
+  violations; `lint
+  headers` / `tests` /
+  `readme-freshness` /
+  `files` / `agents` /
+  `agent-status-truth`
+  / `container-paths`
+  all identical to
+  base; `lint ratchet`
+  / `suppressions`
+  identical to base;
+  `agent-links`
+  still OK with +1
+  scanned file for the
+  new README.
+
+- Raw outputs:
+  `/tmp/jackin-s46-{before,after}-*.txt`
+  plus
+  `/tmp/jackin-s46-{triage,resolve,fngroup}.py`
+  plus
+  `/tmp/jackin-s46-leafgraph2.txt`
+  (kept out of the
+  repo).
