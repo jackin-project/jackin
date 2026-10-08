@@ -10258,7 +10258,7 @@ bound 720.
   relocations; 0
   dropped, 0 added).
   `nextest run`:
-  443/443 runtime
+  433/433 runtime
   green (1 skipped,
   pre-existing; 2 LEAK
   flags in untouched
@@ -10545,5 +10545,183 @@ bound 720.
   `/tmp/jackin-s36-{triage,resolve,fngroup}.py`
   and
   `/tmp/jackin-s36-{resolve,fngroup}-out*.txt`
+  (kept out of the
+  repo).
+
+### Split 97: runtime-launch-sibling-auth-prewarm extraction (M58)
+
+- `jackin-runtime` ->
+  `jackin-runtime` +
+  `jackin-runtime-launch-sibling-auth-prewarm`
+  (T6, landed as
+  `4c25ee37`:
+  `launch_runtime.rs`
+  `SiblingAuthPrewarm` /
+  `spawn_sibling_auth_prewarm` /
+  `await_sibling_auth_prewarm` /
+  `spawn_auth_prewarm_worker`
+  function-group
+  extraction -- the
+  sibling-agent auth-slot
+  prewarm spawn/await pair
+  moves out of the
+  1751-line runtime file:
+  manifest sibling-agent
+  fan-out (`supported_agents`
+  minus the selected
+  agent), the
+  blocking-pool worker
+  (`joined_blocking`), the
+  capsule-setup
+  `instance_auth_bindings`
+  plus placeholder
+  `Ignore` bindings,
+  `RoleState::prewarm_auth_for_bindings`,
+  and the admission-gate
+  await. Max dep is
+  `capsule-setup` T5
+  (`instance` T3,
+  `diagnostics` /
+  `manifest` T2, `config`
+  T1, `core` /
+  `telemetry` T0,
+  `anyhow` / `serde_json` /
+  `tokio` ext), so the
+  leaf takes T6 per the
+  1+max rule. Zero true
+  hub edges in the moved
+  code (`crate::instance::*`
+  resolves to the T3
+  `jackin-instance`
+  re-export per `lib.rs`;
+  `super::capsule_setup`
+  resolves to the T5 leaf;
+  the only in-file
+  neighbor is the
+  `LaunchContext` field
+  type it leaves behind,
+  satisfied by the
+  re-export). Four new
+  `pub` items (the worker
+  was private in the hub
+  and prod-unused outside
+  the moved body, so the
+  hub gates its
+  re-export plus the
+  `AppConfig` import
+  behind `#[cfg(test)]`
+  scope restoration);
+  the hub file keeps item
+  re-exports so the
+  `launch.rs` /
+  `runtime.rs` / `lib.rs`
+  re-exports + the
+  `orchestrate`
+  `runtime.rs` /
+  `environment_resolve.rs`
+  callers + the hub
+  `case_01` / `case_02`
+  suite compile
+  unchanged. Triage: s37
+  re-path of the s36
+  function-group script
+  (item segmentation +
+  sibling call-graph +
+  directed-alone pass)
+  over the s35 resolver
+  plus `leafgraph2.py` +
+  manual capitalized-path
+  grep with re-export
+  resolution; whole-file
+  triage re-confirms all
+  remaining hub modules
+  T8-blocked except
+  parent/shim files, and
+  the `failure.rs`
+  `observe_exit` wrapper
+  grades T8 (universe
+  T7) so it stays.
+
+- Verify: `cargo check
+  --locked --workspace
+  --all-targets` green;
+  `cargo fmt --all
+  --check` clean; `cargo
+  clippy` 0
+  errors/warnings on the
+  leaf (`--all-targets
+  -D warnings`) + hub
+  lib (`-D warnings`;
+  hub `--all-targets`
+  keeps its 6
+  pre-existing test-only
+  errors, byte-identical
+  to base). `cargo
+  nextest list
+  --workspace
+  --all-targets`: 7277
+  -> 7277,
+  byte-identical (0
+  relocations; 0
+  dropped, 0 added).
+  `nextest run`:
+  433/433 runtime green
+  (1 skipped,
+  pre-existing; 1 LEAK
+  flag, same profile as
+  base); the leaf has no
+  tests (coverage in the
+  hub `launch_runtime`
+  `case_01` / `case_02`
+  cases). `alint check`:
+  180 violations / 11
+  failing,
+  byte-identical (zero
+  relocations -- the
+  leaf file sits at 199
+  lines, under 400; zero
+  new rows).
+  `check-gaps`: 12 -> 12
+  (hub 8880 -> 8731 prod
+  code lines, 77 prod
+  files;
+  `launch_runtime.rs`
+  1751 -> 1591, still
+  under the 1850 cap;
+  xtask 26309 ->
+  26310 (+1 TIERS row);
+  leaf fits both
+  budgets, no SIZE
+  finding).
+  `ratchet.toml`: 2 new
+  rows (README bytes
+  1058, public-surface 1;
+  no clippy-lint row --
+  the leaf carries no
+  `expect`; no
+  `print_stderr` row --
+  measured 0, split-92
+  precedent). `lint arch
+  --strict`: 3
+  pre-existing no-tier
+  byte-identical, zero
+  direction violations;
+  `lint headers` /
+  `tests` /
+  `readme-freshness` /
+  `files` / `agents` /
+  `suppressions` /
+  `ratchet` all
+  byte-identical to
+  base (`files` keeps
+  its 1 pre-existing
+  xtask violation).
+
+- Raw outputs:
+  `/tmp/jackin-s37-{before,after}-*.txt`
+  plus
+  `/tmp/jackin-s37-{triage,resolve,fngroup}.py`
+  and
+  `/tmp/jackin-s37-{resolve,fngroup}-out*.txt`
   (kept out of the
   repo).
