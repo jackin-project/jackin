@@ -3583,6 +3583,7 @@ dependencies = [
  "jackin-runtime-apple-container-attach-outcome",
  "jackin-runtime-apple-container-client",
  "jackin-runtime-apple-container-running",
+ "jackin-runtime-apple-container-wait",
  "jackin-runtime-attach-admission",
  "jackin-runtime-attach-capsule-ready",
  "jackin-runtime-attach-exec-args",
@@ -3704,6 +3705,18 @@ name = "jackin-runtime-apple-container-running"
 version = "0.6.4"
 dependencies = [
  "jackin-runtime-apple-container-client",
+]
+
+[[package]]
+name = "jackin-runtime-apple-container-wait"
+version = "0.6.4"
+dependencies = [
+ "anyhow",
+ "jackin-process",
+ "jackin-protocol",
+ "jackin-runtime-identity",
+ "jackin-runtime-process-telemetry",
+ "tokio",
 ]
 
 [[package]]

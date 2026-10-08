@@ -18,6 +18,10 @@
 //! `jackin_runtime_apple_container_attach` (S7 split 110),
 //! imported below.
 //!
+//! The capsule readiness wait lives in
+//! `jackin_runtime_apple_container_wait` (S7 split 111),
+//! imported below.
+//!
 //! # Prerequisites
 //!
 //! - macOS 26 ARM with `apple/container` installed
@@ -39,9 +43,6 @@ use crate::instance::{
     NewInstanceManifest,
 };
 use jackin_core::JackinPaths;
-
-const ATTACH_MAX_WAIT_MS: u64 = 60_000;
-const ATTACH_POLL_MS: u64 = 500;
 
 /// Print the session contract — the security boundary summary shown to the
 /// operator before the interactive attach begins, so they see the isolation
@@ -130,46 +131,10 @@ pub async fn check_dns(container_name: &str) {
     }
 }
 
-/// Wait until `/jackin/run/jackin.sock` negotiates the host's Capsule protocol
-/// major inside the apple/container container.
-pub async fn wait_for_capsule(container_name: &str) -> Result<()> {
-    let check_cmd = format!(
-        "test -S /jackin/run/jackin.sock && /jackin/runtime/jackin-capsule protocol-check --expected-major {}",
-        jackin_protocol::capsule_transport::CONTROL_PROTOCOL_MAJOR
-    );
-    let deadline =
-        tokio::time::Instant::now() + tokio::time::Duration::from_millis(ATTACH_MAX_WAIT_MS);
-
-    loop {
-        if tokio::time::Instant::now() >= deadline {
-            bail!(
-                "timed out waiting for jackin-capsule daemon in container {container_name}; \
-                 check `container logs {container_name}` for startup errors"
-            );
-        }
-
-        let output = crate::process_telemetry::exec_async(&jackin_process::ExecRequest::new(
-            "container",
-            [
-                "exec",
-                "--user",
-                crate::runtime::identity::CAPSULE_SUPERVISOR_USER,
-                container_name,
-                "sh",
-                "-c",
-                &check_cmd,
-            ],
-        ))
-        .await;
-
-        match output {
-            Ok(o) if o.success => return Ok(()),
-            _ => {
-                tokio::time::sleep(tokio::time::Duration::from_millis(ATTACH_POLL_MS)).await;
-            }
-        }
-    }
-}
+// Moved to jackin_runtime_apple_container_wait::wait
+// (S7 split 111); the private import keeps both in-file call sites
+// (`launch`, `reconnect`) compiling unchanged.
+use jackin_runtime_apple_container_wait::wait::wait_for_capsule;
 
 // Moved to jackin_runtime_apple_container_attach::attach
 // (S7 split 110); the private import keeps both in-file call sites

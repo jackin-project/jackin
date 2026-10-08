@@ -34,6 +34,7 @@
     "jackin-runtime-apple-container-attach-outcome": "library",
     "jackin-runtime-apple-container-client": "library",
     "jackin-runtime-apple-container-running": "library",
+    "jackin-runtime-apple-container-wait": "library",
     "jackin-runtime-attach-admission": "library",
     "jackin-runtime-attach-capsule-ready": "library",
     "jackin-runtime-attach-exec-args": "library",

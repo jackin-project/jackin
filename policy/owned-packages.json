@@ -34,6 +34,7 @@
     "jackin-runtime-apple-container-attach-outcome",
     "jackin-runtime-apple-container-client",
     "jackin-runtime-apple-container-running",
+    "jackin-runtime-apple-container-wait",
     "jackin-runtime-attach-admission",
     "jackin-runtime-attach-capsule-ready",
     "jackin-runtime-attach-exec-args",

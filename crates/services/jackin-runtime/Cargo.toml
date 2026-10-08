@@ -37,6 +37,7 @@ jackin-runtime-apple-container-attach = { workspace = true }
 jackin-runtime-apple-container-attach-outcome = { workspace = true }
 jackin-runtime-apple-container-client = { workspace = true }
 jackin-runtime-apple-container-running = { workspace = true }
+jackin-runtime-apple-container-wait = { workspace = true }
 jackin-runtime-attach-admission = { workspace = true }
 jackin-runtime-attach-capsule-ready = { workspace = true }
 jackin-runtime-attach-exec-args = { workspace = true }
