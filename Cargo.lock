@@ -3584,6 +3584,7 @@ dependencies = [
  "jackin-runtime-attach-capsule-ready",
  "jackin-runtime-attach-exec-args",
  "jackin-runtime-attach-inspect",
+ "jackin-runtime-attach-running-gate",
  "jackin-runtime-attach-sessions",
  "jackin-runtime-attach-transport",
  "jackin-runtime-backend-selection",
@@ -3721,6 +3722,18 @@ dependencies = [
  "jackin-runtime-attach-admission",
  "jackin-runtime-attach-sessions",
  "tokio",
+]
+
+[[package]]
+name = "jackin-runtime-attach-running-gate"
+version = "0.6.4"
+dependencies = [
+ "anyhow",
+ "jackin-core",
+ "jackin-docker",
+ "jackin-runtime-attach-admission",
+ "jackin-runtime-attach-inspect",
+ "jackin-runtime-attach-sessions",
 ]
 
 [[package]]

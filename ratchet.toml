@@ -750,6 +750,9 @@ bound = 831
 key = "crates/services/jackin-runtime-attach-inspect/README.md"
 bound = 858
 [[family.entry]]
+key = "crates/services/jackin-runtime-attach-running-gate/README.md"
+bound = 816
+[[family.entry]]
 key = "crates/services/jackin-runtime-attach-sessions/README.md"
 bound = 949
 [[family.entry]]
@@ -1182,6 +1185,9 @@ key = "jackin-runtime-attach-exec-args"
 bound = 1
 [[family.entry]]
 key = "jackin-runtime-attach-inspect"
+bound = 1
+[[family.entry]]
+key = "jackin-runtime-attach-running-gate"
 bound = 1
 [[family.entry]]
 key = "jackin-runtime-attach-sessions"

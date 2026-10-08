@@ -33,6 +33,7 @@ members = [
     "crates/services/jackin-runtime-attach-capsule-ready",
     "crates/services/jackin-runtime-attach-exec-args",
     "crates/services/jackin-runtime-attach-inspect",
+    "crates/services/jackin-runtime-attach-running-gate",
     "crates/services/jackin-runtime-attach-sessions",
     "crates/services/jackin-runtime-attach-transport",
     "crates/services/jackin-runtime-backend-selection",
@@ -204,6 +205,7 @@ jackin-runtime-attach-admission = { version = "0.6.4", path = "crates/services/j
 jackin-runtime-attach-capsule-ready = { version = "0.6.4", path = "crates/services/jackin-runtime-attach-capsule-ready" }
 jackin-runtime-attach-exec-args = { version = "0.6.4", path = "crates/services/jackin-runtime-attach-exec-args" }
 jackin-runtime-attach-inspect = { version = "0.6.4", path = "crates/services/jackin-runtime-attach-inspect" }
+jackin-runtime-attach-running-gate = { version = "0.6.4", path = "crates/services/jackin-runtime-attach-running-gate" }
 jackin-runtime-attach-sessions = { version = "0.6.4", path = "crates/services/jackin-runtime-attach-sessions" }
 jackin-runtime-attach-transport = { version = "0.6.4", path = "crates/services/jackin-runtime-attach-transport" }
 jackin-runtime-backend-selection = { version = "0.6.4", path = "crates/services/jackin-runtime-backend-selection" }

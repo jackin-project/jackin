@@ -35,6 +35,7 @@
     "jackin-runtime-attach-capsule-ready": "library",
     "jackin-runtime-attach-exec-args": "library",
     "jackin-runtime-attach-inspect": "library",
+    "jackin-runtime-attach-running-gate": "library",
     "jackin-runtime-attach-sessions": "library",
     "jackin-runtime-attach-transport": "library",
     "jackin-runtime-backend-selection": "library",

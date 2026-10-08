@@ -1,6 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 //! Hardline agent start and container reachability gates.
+//!
+//! The running-state gate lives in
+//! `jackin_runtime_attach_running_gate` (S7 split 107),
+//! re-exported below.
 
 use jackin_core::{CommandRunner, ContainerHandle};
 use jackin_docker::docker_client::DockerApi;
@@ -8,11 +12,16 @@ use jackin_docker::docker_client::DockerApi;
 use jackin_core::JackinPaths;
 
 use super::{
-    ContainerState, finalize_reconnected_foreground_session_with_handle,
-    hardline_docker_agent_with_focus_with_lease, inspect_unavailable_message,
-    missing_restore_message, start_or_reconnect_capsule_client_with_handle_with_lease,
-    validate_current_account_admission, validate_recorded_role_handle,
+    finalize_reconnected_foreground_session_with_handle,
+    hardline_docker_agent_with_focus_with_lease,
+    start_or_reconnect_capsule_client_with_handle_with_lease, validate_current_account_admission,
+    validate_recorded_role_handle,
 };
+
+// Moved to jackin_runtime_attach_running_gate::running_gate (S7 split
+// 107); the item re-export keeps every
+// `attach::require_container_running` path stable.
+pub(crate) use jackin_runtime_attach_running_gate::running_gate::require_container_running;
 
 pub(crate) async fn start_or_hardline_agent(
     paths: &JackinPaths,
@@ -157,44 +166,4 @@ pub(crate) async fn require_container_reachable(
     let admission_lease = crate::runtime::launch::AccountConfigRevision::acquire(paths)?;
     validate_current_account_admission(paths, container_name, &admission_lease)?;
     Ok((admission_lease, container))
-}
-
-/// Verify only the Docker lifecycle state. New-agent sessions call this
-/// before their single fresh manifest/policy admission gate so that target
-/// selection and revalidation remain one pre-exec decision.
-pub(crate) async fn require_container_running(
-    paths: &JackinPaths,
-    container_name: &str,
-    docker: &impl DockerApi,
-    stopped_hint: &str,
-) -> anyhow::Result<ContainerHandle> {
-    let inspection = docker.inspect_container_by_name(container_name).await;
-    match inspection.state {
-        ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {
-            let container = inspection.handle.ok_or_else(|| {
-                anyhow::anyhow!("container '{container_name}' inspection returned no immutable ID")
-            })?;
-            validate_recorded_role_handle(paths, container_name, &container)?;
-            Ok(container)
-        }
-        ContainerState::NotFound => {
-            if let Some(message) = missing_restore_message(paths, container_name)? {
-                anyhow::bail!("{message}");
-            }
-            anyhow::bail!(
-                "container '{container_name}' not found; use `jackin load` to start a new session"
-            );
-        }
-        ContainerState::InspectUnavailable(reason) => {
-            anyhow::bail!("{}", inspect_unavailable_message(container_name, &reason));
-        }
-        ContainerState::Stopped { .. }
-        | ContainerState::Created
-        | ContainerState::Removing
-        | ContainerState::Dead => {
-            anyhow::bail!(
-                "container '{container_name}' is stopped; run `jackin hardline {container_name}` to {stopped_hint}"
-            );
-        }
-    }
 }

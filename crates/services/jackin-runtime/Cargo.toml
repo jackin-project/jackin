@@ -38,6 +38,7 @@ jackin-runtime-attach-admission = { workspace = true }
 jackin-runtime-attach-capsule-ready = { workspace = true }
 jackin-runtime-attach-exec-args = { workspace = true }
 jackin-runtime-attach-inspect = { workspace = true }
+jackin-runtime-attach-running-gate = { workspace = true }
 jackin-runtime-attach-sessions = { workspace = true }
 jackin-runtime-attach-transport = { workspace = true }
 jackin-runtime-backend-selection = { workspace = true }
