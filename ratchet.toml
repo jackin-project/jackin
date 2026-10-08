@@ -753,6 +753,9 @@ bound = 765
 key = "crates/services/jackin-runtime-apple-container-running/README.md"
 bound = 789
 [[family.entry]]
+key = "crates/services/jackin-runtime-apple-container-supervisor-env/README.md"
+bound = 859
+[[family.entry]]
 key = "crates/services/jackin-runtime-apple-container-wait/README.md"
 bound = 748
 [[family.entry]]
@@ -1206,6 +1209,9 @@ key = "jackin-runtime-apple-container-probe-version"
 bound = 1
 [[family.entry]]
 key = "jackin-runtime-apple-container-running"
+bound = 1
+[[family.entry]]
+key = "jackin-runtime-apple-container-supervisor-env"
 bound = 1
 [[family.entry]]
 key = "jackin-runtime-apple-container-wait"

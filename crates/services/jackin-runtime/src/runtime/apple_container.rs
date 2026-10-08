@@ -30,6 +30,10 @@
 //! `jackin_runtime_apple_container_activate_entry` (S7 split 113),
 //! imported below.
 //!
+//! The supervisor env builder lives in
+//! `jackin_runtime_apple_container_supervisor_env` (S7 split 114),
+//! imported below.
+//!
 //! # Prerequisites
 //!
 //! - macOS 26 ARM with `apple/container` installed
@@ -164,6 +168,11 @@ use jackin_runtime_apple_container_probe_version::probe_version::probe_version;
 // (`launch`) compiling unchanged.
 use jackin_runtime_apple_container_activate_entry::activate_entry::activate_started_entry;
 
+// Moved to jackin_runtime_apple_container_supervisor_env::supervisor_env
+// (S7 split 114); the private import keeps the in-file call site
+// (`launch`) compiling unchanged.
+use jackin_runtime_apple_container_supervisor_env::supervisor_env::apple_supervisor_env;
+
 /// Inputs for the apple-container launch path. Grouped into a struct so the
 /// many backend-specific parameters travel together from the `load_role_with`
 /// call site instead of as a long positional argument list.
@@ -199,24 +208,6 @@ fn validate_exec_bindings(bindings: &[jackin_protocol::ExecBinding]) -> Result<(
 
     crate::exec_host::ensure_caller_auth_supported()
         .context("apple-container does not support on-demand credential bindings")
-}
-
-fn apple_supervisor_env(debug: bool) -> Vec<(String, String)> {
-    // JACKIN_CAPSULE_FORCE_DAEMON=1 enables daemon mode without PID 1 (vminitd
-    // is PID 1 inside apple/container VMs; capsule runs as entrypoint at PID 2+).
-    let mut env: Vec<(String, String)> = vec![
-        ("JACKIN_CAPSULE_FORCE_DAEMON".to_owned(), "1".to_owned()),
-        (
-            // vminitd is PID 1; Capsule entrypoint is launched after it. This
-            // is the Apple launch contract, not a runtime probe of the live PID.
-            jackin_protocol::CAPSULE_SUPERVISOR_PID_ENV.to_owned(),
-            jackin_protocol::APPLE_CAPSULE_SUPERVISOR_PID.to_string(),
-        ),
-    ];
-    if debug {
-        env.push(("JACKIN_TELEMETRY_LEVEL".to_owned(), "debug".to_owned()));
-    }
-    env
 }
 
 /// Full launch path for the `apple-container` backend.
