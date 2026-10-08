@@ -15118,3 +15118,266 @@ bound 720.
   `/tmp/jackin-s54-fnscan.txt`
   (kept out of the
   repo).
+
+### Split 115: runtime-launch-debug-envs extraction (M76)
+
+- `jackin-runtime` ->
+  `jackin-runtime` +
+  `jackin-runtime-launch-debug-envs`
+  (T0, landed as
+  `ccc50eb1`:
+  `launch_runtime.rs`
+  debug env helper
+  extraction -- the
+  3-line
+  `debug_runtime_envs`
+  (extra `-e` entries
+  the debug switch
+  contributes to the
+  container run args,
+  currently none) moves
+  out of the 1595-line
+  launch-runtime file.
+  Zero deps (the body is
+  `Vec::new()`; the leaf
+  declares no
+  `[dependencies]` at
+  all, `auth-error` T0
+  precedent), so the
+  leaf takes T0 per the
+  1+max rule. Zero hub
+  edges in the moved
+  code (zero `super::` /
+  `crate::` refs;
+  std-prelude-only body;
+  capitalized-path grep
+  shows only `Vec` /
+  `String` plus doc
+  prose and SPDX lines).
+  One new `pub` item
+  (the fn was
+  `pub(crate)`); the hub
+  file keeps a
+  `pub(crate)` re-export
+  so the
+  `launch_role_runtime`
+  call site plus the hub
+  launch suite
+  (`tests.rs` explicit
+  import, `case_07` pin
+  test) compile
+  unchanged (the step
+  had one in-file prod
+  site plus two suite
+  refs -- repo-wide
+  sweep shows zero other
+  callers; split-97
+  precedent family). No
+  file-level `use` drops
+  (the moved fn used
+  prelude only).
+  Semantics identical
+  (moved body
+  byte-identical modulo
+  `pub`). Triage: s55
+  fresh fn-size scan
+  over all prod
+  `runtime/**` items
+  plus manual caller
+  sweeps + hub-test
+  reference grep + edge
+  grading, over
+  `leafgraph2.py`. 3
+  lines is the floor:
+  `telemetry_runtime_envs`
+  (3l) is a pure forward
+  to the staying
+  `telemetry_runtime_envs_for`
+  (unmovable alone);
+  `git_pull_program`
+  (3l/5l) is
+  `launch_pipeline`-claimed.
+  Every other item is
+  bigger:
+  `run_runtime_envs`
+  (5l, T1); `stop_with`
+  (6l, moves as a pair
+  with `stop`); `stop` /
+  `remove` /
+  `ensure_absent_for_purge`
+  (7l dead pub wrappers,
+  pairs only);
+  `emit_post_run_failure`
+  (7l, diagnostics
+  edges); `remove_with`
+  / `hardline_agent` /
+  `validate_exec_bindings`
+  /
+  `telemetry_runtime_envs_for`
+  (8l, the last two
+  test-pinned,
+  `hardline_agent`
+  forwards to staying
+  items);
+  `capsule_otlp_allowlist_host`
+  (9l);
+  `purge_container_state`
+  (10l);
+  `register_agent_repo`
+  (12l, pure forward to
+  the repo-cache leaf);
+  `with_admitted_final_apple_spec`
+  /
+  `with_admitted_final_docker_spec`
+  (13l, T6+,
+  test-pinned);
+  `eject_role` (15l, hub
+  edges); `finalize` /
+  `reconnect` / `spawn`
+  / `hardline_start`
+  items
+  (attach/cleanup/backend
+  edges);
+  `initial_daemon_argv`
+  (17l, T4 + test
+  sites);
+  `host_runtime_passthrough_env`
+  (18l, test-pinned);
+  `backend.rs` smalls
+  are trait decls / impl
+  methods (component
+  fragments);
+  `launch.rs` is
+  re-exports only;
+  `launch_pipeline`
+  smalls / `render_exit`
+  / `observe_exit` stay
+  claimed by earlier
+  slices;
+  `prewarm_trigger`
+  `spawn_*` are
+  test-stub bodies;
+  `stubs.rs` is
+  `cfg(test)`-only.
+  `debug_runtime_envs`
+  is therefore the
+  smallest viable leaf
+  (3 lines, single live
+  call site, T0, zero
+  hub edges).
+
+- Verify: `cargo check
+  --locked --workspace
+  --all-targets` green;
+  `cargo fmt --all
+  --check` clean; `cargo
+  clippy` 0
+  errors/warnings on the
+  leaf (`--all-targets
+  -D warnings`) + hub
+  lib (`-D warnings`;
+  hub `--all-targets`
+  keeps its 6
+  pre-existing test-only
+  errors, normalized
+  locations identical to
+  base). `cargo nextest
+  list --workspace
+  --all-targets`: 7277
+  -> 7277,
+  byte-identical (0
+  relocations; 0
+  dropped, 0 added).
+  `nextest run`: 433/433
+  runtime green (1
+  skipped, pre-existing;
+  1 pass-with-leak flag
+  on a cleanup test, a
+  timing-sensitive
+  annotation, all pass
+  either way); 18/18 app
+  `prune` green (656
+  skipped); the leaf has
+  no tests (0 run; the
+  step only reports
+  debug env entries and
+  is exercised through
+  the hub launch path
+  plus the hub launch
+  suite; no dedicated
+  suite exists). `alint
+  check`: 180 violations
+  / 11 failing,
+  byte-identical (zero
+  relocations; zero new
+  rows). `check-gaps`:
+  12 -> 12 (hub 8344 ->
+  8342 prod code lines,
+  77 prod files;
+  `launch_runtime.rs`
+  1595 -> 1602 raw lines
+  (+4 doc lines, +3 net
+  at the re-export
+  site); xtask 26327 ->
+  26328 (+1 TIERS row);
+  leaf fits both
+  budgets, no SIZE
+  finding;
+  `leafgraph2.py` tip
+  diff empty).
+  `ratchet.toml`: 2 new
+  rows (README bytes
+  803, public-surface 1
+  -- no `print_stderr`
+  row: the moved fn has
+  no `eprintln`, s108
+  precedent). `lint arch
+  --strict`: 3
+  pre-existing no-tier,
+  gate content identical
+  to base, zero
+  direction violations;
+  `lint headers` /
+  `tests` /
+  `readme-freshness` /
+  `files` / `agents` /
+  `agent-status-truth`
+  identical to base (the
+  leaf `lib.rs` carries
+  no SPDX `//` lines:
+  they break the gate's
+  leading-doc scan --
+  sibling-leaf
+  precedent); `lint
+  arch` content
+  identical modulo mbx
+  cache-noise lines;
+  `lint ratchet` /
+  `suppressions`
+  identical to base;
+  `agent-links` still OK
+  with +1 scanned file
+  (163 -> 164) for the
+  new README;
+  `container-paths`
+  keeps its 24
+  pre-existing
+  violations with zero
+  new rows (one
+  `launch_runtime.rs`
+  finding renumbered
+  1075 -> 1079 under the
+  +4 doc lines).
+
+- Raw outputs:
+  `/tmp/jackin-s55-{before,after}-*.txt`
+  plus
+  `/tmp/jackin-s55-leafgraph2-*.txt`
+  plus
+  `/tmp/jackin-s55-run-*.txt`
+  plus
+  `/tmp/jackin-s55-base-clippy-locs.txt`
+  plus
+  `/tmp/jackin-s55-fnscan.txt`
+  (kept out of the
+  repo).
