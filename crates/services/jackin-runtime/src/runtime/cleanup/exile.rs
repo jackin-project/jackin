@@ -1,6 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Full exile and prune directory helpers.
+//! Full exile helpers.
+//!
+//! The shared prune-one-directory helper lives in
+//! `jackin_runtime_cleanup_prune_dir` (S7 split 102),
+//! re-exported below.
 
 use crate::instance::InstanceManifest;
 use crate::runtime::prune_output;
@@ -11,7 +15,11 @@ use jackin_docker::docker_client::DockerApi;
 use crate::runtime::backend::InstanceBackend;
 use crate::runtime::discovery::list_managed_role_names;
 
-use super::{cleanup_failure, cleanup_timing, eject_role};
+use super::{cleanup_timing, eject_role};
+
+// Moved to jackin_runtime_cleanup_prune_dir::prune_dir (S7 split 102);
+// the item re-export keeps every `cleanup::prune_dir` path stable.
+pub(crate) use jackin_runtime_cleanup_prune_dir::prune_dir::prune_dir;
 
 pub async fn exile_all(paths: &JackinPaths, docker: &impl DockerApi) -> anyhow::Result<()> {
     let _timing = cleanup_timing("exile_all");
@@ -56,29 +64,4 @@ pub(crate) fn apple_container_instance_names(paths: &JackinPaths) -> anyhow::Res
         }
     }
     Ok(names)
-}
-
-// ── Prune ────────────────────────────────────────────────────────────────────
-
-pub(crate) fn prune_dir(
-    path: &std::path::Path,
-    section_label: &str,
-    section_detail: &str,
-    target_label: &str,
-) -> anyhow::Result<()> {
-    let _timing = cleanup_timing("prune_dir");
-    prune_output::section(section_label, section_detail);
-    let row = prune_output::start("Deleting", target_label);
-    let result: anyhow::Result<()> = match crate::isolation::safe_remove::safe_remove_dir_all(path)
-    {
-        Ok(()) => Ok(()),
-        Err(error) => Err(anyhow::Error::from(error).context(format!(
-            "failed to remove {target_label} at {}",
-            path.display()
-        ))),
-    };
-    row.complete(result, |error| {
-        cleanup_failure(format!("could not remove {target_label}: {error}"));
-        format!("could not remove {target_label}: {error}")
-    })
 }

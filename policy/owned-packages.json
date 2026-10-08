@@ -40,6 +40,7 @@
     "jackin-runtime-backend-selection",
     "jackin-runtime-cleanup-absent-guards",
     "jackin-runtime-cleanup-dind-gc",
+    "jackin-runtime-cleanup-prune-dir",
     "jackin-runtime-cleanup-prune-home",
     "jackin-runtime-cleanup-prune-images",
     "jackin-runtime-cleanup-resolve",
