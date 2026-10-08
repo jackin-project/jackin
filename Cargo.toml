@@ -31,6 +31,7 @@ members = [
     "crates/services/jackin-runtime-apple-container-attach",
     "crates/services/jackin-runtime-apple-container-attach-outcome",
     "crates/services/jackin-runtime-apple-container-client",
+    "crates/services/jackin-runtime-apple-container-probe-version",
     "crates/services/jackin-runtime-apple-container-running",
     "crates/services/jackin-runtime-apple-container-wait",
     "crates/services/jackin-runtime-attach-admission",
@@ -207,6 +208,7 @@ jackin-runtime = { version = "0.6.4", path = "crates/services/jackin-runtime" }
 jackin-runtime-apple-container-attach = { version = "0.6.4", path = "crates/services/jackin-runtime-apple-container-attach" }
 jackin-runtime-apple-container-attach-outcome = { version = "0.6.4", path = "crates/services/jackin-runtime-apple-container-attach-outcome" }
 jackin-runtime-apple-container-client = { version = "0.6.4", path = "crates/services/jackin-runtime-apple-container-client" }
+jackin-runtime-apple-container-probe-version = { version = "0.6.4", path = "crates/services/jackin-runtime-apple-container-probe-version" }
 jackin-runtime-apple-container-running = { version = "0.6.4", path = "crates/services/jackin-runtime-apple-container-running" }
 jackin-runtime-apple-container-wait = { version = "0.6.4", path = "crates/services/jackin-runtime-apple-container-wait" }
 jackin-runtime-attach-admission = { version = "0.6.4", path = "crates/services/jackin-runtime-attach-admission" }

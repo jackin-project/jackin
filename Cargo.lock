@@ -3582,6 +3582,7 @@ dependencies = [
  "jackin-runtime-apple-container-attach",
  "jackin-runtime-apple-container-attach-outcome",
  "jackin-runtime-apple-container-client",
+ "jackin-runtime-apple-container-probe-version",
  "jackin-runtime-apple-container-running",
  "jackin-runtime-apple-container-wait",
  "jackin-runtime-attach-admission",
@@ -3698,6 +3699,14 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
+]
+
+[[package]]
+name = "jackin-runtime-apple-container-probe-version"
+version = "0.6.4"
+dependencies = [
+ "jackin-process",
+ "jackin-runtime-process-telemetry",
 ]
 
 [[package]]

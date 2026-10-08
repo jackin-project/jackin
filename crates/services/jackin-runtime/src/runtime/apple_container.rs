@@ -22,6 +22,10 @@
 //! `jackin_runtime_apple_container_wait` (S7 split 111),
 //! imported below.
 //!
+//! The `container` CLI version probe lives in
+//! `jackin_runtime_apple_container_probe_version` (S7 split 112),
+//! imported below.
+//!
 //! # Prerequisites
 //!
 //! - macOS 26 ARM with `apple/container` installed
@@ -145,6 +149,11 @@ use jackin_runtime_apple_container_attach::attach::attach;
 // (S7 split 109); the private import keeps both in-file call sites
 // (`launch`, `reconnect`) compiling unchanged.
 use jackin_runtime_apple_container_attach_outcome::attach_outcome::record_attach_outcome;
+
+// Moved to jackin_runtime_apple_container_probe_version::probe_version
+// (S7 split 112); the private import keeps the in-file call site
+// (`launch`) compiling unchanged.
+use jackin_runtime_apple_container_probe_version::probe_version::probe_version;
 
 /// Inputs for the apple-container launch path. Grouped into a struct so the
 /// many backend-specific parameters travel together from the `load_role_with`
@@ -500,22 +509,6 @@ pub async fn remove_with(
     // Stop first (ignore errors — may already be stopped).
     drop(client.stop_container(container_name).await);
     client.remove_container(container_name).await
-}
-
-/// Probe the `container` CLI version. Returns `None` if not installed.
-pub async fn probe_version() -> Option<String> {
-    let output = crate::process_telemetry::exec_async(&jackin_process::ExecRequest::new(
-        "container",
-        ["--version"],
-    ))
-    .await
-    .ok()?;
-    if output.success {
-        let v = String::from_utf8_lossy(&output.stdout).trim().to_owned();
-        Some(v)
-    } else {
-        None
-    }
 }
 
 #[cfg(test)]
