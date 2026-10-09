@@ -30,9 +30,9 @@ discovery supplies the selected account credential for each refresh.
 `fetch_claude_oauth_usage` accepts only the access token supplied to the
 broker-owned refresh. It never invokes `claude -p /usage` or probes
 `claude --version`. The broker holds `unattended_keychain_guard()` before
-background discovery; reads also pass `ClaudeKeychainInteractionPolicy::Unattended`.
-Explicit credential preparation may pass `OperatorInitiated` before the guard
-is established.
+background discovery. `read_claude_keychain_item(service)` always prohibits UI.
+`prepare_claude_keychain_auth(service)` is the explicit operator preparation API;
+it checks that stdin, stdout and stderr are terminals before any Keychain access.
 
 ## How to verify
 

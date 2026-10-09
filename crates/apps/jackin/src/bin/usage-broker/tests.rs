@@ -70,7 +70,7 @@ fn prepare_auth_args(extra: &[&str]) -> Vec<String> {
 #[test]
 fn explicit_auth_helper_requires_all_terminal_streams_before_keychain_read() {
     let args = prepare_auth_args(&[]);
-    let (exit_code, json) = prepare_auth_with(&args, false, |_, _| {
+    let (exit_code, json) = prepare_auth_with(&args, false, |_| {
         panic!("headless auth helper must not read Keychain")
     });
 
@@ -80,14 +80,10 @@ fn explicit_auth_helper_requires_all_terminal_streams_before_keychain_read() {
 }
 
 #[test]
-fn explicit_auth_helper_uses_operator_policy_and_never_returns_payload() {
+fn explicit_auth_helper_reads_selected_service_and_never_returns_payload() {
     let args = prepare_auth_args(&[]);
-    let (exit_code, json) = prepare_auth_with(&args, true, |service, policy| {
+    let (exit_code, json) = prepare_auth_with(&args, true, |service| {
         assert_eq!(service, jackin_core::CLAUDE_KEYCHAIN_SERVICE_BASE);
-        assert_eq!(
-            policy,
-            jackin_usage_provider_claude::ClaudeKeychainInteractionPolicy::OperatorInitiated
-        );
         AuthReadOutcome::Payload("secret-canary".to_owned())
     });
 
@@ -105,7 +101,7 @@ fn explicit_auth_helper_maps_missing_consent_and_denial_to_stable_codes() {
         (AuthReadOutcome::ConsentRequired, "interaction_required"),
         (AuthReadOutcome::Denied, "auth_denied"),
     ] {
-        let (exit_code, json) = prepare_auth_with(&args, true, |service, _| {
+        let (exit_code, json) = prepare_auth_with(&args, true, |service| {
             assert_eq!(service, "Claude custom");
             read
         });

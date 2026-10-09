@@ -21,8 +21,8 @@ pub use credentials::{load_claude_oauth_credentials, load_claude_organization_ty
 #[cfg(any(target_os = "macos", test))]
 pub use keychain::classify_claude_keychain_status;
 pub use keychain::{
-    ClaudeKeychainInteractionPolicy, ClaudeKeychainPolicyError, ClaudeKeychainRead,
-    ClaudeUnattendedKeychainGuard, read_claude_keychain_item, unattended_keychain_guard,
+    ClaudeKeychainPolicyError, ClaudeKeychainRead, ClaudeUnattendedKeychainGuard,
+    prepare_claude_keychain_auth, read_claude_keychain_item, unattended_keychain_guard,
 };
 pub use oauth_types::{
     ClaudeOAuthExtraUsage, ClaudeOAuthLimit, ClaudeOAuthLimitModel, ClaudeOAuthLimitScope,

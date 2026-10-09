@@ -1,17 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `Claude` macOS Keychain reads with explicit interaction policy.
+//! `Claude` macOS Keychain reads with an unattended default and a guarded
+//! operator preparation entry point.
 
 use zeroize::{Zeroize as _, Zeroizing};
-
-/// Whether a Keychain read may ask macOS to display an operator consent UI.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ClaudeKeychainInteractionPolicy {
-    /// Background discovery and monitoring must never display UI.
-    Unattended,
-    /// An explicit operator action may display Keychain consent UI.
-    OperatorInitiated,
-}
 
 /// Safe failure while establishing a process-wide unattended Keychain scope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -176,37 +168,63 @@ pub fn classify_claude_keychain_status(code: i32) -> ClaudeKeychainRead {
     }
 }
 
-/// Read a Claude Keychain item under an explicit interaction policy.
+/// Read a Claude Keychain item without allowing Keychain UI.
 ///
-/// All reads are serialized because Security.framework's user-interaction
-/// setting is process-wide. An unattended read disables UI for the lookup and
-/// restores the previous setting through an RAII guard. The operator-initiated
-/// policy is intended only for an explicit credential-preparation action.
+/// The process-wide interaction setting is serialized and restored through an
+/// RAII guard. If Security.framework cannot establish that no-UI scope, the
+/// result is `ConsentRequired` and the item is not searched.
 #[cfg(target_os = "macos")]
-pub fn read_claude_keychain_item(
-    service: &str,
-    policy: ClaudeKeychainInteractionPolicy,
-) -> ClaudeKeychainRead {
-    use security_framework::item::{ItemClass, ItemSearchOptions};
+pub fn read_claude_keychain_item(service: &str) -> ClaudeKeychainRead {
     use security_framework::os::macos::keychain::SecKeychain;
 
     read_claude_keychain_item_with(
-        policy,
+        false,
         || SecKeychain::user_interaction_allowed().map_err(|_| ()),
         || SecKeychain::disable_user_interaction().map_err(|_| ()),
-        || {
-            let mut options = ItemSearchOptions::new();
-            options
-                .class(ItemClass::generic_password())
-                .service(service)
-                .load_data(true)
-                .limit(1);
-            match options.search() {
-                Ok(results) => Ok(parse_claude_keychain_search_results(results)),
-                Err(error) => Err(error.code()),
-            }
-        },
+        || search_claude_keychain_item(service),
     )
+}
+
+/// Explicitly prepare Claude credentials from an attached operator terminal.
+///
+/// The provider boundary checks all three standard streams before it queries
+/// or searches Keychain. Headless callers receive `ConsentRequired`, which
+/// maps to the stable `interaction_required` outcome at the broker boundary.
+pub fn prepare_claude_keychain_auth(service: &str) -> ClaudeKeychainRead {
+    prepare_claude_keychain_auth_with(all_stdio_are_terminal(), || {
+        #[cfg(target_os = "macos")]
+        {
+            use security_framework::os::macos::keychain::SecKeychain;
+
+            read_claude_keychain_item_with(
+                true,
+                || SecKeychain::user_interaction_allowed().map_err(|_| ()),
+                || SecKeychain::disable_user_interaction().map_err(|_| ()),
+                || search_claude_keychain_item(service),
+            )
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = service;
+            ClaudeKeychainRead::Missing
+        }
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn search_claude_keychain_item(service: &str) -> Result<Option<Zeroizing<String>>, i32> {
+    use security_framework::item::{ItemClass, ItemSearchOptions};
+
+    let mut options = ItemSearchOptions::new();
+    options
+        .class(ItemClass::generic_password())
+        .service(service)
+        .load_data(true)
+        .limit(1);
+    match options.search() {
+        Ok(results) => Ok(parse_claude_keychain_search_results(results)),
+        Err(error) => Err(error.code()),
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -231,16 +249,13 @@ fn parse_claude_keychain_search_results(
 }
 
 #[cfg(not(target_os = "macos"))]
-pub fn read_claude_keychain_item(
-    _service: &str,
-    _policy: ClaudeKeychainInteractionPolicy,
-) -> ClaudeKeychainRead {
+pub fn read_claude_keychain_item(_service: &str) -> ClaudeKeychainRead {
     ClaudeKeychainRead::Missing
 }
 
 #[cfg(any(target_os = "macos", test))]
-fn with_keychain_interaction_policy<T, Guard>(
-    policy: ClaudeKeychainInteractionPolicy,
+fn with_keychain_interaction_permission<T, Guard>(
+    allow_ui: bool,
     user_interaction_allowed: impl FnOnce() -> Result<bool, ()>,
     disable_user_interaction: impl FnOnce() -> Result<Guard, ()>,
     search: impl FnOnce() -> T,
@@ -249,7 +264,7 @@ fn with_keychain_interaction_policy<T, Guard>(
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
 
-    if policy == ClaudeKeychainInteractionPolicy::OperatorInitiated {
+    if allow_ui {
         return Ok(search());
     }
 
@@ -266,7 +281,7 @@ fn with_keychain_interaction_policy<T, Guard>(
 
 #[cfg(any(target_os = "macos", test))]
 fn read_claude_keychain_item_with<Guard>(
-    policy: ClaudeKeychainInteractionPolicy,
+    allow_ui: bool,
     user_interaction_allowed: impl FnOnce() -> Result<bool, ()>,
     disable_user_interaction: impl FnOnce() -> Result<Guard, ()>,
     search: impl FnOnce() -> Result<Option<Zeroizing<String>>, i32>,
@@ -276,13 +291,34 @@ fn read_claude_keychain_item_with<Guard>(
         Ok(None) => ClaudeKeychainRead::Missing,
         Err(status) => classify_claude_keychain_status(status),
     };
-    with_keychain_interaction_policy(
-        policy,
+    with_keychain_interaction_permission(
+        allow_ui,
         user_interaction_allowed,
         disable_user_interaction,
         read,
     )
     .unwrap_or(ClaudeKeychainRead::ConsentRequired)
+}
+
+// Private injection seam: production callers cannot supply or bypass the
+// terminal check performed by `prepare_claude_keychain_auth`.
+fn prepare_claude_keychain_auth_with(
+    all_stdio_are_terminal: bool,
+    read_item: impl FnOnce() -> ClaudeKeychainRead,
+) -> ClaudeKeychainRead {
+    if !all_stdio_are_terminal {
+        return ClaudeKeychainRead::ConsentRequired;
+    }
+    read_item()
+}
+
+fn all_stdio_are_terminal() -> bool {
+    use std::io::IsTerminal as _;
+
+    let stdin_is_terminal = std::io::stdin().is_terminal();
+    let stdout_is_terminal = std::io::stdout().is_terminal();
+    let stderr_is_terminal = std::io::stderr().is_terminal();
+    stdin_is_terminal && stdout_is_terminal && stderr_is_terminal
 }
 
 fn trim_keychain_payload_and_zeroize(json: &mut String) -> ClaudeKeychainRead {
@@ -348,9 +384,17 @@ mod tests {
             }
         }
 
-        fn read(&self, policy: ClaudeKeychainInteractionPolicy) -> ClaudeKeychainRead {
+        fn read_unattended(&self) -> ClaudeKeychainRead {
+            self.read_with_ui(false)
+        }
+
+        fn prepare(&self, all_stdio_are_terminal: bool) -> ClaudeKeychainRead {
+            prepare_claude_keychain_auth_with(all_stdio_are_terminal, || self.read_with_ui(true))
+        }
+
+        fn read_with_ui(&self, allow_ui: bool) -> ClaudeKeychainRead {
             read_claude_keychain_item_with(
-                policy,
+                allow_ui,
                 || {
                     self.query_count.set(self.query_count.get() + 1);
                     if self.query_error.get() {
@@ -373,7 +417,7 @@ mod tests {
                 },
                 || {
                     self.search_count.set(self.search_count.get() + 1);
-                    if policy == ClaudeKeychainInteractionPolicy::Unattended {
+                    if !allow_ui {
                         assert!(
                             !self.user_interaction_allowed.get(),
                             "unattended fake Keychain search ran with UI enabled"
@@ -391,8 +435,8 @@ mod tests {
     #[test]
     fn unattended_policy_disables_ui_for_search_and_restores_it() {
         let events = RefCell::new(Vec::new());
-        let outcome = with_keychain_interaction_policy(
-            ClaudeKeychainInteractionPolicy::Unattended,
+        let outcome = with_keychain_interaction_permission(
+            false,
             || {
                 events.borrow_mut().push("check");
                 Ok(true)
@@ -415,8 +459,8 @@ mod tests {
     #[test]
     fn unattended_policy_keeps_preexisting_disabled_state() {
         let events = RefCell::new(Vec::new());
-        let outcome = with_keychain_interaction_policy(
-            ClaudeKeychainInteractionPolicy::Unattended,
+        let outcome = with_keychain_interaction_permission(
+            false,
             || Ok(false),
             || {
                 events.borrow_mut().push("disable");
@@ -434,34 +478,37 @@ mod tests {
     }
 
     #[test]
-    fn operator_policy_does_not_disable_ui() {
-        let events = RefCell::new(Vec::new());
-        let outcome = with_keychain_interaction_policy(
-            ClaudeKeychainInteractionPolicy::OperatorInitiated,
-            || {
-                events.borrow_mut().push("check");
-                Ok(true)
-            },
-            || {
-                events.borrow_mut().push("disable");
-                Ok(RestoreOnDrop(&events))
-            },
-            || {
-                events.borrow_mut().push("search");
-                7
-            },
-        )
-        .expect("policy setup succeeds");
+    fn operator_prepare_searches_without_changing_ui_state_after_tty_gate() {
+        let keychain = FakeKeychain::new();
+        assert!(matches!(
+            keychain.prepare(true),
+            ClaudeKeychainRead::Missing
+        ));
+        assert_eq!(keychain.query_count.get(), 0);
+        assert_eq!(keychain.disable_count.get(), 0);
+        assert_eq!(keychain.search_count.get(), 1);
+        assert!(keychain.user_interaction_allowed.get());
+    }
 
-        assert_eq!(outcome, 7);
-        assert_eq!(*events.borrow(), ["search"]);
+    #[test]
+    fn headless_operator_prepare_returns_consent_required_without_keychain_calls() {
+        let keychain = FakeKeychain::new();
+        assert!(matches!(
+            keychain.prepare(false),
+            ClaudeKeychainRead::ConsentRequired
+        ));
+        assert_eq!(keychain.query_count.get(), 0);
+        assert_eq!(keychain.disable_count.get(), 0);
+        assert_eq!(keychain.search_count.get(), 0);
+        assert_eq!(keychain.restore_count.get(), 0);
+        assert!(keychain.user_interaction_allowed.get());
     }
 
     #[test]
     fn unattended_policy_fails_closed_if_ui_cannot_be_disabled() {
         let events = RefCell::new(Vec::new());
-        let outcome = with_keychain_interaction_policy(
-            ClaudeKeychainInteractionPolicy::Unattended,
+        let outcome = with_keychain_interaction_permission(
+            false,
             || Ok(true),
             || {
                 events.borrow_mut().push("disable");
@@ -495,7 +542,7 @@ mod tests {
             let keychain = FakeKeychain::new();
             keychain.search_status.set(Some(status));
 
-            let outcome = keychain.read(ClaudeKeychainInteractionPolicy::Unattended);
+            let outcome = keychain.read_unattended();
 
             match expected {
                 ExpectedRead::Missing => assert!(matches!(outcome, ClaudeKeychainRead::Missing)),
@@ -513,7 +560,7 @@ mod tests {
 
         let keychain = FakeKeychain::new();
         *keychain.payload.borrow_mut() = Some(" {\"fixture\":true} ".to_owned());
-        let outcome = keychain.read(ClaudeKeychainInteractionPolicy::Unattended);
+        let outcome = keychain.read_unattended();
         assert!(matches!(
             outcome,
             ClaudeKeychainRead::Payload { json } if json == "{\"fixture\":true}"
@@ -550,7 +597,7 @@ mod tests {
         let query_failure = FakeKeychain::new();
         query_failure.query_error.set(true);
         assert!(matches!(
-            query_failure.read(ClaudeKeychainInteractionPolicy::Unattended),
+            query_failure.read_unattended(),
             ClaudeKeychainRead::ConsentRequired
         ));
         assert_eq!(query_failure.query_count.get(), 1);
@@ -561,7 +608,7 @@ mod tests {
         let disable_failure = FakeKeychain::new();
         disable_failure.disable_error.set(true);
         assert!(matches!(
-            disable_failure.read(ClaudeKeychainInteractionPolicy::Unattended),
+            disable_failure.read_unattended(),
             ClaudeKeychainRead::ConsentRequired
         ));
         assert_eq!(disable_failure.query_count.get(), 1);

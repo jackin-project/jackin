@@ -94,10 +94,9 @@ fn main() {
         let all_stdio_are_terminal = std::io::stdin().is_terminal()
             && std::io::stdout().is_terminal()
             && std::io::stderr().is_terminal();
-        let (exit_code, json) =
-            prepare_auth_with(&args, all_stdio_are_terminal, |service, policy| {
-                read_claude_auth_item(service, policy)
-            });
+        let (exit_code, json) = prepare_auth_with(&args, all_stdio_are_terminal, |service| {
+            read_claude_auth_item(service)
+        });
         let stdout = std::io::stdout();
         let mut stdout = stdout.lock();
         let _write_result = writeln!(stdout, "{json}");
@@ -125,13 +124,10 @@ enum AuthReadOutcome {
     ConsentRequired,
 }
 
-fn read_claude_auth_item(
-    service: &str,
-    policy: jackin_usage_provider_claude::ClaudeKeychainInteractionPolicy,
-) -> AuthReadOutcome {
+fn read_claude_auth_item(service: &str) -> AuthReadOutcome {
     use jackin_usage_provider_claude::ClaudeKeychainRead;
 
-    match jackin_usage_provider_claude::read_claude_keychain_item(service, policy) {
+    match jackin_usage_provider_claude::prepare_claude_keychain_auth(service) {
         #[cfg(target_os = "macos")]
         ClaudeKeychainRead::Payload { json } => AuthReadOutcome::Payload(json),
         ClaudeKeychainRead::Denied => AuthReadOutcome::Denied,
@@ -143,10 +139,7 @@ fn read_claude_auth_item(
 fn prepare_auth_with(
     args: &[String],
     all_stdio_are_terminal: bool,
-    read_item: impl FnOnce(
-        &str,
-        jackin_usage_provider_claude::ClaudeKeychainInteractionPolicy,
-    ) -> AuthReadOutcome,
+    read_item: impl FnOnce(&str) -> AuthReadOutcome,
 ) -> (i32, String) {
     let mut prepare_flag = false;
     let mut provider = None;
@@ -189,9 +182,8 @@ fn prepare_auth_with(
         );
     }
 
-    use jackin_usage_provider_claude::ClaudeKeychainInteractionPolicy;
     use zeroize::Zeroize as _;
-    match read_item(&service, ClaudeKeychainInteractionPolicy::OperatorInitiated) {
+    match read_item(&service) {
         AuthReadOutcome::Payload(mut json) => {
             json.zeroize();
             (
