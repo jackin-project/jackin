@@ -23,12 +23,42 @@ jackin usage statusline compose --account ACCOUNT --settings settings.json --for
 jackin usage spend record --account ACCOUNT --file account-spend.json --verified --format json
 ```
 
-`usage --data-dir PATH` selects isolated broker state. `service start` or
-`monitor start` explicitly starts the local-only service when needed. Readers,
-doctor and ingress only attach, so the service must already be running for them.
-Basic usage reads the current canonical projection. Status, doctor, watch and wait attach to the broker without credential
-discovery, authentication or provider requests. The old `usage host snapshot` and
-`usage host projection` commands have been removed.
+## Binary and migration preflight
+
+For a monitor, use one installed `jackin` binary for setup and every follow-up
+command, with the same `--data-dir PATH`. Do not switch to a repository
+`target/debug/jackin`. A version string alone does not prove command support:
+inspect `jackin usage --help` and continue only when it lists `monitor`,
+`status`, `watch` and `wait`, with no `host` or `projection` command.
+
+The broker executable can be selected by `JACKIN_USAGE_BROKER_BIN`, which
+overrides the sibling executable next to `jackin`. Read only that named
+setting, not the full environment:
+
+```bash
+printf '%s\n' "${JACKIN_USAGE_BROKER_BIN-<unset>}"
+```
+
+When unset, the selected `jackin` uses its adjacent `jackin-usage-broker`. When
+set, require the value to point to that same installed pair; an empty or other
+path is a provenance mismatch. Stop and report it without unsetting or changing
+Claude's environment. Version and CLI help checks do not validate the broker
+pair.
+
+`usage host snapshot` and `usage host projection` were removed. If an old
+invocation is rejected, stop and report the CLI error and binary path; do not
+retry with a repository build, snapshot/bootstrap, forced provider refresh or
+authentication. The bare `usage` command reads the current canonical
+projection, but it is not a replacement for a durable monitor status.
+
+`usage --data-dir PATH` selects isolated broker state. Start the local-only
+service before passive `doctor` or other readers, using the same installed
+binary and data directory. `service start` starts it explicitly; `monitor start`
+can also start it when needed. Readers, doctor and ingress only attach.
+If `doctor` reports `broker_unavailable`, stop, checkpoint and report the issue
+to the operator instead of switching to a projection, snapshot, provider
+refresh or auth path. Status, doctor, watch and wait attach to the broker
+without credential discovery, authentication or provider requests.
 
 Auth preparation is an explicit operator setup action. It requires an operator
 terminal and runs in the broker executable. Unattended credential reads prohibit

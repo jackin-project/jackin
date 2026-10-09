@@ -5,10 +5,59 @@ and installed Jackin 0.6.4. Commands, JSON/JSONL and exit behavior were exercise
 with isolated local state; no live provider or Keychain verification was run.
 See [verification.md](verification.md) for checks, artifact hashes and limitations.
 
-Operator precondition: the local-only service must already be running, with
-the reviewed statusline adapter and account binding installed. During setup,
-start it with `/Users/donbeave/.local/share/jackin-claude-monitor/bin/jackin usage service start --format json --data-dir /Users/donbeave/.local/share/jackin-claude-monitor/state`.
-Doctor is passive and reports `broker_unavailable` if setup is incomplete.
+## Binary and command preflight
+
+Use `/Users/donbeave/.local/share/jackin-claude-monitor/bin/jackin` for every
+monitor command. Pass this same data directory to each command:
+`--data-dir /Users/donbeave/.local/share/jackin-claude-monitor/state`
+Do not invoke the original repository's `target/debug/jackin` or switch
+binaries during a goal. Version `0.6.4` alone does not prove this CLI
+contract. Run this capability check:
+
+```bash
+/Users/donbeave/.local/share/jackin-claude-monitor/bin/jackin usage --help
+```
+
+Continue only when it lists `monitor`, `status`, `watch` and `wait`, with no
+`host` or `projection` command. Otherwise stop and report the help output and
+binary path to the operator.
+
+The broker executable can be overridden by `JACKIN_USAGE_BROKER_BIN`, which
+takes priority over the CLI's installed sibling. Read only that named setting:
+
+```bash
+if [ "${JACKIN_USAGE_BROKER_BIN+x}" = x ]; then
+  printf 'set: %s\n' "$JACKIN_USAGE_BROKER_BIN"
+else
+  printf 'unset\n'
+fi
+```
+
+`unset` means the installed CLI will use its sibling
+`/Users/donbeave/.local/share/jackin-claude-monitor/bin/jackin-usage-broker`.
+`set:` identifies a present setting; it must name that exact path. If it is empty or
+names another path, stop before service or monitor commands and report the
+setting and expected path to the operator. Do not unset or change Claude's
+environment. The version and CLI help checks do not validate this broker
+pairing.
+
+`usage host snapshot` and `usage host projection` are removed. If either old
+command is requested or rejected, stop and report the CLI error and binary path
+to the operator. Never retry it with a repository build, snapshot/bootstrap,
+forced provider refresh or authentication command.
+
+Before passive `doctor`, the operator must start the local-only service with
+the installed binary and the same data directory, after installing the reviewed
+statusline adapter and account binding:
+
+```bash
+/Users/donbeave/.local/share/jackin-claude-monitor/bin/jackin usage service start --format json --data-dir /Users/donbeave/.local/share/jackin-claude-monitor/state
+```
+
+`monitor start` can also start the local-only service when needed. `doctor` and
+the other readers only attach. If `doctor` reports `broker_unavailable`, stop,
+checkpoint and report that issue to the operator; do not fall back to a
+projection or another refresh/auth path.
 
 Jackin's usage monitor is the supported interface. Use only these commands:
 

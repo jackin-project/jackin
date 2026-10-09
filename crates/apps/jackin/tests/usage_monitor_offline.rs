@@ -371,6 +371,65 @@ fn fresh_statusline() -> Result<(Vec<u8>, i64)> {
 }
 
 #[test]
+fn isolated_usage_help_advertises_monitor_capabilities() -> Result<()> {
+    let fixture = OfflineFixture::new()?;
+    let help = fixture.run(&["--help"], None)?;
+    expect_exit(&help, 0)?;
+    let help_text = String::from_utf8_lossy(&help.stdout);
+    for command in ["monitor", "status", "watch", "wait"] {
+        ensure!(
+            help_text.contains(&format!("\n  {command} ")),
+            "built usage help omitted `{command}`: {help_text}"
+        );
+    }
+    for removed_command in ["host", "projection", "snapshot"] {
+        ensure!(
+            !help_text.contains(&format!("\n  {removed_command} ")),
+            "built usage help still advertises removed `{removed_command}` syntax: {help_text}"
+        );
+    }
+    ensure!(
+        !fixture.data_dir.join("usage-broker/run").exists(),
+        "reading usage help started a local broker"
+    );
+    fixture.assert_no_external_activity()?;
+    Ok(())
+}
+
+#[test]
+fn removed_host_projection_syntax_fails_before_external_work() -> Result<()> {
+    let fixture = OfflineFixture::new()?;
+    let run_dir = fixture.data_dir.join("usage-broker/run");
+
+    for (args, rejected_subcommand) in [
+        (["host", "projection", "--format", "json"], "projection"),
+        (["host", "snapshot", "--format", "json"], "snapshot"),
+    ] {
+        let output = fixture.run(&args, None)?;
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        ensure!(
+            output.status.code() == Some(2),
+            "removed `usage host {rejected_subcommand}` syntax should exit 2, got {:?}; stdout={}; stderr={stderr}",
+            output.status.code(),
+            String::from_utf8_lossy(&output.stdout),
+        );
+        ensure!(
+            stderr.contains(&format!(
+                "error: unexpected argument '{rejected_subcommand}' found"
+            )),
+            "removed `usage host {rejected_subcommand}` syntax did not fail at the parser: {stderr}"
+        );
+        ensure!(
+            !run_dir.exists(),
+            "rejected `usage host {rejected_subcommand}` syntax started a local broker"
+        );
+        fixture.assert_no_external_activity()?;
+    }
+
+    Ok(())
+}
+
+#[test]
 #[expect(
     clippy::too_many_lines,
     reason = "one local-only fixture verifies persisted monitor state across the full stop/restart sequence"

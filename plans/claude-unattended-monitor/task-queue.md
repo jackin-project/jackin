@@ -264,3 +264,39 @@ All implementation and evidence commits through `3aeb8631` are published on
 `origin/claude-unattended-monitor`. The earlier SSH-agent signing refusal is
 historical; it no longer blocks publication. Both the isolated worktree and
 original checkout were clean at verification.
+
+
+## Legacy CLI incident — 2026-10-10
+
+Claude invoked the original checkout's `target/debug/jackin usage host
+projection`. Read-only provenance checks confirm that binary still exposes
+the old host commands; its cache and hash differ from the installed monitor
+pair, despite both reporting 0.6.4. Old projection requests a refresh. The
+current monitor rejects this removed syntax. Passive doctor on the documented
+installed state returns `broker_unavailable` (exit 3), a separate unmet local
+service prerequisite. No service or authentication was started during diagnosis.
+
+| Work | Owner | State |
+| --- | --- | --- |
+| Binary/source provenance and broker lookup diagnosis | incident_binary_provenance / incident_lookup_research | Confirmed old CLI and protocol/state lookup contract |
+| Prominent installed-binary/capability and service prerequisite handoff | incident_contract_review | Done; independent broker-override review passes |
+| Offline removed-command rejection / zero access regression | incident_offline_regression | Passed; offline CLI 4/4 |
+| Independent review, scoped verification, commit and push | parent / reviewers | Review/gates done; commit and push follow |
+
+The original checkout and Claude settings/session remain untouched. No
+compatibility alias, passive auto-start or forced refresh will be introduced.
+
+The lookup review also found `broker_installation.rs` retained the old
+expectation that bare usage starts a sibling broker. That test is being migrated
+to explicit local-only `usage service start`, with passive-read assertions.
+Production bare usage is already passive; no automatic start will be restored.
+The first removed-command regression expected the wrong Clap error wording;
+the fixture run supplied the actual parse error and the assertion was corrected.
+
+Final incident gates: offline CLI 4/4; installation 4/4; app all-target
+Clippy, workspace formatting and diff checks pass. Only the recorded dependency
+future-incompatibility notice remains. Installed smoke passes with zero
+credential/HTTP trips and orderly stop. No production service, original
+checkout, Claude environment or settings were changed. Use the installed
+capability-checked pair and explicit operator service setup; absent service
+continues to report a stable failure rather than trigger provider work.

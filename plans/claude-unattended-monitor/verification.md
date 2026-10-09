@@ -386,3 +386,71 @@ All implementation and evidence commits through `3aeb8631` are published on
 `origin/claude-unattended-monitor`. The earlier SSH-agent signing refusal is
 historical; it no longer blocks publication. Both the isolated worktree and
 original checkout were clean at verification.
+
+
+## Legacy CLI incident diagnosis — 2026-10-10
+
+The reported command used
+`/Users/donbeave/Projects/tailrocks/jackin-project/jackin/target/debug/jackin
+usage host projection --format json`, not the installed monitor binary. Both
+CLI builds print 0.6.4, so version equality is not capability or provenance
+proof. Read-only help confirms the repository artifact exposes old host
+snapshot/projection commands; current monitor help does not. The original
+source's projection handler requests a refresh, while current bare usage only
+reads the materialized broker projection. We did not run the old projection
+command during this investigation.
+
+| Artifact | SHA-256 |
+| --- | --- |
+| Original checkout CLI | `d95ccf05a94f0bdf7e6cfaa23ca1041a032994f07960e5230a2c54d5b9dd2f3f` |
+| Original checkout broker | `6fe2fce548d3173f58d03076cbe151d7f89580feb066188e330bdb5b03cc531e` |
+| Installed CLI | `5bee8b128d872fcfcea9476d15b7185c2eb0cbc5dce177bbe723bda9f5067d6f` |
+| Installed broker | `6321536a6908ef0e0a594e7c0460be9527ac257ac0015940de71165d723412b0` |
+
+Original artifacts resolve to build cache key `7931e261...`; current artifacts
+resolve to `519eebab...`. The original artifact's exact source commit is not
+attested by its hash alone. The original checkout is at `ff9eb01f`; the current
+monitor branch is separate. Neither checkout nor Claude settings were changed
+as part of diagnosis.
+
+A separate passive installed doctor check on
+`/Users/donbeave/.local/share/jackin-claude-monitor/state` returned exit 3 JSON
+`broker_unavailable`. That proves the expected service prerequisite is not
+reachable at that state; it does not identify why the old broker was unavailable
+at the time of the reported command. No production service was started, no
+credentials were read and no provider check was requested. The durable fix is
+to select the installed capability-checked CLI and matching state, plus explicit
+operator local-only setup. Passive reads continue to fail closed when absent.
+
+The original checkout source uses broker protocol 3, while the monitor source
+uses protocol 5 despite the shared 0.6.4 display version. A live incompatible
+broker is not silently replaced; the explicit separate data directory avoids
+that ownership collision. Existing installation tests still expected bare usage
+to auto-start a sibling, contradicting the migrated passive contract. Those
+fixture tests are now included in the incident verification scope. The first
+removed-command test run passed three cases and failed only the assumed parser
+message; the observed `unexpected argument` error is now asserted with exit 2.
+
+Incident scoped integration gates pass: `usage_monitor_offline` 4/4 and
+`broker_installation` 4/4. The first new parse assertion was corrected against
+actual output; app Clippy found two `expect` calls in the new helper, which
+are being replaced with typed test errors before the final rerun. Independent
+provenance review confirmed the installed path/capability preflight and broker
+override rule. The read-only override check distinguishes unset from present,
+even empty, without changing Claude's environment.
+
+Installed smoke rerun PASS on the unchanged verified pair, with default sibling
+lookup and explicit JSONL watch. Fixture `/tmp/jkin-installed-smoke-_q0csgjv`
+was removed after orderly monitor/service stop. Credential trips 0; HTTP proxy
+requests 0. Headless preparation returned interaction_required. The fixture
+does not start the real documented state or install a statusline into the
+running Claude session. No production source behavior or installed bytes were
+changed in this incident fix; only regression coverage and handoff were updated.
+
+Final incident rerun is green: offline CLI 4/4; installation 4/4; app
+all-target Clippy with `-D warnings`; workspace formatting; diff checks. The
+helper's typed-error change passed the rerun. The only Cargo warning is the
+previously recorded `proc-macro-error2 v2.0.1` future-incompatibility notice.
+These fixes deliberately leave the old checkout/build and live session alone;
+they do not guarantee availability without operator setup or prevent an
+uninstructed caller from choosing a different binary.
