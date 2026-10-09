@@ -6,6 +6,7 @@ use jackin_config::AppConfig;
 use jackin_core::{UsageCredentialEnvName, WorkspaceName};
 use jackin_protocol::control::FocusedUsageView;
 use jackin_protocol::usage_broker::UsageCredentialSourceIdentity;
+use jackin_usage_provider_core::ProviderFailureMetadata;
 
 use jackin_usage_host_presentation::HostSurfaceId;
 
@@ -160,6 +161,8 @@ pub enum ProviderCredentialRefreshOutcome {
         view: Box<FocusedUsageView>,
         /// Typed provider rate-limit metadata, when the provider returned HTTP 429.
         rate_limit: Option<jackin_usage_provider_core::ProviderRateLimit>,
+        /// Typed provider failure metadata, when the refresh produced an error view.
+        provider_error: Option<ProviderFailureMetadata>,
     },
     /// Credential disappeared after discovery.
     Missing,

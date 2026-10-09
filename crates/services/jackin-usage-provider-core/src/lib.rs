@@ -53,6 +53,8 @@ pub use self::format::{
 
 pub use self::refresh::MaterializedUsageAccounts;
 pub use self::refresh::ProviderError;
+pub use self::refresh::ProviderErrorKind;
+pub use self::refresh::ProviderFailureMetadata;
 pub use self::refresh::ProviderRateLimit;
 pub use self::refresh::{
     MATERIALIZED_TMP_COUNTER, atomic_write_usage_json, split_provider_fetch,
@@ -87,7 +89,7 @@ pub use cache_keys::{
 };
 pub use consts::{
     AMP_HANDOFF_SECRETS_PATH, CLAUDE_CODE_USER_AGENT_FALLBACK, CLAUDE_HANDOFF_CREDENTIALS_PATH,
-    CLAUDE_VERSION_TIMEOUT, CODEX_HANDOFF_AUTH_PATH, CODEX_OAUTH_CLIENT_ID, CODEX_OAUTH_TOKEN_URL,
+    CODEX_HANDOFF_AUTH_PATH, CODEX_OAUTH_CLIENT_ID, CODEX_OAUTH_TOKEN_URL,
     CODEX_RPC_INIT_TIMEOUT, CODEX_RPC_LAUNCH_COOLDOWN, CODEX_RPC_REQUEST_TIMEOUT,
     GROK_RPC_INIT_TIMEOUT, GROK_RPC_REQUEST_TIMEOUT, MATERIALIZED_USAGE_ACCOUNTS_PATH,
     PROVIDER_HTTP_TIMEOUT,

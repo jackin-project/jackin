@@ -11,7 +11,6 @@ pub const PROVIDER_CLI_TIMEOUT: Duration = Duration::from_secs(10);
 pub const CODEX_RPC_INIT_TIMEOUT: Duration = Duration::from_secs(8);
 pub const CODEX_RPC_REQUEST_TIMEOUT: Duration = Duration::from_secs(3);
 pub const CODEX_RPC_LAUNCH_COOLDOWN: Duration = Duration::from_mins(30);
-pub const CLAUDE_VERSION_TIMEOUT: Duration = Duration::from_secs(2);
 pub const CLAUDE_CODE_USER_AGENT_FALLBACK: &str = "claude-code/2.1.0";
 pub const GROK_RPC_INIT_TIMEOUT: Duration = Duration::from_secs(8);
 pub const GROK_RPC_REQUEST_TIMEOUT: Duration = Duration::from_secs(12);

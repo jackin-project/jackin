@@ -2,32 +2,21 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use std::cell::Cell;
 
-#[test]
-fn claude_code_user_agent_parses_cli_version() {
-    assert_eq!(
-        claude_code_version_from_text("Claude Code 2.1.7\n").as_deref(),
-        Some("2.1.7")
-    );
-    assert_eq!(
-        claude_code_user_agent_with(|command, args, timeout| {
-            assert_eq!(command, "claude");
-            assert_eq!(args, ["--version"]);
-            assert_eq!(timeout, CLAUDE_VERSION_TIMEOUT);
-            Ok(CliOutput {
-                success: true,
-                exit_code: Some(0),
-                stdout: "Claude Code 2.2.0".to_owned(),
-                stderr: String::new(),
-            })
-        })
-        .as_deref(),
-        Some("claude-code/2.2.0")
-    );
+fn resolved_for_test() -> ClaudeResolved {
+    ClaudeResolved {
+        access_token: "fixture-token".to_owned(),
+        subscription_type: Some("Claude Max".to_owned()),
+        account_email: Some("operator@example.test".to_owned()),
+        organization_type: None,
+        credential_origin: "OAuth · fixture".to_owned(),
+        is_anonymous: false,
+    }
 }
 
 #[test]
-fn classify_claude_keychain_status_maps_denial_and_absence() {
+fn classify_claude_keychain_status_distinguishes_denial_absence_and_consent() {
     assert!(matches!(
         classify_claude_keychain_status(-128),
         ClaudeKeychainRead::Denied
@@ -51,212 +40,189 @@ fn classify_claude_keychain_status_maps_denial_and_absence() {
 }
 
 #[test]
-fn claude_keychain_credential_wins_over_file_paths() {
-    let scope = keychain_test_scope(true);
-    let state = ClaudeKeychainState::default();
-    let resolution = resolve_claude_refresh_wave_with(
-        &scope,
-        &state,
-        |_service| ClaudeKeychainRead::Payload {
-            json: KEYCHAIN_PAYLOAD.to_owned(),
-        },
-        || ClaudeFileProbe {
-            credential: claude_oauth_from_value(
-                &serde_json::json!({"claudeAiOauth":{"accessToken":"file-token"}}),
-            ),
-            origin: Some("OAuth · file".to_owned()),
-            account_email: Some("user@example.com".to_owned()),
-            organization_type: Some("Max".to_owned()),
-        },
-        || Some(ClaudeOAuthEnvToken::new("env-token".to_owned())),
-    );
-    match resolution {
-        ClaudeWaveResolution::Resolved(resolved) => {
-            assert_eq!(resolved.access_token, "kc-token");
-            assert_eq!(
-                resolved.credential_origin,
-                "OAuth · macOS Keychain (Claude Code-credentials)"
-            );
-            assert!(!resolved.is_anonymous);
-        }
-        _ => panic!("expected Resolved"),
-    }
-    assert_eq!(state.read_count(), 1);
-}
+fn claude_wave_policy_is_typed_and_does_not_expose_secret() {
+    let shared = ClaudeWaveResolution::Resolved(Box::new(resolved_for_test()));
+    assert_eq!(claude_wave_policy(&shared), ClaudeWavePolicy::Shared);
 
-#[test]
-fn claude_keychain_denial_short_circuits_before_file_or_env_read() {
-    let scope = keychain_test_scope(true);
-    let state = ClaudeKeychainState::default();
-    let resolution = resolve_claude_refresh_wave_with(
-        &scope,
-        &state,
-        |_service| ClaudeKeychainRead::Denied,
-        || panic!("file probe must not run after denial"),
-        || panic!("env reader must not run after denial"),
-    );
-    assert!(matches!(resolution, ClaudeWaveResolution::Denied));
-    // Terminal for the service: a later wave whose reader panics still returns
-    // Denied from the process-lifetime cache without re-prompting.
-    let again = resolve_claude_refresh_wave_with(
-        &scope,
-        &state,
-        |_service| panic!("reader must not run after cached denial"),
-        || panic!("no file probe"),
-        || panic!("no env"),
-    );
-    assert!(matches!(again, ClaudeWaveResolution::Denied));
-    assert_eq!(state.read_count(), 1);
-    assert_eq!(claude_wave_policy(&again), ClaudeWavePolicy::LocalDenied);
-}
-
-#[test]
-fn claude_keychain_missing_falls_back_to_file_then_env() {
-    let scope = keychain_test_scope(true);
-    let state = ClaudeKeychainState::default();
-    let with_file = resolve_claude_refresh_wave_with(
-        &scope,
-        &state,
-        |_| ClaudeKeychainRead::Missing,
-        || ClaudeFileProbe {
-            credential: claude_oauth_from_value(
-                &serde_json::json!({"claudeAiOauth":{"accessToken":"file-token","refreshToken":"rt"}}),
-            ),
-            origin: Some("OAuth · file".to_owned()),
-            account_email: None,
-            organization_type: None,
-        },
-        || None,
-    );
-    match with_file {
-        ClaudeWaveResolution::Resolved(r) => assert_eq!(r.access_token, "file-token"),
-        _ => panic!("file fallback"),
-    }
-    let state2 = ClaudeKeychainState::default();
-    let with_env = resolve_claude_refresh_wave_with(
-        &scope,
-        &state2,
-        |_| ClaudeKeychainRead::Missing,
-        empty_file_probe,
-        || Some(ClaudeOAuthEnvToken::new("env-token".to_owned())),
-    );
-    match &with_env {
-        ClaudeWaveResolution::Resolved(r) => {
-            assert_eq!(r.access_token, "env-token");
-            assert!(r.is_anonymous);
-        }
-        _ => panic!("env fallback"),
-    }
+    let anonymous = ClaudeWaveResolution::Resolved(Box::new(ClaudeResolved {
+        is_anonymous: true,
+        ..resolved_for_test()
+    }));
     assert_eq!(
-        claude_wave_policy(&with_env),
+        claude_wave_policy(&anonymous),
         ClaudeWavePolicy::LocalAnonymous
     );
-}
-
-#[test]
-fn claude_oauth_env_reader_never_reads_api_key_variables() {
-    let mut requested = None;
-    let token = read_claude_oauth_env_token(|name| {
-        requested = Some(name.to_owned());
-        match name {
-            jackin_core::ANTHROPIC_API_KEY_ENV_NAME
-            | jackin_core::ANTHROPIC_AUTH_TOKEN_ENV_NAME => {
-                Ok("api-key-must-not-be-read".to_owned())
-            }
-            jackin_core::CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME => Ok("oauth-token".to_owned()),
-            _ => panic!("unexpected environment variable: {name}"),
-        }
-    });
-
-    assert_eq!(requested.as_deref(), Some("CLAUDE_CODE_OAUTH_TOKEN"));
     assert_eq!(
-        token,
-        Some(ClaudeOAuthEnvToken::new("oauth-token".to_owned()))
+        claude_wave_policy(&ClaudeWaveResolution::Denied),
+        ClaudeWavePolicy::LocalDenied
     );
-}
-
-#[test]
-fn claude_keychain_consent_required_falls_back_like_missing() {
-    let scope = keychain_test_scope(true);
-    let state = ClaudeKeychainState::default();
-    let resolution = resolve_claude_refresh_wave_with(
-        &scope,
-        &state,
-        |_| ClaudeKeychainRead::ConsentRequired,
-        || ClaudeFileProbe {
-            credential: claude_oauth_from_value(
-                &serde_json::json!({"claudeAiOauth":{"accessToken":"file-token"}}),
-            ),
-            origin: Some("OAuth · file".to_owned()),
-            account_email: None,
-            organization_type: None,
-        },
-        || None,
-    );
-    match resolution {
-        ClaudeWaveResolution::Resolved(resolved) => {
-            assert_eq!(resolved.access_token, "file-token");
-        }
-        _ => panic!("consent-gated Keychain must preserve file fallback"),
-    }
-    assert_eq!(state.read_count(), 1);
-}
-
-#[test]
-fn claude_keychain_missing_with_no_credential_is_local_missing() {
-    let scope = keychain_test_scope(true);
-    let state = ClaudeKeychainState::default();
-    let resolution = resolve_claude_refresh_wave_with(
-        &scope,
-        &state,
-        |_| ClaudeKeychainRead::Missing,
-        empty_file_probe,
-        || None,
-    );
-    assert!(matches!(resolution, ClaudeWaveResolution::Missing));
     assert_eq!(
-        claude_wave_policy(&resolution),
+        claude_wave_policy(&ClaudeWaveResolution::Missing),
         ClaudeWavePolicy::LocalMissing
     );
 }
 
 #[test]
-fn claude_keychain_metadata_makes_resolution_shared() {
-    let scope = keychain_test_scope(true);
-    let state = ClaudeKeychainState::default();
-    let resolution = resolve_claude_refresh_wave_with(
-        &scope,
-        &state,
-        |_| ClaudeKeychainRead::Payload {
-            json: r#"{"claudeAiOauth":{"accessToken":"kc"}}"#.to_owned(),
-        },
-        || ClaudeFileProbe {
-            credential: None,
-            origin: None,
-            account_email: Some("id@example.com".to_owned()),
-            organization_type: Some("Max".to_owned()),
-        },
-        || None,
-    );
-    match &resolution {
-        ClaudeWaveResolution::Resolved(r) => {
-            assert!(!r.is_anonymous);
-            assert_eq!(r.account_email.as_deref(), Some("id@example.com"));
+fn claude_http_auth_scope_and_rate_failures_keep_typed_status() {
+    for (http_status, expected_snapshot_status) in [
+        (401, UsageSnapshotStatus::NeedsLogin),
+        (403, UsageSnapshotStatus::Stale),
+        (429, UsageSnapshotStatus::Stale),
+    ] {
+        let calls = Cell::new(0);
+        let now = 1_781_185_560;
+        let (view, rate_limit, provider_error) = claude_resolved_view_with_fetch(
+            "claude",
+            Some("Anthropic / Claude"),
+            now,
+            resolved_for_test(),
+            |token| {
+                assert_eq!(token, "fixture-token");
+                calls.set(calls.get() + 1);
+                Err(ProviderHttpError::HttpStatus {
+                    status: http_status,
+                    message: format!("Claude OAuth usage HTTP {http_status}"),
+                    retry_after_seconds: (http_status == 429).then_some(300),
+                    response_received_at_epoch: Some(now),
+                })
+            },
+        );
+
+        assert_eq!(calls.get(), 1, "one OAuth attempt for HTTP {http_status}");
+        assert_eq!(view.status, expected_snapshot_status);
+        assert_eq!(
+            provider_error.map(|error| (error.kind, error.http_status)),
+            Some((
+                jackin_usage_provider_core::ProviderErrorKind::HttpStatus,
+                Some(http_status)
+            ))
+        );
+        assert!(
+            view.buckets
+                .iter()
+                .all(|bucket| bucket.status == expected_snapshot_status)
+        );
+        let last_error = view.last_error.as_deref().expect("typed error is retained");
+        assert!(last_error.contains(&format!("HTTP {http_status}")));
+
+        if http_status == 403 {
+            assert!(last_error.contains("inference-only"));
         }
-        _ => panic!("resolved"),
+        if http_status == 429 {
+            assert_eq!(
+                rate_limit.and_then(|limit| limit.retry_at_epoch),
+                Some(now + 300)
+            );
+        } else {
+            assert_eq!(rate_limit, None);
+        }
     }
-    assert_eq!(claude_wave_policy(&resolution), ClaudeWavePolicy::Shared);
+}
+
+#[test]
+fn claude_401_does_not_reread_credentials_and_uses_only_later_caller_token() {
+    let old_token_calls = Cell::new(0);
+    let (old_view, _, old_error) = claude_resolved_view_with_fetch(
+        "claude",
+        Some("Anthropic / Claude"),
+        1_781_185_560,
+        resolved_for_test(),
+        |token| {
+            assert_eq!(token, "fixture-token");
+            old_token_calls.set(old_token_calls.get() + 1);
+            Err(ProviderHttpError::HttpStatus {
+                status: 401,
+                message: "Claude OAuth usage HTTP 401".to_owned(),
+                retry_after_seconds: None,
+                response_received_at_epoch: None,
+            })
+        },
+    );
+
+    assert_eq!(
+        old_token_calls.get(),
+        1,
+        "401 does not trigger another fetch"
+    );
+    assert_eq!(old_view.status, UsageSnapshotStatus::NeedsLogin);
+    assert_eq!(
+        old_error.map(|error| (error.kind, error.http_status)),
+        Some((
+            jackin_usage_provider_core::ProviderErrorKind::HttpStatus,
+            Some(401)
+        ))
+    );
+
+    // A later broker invocation may supply a changed credential. The provider
+    // has no source handle to reread, so this is a separate caller-supplied
+    // token, not an automatic same-source retry after 401.
+    let new_token_calls = Cell::new(0);
+    let mut new_credential = resolved_for_test();
+    new_credential.access_token = "new-fixture-token".to_owned();
+    let (_, _, new_error) = claude_resolved_view_with_fetch(
+        "claude",
+        Some("Anthropic / Claude"),
+        1_781_185_560,
+        new_credential,
+        |token| {
+            assert_eq!(token, "new-fixture-token");
+            new_token_calls.set(new_token_calls.get() + 1);
+            Ok(serde_json::from_value(serde_json::json!({}))
+                .expect("empty fake usage response decodes"))
+        },
+    );
+
+    assert_eq!(new_token_calls.get(), 1);
+    assert_eq!(new_error, None);
+}
+
+#[test]
+fn claude_http_timeout_and_transport_failures_stay_typed_and_do_not_retry() {
+    for (failure, expected_kind, message) in [
+        (
+            ProviderHttpError::Timeout("Claude OAuth usage request timed out".to_owned()),
+            jackin_usage_provider_core::ProviderErrorKind::Timeout,
+            "Claude OAuth usage request timed out",
+        ),
+        (
+            ProviderHttpError::Transport("Claude OAuth usage connection reset".to_owned()),
+            jackin_usage_provider_core::ProviderErrorKind::Transport,
+            "Claude OAuth usage connection reset",
+        ),
+    ] {
+        let calls = Cell::new(0);
+        let (view, rate_limit, provider_error) = claude_resolved_view_with_fetch(
+            "claude",
+            Some("Anthropic / Claude"),
+            1_781_185_560,
+            resolved_for_test(),
+            |_| {
+                calls.set(calls.get() + 1);
+                Err(failure)
+            },
+        );
+
+        assert_eq!(calls.get(), 1);
+        assert_eq!(view.status, UsageSnapshotStatus::Stale);
+        assert_eq!(
+            provider_error.map(|error| (error.kind, error.http_status)),
+            Some((expected_kind, None))
+        );
+        assert_eq!(view.last_error.as_deref(), Some(message));
+        assert_eq!(rate_limit, None);
+    }
 }
 
 #[test]
 fn claude_denied_view_has_no_quota_and_exact_error() {
-    let view = claude_view_from_wave_with_rate_limit(
+    let (view, rate_limit, provider_error) = claude_view_from_wave(
         "claude",
         Some("Anthropic / Claude"),
         1_781_185_560,
         ClaudeWaveResolution::Denied,
-    )
-    .0;
+    );
+    assert_eq!(rate_limit, None);
+    assert_eq!(provider_error, None);
     assert_eq!(view.status, UsageSnapshotStatus::NeedsLogin);
     assert!(view.buckets.is_empty());
     assert!(view.account.account_label.is_empty());
@@ -296,52 +262,4 @@ fn claude_limits_inactive_flag_does_not_gate_rendering() {
         .expect("weekly bucket despite is_active false");
     assert_eq!(weekly.label, "All models");
     assert_eq!(weekly.remaining_percent, Some(58));
-}
-
-#[test]
-fn claude_scope_restriction_error_is_explicit() {
-    let forbidden = ProviderError::from(ProviderHttpError::HttpStatus {
-        status: 403,
-        message: "Claude OAuth usage HTTP 403 Forbidden".to_owned(),
-        retry_after_seconds: None,
-        response_received_at_epoch: None,
-    });
-    assert!(claude_error_is_scope_restriction(&forbidden));
-    assert!(!claude_error_is_scope_restriction(&ProviderError::from(
-        ProviderHttpError::Transport("HTTP 403 insufficient_scope".to_owned()),
-    )));
-    assert!(!claude_error_is_scope_restriction(&ProviderError::from(
-        ProviderHttpError::HttpStatus {
-            status: 401,
-            message: "Claude OAuth usage HTTP 401 Unauthorized".to_owned(),
-            retry_after_seconds: None,
-            response_received_at_epoch: None,
-        },
-    )));
-    assert!(!claude_error_is_scope_restriction(&ProviderError::from(
-        "Claude OAuth usage request failed: connection reset".to_owned(),
-    )));
-    assert_eq!(
-        claude_provider_error_label(
-            Some(&forbidden),
-            Some(&ProviderError::from("cli boom".to_owned()))
-        )
-        .as_deref(),
-        Some("Claude token lacks usage scope (inference-only); quota unavailable")
-    );
-    // Non-scope errors pass through verbatim, OAuth first.
-    assert_eq!(
-        claude_provider_error_label(
-            Some(&ProviderError::from("oauth boom".to_owned())),
-            Some(&ProviderError::from("cli boom".to_owned())),
-        )
-        .as_deref(),
-        Some("oauth boom")
-    );
-    assert_eq!(
-        claude_provider_error_label(None, Some(&ProviderError::from("cli boom".to_owned())))
-            .as_deref(),
-        Some("cli boom")
-    );
-    assert_eq!(claude_provider_error_label(None, None), None);
 }

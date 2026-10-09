@@ -6,10 +6,11 @@ use jackin_protocol::control::{
     FocusedUsageView, UsageConfidence, UsageSnapshotStatus, UsageSource,
 };
 use jackin_usage_provider_core::{
-    ProviderRateLimit, UsageSurface, UsageViewInput, now_epoch, unsupported_snapshot, usage_view,
+    ProviderFailureMetadata, ProviderRateLimit, UsageSurface, UsageViewInput, now_epoch,
+    unsupported_snapshot, usage_view,
 };
 
-/// Per-vendor snapshot arms for [`provider_credential_snapshot_with_rate_limit`].
+/// Per-vendor snapshot arms for [`provider_credential_snapshot_with_metadata`].
 /// Implemented once by `jackin-usage-credential-resolver`, which names the
 /// T3 vendor crates from T4. Each arm receives only the routing inputs plus the
 /// caller-retained secret, and returns a view that never embeds the secret.
@@ -19,7 +20,11 @@ pub trait CredentialSnapshotVendors {
         &self,
         secret: &str,
         now: i64,
-    ) -> (FocusedUsageView, Option<ProviderRateLimit>);
+    ) -> (
+        FocusedUsageView,
+        Option<ProviderRateLimit>,
+        Option<ProviderFailureMetadata>,
+    );
     /// `claude` arm with an API key: key snapshot view.
     fn claude_api_key_view(&self, key_name: &str, secret: &str, now: i64) -> FocusedUsageView;
     /// `openrouter` arm: key snapshot with rate limit.
@@ -52,24 +57,29 @@ pub fn provider_credential_snapshot<V: CredentialSnapshotVendors>(
     secret: &str,
     vendors: &V,
 ) -> FocusedUsageView {
-    provider_credential_snapshot_with_rate_limit(surface_id, key_name, secret, vendors).0
+    provider_credential_snapshot_with_metadata(surface_id, key_name, secret, vendors).0
 }
 
-pub fn provider_credential_snapshot_with_rate_limit<V: CredentialSnapshotVendors>(
+pub fn provider_credential_snapshot_with_metadata<V: CredentialSnapshotVendors>(
     surface_id: &str,
     key_name: &str,
     secret: &str,
     vendors: &V,
-) -> (FocusedUsageView, Option<ProviderRateLimit>) {
+) -> (
+    FocusedUsageView,
+    Option<ProviderRateLimit>,
+    Option<ProviderFailureMetadata>,
+) {
     let now = now_epoch();
     if surface_id == "claude" {
         if key_name == jackin_core::CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME {
             return vendors.claude_oauth_wave_view(secret, now);
         }
-        return (vendors.claude_api_key_view(key_name, secret, now), None);
+        return (vendors.claude_api_key_view(key_name, secret, now), None, None);
     }
     if surface_id == "openrouter" {
-        return vendors.openrouter_key_view(secret, now);
+        let (view, rate_limit) = vendors.openrouter_key_view(secret, now);
+        return (view, rate_limit, None);
     }
     let view = match surface_id {
         "amp" => vendors.amp_key_view(secret, now),
@@ -117,5 +127,5 @@ pub fn provider_credential_snapshot_with_rate_limit<V: CredentialSnapshotVendors
         // collector, registry, or discovery entry exists at all).
         _ => unsupported_snapshot(surface_id, None, now),
     };
-    (view, None)
+    (view, None, None)
 }

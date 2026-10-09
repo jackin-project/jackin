@@ -1,46 +1,11 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `Claude` snapshot entry points and identity.
+//! Claude API-key route: API keys cannot poll the OAuth usage endpoint.
 
 use jackin_protocol::control::{
     FocusedUsageView, UsageConfidence, UsageSnapshotStatus, UsageSource,
 };
-use jackin_usage_provider_core::{
-    CLAUDE_HANDOFF_CREDENTIALS_PATH, UsageSurface, UsageViewInput, bucket, env_dir_or_home,
-    home_path, usage_view,
-};
-use std::path::{Path, PathBuf};
-
-use super::{
-    ClaudeWaveResolution, claude_keychain_state, claude_scope_file_probe,
-    claude_view_from_wave_with_rate_limit, load_claude_account_email, read_claude_keychain_item,
-    read_claude_oauth_env_token, resolve_claude_refresh_wave_with,
-};
-
-/// Claude OAuth credential candidates, home-first — the single source of truth
-/// for the path precedence, shared by `claude_snapshot` (token + identity) and
-/// `claude_account_identity` (the shared-cache key) so the list can't drift.
-pub fn claude_oauth_candidates(config: &Path) -> [PathBuf; 4] {
-    [
-        config.join(".credentials.json"),
-        home_path(".claude/.credentials.json"),
-        home_path(".claude.json"),
-        PathBuf::from(CLAUDE_HANDOFF_CREDENTIALS_PATH),
-    ]
-}
-
-/// Claude account identity (the `oauthAccount` email) from the same credential
-/// candidates `claude_snapshot` uses, without fetching usage.
-pub fn claude_account_identity() -> Option<String> {
-    let config = env_dir_or_home("CLAUDE_CONFIG_DIR", ".claude");
-    claude_oauth_candidates(&config)
-        .iter()
-        .find_map(|path| load_claude_account_email(path))
-}
-
-pub fn claude_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsageView {
-    claude_view_from_wave_with_rate_limit(agent, provider, now, resolve_claude_wave()).0
-}
+use jackin_usage_provider_core::{UsageSurface, UsageViewInput, bucket, usage_view};
 
 /// Claude API keys do not authenticate the OAuth quota endpoint. Keep this
 /// route explicit and unsupported rather than feeding an API key into the
@@ -86,24 +51,4 @@ pub fn claude_api_key_snapshot(
         now,
         last_error: Some(message.to_owned()),
     })
-}
-
-/// Production Claude wave resolution: derive the Keychain scope from the
-/// effective `CLAUDE_CONFIG_DIR`, then resolve Keychain-first with
-/// scope-appropriate file/env fallback.
-pub fn resolve_claude_wave() -> ClaudeWaveResolution {
-    let config = env_dir_or_home("CLAUDE_CONFIG_DIR", ".claude");
-    let home = home_path("");
-    let current_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
-    let Some(scope) = jackin_core::claude_keychain_scope(&config, &home, &current_dir) else {
-        // Non-UTF-8 config path: the service is unknowable, so treat as absence.
-        return ClaudeWaveResolution::Missing;
-    };
-    resolve_claude_refresh_wave_with(
-        &scope,
-        claude_keychain_state(),
-        read_claude_keychain_item,
-        || claude_scope_file_probe(&scope, &config),
-        || read_claude_oauth_env_token(|name| std::env::var(name)),
-    )
 }

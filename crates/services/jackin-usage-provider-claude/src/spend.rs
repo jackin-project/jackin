@@ -6,14 +6,15 @@ use jackin_protocol::control::{
     Money, QuotaBucketView, StatusSlot, UsageSeverity, UsageSnapshotStatus,
 };
 use jackin_usage_provider_core::{
-    ProviderHttpError, bucket, get_json_bearer, humanize_reason, humanize_window_label,
-    parse_iso_epoch, severity_from_label, timed_bucket, used_percent_from_fraction,
+    CLAUDE_CODE_USER_AGENT_FALLBACK, ProviderHttpError, bucket, get_json_bearer, humanize_reason,
+    humanize_window_label, parse_iso_epoch, severity_from_label, timed_bucket,
+    used_percent_from_fraction,
 };
 use std::collections::BTreeMap;
 
 use super::{
     ClaudeOAuthExtraUsage, ClaudeOAuthMoney, ClaudeOAuthSpend, ClaudeOAuthUsageResponse,
-    ClaudeOAuthUsageWindow, claude_code_user_agent,
+    ClaudeOAuthUsageWindow,
 };
 
 /// Surface rotating-codename dollar-budget windows (`amber_ladder` etc.) that a
@@ -154,7 +155,6 @@ pub fn normalize_claude_spend(
 pub fn fetch_claude_oauth_usage(
     access_token: &str,
 ) -> Result<ClaudeOAuthUsageResponse, ProviderHttpError> {
-    let user_agent = claude_code_user_agent();
     get_json_bearer(
         jackin_telemetry::schema::enums::ProviderName::Anthropic,
         "/api/oauth/usage",
@@ -169,7 +169,7 @@ pub fn fetch_claude_oauth_usage(
             ),
             // The OAuth usage endpoint is gated to the Claude Code client UA;
             // a generic UA is rejected.
-            (reqwest::header::USER_AGENT, &user_agent),
+            (reqwest::header::USER_AGENT, CLAUDE_CODE_USER_AGENT_FALLBACK),
         ],
     )
 }

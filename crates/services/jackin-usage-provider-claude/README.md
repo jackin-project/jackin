@@ -1,23 +1,18 @@
 # jackin-usage-provider-claude
 
-`Claude` / `Anthropic` usage snapshot collection: OAuth credentials,
-CLI fallback, spend windows, and refresh waves. Consumed by
-`jackin-usage` (credential snapshots, host discovery).
+`Claude` / `Anthropic` OAuth usage adapter and spend windows. Broker-owned
+discovery supplies the selected account credential for each refresh.
 
 ## What this crate owns
 
-- CLI (`cli`): `Claude` CLI usage fallback + user agent.
-- Credentials (`credentials`): OAuth credential loading, account
-  email, organization type.
-- Diagnostics (`diagnostic`): usage-output parsing and the usage
-  diagnostic runner.
-- Keychain (`keychain`, macOS): Keychain reads with injectable
-  state for refresh waves.
+- Credentials (`credentials`): OAuth credential parsing and account metadata.
+- Keychain (`keychain`, macOS): serialized reads with explicit unattended or
+  operator-initiated interaction policy.
 - OAuth types (`oauth_types`): usage responses, limits, spend.
-- Refresh (`refresh`): file probes, env tokens, wave resolution.
-- Snapshots (`snapshot`): identity + profile snapshots.
+- Refresh (`refresh`): secret-bearing material supplied by discovery.
+- Snapshots (`snapshot`): API-key route remains explicitly unsupported.
 - Spend (`spend`): OAuth spend buckets and dollar windows.
-- Waves (`wave`): wave policy, scope restriction labels.
+- Waves (`wave`): one OAuth HTTP request, typed failure metadata and rate limits.
 - Windows (`windows`): session/weekly window constants.
 
 ## Structure
@@ -25,16 +20,19 @@ CLI fallback, spend windows, and refresh waves. Consumed by
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | [`tests.rs`](src/tests.rs) |
-| [`cli.rs`](src/cli.rs) · [`credentials.rs`](src/credentials.rs) · [`diagnostic.rs`](src/diagnostic.rs) | CLI + credentials + diagnostics | — |
-| [`keychain.rs`](src/keychain.rs) | Keychain reads | — |
+| [`credentials.rs`](src/credentials.rs) · [`keychain.rs`](src/keychain.rs) | credential parsing + policy-aware Keychain reads | — |
 | [`oauth_types.rs`](src/oauth_types.rs) | OAuth types | — |
-| [`refresh.rs`](src/refresh.rs) · [`snapshot.rs`](src/snapshot.rs) | refresh + snapshots | — |
+| [`refresh.rs`](src/refresh.rs) · [`snapshot.rs`](src/snapshot.rs) | broker material + API-key snapshot | — |
 | [`spend.rs`](src/spend.rs) · [`wave.rs`](src/wave.rs) · [`windows.rs`](src/windows.rs) | spend + waves + windows | — |
 
 ## Public API
 
-`claude_snapshot`, `claude_profile` helpers, OAuth/CLI fetch, and
-usage types consumed by `jackin-usage`.
+`fetch_claude_oauth_usage` accepts only the access token supplied to the
+broker-owned refresh. It never invokes `claude -p /usage` or probes
+`claude --version`. The broker holds `unattended_keychain_guard()` before
+background discovery; reads also pass `ClaudeKeychainInteractionPolicy::Unattended`.
+Explicit credential preparation may pass `OperatorInitiated` before the guard
+is established.
 
 ## How to verify
 

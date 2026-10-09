@@ -294,7 +294,8 @@ impl<S: ProviderCredentialSecretSource> ProviderCredentialEnvResolver
         let Some(secret) = secret else {
             return ProviderCredentialRefreshOutcome::Missing;
         };
-        let (view, rate_limit) = super::dispatch::provider_credential_snapshot_with_rate_limit(
+        let (view, rate_limit, provider_error) =
+            super::dispatch::provider_credential_snapshot_with_metadata(
             surface.id(),
             key,
             &secret,
@@ -302,6 +303,7 @@ impl<S: ProviderCredentialSecretSource> ProviderCredentialEnvResolver
         ProviderCredentialRefreshOutcome::Snapshot {
             view: Box::new(view),
             rate_limit,
+            provider_error,
         }
     }
 

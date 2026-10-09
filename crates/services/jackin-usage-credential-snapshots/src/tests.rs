@@ -25,9 +25,10 @@ impl CredentialSnapshotVendors for MockVendors {
     ) -> (
         FocusedUsageView,
         Option<jackin_usage_provider_core::ProviderRateLimit>,
+        Option<jackin_usage_provider_core::ProviderFailureMetadata>,
     ) {
         assert_eq!(secret, "secret");
-        (self.view("claude-oauth", now), None)
+        (self.view("claude-oauth", now), None, None)
     }
     fn claude_api_key_view(&self, _key_name: &str, _secret: &str, now: i64) -> FocusedUsageView {
         self.view("claude-key", now)
@@ -82,8 +83,8 @@ fn surfaces_route_to_vendor_arms() {
         ("grok", "XAI_API_KEY", "grok"),
         ("google", "GEMINI_API_KEY", "gemini"),
     ] {
-        let (view, _) =
-            provider_credential_snapshot_with_rate_limit(surface, key, "secret", &vendors);
+        let (view, _, _) =
+            provider_credential_snapshot_with_metadata(surface, key, "secret", &vendors);
         assert_eq!(view.status, UsageSnapshotStatus::Unsupported);
         assert_eq!(vendors.calls.borrow().last(), Some(&expected.to_owned()));
     }

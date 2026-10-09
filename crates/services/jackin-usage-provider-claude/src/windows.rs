@@ -1,6 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `Claude` quota windows and legacy mapping.
+//! `Claude` quota windows and legacy response mapping.
 
 use jackin_protocol::control::{QuotaBucketView, StatusSlot, UsageSeverity, UsageSnapshotStatus};
 use jackin_usage_provider_core::{
@@ -19,22 +19,17 @@ pub const CLAUDE_SESSION_WINDOW_SECONDS: i64 = 5 * 60 * 60;
 /// `weekly_scoped`, legacy `seven_day*`).
 pub const CLAUDE_WEEKLY_WINDOW_SECONDS: i64 = 7 * 24 * 60 * 60;
 
-/// One normalized Claude quota window — the single intermediate shape every
-/// utilization source feeds before it becomes a [`QuotaBucketView`]. The
-/// authoritative `limits` array, the legacy named windows (`seven_day*`), and
-/// the `claude -p /usage` CLI fallback all produce `ClaudeQuotaWindow`s, so a
-/// Session window, a Fable `weekly_scoped` limit, a legacy Sonnet window, and a
-/// CLI "Weekly" line share one builder instead of three near-identical ones.
-/// Fable is not a special case here — it is just another `weekly_scoped` entry.
+/// One normalized OAuth quota window before it becomes a [`QuotaBucketView`].
+/// The authoritative `limits` array and legacy named windows (`seven_day*`)
+/// share one builder. Fable is not a special case here — it is just another
+/// `weekly_scoped` entry.
 #[derive(Debug, Clone)]
 pub struct ClaudeQuotaWindow {
     pub label: String,
     pub slot: Option<StatusSlot>,
     /// Used fraction on the scale the shared helpers expect: a raw
-    /// `utilization` (fraction-or-percent) for legacy/CLI sources, or
-    /// `f64::from(percent)` for `limits`. `used_percent_label` and
-    /// `remaining_from_fraction` resolve the fraction-vs-percent ambiguity, so
-    /// both source shapes flow through unchanged.
+    /// `utilization` (fraction-or-percent) for legacy responses, or
+    /// `f64::from(percent)` for `limits`.
     pub used: Option<f64>,
     pub reset_at: Option<i64>,
     pub window_seconds: Option<i64>,
@@ -42,31 +37,6 @@ pub struct ClaudeQuotaWindow {
 }
 
 impl ClaudeQuotaWindow {
-    /// A non-headline window with no reset/pace data (the CLI fallback shape).
-    pub fn scoped(label: &str, used: f64) -> Self {
-        Self {
-            label: label.to_owned(),
-            slot: None,
-            used: Some(used),
-            reset_at: None,
-            window_seconds: None,
-            severity: UsageSeverity::Normal,
-        }
-    }
-
-    /// A headline window with a duration (so pace can be computed when the
-    /// source also carries a reset). Used by the CLI Session/Weekly lines.
-    pub fn headline(label: &str, slot: StatusSlot, used: f64, window_seconds: Option<i64>) -> Self {
-        Self {
-            label: label.to_owned(),
-            slot: Some(slot),
-            used: Some(used),
-            reset_at: None,
-            window_seconds,
-            severity: UsageSeverity::Normal,
-        }
-    }
-
     /// The one bucket builder for every Claude utilization source. The used
     /// label is uncapped (a window over its limit renders `150% used` while
     /// `remaining` clamps at 0); pace is computed only when both a reset and a

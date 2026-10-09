@@ -293,6 +293,96 @@ fn retry_after_accepts_delay_seconds_and_http_dates_against_response_time() {
     );
 }
 
+fn fake_provider_429(retry_after: &str) -> ProviderError {
+    use std::io::{Read as _, Write as _};
+
+    let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let address = listener.local_addr().unwrap();
+    let retry_after = retry_after.to_owned();
+    let server = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut request = [0_u8; 2048];
+        let _read = stream.read(&mut request).unwrap();
+        write!(
+            stream,
+            "HTTP/1.1 429 Too Many Requests\r\nRetry-After: {retry_after}\r\ncontent-length: 0\r\nconnection: close\r\n\r\n"
+        )
+        .unwrap();
+    });
+
+    let error = get_json_bearer::<serde_json::Value>(
+        jackin_telemetry::schema::enums::ProviderName::Anthropic,
+        "usage.test",
+        "Claude usage",
+        &format!("http://{address}/usage"),
+        "fixture-token",
+        &[],
+    )
+    .unwrap_err();
+    server.join().unwrap();
+    ProviderError::from(error)
+}
+
+#[test]
+fn fake_http_429_preserves_numeric_and_http_date_retry_after() {
+    let numeric_request_started_at = chrono::Utc::now().timestamp();
+    let numeric = fake_provider_429("37");
+    assert_eq!(numeric.kind(), ProviderErrorKind::HttpStatus);
+    assert_eq!(numeric.status(), Some(429));
+    assert_eq!(numeric.retry_after_seconds(), Some(37));
+    let numeric_retry_at = numeric.rate_limit().unwrap().retry_at_epoch.unwrap();
+    let numeric_checked_at = chrono::Utc::now().timestamp();
+    assert!(
+        (numeric_request_started_at + 37..=numeric_checked_at + 37).contains(&numeric_retry_at)
+    );
+
+    let reset_at = chrono::Utc::now().timestamp().saturating_add(3_600);
+    let retry_after = httpdate::fmt_http_date(
+        std::time::UNIX_EPOCH + Duration::from_secs(u64::try_from(reset_at).unwrap()),
+    );
+    let dated = fake_provider_429(&retry_after);
+    assert_eq!(dated.kind(), ProviderErrorKind::HttpStatus);
+    assert_eq!(dated.status(), Some(429));
+    assert!(
+        dated
+            .retry_after_seconds()
+            .is_some_and(|seconds| seconds > 3_500)
+    );
+    assert_eq!(dated.rate_limit().unwrap().retry_at_epoch, Some(reset_at));
+}
+
+#[test]
+fn provider_error_keeps_timeout_transport_and_decode_distinct_from_status_text() {
+    let errors = [
+        (
+            ProviderHttpError::Timeout("provider timed out near HTTP 401".to_owned()),
+            ProviderErrorKind::Timeout,
+        ),
+        (
+            ProviderHttpError::Transport("connection failed after HTTP 429".to_owned()),
+            ProviderErrorKind::Transport,
+        ),
+        (
+            ProviderHttpError::Decode("decode failed with payload code 403".to_owned()),
+            ProviderErrorKind::Decode,
+        ),
+    ];
+    for (http_error, expected_kind) in errors {
+        let error = ProviderError::from(http_error);
+        assert_eq!(error.kind(), expected_kind);
+        assert_eq!(error.status(), None);
+        assert_eq!(error.retry_after_seconds(), None);
+        assert_eq!(error.rate_limit(), None);
+        assert!(!usage_error_is_unauthorized(&error));
+        assert!(!usage_error_is_rate_limited(&error));
+    }
+
+    let unclassified = ProviderError::from("CLI failed with HTTP 401".to_owned());
+    assert_eq!(unclassified.kind(), ProviderErrorKind::Other);
+    assert_eq!(unclassified.status(), None);
+    assert!(!usage_error_is_unauthorized(&unclassified));
+}
+
 #[test]
 fn fraction_helpers_reject_absent_and_clamp_present() {
     // Fraction form (0..=1) and already-percent form (>1) both map to a

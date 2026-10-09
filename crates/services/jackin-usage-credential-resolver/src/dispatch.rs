@@ -12,13 +12,14 @@ use std::path::Path;
 use jackin_protocol::control::FocusedUsageView;
 use jackin_usage_credential_snapshots::CredentialSnapshotVendors;
 use jackin_usage_provider_core::{
-    GROK_HANDOFF_AUTH_PATH, ProviderError, ProviderRateLimit, UsageSurface,
+    GROK_HANDOFF_AUTH_PATH, ProviderError, ProviderFailureMetadata, ProviderRateLimit,
+    UsageSurface,
 };
 
 use jackin_usage_provider_amp::amp_api_key_snapshot;
 use jackin_usage_provider_claude::{
     ClaudeResolved, ClaudeWaveResolution, claude_api_key_snapshot,
-    claude_view_from_wave_with_rate_limit,
+    claude_view_from_wave,
 };
 use jackin_usage_provider_gemini::gemini_snapshot_with_presence;
 use jackin_usage_provider_grok::grok_snapshot_from_rpc_result;
@@ -34,8 +35,12 @@ impl CredentialSnapshotVendors for UsageCredentialVendors {
         &self,
         secret: &str,
         now: i64,
-    ) -> (FocusedUsageView, Option<ProviderRateLimit>) {
-        claude_view_from_wave_with_rate_limit(
+    ) -> (
+        FocusedUsageView,
+        Option<ProviderRateLimit>,
+        Option<ProviderFailureMetadata>,
+    ) {
+        claude_view_from_wave(
             "claude",
             Some("Claude"),
             now,
@@ -121,12 +126,16 @@ pub fn provider_credential_snapshot(
     )
 }
 
-pub(crate) fn provider_credential_snapshot_with_rate_limit(
+pub(crate) fn provider_credential_snapshot_with_metadata(
     surface_id: &str,
     key_name: &str,
     secret: &str,
-) -> (FocusedUsageView, Option<ProviderRateLimit>) {
-    jackin_usage_credential_snapshots::provider_credential_snapshot_with_rate_limit(
+) -> (
+    FocusedUsageView,
+    Option<ProviderRateLimit>,
+    Option<ProviderFailureMetadata>,
+) {
+    jackin_usage_credential_snapshots::provider_credential_snapshot_with_metadata(
         surface_id,
         key_name,
         secret,

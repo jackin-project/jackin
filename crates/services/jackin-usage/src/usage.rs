@@ -30,26 +30,9 @@ pub(crate) use jackin_usage_provider_antigravity::{
     parse_agy_version, parse_antigravity_credits_output, parse_antigravity_usage_output,
 };
 #[cfg(test)]
+pub(crate) use jackin_usage_provider_claude::ClaudeOAuthUsageResponse;
+#[cfg(test)]
 pub(crate) use jackin_usage_provider_claude::load_claude_oauth_credentials;
-#[expect(
-    unused_imports,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
-pub(crate) use jackin_usage_provider_claude::{
-    ClaudeCliUsage, ClaudeKeychainRead, ClaudeOAuthCredentials, ClaudeOAuthEnvToken,
-    ClaudeOAuthExtraUsage, ClaudeOAuthLimit, ClaudeOAuthLimitModel, ClaudeOAuthLimitScope,
-    ClaudeOAuthMoney, ClaudeOAuthSpend, ClaudeOAuthUsageResponse, ClaudeOAuthUsageWindow,
-    ClaudeQuotaWindow, ClaudeResolved, ClaudeSpend, ClaudeWavePolicy, ClaudeWaveResolution,
-    claude_account_identity, claude_api_key_snapshot, claude_code_user_agent,
-    claude_code_user_agent_with, claude_code_version_from_text, claude_email_from_value,
-    claude_error_is_scope_restriction, claude_oauth_candidates, claude_oauth_from_value,
-    claude_organization_type_from_value, claude_provider_error_label, claude_snapshot,
-    claude_spend_bucket, claude_view_from_wave_with_rate_limit, claude_wave_policy,
-    fetch_claude_cli_usage, fetch_claude_oauth_usage, load_claude_account_email,
-    normalize_claude_spend, parse_claude_usage_output, push_claude_dollar_windows,
-    read_claude_keychain_item, resolve_claude_wave,
-};
-pub use jackin_usage_provider_claude::{ClaudeUsageDiagnostic, run_claude_usage_diagnostic};
 #[cfg(test)]
 pub(crate) use jackin_usage_provider_codex::load_codex_oauth_credentials;
 #[expect(
@@ -189,25 +172,25 @@ mod tests;
 )]
 pub(crate) use jackin_usage_provider_core::{
     AMP_HANDOFF_SECRETS_PATH, CLAUDE_CODE_USER_AGENT_FALLBACK, CLAUDE_HANDOFF_CREDENTIALS_PATH,
-    CLAUDE_VERSION_TIMEOUT, CODEX_HANDOFF_AUTH_PATH, CODEX_OAUTH_CLIENT_ID, CODEX_OAUTH_TOKEN_URL,
-    CODEX_RPC_INIT_TIMEOUT, CODEX_RPC_LAUNCH_COOLDOWN, CODEX_RPC_REQUEST_TIMEOUT, CachedUsage,
-    ChildOperation, CliOutput, Fixed32Field, GROK_HANDOFF_AUTH_PATH, GROK_RPC_INIT_TIMEOUT,
-    GROK_RPC_REQUEST_TIMEOUT, MATERIALIZED_TMP_COUNTER, MATERIALIZED_USAGE_ACCOUNTS_PATH,
-    ManagedCliLaunchGate, MaterializedUsageAccounts, PROCESS_OUTPUT_MAX, PROVIDER_CLI_TIMEOUT,
-    PROVIDER_HTTP_TIMEOUT, PercentStyle, ProtobufScan, ProviderError, ProviderHttpError,
-    ProviderPresence, ProviderRateLimit, ResetStyle, USAGE_SNAPSHOT_STORE_PATH,
-    UsageBucketPresentation, UsageCache, UsageFormatPrefs, UsageRefreshTarget, UsageSurface,
-    UsageViewInput, VarintField, account_snapshot_views_from_cache, account_tab_label_for_parts,
-    amp_status_bar_headline, atomic_write_usage_json, broker_surface_id, bucket,
-    cached_refreshing_view, cached_unavailable_view, cached_usage_for_capability,
-    cached_usage_for_target, cached_usage_key_for_target, canonical_usage_cache_key,
-    capability_matches_surface, codex_account_from_value, codex_limit_label, collect_cli_output,
-    compact_account_identity, compact_count, compact_duration_label, complete_external_rpc,
-    decorate_surface_view, dollar_amounts, enrich_provider_tabs, env_dir_or_home, env_value,
-    epoch_seconds_from_maybe_ms, estimate_caption, exact_reset_parenthetical, expiry_label,
-    external_rpc_operation, first_credential, first_credential_with_path, first_string_key,
-    format_amount_with_unit, format_cents, format_currency, get_json_bearer, home_path,
-    humanize_plan_label, humanize_reason, humanize_window_label, humanize_words_with, json_number,
+    CODEX_HANDOFF_AUTH_PATH, CODEX_OAUTH_CLIENT_ID, CODEX_OAUTH_TOKEN_URL, CODEX_RPC_INIT_TIMEOUT,
+    CODEX_RPC_LAUNCH_COOLDOWN, CODEX_RPC_REQUEST_TIMEOUT, CachedUsage, ChildOperation, CliOutput,
+    Fixed32Field, GROK_HANDOFF_AUTH_PATH, GROK_RPC_INIT_TIMEOUT, GROK_RPC_REQUEST_TIMEOUT,
+    MATERIALIZED_TMP_COUNTER, MATERIALIZED_USAGE_ACCOUNTS_PATH, ManagedCliLaunchGate,
+    MaterializedUsageAccounts, PROCESS_OUTPUT_MAX, PROVIDER_CLI_TIMEOUT, PROVIDER_HTTP_TIMEOUT,
+    PercentStyle, ProtobufScan, ProviderError, ProviderHttpError, ProviderPresence,
+    ProviderRateLimit, ResetStyle, USAGE_SNAPSHOT_STORE_PATH, UsageBucketPresentation, UsageCache,
+    UsageFormatPrefs, UsageRefreshTarget, UsageSurface, UsageViewInput, VarintField,
+    account_snapshot_views_from_cache, account_tab_label_for_parts, amp_status_bar_headline,
+    atomic_write_usage_json, broker_surface_id, bucket, cached_refreshing_view,
+    cached_unavailable_view, cached_usage_for_capability, cached_usage_for_target,
+    cached_usage_key_for_target, canonical_usage_cache_key, capability_matches_surface,
+    codex_account_from_value, codex_limit_label, collect_cli_output, compact_account_identity,
+    compact_count, compact_duration_label, complete_external_rpc, decorate_surface_view,
+    dollar_amounts, enrich_provider_tabs, env_dir_or_home, env_value, epoch_seconds_from_maybe_ms,
+    estimate_caption, exact_reset_parenthetical, expiry_label, external_rpc_operation,
+    first_credential, first_credential_with_path, first_string_key, format_amount_with_unit,
+    format_cents, format_currency, get_json_bearer, home_path, humanize_plan_label,
+    humanize_reason, humanize_window_label, humanize_words_with, json_number,
     local_timestamp_label, looks_like_protobuf_payload, mark_active_tab, normalize_url_or_host,
     now_epoch, oauth_origin, parse_chatgpt_base_url, parse_iso_epoch, percent_before_used,
     percent_headline, preserve_cached_quota_on_failed_refresh, provider_display_label,

@@ -53,6 +53,7 @@ pub fn refresh_credential_binding(
     binding: &ValidatedCredentialBinding,
     env_resolver: &dyn ProviderCredentialEnvResolver,
 ) -> ProviderCredentialRefreshOutcome {
+    let mut provider_error = None;
     let (view, rate_limit) = match &binding.source {
         ValidatedCredentialSource::Env {
             handle,
@@ -76,14 +77,16 @@ pub fn refresh_credential_binding(
             None,
         ),
         ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Claude(resolved)) => {
-            jackin_usage_provider_claude::claude_view_from_wave_with_rate_limit(
+            let (view, rate_limit, failure) = jackin_usage_provider_claude::claude_view_from_wave(
                 binding.surface.agent_slug(),
                 binding.surface.provider_label(),
                 chrono::Utc::now().timestamp(),
                 jackin_usage_provider_claude::ClaudeWaveResolution::Resolved(Box::new(
                     resolved.clone(),
                 )),
-            )
+            );
+            provider_error = failure;
+            (view, rate_limit)
         }
         ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Codex {
             credentials,
@@ -176,5 +179,6 @@ pub fn refresh_credential_binding(
     ProviderCredentialRefreshOutcome::Snapshot {
         view: Box::new(view),
         rate_limit,
+        provider_error,
     }
 }

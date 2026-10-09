@@ -24,7 +24,7 @@ persisted.
 ## Public API
 
 `provider_credential_snapshot`,
-`provider_credential_snapshot_with_rate_limit`, and
+`provider_credential_snapshot_with_metadata`, and
 `CredentialSnapshotVendors`.
 
 ## How to verify

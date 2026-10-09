@@ -50,6 +50,8 @@ pub fn provider_request<T, E>(
 /// its rendered message happens to contain the same digits.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProviderHttpError {
+    /// Request exceeded the configured provider HTTP timeout.
+    Timeout(String),
     Transport(String),
     HttpStatus {
         status: u16,
@@ -63,9 +65,10 @@ pub enum ProviderHttpError {
 impl std::fmt::Display for ProviderHttpError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Transport(message) | Self::HttpStatus { message, .. } | Self::Decode(message) => {
-                formatter.write_str(message)
-            }
+            Self::Timeout(message)
+            | Self::Transport(message)
+            | Self::HttpStatus { message, .. }
+            | Self::Decode(message) => formatter.write_str(message),
         }
     }
 }
@@ -127,7 +130,12 @@ pub fn get_json_bearer<T: serde::de::DeserializeOwned>(
             request = request.header(name.clone(), *value);
         }
         let response = request.send().map_err(|err| {
-            ProviderHttpError::Transport(format!("{label} request failed: {err}"))
+            let message = format!("{label} request failed: {err}");
+            if err.is_timeout() {
+                ProviderHttpError::Timeout(message)
+            } else {
+                ProviderHttpError::Transport(message)
+            }
         })?;
         let response_received_at_epoch = now_epoch();
         let status = response.status();
@@ -141,9 +149,14 @@ pub fn get_json_bearer<T: serde::de::DeserializeOwned>(
                 response_received_at_epoch: Some(response_received_at_epoch),
             });
         }
-        response
-            .json::<T>()
-            .map_err(|err| ProviderHttpError::Decode(format!("{label} decode failed: {err}")))
+        response.json::<T>().map_err(|err| {
+            let message = format!("{label} decode failed: {err}");
+            if err.is_timeout() {
+                ProviderHttpError::Timeout(message)
+            } else {
+                ProviderHttpError::Decode(message)
+            }
+        })
     })
 }
 
