@@ -3,6 +3,8 @@ title: "09 — Claude account and window semantics"
 description: Documents Claude credential storage, payload fields, profile access, and quota-window semantics.
 ---
 
+> Historical research: Claude monitoring now uses the [durable usage monitor](/commands/usage/). The former automatic CLI fallback and interactive background Keychain behavior described below have been removed; these notes are not proof of current shipped behavior.
+
 ## Summary
 
 Claude credentials live in Keychain by default on macOS, and OAuth profile plus usage endpoints provide identity and bounded quota metadata.

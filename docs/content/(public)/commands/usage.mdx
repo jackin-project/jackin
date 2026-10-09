@@ -1,127 +1,171 @@
 ---
 title: jackin❯ usage
-description: "Inspect cached Capsule usage and quota data for a running instance"
+description: "Read broker-owned usage and durable Claude monitor decisions"
 ---
 
-## Synopsis
+## Commands
 
 ```bash
-jackin usage cache accounts [--format human|json]
-jackin usage <INSTANCE> accounts [--sync-host-cache] [--format human|json]
-jackin usage <INSTANCE> verify [--format human|json]
-jackin usage host snapshot --agent <SURFACE> [--format human|json] [--no-refresh]
-jackin usage host projection [--format human|json]
+jackin usage --format json
+jackin usage service start --format json
+jackin usage service status --format json
+jackin usage service stop --format json
+jackin usage auth prepare --provider claude [--keychain-service SERVICE] --format json
+jackin usage doctor --provider claude --unattended --format json
+jackin usage monitor start --provider claude --account ACCOUNT --goal GOAL --budget-sgd 50 --format json
+jackin usage monitor stop --monitor ID --format json
+jackin usage status --monitor ID --format json
+jackin usage refresh --monitor ID --format json
+jackin usage watch --monitor ID --format jsonl
+jackin usage wait --monitor ID --until runnable --format json
+jackin usage statusline ingest --account ACCOUNT --format json < statusline.json
+jackin usage statusline compose --account ACCOUNT --settings settings.json --format json
+jackin usage spend record --account ACCOUNT --file account-spend.json --verified --format json
 ```
 
-Capsule account commands read the quota snapshots rendered by the Capsule
-status bar and usage overlay. Host snapshot commands use the shared host usage
-broker, which owns provider access, caching, retry, and stale-state decisions.
+`usage --data-dir PATH` selects isolated broker state. `service start` or
+`monitor start` explicitly starts the local-only service when needed. Readers,
+doctor and ingress only attach, so the service must already be running for them.
+Basic usage reads the current canonical projection. Status, doctor, watch and wait attach to the broker without credential
+discovery, authentication or provider requests. The old `usage host snapshot` and
+`usage host projection` commands have been removed.
 
-`<INSTANCE>` accepts a full container name or the short instance id shown by
-[`jackin status`](/commands/status/).
+Auth preparation is an explicit operator setup action. It requires an operator
+terminal and runs in the broker executable. Unattended credential reads prohibit
+Keychain UI and report `interaction_required` when consent cannot be obtained.
+Preparation does not promise credentials will stay readable forever. Do not use
+auth preparation from a monitoring hook or automated lane.
 
-## Scopes
+Broker discovery also fails closed for 1Password `OpRef` declarations that would
+require interaction. The Claude auth command prepares only the selected Claude
+Keychain source. It does not prepare 1Password accounts; their missing relay
+capabilities remain unavailable and carry an interaction-required issue.
 
-### host snapshot
+## Local Claude Code evidence
 
-```bash
-jackin usage host snapshot --agent claude --format json
-```
+The [official statusline guide](https://code.claude.com/docs/en/statusline)
+documents `rate_limits.five_hour` and `rate_limits.seven_day`. Each may independently
+contain `used_percentage` and a `resets_at` Unix timestamp. The fields were
+introduced in Claude Code [v2.1.80](https://github.com/anthropics/claude-code/blob/v2.1.80/CHANGELOG.md).
+They are conditional, can be absent before an API response, and can disappear
+when a window expires. Jackin does not execute Claude to inspect its installed
+version or obtain quota.
 
-Reads the host provider snapshot through the shared usage broker. Repeated
-invocations request a non-forced refresh: fresh broker data is reused, and
-provider retry deadlines such as `Retry-After` remain in force. Both
-`jackin usage --format json` (all host providers) and this surface-scoped
-snapshot command reuse fresh results. The broker applies a
-shared five-minute success cooldown locally; callers may poll more
-often, but they should expect cached state until refresh is due. This is
-jackin's local broker policy, not an Anthropic polling interval.
+The raw callback has a `session_id` and optional model object; it has no verified
+account identity or provider observation timestamp. The operator must bind the
+callback to the correct account. The ingress accepts at most 16 KiB, ignores
+unrelated fields including session cost, and never reads credentials or sends
+provider requests. Missing fields stay unknown. Each field carries its source,
+account/session, receipt time, evidence time when available, sequence and age.
+Repeated identical callbacks preserve evidence age. A timer running the callback
+again does not observe the provider, and inactivity can leave data stale.
+The current local evidence age limit is 300 seconds, evaluated per field.
 
-For Claude Code, run `jackin usage host snapshot --agent claude --format json`
-from a hook or scheduled task and consume its stdout. `--no-refresh` skips the
-broker request, so a fresh CLI process may return an unavailable view. Claude
-credentials stored only in macOS Keychain may require operating-system
-authorization when jackin discovers the host account.
+`statusline compose` reads the supplied settings file and prints a proposed
+settings document. It preserves an existing command and its output, and proposes
+an ingress command when no statusline exists. It does not install settings or
+modify a running Claude session. Review and apply the proposal during an operator
+setup window. The adapter requires Python 3; if unavailable it retains the old
+command and supplies no monitoring evidence.
 
-### cache accounts
+## Decisions and resets
 
-```bash
-jackin usage cache accounts
-```
+Used values in monitor JSON are integer `used_percentage_basis_points`:
+`9000` means 90%. Read the five-hour and seven-day windows independently.
+Unknown or stale evidence blocks runnable decisions. Execute the actions in each
+`latest_decision.sequence` once, saving the last handled sequence durably.
+`watch` starts with the latest reconciled event and then streams newer events;
+it does not replay an old runnable state on a fresh attachment. Treat event
+history as history, and use current status before starting work.
 
-Reads the host-global jackin❯ account cache at
-`~/.jackin/data/daemon/accounts.db`. This is a read-only command: it does not
-create the cache file, poll providers, launch provider CLIs, or repair
-credentials. If the cache has not been explicitly seeded yet, it prints an
-empty table.
+| Used limit | Required behavior |
+| --- | --- |
+| 90% | Stop large packs and request a durable checkpoint from every active lane. |
+| 91% | Reduce dispatch concurrency; use small checkpointed slices. |
+| 95% | Finish the current slice, checkpoint and pause new work. |
 
-### accounts
+A threshold jump includes the necessary checkpoint and concurrency actions
+before pause. Decisions are requests to the coordinator/operator; Jackin does
+not forcibly terminate lanes or edit their projects.
 
-```bash
-jackin usage jk-k7p9m2xq accounts
-```
+A reported reset schedules a wait with a small grace. Time passing produces
+`reset_due_unverified`, never proof of replenished allowance. New evidence must
+confirm the relevant reset before the monitor can resume. Weekly, model and spend
+guards still apply after a five-hour reset. A missing reset remains unknown.
+The 95% pause stays latched even if a later callback reports a lower value for
+the same old window. Recovery requires fresh lower-use and advanced-reset fields from one paired
+observation after the reported reset plus 60 seconds. Its bound session may
+differ from the session that triggered the pause.
+The quota latch belongs to the account, including high observations received
+before a monitor was created. Starting another monitor or goal cannot bypass it.
+`wait --until runnable` is bounded and returns the latest useful JSON when its
+wait ends, with `wait_timeout` and exit 2 if still blocked; another wait can be
+issued after checkpointing. No automatic resumption
+is guaranteed.
 
-Prints provider account/quota buckets known to the Capsule daemon: provider,
-account label, quota window, status, usage amount, and source.
+Monitor state, goal baselines, decisions and reset waits persist across broker
+restart. Long idle periods and sleep do not schedule catch-up polling bursts.
+Elapsed time can age evidence or make a reset due; it cannot manufacture new
+quota or spend evidence.
 
-`--sync-host-cache` also upserts the returned rows into jackin❯'s host-global
-account cache at `~/.jackin/data/daemon/accounts.db`. This is an explicit
-host-side write, intended as a diagnostic bridge until the long-running host
-daemon owns provider refresh and writes that cache itself.
+Independent Claude OAuth refresh is disabled in both local monitors and the
+normal broker executor, including desktop startup and whole-projection refresh.
+`usage refresh --monitor ID` reconciles local evidence and reports `independent_refresh_disabled`.
+Other broker provider work uses the existing single-flight coordinator. Claude
+attempts have a persisted minimum interval of 300 seconds, respect numeric and
+HTTP-date `Retry-After`, and use positive exponential retry deadlines. Monitoring
+callers cannot force past them, including at reset. This local interval does not
+guarantee avoidance of Anthropic bans. There is no `claude -p /usage` fallback. A 401 fails closed without an automatic credential reread or retry; resolved credentials lack a safe same-source reread handle. Jackin does not independently rotate Claude Code refresh tokens.
+The HTTP adapter and coordinator retain offline failure/cooldown coverage, but
+there is no enabled production Claude OAuth opt-in command in this release.
+Other providers can still use the normal broker refresh path. Cached desktop
+Claude rows may be unavailable; the durable statusline monitor is the supported
+Claude quota interface.
 
-### verify
+## Spend guard
 
-```bash
-jackin usage jk-k7p9m2xq verify
-```
-
-Checks that every provider quota row known to the Capsule daemon is present and
-trusted (fresh enough and from an expected source). Use this after auth or
-provider changes to confirm the status bar and usage overlay will see the same
-data.
-
-## Output
-
-Human output is compact and intended for diagnostics:
-
-```text
-  jackin❯
-
-usage accounts for jk-k7p9m2xq (k7p9m2xq)
-
-  provider      account                 window        status        usage               source
-  ----------------------------------------------------------------------------------------------
-  codex         alexey@example.com      session       fresh         37/100 percent      codex-rpc
-```
-
-`--format json` wraps the shared protocol shape in a stable command envelope:
+A goal needs an account-bound, fresh same-period baseline with explicit currency,
+amount and decimal exponent. Record a verified operator receipt before creating
+the goal monitor. The file schema is:
 
 ```json
 {
-  "schema_version": "v1",
-  "data": {
-    "container": "jk-k7p9m2xq-myproj-agent",
-    "accounts": [],
-    "synced_host_cache_path": null,
-    "host_cache_path": null
-  }
+  "billing_period_start_epoch": 1790812800,
+  "billing_period_end_epoch": 1793491200,
+  "amount": {"amount_minor": 12000, "currency": "SGD", "exponent": 2},
+  "evidence_at_epoch": 1791532800
 }
 ```
 
-## Related
+These are illustrative values, not current billing evidence. `--verified` is an
+operator attestation of the selected account, currency and period. Without it
+the observation is explicitly unverified. Session list-price cost, unknown credits, USD and unspecified
+currency cannot be treated as billed SGD. The account total's increases since
+the baseline are counted conservatively toward the goal; simultaneous goals can
+attribute the same account spending to more than one goal.
 
-- [`jackin status`](/commands/status/) - find running instances and short ids
-- [`jackin console`](/commands/console/) - open the Capsule TUI and usage overlay
+The default SGD50 guard warns at SGD40, checkpoints and stops new work at SGD45,
+and pauses at SGD48. Missing or unverifiable evidence returns
+`budget_unverifiable` and requires checkpointing and reporting the issue. Billing
+rollover retains cumulative goal spending and fails closed when closing/opening
+period evidence is incomplete. Operator attestation is not independent provider
+verification or a guarantee of final billed amounts.
+Stopping or recreating a monitor for the same goal retains its spend state. A
+goal started without a valid baseline remains unverifiable; a later receipt
+does not silently establish a zero-spend baseline for that existing goal.
 
-### host projection
+Configure an **account-side Anthropic monthly spending limit** for hard billing
+protection. Jackin's local goal guard is not a hard per-goal SGD billing cap.
+
+## Cached Capsule inspection
 
 ```bash
-jackin usage host projection --format json
+jackin usage cache accounts --format json
+jackin usage INSTANCE accounts --format json
+jackin usage INSTANCE accounts --sync-host-cache --format json
+jackin usage INSTANCE verify --format json
 ```
 
-Polls the canonical projection from the already-running host broker. This path
-does not discover host accounts, start the broker, or access credentials. It
-requests a non-forced refresh and joins an active publication for at most 30
-seconds. The broker's shared five-minute success cooldown means frequent polls
-usually return the latest cached projection. Initialize the broker and host
-account once with `jackin usage host snapshot --agent claude --format json`.
+These commands inspect existing account snapshots. `--sync-host-cache` explicitly
+copies Capsule rows into the host account cache. They do not replace the durable
+monitor contract.

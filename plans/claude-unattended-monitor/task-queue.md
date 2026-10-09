@@ -13,16 +13,16 @@ All delegated work uses GPT-6-Luna at max reasoning.
   and official statusline contracts independently.
 - [done] Freeze command names, observation/policy/spend contracts, and file
   ownership before parallel implementation.
-- [in progress] Implement broker-owned noninteractive auth and bounded optional HTTP.
-- [in progress] Implement bounded statusline ingress and explicit composition setup.
-- [in progress] Implement durable observations, monitors, decisions, spend baselines,
+- [done] Implement broker-owned noninteractive auth and bounded optional HTTP.
+- [done] Implement bounded statusline ingress and explicit composition setup.
+- [done] Implement durable observations, monitors, decisions, spend baselines,
   reset waits, and passive status/readiness APIs.
-- [in progress] Migrate CLI and affected consumers; remove superseded paths.
-- [pending] Run deterministic offline fake clock/Keychain/HTTP coverage and
+- [done] Migrate CLI and affected consumers; remove superseded paths.
+- [done] Run deterministic offline fake clock/Keychain/HTTP coverage and
   consumer regressions; independent security/rate-limit reviews.
-- [pending] Build an isolated binary, verify exact commands and JSON/exit schema,
-  document evidence and limitations, commit and push checkpoints.
-- [pending] Produce ready-to-paste Claude Code handoff from verified commands.
+- [done] Build an isolated binary, verify exact commands and JSON/exit schema,
+  document evidence and limitations, commit locally, and record blocked pushes.
+- [done] Produce ready-to-paste Claude Code handoff from verified commands.
 
 ## Acceptance evidence
 
@@ -44,7 +44,8 @@ select a stable monitor ID; start selects account and goal IDs. Usage-level
 `--data-dir` provides isolated state. JSON status/readiness and JSONL watch
 are separate formats. Superseded host snapshot/projection commands are removed.
 
-Independent OAuth refresh is disabled for durable monitors. `refresh` is
+Independent Claude OAuth refresh is disabled for durable monitors and the normal
+broker executor, including desktop whole-projection refresh. `refresh` is
 local reconciliation, never a forced HTTP call. Existing broker provider work
 is hardened with a persisted Claude attempt floor of 300 seconds and positive
 backoff; this does not guarantee avoidance of provider bans.
@@ -73,3 +74,153 @@ fields remain unknown. Session list-price cost is not billing evidence.
 - `cargo check --offline -p jackin-protocol`: passed.
 - Protocol monitor contract fixtures: 4 tests passed (agent report).
 - Original worktree status after moving our newly created files: clean.
+
+## Checkpoints and review evidence
+
+- `e5ee84f8`: monitor contract and initial durable queue; pushed successfully.
+- `2031b552`: persisted Claude attempt floor, positive backoff, catalog-reset
+  transaction and restart tests; 44 coordinator tests and scoped offline Clippy
+  passed. Push refused by SSH agent; no interactive authentication attempted.
+- Provider/core/discovery/credential suites: 171 tests passed. Scoped offline
+  Clippy passed for Claude provider, provider-core, discovery and credential
+  resolver. Typed HTTP failure metadata reaches the broker without text parsing.
+- Composition helper: 11 isolated offline fixtures passed; full package fixture
+  run awaits the integrated build. Official statusline source contract recorded
+  in `statusline-contract.md`.
+- First broker integration run: 70 passed, 6 failed. Two legacy force-refresh
+  expectations are corrected to enforce the Claude floor. Policy failures and
+  independent review findings are being fixed before runnable decisions are
+  accepted. Do not treat this intermediate test count as final validation.
+- Independent review found and implementation addressed: cooldown loss on catalog
+  revision; wrapper capture race/SIGPIPE behavior; cross-user socket attachment;
+  future-period spend receipt; optional-model guard; same-goal spend reset;
+  reset-field pairing; deadline scheduling; clock rollback; unrelated projection
+  publication timestamps. Final review and fixture validation remain required.
+- 401 behavior is intentionally fail-closed with zero automatic rereads/retries.
+  The resolved credential has no safe same-source reread handle; a separately
+  supplied token is a distinct bounded attempt. No refresh-token ownership is
+  assumed and no CLI fallback exists.
+- `2e984db`: provider/auth hardening checkpoint, backed by the provider suites
+  and scoped Clippy above. No live credential or provider verification performed.
+- Final consumer audit found Capsule launch still resolving credentials before
+  broker attachment. A broker-only relay-capability resolution operation is
+  being added using the existing exact source-proof intersections; the relay
+  will send only secret-free forwarding facts. Legacy client discovery APIs
+  will be removed. This is required by broker ownership, not an optional cleanup.
+- Final security review also found bounded session storage could permanently
+  reject the seventeenth sequential session. The engine is adding safe inactive
+  session eviction while preserving active monitor/reset dependencies, and
+  tightening future reset horizons before updating durable watermarks.
+- Monitor fake-clock fixtures now include independent seven-day recovery,
+  old-session reset replay, >10-minute idle/reopen, model/spend age boundaries,
+  absent baseline persistence, and unknown currency. A combined broker fixture
+  covers reset ticking while Retry-After still blocks forced provider work.
+- Fake Keychain reads now share production orchestration and cover missing,
+  locked, consent-required, query/search/disable errors and nested guard state.
+  This is offline adapter evidence, not live macOS ACL verification.
+- First facade regression run compiled and passed 67/68 cases; one provider-call
+  allowlist entry is being reconciled. Final consumers and typed broker discovery
+  diagnostics are still migrating; intermediate results are not final gates.
+- `887a1b47`: shared native/fake Keychain orchestration and nested guard tests.
+  Final provider/core/discovery/credential run: 177 tests passed; scoped
+  all-target Clippy passed. Manifest lock changes are minimal and offline.
+- `4c6ba90`: atomic typed publisher diagnostics; 14 publisher tests passed.
+- Caller-side relay discovery and unused HostUsageRuntime are removed. The
+  host-only wire catalog-injection API is removed, and forwarded env routes now
+  require exact staged credential-source proofs. Broker-owned conflict retry,
+  empty-scan confirmation and stale-lease tests replace retired caller hooks.
+- Final restart review found watch could replay old runnable authority after
+  evidence expiry. Watch now reconciles before reads; a zero cursor is a fresh
+  attachment to the latest event. Initial service ticking and fake-clock/CLI
+  restart regressions are being completed before the integrated broker gate.
+- Final publisher run: 15 tests passed and all-target Clippy passed; diagnostic
+  test extraction checkpoint `013e5e6`. Opaque discovery diagnostics checkpoint
+  `d06582d` is backed by the 177-test provider/discovery run.
+- Full protocol/coordinator run: 173 tests passed, one pre-existing ignored test.
+- Independent policy review found two further blockers: clock-advancing no-ops
+  could hide an overdue freshness wake, and a new monitor could bypass a
+  per-monitor quota latch. The engine is moving the latch to durable account
+  observations, including observations received before monitor creation, and
+  scheduling against each monitor's last reconciliation time. These fixes need
+  fake-clock regressions and final review before any completion claim.
+- Final broker run after those fixes: 86 tests passed, including no-op expiry
+  notification, account barriers recorded before monitor creation, stop/reopen,
+  new-goal attempts and full-pair cross-session reset recovery. The library and
+  test target compile. CLI subprocess and consumer checks are running next.
+- Independent final security review: Ready after fixing original Keychain
+  allocation zeroization (including malformed bytes and whitespace). This is
+  static and fake-adapter evidence; live ACLs/provider availability are untested.
+
+## Final gate queue
+
+- Implementation owners are frozen after mechanical lint refactors. Offline
+  verifier owns sequential Cargo gates; security, rate and contract reviewers
+  independently inspect the current code.
+- Final audit found normal desktop refresh could still poll Claude accounts.
+  The production executor now rejects every Claude probe before cache lookup
+  or fallback rediscovery; there is no enabled OAuth opt-in command. Other
+  provider refresh paths remain enabled. Fake adapter/coordinator coverage
+  remains for typed failures and persisted cooldowns.
+- Provider final run: 178 passed, scoped all-target Clippy clean. Broker test
+  compile errors from import cleanup and a shadowed fixture helper were fixed
+  before the final broker rerun.
+- Broad E2E invocation accidentally attempted three Docker image pulls; exact
+  registry request count is unknown. No Claude/provider/Keychain paths ran.
+  The incident, failures and fake-only reruns are recorded in verification.md.
+  Docker names are now unique and images cannot be implicitly pulled; Docker
+  tests will not be rerun during this task.
+- All local changes remain in the isolated branch. Only the first checkpoint
+  was pushed; subsequent push attempts were refused by SSH-agent signing.
+  No interactive authentication or unlock was attempted.
+- Final binaries will be installed in the separate prefix
+  `/Users/donbeave/.local/share/jackin-claude-monitor/bin`; the standard Jackin
+  installation and running Claude session remain untouched.
+
+## Implementation checkpoint
+
+`29db1854cf694d3a3f9cdae23659ffe5ee5da3cc` commits the coherent monitor,
+CLI, broker ownership and consumer migration. Final scoped gates pass: broker
+89; provider/auth/discovery 178; facade 68; publisher 15; protocol/coordinator
+173 with one pre-existing ignored test; host runtime 6; FFI 6; relay 19; Capsule
+relay authorization 13; offline CLI 2; lifecycle 2. Three exact fake-only E2Es
+pass: twenty clients/one provider call, persisted retry deadline/one call, and
+eight recovery clients/one replacement call (two total including killed owner).
+Relevant all-target Clippy, workspace formatting and diff checks pass.
+
+The cache telemetry regression recurred in parallel. Independent investigation
+identified tracing-core 0.1.36's single-dispatch cache fast path using a worker's
+thread-local default. The test fixture keeps a second live registry dispatcher
+to remove that condition; it does not serialize tests or change production
+instrumentation. Five parallel store runs and five parallel usage runs pass
+with the original span-count/privacy assertions. The underlying dependency
+fast-path defect is not patched by this monitoring change.
+
+Fake owner recovery initially persisted an empty authoritative catalog after
+removal of caller catalog injection. Its private fixture now seeds the intended
+schema-2 catalog before startup. Production startup already reconciles its
+broker-owned catalog; no production admission guard was weakened.
+
+Final static security and rate-limit reviews are Ready. The native DTO/API audit
+is coherent; generated Swift comments were synced without changing ABI. Final
+build/installation and handoff verification are in progress. Push remains
+blocked by SSH-agent signing; no interactive unlock is attempted.
+
+## Final installation and handoff
+
+Fresh build from `29db1854` is installed separately at
+`/Users/donbeave/.local/share/jackin-claude-monitor/bin/{jackin,jackin-usage-broker}`
+(version 0.6.4). Installed bytes match build artifacts; canonical cache paths and
+SHA-256 hashes are recorded in verification.md. Installed service lifecycle,
+doctor, monitor start/status/stop, JSONL watch and bounded wait were exercised
+without a broker-path override, with zero credential trips and HTTP requests.
+Operator setup and a reviewed statusline composition remain required; no running
+Claude settings or auth state were changed.
+
+The first installed smoke reported broker_unavailable and removed its fixture
+before diagnostic logs could be retained. Its cause is unconfirmed. Subsequent
+short-path proof and default macOS long-path alias proof pass with the same
+binaries; the report preserves that uncertainty.
+
+The ready-to-paste handoff is claude-code-handoff.md. The original checkout is
+still clean. Latest local implementation is committed; push remains blocked by
+SSH-agent signing refusal. Only the first contract checkpoint reached origin.
