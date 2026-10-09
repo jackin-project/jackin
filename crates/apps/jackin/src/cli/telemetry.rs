@@ -79,6 +79,7 @@ const fn usage_command_name(scope: Option<&UsageScope>) -> CliCommandName {
         Some(UsageScope::Accounts(_)) => CliCommandName::UsageAccounts,
         Some(UsageScope::Verify) => CliCommandName::UsageVerify,
         Some(UsageScope::Snapshot(_)) => CliCommandName::UsageSnapshot,
+        Some(UsageScope::Projection) => CliCommandName::UsageSnapshot,
     }
 }
 

@@ -10,6 +10,7 @@ jackin usage cache accounts [--format human|json]
 jackin usage <INSTANCE> accounts [--sync-host-cache] [--format human|json]
 jackin usage <INSTANCE> verify [--format human|json]
 jackin usage host snapshot --agent <SURFACE> [--format human|json] [--no-refresh]
+jackin usage host projection [--format human|json]
 ```
 
 Capsule account commands read the quota snapshots rendered by the Capsule
@@ -111,3 +112,16 @@ usage accounts for jk-k7p9m2xq (k7p9m2xq)
 
 - [`jackin status`](/commands/status/) - find running instances and short ids
 - [`jackin console`](/commands/console/) - open the Capsule TUI and usage overlay
+
+### host projection
+
+```bash
+jackin usage host projection --format json
+```
+
+Polls the canonical projection from the already-running host broker. This path
+does not discover host accounts, start the broker, or access credentials. It
+requests a non-forced refresh and joins an active publication for at most 30
+seconds. The broker's shared five-minute success cooldown means frequent polls
+usually return the latest cached projection. Initialize the broker and host
+account once with `jackin usage host snapshot --agent claude --format json`.

@@ -97,8 +97,9 @@ pub(crate) type CliUsageCredentialResolver =
         Human output stays intentionally compact for scripts and quick inspection.\n\
         Use `jackin usage <instance> accounts|verify` for explicit Capsule\n\
         inspection, or `jackin usage host snapshot --agent claude --format json`\n\
-        for a host provider snapshot. Repeated host usage requests reuse fresh\n\
-        broker data and are locally rate-limited by broker policy."
+        for a host provider snapshot. Use `jackin usage host projection --format json`\n\
+        for recurring polling through an existing broker; refreshes follow the\n\
+        shared five-minute success cooldown."
 )]
 pub struct UsageArgs {
     /// Container name, short instance id, `cache`, or `host`; omit for host-wide usage
@@ -121,6 +122,9 @@ pub enum UsageScope {
     /// Host-side probe snapshot (no Capsule; uses jackin-usage host runtime)
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Snapshot(UsageHostSnapshotArgs),
+    /// Read the canonical projection through an already-running host broker
+    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    Projection,
 }
 
 /// `jackin usage host snapshot --agent claude`
@@ -195,6 +199,9 @@ pub async fn run(args: &UsageArgs, paths: &JackinPaths) -> Result<()> {
         UsageScope::Verify => run_verify(paths, &target, &container),
         UsageScope::Snapshot(_) => {
             anyhow::bail!("`jackin usage <instance> snapshot` is only valid with instance `host`")
+        }
+        UsageScope::Projection => {
+            anyhow::bail!("`jackin usage <instance> projection` is only valid with instance `host`")
         }
     }
 }
@@ -304,12 +311,37 @@ fn run_host(args: &UsageArgs, paths: &JackinPaths) -> Result<()> {
         .ok_or_else(|| anyhow::anyhow!("missing host usage scope; choose `snapshot`"))?;
     match scope {
         UsageScope::Snapshot(scope) => run_host_snapshot(args, paths, scope),
+        UsageScope::Projection => run_host_projection(args, paths),
         UsageScope::Accounts(_) | UsageScope::Verify => {
             anyhow::bail!(
                 "`jackin usage host` supports `snapshot` only; use `jackin usage cache accounts` for the host cache"
             )
         }
     }
+}
+
+fn run_host_projection(args: &UsageArgs, paths: &JackinPaths) -> Result<()> {
+    use jackin_protocol::usage_broker::UsageProjectionRefreshStateV1;
+    use jackin_usage::host::UsageBrokerConfig;
+
+    let client = UsageBrokerConfig::for_data_dir(paths.data_dir.clone()).client();
+    let projection = client.request_refresh(None, false).map_err(|error| {
+        anyhow::anyhow!("host usage broker is unavailable ({error:?}); initialize it once with `jackin usage host snapshot --agent claude --format json`")
+    })?;
+    let projection = if projection.refresh_state == UsageProjectionRefreshStateV1::Refreshing {
+        client
+            .join_publication(projection.projection_id.clone(), Duration::from_secs(30))
+            .map_err(|error| anyhow::anyhow!(error.message))?
+    } else {
+        projection
+    };
+    if args.output_format() == OutputFormat::Json {
+        let envelope = OutputEnvelope::v1(projection);
+        println!("{}", serde_json::to_string_pretty(&envelope)?);
+    } else {
+        print_bare_host_projection(&projection);
+    }
+    Ok(())
 }
 
 fn run_host_snapshot(
@@ -456,6 +488,9 @@ async fn run_cache(args: &UsageArgs, paths: &JackinPaths) -> Result<()> {
                 "`jackin usage cache snapshot` is invalid; use `jackin usage host snapshot`"
             )
         }
+        UsageScope::Projection => anyhow::bail!(
+            "`jackin usage cache projection` is invalid; use `jackin usage host projection`"
+        ),
     }
 }
 

@@ -41,6 +41,15 @@ fn parses_usage_verify() {
 }
 
 #[test]
+fn parses_usage_host_projection_json() {
+    let cli =
+        Cli::try_parse_from(["jackin", "usage", "host", "projection", "--format", "json"]).unwrap();
+    assert!(matches!(cli.command, Some(Command::Usage(ref args))
+        if args.instance.as_deref() == Some("host") && args.format == "json"
+            && matches!(args.scope, Some(usage::UsageScope::Projection))));
+}
+
+#[test]
 fn parses_prewarm_agent_filters() {
     let cli =
         Cli::try_parse_from(["jackin", "prewarm", "--agent", "claude", "--agent", "kimi"]).unwrap();
