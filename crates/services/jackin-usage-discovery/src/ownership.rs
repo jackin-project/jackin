@@ -84,11 +84,30 @@ pub(crate) fn resolve_profile_root(operator_home: &Path, configured: &Path) -> P
 pub(crate) fn account_diagnostic(
     surface: HostSurfaceId,
     account_id: &str,
+    source_key: Option<&str>,
+    configuration_count: u32,
     issue: UsageDiscoveryIssue,
 ) -> UsageDiscoveryDiagnostic {
+    let source_key = source_key.unwrap_or("account-credential");
+    let material = format!(
+        "surface:{}:account:{}:source:{}",
+        surface.id(),
+        account_id,
+        source_key
+    );
+    let capability_id =
+        jackin_core::account_key_hash("usage-discovery-unresolved-source-v1", &material);
     UsageDiscoveryDiagnostic {
         surface_id: Some(surface.id().to_owned()),
-        scope_label: format!("account {account_id}"),
+        // Do not retain the declared account alias in an operator diagnostic.
+        scope_label: "account".to_owned(),
+        unresolved_source: Some(crate::UsageDiscoveryUnresolvedSource {
+            capability_id: capability_id
+                .strip_prefix("sha256:")
+                .unwrap_or(&capability_id)
+                .to_owned(),
+            configuration_count,
+        }),
         issue,
     }
 }
@@ -108,6 +127,7 @@ pub(crate) fn config_diagnostics(
                     format!("workspace {name}")
                 }
             },
+            unresolved_source: None,
             issue: match diagnostic.issue {
                 ConfigSourceIssue::Unreadable => UsageDiscoveryIssue::ConfigUnreadable,
                 ConfigSourceIssue::UnsupportedVersion => {
@@ -189,6 +209,33 @@ pub(crate) fn materialize_catalog(
         candidates: descriptors,
         diagnostics,
         sources,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn account_diagnostic_keeps_only_opaque_declared_source_identity() {
+        let account_id = "private-account-alias";
+        let route_key = "ANTHROPIC_API_KEY";
+        let diagnostic = account_diagnostic(
+            HostSurfaceId::Claude,
+            account_id,
+            Some(route_key),
+            2,
+            UsageDiscoveryIssue::InteractionRequired,
+        );
+        let debug = format!("{diagnostic:?}");
+        let source = diagnostic.unresolved_source.as_ref().unwrap();
+
+        assert_eq!(diagnostic.scope_label, "account");
+        assert_eq!(source.configuration_count, 2);
+        assert!(!source.capability_id.contains(account_id));
+        assert!(!source.capability_id.contains(route_key));
+        assert!(!debug.contains(account_id));
+        assert!(!debug.contains(route_key));
     }
 }
 

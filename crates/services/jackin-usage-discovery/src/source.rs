@@ -167,11 +167,16 @@ pub(crate) fn validate_source(
 pub(crate) fn source_diagnostic(
     surface: HostSurfaceId,
     provenance: &BTreeSet<String>,
+    capability_id: &str,
     issue: UsageDiscoveryIssue,
 ) -> UsageDiscoveryDiagnostic {
     UsageDiscoveryDiagnostic {
         surface_id: Some(surface.id().to_owned()),
         scope_label: provenance.iter().cloned().collect::<Vec<_>>().join(", "),
+        unresolved_source: Some(crate::UsageDiscoveryUnresolvedSource {
+            capability_id: capability_id.to_owned(),
+            configuration_count: u32::try_from(provenance.len()).unwrap_or(u32::MAX),
+        }),
         issue,
     }
 }

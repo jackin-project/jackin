@@ -209,6 +209,8 @@ pub(crate) fn enumerate_registered_accounts(
             diagnostics.push(account_diagnostic(
                 surface,
                 id,
+                None,
+                u32::try_from(provenance.len()).unwrap_or(u32::MAX),
                 UsageDiscoveryIssue::CredentialMalformed,
             ));
             continue;
@@ -218,6 +220,8 @@ pub(crate) fn enumerate_registered_accounts(
                 diagnostics.push(account_diagnostic(
                     surface,
                     id,
+                    Some(route.env_name),
+                    u32::try_from(provenance.len()).unwrap_or(u32::MAX),
                     UsageDiscoveryIssue::CredentialMalformed,
                 ));
                 continue;
@@ -230,6 +234,8 @@ pub(crate) fn enumerate_registered_accounts(
                 diagnostics.push(account_diagnostic(
                     surface,
                     id,
+                    Some(route.env_name),
+                    u32::try_from(provenance.len()).unwrap_or(u32::MAX),
                     UsageDiscoveryIssue::CredentialMalformed,
                 ));
                 continue;
@@ -290,7 +296,13 @@ pub(crate) fn enumerate_registered_accounts(
                     UsageDiscoveryIssue::InteractionRequired
                 }
             };
-            diagnostics.push(account_diagnostic(surface, id, issue));
+            diagnostics.push(account_diagnostic(
+                surface,
+                id,
+                Some(entry.name),
+                u32::try_from(provenance.len()).unwrap_or(u32::MAX),
+                issue,
+            ));
         }
     }
 }

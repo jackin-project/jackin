@@ -54,7 +54,10 @@ pub use catalog::{
 pub(crate) use identity::{
     opaque_credential_revision, profile_credential_revision, profile_identity,
 };
-pub use issues::{UsageDiscoveryDiagnostic, UsageDiscoveryIssue, UsageSourceCandidateDescriptor};
+pub use issues::{
+    UsageDiscoveryDiagnostic, UsageDiscoveryIssue, UsageDiscoveryUnresolvedSource,
+    UsageSourceCandidateDescriptor,
+};
 #[cfg(test)]
 pub(crate) use ownership::source_capability_id;
 pub(crate) use ownership::{
