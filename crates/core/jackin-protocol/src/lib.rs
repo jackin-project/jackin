@@ -27,6 +27,7 @@ pub mod control;
 pub mod snapshot;
 pub mod telemetry_context;
 pub mod usage_broker;
+pub mod usage_monitor;
 
 pub use telemetry_context::TelemetryContext;
 
