@@ -4,8 +4,60 @@
 use super::*;
 use jackin_protocol::usage_broker::{UsageIssueRecoverabilityV1, UsageIssueScopeV1, UsageIssueV1};
 
-#[test]
-fn interaction_diagnostics_survive_new_catalog_incremental_publish_and_revocation() {
+struct CatalogFixture {
+    _temp: tempfile::TempDir,
+    coordinator: Arc<UsageCoordinator>,
+    projection: Arc<Mutex<UsageProjectionV1>>,
+    store: FileProjectionStateStore,
+    publisher: ProjectionPublisher,
+    revoked_capability: UsageAccountCapability,
+    current_capability: UsageAccountCapability,
+    current_entry: UsageCatalogEntry,
+}
+
+impl CatalogFixture {
+    fn reconcile_interaction(&self) -> UsageProjectionV1 {
+        let mut diagnostics = CatalogDiagnostics::default();
+        diagnostics.push_provider_issue(
+            "claude",
+            "Claude",
+            CatalogDiagnosticCode::InteractionRequired,
+        );
+        diagnostics.push_unresolved("claude", "Claude", "opaque-candidate".to_owned(), 1);
+
+        let before = self.publisher.current_projection().unwrap();
+        self.publisher
+            .reconcile_catalog_if_projection_with_diagnostics(
+                Some(&before.projection_id),
+                "catalog-current".to_owned(),
+                vec![self.current_entry.clone()],
+                diagnostics,
+                1_002,
+            )
+            .unwrap()
+    }
+
+    fn refresh_and_publish(
+        &self,
+        capability: &UsageAccountCapability,
+        request_at: i64,
+        joined_at: i64,
+        published_at: i64,
+    ) {
+        let generation = self
+            .coordinator
+            .request_refresh(capability, 0, true, request_at)
+            .unwrap()
+            .generation;
+        self.coordinator
+            .join_generation(capability, generation, Duration::from_secs(1), joined_at)
+            .unwrap();
+        self.publisher.observe(capability);
+        assert!(self.publisher.publish_due(published_at));
+    }
+}
+
+fn seeded_catalog_fixture() -> CatalogFixture {
     let temp = tempfile::tempdir().unwrap();
     let revoked_capability = capability();
     let current_capability = UsageAccountCapability {
@@ -34,44 +86,29 @@ fn interaction_diagnostics_survive_new_catalog_incremental_publish_and_revocatio
         store.clone(),
     )
     .with_catalog([revoked_entry]);
+    let fixture = CatalogFixture {
+        _temp: temp,
+        coordinator,
+        projection,
+        store,
+        publisher,
+        revoked_capability,
+        current_capability,
+        current_entry,
+    };
+    fixture.refresh_and_publish(&fixture.revoked_capability, 1_000, 1_001, 1_001);
+    fixture
+}
 
-    let generation = coordinator
-        .request_refresh(&revoked_capability, 0, true, 1_000)
-        .unwrap()
-        .generation;
-    coordinator
-        .join_generation(
-            &revoked_capability,
-            generation,
-            Duration::from_secs(1),
-            1_001,
-        )
-        .unwrap();
-    publisher.observe(&revoked_capability);
-    assert!(publisher.publish_due(1_001));
-
-    let mut diagnostics = CatalogDiagnostics::default();
-    diagnostics.push_provider_issue(
-        "claude",
-        "Claude",
-        CatalogDiagnosticCode::InteractionRequired,
-    );
-    diagnostics.push_unresolved("claude", "Claude", "opaque-candidate".to_owned(), 1);
-    let before_reconcile = publisher.current_projection().unwrap();
-    let reconciled = publisher
-        .reconcile_catalog_if_projection_with_diagnostics(
-            Some(&before_reconcile.projection_id),
-            "catalog-current".to_owned(),
-            vec![current_entry.clone()],
-            diagnostics,
-            1_002,
-        )
-        .unwrap();
+#[test]
+fn interaction_diagnostics_survive_new_catalog_incremental_publish_and_revocation() {
+    let fixture = seeded_catalog_fixture();
+    let reconciled = fixture.reconcile_interaction();
     let revoked = reconciled
         .providers
         .iter()
         .flat_map(|provider| provider.accounts.iter())
-        .find(|account| account.canonical_account_id == revoked_capability.account_id)
+        .find(|account| account.canonical_account_id == fixture.revoked_capability.account_id)
         .expect("revoked account remains as a tombstone");
     assert_eq!(revoked.lifecycle, UsageLifecycleV1::Unavailable);
     assert_eq!(reconciled.unresolved.len(), 1);
@@ -81,53 +118,27 @@ fn interaction_diagnostics_survive_new_catalog_incremental_publish_and_revocatio
     );
     assert_eq!(reconciled.unresolved[0].capability_id, "opaque-candidate");
 
-    let generation = coordinator
-        .request_refresh(&current_capability, 0, true, 1_003)
-        .unwrap()
-        .generation;
-    coordinator
-        .join_generation(
-            &current_capability,
-            generation,
-            Duration::from_secs(1),
-            1_004,
-        )
-        .unwrap();
-    publisher.observe(&current_capability);
-    assert!(publisher.publish_due(1_005));
-
-    let published = publisher.current_projection().unwrap();
-    let provider = published
-        .providers
-        .iter()
-        .find(|provider| provider.provider_id == "claude")
-        .unwrap();
-    let interaction = provider
-        .issues
-        .iter()
-        .find(|issue| issue.code == "interaction_required")
-        .expect("provider diagnostic survives incremental publication");
-    assert_eq!(interaction.scope, UsageIssueScopeV1::Provider);
-    assert_eq!(
-        interaction.recoverability,
-        UsageIssueRecoverabilityV1::ActionRequired
-    );
-    assert_eq!(
-        interaction.message,
-        "Credential access requires interaction"
-    );
+    fixture.refresh_and_publish(&fixture.current_capability, 1_003, 1_004, 1_005);
+    let published = fixture.publisher.current_projection().unwrap();
+    assert_interaction_issue(&published);
     assert!(
         published
             .providers
             .iter()
             .flat_map(|provider| provider.accounts.iter())
-            .any(|account| account.canonical_account_id == revoked_capability.account_id)
+            .any(|account| account.canonical_account_id == fixture.revoked_capability.account_id)
     );
     assert_eq!(published.unresolved.len(), 1);
     assert_eq!(published.unresolved[0].state, UsageLifecycleV1::NeedsSecret);
-    assert_eq!(store.load().unwrap().unwrap().projection, published);
+    assert_eq!(fixture.store.load().unwrap().unwrap().projection, published);
+}
 
-    projection
+#[test]
+fn clean_catalog_scan_clears_catalog_diagnostics_and_keeps_unrelated_provider_issues() {
+    let fixture = seeded_catalog_fixture();
+    fixture.reconcile_interaction();
+    fixture
+        .projection
         .lock()
         .unwrap()
         .providers
@@ -143,12 +154,13 @@ fn interaction_diagnostics_survive_new_catalog_incremental_publish_and_revocatio
             retry_at_epoch: Some(1_006),
         });
 
-    let before_clean_scan = publisher.current_projection().unwrap();
-    let clean = publisher
+    let before = fixture.publisher.current_projection().unwrap();
+    let clean = fixture
+        .publisher
         .reconcile_catalog_if_projection_with_diagnostics(
-            Some(&before_clean_scan.projection_id),
+            Some(&before.projection_id),
             "catalog-clean".to_owned(),
-            vec![current_entry],
+            vec![fixture.current_entry.clone()],
             CatalogDiagnostics::default(),
             1_006,
         )
@@ -171,4 +183,23 @@ fn interaction_diagnostics_survive_new_catalog_incremental_publish_and_revocatio
             .any(|issue| issue.code == "interaction_required")
     );
     assert!(clean.unresolved.is_empty());
+}
+
+fn assert_interaction_issue(projection: &UsageProjectionV1) {
+    let provider = projection
+        .providers
+        .iter()
+        .find(|provider| provider.provider_id == "claude")
+        .unwrap();
+    let issue = provider
+        .issues
+        .iter()
+        .find(|issue| issue.code == "interaction_required")
+        .expect("provider diagnostic survives incremental publication");
+    assert_eq!(issue.scope, UsageIssueScopeV1::Provider);
+    assert_eq!(
+        issue.recoverability,
+        UsageIssueRecoverabilityV1::ActionRequired
+    );
+    assert_eq!(issue.message, "Credential access requires interaction");
 }
