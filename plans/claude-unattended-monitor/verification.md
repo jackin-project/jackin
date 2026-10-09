@@ -178,7 +178,7 @@ container matching `jackin-usage-e2e-88635-0`. No container cleanup or process
 termination was performed. Because Docker attempted registry access, the
 verification session as a whole was not fully offline.
 
-## Built binaries and installed CLI proof
+## Initial implementation binaries and installed CLI proof (historical)
 
 A fresh locked offline build was completed from implementation commit
 `29db1854cf694d3a3f9cdae23659ffe5ee5da3cc`:
@@ -277,3 +277,103 @@ Swift DTO/API consumers were audited statically; no full Desktop UI build or
 live provider/Keychain check was performed. The locked tracing-core fast-path
 defect remains in the dependency; the test fixture removes its enabling
 single-dispatch condition rather than modifying production instrumentation.
+
+
+## Renewed acceptance audit
+
+The renewed goal reopened proof against the complete objective. The previous
+installation is historical evidence. The audit found that a suspended owner's
+expired lease could reject renewal, and a failed due tick was remembered as
+successful. Independent security review also found transient lease locks could
+allow a successor while startup, queued requests or in-flight writes still
+belonged to the old broker.
+
+The replacement holds the owner descriptor lock for its lifetime, through
+startup, connection workers, ticker and admitted WaitPool operations. Teardown
+releases authority last. Both lease open paths use `O_CLOEXEC`, and the fixture
+checks `F_GETFD` on new and recovered claims. A live hung owner requires operator
+lifecycle intervention; expiry cannot transfer its authority. Process exit
+releases the kernel lock. The ticker retries failed due ticks after one second
+and does not latch failed persistence as success. Fake clock tests exercise the
+actual spawned ticker across an eleven-minute sleep jump, notify Watch, retain
+active monitors and assert zero provider calls.
+
+Auth hardening checkpoint: `e5863815`; lifecycle/policy checkpoint: `f669ec7`;
+CLI help checkpoint and current source: `6c1709e`. The provider exposes an
+unattended-only read and a separate operator preparation API whose internal
+TTY check precedes all Keychain work. Fake headless preparation records zero
+query, disable, search and restore operations. Independent security review is
+Ready. This is source and deterministic fixture evidence, not live Keychain
+verification.
+
+The new help regression initially assumed Clap's argument long-about appeared
+in variant help; a second expectation also used the wrong description. Both
+were corrected to assert the actual generated `-h` and `--help`. Cargo caught
+an Arc moved before teardown and test import/qualification errors; all were
+fixed before the passing reruns. Clippy's four test duration lints were fixed.
+
+Fresh current gates: broker 101 tests and all-target Clippy; Claude provider 37
+and discovery 43 and all-target Clippy; broker auth helper 7; CLI help 1; usage
+command tests 14; offline subprocess 2 with zero credential trips and HTTP
+requests; lifecycle 2; exact fake killed-owner recovery 1. The recovery filter
+uses only local fake processes, never the broad Docker suite. Final app gates,
+build and installed proof are pending.
+
+Independent freshness review found no supported provider timestamp for an
+unchanged statusline field. A changed five-hour value cannot reattest an
+unchanged weekly/reset/model value. This conservative limitation can block
+active sessions when those fields age out; the public docs and handoff now
+state it explicitly. Existing per-field fixtures assert that behavior.
+
+Rate-limit review is Ready: persisted retry/rate-limit deadlines and the
+300-second floor block forced requests. Positive exponential backoff applies
+to retryable failures; the latest provider Retry-After/backoff/floor wins.
+There is no separate circuit-breaker state beyond these persisted timed
+admission guards. Standard independent Claude OAuth remains disabled.
+
+
+## Replacement build and installed proof
+
+Fresh `cargo build --offline --locked -p jackin --bin jackin --bin
+jackin-usage-broker` passed from source commit
+`6c1709e4bea1db9ee05d56352f11440db165e4e7`. Its sole warning is the dependency
+future-incompatibility notice for `proc-macro-error2 v2.0.1`; app all-target
+Clippy also exits zero with this notice. Workspace formatting and diff checks
+pass. The installed files were replaced atomically in the separate prefix and
+compare byte-for-byte with their build artifacts.
+
+| Binary | Installed path | Mode / bytes | SHA-256 |
+| --- | --- | --- | --- |
+| jackin | `/Users/donbeave/.local/share/jackin-claude-monitor/bin/jackin` | 0755 / 213671080 | `5bee8b128d872fcfcea9476d15b7185c2eb0cbc5dce177bbe723bda9f5067d6f` |
+| jackin-usage-broker | `/Users/donbeave/.local/share/jackin-claude-monitor/bin/jackin-usage-broker` | 0755 / 51862296 | `6321536a6908ef0e0a594e7c0460be9527ac257ac0015940de71165d723412b0` |
+
+Canonical build directory remains
+`/Users/donbeave/Library/Caches/mbx/targets/v1/519eebab1636eb6d9b57bb77aa6e6d394b5e4bf8c0d778e9bcdd1148ee1fffff/debug`.
+Both binaries report 0.6.4. Fresh current gates additionally pass the complete
+30-test usage consumer group, the two exact fake single-flight/rate-deadline
+E2Es and app all-target Clippy. Twenty clients assert one fake provider call;
+forced early waiters assert one call; eight recovery clients assert one
+replacement (two total including the killed fixture owner).
+
+The reusable `installed-smoke.py` is ready to exercise this installed pair
+without a broker override, including JSONL watch, headless auth rejection and
+repeated passive reads. Its result is recorded below after execution.
+
+Installed smoke PASS against the replacement pair, fixture
+`/tmp/jkin-installed-smoke-h_rnm8yy` (removed only after orderly stop). No
+`JACKIN_USAGE_BROKER_BIN` override was used. Versions/help exit 0; piped auth
+prepare returns exit 2 with `interaction_required`; service start/status/stop
+exit 0; doctor and two repeats exit 0; monitor start/status and repeated status
+reads exit 2 with paused/missing-evidence JSON; explicit JSONL watch exits 0
+with one current event; bounded wait exits 2 with `wait_timeout`; monitor stop
+exits 0. Credential command tripwires: 0. HTTP proxy requests: 0. The test does
+not invoke native Keychain; fake native coverage plus the internal terminal
+gate supplies the no-dialog proof. No live provider/auth checks ran in this
+renewed audit. The prior broad Docker pull incident remains recorded above.
+
+The original checkout is clean. All replacement implementation lives in the
+isolated branch. Push remains blocked by the previously observed SSH-agent
+signing refusal; no interactive unlock or auth was attempted. Operator setup,
+statusline composition and attested fresh SGD receipts remain prerequisites
+for useful runnable evidence; neither fixture proof nor doctor asserts live
+quota or credential availability.

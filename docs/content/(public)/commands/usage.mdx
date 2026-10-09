@@ -103,14 +103,23 @@ wait ends, with `wait_timeout` and exit 2 if still blocked; another wait can be
 issued after checkpointing. No automatic resumption
 is guaranteed.
 
+Unchanged fields retain their own evidence age even when another field changes.
+This conservative rule can leave a weekly window, reset or expected model stale
+during an active session. A callback has no authoritative per-field provider
+timestamp; a changed sibling cannot certify its freshness. Jackin blocks until
+usable new evidence arrives.
+
 Monitor state, goal baselines, decisions and reset waits persist across broker
 restart. Long idle periods and sleep do not schedule catch-up polling bursts.
 Elapsed time can age evidence or make a reset due; it cannot manufacture new
-quota or spend evidence.
+quota or spend evidence. The broker holds its owner lease lock throughout its
+lifetime, including startup and sleep. A live hung broker requires operator
+lifecycle intervention; expiry alone cannot replace it while it still owns the
+lock. Process exit releases the lock.
 
 Independent Claude OAuth refresh is disabled in both local monitors and the
 normal broker executor, including desktop startup and whole-projection refresh.
-`usage refresh --monitor ID` reconciles local evidence and reports `independent_refresh_disabled`.
+`usage refresh --monitor ID` reconciles local evidence and returns the current monitor status; it does not contact Claude.
 Other broker provider work uses the existing single-flight coordinator. Claude
 attempts have a persisted minimum interval of 300 seconds, respect numeric and
 HTTP-date `Retry-After`, and use positive exponential retry deadlines. Monitoring

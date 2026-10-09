@@ -81,10 +81,25 @@ request.
 The wrapper requires a POSIX-compatible shell and Python 3 for ingestion; if
 Python 3 is unavailable, the existing command still runs without ingestion.
 Ingestion requires top-level `session_id`; `rate_limits`, `five_hour`, and
-`seven_day` are independently optional. A present window must contain a finite
-`used_percentage` from 0 through 100 and a `resets_at` Unix epoch timestamp.
+`seven_day` are independently optional. Within each window, absent or null
+`used_percentage` and `resets_at` remain independently unknown. A supplied
+percentage must be finite and from 0 through 100; a supplied reset must be a
+valid Unix epoch timestamp. An empty window does not create evidence.
 
 ## Official references
 
 - [Customize your status line — Claude Code Docs](https://code.claude.com/docs/en/statusline)
 - [Claude Code changelog, v2.1.80](https://raw.githubusercontent.com/anthropics/claude-code/v2.1.80/CHANGELOG.md#L2-L2)
+
+
+## Current documentation recheck
+
+On 2026-10-09, the [official statusline reference](https://code.claude.com/docs/en/statusline)
+still documents the five-hour and seven-day used percentages and reset epochs.
+Each window may be absent; the callback is not an independent provider request.
+The reference also describes gateway `rate_limits.spend_limit.used_usd`,
+`limit_usd` and `period` fields (v2.1.284). These are USD estimates, not an
+authoritative SGD billing receipt or a same-period goal baseline. Jackin ignores
+these spend fields for its SGD budget guard. It never converts them into billed
+SGD. The current reference documents gateway quota fields from v2.1.251; this
+does not change the earlier v2.1.80 introduction of subscription quota fields.

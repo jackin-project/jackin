@@ -1,6 +1,6 @@
 # Claude Code handoff
 
-Verified against implementation commit `29db1854cf694d3a3f9cdae23659ffe5ee5da3cc`
+Verified against implementation commit `6c1709e4bea1db9ee05d56352f11440db165e4e7`
 and installed Jackin 0.6.4. Commands, JSON/JSONL and exit behavior were exercised
 with isolated local state; no live provider or Keychain verification was run.
 See [verification.md](verification.md) for checks, artifact hashes and limitations.
@@ -32,7 +32,9 @@ Read `status.five_hour` and `status.seven_day` independently. Their
 `used_percentage_basis_points` are integers: 9000 means 90%. Missing values,
 `unavailable` or `stale` field freshness, or a non-runnable status mean unknown
 or blocked. Require `used_evidence.freshness` and `reset_evidence.freshness`
-to be `current` independently for each window. Status replies contain `result`
+to be `current` independently for each window. Unchanged fields can become
+stale even while a sibling field changes; do not reinterpret the callback as
+fresh evidence for every field. Status replies contain `result`
 and `status`; Watch JSONL contains events with a nested `status`. A fresh Watch attachment supplies the current
 reconciled event, then later events.
 
@@ -55,6 +57,8 @@ Never run snapshot/bootstrap, interactive auth, or a forced provider refresh
 when unattended. Monitor `refresh` only reconciles local evidence; it does not
 fetch a provider. On degraded readiness, missing evidence, an unavailable
 broker, or an unverifiable budget, checkpoint and report the stable issue code.
+A live hung broker requires operator lifecycle intervention; do not attempt
+unattended process killing or lease replacement.
 Exit 0 means the command's permitted success condition; monitor status and wait
 require `status.runnable: true` before work. Exit 2 means blocked/degraded;
 exit 3 means unavailable/invalid. Doctor can return 0 with informational

@@ -224,3 +224,34 @@ binaries; the report preserves that uncertainty.
 The ready-to-paste handoff is claude-code-handoff.md. The original checkout is
 still clean. Latest local implementation is committed; push remains blocked by
 SSH-agent signing refusal. Only the first contract checkpoint reached origin.
+
+
+## Reopened acceptance audit
+
+The renewed goal requires current proof against the complete objective. The
+previous installation is historical evidence; new changes require fresh gates
+and artifacts before completion.
+
+| Work | Owner | State |
+| --- | --- | --- |
+| Retain lifetime lease lock, renew after sleep, close descriptor on exec, fence stale cleanup | broker_integration | Committed f669ec7; 101 broker tests and Clippy pass |
+| Maintain lease before accepting requests; retry failed reset ticks with bounded deadlines | monitor_engine | Committed f669ec7; 101 broker tests and Clippy pass |
+| Exercise production ticker with fake clock, idle and suspend/wake | monitor_engine | Passed in 101-test broker gate |
+| Enforce terminal gate inside operator Keychain API; remove policy bypass | provider_research | Committed e5863815; 37 provider / 43 discovery / 7 helper tests pass |
+| Prove action sequence restart and independent model/spend reset guards | policy_review | Passed in 101-test broker gate |
+| Correct CLI help and local refresh documentation | parent / consumer_tests_research | Committed 6c1709e; help/usage gates pass |
+| Independent review, offline gates, rebuild/install and new handoff evidence | reviewers / offline_verification / parent | Done; fresh install smoke passes with zero credential/HTTP trips |
+
+No live authentication, provider checks, Claude settings or session mutations
+are authorized by this audit.
+
+
+Renewed audit complete: source `6c1709e4`, auth `e5863815`, lifecycle
+`f669ec7`; broker 101, provider/discovery 80, helper 7, help 1, usage 30,
+offline CLI 2, lifecycle 2, and three exact fake E2Es pass. Relevant Clippy,
+formatting and diff checks pass; dependency future-incompatibility notice is
+recorded. Fresh installed sibling binaries pass the reusable smoke with zero
+credential trips/HTTP requests and orderly stop. Updated verification and
+handoff record artifact hashes, conservative field freshness, the live hung
+broker limitation and operator setup requirements. Remote push is still
+blocked by SSH-agent signing; no interactive unlock is attempted.
