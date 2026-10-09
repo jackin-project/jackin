@@ -301,6 +301,39 @@ fn root_help_lists_help_subcommand() {
 }
 
 #[test]
+fn usage_help_describes_broker_owned_cache_and_durable_monitors() {
+    let root = help_text(&["jackin", "--help"]);
+    let root_words = root.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(
+        root_words.contains("broker-owned cached usage"),
+        "root help should identify the broker-owned usage cache: {root}"
+    );
+    assert!(
+        root_words.contains("durable usage monitors"),
+        "root help should mention durable usage monitors: {root}"
+    );
+
+    for help_flag in ["-h", "--help"] {
+        let usage = help_text(&["jackin", "usage", help_flag]);
+        let usage_words = usage.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(
+            usage_words.contains("broker-owned cached usage"),
+            "usage {help_flag} should describe its broker-owned cache: {usage}"
+        );
+        assert!(
+            usage_words.contains("durable usage monitors"),
+            "usage {help_flag} should describe durable monitors: {usage}"
+        );
+        for command in ["monitor", "status", "watch", "wait"] {
+            assert!(
+                usage.contains(&format!("\n  {command} ")),
+                "usage {help_flag} should list `{command}`: {usage}"
+            );
+        }
+    }
+}
+
+#[test]
 fn config_help_does_not_list_help_subcommand() {
     let help = help_text(&["jackin", "config", "--help"]);
     assert!(

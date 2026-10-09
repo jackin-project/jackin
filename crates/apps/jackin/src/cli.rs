@@ -153,7 +153,7 @@ pub enum Command {
     /// Show fleet status — workspaces, instances, and agents
     #[command(before_help = BANNER, styles = HELP_STYLES, visible_alias = "ps")]
     Status(status::StatusArgs),
-    /// Read cached usage and quota data from a running Capsule daemon
+    /// Read broker-owned cached usage and manage durable usage monitors
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Usage(usage::UsageArgs),
     /// Print help documentation for a jackin command

@@ -27,12 +27,12 @@ use jackin_runtime::runtime::snapshot;
 mod statusline;
 mod store;
 
-/// `jackin usage` — passive cached usage plus explicit local monitor operations.
+/// `jackin usage` — broker-owned cached usage and durable monitor operations.
 #[derive(Debug, Args, PartialEq, Eq)]
 #[command(
-    about = "Read cached usage or manage a local Claude quota monitor",
-    long_about = "Read the current cached usage projection without starting a broker or refreshing a provider.\n\n\
-        Explicit monitor and service start commands may start a local-only broker.\n\
+    about = "Read broker-owned cached usage or manage durable Claude quota monitors",
+    long_about = "Read the broker-owned cached usage projection without starting a broker or refreshing a provider.\n\n\
+        Explicit monitor and service start commands may start a local-only broker. Monitor state and policy decisions are durable.\n\
         All monitor evidence is local; statusline observations do not contain spend."
 )]
 pub struct UsageArgs {
