@@ -1,0 +1,225 @@
+{
+  "accounts": {
+    "fixtureaccount": {
+      "bounded_wait_issue": "wait_timeout",
+      "composed_command": "sh -c 'if command -v python3 >/dev/null 2>&1; then python3 -I -S -c \"$1\" \"$2\" \"$3\" \"$4\" \"$5\"; else \"${SHELL:-/bin/sh}\" -c \"$2\"; fi' jackin-statusline '\nimport os\nimport subprocess\nimport sys\nimport threading\n\nMAX_INPUT_BYTES = 16384\nCAPTURE_LIMIT = MAX_INPUT_BYTES + 1\nlegacy_command, jackin_binary, account_id, data_dir = sys.argv[1:5]\nshell_path = os.environ.get(\"SHELL\") or \"/bin/sh\"\n\ntry:\n    legacy = subprocess.Popen(\n        [shell_path, \"-c\", legacy_command],\n        stdin=subprocess.PIPE,\n        bufsize=0,\n    )\nexcept OSError:\n    sys.exit(127)\n\ncaptured = bytearray()\nforward_to_legacy = True\n\ndef relay_input():\n    global forward_to_legacy\n    while True:\n        chunk = sys.stdin.buffer.read(8192)\n        if not chunk:\n            break\n        remaining = CAPTURE_LIMIT - len(captured)\n        if remaining > 0:\n            captured.extend(chunk[:remaining])\n        if forward_to_legacy:\n            view = memoryview(chunk)\n            while view:\n                try:\n                    written = legacy.stdin.write(view)\n                    if written is None or written <= 0:\n                        raise BrokenPipeError()\n                    view = view[written:]\n                except (BrokenPipeError, OSError):\n                    forward_to_legacy = False\n                    break\n    if forward_to_legacy:\n        try:\n            legacy.stdin.close()\n        except (BrokenPipeError, OSError):\n            pass\n\nrelay = threading.Thread(target=relay_input)\nrelay.start()\nlegacy_status = legacy.wait()\nrelay.join()\nif legacy_status != 0:\n    sys.exit(legacy_status if legacy_status > 0 else 128 - legacy_status)\n\nif len(captured) <= MAX_INPUT_BYTES:\n    try:\n        subprocess.run(\n            [\n                jackin_binary,\n                \"usage\",\n                \"statusline\",\n                \"ingest\",\n                \"--account\",\n                account_id,\n                \"--format\",\n                \"json\",\n                \"--data-dir\",\n                data_dir,\n            ],\n            input=bytes(captured),\n            stdout=subprocess.DEVNULL,\n            stderr=subprocess.DEVNULL,\n            timeout=2,\n            check=False,\n        )\n    except (OSError, subprocess.TimeoutExpired):\n        pass\nsys.exit(0)\n' 'cat >/dev/null && printf '\"'\"'statusline-legacy-fixture\\n'\"'\"'' '/Users/donbeave/.local/share/jackin-claude-monitor/bin/jackin' 'fixtureaccount' '/tmp/jkin-statusline-hook-proof-fhjb_c6h/data'",
+      "fixture_spend_record": {
+        "amount": {
+          "amount_minor": 1000,
+          "currency": "SGD",
+          "exponent": 2
+        },
+        "path": "/tmp/jkin-statusline-hook-proof-fhjb_c6h/spend-fixtureaccount.json",
+        "source": "operator_receipt",
+        "verification": "verified (synthetic fixture attestation only)"
+      },
+      "goal_id": "fixture-goal",
+      "initial_evidence_signature": [
+        [
+          1,
+          "fixtureaccount",
+          "fixture-session",
+          "statusline",
+          1791587030,
+          "{\"kind\": \"model\", \"model\": \"claude-sonnet-4-5\"}"
+        ],
+        [
+          2,
+          "fixtureaccount",
+          "fixture-session",
+          "statusline",
+          1791587030,
+          "{\"kind\": \"quota_used_percentage\", \"used_percentage_basis_points\": 2000, \"window\": \"five_hour\"}"
+        ],
+        [
+          3,
+          "fixtureaccount",
+          "fixture-session",
+          "statusline",
+          1791587030,
+          "{\"kind\": \"quota_reset\", \"reset_at_epoch\": 1791588830, \"window\": \"five_hour\"}"
+        ],
+        [
+          4,
+          "fixtureaccount",
+          "fixture-session",
+          "statusline",
+          1791587030,
+          "{\"kind\": \"quota_used_percentage\", \"used_percentage_basis_points\": 3000, \"window\": \"seven_day\"}"
+        ],
+        [
+          5,
+          "fixtureaccount",
+          "fixture-session",
+          "statusline",
+          1791587030,
+          "{\"kind\": \"quota_reset\", \"reset_at_epoch\": 1791673430, \"window\": \"seven_day\"}"
+        ]
+      ],
+      "monitor_id": "monitor-00000001",
+      "quota_thresholds": [
+        {
+          "action_kinds": [
+            "checkpoint",
+            "wait"
+          ],
+          "decision_sequence": 2,
+          "evidence_received_at_epoch": 1791587031,
+          "evidence_sequence": 7,
+          "runnable": true,
+          "used_percentage": 90
+        },
+        {
+          "action_kinds": [
+            "checkpoint",
+            "reduce_dispatch",
+            "wait"
+          ],
+          "decision_sequence": 3,
+          "evidence_received_at_epoch": 1791587031,
+          "evidence_sequence": 8,
+          "runnable": true,
+          "used_percentage": 91
+        },
+        {
+          "action_kinds": [
+            "checkpoint",
+            "pause",
+            "reduce_dispatch",
+            "wait"
+          ],
+          "decision_sequence": 4,
+          "evidence_received_at_epoch": 1791587032,
+          "evidence_sequence": 9,
+          "runnable": false,
+          "used_percentage": 95
+        }
+      ],
+      "session_id": "fixture-session",
+      "started_runnable": true
+    },
+    "fixtureweekly": {
+      "composed_command": "sh -c 'if command -v python3 >/dev/null 2>&1; then python3 -I -S -c \"$1\" \"$2\" \"$3\" \"$4\" \"$5\"; else \"${SHELL:-/bin/sh}\" -c \"$2\"; fi' jackin-statusline '\nimport os\nimport subprocess\nimport sys\nimport threading\n\nMAX_INPUT_BYTES = 16384\nCAPTURE_LIMIT = MAX_INPUT_BYTES + 1\nlegacy_command, jackin_binary, account_id, data_dir = sys.argv[1:5]\nshell_path = os.environ.get(\"SHELL\") or \"/bin/sh\"\n\ntry:\n    legacy = subprocess.Popen(\n        [shell_path, \"-c\", legacy_command],\n        stdin=subprocess.PIPE,\n        bufsize=0,\n    )\nexcept OSError:\n    sys.exit(127)\n\ncaptured = bytearray()\nforward_to_legacy = True\n\ndef relay_input():\n    global forward_to_legacy\n    while True:\n        chunk = sys.stdin.buffer.read(8192)\n        if not chunk:\n            break\n        remaining = CAPTURE_LIMIT - len(captured)\n        if remaining > 0:\n            captured.extend(chunk[:remaining])\n        if forward_to_legacy:\n            view = memoryview(chunk)\n            while view:\n                try:\n                    written = legacy.stdin.write(view)\n                    if written is None or written <= 0:\n                        raise BrokenPipeError()\n                    view = view[written:]\n                except (BrokenPipeError, OSError):\n                    forward_to_legacy = False\n                    break\n    if forward_to_legacy:\n        try:\n            legacy.stdin.close()\n        except (BrokenPipeError, OSError):\n            pass\n\nrelay = threading.Thread(target=relay_input)\nrelay.start()\nlegacy_status = legacy.wait()\nrelay.join()\nif legacy_status != 0:\n    sys.exit(legacy_status if legacy_status > 0 else 128 - legacy_status)\n\nif len(captured) <= MAX_INPUT_BYTES:\n    try:\n        subprocess.run(\n            [\n                jackin_binary,\n                \"usage\",\n                \"statusline\",\n                \"ingest\",\n                \"--account\",\n                account_id,\n                \"--format\",\n                \"json\",\n                \"--data-dir\",\n                data_dir,\n            ],\n            input=bytes(captured),\n            stdout=subprocess.DEVNULL,\n            stderr=subprocess.DEVNULL,\n            timeout=2,\n            check=False,\n        )\n    except (OSError, subprocess.TimeoutExpired):\n        pass\nsys.exit(0)\n' 'cat >/dev/null && printf '\"'\"'statusline-legacy-fixture\\n'\"'\"'' '/Users/donbeave/.local/share/jackin-claude-monitor/bin/jackin' 'fixtureweekly' '/tmp/jkin-statusline-hook-proof-fhjb_c6h/data'",
+      "fixture_spend_record": {
+        "amount": {
+          "amount_minor": 1000,
+          "currency": "SGD",
+          "exponent": 2
+        },
+        "path": "/tmp/jkin-statusline-hook-proof-fhjb_c6h/spend-fixtureweekly.json",
+        "source": "operator_receipt",
+        "verification": "verified (synthetic fixture attestation only)"
+      },
+      "goal_id": "fixture-weekly-goal",
+      "initial_evidence_signature": [
+        [
+          1,
+          "fixtureweekly",
+          "fixture-weekly-session",
+          "statusline",
+          1791587033,
+          "{\"kind\": \"model\", \"model\": \"claude-sonnet-4-5\"}"
+        ],
+        [
+          2,
+          "fixtureweekly",
+          "fixture-weekly-session",
+          "statusline",
+          1791587033,
+          "{\"kind\": \"quota_used_percentage\", \"used_percentage_basis_points\": 1000, \"window\": \"five_hour\"}"
+        ],
+        [
+          3,
+          "fixtureweekly",
+          "fixture-weekly-session",
+          "statusline",
+          1791587033,
+          "{\"kind\": \"quota_reset\", \"reset_at_epoch\": 1791588830, \"window\": \"five_hour\"}"
+        ],
+        [
+          4,
+          "fixtureweekly",
+          "fixture-weekly-session",
+          "statusline",
+          1791587033,
+          "{\"kind\": \"quota_used_percentage\", \"used_percentage_basis_points\": 2000, \"window\": \"seven_day\"}"
+        ],
+        [
+          5,
+          "fixtureweekly",
+          "fixture-weekly-session",
+          "statusline",
+          1791587033,
+          "{\"kind\": \"quota_reset\", \"reset_at_epoch\": 1791673430, \"window\": \"seven_day\"}"
+        ]
+      ],
+      "monitor_id": "monitor-00000002",
+      "session_id": "fixture-weekly-session",
+      "started_runnable": true,
+      "weekly_guard": {
+        "five_hour_after_reset_basis_points": 500,
+        "runnable_after_five_hour_reset": false,
+        "seven_day_basis_points": 10000,
+        "weekly_evidence_sequence": 7
+      }
+    }
+  },
+  "assertions": {
+    "bounded_wait_times_out_without_unblocking_or_resequencing": true,
+    "compose_fixtureaccount_preserves_settings_except_command": true,
+    "compose_fixtureweekly_preserves_settings_except_command": true,
+    "fixtureaccount_fresh_sgd_attestation_precedes_runnable_goal": true,
+    "fixtureweekly_fresh_sgd_attestation_precedes_runnable_goal": true,
+    "hook_fixtureaccount-90-identical-repeat_output_preserved": true,
+    "hook_fixtureaccount-90_output_preserved": true,
+    "hook_fixtureaccount-91_output_preserved": true,
+    "hook_fixtureaccount-95_output_preserved": true,
+    "hook_fixtureaccount-baseline_output_preserved": true,
+    "hook_fixtureaccount-identical-repeat_output_preserved": true,
+    "hook_fixtureweekly-100_output_preserved": true,
+    "hook_fixtureweekly-baseline_output_preserved": true,
+    "hook_fixtureweekly-low-5h-weekly-100_output_preserved": true,
+    "identical_90_callback_keeps_evidence_and_decision_sequences": true,
+    "identical_callback_keeps_evidence_sequence_and_receipt_time": true,
+    "service_start_local_and_doctor_ready": true,
+    "settings_file_byte_identical_after_compose_and_callbacks": true,
+    "weekly_100_remains_blocked_after_low_five_hour_reset": true
+  },
+  "binary_dir": "/Users/donbeave/.local/share/jackin-claude-monitor/bin",
+  "binary_sha256": {
+    "broker": "6321536a6908ef0e0a594e7c0460be9527ac257ac0015940de71165d723412b0",
+    "jackin": "5bee8b128d872fcfcea9476d15b7185c2eb0cbc5dce177bbe723bda9f5067d6f"
+  },
+  "binary_versions": {
+    "broker": "jackin-usage-broker 0.6.4",
+    "jackin": "jackin 0.6.4"
+  },
+  "cleanup": {
+    "broker_run_files_after_stop": [],
+    "cleanup_errors": [],
+    "commands_log": "/tmp/jkin-statusline-hook-proof-fhjb_c6h/commands.log",
+    "credential_tripwire_lines": [],
+    "http_proxy_requests": [],
+    "monitor_stops_attempted": 2,
+    "service_started": true,
+    "service_stop_attempted": true
+  },
+  "doctor_auth_status": "unknown",
+  "environment": {
+    "broker_override_unset": true,
+    "clearenv_child": true,
+    "fake_path_tripwires": [
+      "op",
+      "claude",
+      "security"
+    ],
+    "private_config": "/tmp/jkin-statusline-hook-proof-fhjb_c6h/config",
+    "private_data": "/tmp/jkin-statusline-hook-proof-fhjb_c6h/data",
+    "private_home": "/tmp/jkin-statusline-hook-proof-fhjb_c6h/home"
+  },
+  "failure": null,
+  "fixture_settings": "/tmp/jkin-statusline-hook-proof-fhjb_c6h/claude-settings.fixture.json",
+  "private_root": "/tmp/jkin-statusline-hook-proof-fhjb_c6h",
+  "proof": "installed Claude statusline composition and callback end-to-end",
+  "result": "PASS"
+}

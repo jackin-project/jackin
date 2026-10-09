@@ -300,3 +300,32 @@ credential/HTTP trips and orderly stop. No production service, original
 checkout, Claude environment or settings were changed. Use the installed
 capability-checked pair and explicit operator service setup; absent service
 continues to report a stable failure rather than trigger provider work.
+
+
+## Final prompt verification — 2026-10-10
+
+Broad current offline gates passed: broker 101, provider/discovery 80,
+protocol/coordinator 173 (one pre-existing ignored), CLI/installation 8.
+Three focused persisted deadline filters also passed. Formatting/diff checks
+passed; current source is unchanged, so previous Clippy proof is reused.
+
+The installed composed hook was executed over fixture callbacks, preserving
+existing output and leaving settings unchanged. It established runnable
+monitors after synthetic SGD baselines, kept duplicate evidence age stable,
+emitted 90/91/95% actions, and retained weekly exhaustion after lower five-hour
+usage/reset. Public stop and bounded wait worked; credential/HTTP counts were
+zero. Proof is verification-installed-hook.json.
+
+Independent review exposed a real handoff error: routine Wait actions occur
+while runnable=true and must be reevaluation hints, not automatic pauses.
+The handoff/public docs are corrected; independent final review is Ready. The prompt also
+needs explicit receipt recording before creation and must report prior
+untracked task spend rather than silently treating it as zero. No real
+account, credential, settings or provider was exercised or modified.
+
+Final handoff review is Ready. The corrected instructions distinguish runnable
+Wait hints from blocking Pause, permit the already-authorized fresh service
+setup before adapter installation, preserve unknown existing service ownership,
+record real SGD evidence before monitor creation and disclose pre-monitor
+spend. No product code changed. The durable proof and handoff are committed
+and published with this verification checkpoint.

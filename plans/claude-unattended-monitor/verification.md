@@ -454,3 +454,43 @@ previously recorded `proc-macro-error2 v2.0.1` future-incompatibility notice.
 These fixes deliberately leave the old checkout/build and live session alone;
 they do not guarantee availability without operator setup or prevent an
 uninstructed caller from choosing a different binary.
+
+
+## Final composed-hook verification — 2026-10-10
+
+On source HEAD `37fd349c`, the offline rerun passed 362 tests: broker 101;
+Claude provider/discovery 80; protocol 123; coordinator 50 plus one pre-existing
+ignored unit test; CLI offline and installation 4 each. Focused attempt-floor,
+Retry-After/catalog restart and shared backoff filters also passed. Workspace
+formatting and diff checks passed; prior Clippy evidence is reused because
+production source remains unchanged.
+
+`verification-installed-hook.json` preserves the actual installed-pair proof.
+The proposed statusline command was executed through `/bin/sh -c` over raw
+fixture JSON, retaining existing stdout byte-for-byte and leaving settings
+byte-identical. The broker received the expected account/session and quota
+fields. Fresh synthetic SGD receipts preceded first goal creation, then
+monitor start/status were runnable. Identical callbacks retained evidence
+sequence/receipt time. At 90%, 91% and 95%, decision sequences 2/3/4 emitted
+checkpoint, dispatch reduction and blocking pause respectively. Weekly 100%
+remained exhausted with five-hour usage reduced to 5% and an advanced reset.
+One-second wait returned wait_timeout. Public stops succeeded; run files,
+credential-helper tripwire lines and HTTP proxy requests were all empty.
+
+The first monitor baseline only counts later increases; it cannot reconstruct
+spend from the already-started task. The live account, existing real statusline
+command and real SGD billing evidence remain unverified. These synthetic
+receipts do not establish a real baseline or justify a hard per-goal cap.
+
+This proof also confirmed a prompt error: Wait actions are emitted for future
+reset hints even when runnable=true. Only blocked status/Pause stops dispatch;
+a routine Wait must not turn a healthy monitor into a pause. The final handoff
+is corrected against this source and installed behavior. No product
+code or live session change is needed for that documentation correction.
+
+Independent final review of the corrected handoff and public usage docs is
+Ready. The synthetic proof is retained for audit, not for live ingestion or
+billing. Current production source and installed binaries are unchanged; the
+original checkout remains untouched. Real operator binding, reviewed adapter
+installation and genuine spend evidence are still needed before live readiness
+can be claimed.

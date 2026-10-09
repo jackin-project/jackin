@@ -16,8 +16,8 @@ jackin usage monitor start --provider claude --account ACCOUNT --goal GOAL --bud
 jackin usage monitor stop --monitor ID --format json
 jackin usage status --monitor ID --format json
 jackin usage refresh --monitor ID --format json
-jackin usage watch --monitor ID --format jsonl
-jackin usage wait --monitor ID --until runnable --format json
+jackin usage watch --monitor ID --timeout-secs 300 --format jsonl
+jackin usage wait --monitor ID --until runnable --timeout-secs 300 --format json
 jackin usage statusline ingest --account ACCOUNT --format json < statusline.json
 jackin usage statusline compose --account ACCOUNT --settings settings.json --format json
 jackin usage spend record --account ACCOUNT --file account-spend.json --verified --format json
@@ -51,16 +51,28 @@ retry with a repository build, snapshot/bootstrap, forced provider refresh or
 authentication. The bare `usage` command reads the current canonical
 projection, but it is not a replacement for a durable monitor status.
 
-`usage --data-dir PATH` selects isolated broker state. Start the local-only
-service before passive `doctor` or other readers, using the same installed
-binary and data directory. `service start` starts it explicitly; `monitor start`
-can also start it when needed. Readers, doctor and ingress only attach.
+`usage --data-dir PATH` selects isolated broker state. `service status` reports
+whether a broker responds, but not which executor it uses. If a responding
+broker is known to be the previously verified local-only service for this same
+data directory, reattach to it. Otherwise halt this setup and report its mode as
+unknown; do not stop the running service. `service start` attaches to an existing
+broker and cannot prove it is local-only.
+A `broker_unavailable` result alone does not prove absence because an
+incompatible or unreachable service may be present. Confirm the data directory
+has no existing service before starting one. A fresh `service start` launches
+the local-only executor. Use the same installed binary and data directory, and
+start the service before setting up the statusline adapter. Do not use `monitor
+start` to start a service implicitly. Readers, doctor and ingress only attach.
 If `doctor` reports `broker_unavailable`, stop, checkpoint and report the issue
 to the operator instead of switching to a projection, snapshot, provider
 refresh or auth path. Status, doctor, watch and wait attach to the broker
 without credential discovery, authentication or provider requests.
 
-Auth preparation is an explicit operator setup action. It requires an operator
+Claude statusline monitoring does not require authentication. Passive doctor
+may report `auth_status_unknown`; that is informational and does not prove
+credential access. Do not run auth preparation for unattended monitoring.
+
+Auth preparation is a separate explicit operator setup action. It requires an operator
 terminal and runs in the broker executable. Unattended credential reads prohibit
 Keychain UI and report `interaction_required` when consent cannot be obtained.
 Preparation does not promise credentials will stay readable forever. Do not use
@@ -102,8 +114,14 @@ command and supplies no monitoring evidence.
 
 Used values in monitor JSON are integer `used_percentage_basis_points`:
 `9000` means 90%. Read the five-hour and seven-day windows independently.
-Unknown or stale evidence blocks runnable decisions. Execute the actions in each
-`latest_decision.sequence` once, saving the last handled sequence durably.
+Unknown or stale evidence blocks runnable decisions. Treat `status.runnable` as
+authoritative regardless of lifecycle or a `Wait` action. A future reset can
+produce `Wait` while the monitor remains runnable; it is a reevaluation hint,
+not a pause. Continue work within any checkpoint or dispatch limits. If a
+`Pause` action is present or `status.runnable` is false, checkpoint and stop new
+work. Use bounded `wait --until runnable` only while blocked, then re-read
+status before resuming. Execute the actions in each `latest_decision.sequence`
+once, saving the last handled sequence durably.
 `watch` starts with the latest reconciled event and then streams newer events;
 it does not replay an old runnable state on a fresh attachment. Treat event
 history as history, and use current status before starting work.
@@ -118,10 +136,11 @@ A threshold jump includes the necessary checkpoint and concurrency actions
 before pause. Decisions are requests to the coordinator/operator; Jackin does
 not forcibly terminate lanes or edit their projects.
 
-A reported reset schedules a wait with a small grace. Time passing produces
-`reset_due_unverified`, never proof of replenished allowance. New evidence must
-confirm the relevant reset before the monitor can resume. Weekly, model and spend
-guards still apply after a five-hour reset. A missing reset remains unknown.
+A reported reset schedules reevaluation after a small grace. Time passing
+produces `reset_due_unverified`, never proof of replenished allowance. A reset
+hint or `Wait` action alone does not release a paused monitor. New evidence must
+confirm the relevant reset before the monitor can resume. Weekly, model and
+spend guards still apply after a five-hour reset. A missing reset remains unknown.
 The 95% pause stays latched even if a later callback reports a lower value for
 the same old window. Recovery requires fresh lower-use and advanced-reset fields from one paired
 observation after the reported reset plus 60 seconds. Its bound session may
@@ -182,6 +201,15 @@ the observation is explicitly unverified. Session list-price cost, unknown credi
 currency cannot be treated as billed SGD. The account total's increases since
 the baseline are counted conservatively toward the goal; simultaneous goals can
 attribute the same account spending to more than one goal.
+
+The first monitor creation captures the current account total as its spend
+baseline. The monitor attributes only later increases to that goal. Work already
+done before monitoring is untracked and unknown; the receipt cannot make prior
+spend retroactive. Do not present the SGD50 guard as a whole-goal historical
+cap or change the goal ID to erase attribution. A missing or invalid baseline
+leaves the goal unverifiable; a later receipt does not create a zero-spend
+baseline for that goal. `--verified` is an operator attestation, not independent
+provider billing verification.
 
 The default SGD50 guard warns at SGD40, checkpoints and stops new work at SGD45,
 and pauses at SGD48. Missing or unverifiable evidence returns
