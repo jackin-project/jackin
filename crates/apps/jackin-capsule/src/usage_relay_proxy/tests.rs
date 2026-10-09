@@ -4,9 +4,10 @@
 use super::*;
 
 use jackin_protocol::usage_broker::{
-    USAGE_BROKER_PROTOCOL_VERSION, UsageAccountCapability, UsageBrokerOperation, UsageCatalogEntry,
+    USAGE_BROKER_PROTOCOL_VERSION, UsageAccountCapability, UsageBrokerOperation,
     UsageCoordinationError,
 };
+use jackin_protocol::usage_monitor::MonitorOperation;
 
 use jackin_protocol::{CapsuleConfig, SessionIdentity};
 

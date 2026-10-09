@@ -245,12 +245,18 @@ fn subscribe_all_dedups_reuses_fresh_and_forces_only_on_demand() {
     assert_eq!(heartbeat.len(), 2);
     assert_eq!(executor.calls.load(Ordering::SeqCst), 2);
 
-    // An explicit operator refresh bypasses the success cooldown exactly once.
+    // An explicit operator refresh bypasses Codex's success cooldown, while
+    // Claude's persisted minimum attempt interval still applies.
     let forced = client.refresh_due(true);
     assert!(forced.iter().all(|(_, result)| result.is_ok()));
     for (_, result) in &forced {
         let view = result.as_ref().unwrap();
-        assert_eq!(view.generation, 2);
+        let expected_generation = if view.capability == capability() {
+            1
+        } else {
+            2
+        };
+        assert_eq!(view.generation, expected_generation);
         client
             .join(
                 view.capability.clone(),
@@ -259,7 +265,7 @@ fn subscribe_all_dedups_reuses_fresh_and_forces_only_on_demand() {
             )
             .unwrap();
     }
-    assert_eq!(executor.calls.load(Ordering::SeqCst), 4);
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 3);
 }
 
 #[test]

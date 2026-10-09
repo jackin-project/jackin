@@ -76,19 +76,30 @@ fn account_hash_is_stable_and_namespaced() {
     );
 }
 
-#[tokio::test]
-async fn host_account_cache_exports_owned_operations_without_payloads() {
+#[test]
+fn host_account_cache_exports_owned_operations_without_payloads() {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path().join("host-cache-secret-path");
     let paths = JackinPaths::for_tests(&root);
     let mut sensitive_account = account("host-cache-secret-window", 37);
     sensitive_account.account_label = "host-cache-secret@example.com".to_owned();
 
+    // With a single registered dispatcher, tracing-core can rebuild interest using only the
+    // registering thread's default. Keep a second live dispatcher so rebuilds use the registry.
+    let _interest_cache_anchor = tracing::Dispatch::new(tracing_subscriber::registry());
     let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
-    let _subscriber = tracing::subscriber::set_default(subscriber);
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
 
-    upsert_accounts(&paths, &[sensitive_account]).await.unwrap();
-    read_accounts(&paths).await.unwrap();
+    tracing::subscriber::with_default(subscriber, || {
+        runtime.block_on(async {
+            upsert_accounts(&paths, &[sensitive_account]).await.unwrap();
+            read_accounts(&paths).await.unwrap();
+        });
+        export.force_flush();
+    });
 
     export.force_flush();
     assert_eq!(export.finished_spans().len(), 7);

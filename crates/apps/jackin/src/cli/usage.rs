@@ -1,12 +1,20 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use anyhow::Result;
-use clap::{Args, Subcommand};
+use anyhow::{Context, Result};
+use clap::{Args, Subcommand, ValueEnum};
 use jackin_protocol::control::AccountUsageSnapshotView;
-use jackin_protocol::usage_broker::{UsageLimitWindowV1, UsageProjectionV1};
-use serde::Serialize;
-use std::sync::Arc;
+use jackin_protocol::control::Money;
+use jackin_protocol::usage_broker::UsageProjectionV1;
+use jackin_protocol::usage_monitor::{
+    MonitorConfig, MonitorIssue, MonitorIssueCode, MonitorOperation, MonitorProvider, MonitorReply,
+    MonitorStatus, SpendRecordInput, SpendRecordSource, StatuslineObservation,
+    USAGE_MONITOR_MAX_STATUSLINE_BYTES,
+};
+use serde::{Deserialize, Serialize};
+use std::io::Read as _;
+use std::path::PathBuf;
+use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use crate::cli::format::{OutputEnvelope, OutputFormat};
@@ -16,99 +24,28 @@ use jackin_docker::docker_client::{BollardDockerClient, DockerApi};
 use jackin_runtime::instance::{InstanceIndex, InstanceStatus};
 use jackin_runtime::runtime::snapshot;
 
+mod statusline;
 mod store;
 
-#[derive(Default)]
-pub(crate) struct CliUsageSecretSource;
-
-impl jackin_usage::host::ProviderCredentialSecretSource for CliUsageSecretSource {
-    fn lookup_declaration(
-        &self,
-        config: &jackin_config::AppConfig,
-        workspace: Option<&jackin_core::WorkspaceName>,
-        role: Option<&str>,
-        entry: jackin_core::UsageCredentialEnvName,
-    ) -> Option<jackin_config::EnvValue> {
-        jackin_env::lookup_operator_env_declaration(config, role, workspace, entry.name)
-    }
-
-    fn resolve_secret(
-        &self,
-        config: &jackin_config::AppConfig,
-        workspace: Option<&jackin_core::WorkspaceName>,
-        role: Option<&str>,
-        entry: jackin_core::UsageCredentialEnvName,
-    ) -> Option<jackin_usage::host::ProviderCredentialSecretResolution> {
-        use jackin_usage::host::{
-            ProviderCredentialSecretOutcome, ProviderCredentialSecretResolution,
-        };
-
-        let declaration =
-            jackin_env::lookup_operator_env_declaration(config, role, workspace, entry.name)?;
-        let resolved =
-            jackin_env::resolve_operator_env_per_key_matching(config, role, workspace, |key| {
-                key == entry.name
-            })
-            .into_iter()
-            .next();
-        let outcome = match resolved {
-            Some(result)
-                if result.status() == jackin_env::OperatorEnvKeyStatus::Resolved
-                    && result.resolved_value().is_some() =>
-            {
-                ProviderCredentialSecretOutcome::Resolved(
-                    result.resolved_value().unwrap_or_default().to_owned(),
-                )
-            }
-            Some(result) => match result.status() {
-                jackin_env::OperatorEnvKeyStatus::Resolved => {
-                    ProviderCredentialSecretOutcome::Malformed
-                }
-                jackin_env::OperatorEnvKeyStatus::Missing => {
-                    ProviderCredentialSecretOutcome::Missing
-                }
-                jackin_env::OperatorEnvKeyStatus::DeniedOrUnavailable => {
-                    ProviderCredentialSecretOutcome::Denied
-                }
-                jackin_env::OperatorEnvKeyStatus::Malformed => {
-                    ProviderCredentialSecretOutcome::Malformed
-                }
-                jackin_env::OperatorEnvKeyStatus::InteractionRequired => {
-                    ProviderCredentialSecretOutcome::InteractionRequired
-                }
-            },
-            None => return None,
-        };
-        Some(ProviderCredentialSecretResolution {
-            declaration,
-            outcome,
-        })
-    }
-}
-
-pub(crate) type CliUsageCredentialResolver =
-    jackin_usage::host::CachedProviderCredentialResolver<CliUsageSecretSource>;
-
-/// `jackin usage` — simple host projection output, or explicit instance inspection.
+/// `jackin usage` — passive cached usage plus explicit local monitor operations.
 #[derive(Debug, Args, PartialEq, Eq)]
 #[command(
-    about = "Read simple limits-only usage output",
-    long_about = "Read the canonical host usage projection.\n\n\
-        Human output stays intentionally compact for scripts and quick inspection.\n\
-        Use `jackin usage <instance> accounts|verify` for explicit Capsule\n\
-        inspection, or `jackin usage host snapshot --agent claude --format json`\n\
-        for a host provider snapshot. Use `jackin usage host projection --format json`\n\
-        for recurring polling through an existing broker; refreshes follow the\n\
-        shared five-minute success cooldown."
+    about = "Read cached usage or manage a local Claude quota monitor",
+    long_about = "Read the current cached usage projection without starting a broker or refreshing a provider.\n\n\
+        Explicit monitor and service start commands may start a local-only broker.\n\
+        All monitor evidence is local; statusline observations do not contain spend."
 )]
 pub struct UsageArgs {
-    /// Container name, short instance id, `cache`, or `host`; omit for host-wide usage
+    /// Instance name for Capsule account inspection, or `cache` for the host account cache
     pub instance: Option<String>,
     #[command(subcommand)]
     pub scope: Option<UsageScope>,
     /// Output format
     #[arg(long, global = true, value_name = "FORMAT", default_value = "human")]
     pub format: String,
+    /// Use an isolated jackin data directory for this usage operation
+    #[arg(long, global = true, value_name = "PATH")]
+    pub data_dir: Option<PathBuf>,
 }
 
 #[derive(Debug, Subcommand, PartialEq, Eq)]
@@ -119,24 +56,36 @@ pub enum UsageScope {
     /// Verify all provider quota rows are present and trusted
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Verify,
-    /// Host-side probe snapshot (no Capsule; uses jackin-usage host runtime)
+    /// Run passive readiness checks without accessing credentials or providers
     #[command(before_help = BANNER, styles = HELP_STYLES)]
-    Snapshot(UsageHostSnapshotArgs),
-    /// Read the canonical projection through an already-running host broker
+    Doctor(UsageDoctorArgs),
+    /// Manage the local-only usage broker
     #[command(before_help = BANNER, styles = HELP_STYLES)]
-    Projection,
-}
-
-/// `jackin usage host snapshot --agent claude`
-#[derive(Debug, Args, PartialEq, Eq)]
-pub struct UsageHostSnapshotArgs {
-    /// Host surface id: codex, claude, amp, grok, zai, kimi, minimax, opencode,
-    /// google, cursor, meta, openrouter
-    #[arg(long, value_name = "SURFACE")]
-    pub agent: String,
-    /// Skip the broker request (a fresh CLI process may have no local snapshot)
-    #[arg(long, default_value_t = false)]
-    pub no_refresh: bool,
+    Service(UsageServiceArgs),
+    /// Manage an unattended quota monitor
+    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    Monitor(UsageMonitorArgs),
+    /// Read the status of a durable monitor
+    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    Status(UsageMonitorIdArgs),
+    /// Reconcile a monitor against local evidence without provider refresh
+    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    Refresh(UsageMonitorIdArgs),
+    /// Stream new monitor events as JSON Lines
+    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    Watch(UsageWatchArgs),
+    /// Wait for runnable evidence for a bounded time
+    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    Wait(UsageWaitArgs),
+    /// Ingest or compose Claude Code statusline integration
+    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    Statusline(UsageStatuslineArgs),
+    /// Record an explicit account-bound spend baseline
+    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    Spend(UsageSpendArgs),
+    /// Prepare provider authentication in an attached terminal
+    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    Auth(UsageAuthArgs),
 }
 
 #[derive(Debug, Args, PartialEq, Eq)]
@@ -147,6 +96,204 @@ pub struct UsageAccountsArgs {
     /// cache before a long-running host daemon owns account refresh.
     #[arg(long)]
     pub sync_host_cache: bool,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq)]
+pub enum UsageProviderArg {
+    Claude,
+}
+
+impl From<UsageProviderArg> for MonitorProvider {
+    fn from(value: UsageProviderArg) -> Self {
+        match value {
+            UsageProviderArg::Claude => Self::Claude,
+        }
+    }
+}
+
+#[derive(Debug, Args, PartialEq, Eq)]
+pub struct UsageDoctorArgs {
+    #[arg(long, value_enum, required = true)]
+    pub provider: UsageProviderArg,
+    /// Require a noninteractive readiness report
+    #[arg(long, required = true)]
+    pub unattended: bool,
+}
+
+#[derive(Debug, Args, PartialEq, Eq)]
+pub struct UsageServiceArgs {
+    #[command(subcommand)]
+    pub command: UsageServiceCommand,
+}
+
+#[derive(Debug, Subcommand, PartialEq, Eq)]
+pub enum UsageServiceCommand {
+    /// Start the local-only broker explicitly
+    Start,
+    /// Stop the already-running broker
+    Stop,
+    /// Read local broker status without starting it
+    Status,
+}
+
+#[derive(Debug, Args, PartialEq, Eq)]
+pub struct UsageMonitorArgs {
+    #[command(subcommand)]
+    pub command: UsageMonitorCommand,
+}
+
+#[derive(Debug, Subcommand, PartialEq, Eq)]
+pub enum UsageMonitorCommand {
+    /// Create a durable monitor and start the local-only broker if needed
+    Start(UsageMonitorStartArgs),
+    /// Stop one monitor
+    Stop(UsageMonitorIdArgs),
+}
+
+#[derive(Debug, Args, PartialEq, Eq)]
+pub struct UsageMonitorStartArgs {
+    #[arg(long, value_enum, required = true)]
+    pub provider: UsageProviderArg,
+    #[arg(long, value_name = "ID", required = true)]
+    pub account: String,
+    #[arg(long, value_name = "ID", required = true)]
+    pub goal: String,
+    #[arg(long, value_name = "ID")]
+    pub session: Option<String>,
+    #[arg(long, value_name = "MODEL")]
+    pub expected_model: Option<String>,
+    /// SGD budget ceiling, e.g. `50` or `50.25` (default `50`)
+    #[arg(long, value_name = "SGD", default_value = "50")]
+    pub budget_sgd: Option<String>,
+}
+
+#[derive(Debug, Args, PartialEq, Eq)]
+pub struct UsageMonitorIdArgs {
+    #[arg(long, value_name = "ID", required = true)]
+    pub monitor: String,
+}
+
+#[derive(Debug, Args, PartialEq, Eq)]
+pub struct UsageWatchArgs {
+    #[arg(long, value_name = "ID", required = true)]
+    pub monitor: String,
+    /// Bound watch duration; without this option, stream until interrupted
+    #[arg(long, value_name = "SECONDS", value_parser = clap::value_parser!(u64).range(1..=300))]
+    pub timeout_secs: Option<u64>,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq)]
+pub enum UsageWaitCondition {
+    Runnable,
+}
+
+#[derive(Debug, Args, PartialEq, Eq)]
+pub struct UsageWaitArgs {
+    #[arg(long, value_name = "ID", required = true)]
+    pub monitor: String,
+    #[arg(long, value_enum, required = true)]
+    pub until: UsageWaitCondition,
+    /// Maximum wait duration, clamped to five minutes
+    #[arg(long = "timeout-secs", default_value_t = 30, value_parser = clap::value_parser!(u64).range(1..=300))]
+    pub timeout_secs: u64,
+}
+
+#[derive(Debug, Args, PartialEq, Eq)]
+pub struct UsageStatuslineArgs {
+    #[command(subcommand)]
+    pub command: UsageStatuslineCommand,
+}
+
+#[derive(Debug, Subcommand, PartialEq, Eq)]
+pub enum UsageStatuslineCommand {
+    /// Ingest one bounded JSON document from stdin
+    Ingest(UsageStatuslineIngestArgs),
+    /// Print a proposed settings JSON value with a composed command
+    Compose(UsageStatuslineComposeArgs),
+}
+
+#[derive(Debug, Args, PartialEq, Eq)]
+pub struct UsageStatuslineIngestArgs {
+    #[arg(long, value_name = "ID", required = true)]
+    pub account: String,
+}
+
+#[derive(Debug, Args, PartialEq, Eq)]
+pub struct UsageStatuslineComposeArgs {
+    #[arg(long, value_name = "PATH", required = true)]
+    pub settings: PathBuf,
+    #[arg(long, value_name = "ID", required = true)]
+    pub account: String,
+}
+
+#[derive(Debug, Args, PartialEq, Eq)]
+pub struct UsageSpendArgs {
+    #[command(subcommand)]
+    pub command: UsageSpendCommand,
+}
+
+#[derive(Debug, Subcommand, PartialEq, Eq)]
+pub enum UsageSpendCommand {
+    /// Record a bounded JSON spend observation from an operator-supplied file
+    Record(UsageSpendRecordArgs),
+}
+
+#[derive(Debug, Args, PartialEq, Eq)]
+pub struct UsageSpendRecordArgs {
+    #[arg(long, value_name = "ID", required = true)]
+    pub account: String,
+    #[arg(long, value_name = "PATH", required = true)]
+    pub file: PathBuf,
+    /// Operator attestation only; this does not prove a provider billing record
+    #[arg(long)]
+    pub verified: bool,
+}
+
+#[derive(Debug, Args, PartialEq, Eq)]
+pub struct UsageAuthArgs {
+    #[command(subcommand)]
+    pub command: UsageAuthCommand,
+}
+
+#[derive(Debug, Subcommand, PartialEq, Eq)]
+pub enum UsageAuthCommand {
+    /// Explicitly request interactive authentication preparation
+    Prepare(UsageProviderArgs),
+}
+
+#[derive(Debug, Args, PartialEq, Eq)]
+pub struct UsageProviderArgs {
+    #[arg(long, value_enum, required = true)]
+    pub provider: UsageProviderArg,
+    /// Explicit Claude Keychain generic-password service name
+    #[arg(long, value_name = "SERVICE")]
+    pub keychain_service: Option<String>,
+}
+
+/// A stable machine-readable CLI failure. `main.rs` prints `json` to stdout
+/// and uses `exit_code` instead of rendering this error to stderr.
+#[derive(Debug, thiserror::Error)]
+#[error("{json}")]
+pub struct UsageCommandExit {
+    exit_code: i32,
+    json: String,
+}
+
+impl UsageCommandExit {
+    #[must_use]
+    pub fn new(exit_code: i32, json: String) -> Self {
+        Self { exit_code, json }
+    }
+
+    #[must_use]
+    pub const fn exit_code(&self) -> i32 {
+        self.exit_code
+    }
+
+    #[must_use]
+    pub fn json(&self) -> &str {
+        &self.json
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -164,25 +311,28 @@ impl UsageArgs {
 }
 
 pub async fn run(args: &UsageArgs, paths: &JackinPaths) -> Result<()> {
+    let paths = with_data_dir(paths, args.data_dir.as_deref());
     let Some(instance) = args.instance.as_deref() else {
-        if args.scope.is_some() {
-            anyhow::bail!(
-                "`jackin usage` does not accept an instance scope; use `jackin usage <instance> ...`"
-            );
+        if let Some(scope) = args.scope.as_ref() {
+            return run_local_scope(&paths, scope);
         }
-        return run_bare_host(args, paths);
+        return run_bare_host(args, &paths);
     };
     if instance == "cache" {
-        return run_cache(args, paths).await;
-    }
-    if instance == "host" {
-        return run_host(args, paths);
+        return run_cache(args, &paths).await;
     }
     let scope = args
         .scope
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("missing usage scope; choose `accounts` or `verify`"))?;
-    let target = resolve_usage_target(paths, instance)?;
+    if !matches!(scope, UsageScope::Accounts(_) | UsageScope::Verify) {
+        return Err(usage_error(
+            "invalid_scope",
+            "monitor, service, statusline, spend, auth, and doctor commands do not take an instance",
+            3,
+        ));
+    }
+    let target = resolve_usage_target(&paths, instance)?;
     let docker = BollardDockerClient::connect()?;
     let inspection = docker.inspect_container_by_name(&target.container).await;
     let container = inspection.handle.ok_or_else(|| {
@@ -194,74 +344,33 @@ pub async fn run(args: &UsageArgs, paths: &JackinPaths) -> Result<()> {
     })?;
     match scope {
         UsageScope::Accounts(scope_args) => {
-            run_accounts(args, paths, &target, &container, scope_args).await
+            run_accounts(args, &paths, &target, &container, scope_args).await
         }
-        UsageScope::Verify => run_verify(paths, &target, &container),
-        UsageScope::Snapshot(_) => {
-            anyhow::bail!("`jackin usage <instance> snapshot` is only valid with instance `host`")
-        }
-        UsageScope::Projection => {
-            anyhow::bail!("`jackin usage <instance> projection` is only valid with instance `host`")
-        }
+        UsageScope::Verify => run_verify(&paths, &target, &container),
+        _ => unreachable!("non-instance usage scope checked above"),
     }
 }
 
-/// Render one bounded, final-only host projection. This intentionally stays
-/// plainer than the Capsule/Console surfaces: no meters, animation, or
-/// interactive chrome belong in a command intended for pipes and scripts.
-fn run_bare_host(args: &UsageArgs, paths: &JackinPaths) -> Result<()> {
-    use jackin_usage::host::{
-        HostRuntimeConfig, HostUsageRuntime, UsageBrokerConfig, UsageDiscoveryScope,
-        ensure_usage_broker_process, usage_broker_capabilities,
-    };
-
-    let resolver = Arc::new(CliUsageCredentialResolver::default());
-    let discovery_scope = UsageDiscoveryScope::HostDesktop {
-        config_root: paths.config_dir.clone(),
-        operator_home: paths.home_dir.clone(),
-    };
-    let host_config = HostRuntimeConfig {
-        data_dir: paths.data_dir.clone(),
-        refresh_floor_secs: 300,
-        enabled_surface_ids: Vec::new(),
-        probe_policy: jackin_usage::host::HostProbePolicy::Live,
-        discovery_scope: discovery_scope.clone(),
-    };
-    let mut runtime = HostUsageRuntime::new();
-    runtime
-        .open_with_discovery(host_config, resolver.as_ref())
-        .map_err(|error| anyhow::anyhow!(error))?;
-    let discovery = runtime
-        .validated_discovery()
-        .ok_or_else(|| anyhow::anyhow!("host usage discovery unavailable"))?;
-    let client = ensure_usage_broker_process(
-        UsageBrokerConfig::for_data_dir(paths.data_dir.clone()),
-        &discovery_scope,
-    )
-    .map_err(|error| anyhow::anyhow!(error.message))?;
-
-    for capability in usage_broker_capabilities(&discovery) {
-        let current = client
-            .current(capability.clone())
-            .map_err(|error| anyhow::anyhow!(error.message))?;
-        let state = client
-            .refresh(capability.clone(), current.generation, false)
-            .map_err(|error| anyhow::anyhow!(error.message))?;
-        let state = if state.phase.is_active() {
-            client
-                .join(capability, state.generation, Duration::from_secs(30))
-                .map_err(|error| anyhow::anyhow!(error.message))?
-        } else {
-            state
-        };
-        runtime
-            .apply_broker_generation(state)
-            .map_err(|error| anyhow::anyhow!(error))?;
+fn with_data_dir(paths: &JackinPaths, data_dir: Option<&std::path::Path>) -> JackinPaths {
+    let mut paths = paths.clone();
+    if let Some(data_dir) = data_dir {
+        paths.data_dir = data_dir.to_path_buf();
     }
+    paths
+}
 
-    let projection = runtime
-        .canonical_projection("und")
-        .map_err(|error| anyhow::anyhow!(error))?;
+/// Bare `usage` only reads an already-published broker projection. It never
+/// starts a service, discovers accounts, resolves credentials, or refreshes.
+fn run_bare_host(args: &UsageArgs, paths: &JackinPaths) -> Result<()> {
+    let client =
+        jackin_usage::host::UsageBrokerConfig::for_data_dir(paths.data_dir.clone()).client();
+    let projection = client.current_projection().map_err(|error| {
+        usage_error(
+            "broker_unavailable",
+            &format!("cached usage projection is unavailable ({error:?})"),
+            3,
+        )
+    })?;
     if args.output_format() == OutputFormat::Json {
         println!("{}", serde_json::to_string_pretty(&projection)?);
     } else {
@@ -282,7 +391,16 @@ fn print_bare_host_projection(projection: &UsageProjectionV1) {
             let status = account.status_label.as_deref().unwrap_or("available");
             println!("  {} · {status}", account.display_label);
             for window in &account.windows {
-                print_bare_limit(window);
+                let value = if window.value_label.is_empty() {
+                    "—"
+                } else {
+                    window.value_label.as_str()
+                };
+                if window.reset_label.is_empty() {
+                    println!("    {}  {}", window.label, value);
+                } else {
+                    println!("    {}  {} · {}", window.label, value, window.reset_label);
+                }
             }
         }
     }
@@ -291,172 +409,659 @@ fn print_bare_host_projection(projection: &UsageProjectionV1) {
     }
 }
 
-fn print_bare_limit(window: &UsageLimitWindowV1) {
-    let value = if window.value_label.is_empty() {
-        "—"
-    } else {
-        window.value_label.as_str()
-    };
-    if window.reset_label.is_empty() {
-        println!("    {}  {}", window.label, value);
-    } else {
-        println!("    {}  {} · {}", window.label, value, window.reset_label);
-    }
-}
-
-fn run_host(args: &UsageArgs, paths: &JackinPaths) -> Result<()> {
-    let scope = args
-        .scope
-        .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("missing host usage scope; choose `snapshot`"))?;
+fn run_local_scope(paths: &JackinPaths, scope: &UsageScope) -> Result<()> {
     match scope {
-        UsageScope::Snapshot(scope) => run_host_snapshot(args, paths, scope),
-        UsageScope::Projection => run_host_projection(args, paths),
-        UsageScope::Accounts(_) | UsageScope::Verify => {
-            anyhow::bail!(
-                "`jackin usage host` supports `snapshot` only; use `jackin usage cache accounts` for the host cache"
-            )
-        }
+        UsageScope::Accounts(_) | UsageScope::Verify => Err(usage_error(
+            "invalid_scope",
+            "account and verify scopes require an instance name; use `usage cache accounts` for the host cache",
+            3,
+        )),
+        UsageScope::Doctor(command) => run_doctor(paths, command),
+        UsageScope::Service(command) => run_service(paths, command),
+        UsageScope::Monitor(command) => run_monitor(paths, command),
+        UsageScope::Status(command) => run_monitor_read(
+            paths,
+            MonitorOperation::Status {
+                monitor_id: command.monitor.clone(),
+            },
+        ),
+        UsageScope::Refresh(command) => run_monitor_read(
+            paths,
+            MonitorOperation::Refresh {
+                monitor_id: command.monitor.clone(),
+            },
+        ),
+        UsageScope::Watch(command) => run_watch(paths, command),
+        UsageScope::Wait(command) => run_wait(paths, command),
+        UsageScope::Statusline(command) => run_statusline(paths, command),
+        UsageScope::Spend(command) => run_spend(paths, command),
+        UsageScope::Auth(command) => run_auth(paths, command),
     }
 }
 
-fn run_host_projection(args: &UsageArgs, paths: &JackinPaths) -> Result<()> {
-    use jackin_protocol::usage_broker::{
-        UsageCoordinationErrorKind, UsageProjectionRefreshStateV1,
-    };
-    use jackin_usage::host::UsageBrokerConfig;
-
-    let client = UsageBrokerConfig::for_data_dir(paths.data_dir.clone()).client();
-    let projection = client.request_refresh(None, false).map_err(|error| {
-        anyhow::anyhow!("host usage broker is unavailable ({error:?}); initialize it once with `jackin usage host snapshot --agent claude --format json`")
-    })?;
-    let mut projection = projection;
-    if projection.refresh_state == UsageProjectionRefreshStateV1::Refreshing {
-        let deadline = Instant::now() + Duration::from_secs(30);
-        while projection.refresh_state == UsageProjectionRefreshStateV1::Refreshing {
-            let remaining = deadline.saturating_duration_since(Instant::now());
-            if remaining.is_zero() {
-                break;
-            }
-            match client.join_publication(projection.projection_id.clone(), remaining) {
-                Ok(next) => projection = next,
-                Err(error) if error.kind == UsageCoordinationErrorKind::WaitTimeout => break,
-                Err(error) => return Err(anyhow::anyhow!(error.message)),
-            }
-        }
-    }
-    if args.output_format() == OutputFormat::Json {
-        let envelope = OutputEnvelope::v1(projection);
-        println!("{}", serde_json::to_string_pretty(&envelope)?);
-    } else {
-        print_bare_host_projection(&projection);
-    }
-    Ok(())
+fn broker_config(paths: &JackinPaths) -> jackin_usage::host::UsageBrokerConfig {
+    jackin_usage::host::UsageBrokerConfig::for_data_dir(paths.data_dir.clone())
 }
 
-fn run_host_snapshot(
-    args: &UsageArgs,
-    paths: &JackinPaths,
-    scope: &UsageHostSnapshotArgs,
-) -> Result<()> {
-    use jackin_usage::host::{
-        HostProbePolicy, HostRuntimeConfig, HostSurfaceId, HostUsageRuntime, UsageBrokerConfig,
-        UsageDiscoveryScope, ensure_usage_broker_process, usage_broker_capabilities,
-    };
-
-    let surface = HostSurfaceId::from_id(&scope.agent).ok_or_else(|| {
-        anyhow::anyhow!(
-            "unknown host surface `{}`; expected one of: {}",
-            scope.agent,
-            HostSurfaceId::ALL
-                .iter()
-                .map(|s| s.id())
-                .collect::<Vec<_>>()
-                .join(", ")
-        )
-    })?;
-
-    let resolver = Arc::new(CliUsageCredentialResolver::default());
-    let discovery_scope = UsageDiscoveryScope::HostDesktop {
+fn discovery_scope(paths: &JackinPaths) -> jackin_usage::host::UsageDiscoveryScope {
+    jackin_usage::host::UsageDiscoveryScope::HostDesktop {
         config_root: paths.config_dir.clone(),
         operator_home: paths.home_dir.clone(),
-    };
-    let host_config = HostRuntimeConfig {
-        data_dir: paths.data_dir.clone(),
-        refresh_floor_secs: 300,
-        enabled_surface_ids: Vec::new(),
-        probe_policy: HostProbePolicy::Live,
-        discovery_scope: discovery_scope.clone(),
-    };
-    let broker_config = UsageBrokerConfig::for_data_dir(paths.data_dir.clone());
-    let mut runtime = HostUsageRuntime::new();
-    runtime
-        .open_with_discovery(host_config, resolver.as_ref())
-        .map_err(|err| anyhow::anyhow!(err))?;
+    }
+}
 
-    if !scope.no_refresh {
-        let discovery = runtime
-            .validated_discovery()
-            .ok_or_else(|| anyhow::anyhow!("host usage discovery unavailable"))?;
-        let client = ensure_usage_broker_process(broker_config, &discovery_scope)
-            .map_err(|error| anyhow::anyhow!(error.message))?;
-        for capability in usage_broker_capabilities(&discovery)
-            .into_iter()
-            .filter(|capability| capability.surface_id == surface.id())
-        {
-            let current = client
-                .current(capability.clone())
-                .map_err(|error| anyhow::anyhow!(error.message))?;
-            let mut state = client
-                .refresh(capability.clone(), current.generation, false)
-                .map_err(|error| anyhow::anyhow!(error.message))?;
-            if state.phase.is_active() {
-                state = client
-                    .join(capability, state.generation, Duration::from_secs(30))
-                    .map_err(|error| anyhow::anyhow!(error.message))?;
-            }
-            runtime
-                .apply_broker_generation(state)
-                .map_err(|err| anyhow::anyhow!(err))?;
-        }
-    }
-    let view = runtime
-        .snapshot(surface.id())
-        .map_err(|err| anyhow::anyhow!(err))?;
+fn start_broker(paths: &JackinPaths) -> Result<jackin_usage::host::UsageBrokerClient> {
+    jackin_usage::host::ensure_usage_monitor_process(broker_config(paths), &discovery_scope(paths))
+        .map_err(|error| usage_error("broker_unavailable", &error.message, 3))
+}
 
-    if args.output_format() == OutputFormat::Json {
-        let envelope = OutputEnvelope::v1(view);
-        println!("{}", serde_json::to_string_pretty(&envelope)?);
-        return Ok(());
-    }
+fn attach_client(paths: &JackinPaths) -> jackin_usage::host::UsageBrokerClient {
+    broker_config(paths).client()
+}
 
-    print!("{BANNER}");
-    println!("host usage snapshot · {}\n", surface.label());
-    println!("  status_bar_label  {}", view.status_bar_label);
-    println!("  status            {:?}", view.status);
-    println!("  source            {:?}", view.source);
-    println!("  confidence        {:?}", view.confidence);
-    println!("  account           {}", view.account.account_label);
-    if let Some(plan) = &view.account.plan_label {
-        println!("  plan              {plan}");
+fn emit_json<T: Serialize>(value: &T) -> Result<()> {
+    println!("{}", serde_json::to_string(value)?);
+    Ok(())
+}
+
+fn run_doctor(paths: &JackinPaths, command: &UsageDoctorArgs) -> Result<()> {
+    let reply = attach_client(paths)
+        .monitor(MonitorOperation::Doctor {
+            provider: command.provider.into(),
+        })
+        .map_err(|issue| issue_error(issue, 3))?;
+    if !matches!(&reply, MonitorReply::Doctor { .. }) {
+        return Err(usage_error(
+            "unexpected_reply",
+            "broker returned a non-doctor reply",
+            3,
+        ));
     }
-    if let Some(origin) = &view.account.credential_origin {
-        println!("  credential        {origin}");
-    }
-    if view.buckets.is_empty() {
-        println!("  buckets           (none — no invented percentages)");
+    let status = doctor_exit_code(&reply);
+    if status == 0 {
+        emit_json(&reply)
     } else {
-        for bucket in &view.buckets {
-            println!(
-                "  bucket            {} remaining={:?} resets_at={:?} status={:?}",
-                bucket.label, bucket.remaining_percent, bucket.resets_at, bucket.status
-            );
+        Err(json_value_exit(&reply, status))
+    }
+}
+
+fn doctor_exit_code(reply: &MonitorReply) -> i32 {
+    match reply {
+        MonitorReply::Doctor { report } if !report.broker_available => 3,
+        MonitorReply::Doctor { report }
+            if report.issues.iter().any(|issue| {
+                !matches!(
+                    issue.code,
+                    MonitorIssueCode::AuthStatusUnknown
+                        | MonitorIssueCode::IndependentRefreshDisabled
+                )
+            }) =>
+        {
+            2
+        }
+        _ => 0,
+    }
+}
+
+fn run_service(paths: &JackinPaths, command: &UsageServiceArgs) -> Result<()> {
+    let reply = match &command.command {
+        UsageServiceCommand::Start => start_broker(paths)?.monitor(MonitorOperation::ServiceStatus),
+        UsageServiceCommand::Stop => attach_client(paths).monitor(MonitorOperation::ServiceStop),
+        UsageServiceCommand::Status => {
+            attach_client(paths).monitor(MonitorOperation::ServiceStatus)
         }
     }
-    if let Some(err) = &view.last_error {
-        println!("  last_error        {err}");
+    .map_err(|issue| issue_error(issue, 3))?;
+    let expected_reply = match &command.command {
+        UsageServiceCommand::Stop => matches!(&reply, MonitorReply::ServiceStopped),
+        UsageServiceCommand::Start | UsageServiceCommand::Status => {
+            matches!(&reply, MonitorReply::ServiceStatus { .. })
+        }
+    };
+    if !expected_reply {
+        return Err(usage_error(
+            "unexpected_reply",
+            "broker returned a mismatched service reply",
+            3,
+        ));
+    }
+    let status = match &reply {
+        MonitorReply::ServiceStatus { status } if !status.running => 2,
+        _ => 0,
+    };
+    if status == 0 {
+        emit_json(&reply)
+    } else {
+        Err(json_value_exit(&reply, status))
+    }
+}
+
+fn run_monitor(paths: &JackinPaths, command: &UsageMonitorArgs) -> Result<()> {
+    match &command.command {
+        UsageMonitorCommand::Start(args) => {
+            let budget = args
+                .budget_sgd
+                .as_deref()
+                .map(parse_sgd_budget)
+                .transpose()?;
+            if args.account.trim().is_empty()
+                || args.goal.trim().is_empty()
+                || args
+                    .session
+                    .as_deref()
+                    .is_some_and(|session| session.trim().is_empty())
+            {
+                return Err(usage_error(
+                    "invalid_argument",
+                    "account, goal, and any supplied session IDs must not be empty",
+                    3,
+                ));
+            }
+            let client = start_broker(paths)?;
+            let reply = client
+                .monitor(MonitorOperation::Start {
+                    config: MonitorConfig {
+                        provider: args.provider.into(),
+                        account_id: args.account.clone(),
+                        goal_id: args.goal.clone(),
+                        session_id: args.session.clone(),
+                        expected_model: args.expected_model.clone(),
+                        budget,
+                    },
+                })
+                .map_err(|issue| issue_error(issue, 3))?;
+            emit_monitor_reply(&reply)
+        }
+        UsageMonitorCommand::Stop(args) => {
+            let reply = attach_client(paths)
+                .monitor(MonitorOperation::Stop {
+                    monitor_id: args.monitor.clone(),
+                })
+                .map_err(|issue| issue_error(issue, 3))?;
+            emit_json(&reply)
+        }
+    }
+}
+
+fn run_monitor_read(paths: &JackinPaths, operation: MonitorOperation) -> Result<()> {
+    let expects_refresh = matches!(&operation, MonitorOperation::Refresh { .. });
+    let reply = attach_client(paths)
+        .monitor(operation)
+        .map_err(|issue| issue_error(issue, 3))?;
+    let expected_reply = if expects_refresh {
+        matches!(&reply, MonitorReply::Refreshed { .. })
+    } else {
+        matches!(&reply, MonitorReply::Status { .. })
+    };
+    if !expected_reply {
+        return Err(usage_error(
+            "unexpected_reply",
+            "broker returned a mismatched monitor reply",
+            3,
+        ));
+    }
+    emit_monitor_reply(&reply)
+}
+
+fn emit_monitor_reply(reply: &MonitorReply) -> Result<()> {
+    let code = match reply_status(reply) {
+        Some(status) if status.runnable => 0,
+        Some(_) => 2,
+        None => {
+            return Err(usage_error(
+                "unexpected_reply",
+                "broker returned a reply without monitor status",
+                3,
+            ));
+        }
+    };
+    if code == 0 {
+        emit_json(reply)
+    } else {
+        Err(json_value_exit(reply, code))
+    }
+}
+
+fn reply_status(reply: &MonitorReply) -> Option<&MonitorStatus> {
+    match reply {
+        MonitorReply::Started { status }
+        | MonitorReply::Stopped { status }
+        | MonitorReply::Status { status }
+        | MonitorReply::Refreshed { status } => Some(status),
+        _ => None,
+    }
+}
+
+fn run_watch(paths: &JackinPaths, args: &UsageWatchArgs) -> Result<()> {
+    let client = attach_client(paths);
+    let deadline = args
+        .timeout_secs
+        .map(|timeout| Instant::now() + Duration::from_secs(timeout.min(300)));
+    // The broker treats cursor zero as a fresh attach: it reconciles the
+    // monitor and returns only the newest current event, never the retained
+    // history. Later requests continue from the cursor returned with that
+    // current snapshot, so old runnable events cannot act as current state.
+    let mut sequence = 0_u64;
+    loop {
+        let timeout_ms = deadline.map_or(30_000, |deadline| {
+            u64::try_from(
+                deadline
+                    .saturating_duration_since(Instant::now())
+                    .as_millis(),
+            )
+            .unwrap_or(u64::MAX)
+            .min(30_000)
+        });
+        if timeout_ms == 0 {
+            return Ok(());
+        }
+        let reply = client
+            .monitor(MonitorOperation::Watch {
+                monitor_id: args.monitor.clone(),
+                after_sequence: sequence,
+                timeout_ms,
+            })
+            .map_err(|issue| issue_error(issue, 3))?;
+        let MonitorReply::Watch {
+            events,
+            next_sequence,
+            timed_out,
+        } = reply
+        else {
+            return Err(usage_error(
+                "unexpected_reply",
+                "broker returned a non-watch reply",
+                3,
+            ));
+        };
+        let after_sequence = sequence;
+        sequence = advance_watch_cursor(
+            sequence,
+            next_sequence,
+            events.iter().map(|event| event.sequence),
+        );
+        for event in events {
+            if event.sequence <= after_sequence {
+                continue;
+            }
+            println!("{}", serde_json::to_string(&event)?);
+        }
+        if timed_out && deadline.is_some() {
+            return Ok(());
+        }
+    }
+}
+
+fn advance_watch_cursor(
+    current: u64,
+    next_sequence: u64,
+    event_sequences: impl IntoIterator<Item = u64>,
+) -> u64 {
+    event_sequences
+        .into_iter()
+        .fold(current.max(next_sequence), u64::max)
+}
+
+fn run_wait(paths: &JackinPaths, args: &UsageWaitArgs) -> Result<()> {
+    match args.until {
+        UsageWaitCondition::Runnable => {
+            run_wait_until_runnable(paths, &args.monitor, args.timeout_secs)
+        }
+    }
+}
+
+fn run_wait_until_runnable(
+    paths: &JackinPaths,
+    monitor_id: &str,
+    timeout_seconds: u64,
+) -> Result<()> {
+    let client = attach_client(paths);
+    let deadline = Instant::now() + Duration::from_secs(timeout_seconds.min(300));
+    let mut sequence = 0_u64;
+    loop {
+        let status_reply = client
+            .monitor(MonitorOperation::Status {
+                monitor_id: monitor_id.to_owned(),
+            })
+            .map_err(|issue| issue_error(issue, 3))?;
+        let MonitorReply::Status { status } = status_reply else {
+            return Err(usage_error(
+                "unexpected_reply",
+                "broker returned a non-status reply",
+                3,
+            ));
+        };
+        if status.runnable {
+            return emit_monitor_reply(&MonitorReply::Status { status });
+        }
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            break;
+        }
+        let timeout_ms = u64::try_from(remaining.as_millis())
+            .unwrap_or(u64::MAX)
+            .min(1_000);
+        let reply = client
+            .monitor(MonitorOperation::Watch {
+                monitor_id: monitor_id.to_owned(),
+                after_sequence: sequence,
+                timeout_ms,
+            })
+            .map_err(|issue| issue_error(issue, 3))?;
+        match reply {
+            MonitorReply::Watch {
+                events,
+                next_sequence,
+                ..
+            } => {
+                sequence = sequence.max(next_sequence);
+                for event in events {
+                    sequence = sequence.max(event.sequence);
+                }
+            }
+            _ => {
+                return Err(usage_error(
+                    "unexpected_reply",
+                    "broker returned a non-watch reply",
+                    3,
+                ));
+            }
+        }
+    }
+    let reply = client
+        .monitor(MonitorOperation::Status {
+            monitor_id: monitor_id.to_owned(),
+        })
+        .map_err(|issue| issue_error(issue, 3))?;
+    let MonitorReply::Status { mut status } = reply else {
+        return Err(usage_error(
+            "unexpected_reply",
+            "broker returned a non-status reply",
+            3,
+        ));
+    };
+    if status.runnable {
+        return emit_monitor_reply(&MonitorReply::Status { status });
+    }
+    append_wait_timeout_issue(&mut status.issues);
+    Err(json_value_exit(&MonitorReply::Status { status }, 2))
+}
+
+fn append_wait_timeout_issue(issues: &mut Vec<MonitorIssue>) {
+    issues.push(MonitorIssue {
+        code: MonitorIssueCode::WaitTimeout,
+        message: "wait for runnable evidence expired before the monitor became runnable".to_owned(),
+        retry_at_epoch: None,
+    });
+}
+
+fn run_statusline(paths: &JackinPaths, command: &UsageStatuslineArgs) -> Result<()> {
+    match &command.command {
+        UsageStatuslineCommand::Ingest(args) => {
+            let mut bytes = Vec::with_capacity(USAGE_MONITOR_MAX_STATUSLINE_BYTES + 1);
+            std::io::stdin()
+                .take((USAGE_MONITOR_MAX_STATUSLINE_BYTES + 1) as u64)
+                .read_to_end(&mut bytes)
+                .context("read statusline JSON from stdin")
+                .map_err(|error| usage_error("statusline_invalid", &error.to_string(), 3))?;
+            let observation = parse_statusline(&bytes).map_err(|issue| issue_error(issue, 3))?;
+            let reply = attach_client(paths)
+                .monitor(MonitorOperation::Ingest {
+                    account_id: args.account.clone(),
+                    observation,
+                })
+                .map_err(|issue| issue_error(issue, 3))?;
+            if !matches!(&reply, MonitorReply::Ingested { .. }) {
+                return Err(usage_error(
+                    "unexpected_reply",
+                    "broker returned a non-ingest reply",
+                    3,
+                ));
+            }
+            emit_json(&reply)
+        }
+        UsageStatuslineCommand::Compose(args) => {
+            let binary = std::env::current_exe()
+                .map_err(|error| usage_error("path_unavailable", &error.to_string(), 3))?;
+            let proposed =
+                statusline::compose(&args.settings, &binary, &args.account, &paths.data_dir)
+                    .map_err(|error| usage_error("compose_failed", &format!("{error:#}"), 3))?;
+            println!("{}", serde_json::to_string_pretty(&proposed)?);
+            Ok(())
+        }
+    }
+}
+
+fn run_spend(paths: &JackinPaths, command: &UsageSpendArgs) -> Result<()> {
+    match &command.command {
+        UsageSpendCommand::Record(args) => {
+            let record = read_spend_record(&args.file, &args.account, args.verified)?;
+            let reply = attach_client(paths)
+                .monitor(MonitorOperation::RecordSpend { record })
+                .map_err(|issue| issue_error(issue, 3))?;
+            if !matches!(&reply, MonitorReply::SpendRecorded { .. }) {
+                return Err(usage_error(
+                    "unexpected_reply",
+                    "broker returned a non-spend reply",
+                    3,
+                ));
+            }
+            emit_json(&reply)
+        }
+    }
+}
+
+fn run_auth(paths: &JackinPaths, command: &UsageAuthArgs) -> Result<()> {
+    match &command.command {
+        UsageAuthCommand::Prepare(args) => {
+            use std::io::IsTerminal as _;
+            if !all_stdio_are_terminal(
+                std::io::stdin().is_terminal(),
+                std::io::stdout().is_terminal(),
+                std::io::stderr().is_terminal(),
+            ) {
+                return Err(issue_error(
+                    MonitorIssue {
+                        code: MonitorIssueCode::InteractionRequired,
+                        message: "authentication preparation requires an attached terminal"
+                            .to_owned(),
+                        retry_at_epoch: None,
+                    },
+                    2,
+                ));
+            }
+            if args.provider != UsageProviderArg::Claude {
+                return Err(usage_error(
+                    "unsupported_provider",
+                    "authentication preparation supports Claude only",
+                    3,
+                ));
+            }
+            let service = args
+                .keychain_service
+                .as_deref()
+                .unwrap_or(jackin_core::CLAUDE_KEYCHAIN_SERVICE_BASE);
+            validate_keychain_service(service)?;
+            let executable = broker_config(paths).service_executable.ok_or_else(|| {
+                usage_error(
+                    "broker_unavailable",
+                    "the sibling usage broker executable could not be located",
+                    3,
+                )
+            })?;
+            let child = Command::new(executable)
+                .arg("--prepare-auth")
+                .arg("--provider")
+                .arg("claude")
+                .arg("--keychain-service")
+                .arg(service)
+                .stdin(Stdio::inherit())
+                .stdout(Stdio::inherit())
+                .stderr(Stdio::inherit())
+                .status()
+                .map_err(|error| {
+                    usage_error(
+                        "broker_unavailable",
+                        &format!("cannot launch the usage broker auth helper: {error}"),
+                        3,
+                    )
+                })?;
+            if child.success() {
+                Ok(())
+            } else {
+                Err(UsageCommandExit::new(child.code().unwrap_or(3), String::new()).into())
+            }
+        }
+    }
+}
+
+fn all_stdio_are_terminal(stdin: bool, stdout: bool, stderr: bool) -> bool {
+    stdin && stdout && stderr
+}
+
+fn validate_keychain_service(service: &str) -> Result<()> {
+    if service.trim().is_empty() || service.len() > 512 || service.contains('\0') {
+        return Err(usage_error(
+            "invalid_keychain_service",
+            "Keychain service must be nonempty, contain no NUL, and be at most 512 bytes",
+            3,
+        ));
     }
     Ok(())
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SpendEvidenceFile {
+    billing_period_start_epoch: i64,
+    billing_period_end_epoch: i64,
+    amount: Money,
+    evidence_at_epoch: Option<i64>,
+}
+
+#[expect(
+    clippy::disallowed_methods,
+    reason = "bounded synchronous CLI input read outside render/runtime threads"
+)]
+fn read_spend_record(
+    path: &std::path::Path,
+    account: &str,
+    verified: bool,
+) -> Result<SpendRecordInput> {
+    const MAX_SPEND_FILE_BYTES: usize = 16 * 1024;
+    let file = std::fs::File::open(path)
+        .with_context(|| format!("open spend evidence file {}", path.display()))
+        .map_err(|error| usage_error("spend_file_invalid", &format!("{error:#}"), 3))?;
+    let mut bytes = Vec::with_capacity(MAX_SPEND_FILE_BYTES + 1);
+    file.take((MAX_SPEND_FILE_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|error| usage_error("spend_file_invalid", &error.to_string(), 3))?;
+    if bytes.len() > MAX_SPEND_FILE_BYTES {
+        return Err(usage_error(
+            "spend_file_too_large",
+            "spend evidence file exceeds 16 KiB",
+            3,
+        ));
+    }
+    let evidence: SpendEvidenceFile = serde_json::from_slice(&bytes)
+        .map_err(|error| usage_error("spend_file_invalid", &error.to_string(), 3))?;
+    if account.trim().is_empty()
+        || evidence.billing_period_start_epoch >= evidence.billing_period_end_epoch
+        || evidence.amount.amount_minor < 0
+        || evidence.amount.currency.trim().is_empty()
+    {
+        return Err(usage_error(
+            "spend_file_invalid",
+            "account, billing period, and nonnegative monetary amount must be valid",
+            3,
+        ));
+    }
+    Ok(SpendRecordInput {
+        account_id: account.to_owned(),
+        billing_period_start_epoch: evidence.billing_period_start_epoch,
+        billing_period_end_epoch: evidence.billing_period_end_epoch,
+        amount: evidence.amount,
+        evidence_at_epoch: evidence.evidence_at_epoch,
+        verified,
+        source: SpendRecordSource::OperatorReceipt,
+    })
+}
+
+fn parse_sgd_budget(value: &str) -> Result<Money> {
+    let mut parts = value.split('.');
+    let major = parts.next().unwrap_or_default();
+    let minor = parts.next();
+    if parts.next().is_some()
+        || major.is_empty()
+        || !major.bytes().all(|byte| byte.is_ascii_digit())
+        || minor
+            .is_some_and(|part| part.len() > 2 || !part.bytes().all(|byte| byte.is_ascii_digit()))
+    {
+        return Err(usage_error(
+            "invalid_budget",
+            "SGD budget must be a nonnegative amount with at most two decimal places",
+            3,
+        ));
+    }
+    let major = major
+        .parse::<i64>()
+        .map_err(|_| usage_error("invalid_budget", "SGD budget is out of range", 3))?;
+    let minor = minor.unwrap_or_default();
+    let minor = if minor.is_empty() {
+        0
+    } else if minor.len() == 1 {
+        minor.parse::<i64>().unwrap_or(0) * 10
+    } else {
+        minor.parse::<i64>().unwrap_or(0)
+    };
+    let amount_minor = major
+        .checked_mul(100)
+        .and_then(|amount| amount.checked_add(minor))
+        .ok_or_else(|| usage_error("invalid_budget", "SGD budget is out of range", 3))?;
+    Ok(Money::new(amount_minor, "SGD", 2))
+}
+
+fn parse_statusline(bytes: &[u8]) -> Result<StatuslineObservation, MonitorIssue> {
+    jackin_usage::host::parse_statusline(bytes)
+}
+
+#[derive(Serialize)]
+struct UsageErrorEnvelope<'a> {
+    version: u16,
+    error: UsageErrorBody<'a>,
+}
+
+#[derive(Serialize)]
+struct UsageErrorBody<'a> {
+    code: &'a str,
+    message: &'a str,
+}
+
+fn usage_error(code: &str, message: &str, exit_code: i32) -> anyhow::Error {
+    let json = serde_json::to_string(&UsageErrorEnvelope {
+        version: 1,
+        error: UsageErrorBody { code, message },
+    })
+    .unwrap_or_else(|_| {
+        "{\"version\":1,\"error\":{\"code\":\"internal\",\"message\":\"unable to encode error\"}}"
+            .to_owned()
+    });
+    UsageCommandExit::new(exit_code, json).into()
+}
+
+fn issue_error(issue: MonitorIssue, exit_code: i32) -> anyhow::Error {
+    let code = serde_json::to_value(issue.code)
+        .ok()
+        .and_then(|value| value.as_str().map(str::to_owned))
+        .unwrap_or_else(|| "monitor_error".to_owned());
+    usage_error(&code, &issue.message, exit_code)
+}
+
+fn json_value_exit<T: Serialize>(value: &T, exit_code: i32) -> anyhow::Error {
+    let json = serde_json::to_string(value).unwrap_or_else(|_| {
+        "{\"version\":1,\"error\":{\"code\":\"internal\",\"message\":\"unable to encode result\"}}".to_owned()
+    });
+    UsageCommandExit::new(exit_code, json).into()
 }
 
 async fn run_cache(args: &UsageArgs, paths: &JackinPaths) -> Result<()> {
@@ -493,14 +1098,11 @@ async fn run_cache(args: &UsageArgs, paths: &JackinPaths) -> Result<()> {
                 "`jackin usage cache verify` is invalid; verification must query a running Capsule daemon"
             )
         }
-        UsageScope::Snapshot(_) => {
-            anyhow::bail!(
-                "`jackin usage cache snapshot` is invalid; use `jackin usage host snapshot`"
-            )
-        }
-        UsageScope::Projection => anyhow::bail!(
-            "`jackin usage cache projection` is invalid; use `jackin usage host projection`"
-        ),
+        _ => Err(usage_error(
+            "invalid_scope",
+            "this usage command cannot be scoped to the host cache",
+            3,
+        )),
     }
 }
 

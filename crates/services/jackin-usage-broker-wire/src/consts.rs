@@ -8,11 +8,9 @@ pub const BROKER_DIR: &str = "usage-broker";
 pub const BROKER_RUN_DIR: &str = "run";
 pub const BROKER_SOCKET: &str = "usage-broker.sock";
 pub const BROKER_LEADER: &str = "leader.pid";
-pub const BROKER_ACTIVATE_LOCK: &str = "activate.lock";
-/// Activation attempts per `ensure_usage_broker` call: one initial reconcile
-/// plus bounded CAS-conflict retries with re-discovery. A conflicting
-/// activation fails closed with `CatalogRevisionConflict` once the bound is
-/// exhausted.
+/// Broker catalog attempts per explicit scan: one initial reconcile plus
+/// bounded CAS-conflict retries with fresh discovery. Conflicting scans fail
+/// closed with `CatalogRevisionConflict` after this bound.
 pub const BROKER_ACTIVATION_ATTEMPTS: u32 = 3;
 pub const BROKER_LEASE_DURATION: Duration = Duration::from_secs(30);
 pub const BROKER_LEASE_RENEWAL: Duration = Duration::from_secs(10);

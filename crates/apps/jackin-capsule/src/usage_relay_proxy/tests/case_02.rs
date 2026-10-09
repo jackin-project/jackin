@@ -189,6 +189,45 @@ fn supervisor_binding_still_requires_root_and_exact_pid() {
     }));
 }
 
+#[test]
+fn relay_authorization_rejects_host_monitor_operations_for_sessions_and_supervisor() {
+    let (authorization, _) = single_session_authorization(2_001, 2_001, "account-a");
+    let operation = UsageBrokerOperation::Monitor {
+        request: MonitorOperation::ServiceStatus,
+    };
+    let binding = supervisor(DEFAULT_CAPSULE_SUPERVISOR_PID);
+    let session_peer = PeerIdentity {
+        pid: Some(77),
+        start_time: Some(SUPERVISOR_START_TIME),
+        uid: 2_001,
+        gid: 2_001,
+    };
+    let supervisor_peer = root_peer(DEFAULT_CAPSULE_SUPERVISOR_PID, Some(SUPERVISOR_START_TIME));
+
+    assert!(!authorization.authorizes(binding, Some(session_peer), &operation));
+    assert!(!authorization.authorizes(binding, Some(supervisor_peer), &operation));
+}
+
+#[test]
+fn capsule_proxy_rejects_host_launch_capability_resolution() {
+    let (authorization, _) = single_session_authorization(2_001, 2_001, "account-a");
+    let operation = UsageBrokerOperation::ResolveRelayCapabilities {
+        scope_label: "workspace fixture role reviewer".to_owned(),
+        forwarded_sources: jackin_protocol::usage_broker::UsageRelayForwardedSourcesV1::default(),
+    };
+    let binding = supervisor(DEFAULT_CAPSULE_SUPERVISOR_PID);
+    let session_peer = PeerIdentity {
+        pid: Some(77),
+        start_time: Some(SUPERVISOR_START_TIME),
+        uid: 2_001,
+        gid: 2_001,
+    };
+    let supervisor_peer = root_peer(DEFAULT_CAPSULE_SUPERVISOR_PID, Some(SUPERVISOR_START_TIME));
+
+    assert!(!authorization.authorizes(binding, Some(session_peer), &operation));
+    assert!(!authorization.authorizes(binding, Some(supervisor_peer), &operation));
+}
+
 #[cfg(target_os = "linux")]
 #[test]
 fn process_start_time_is_stable_for_self_and_absent_for_missing_pid() {

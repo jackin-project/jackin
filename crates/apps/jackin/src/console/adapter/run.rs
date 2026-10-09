@@ -48,71 +48,69 @@ pub struct ConsoleRunOptions<'a> {
 }
 
 /// Worker body for the Console Usage refresh effect: read the broker's
-/// latest host projection for the Console route.
+/// latest canonical projection for the Console route.
 ///
 /// Runs on a worker thread via `spawn_blocking_subscription` — never on the
-/// UI thread. The broker read is one bounded batch
-/// ([`jackin_usage::host::request_usage_batch`]): one refresh request per
-/// unique capability and no blocking join, so one slow provider's probe runs
-/// broker-side and never delays the other accounts' rows. Freshness arrives
-/// over subsequent heartbeat polls. With `force_refresh` (explicit operator
-/// refresh only) the batch bypasses the broker success cadence; shared
-/// rate-limit/`Retry-After` deadlines are still honored broker-side and
-/// active generations are joined rather than duplicated.
+/// UI thread. Passive route heartbeats read `current_projection` only. An
+/// explicit operator refresh requests one whole broker publication; the
+/// broker owns catalog discovery, credentials, provider work, and cooldowns.
+/// Startup has a separate due-aware request so the broker can populate its
+/// first publication without blocking Console startup.
 pub(crate) fn load_console_usage_state(
     paths: &JackinPaths,
     force_refresh: bool,
 ) -> anyhow::Result<jackin_console::tui::state::UsageScreenState> {
-    use jackin_usage::host::{
-        HostProbePolicy, HostRuntimeConfig, HostUsageRuntime, UsageBrokerConfig,
-        UsageDiscoveryScope, ensure_usage_broker_process, request_usage_batch,
-        usage_broker_capabilities,
-    };
+    load_console_usage_state_inner(paths, force_refresh, false)
+}
+
+fn load_console_startup_usage_state(
+    paths: &JackinPaths,
+) -> anyhow::Result<jackin_console::tui::state::UsageScreenState> {
+    load_console_usage_state_inner(paths, false, true)
+}
+
+fn load_console_usage_state_inner(
+    paths: &JackinPaths,
+    force_refresh: bool,
+    request_due_refresh: bool,
+) -> anyhow::Result<jackin_console::tui::state::UsageScreenState> {
+    use jackin_usage::host::{UsageBrokerConfig, UsageDiscoveryScope, ensure_usage_broker_process};
 
     let discovery_scope = UsageDiscoveryScope::HostDesktop {
         config_root: paths.config_dir.clone(),
         operator_home: paths.home_dir.clone(),
     };
-    let mut runtime = HostUsageRuntime::new();
-    runtime
-        .open_with_discovery(
-            HostRuntimeConfig {
-                data_dir: paths.data_dir.clone(),
-                refresh_floor_secs: 300,
-                enabled_surface_ids: Vec::new(),
-                probe_policy: HostProbePolicy::Live,
-                discovery_scope: discovery_scope.clone(),
-            },
-            &jackin_usage::host::CachedProviderCredentialResolver::new(
-                crate::cli::usage::CliUsageSecretSource,
-            ),
-        )
-        .map_err(anyhow::Error::msg)?;
-    let discovery = runtime
-        .validated_discovery()
-        .ok_or_else(|| anyhow::anyhow!("host usage discovery unavailable"))?;
-    let client = ensure_usage_broker_process(
-        UsageBrokerConfig::for_data_dir(paths.data_dir.clone()),
-        &discovery_scope,
-    )
-    .map_err(|error| anyhow::anyhow!(error.message))?;
-    for (capability, result) in request_usage_batch(
-        &client,
-        usage_broker_capabilities(&discovery),
-        force_refresh,
-    ) {
-        match result {
-            Ok(view) => runtime
-                .apply_broker_generation(view)
-                .map_err(anyhow::Error::msg)?,
-            Err(error) => runtime
-                .record_broker_error(&capability, &error)
-                .map_err(anyhow::Error::msg)?,
-        }
-    }
-    let projection = runtime
-        .canonical_projection("und")
-        .map_err(anyhow::Error::msg)?;
+    let broker_config = UsageBrokerConfig::for_data_dir(paths.data_dir.clone());
+    let client = if force_refresh || request_due_refresh {
+        ensure_usage_broker_process(broker_config, &discovery_scope)
+            .map_err(|error| anyhow::anyhow!(error.message))?
+    } else {
+        broker_config.client()
+    };
+    load_console_usage_projection(&client, force_refresh, request_due_refresh)
+}
+
+/// Read and optionally refresh the broker's canonical usage publication.
+///
+/// Keeping this boundary client-only makes the Console a passive projection
+/// consumer: discovery, credential resolution, and provider work remain in
+/// the broker process. Heartbeats return the cached publication; startup may
+/// request due work once, and only an operator action can force it.
+fn load_console_usage_projection(
+    client: &jackin_usage::host::UsageBrokerClient,
+    force_refresh: bool,
+    request_due_refresh: bool,
+) -> anyhow::Result<jackin_console::tui::state::UsageScreenState> {
+    let current = client
+        .current_projection()
+        .map_err(|error| anyhow::anyhow!(error.message))?;
+    let projection = if force_refresh || request_due_refresh {
+        client
+            .request_refresh(Some(current.projection_id), force_refresh)
+            .map_err(|error| anyhow::anyhow!(error.message))?
+    } else {
+        current
+    };
     Ok(jackin_console::tui::screens::usage::UsageScreenState::from_projection(&projection))
 }
 
@@ -1211,13 +1209,13 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
         options.op_available,
         options.startup_error,
     )?;
-    // The startup usage snapshot loads off the UI thread: broker activation
-    // (and first discovery) must never stall console startup. The result is
-    // polled into the manager snapshot once per loop turn below.
+    // Startup asks the broker to refresh due accounts off the UI thread. The
+    // broker owns discovery and credentials; Console startup never waits for
+    // provider work. The result is polled into manager state below.
     let paths_for_usage_startup = paths.clone();
     let mut startup_usage_rx = Some(jackin_console::tui::runtime::spawn_blocking_subscription(
         move || {
-            load_console_usage_state(&paths_for_usage_startup, false)
+            load_console_startup_usage_state(&paths_for_usage_startup)
                 .map_err(|error| error.to_string())
         },
     ));

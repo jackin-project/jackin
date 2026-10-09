@@ -226,13 +226,46 @@ pub(super) fn scan_production_calls(root: &Path, symbols: &BTreeSet<&str>) -> BT
                 continue;
             }
             for symbol in symbols {
-                if line.contains(&format!("{symbol}(")) {
+                if line_has_provider_route(line, symbol) {
                     calls.insert(format!("{relative_text}|{symbol}"));
                 }
             }
         }
     }
     calls
+}
+
+fn line_has_provider_route(line: &str, symbol: &str) -> bool {
+    for (start, _) in line.match_indices(symbol) {
+        let end = start + symbol.len();
+        let before = line[..start].chars().next_back();
+        let after = line[end..].chars().next();
+        if before.is_some_and(is_identifier_character) || after.is_some_and(is_identifier_character)
+        {
+            continue;
+        }
+
+        let next = line[end..].trim_start().chars().next();
+        if next == Some('(') {
+            return true;
+        }
+
+        // A function item can be supplied as any positional argument to an
+        // adapter dispatch call. Imports use brace trees, so these punctuation
+        // boundaries do not turn an unused import into an execution route.
+        let previous = line[..start].trim_end().chars().next_back();
+        if matches!(previous, Some('(' | ','))
+            && matches!(next, Some(',' | ')'))
+            && line[..start].contains('(')
+        {
+            return true;
+        }
+    }
+    false
+}
+
+fn is_identifier_character(character: char) -> bool {
+    character == '_' || character.is_alphanumeric()
 }
 
 pub(super) fn collect_rust_files(directory: &Path, files: &mut Vec<PathBuf>) {

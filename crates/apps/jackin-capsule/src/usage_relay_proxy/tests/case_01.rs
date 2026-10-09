@@ -213,43 +213,6 @@ fn usage_relay_rejects_agent_root_but_accepts_capsule_supervisor() {
 }
 
 #[test]
-fn usage_relay_rejects_host_only_catalog_reconciliation() {
-    let account = capability("account-a");
-    let config = CapsuleConfig {
-        instances: vec!["session-a".to_owned()],
-        usage_capabilities: BTreeMap::from([("session-a".to_owned(), account.clone())]),
-        instance_identities: BTreeMap::from([(
-            "session-a".to_owned(),
-            SessionIdentity {
-                uid: 2_001,
-                gid: 2_001,
-            },
-        )]),
-        ..CapsuleConfig::default()
-    };
-    let authorization = UsageRelayAuthorization::from_config(&config).unwrap();
-    let operation = UsageBrokerOperation::ReconcileCatalog {
-        expected_projection_id: None,
-        catalog_revision: "catalog-2".to_owned(),
-        entries: vec![UsageCatalogEntry {
-            capability: account,
-            revision: "credential-2".to_owned(),
-        }],
-    };
-
-    assert!(!authorization.authorizes(
-        supervisor(DEFAULT_CAPSULE_SUPERVISOR_PID),
-        Some(PeerIdentity {
-            pid: Some(1),
-            start_time: Some(SUPERVISOR_START_TIME),
-            uid: 0,
-            gid: 0,
-        }),
-        &operation,
-    ));
-}
-
-#[test]
 fn supervisor_peer_allows_only_exact_root_supervisor() {
     assert!(!supervisor_peer_allows(supervisor(2), None));
     assert!(!supervisor_peer_allows(

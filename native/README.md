@@ -11,6 +11,11 @@ last-good state, and shared rate-limit deadlines. Desktop sends refresh intent a
 renders the returned phase; it never starts a local probe or uses Swift task
 cancellation as coordination.
 
+Production Desktop startup enables the standard broker and requests a forced
+whole-projection refresh. Opening the app can therefore initiate broker-owned
+work for known accounts; non-Claude providers follow the normal broker path,
+while the Claude gate blocks independent OAuth refresh.
+
 One `desktopProjection` call returns the complete generation: provider groups,
 account children, selected identities, quota/detail rows, status-item rows, activity,
 and sanitized diagnostics. `PresentationStore` replaces visible state only after that
@@ -83,8 +88,8 @@ Settings is a standard titled `NSWindow` containing a grouped `Form`. It owns me
 
 | Path | Role |
 |---|---|
-| `../crates/jackin-usage` | Host probes and `HostUsageRuntime` |
-| `../crates/jackin-usage-ffi` | Synchronous boltffi facade |
+| `../crates/services/jackin-usage` | Broker client and credential-free host projection presentation |
+| `../crates/adapters/jackin-usage-ffi` | Synchronous boltffi facade |
 | `Sources/JackinUsageBindings` | Generated boltffi Swift only (never handwritten) |
 | `Sources/JackinUsageBridge` | Handwritten sole FFI importer: typed facade, `PresentationStore`, pure projections |
 | `Sources/JackinDesktop` | AppKit hosts and SwiftUI native surfaces |

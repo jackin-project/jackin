@@ -10,7 +10,7 @@ use crate::{ForwardedUsageSources, capability_for_binding, forwarding_requiremen
 use jackin_usage_discovery::{ValidatedCredentialSource, ValidatedUsageDiscovery};
 /// Derive an exact per-container capability allowlist before broker startup.
 #[must_use]
-pub fn forwarded_usage_capabilities(
+pub(crate) fn forwarded_usage_capabilities(
     discovery: &ValidatedUsageDiscovery,
     scope_label: &str,
     sources: &ForwardedUsageSources,
@@ -40,25 +40,12 @@ pub fn forwarded_usage_capabilities(
         .collect()
 }
 
-/// Resolve one exact configured account to the canonical broker capability
-/// used by Capsule sessions. Multiple source bindings for the same canonical
-/// account collapse to one capability; distinct identities are rejected rather
-/// than guessed.
-#[must_use]
-pub fn usage_capability_for_selected_account(
-    discovery: &ValidatedUsageDiscovery,
-    account_id: &str,
-    surface_id: &str,
-) -> Option<UsageAccountCapability> {
-    usage_capability_for_selected_account_with_sources(discovery, account_id, surface_id, None)
-}
-
 /// Resolve one exact configured account after intersecting it with the
 /// credential sources forwarded into the current Capsule. The source proof is
 /// part of launch authority: a provider surface or account id alone cannot
 /// select a credential when several routes share that identity.
 #[must_use]
-pub fn usage_capability_for_selected_account_with_sources(
+pub(crate) fn usage_capability_for_selected_account_with_sources(
     discovery: &ValidatedUsageDiscovery,
     account_id: &str,
     surface_id: &str,

@@ -299,7 +299,7 @@ fn forwarded_sources_include_only_provisioned_profiles_and_governed_env() {
 }
 
 #[test]
-fn hermetic_layout_never_starts_host_usage_discovery() {
+fn hermetic_layout_never_starts_or_queries_the_usage_broker() {
     let temp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     fs::create_dir_all(&paths.config_dir).unwrap();

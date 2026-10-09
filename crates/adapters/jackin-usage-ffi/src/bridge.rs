@@ -1,41 +1,36 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Coarse synchronous facade matching the roadmap `boltffi` surface.
+//! Coarse synchronous facade over broker-owned usage projections.
 
-use std::collections::BTreeSet;
+use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use jackin_protocol::usage_broker::{
-    UsageAccountCapability, UsageCoordinationError, UsageCoordinationErrorKind,
+    UsageCoordinationError, UsageCoordinationErrorKind, UsageProjectionRefreshStateV1,
+    UsageProjectionSchemaV1, UsageProjectionV1,
 };
 use jackin_usage::host::{
-    HostSurfaceId, HostUsageRuntime, UsageBrokerClient, UsageBrokerConfig, UsageDiscoveryScope,
-    ValidatedUsageDiscovery, discover_usage_sources, validate_usage_sources,
+    HostSurfaceId, HostUsageProjectionConfig, HostUsageProjectionRuntime, UsageBrokerClient,
+    UsageBrokerConfig,
 };
+use jackin_usage_provider_core::UsageFormatPrefs;
 
-use crate::discovery::DesktopCredentialResolver;
 use crate::dto::{
     AccountDescriptorDto, DesktopInventoryDto, DesktopProjectionDto, DiscoveryDiagnosticDto,
-    OpenConfig, OverviewRowDto, ProviderGlanceRowDto, SurfaceDescriptorDto, UsageEventBatchDto,
-    UsageFormatPrefsDto, UsageViewDto, account_dto, desktop_inventory_dto, desktop_projection_dto,
-    discovery_diagnostic_dto, event_batch_dto, map_open_err, map_runtime_err, overview_row_dto,
-    parse_format_prefs, provider_glance_row_dto, surface_dto, to_host_config, view_dto,
+    OpenConfig, OverviewRowDto, ProjectionOpenConfig, ProviderGlanceRowDto, SurfaceDescriptorDto,
+    UsageEventBatchDto, UsageEventDto, UsageFormatPrefsDto, UsageViewDto, map_open_err,
+    map_runtime_err, parse_format_prefs, to_projection_config,
 };
 use crate::error::{UsageBridgeError, catch_entry};
 
-/// Process-scoped `boltffi` facade over the host usage runtime.
+/// Process-scoped `boltffi` facade over broker-owned canonical publications.
 pub struct UsageMenuBarBridge {
-    inner: Arc<Mutex<HostUsageRuntime>>,
-    credential_resolver: Arc<DesktopCredentialResolver>,
-    broker: Arc<Mutex<Option<DesktopBroker>>>,
-    broker_lifecycle: Arc<Mutex<()>>,
-    joiners: Arc<Mutex<BTreeSet<(UsageAccountCapability, u64)>>>,
+    inner: Arc<Mutex<Option<BridgeState>>>,
+    lifecycle: Arc<Mutex<()>>,
 }
 
-// Manual `Debug`: the bridge owns the secret resolver, so field values stay
-// out of `Debug` output (mirrors the resolver's own redacted impl).
 impl std::fmt::Debug for UsageMenuBarBridge {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
@@ -44,13 +39,16 @@ impl std::fmt::Debug for UsageMenuBarBridge {
     }
 }
 
-#[derive(Clone)]
-struct DesktopBroker {
+struct BridgeState {
+    runtime: HostUsageProjectionRuntime,
     client: UsageBrokerClient,
-    capabilities: Vec<UsageAccountCapability>,
-    catalog_lease: String,
-    config: UsageBrokerConfig,
-    scope: UsageDiscoveryScope,
+    live_probes_enabled: bool,
+    enabled_surface_ids: Vec<String>,
+    refresh_floor_secs: u64,
+    format_prefs: UsageFormatPrefs,
+    last_refresh: Option<Instant>,
+    event_sequence: u64,
+    events: VecDeque<UsageEventDto>,
 }
 
 #[boltffi::export]
@@ -59,223 +57,277 @@ impl UsageMenuBarBridge {
     #[must_use]
     pub fn create() -> Self {
         Self {
-            inner: Arc::new(Mutex::new(HostUsageRuntime::new())),
-            credential_resolver: Arc::new(DesktopCredentialResolver::default()),
-            broker: Arc::new(Mutex::new(None)),
-            broker_lifecycle: Arc::new(Mutex::new(())),
-            joiners: Arc::new(Mutex::new(BTreeSet::new())),
+            inner: Arc::new(Mutex::new(None)),
+            lifecycle: Arc::new(Mutex::new(())),
         }
     }
 
-    /// Open the host runtime (paths + enable set). Idempotent replace.
+    /// Open the projection consumer. Live mode may activate the standard
+    /// broker process; this client never discovers credentials or providers.
     pub fn open_runtime(&self, config: OpenConfig) -> Result<(), UsageBridgeError> {
         catch_entry(|| {
-            let host_config = to_host_config(config).map_err(map_open_err)?;
+            let host_config = to_projection_config(config).map_err(map_open_err)?;
             let broker_config = UsageBrokerConfig::for_data_dir(host_config.data_dir.clone());
             self.open_runtime_with_config(host_config, broker_config)
         })
     }
 
-    /// List all host surfaces with enable flags.
+    /// List host surfaces and their current enable flags.
     pub fn list_surfaces(&self) -> Result<Vec<SurfaceDescriptorDto>, UsageBridgeError> {
         catch_entry(|| {
             let _lifecycle = self.lifecycle_lock()?;
-            let guard = self.lock()?;
-            Ok(guard
-                .list_surfaces()
-                .map_err(map_runtime_err)?
-                .into_iter()
-                .map(surface_dto)
-                .collect())
+            self.poll_latest_projection();
+            self.with_state(|state| {
+                Ok(crate::presentation::surface_rows(
+                    &state.enabled_surface_ids,
+                ))
+            })
         })
     }
 
-    /// Sanitized discovery diagnostics for the current catalog generation.
+    /// Sanitized broker projection issues for the current publication.
     pub fn discovery_diagnostics(&self) -> Result<Vec<DiscoveryDiagnosticDto>, UsageBridgeError> {
         catch_entry(|| {
             let _lifecycle = self.lifecycle_lock()?;
-            let guard = self.lock()?;
-            Ok(guard
-                .discovery_diagnostics()
-                .map_err(map_runtime_err)?
-                .into_iter()
-                .map(discovery_diagnostic_dto)
-                .collect())
+            self.poll_latest_projection();
+            self.with_state(|state| {
+                Ok(crate::presentation::discovery_diagnostics(
+                    state.runtime.projection(),
+                ))
+            })
         })
     }
 
-    /// Enable or disable a surface for bar + refresh.
+    /// Enable or disable one native surface.
     pub fn set_enabled(&self, surface_id: String, enabled: bool) -> Result<(), UsageBridgeError> {
         catch_entry(|| {
             let _lifecycle = self.lifecycle_lock()?;
-            let mut guard = self.lock()?;
-            guard
-                .set_enabled(&surface_id, enabled)
-                .map_err(map_runtime_err)
+            let surface = HostSurfaceId::from_id(&surface_id)
+                .ok_or_else(|| UsageBridgeError::rejected("runtime", "unknown surface"))?;
+            self.with_state(|state| {
+                if state.enabled_surface_ids.is_empty() {
+                    state.enabled_surface_ids = HostSurfaceId::ALL
+                        .iter()
+                        .map(|surface| surface.id().to_owned())
+                        .collect();
+                }
+                state.enabled_surface_ids.retain(|id| id != surface.id());
+                if enabled {
+                    state.enabled_surface_ids.push(surface.id().to_owned());
+                }
+                state
+                    .runtime
+                    .set_enabled_surface_ids(&state.enabled_surface_ids)
+                    .map_err(map_runtime_err)?;
+                push_event(
+                    state,
+                    "surface_enabled",
+                    Some(surface.id().to_owned()),
+                    None,
+                );
+                Ok(())
+            })
         })
     }
 
-    /// Refresh one surface (`surface_id`) or all enabled (`None`).
-    ///
-    /// When `force` is false, respects the runtime refresh floor (poll-safe).
-    /// When `force` is true, bypasses the floor (manual Refresh).
+    /// Read the latest projection or explicitly request a broker-owned refresh.
+    /// Non-forced calls are cache reads; force refresh is account-wide because
+    /// the broker owns a single canonical projection generation.
     pub fn refresh(&self, surface_id: Option<String>, force: bool) -> Result<(), UsageBridgeError> {
         catch_entry(|| {
             let _lifecycle = self.lifecycle_lock()?;
-            if force {
-                self.reconcile_broker_catalog()?;
+            let surface = surface_id
+                .as_deref()
+                .map(|surface_id| {
+                    HostSurfaceId::from_id(surface_id)
+                        .ok_or_else(|| UsageBridgeError::rejected("runtime", "unknown surface"))
+                })
+                .transpose()?;
+            if let Some(surface) = surface {
+                self.ensure_surface_enabled(surface)?;
             }
-            {
-                let guard = self.lock()?;
-                if !guard.live_probes_enabled() {
-                    return Ok(());
-                }
-                if surface_id
-                    .as_deref()
-                    .is_some_and(|surface| !guard.surface_enabled(surface))
-                {
-                    return Err(UsageBridgeError::rejected("runtime", "surface is disabled"));
-                }
+
+            let (client, live_probes_enabled, observed_projection_id) =
+                self.with_state(|state| {
+                    Ok((
+                        state.client.clone(),
+                        state.live_probes_enabled,
+                        state.runtime.projection().projection_id.clone(),
+                    ))
+                })?;
+            if !force || !live_probes_enabled {
+                self.poll_latest_projection();
+                self.with_state(|state| {
+                    state.last_refresh = Some(Instant::now());
+                    Ok(())
+                })?;
+                return Ok(());
             }
-            let broker = self
-                .broker_lock()?
-                .clone()
-                .ok_or(UsageBridgeError::RuntimeUnavailable)?;
-            let capabilities = {
-                let runtime = self.lock()?;
-                broker
-                    .capabilities
-                    .iter()
-                    .filter(|capability| {
-                        surface_id
-                            .as_deref()
-                            .is_none_or(|surface| capability.surface_id == surface)
-                    })
-                    .filter(|capability| runtime.surface_enabled(&capability.surface_id))
-                    .cloned()
-                    .collect::<Vec<_>>()
-            };
-            let mut first_error = None;
-            for capability in capabilities {
-                let result = broker
-                    .client
-                    .current(capability.clone())
-                    .and_then(|current| {
-                        broker
-                            .client
-                            .refresh(capability.clone(), current.generation, force)
-                    });
-                let state = match result {
-                    Ok(state) => state,
-                    Err(error) => {
-                        self.lock()?
-                            .record_broker_error(&capability, &error)
-                            .map_err(map_runtime_err)?;
-                        first_error.get_or_insert(error);
-                        continue;
-                    }
-                };
-                self.lock()?
-                    .apply_broker_generation(state.clone())
-                    .map_err(map_runtime_err)?;
-                if state.phase.is_active() {
-                    self.schedule_join(
-                        broker.client.clone(),
-                        capability,
-                        state.generation,
-                        broker.catalog_lease.clone(),
-                    );
-                }
-            }
-            first_error.map_or(Ok(()), |error| Err(map_coordination_err(error)))
+
+            let publication = client
+                .request_refresh(Some(observed_projection_id), true)
+                .map_err(map_coordination_err)?;
+            self.apply_publication(publication)?;
+            self.with_state(|state| {
+                state.last_refresh = Some(Instant::now());
+                Ok(())
+            })
         })
     }
 
-    /// True while at least one Rust broker generation is queued/updating.
+    /// True while the broker marks its current publication as refreshing.
     pub fn refresh_in_progress(&self) -> Result<bool, UsageBridgeError> {
         catch_entry(|| {
             let _lifecycle = self.lifecycle_lock()?;
-            Ok(self.lock()?.broker_refresh_in_progress())
+            self.poll_latest_projection();
+            self.with_state(|state| {
+                Ok(state.runtime.projection().refresh_state
+                    == UsageProjectionRefreshStateV1::Refreshing)
+            })
         })
     }
 
-    /// Set refresh floor seconds (clamped ≥ 60 in Rust).
+    /// Set the local display refresh floor (clamped to at least 60 seconds).
     pub fn set_refresh_floor_secs(&self, secs: u64) -> Result<(), UsageBridgeError> {
         catch_entry(|| {
             let _lifecycle = self.lifecycle_lock()?;
-            let mut guard = self.lock()?;
-            guard.set_refresh_floor_secs(secs).map_err(map_runtime_err)
+            self.with_state(|state| {
+                state.refresh_floor_secs = secs.max(60);
+                push_event(
+                    state,
+                    "refresh_floor_changed",
+                    None,
+                    Some(format!("refresh_floor_secs={}", state.refresh_floor_secs)),
+                );
+                Ok(())
+            })
         })
     }
 
-    /// Whether a non-forced refresh would probe the network.
+    /// Whether the local display floor elapsed since the last explicit refresh.
+    /// This query never dispatches provider work.
     pub fn refresh_due(&self) -> Result<bool, UsageBridgeError> {
         catch_entry(|| {
             let _lifecycle = self.lifecycle_lock()?;
-            let guard = self.lock()?;
-            Ok(guard.refresh_due())
+            self.with_state(|state| {
+                Ok(state.last_refresh.is_none_or(|last| {
+                    last.elapsed() >= Duration::from_secs(state.refresh_floor_secs)
+                }))
+            })
         })
     }
 
-    /// Snapshot for one enabled surface (selected multi-account when set).
+    /// Snapshot for one enabled surface and its exact selected account.
     pub fn snapshot(&self, surface_id: String) -> Result<UsageViewDto, UsageBridgeError> {
         catch_entry(|| {
             let _lifecycle = self.lifecycle_lock()?;
-            let mut guard = self.lock()?;
-            guard
-                .snapshot(&surface_id)
-                .map(view_dto)
-                .map_err(map_runtime_err)
+            self.poll_latest_projection();
+            self.with_state(|state| {
+                let surface = HostSurfaceId::from_id(&surface_id)
+                    .ok_or_else(|| UsageBridgeError::rejected("runtime", "unknown surface"))?;
+                if !is_enabled(&state.enabled_surface_ids, surface) {
+                    return Err(UsageBridgeError::rejected("runtime", "surface is disabled"));
+                }
+                let presentation = state
+                    .runtime
+                    .provider_presentation(surface.id())
+                    .map_err(map_runtime_err)?;
+                match presentation.selected_account {
+                    jackin_usage::host::HostUsageProjectionSelectedAccount::Available {
+                        account,
+                        ..
+                    } => Ok(crate::presentation::view_dto(
+                        surface,
+                        account,
+                        state.format_prefs,
+                    )),
+                    jackin_usage::host::HostUsageProjectionSelectedAccount::Unselected => {
+                        Ok(crate::presentation::empty_view(surface, None))
+                    }
+                    jackin_usage::host::HostUsageProjectionSelectedAccount::Unavailable {
+                        ..
+                    } => Ok(crate::presentation::empty_view(
+                        surface,
+                        Some(
+                            "The selected account is not in the current broker publication"
+                                .to_owned(),
+                        ),
+                    )),
+                }
+            })
         })
     }
 
-    /// List known accounts for one surface (`Some`) or all surfaces (`None`).
+    /// List broker-canonical accounts. `account_key` carries the canonical id.
     pub fn list_accounts(
         &self,
         surface_id: Option<String>,
     ) -> Result<Vec<AccountDescriptorDto>, UsageBridgeError> {
         catch_entry(|| {
             let _lifecycle = self.lifecycle_lock()?;
-            let mut guard = self.lock()?;
-            Ok(guard
-                .list_accounts(surface_id.as_deref())
-                .map_err(map_runtime_err)?
-                .into_iter()
-                .map(account_dto)
-                .collect())
+            self.poll_latest_projection();
+            self.with_state(|state| {
+                let rows = state
+                    .runtime
+                    .account_inventory(surface_id.as_deref())
+                    .map_err(map_runtime_err)?;
+                rows.into_iter()
+                    .map(|row| {
+                        let surface = HostSurfaceId::from_id(row.surface_id)
+                            .ok_or(UsageBridgeError::rejected("runtime", "unknown surface"))?;
+                        Ok(crate::presentation::account_dto(
+                            surface,
+                            row.provider,
+                            row.account,
+                            state.format_prefs,
+                            row.selected,
+                        ))
+                    })
+                    .collect::<Result<Vec<_>, UsageBridgeError>>()
+            })
         })
     }
 
-    /// Atomic, Rust-ordered provider/account projection for jackin❯ desktop.
+    /// Atomic provider/account inventory from one broker publication.
     pub fn desktop_inventory(&self) -> Result<DesktopInventoryDto, UsageBridgeError> {
         catch_entry(|| {
             let _lifecycle = self.lifecycle_lock()?;
-            let mut guard = self.lock()?;
-            guard
-                .desktop_inventory()
-                .map(desktop_inventory_dto)
+            self.poll_latest_projection();
+            self.with_state(|state| {
+                crate::presentation::desktop_inventory(
+                    &state.runtime,
+                    &state.enabled_surface_ids,
+                    state.format_prefs,
+                )
                 .map_err(map_runtime_err)
+            })
         })
     }
 
-    /// Complete native Desktop state produced beneath one runtime mutex hold.
-    /// Any required nested projection failure fails the whole call; callers retain
-    /// their last complete value rather than replacing it with partial arrays.
+    /// Complete native Desktop state from one broker publication.
     pub fn desktop_projection(
         &self,
         status_bar_max: u32,
     ) -> Result<DesktopProjectionDto, UsageBridgeError> {
         catch_entry(|| {
             let _lifecycle = self.lifecycle_lock()?;
-            let mut guard = self.lock()?;
-            guard
-                .desktop_projection(status_bar_max)
-                .map(desktop_projection_dto)
+            self.poll_latest_projection();
+            self.with_state(|state| {
+                let elapsed = state.last_refresh.map(|last| last.elapsed());
+                crate::presentation::desktop_projection(
+                    &state.runtime,
+                    &state.enabled_surface_ids,
+                    state.format_prefs,
+                    status_bar_max,
+                    state.refresh_floor_secs,
+                    elapsed,
+                )
                 .map_err(map_runtime_err)
+            })
         })
     }
 
-    /// Select which account drives snapshot/detail for a surface (persisted).
+    /// Select one exact broker-canonical account id for the surface.
     pub fn set_selected_account(
         &self,
         surface_id: String,
@@ -283,137 +335,205 @@ impl UsageMenuBarBridge {
     ) -> Result<(), UsageBridgeError> {
         catch_entry(|| {
             let _lifecycle = self.lifecycle_lock()?;
-            let mut guard = self.lock()?;
-            guard
-                .set_selected_account(&surface_id, &account_key)
-                .map_err(map_runtime_err)
+            self.with_state(|state| {
+                state
+                    .runtime
+                    .set_selected_account(&surface_id, Some(&account_key))
+                    .map_err(map_runtime_err)?;
+                push_event(
+                    state,
+                    "account_selected",
+                    Some(surface_id),
+                    Some(account_key),
+                );
+                Ok(())
+            })
         })
     }
 
-    /// Compact bar label for one surface.
     pub fn status_bar_label(&self, surface_id: String) -> Result<Option<String>, UsageBridgeError> {
         catch_entry(|| {
             let _lifecycle = self.lifecycle_lock()?;
-            let mut guard = self.lock()?;
-            guard.status_bar_label(&surface_id).map_err(map_runtime_err)
+            self.poll_latest_projection();
+            self.with_state(|state| {
+                let rows = crate::presentation::provider_glance_rows(
+                    &state.runtime,
+                    &state.enabled_surface_ids,
+                    state.format_prefs,
+                )
+                .map_err(map_runtime_err)?;
+                Ok(rows
+                    .into_iter()
+                    .find(|row| row.surface_id == surface_id)
+                    .map(|row| row.bar_label))
+            })
         })
     }
 
-    /// Merged menu-bar text for all enabled surfaces.
     pub fn merged_status_bar_label(&self) -> Result<String, UsageBridgeError> {
         catch_entry(|| {
             let _lifecycle = self.lifecycle_lock()?;
-            let mut guard = self.lock()?;
-            guard.merged_status_bar_label().map_err(map_runtime_err)
+            self.poll_latest_projection();
+            self.with_state(|state| {
+                Ok(crate::presentation::provider_glance_rows(
+                    &state.runtime,
+                    &state.enabled_surface_ids,
+                    state.format_prefs,
+                )
+                .map_err(map_runtime_err)?
+                .into_iter()
+                .map(|row| row.bar_label)
+                .collect::<Vec<_>>()
+                .join(" · "))
+            })
         })
     }
 
-    /// Short status-item label (worst enabled surface; remaining % by default).
     pub fn compact_status_bar_label(&self) -> Result<String, UsageBridgeError> {
         catch_entry(|| {
             let _lifecycle = self.lifecycle_lock()?;
-            let mut guard = self.lock()?;
-            guard.compact_status_bar_label().map_err(map_runtime_err)
+            self.poll_latest_projection();
+            self.with_state(|state| {
+                let rows = crate::presentation::provider_glance_rows(
+                    &state.runtime,
+                    &state.enabled_surface_ids,
+                    state.format_prefs,
+                )
+                .map_err(map_runtime_err)?;
+                Ok(rows
+                    .iter()
+                    .max_by_key(|row| severity_rank(&row.severity))
+                    .map(|row| format!("{} {}", row.fallback_glyph, row.bar_label))
+                    .unwrap_or_default())
+            })
         })
     }
 
-    /// Presentation-time format prefs (`left`/`used`, `countdown`/`exact_clock`).
     pub fn set_format_prefs(&self, prefs: UsageFormatPrefsDto) -> Result<(), UsageBridgeError> {
         catch_entry(|| {
             let parsed = parse_format_prefs(prefs).map_err(map_runtime_err)?;
             let _lifecycle = self.lifecycle_lock()?;
-            let mut guard = self.lock()?;
-            guard.set_format_prefs(parsed).map_err(map_runtime_err)
+            self.with_state(|state| {
+                state.format_prefs = parsed;
+                push_event(state, "format_prefs_changed", None, None);
+                Ok(())
+            })
         })
     }
 
-    /// Pinned-surface compact status-item label.
     pub fn compact_status_bar_label_for(
         &self,
         surface_id: String,
     ) -> Result<Option<String>, UsageBridgeError> {
         catch_entry(|| {
             let _lifecycle = self.lifecycle_lock()?;
-            let mut guard = self.lock()?;
-            guard
-                .compact_status_bar_label_for(&surface_id)
-                .map_err(map_runtime_err)
+            self.poll_latest_projection();
+            self.with_state(|state| {
+                let rows = crate::presentation::provider_glance_rows(
+                    &state.runtime,
+                    &state.enabled_surface_ids,
+                    state.format_prefs,
+                )
+                .map_err(map_runtime_err)?;
+                Ok(rows
+                    .into_iter()
+                    .find(|row| row.surface_id == surface_id)
+                    .map(|row| format!("{} {}", row.fallback_glyph, row.bar_label)))
+            })
         })
     }
 
-    /// Worst-first multi-surface compact strip (joined with ` · `).
     pub fn compact_status_bar_strip(&self, max: u32) -> Result<String, UsageBridgeError> {
         catch_entry(|| {
             let _lifecycle = self.lifecycle_lock()?;
-            let mut guard = self.lock()?;
-            guard.compact_status_bar_strip(max).map_err(map_runtime_err)
+            self.poll_latest_projection();
+            self.with_state(|state| {
+                let mut rows = crate::presentation::provider_glance_rows(
+                    &state.runtime,
+                    &state.enabled_surface_ids,
+                    state.format_prefs,
+                )
+                .map_err(map_runtime_err)?;
+                rows.sort_by_key(|row| std::cmp::Reverse(severity_rank(&row.severity)));
+                rows.truncate(max.clamp(1, 3) as usize);
+                Ok(rows
+                    .into_iter()
+                    .map(|row| format!("{} {}", row.fallback_glyph, row.bar_label))
+                    .collect::<Vec<_>>()
+                    .join(" · "))
+            })
         })
     }
 
-    /// Overview rows for every enabled surface (popover + Usage window).
     pub fn overview_rows(&self) -> Result<Vec<OverviewRowDto>, UsageBridgeError> {
         catch_entry(|| {
             let _lifecycle = self.lifecycle_lock()?;
-            let mut guard = self.lock()?;
-            Ok(guard
-                .overview_rows()
-                .map_err(map_runtime_err)?
-                .into_iter()
-                .map(overview_row_dto)
-                .collect())
+            self.poll_latest_projection();
+            self.with_state(|state| {
+                crate::presentation::overview_rows(
+                    &state.runtime,
+                    &state.enabled_surface_ids,
+                    state.format_prefs,
+                )
+                .map_err(map_runtime_err)
+            })
         })
     }
 
-    /// Selected-account-aware provider glance rows in the canonical Desktop
-    /// order (popover / Usage inventory). Full detected set — includes 0%.
-    /// Rust owns detection, ordering, and every display string.
     pub fn provider_glance_rows(&self) -> Result<Vec<ProviderGlanceRowDto>, UsageBridgeError> {
         catch_entry(|| {
             let _lifecycle = self.lifecycle_lock()?;
-            let mut guard = self.lock()?;
-            Ok(guard
-                .provider_glance_rows()
-                .map_err(map_runtime_err)?
-                .into_iter()
-                .map(provider_glance_row_dto)
-                .collect())
+            self.poll_latest_projection();
+            self.with_state(|state| {
+                crate::presentation::provider_glance_rows(
+                    &state.runtime,
+                    &state.enabled_surface_ids,
+                    state.format_prefs,
+                )
+                .map_err(map_runtime_err)
+            })
         })
     }
 
-    /// Burn-first **status bar** glance rows only (SB-3/14/17/19).
-    ///
-    /// Filters 0%, ranks soonest-then-remaining, hard-caps at 3. `max` is
-    /// clamped into `1…3`. Popover/Usage keep using [`Self::provider_glance_rows`].
     pub fn status_bar_provider_glance_rows(
         &self,
         max: u32,
     ) -> Result<Vec<ProviderGlanceRowDto>, UsageBridgeError> {
         catch_entry(|| {
             let _lifecycle = self.lifecycle_lock()?;
-            let mut guard = self.lock()?;
-            Ok(guard
-                .status_bar_provider_glance_rows(max)
+            self.poll_latest_projection();
+            self.with_state(|state| {
+                let mut rows = crate::presentation::provider_glance_rows(
+                    &state.runtime,
+                    &state.enabled_surface_ids,
+                    state.format_prefs,
+                )
                 .map_err(map_runtime_err)?
                 .into_iter()
-                .map(provider_glance_row_dto)
-                .collect())
+                .filter(|row| {
+                    row.glance_remaining_percent
+                        .is_some_and(|percent| percent > 0)
+                })
+                .collect::<Vec<_>>();
+                rows.sort_by_key(|row| std::cmp::Reverse(severity_rank(&row.severity)));
+                rows.truncate(max.clamp(1, 3) as usize);
+                Ok(rows)
+            })
         })
     }
 
-    /// Next network refresh label (`Next update in …` / `Next update due`).
     pub fn next_refresh_label(&self) -> Result<String, UsageBridgeError> {
         catch_entry(|| {
             let _lifecycle = self.lifecycle_lock()?;
-            let guard = self.lock()?;
-            Ok(guard.next_refresh_label())
+            self.with_state(|state| {
+                Ok(crate::presentation::next_refresh_label(
+                    state.refresh_floor_secs,
+                    state.last_refresh.map(|last| last.elapsed()),
+                ))
+            })
         })
     }
 
-    /// Poll events after `cursor` (exclusive).
-    ///
-    /// Always returns `Ok` for a valid open runtime. When the client cursor is
-    /// behind the retained log, `resync_required` is true on the batch (do not
-    /// turn that into an error — presentation must reset the cursor).
     pub fn next_events(
         &self,
         cursor: u64,
@@ -421,45 +541,55 @@ impl UsageMenuBarBridge {
     ) -> Result<UsageEventBatchDto, UsageBridgeError> {
         catch_entry(|| {
             let _lifecycle = self.lifecycle_lock()?;
-            let mut guard = self.lock()?;
-            let batch = guard.next_events(cursor, max).map_err(map_runtime_err)?;
-            Ok(event_batch_dto(batch))
+            self.with_state(|state| {
+                let oldest = state
+                    .events
+                    .front()
+                    .map_or(state.event_sequence, |event| event.sequence);
+                let resync_required = cursor.saturating_add(1) < oldest;
+                let events = state
+                    .events
+                    .iter()
+                    .filter(|event| resync_required || event.sequence > cursor)
+                    .take(max.clamp(1, 256) as usize)
+                    .cloned()
+                    .collect::<Vec<_>>();
+                let next_cursor = events
+                    .last()
+                    .map_or(state.event_sequence, |event| event.sequence);
+                Ok(UsageEventBatchDto {
+                    next_cursor,
+                    events,
+                    resync_required,
+                })
+            })
         })
     }
 
-    /// Refresh floor seconds (clamped policy).
     pub fn refresh_floor_secs(&self) -> Result<u64, UsageBridgeError> {
         catch_entry(|| {
             let _lifecycle = self.lifecycle_lock()?;
-            let guard = self.lock()?;
-            Ok(guard.refresh_floor_secs())
+            self.with_state(|state| Ok(state.refresh_floor_secs))
         })
     }
 
-    /// Shutdown; idempotent.
     pub fn shutdown(&self) -> Result<(), UsageBridgeError> {
         catch_entry(|| {
             let _lifecycle = self.lifecycle_lock()?;
             let mut guard = self.lock()?;
-            guard.shutdown();
-            *self.broker_lock()? = None;
-            if let Ok(mut joiners) = self.joiners.lock() {
-                joiners.clear();
-            }
+            *guard = None;
             Ok(())
         })
     }
 
-    /// Intentional panic probe for containment tests (never call from product UI).
+    /// Intentional panic probe for containment tests.
+    #[expect(
+        clippy::panic,
+        reason = "this exported test probe verifies panic containment at the FFI boundary"
+    )]
     pub fn panic_probe(&self) -> Result<(), UsageBridgeError> {
         catch_entry(|| {
-            #[expect(
-                clippy::panic,
-                reason = "intentional containment probe for boltffi gate"
-            )]
-            {
-                panic!("usage-ffi intentional panic probe");
-            }
+            panic!("usage-ffi intentional panic probe");
         })
     }
 }
@@ -467,197 +597,150 @@ impl UsageMenuBarBridge {
 impl UsageMenuBarBridge {
     fn open_runtime_with_config(
         &self,
-        host_config: jackin_usage::host::HostRuntimeConfig,
+        host_config: ProjectionOpenConfig,
         broker_config: UsageBrokerConfig,
     ) -> Result<(), UsageBridgeError> {
         let _lifecycle = self.lifecycle_lock()?;
-        let discovery_scope = host_config.discovery_scope.clone();
-        let unknown = host_config
-            .enabled_surface_ids
-            .iter()
-            .filter(|id| HostSurfaceId::from_id(id).is_none())
-            .cloned()
-            .collect::<Vec<_>>();
-        if !unknown.is_empty() {
-            return Err(map_open_err(format!(
-                "unknown enabled surface ids: {}",
-                unknown.join(", ")
-            )));
-        }
-        let live = host_config.probe_policy == jackin_usage::host::HostProbePolicy::Live;
-        let catalog = discover_usage_sources(
-            &host_config.discovery_scope,
-            self.credential_resolver.as_ref(),
-        )
-        .map_err(map_open_err)?;
-        let discovery = validate_usage_sources(catalog, self.credential_resolver.as_ref());
-        let fallback = broker_config.client();
-        let broker = if live {
-            self.activate_broker(
-                broker_config.clone(),
-                discovery_scope.clone(),
-                discovery.clone(),
-            )
-            .map_err(map_coordination_err)?
+        let live = host_config.allow_live_probes;
+        let enabled_surface_ids = host_config.enabled_surface_ids.clone();
+        let scope = jackin_usage::host::UsageDiscoveryScope::HostDesktop {
+            config_root: host_config.config_root.clone(),
+            operator_home: host_config.operator_home.clone(),
+        };
+        let client = if live {
+            jackin_usage::host::ensure_usage_broker_process(broker_config.clone(), &scope)
+                .map_err(map_coordination_err)?
         } else {
-            DesktopBroker {
-                client: fallback,
-                capabilities: Vec::new(),
-                catalog_lease: "disabled".to_owned(),
-                config: broker_config.clone(),
-                scope: discovery_scope.clone(),
-            }
+            broker_config.client()
         };
-        let mut runtime = self.lock()?;
-        runtime
-            .open_with_validated_discovery(host_config, discovery)
+        let projection = match client.current_projection() {
+            Ok(projection) => projection,
+            Err(_error) if !live => empty_projection(&broker_config.build_id),
+            Err(error) => return Err(map_coordination_err(error)),
+        };
+        let mut projection_config = HostUsageProjectionConfig::under_data_dir(host_config.data_dir);
+        projection_config.enabled_surface_ids = enabled_surface_ids.clone();
+        let runtime = HostUsageProjectionRuntime::open(projection, projection_config)
             .map_err(map_open_err)?;
-        *self.broker_lock()? = Some(broker);
-        Ok(())
-    }
-
-    fn reconcile_broker_catalog(&self) -> Result<(), UsageBridgeError> {
-        let mut broker_guard = self.broker_lock()?;
-        let current = broker_guard
-            .clone()
-            .ok_or(UsageBridgeError::RuntimeUnavailable)?;
-        let mut runtime = self.lock()?;
-        if !runtime.live_probes_enabled() {
-            return Ok(());
-        }
-        let Some(staged) = runtime
-            .stage_discovery(self.credential_resolver.as_ref())
-            .map_err(map_runtime_err)?
-        else {
-            return Ok(());
+        let mut state = BridgeState {
+            runtime,
+            client,
+            live_probes_enabled: live,
+            enabled_surface_ids,
+            refresh_floor_secs: host_config.refresh_floor_secs.max(60),
+            format_prefs: UsageFormatPrefs::default(),
+            last_refresh: None,
+            event_sequence: 0,
+            events: VecDeque::new(),
         };
-        if !staged.changed {
-            runtime
-                .commit_staged_discovery(staged)
-                .map_err(map_runtime_err)?;
-            return Ok(());
-        }
-        let discovery = staged.discovery.clone();
-        let refreshed = self
-            .activate_broker(current.config, current.scope, discovery)
-            .map_err(map_coordination_err)?;
-        runtime
-            .commit_staged_discovery(staged)
-            .map_err(map_runtime_err)?;
-        *broker_guard = Some(refreshed);
+        push_event(&mut state, "runtime_opened", None, None);
+        *self.lock()? = Some(state);
         Ok(())
     }
 
-    fn activate_broker(
-        &self,
-        config: UsageBrokerConfig,
-        scope: UsageDiscoveryScope,
-        discovery: ValidatedUsageDiscovery,
-    ) -> Result<DesktopBroker, UsageCoordinationError> {
-        let resolver = Arc::clone(&self.credential_resolver);
-        let handle = jackin_usage::host::ensure_usage_broker(
-            config.clone(),
-            scope.clone(),
-            discovery,
-            resolver,
-        )?;
-        Ok(DesktopBroker {
-            client: handle.client,
-            capabilities: handle.capabilities,
-            catalog_lease: handle.catalog_lease,
-            config,
-            scope,
+    fn poll_latest_projection(&self) {
+        let client = self
+            .lock()
+            .ok()
+            .and_then(|state| state.as_ref().map(|state| state.client.clone()));
+        let Some(client) = client else {
+            return;
+        };
+        let Ok(publication) = client.current_projection() else {
+            return;
+        };
+        drop(self.apply_publication(publication));
+    }
+
+    fn apply_publication(&self, publication: UsageProjectionV1) -> Result<(), UsageBridgeError> {
+        self.with_state(|state| {
+            let old_id = state.runtime.projection().projection_id.clone();
+            state
+                .runtime
+                .apply_publication(publication)
+                .map_err(map_runtime_err)?;
+            let new_id = state.runtime.projection().projection_id.clone();
+            if new_id != old_id {
+                push_event(state, "projection_published", None, Some(new_id));
+            }
+            Ok(())
         })
     }
 
-    fn lock(&self) -> Result<std::sync::MutexGuard<'_, HostUsageRuntime>, UsageBridgeError> {
+    fn with_state<R>(
+        &self,
+        operation: impl FnOnce(&mut BridgeState) -> Result<R, UsageBridgeError>,
+    ) -> Result<R, UsageBridgeError> {
+        let mut guard = self.lock()?;
+        let state = guard.as_mut().ok_or(UsageBridgeError::RuntimeUnavailable)?;
+        operation(state)
+    }
+
+    fn ensure_surface_enabled(&self, surface: HostSurfaceId) -> Result<(), UsageBridgeError> {
+        self.with_state(|state| {
+            if is_enabled(&state.enabled_surface_ids, surface) {
+                Ok(())
+            } else {
+                Err(UsageBridgeError::rejected("runtime", "surface is disabled"))
+            }
+        })
+    }
+
+    fn lock(&self) -> Result<std::sync::MutexGuard<'_, Option<BridgeState>>, UsageBridgeError> {
         self.inner
             .lock()
             .map_err(|_| UsageBridgeError::rejected("lock", "runtime mutex poisoned"))
     }
 
-    fn broker_lock(
-        &self,
-    ) -> Result<std::sync::MutexGuard<'_, Option<DesktopBroker>>, UsageBridgeError> {
-        self.broker
-            .lock()
-            .map_err(|_| UsageBridgeError::rejected("lock", "broker mutex poisoned"))
-    }
-
     fn lifecycle_lock(&self) -> Result<std::sync::MutexGuard<'_, ()>, UsageBridgeError> {
-        self.broker_lifecycle
+        self.lifecycle
             .lock()
-            .map_err(|_| UsageBridgeError::rejected("lock", "broker lifecycle mutex poisoned"))
+            .map_err(|_| UsageBridgeError::rejected("lock", "runtime lifecycle mutex poisoned"))
     }
+}
 
-    fn schedule_join(
-        &self,
-        client: UsageBrokerClient,
-        capability: UsageAccountCapability,
-        generation: u64,
-        catalog_lease: String,
-    ) {
-        let key = (capability.clone(), generation);
-        {
-            let Ok(mut joiners) = self.joiners.lock() else {
-                return;
-            };
-            if !joiners.insert(key.clone()) {
-                return;
-            }
-        }
-        let runtime = Arc::clone(&self.inner);
-        let lifecycle = Arc::clone(&self.broker_lifecycle);
-        let broker = Arc::clone(&self.broker);
-        let joiners = Arc::clone(&self.joiners);
-        let name = format!("desktop-usage-join-{}", capability.surface_id);
-        let worker_key = key.clone();
-        let worker = jackin_telemetry::spawn::thread_joined_named(name, move || {
-            let result = client.join(capability.clone(), generation, Duration::from_secs(30));
-            let Ok(_lifecycle) = lifecycle.lock() else {
-                if let Ok(mut joiners) = joiners.lock() {
-                    joiners.remove(&worker_key);
-                }
-                return;
-            };
-            let Ok(mut runtime) = runtime.lock() else {
-                if let Ok(mut joiners) = joiners.lock() {
-                    joiners.remove(&worker_key);
-                }
-                return;
-            };
-            let stale = broker
-                .lock()
-                .ok()
-                .and_then(|broker| {
-                    broker
-                        .as_ref()
-                        .map(|broker| broker.catalog_lease != catalog_lease)
-                })
-                .unwrap_or(true);
-            if stale {
-                let error = UsageCoordinationError {
-                    kind: UsageCoordinationErrorKind::CatalogRevoked,
-                    message: "usage refresh generation was fenced by catalog rotation".to_owned(),
-                };
-                drop(runtime.record_broker_error(&capability, &error));
-            } else {
-                match result {
-                    Ok(state) => drop(runtime.apply_broker_generation(state)),
-                    Err(error) => {
-                        drop(runtime.record_broker_error(&capability, &error));
-                    }
-                }
-            }
-            if let Ok(mut joiners) = joiners.lock() {
-                joiners.remove(&worker_key);
-            }
-        });
-        if worker.is_err()
-            && let Ok(mut joiners) = self.joiners.lock()
-        {
-            joiners.remove(&key);
-        }
+fn push_event(
+    state: &mut BridgeState,
+    kind: &str,
+    surface_id: Option<String>,
+    detail: Option<String>,
+) {
+    state.event_sequence = state.event_sequence.saturating_add(1);
+    state.events.push_back(UsageEventDto {
+        sequence: state.event_sequence,
+        kind: kind.to_owned(),
+        surface_id,
+        detail,
+    });
+    while state.events.len() > 256 {
+        state.events.pop_front();
+    }
+}
+
+fn is_enabled(ids: &[String], surface: HostSurfaceId) -> bool {
+    ids.is_empty() || ids.iter().any(|id| id == surface.id())
+}
+
+fn severity_rank(severity: &str) -> u8 {
+    match severity {
+        "danger" => 2,
+        "warn" => 1,
+        _ => 0,
+    }
+}
+
+fn empty_projection(build_id: &str) -> UsageProjectionV1 {
+    UsageProjectionV1 {
+        schema_version: UsageProjectionSchemaV1,
+        projection_id: format!("offline-{build_id}"),
+        generated_at_epoch: 0,
+        discovery_revision: "offline".to_owned(),
+        broker_instance_id: format!("offline-{build_id}"),
+        broker_generation: 0,
+        refresh_state: UsageProjectionRefreshStateV1::Idle,
+        providers: Vec::new(),
+        unresolved: Vec::new(),
+        issues: Vec::new(),
     }
 }
 

@@ -86,7 +86,7 @@ async fn usage_relay_stdio_dispatch_scopes_exact_capability() {
 }
 
 #[tokio::test]
-async fn usage_relay_dispatch_denies_projection_for_surface() {
+async fn usage_relay_dispatch_denies_host_only_operations() {
     let temp = tempfile::tempdir().unwrap();
     let executor = Arc::new(CountingExecutor {
         calls: AtomicUsize::new(0),
@@ -100,17 +100,26 @@ async fn usage_relay_dispatch_denies_projection_for_surface() {
     .unwrap();
     let allowlist = UsageCapabilitySet::new([capability("allowed")]);
 
-    let denied = dispatch(
+    for operation in [
         UsageBrokerOperation::CurrentProjectionForSurface,
-        broker,
-        allowlist,
-        UsageCredentialScope::default(),
-    )
-    .await;
-    let UsageBrokerResponse::Error { error } = denied else {
-        panic!("for-surface projection returned state");
-    };
-    assert_eq!(error.kind, UsageCoordinationErrorKind::Unauthorized);
+        UsageBrokerOperation::ResolveRelayCapabilities {
+            scope_label: "workspace fixture role reviewer".to_owned(),
+            forwarded_sources: jackin_protocol::usage_broker::UsageRelayForwardedSourcesV1::default(
+            ),
+        },
+    ] {
+        let denied = dispatch(
+            operation,
+            broker.clone(),
+            allowlist.clone(),
+            UsageCredentialScope::default(),
+        )
+        .await;
+        let UsageBrokerResponse::Error { error } = denied else {
+            panic!("host-only operation returned a result");
+        };
+        assert_eq!(error.kind, UsageCoordinationErrorKind::Unauthorized);
+    }
     assert_eq!(executor.calls.load(Ordering::SeqCst), 0);
 }
 

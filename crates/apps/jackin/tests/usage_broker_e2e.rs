@@ -14,7 +14,7 @@ use jackin_protocol::control::{
     FocusedUsageView, QuotaBucketView, UsageConfidence, UsageSeverity, UsageSnapshotStatus,
     UsageSource,
 };
-use jackin_protocol::usage_broker::{UsageAccountCapability, UsageCatalogEntry, UsageRefreshPhase};
+use jackin_protocol::usage_broker::{UsageAccountCapability, UsageRefreshPhase};
 use jackin_protocol::usage_broker::{UsageCoordinationError, UsageCoordinationErrorKind};
 use jackin_usage::coordinator::{ProviderProbeOutcome, UsageProviderExecutor};
 use jackin_usage::host::{UsageBrokerConfig, ensure_usage_broker_with_executor};
@@ -125,19 +125,9 @@ fn usage_broker_child() -> Result<()> {
             executor,
         )
         .test_result()?;
-        // Mirror production activation (ensure → reconcile with current
-        // discovery): without this the owner persists an empty catalog, the
-        // post-kill recovery leader loads it as a gated-empty admission set,
-        // and every recovery refresh fails `CatalogRevoked`.
-        client
-            .reconcile_catalog(
-                "e2e-catalog-1".to_owned(),
-                vec![UsageCatalogEntry {
-                    capability: capability(),
-                    revision: "e2e-shared-account-1".to_owned(),
-                }],
-            )
-            .test_result()?;
+        // This process seam has no discovery callback, so exercise the
+        // account-generation API directly. Production publication refreshes
+        // obtain their catalog inside the broker service.
         let state = client.refresh(capability(), 0, true).test_result()?;
         assert_eq!(state.generation, 1);
         wait_until(Duration::from_secs(10), || {
@@ -164,7 +154,7 @@ fn usage_broker_child() -> Result<()> {
     let deadline = Instant::now() + ENSURE_DEADLINE;
     let client = loop {
         match ensure_usage_broker_with_executor(
-            UsageBrokerConfig::for_data_dir(root.join("data")),
+            child_broker_config(&root, &mode),
             Arc::clone(&executor),
         ) {
             Ok(client) => break client,
@@ -177,7 +167,25 @@ fn usage_broker_child() -> Result<()> {
             Err(error) => return Err(error).test_result(),
         }
     };
-    let state = client.refresh(capability(), 0, true).test_result()?;
+    let mut state = client.refresh(capability(), 0, true).test_result()?;
+    if mode == "recovery" && state.generation == 1 {
+        assert_eq!(state.phase, UsageRefreshPhase::Failed);
+        let error = state
+            .error
+            .as_ref()
+            .context("recovered owner state lacked an error")?;
+        assert_eq!(error.kind, UsageCoordinationErrorKind::OwnerLost);
+        let retry_at = state
+            .retry_at_epoch
+            .context("recovered owner state lacked a retry deadline")?;
+        wait_until(Duration::from_secs(10), || epoch_now() >= retry_at);
+        state = client
+            .refresh(capability(), state.generation, true)
+            .test_result()?;
+    }
+    if mode == "recovery" {
+        assert_eq!(state.generation, 2);
+    }
     let terminal = client
         .join(capability(), state.generation, Duration::from_secs(5))
         .test_result()?;
@@ -237,6 +245,26 @@ fn wait_until(timeout: Duration, condition: impl Fn() -> bool) {
         assert!(started.elapsed() < timeout, "timed out waiting for barrier");
         std::thread::park_timeout(Duration::from_millis(10));
     }
+}
+
+fn child_broker_config(root: &Path, mode: &str) -> UsageBrokerConfig {
+    let mut config = UsageBrokerConfig::for_data_dir(root.join("data"));
+    if mode == "recovery" {
+        // This E2E case checks process ownership recovery, not retry duration.
+        // The test advances the persisted attempt clock after killing its
+        // fixture owner, then uses a one-second retry to stay bounded.
+        config.coordinator.retry_policy.retry_base = Duration::from_secs(1);
+        config.coordinator.retry_policy.retry_cap = Duration::from_secs(1);
+    }
+    config
+}
+
+fn epoch_now() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .and_then(|duration| i64::try_from(duration.as_secs()).ok())
+        .unwrap_or_default()
 }
 
 fn entries_with_prefix(root: &Path, prefix: &str) -> usize {

@@ -151,12 +151,7 @@ pub(crate) fn enumerate_registered_accounts(
         }
         let surface = provider_surface(account.provider);
         let canonical_owner = canonical_owner_for_account(surface, account.provider);
-        let mut provenance = BTreeSet::from([format!("account {id}")]);
-        for (workspace_name, workspace) in &config.workspaces {
-            if workspace.accounts.contains(id) {
-                provenance.insert(format!("workspace {workspace_name}"));
-            }
-        }
+        let provenance = registered_account_provenance(config, id);
         let label = if !account.name.trim().is_empty() {
             Some(account.name.trim().to_owned())
         } else if !id.trim().is_empty() {
@@ -305,4 +300,18 @@ pub(crate) fn enumerate_registered_accounts(
             ));
         }
     }
+}
+
+fn registered_account_provenance(config: &AppConfig, account_id: &str) -> BTreeSet<String> {
+    let mut provenance = BTreeSet::from([format!("account {account_id}")]);
+    for (workspace_name, workspace) in &config.workspaces {
+        if workspace
+            .accounts
+            .iter()
+            .any(|workspace_account_id| workspace_account_id.as_str() == account_id)
+        {
+            provenance.insert(format!("workspace {workspace_name}"));
+        }
+    }
+    provenance
 }

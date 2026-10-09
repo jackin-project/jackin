@@ -4,28 +4,18 @@
 
 use std::collections::BTreeSet;
 
-use jackin_protocol::usage_broker::{
-    UsageAccountCapability, UsageCredentialScope, UsageCredentialSourceIdentity,
-};
+use jackin_protocol::usage_broker::{UsageCredentialScope, UsageCredentialSourceIdentity};
 
 use crate::refresh_authority_equivalent;
 use jackin_usage_discovery::{ValidatedCredentialBinding, ValidatedCredentialSource};
 use jackin_usage_host_credentials::ProviderCredentialSourceMaterial;
 use jackin_usage_host_presentation::HostSurfaceId;
 
-#[derive(Debug, Clone)]
-pub(crate) struct ScopedCapability {
-    pub(crate) capability: UsageAccountCapability,
-    pub(crate) requirement: ForwardingRequirement,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ForwardingRequirement {
     Profile(String),
     Env {
         surface: String,
-        /// Canonical provider usage key used for cache/refresh routing.
-        key: String,
         /// Exact launch keys synthesized for this binding's provider source.
         launch_keys: BTreeSet<String>,
         account_ids: BTreeSet<String>,
@@ -104,7 +94,6 @@ pub(crate) fn credential_scope_has_matching_proof(
     scope: &UsageCredentialScope,
     account_ids: &BTreeSet<String>,
     surface: &str,
-    _canonical_key: &str,
     launch_keys: &BTreeSet<String>,
     material: &ProviderCredentialSourceMaterial,
 ) -> bool {

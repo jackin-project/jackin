@@ -47,6 +47,12 @@ jackin-launch = { workspace = true }
 jackin-console = { workspace = true }
 jackin-protocol = { workspace = true }
 jackin-usage = { workspace = true }
+jackin-usage-broker = { workspace = true }
+jackin-usage-credential-resolver = { workspace = true }
+jackin-usage-discovery = { workspace = true }
+jackin-usage-host-credentials = { workspace = true }
+jackin-usage-provider-claude = { workspace = true }
+zeroize = { workspace = true }
 jackin-process = { workspace = true }
 jackin-telemetry = { workspace = true }
 clap = { workspace = true, features = ["derive", "color", "env"] }
@@ -87,6 +93,7 @@ predicates = { workspace = true }
 syn = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
+tracing-subscriber = { workspace = true }
 
 [[bench]]
 name = "console_frame"

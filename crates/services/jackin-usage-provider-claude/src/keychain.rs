@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `Claude` macOS Keychain reads with explicit interaction policy.
 
+use zeroize::{Zeroize as _, Zeroizing};
+
 /// Whether a Keychain read may ask macOS to display an operator consent UI.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClaudeKeychainInteractionPolicy {
@@ -210,12 +212,19 @@ pub fn read_claude_keychain_item(
 #[cfg(target_os = "macos")]
 fn parse_claude_keychain_search_results(
     results: impl IntoIterator<Item = security_framework::item::SearchResult>,
-) -> Option<String> {
+) -> Option<Zeroizing<String>> {
     use security_framework::item::SearchResult;
 
     for result in results {
         if let SearchResult::Data(bytes) = result {
-            return String::from_utf8(bytes).ok();
+            return match String::from_utf8(bytes) {
+                Ok(json) => Some(Zeroizing::new(json)),
+                Err(error) => {
+                    let mut bytes = error.into_bytes();
+                    bytes.zeroize();
+                    None
+                }
+            };
         }
     }
     None
@@ -260,13 +269,11 @@ fn read_claude_keychain_item_with<Guard>(
     policy: ClaudeKeychainInteractionPolicy,
     user_interaction_allowed: impl FnOnce() -> Result<bool, ()>,
     disable_user_interaction: impl FnOnce() -> Result<Guard, ()>,
-    search: impl FnOnce() -> Result<Option<String>, i32>,
+    search: impl FnOnce() -> Result<Option<Zeroizing<String>>, i32>,
 ) -> ClaudeKeychainRead {
     let read = || match search() {
-        Ok(Some(json)) if !json.trim().is_empty() => ClaudeKeychainRead::Payload {
-            json: json.trim().to_owned(),
-        },
-        Ok(_) => ClaudeKeychainRead::Missing,
+        Ok(Some(mut json)) => trim_keychain_payload_and_zeroize(&mut json),
+        Ok(None) => ClaudeKeychainRead::Missing,
         Err(status) => classify_claude_keychain_status(status),
     };
     with_keychain_interaction_policy(
@@ -276,6 +283,16 @@ fn read_claude_keychain_item_with<Guard>(
         read,
     )
     .unwrap_or(ClaudeKeychainRead::ConsentRequired)
+}
+
+fn trim_keychain_payload_and_zeroize(json: &mut String) -> ClaudeKeychainRead {
+    let payload = json.trim().to_owned();
+    json.zeroize();
+    if payload.is_empty() {
+        ClaudeKeychainRead::Missing
+    } else {
+        ClaudeKeychainRead::Payload { json: payload }
+    }
 }
 
 #[cfg(test)]
@@ -364,7 +381,7 @@ mod tests {
                     }
                     match self.search_status.get() {
                         Some(status) => Err(status),
-                        None => Ok(self.payload.borrow().clone()),
+                        None => Ok(self.payload.borrow().clone().map(Zeroizing::new)),
                     }
                 },
             )
@@ -504,6 +521,28 @@ mod tests {
         assert_eq!(keychain.search_count.get(), 1);
         assert_eq!(keychain.restore_count.get(), 1);
         assert!(keychain.user_interaction_allowed.get());
+    }
+
+    #[test]
+    fn keychain_payload_trimming_zeroizes_the_original_including_empty_payloads() {
+        let mut secret = " {\"access_token\":\"fixture-secret\"} ".to_owned();
+        let outcome = trim_keychain_payload_and_zeroize(&mut secret);
+        assert!(matches!(
+            outcome,
+            ClaudeKeychainRead::Payload { json }
+                if json == "{\"access_token\":\"fixture-secret\"}"
+        ));
+        assert!(
+            secret.is_empty(),
+            "source JSON must be zeroized and cleared"
+        );
+
+        let mut empty = " \t\n ".to_owned();
+        assert!(matches!(
+            trim_keychain_payload_and_zeroize(&mut empty),
+            ClaudeKeychainRead::Missing
+        ));
+        assert!(empty.is_empty(), "empty source JSON must also be cleared");
     }
 
     #[test]

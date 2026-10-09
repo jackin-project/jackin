@@ -44,14 +44,6 @@ fn response_round_trip_keeps_typed_sanitized_failure() {
 #[test]
 fn projection_operations_and_publication_response_round_trip() {
     let operations = [
-        UsageBrokerOperation::ReconcileCatalog {
-            expected_projection_id: None,
-            catalog_revision: "catalog-2".into(),
-            entries: vec![UsageCatalogEntry {
-                capability: capability(),
-                revision: "credential-2".into(),
-            }],
-        },
         UsageBrokerOperation::CurrentProjection,
         UsageBrokerOperation::RequestRefresh {
             force: true,
@@ -87,6 +79,17 @@ fn projection_operations_and_publication_response_round_trip() {
         serde_json::from_slice::<UsageBrokerResponse>(&bytes).unwrap(),
         response
     );
+}
+
+#[test]
+fn caller_supplied_catalog_reconciliation_is_not_a_wire_operation() {
+    let operation = serde_json::json!({
+        "operation": "reconcile_catalog",
+        "expected_projection_id": null,
+        "catalog_revision": "caller-controlled",
+        "entries": [],
+    });
+    assert!(serde_json::from_value::<UsageBrokerOperation>(operation).is_err());
 }
 
 #[test]

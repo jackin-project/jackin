@@ -43,6 +43,26 @@ capabilities.
 `usage_relay::start_apple_tunnel`,
 `usage_relay::populate_launch_usage_capabilities`.
 
+## Capability ownership
+
+Before a tunnel starts, the relay attaches to the host broker and asks it to
+resolve the launch's forwarded sources against the broker-owned catalog. The
+request contains selected account ids and surfaces, forwarded profile and
+environment-key metadata, and exact fingerprints for staged credentials. It
+contains no credential values. The broker returns only the capabilities whose
+source requirements match those facts; the relay pins that allowlist for the
+container lifetime and keeps the staged credential scope for each forwarded
+refresh.
+
+Credential declarations that require operator interaction remain unavailable
+to unattended broker discovery. In particular, an `OpRef` source does not
+grant a relay capability unless the broker has independently obtained the
+matching material through a supported non-interactive source. The broker
+projection reports the typed interaction-required issue; the relay remains
+fail-closed until the credential becomes available.
+The current explicit auth-preparation flow covers Claude Keychain credentials
+only and does not prepare `OpRef`-backed environment sources.
+
 ## How to verify
 
 ```sh

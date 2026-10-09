@@ -91,8 +91,14 @@ pub async fn run(cli: Cli, lifecycle: crate::lifecycle::ProductLifecycle) -> Res
         None => Command::Console(cli.console_args),
     };
     let command_name = crate::cli::command_name(&command);
+    let suppress_cli_notices = matches!(&command, Command::Usage(_));
     let app_mode = command_app_mode(&command);
-    let paths = JackinPaths::detect()?;
+    let mut paths = JackinPaths::detect()?;
+    if let Command::Usage(args) = &command
+        && let Some(data_dir) = args.data_dir.as_ref()
+    {
+        paths.data_dir = data_dir.clone();
+    }
     let identity = service_identity(app_mode);
     let diagnostics =
         jackin_diagnostics::RunDiagnostics::start(&paths, debug, command_name.as_str(), identity)?;
@@ -104,16 +110,17 @@ pub async fn run(cli: Cli, lifecycle: crate::lifecycle::ProductLifecycle) -> Res
     // subscriber exists, so configuration failures share the one-shot harness.
     if let Some(requested) = jackin_diagnostics::unsupported_otlp_protocol() {
         let result = Err(crate::error::JackinError::UnsupportedOtlpProtocol { requested }.into());
-        finish_invocation(&diagnostics, invocation, &result);
+        finish_invocation(&diagnostics, invocation, &result, suppress_cli_notices);
         return result;
     }
 
     // The startup bootstrap report threads first-run discovery into
     // `account scan` so a fresh-config scan prints the true imported count.
     let (mut config, startup_bootstrap) = match &command {
-        // Role authoring is repository-local and must not create or read the
-        // operator's product configuration as a side effect.
-        Command::Role(_) => (
+        // Role authoring is repository-local. Usage is also isolated from
+        // startup discovery so even passive commands cannot touch provider
+        // credentials, Keychain, or 1Password while loading configuration.
+        Command::Role(_) | Command::Usage(_) => (
             AppConfig::default(),
             jackin_config::BootstrapReport::default(),
         ),
@@ -121,7 +128,7 @@ pub async fn run(cli: Cli, lifecycle: crate::lifecycle::ProductLifecycle) -> Res
             Ok(loaded) => loaded,
             Err(error) => {
                 let result: Result<()> = Err(error.into());
-                finish_invocation(&diagnostics, invocation, &result);
+                finish_invocation(&diagnostics, invocation, &result, suppress_cli_notices);
                 return result;
             }
         },
@@ -134,7 +141,7 @@ pub async fn run(cli: Cli, lifecycle: crate::lifecycle::ProductLifecycle) -> Res
     // depending on the diagnostics implementation.
     jackin_diagnostics::operator_notice::install_operator_notice_sink();
     jackin_launch::install_standalone_dialog_sink();
-    if debug {
+    if debug && !suppress_cli_notices {
         announce_debug_run(&diagnostics);
     }
     let mut runner = ShellRunner { debug };
@@ -208,7 +215,7 @@ pub async fn run(cli: Cli, lifecycle: crate::lifecycle::ProductLifecycle) -> Res
     if interactive {
         invocation.exit_requested();
     }
-    finish_invocation(&diagnostics, invocation, &result);
+    finish_invocation(&diagnostics, invocation, &result, suppress_cli_notices);
     result
 }
 
@@ -216,12 +223,15 @@ fn finish_invocation(
     diagnostics: &jackin_diagnostics::RunDiagnostics,
     invocation: crate::lifecycle::InvocationTelemetry,
     result: &Result<()>,
+    suppress_cli_notices: bool,
 ) {
     record_run_error(result);
     // Emit per-stage duration summary before the run guard drops (Defect 47.5).
     // The guard's Drop then flushes OTLP, so the summary makes the export.
     diagnostics.emit_run_summary();
-    announce_run_teardown(diagnostics);
+    if !suppress_cli_notices {
+        announce_run_teardown(diagnostics);
+    }
     let _classification = invocation.finish(result);
 }
 

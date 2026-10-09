@@ -108,15 +108,40 @@ fn contract_baseline_provider_calls_detect_injected_route() {
     fs::create_dir_all(&source_dir).expect("fixture source directory must exist");
     fs::write(
         source_dir.join("lib.rs"),
-        "fn bypass() {\n    fetch_codex_rpc_usage();\n}\n",
+        r#"use super::{unused_import_route};
+fn unused_definition() {}
+pub fn another_unused_definition() {}
+fn bypass() {
+    fetch_codex_rpc_usage();
+    dispatch(first_callback, middle_callback, last_callback);
+    not_fetch_codex_rpc_usage();
+    not_unused_import_route();
+    unused_import_route_suffix();
+}
+"#,
     )
     .expect("fixture source must be writable");
-    let symbols = ["fetch_codex_rpc_usage"].into_iter().collect();
+    let symbols = [
+        "fetch_codex_rpc_usage",
+        "first_callback",
+        "middle_callback",
+        "last_callback",
+        "unused_definition",
+        "another_unused_definition",
+        "unused_import_route",
+    ]
+    .into_iter()
+    .collect();
     let calls = scan_production_calls(workspace.path(), &symbols);
     assert_eq!(
         calls,
-        ["crates/consumer/src/lib.rs|fetch_codex_rpc_usage".to_owned()]
-            .into_iter()
-            .collect()
+        [
+            "crates/consumer/src/lib.rs|fetch_codex_rpc_usage".to_owned(),
+            "crates/consumer/src/lib.rs|first_callback".to_owned(),
+            "crates/consumer/src/lib.rs|middle_callback".to_owned(),
+            "crates/consumer/src/lib.rs|last_callback".to_owned(),
+        ]
+        .into_iter()
+        .collect()
     );
 }

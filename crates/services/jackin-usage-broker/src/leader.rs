@@ -5,7 +5,6 @@
 use std::fs::{self, File};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::os::unix::fs::MetadataExt as _;
-use std::os::unix::net::UnixStream;
 use std::path::Path;
 
 use std::time::{Duration, Instant};
@@ -254,5 +253,5 @@ pub(crate) fn wait_for_leader(client: &UsageBrokerClient) -> Result<(), UsageCoo
 }
 
 pub(crate) fn connect_probe(client: &UsageBrokerClient) -> bool {
-    UnixStream::connect(&client.socket_path).is_ok()
+    client.probe_current_projection()
 }

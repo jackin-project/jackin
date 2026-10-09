@@ -11,18 +11,20 @@ use std::os::unix::net::UnixListener;
 use std::sync::{Arc, Mutex};
 
 use jackin_protocol::usage_broker::{
-    UsageAccountCapability, UsageCatalogEntry, UsageCoordinationError,
+    UsageAccountCapability, UsageCatalogEntry, UsageCoordinationError, UsageCoordinationErrorKind,
+    UsageCredentialScope,
 };
-
 use jackin_usage_coordinator::{
-    FileAccountStateStore, FileProjectionStateStore, UsageCoordinator, UsageProviderExecutor,
+    FileAccountStateStore, FileProjectionStateStore, ProviderProbeOutcome, UsageCoordinator,
+    UsageProviderExecutor,
 };
 
 use crate::{
-    BROKER_LEADER, BrokerStartupCleanup, DiscoveryProviderExecutor, LoadedProjection, ServeConfig,
-    ServePolicy, UsageBrokerClient, UsageBrokerConfig, claim_leader, connect_probe,
-    grouped_bindings, load_projection, publication_identity_metadata, publish,
-    secure_run_directory, serve, unavailable, usage_catalog_entries, validate_owned_mode,
+    BROKER_LEADER, BrokerCatalogRefresh, BrokerStartupCleanup, DiscoveryProviderExecutor,
+    LoadedProjection, MonitorStore, ServeConfig, ServePolicy, UsageBrokerClient, UsageBrokerConfig,
+    claim_leader, connect_probe, grouped_bindings, load_projection, publication_identity_metadata,
+    publish, secure_run_directory, serve, unavailable, usage_catalog_entries,
+    validate_broker_data_ancestors, validate_broker_data_tree, validate_owned_mode,
     wait_for_leader,
 };
 use jackin_usage_discovery::{UsageDiscoveryScope, ValidatedUsageDiscovery};
@@ -35,25 +37,33 @@ pub fn run_usage_broker_service(
     discovery: ValidatedUsageDiscovery,
     resolver: Arc<dyn ProviderCredentialEnvResolver>,
 ) -> Result<(), UsageCoordinationError> {
+    let _unattended_keychain_guard =
+        jackin_usage_provider_claude::unattended_keychain_guard().map_err(|_| unavailable())?;
     let identity_metadata = publication_identity_metadata(&discovery);
     let catalog_revision = discovery
         .config_generation
         .clone()
         .unwrap_or_else(|| "empty".to_owned());
     let catalog = usage_catalog_entries(&discovery);
+    let diagnostics = crate::catalog_diagnostics::from_discovery(&discovery);
     let bindings = grouped_bindings(&discovery);
+    let catalog_refresh = Arc::new(BrokerCatalogRefresh::new(
+        scope.clone(),
+        Arc::clone(&resolver),
+    ));
     let executor = Arc::new(DiscoveryProviderExecutor {
         bindings: Mutex::new(bindings),
         validated_catalog: Mutex::new(None),
         scope,
-        resolver,
+        resolver: Arc::clone(&resolver),
         probe_budget: config.coordinator.provider_timeout,
     });
     run_usage_broker_service_with_executor_and_metadata(
         config,
         executor,
         identity_metadata,
-        Some((catalog_revision, catalog)),
+        Some((catalog_revision, catalog, diagnostics)),
+        Some(catalog_refresh),
     )
 }
 
@@ -62,21 +72,77 @@ pub fn run_usage_broker_service_with_executor(
     config: UsageBrokerConfig,
     executor: Arc<dyn UsageProviderExecutor>,
 ) -> Result<(), UsageCoordinationError> {
-    run_usage_broker_service_with_executor_and_metadata(config, executor, BTreeMap::new(), None)
+    run_usage_broker_service_with_executor_and_metadata(
+        config,
+        executor,
+        BTreeMap::new(),
+        None,
+        None,
+    )
+}
+
+/// Run the host broker without discovering accounts or resolving credentials.
+///
+/// This is the service entry point used by explicit monitor startup. Existing
+/// usage reads can still use persisted projections, while provider refresh
+/// requests fail closed without touching provider or credential APIs.
+pub fn run_usage_monitor_service(config: UsageBrokerConfig) -> Result<(), UsageCoordinationError> {
+    run_usage_broker_service_with_executor_and_metadata(
+        config,
+        Arc::new(LocalOnlyProviderExecutor),
+        BTreeMap::new(),
+        None,
+        None,
+    )
+}
+
+struct LocalOnlyProviderExecutor;
+
+impl UsageProviderExecutor for LocalOnlyProviderExecutor {
+    fn probe(
+        &self,
+        _capability: &UsageAccountCapability,
+        _generation: u64,
+    ) -> ProviderProbeOutcome {
+        ProviderProbeOutcome::Failure {
+            kind: UsageCoordinationErrorKind::ProviderUnavailable,
+            message: "provider refresh is disabled in the local-only usage service".to_owned(),
+            retry_at_epoch: None,
+        }
+    }
+
+    fn probe_scoped(
+        &self,
+        capability: &UsageAccountCapability,
+        generation: u64,
+        _scope: &UsageCredentialScope,
+    ) -> ProviderProbeOutcome {
+        self.probe(capability, generation)
+    }
+
+    fn reconcile_catalog(
+        &self,
+        _entries: &[UsageCatalogEntry],
+    ) -> Result<(), UsageCoordinationError> {
+        Ok(())
+    }
 }
 
 pub(crate) fn run_usage_broker_service_with_executor_and_metadata(
     config: UsageBrokerConfig,
     executor: Arc<dyn UsageProviderExecutor>,
     identity_metadata: BTreeMap<UsageAccountCapability, publish::AccountIdentityMetadata>,
-    initial_catalog: Option<(String, Vec<UsageCatalogEntry>)>,
+    initial_catalog: Option<(String, Vec<UsageCatalogEntry>, publish::CatalogDiagnostics)>,
+    catalog_refresh: Option<Arc<BrokerCatalogRefresh>>,
 ) -> Result<(), UsageCoordinationError> {
+    validate_broker_data_ancestors(&config.data_dir)?;
     let run_dir = secure_run_directory(&config.data_dir)?;
+    validate_broker_data_tree(&config.data_dir)?;
+    let socket_path = config.prepare_socket_path()?;
     let leader_path = run_dir.join(BROKER_LEADER);
     let Some(lease) = claim_leader(&leader_path, &config.build_id, config.lease_duration)? else {
         return Ok(());
     };
-    let socket_path = config.socket_path();
     let cleanup = BrokerStartupCleanup::new(leader_path.clone(), socket_path.clone(), lease);
     if socket_path.exists() {
         fs::remove_file(&socket_path).map_err(|_| unavailable())?;
@@ -114,9 +180,22 @@ pub(crate) fn run_usage_broker_service_with_executor_and_metadata(
     )
     .with_identity_metadata(identity_metadata);
     let publisher = publisher.with_catalog(previous_catalog);
-    if let Some((catalog_revision, catalog)) = initial_catalog {
-        publisher.reconcile_catalog(catalog_revision, catalog, chrono::Utc::now().timestamp())?;
+    if let Some((catalog_revision, catalog, diagnostics)) = initial_catalog {
+        publisher.reconcile_catalog_if_projection_with_diagnostics(
+            None,
+            catalog_revision,
+            catalog,
+            diagnostics,
+            chrono::Utc::now().timestamp(),
+        )?;
     }
+    let monitor_store = Arc::new(MonitorStore::open(&config.data_dir).map_err(|_| unavailable())?);
+    let initial_projection = publisher.current_projection().map_err(|_| unavailable())?;
+    let monitor_now = chrono::Utc::now().timestamp();
+    monitor_store
+        .observe_projection(&initial_projection, monitor_now)
+        .map_err(|_| unavailable())?;
+    monitor_store.tick(monitor_now).map_err(|_| unavailable())?;
     serve(ServeConfig {
         listener,
         coordinator,
@@ -128,6 +207,8 @@ pub(crate) fn run_usage_broker_service_with_executor_and_metadata(
             lease_renewal: config.lease_renewal,
         },
         publisher,
+        monitor_store,
+        catalog_refresh,
     });
     Ok(())
 }
@@ -138,13 +219,15 @@ pub fn ensure_usage_broker_with_executor(
     config: UsageBrokerConfig,
     executor: Arc<dyn UsageProviderExecutor>,
 ) -> Result<UsageBrokerClient, UsageCoordinationError> {
-    let socket_path = config.socket_path();
+    let socket_path = config.prepare_socket_path()?;
     let client = UsageBrokerClient::at(socket_path.clone(), config.build_id.clone());
     if connect_probe(&client) {
         return Ok(client);
     }
 
+    validate_broker_data_ancestors(&config.data_dir)?;
     let run_dir = secure_run_directory(&config.data_dir)?;
+    validate_broker_data_tree(&config.data_dir)?;
     let leader_path = run_dir.join(BROKER_LEADER);
     let Some(lease) = claim_leader(&leader_path, &config.build_id, config.lease_duration)? else {
         wait_for_leader(&client)?;
@@ -196,6 +279,13 @@ pub fn ensure_usage_broker_with_executor(
         Some(catalog) => publisher.with_catalog(catalog),
         None => publisher,
     };
+    let monitor_store = Arc::new(MonitorStore::open(&config.data_dir).map_err(|_| unavailable())?);
+    let initial_projection = publisher.current_projection().map_err(|_| unavailable())?;
+    let monitor_now = chrono::Utc::now().timestamp();
+    monitor_store
+        .observe_projection(&initial_projection, monitor_now)
+        .map_err(|_| unavailable())?;
+    monitor_store.tick(monitor_now).map_err(|_| unavailable())?;
     jackin_telemetry::spawn::thread_joined_named("usage-broker".to_owned(), move || {
         serve(ServeConfig {
             listener,
@@ -208,6 +298,8 @@ pub fn ensure_usage_broker_with_executor(
                 lease_renewal,
             },
             publisher,
+            monitor_store,
+            catalog_refresh: None,
         });
     })
     .map_err(|_| unavailable())?;

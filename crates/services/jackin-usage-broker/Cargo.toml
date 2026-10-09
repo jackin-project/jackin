@@ -31,6 +31,7 @@ jackin-usage-host-presentation = { workspace = true }
 jackin-usage-broker-publish = { workspace = true }
 jackin-usage-broker-wire = { workspace = true }
 jackin-usage-provider-core = { workspace = true }
+jackin-usage-provider-claude = { workspace = true }
 chrono = { workspace = true, features = ["clock"] }
 nix = { workspace = true, features = ["fs", "signal"] }
 serde = { workspace = true, features = ["derive"] }

@@ -21,6 +21,7 @@ use jackin_usage::host::{UsageBrokerClient, UsageBrokerConfig, ensure_usage_brok
 use super::*;
 
 const CAPSULE_IMAGE: &str = "python:3.14-alpine";
+static DOCKER_CONTAINER_SEQUENCE: AtomicUsize = AtomicUsize::new(0);
 const TUNNEL_PROXY_SCRIPT: &str = r#"
 import json, os, socket, sys
 
@@ -353,7 +354,9 @@ fn usage_broker_failure_and_rate_deadline_are_identical_for_all_waiters() -> Res
     let root = temp.path().to_path_buf();
     let data_dir = root.join("data");
     let now = now_epoch();
-    let retry_at = now + 300;
+    // Keep the provider deadline later than Claude's 300-second attempt
+    // floor, so this assertion checks the provider deadline itself.
+    let retry_at = now + 600;
     let store = FileAccountStateStore::under_data_dir(&data_dir);
     let mut seeded = AccountStateEnvelope::idle(capability());
     seeded.generation = 1;
@@ -530,12 +533,14 @@ async fn start_capsule(
 ) -> Result<DockerCapsule> {
     let relay_dir = root.join(format!("relay-{index}"));
     fs::create_dir(&relay_dir)?;
-    let name = format!("jackin-usage-e2e-{}-{index}", std::process::id());
+    let sequence = DOCKER_CONTAINER_SEQUENCE.fetch_add(1, Ordering::SeqCst);
+    let name = format!("jackin-usage-e2e-{}-{sequence}-{index}", std::process::id());
     let mount = format!("type=bind,src={},dst=/jackin/run", relay_dir.display());
     let output = jackin_process::exec_async(&jackin_process::ExecRequest::new(
         "docker",
         [
             "run",
+            "--pull=never",
             "--detach",
             "--rm",
             "--name",

@@ -1,10 +1,11 @@
-//! jackin-usage-host-runtime: capsule-free host usage runtime for menu bar and CLI.
+//! jackin-usage-host-runtime: credential-free host projection presentation.
 //!
 //! **Architecture Invariant:** T6.
-//! Entry point: [`host::HostUsageRuntime`] — presentation-state runtime over the broker.
+//! Entry point: [`host::HostUsageProjectionRuntime`] — presentation state over
+//! complete broker-owned publications.
 //!
-//! Holds presentation state only: provider work and shared state are owned by
-//! the host usage broker. Split out of `jackin-usage` (S7 split 38); the old
-//! `jackin_usage::host::*` paths keep working through a re-export shim.
+//! Provider work, credential resolution, discovery, and shared state are owned
+//! by the host usage broker. This crate validates and presents broker
+//! projections; it does not discover credentials or invoke providers.
 
 pub mod host;

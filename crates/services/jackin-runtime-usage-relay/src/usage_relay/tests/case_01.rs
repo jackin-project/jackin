@@ -275,79 +275,28 @@ fn staged_scope_audits_one_account_across_mixed_agent_consumers() -> Result<()> 
 }
 
 #[test]
-fn launch_discovery_relay_uses_distinct_canonical_ids_for_same_surface() -> Result<()> {
-    use jackin_config::{AccountConfig, AccountCredential, AiProvider};
-
-    let temp = tempfile::tempdir()?;
-    let config_root = temp.path().join("config");
-    let home = temp.path().join("home");
-    fs::create_dir_all(&config_root)?;
-    let mut config = AppConfig::default();
-    for (id, name, account_id, token) in [
-        (
-            "personal-openai",
-            "Personal",
-            "provider-personal",
-            "fixture-personal-token",
-        ),
-        ("work-openai", "Work", "provider-work", "fixture-work-token"),
-    ] {
-        let profile = temp.path().join(id);
-        fs::create_dir_all(&profile)?;
-        fs::write(
-            profile.join("auth.json"),
-            format!(r#"{{"tokens":{{"access_token":"{token}","account_id":"{account_id}"}}}}"#),
-        )?;
-        config.accounts.insert(
-            id.to_owned(),
-            AccountConfig {
-                enabled: true,
-                name: name.to_owned(),
-                provider: AiProvider::OpenAi,
-                credential: AccountCredential::Profile {
-                    agent: jackin_core::Agent::Codex,
-                    directory: profile,
-                    xdg_roots: None,
-                    source_selector: None,
-                },
-            },
-        );
-    }
-    fs::write(config_root.join("config.toml"), toml::to_string(&config)?)?;
-
-    let resolver = CachedProviderCredentialResolver::new(RuntimeSecretSource);
-    let catalog = discover_usage_sources(
-        &UsageDiscoveryScope::HostDesktop {
-            config_root,
-            operator_home: home,
-        },
-        &resolver,
-    )
-    .map_err(anyhow::Error::msg)?;
-    let discovery = validate_usage_sources(catalog, &resolver);
-    let sources = ForwardedUsageSources {
-        selected_account_ids: BTreeSet::from([
-            "personal-openai".to_owned(),
-            "work-openai".to_owned(),
-        ]),
-        selected_account_surfaces: BTreeMap::from([
-            ("personal-openai".to_owned(), "codex".to_owned()),
-            ("work-openai".to_owned(), "codex".to_owned()),
-        ]),
-        profile_surface_ids: BTreeSet::from(["codex".to_owned()]),
-        env_keys: BTreeSet::new(),
-        credential_scope: UsageCredentialScope::default(),
+fn broker_resolution_keeps_distinct_canonical_ids_for_selected_accounts() {
+    let personal = UsageAccountCapability {
+        account_id: "provider-personal".to_owned(),
+        surface_id: "codex".to_owned(),
     };
-    let forwarded = forwarded_usage_capabilities(&discovery, "unrelated scope", &sources);
-    assert_eq!(forwarded.len(), 2);
-    assert!(
-        forwarded
-            .iter()
-            .all(|capability| capability.surface_id == "codex")
-    );
-
-    let allowed = forwarded.iter().cloned().collect::<BTreeSet<_>>();
-    let canonical = canonical_capabilities_for_launch(&discovery, &sources, &allowed);
+    let work = UsageAccountCapability {
+        account_id: "provider-work".to_owned(),
+        surface_id: "codex".to_owned(),
+    };
+    let forwarded = vec![personal.clone(), work.clone()];
+    let canonical = canonical_capabilities_from_resolution(vec![
+        jackin_protocol::usage_broker::UsageRelayCapabilityMappingV1 {
+            account_id: "personal-openai".to_owned(),
+            surface_id: "codex".to_owned(),
+            capability: personal,
+        },
+        jackin_protocol::usage_broker::UsageRelayCapabilityMappingV1 {
+            account_id: "work-openai".to_owned(),
+            surface_id: "codex".to_owned(),
+            capability: work,
+        },
+    ]);
     let mut launch_config = CapsuleConfig {
         instances: vec!["personal@codex".to_owned(), "work@codex".to_owned()],
         accounts: BTreeMap::from([
@@ -383,6 +332,7 @@ fn launch_discovery_relay_uses_distinct_canonical_ids_for_same_surface() -> Resu
     assert_ne!(personal.account_id, "personal-openai");
     assert_ne!(work.account_id, "work-openai");
     assert_ne!(personal.account_id, work.account_id);
+    let allowed = forwarded.iter().cloned().collect::<BTreeSet<_>>();
     assert!(matches!(
         UsageCapabilitySet::new(forwarded).authorize(personal),
         Ok(())
@@ -394,5 +344,4 @@ fn launch_discovery_relay_uses_distinct_canonical_ids_for_same_surface() -> Resu
         }),
         Err(error) if error.kind == UsageCoordinationErrorKind::Unauthorized
     ));
-    Ok(())
 }

@@ -151,11 +151,23 @@ fn print_root_help_banner() {
     reason = "binary entrypoint — exit is the correct mechanism"
 )]
 fn exit_for_run_error(error: &anyhow::Error, debug: bool) -> ! {
+    if let Some((exit_code, json)) = usage_cli_error(error) {
+        if !json.is_empty() {
+            println!("{json}");
+        }
+        std::process::exit(exit_code);
+    }
     let classification = jackin::classify_error(error);
     if classification.failed() {
         render_error(error, debug);
     }
     std::process::exit(i32::try_from(classification.exit_code).unwrap_or(1));
+}
+
+fn usage_cli_error(error: &anyhow::Error) -> Option<(i32, &str)> {
+    error
+        .downcast_ref::<jackin::cli::usage::UsageCommandExit>()
+        .map(|error| (error.exit_code(), error.json()))
 }
 
 /// Render an error at the binary entry point.
@@ -172,5 +184,32 @@ fn render_error(error: &anyhow::Error, debug: bool) {
         }
     } else {
         jackin_launch::output::fatal(&format!("{error:#}"));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::usage_cli_error;
+
+    #[test]
+    fn monitor_exit_keeps_json_on_stdout_and_stable_code() {
+        let error: anyhow::Error = jackin::cli::usage::UsageCommandExit::new(
+            2,
+            r#"{"version":1,"result":"blocked"}"#.to_owned(),
+        )
+        .into();
+
+        assert_eq!(
+            usage_cli_error(&error),
+            Some((2, r#"{"version":1,"result":"blocked"}"#))
+        );
+    }
+
+    #[test]
+    fn inherited_auth_helper_output_is_not_duplicated() {
+        let error: anyhow::Error =
+            jackin::cli::usage::UsageCommandExit::new(2, String::new()).into();
+
+        assert_eq!(usage_cli_error(&error), Some((2, "")));
     }
 }

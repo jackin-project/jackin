@@ -147,6 +147,7 @@ impl ProviderCredentialEnvResolver for TypedRateLimitResolver {
             rate_limit: Some(jackin_usage_provider_core::ProviderRateLimit {
                 retry_at_epoch: Some(1_700_000_037),
             }),
+            provider_error: None,
         }
     }
 }
@@ -180,6 +181,7 @@ impl ProviderCredentialEnvResolver for RecordingRefreshResolver {
         ProviderCredentialRefreshOutcome::Snapshot {
             view: Box::new(quota_view()),
             rate_limit: None,
+            provider_error: None,
         }
     }
 }
@@ -216,66 +218,5 @@ impl UsageProviderExecutor for StallOneExecutor {
                 .unwrap();
         }
         ProviderProbeOutcome::success(quota_view())
-    }
-}
-
-pub(super) fn scripted_discovery(
-    generation: Option<&str>,
-    members: &[(&str, HostSurfaceId)],
-) -> ValidatedUsageDiscovery {
-    use jackin_usage_host_accounts::{CanonicalAccountIdentity, CanonicalAccountSubject};
-
-    ValidatedUsageDiscovery {
-        config_generation: generation.map(str::to_owned),
-        accounts: Vec::new(),
-        diagnostics: Vec::new(),
-        candidates: Vec::new(),
-        bindings: members
-            .iter()
-            .enumerate()
-            .map(|(index, (label, surface))| ValidatedCredentialBinding {
-                surface: *surface,
-                identity: Some(CanonicalAccountIdentity {
-                    surface: *surface,
-                    subject: CanonicalAccountSubject::ProviderStableHandle((*label).to_owned()),
-                }),
-                source_id: format!("source-{index}"),
-                capability_id: format!("capability-{index}-{label}"),
-                credential_revision: format!("credential-revision-{index}-{label}"),
-                provenance: BTreeSet::from(["workspace sample role test".to_owned()]),
-                source: ValidatedCredentialSource::Capability,
-            })
-            .collect(),
-    }
-}
-
-pub(super) fn activation_scope(temp: &tempfile::TempDir) -> UsageDiscoveryScope {
-    UsageDiscoveryScope::HostDesktop {
-        config_root: temp.path().join("config"),
-        operator_home: temp.path().join("home"),
-    }
-}
-
-pub(super) fn counting_broker(data_dir: &Path) -> UsageBrokerClient {
-    ensure_usage_broker_with_executor(
-        UsageBrokerConfig::for_data_dir(data_dir.to_owned()),
-        Arc::new(CountingExecutor {
-            calls: AtomicUsize::new(0),
-        }),
-    )
-    .unwrap()
-}
-
-pub(super) struct NoEnvResolver;
-
-impl ProviderCredentialEnvResolver for NoEnvResolver {
-    fn resolve_provider_credentials(
-        &self,
-        _config: &AppConfig,
-        _workspace: Option<&WorkspaceName>,
-        _role: Option<&str>,
-        _keys: &[UsageCredentialEnvName],
-    ) -> Vec<ProviderCredentialEnvResolution> {
-        Vec::new()
     }
 }

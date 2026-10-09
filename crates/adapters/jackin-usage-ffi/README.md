@@ -31,8 +31,9 @@ cargo clippy -p jackin-usage-ffi --all-targets -- -D warnings
 
 Production `OpenConfig` supplies no paths: Rust derives the operator home, config
 root, and data root through `JackinPaths`, exactly like the CLI. Optional data/config
-overrides exist only for tests. `jackin-usage` owns credential resolution, opaque
-secret handles, discovery, quota shaping, and broker coordination.
+overrides exist only for tests. This facade owns local projection presentation and
+refresh intent; discovery, credential resolution, provider work, quota shaping,
+and canonical publication happen in the broker process.
 
 Refresh sends broker intent. Rust workers join active generations; Swift never blocks
 the main actor. Broker failure preserves last-good quota and never probes directly.
@@ -45,7 +46,8 @@ the main actor. Broker failure preserves last-good quota and never probes direct
 Swift renders the segments verbatim. `provider_glance_rows()` (Swift
 `providerGlanceRows()`) returns `ProviderGlanceRowDto` — the selected-account-aware
 seven-provider Desktop glance rows in canonical order. `OpenConfig.allow_live_probes`
-maps to the Rust `HostProbePolicy` (false = smoke/defense mode, no live probes).
+controls whether an explicit FFI refresh may send broker refresh intent. When false,
+refresh reads only the existing broker publication.
 
 `DesktopInventoryDto` carries the seven-provider Rust order, provider chrome, and
 self-contained account identity/lifecycle/limits/status fields. OpenCode is absent;

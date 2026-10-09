@@ -2,7 +2,8 @@
 //!
 //! **Architecture Invariant:** T7.
 //! Entry point: [`UsageTotals`] — usage aggregation surface.
-//! Host menu-bar / CLI: [`host::HostUsageRuntime`] (Capsule-free).
+//! Host menu-bar / CLI clients use [`host::HostUsageProjectionRuntime`] and the
+//! host broker client APIs.
 
 pub use jackin_usage_coordinator as coordinator;
 pub mod host;

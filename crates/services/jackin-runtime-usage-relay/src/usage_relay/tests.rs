@@ -27,10 +27,7 @@ use jackin_protocol::usage_broker::{
 
 use jackin_usage_coordinator::{ProviderProbeOutcome, UsageCapabilitySet, UsageProviderExecutor};
 
-use jackin_usage_host_runtime::host::{
-    CachedProviderCredentialResolver, UsageDiscoveryScope, discover_usage_sources,
-    ensure_usage_broker_with_executor, validate_usage_sources,
-};
+use jackin_usage_host_runtime::host::ensure_usage_broker_with_executor;
 
 mod support;
 use support::*;

@@ -123,8 +123,9 @@ fn projection_refresh_runs_due_checks_and_join_settles() {
             .any(|account| account.canonical_account_id == "abc123")
     );
 
-    // A forced projection refresh starts one new generation and the join
-    // observes it settle without cancelling broker ownership.
+    // A forced projection refresh still respects Claude's minimum attempt
+    // interval; the join observes the unchanged projection settle without
+    // cancelling broker ownership.
     //
     // Join returns a superseding publication immediately by design, and
     // every intermediate publish mints a fresh publication id, so a single
@@ -145,7 +146,7 @@ fn projection_refresh_runs_due_checks_and_join_settles() {
         target = observed.projection_id.clone();
     };
     assert_eq!(settled.refresh_state, UsageProjectionRefreshStateV1::Idle);
-    assert_eq!(executor.calls.load(Ordering::SeqCst), 2);
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
 
     // A superseded or unknown publication id returns the latest publication.
     let latest = client
@@ -240,149 +241,4 @@ fn probe_budget_propagates_worker_panic_to_coordinator_classification() {
         outcome.is_err(),
         "worker panic must propagate to the caller"
     );
-}
-
-#[test]
-fn slow_activator_stale_caller_catalog_never_wins() {
-    use jackin_usage_host_presentation::HostSurfaceId;
-
-    let temp = tempfile::tempdir().unwrap();
-    let config = UsageBrokerConfig::for_data_dir(temp.path().to_owned());
-    let client = counting_broker(temp.path());
-
-    // The newer winner already published the current truth.
-    let fresh = scripted_discovery(
-        Some("generation-fresh"),
-        &[("fresh", HostSurfaceId::Claude)],
-    );
-    let fresh_entries = usage_catalog_entries(&fresh);
-    let winner = client
-        .reconcile_catalog("generation-fresh".to_owned(), fresh_entries)
-        .unwrap();
-    let stale = scripted_discovery(Some("generation-stale"), &[("stale", HostSurfaceId::Codex)]);
-    let stale_capability =
-        capability_for_binding(&stale.bindings[0], stale.config_generation.as_deref());
-
-    // A slow activator arrives holding a stale caller-side catalog, but its
-    // post-lease scan observes the same current truth as the winner. The
-    // ordering is driven explicitly through the seams: no timing involved.
-    let published = Arc::new(Mutex::new(Vec::<String>::new()));
-    let mut discover =
-        || -> Result<ValidatedUsageDiscovery, UsageCoordinationError> { Ok(fresh.clone()) };
-    let mut reconcile = {
-        let published = Arc::clone(&published);
-        move |client: &UsageBrokerClient,
-              expected_projection_id: Option<String>,
-              catalog_revision: String,
-              entries: Vec<UsageCatalogEntry>| {
-            published.lock().unwrap().push(catalog_revision.clone());
-            client.reconcile_catalog_if_projection(
-                expected_projection_id,
-                catalog_revision,
-                entries,
-            )
-        }
-    };
-    let handle = ensure_usage_broker_with_hooks(
-        &config,
-        &activation_scope(&temp),
-        stale,
-        &mut discover,
-        &mut reconcile,
-    )
-    .unwrap();
-
-    let published = published.lock().unwrap();
-    assert!(
-        !published.is_empty()
-            && published
-                .iter()
-                .all(|revision| revision == "generation-fresh"),
-        "stale caller catalog must never be published: {published:?}"
-    );
-    let final_projection = client.current_projection().unwrap();
-    assert_eq!(final_projection.discovery_revision, "generation-fresh");
-    assert_eq!(
-        final_projection.broker_instance_id,
-        winner.broker_instance_id
-    );
-    assert_eq!(handle.catalog_lease, final_projection.projection_id);
-    assert_eq!(handle.capabilities, usage_broker_capabilities(&fresh));
-    assert_eq!(
-        client.current(stale_capability).unwrap_err().kind,
-        UsageCoordinationErrorKind::CatalogRevoked
-    );
-    assert!(
-        temp.path()
-            .join("usage-broker")
-            .join("activate.lock")
-            .exists(),
-        "activation must hold the inter-process lock file"
-    );
-}
-
-#[test]
-fn catalog_conflict_retries_with_rediscovery_then_succeeds() {
-    use jackin_usage_host_presentation::HostSurfaceId;
-
-    let temp = tempfile::tempdir().unwrap();
-    let config = UsageBrokerConfig::for_data_dir(temp.path().to_owned());
-    let client = counting_broker(temp.path());
-
-    let fresh = scripted_discovery(
-        Some("generation-fresh"),
-        &[("fresh", HostSurfaceId::Claude)],
-    );
-    let winner_entries = usage_catalog_entries(&scripted_discovery(
-        Some("generation-winner"),
-        &[("winner", HostSurfaceId::Codex)],
-    ));
-    let scans = Arc::new(AtomicUsize::new(0));
-    let reconciles = Arc::new(AtomicUsize::new(0));
-    let mut discover = {
-        let scans = Arc::clone(&scans);
-        let fresh = fresh.clone();
-        move || -> Result<ValidatedUsageDiscovery, UsageCoordinationError> {
-            scans.fetch_add(1, Ordering::SeqCst);
-            Ok(fresh.clone())
-        }
-    };
-    let mut reconcile = {
-        let reconciles = Arc::clone(&reconciles);
-        move |client: &UsageBrokerClient,
-              expected_projection_id: Option<String>,
-              catalog_revision: String,
-              entries: Vec<UsageCatalogEntry>| {
-            // Deterministic interleaving: a winner commits between our lease
-            // read and our first reconcile, so the first CAS attempt fails.
-            if reconciles.fetch_add(1, Ordering::SeqCst) == 0 {
-                client
-                    .reconcile_catalog("generation-winner".to_owned(), winner_entries.clone())
-                    .unwrap();
-            }
-            client.reconcile_catalog_if_projection(
-                expected_projection_id,
-                catalog_revision,
-                entries,
-            )
-        }
-    };
-    let handle = ensure_usage_broker_with_hooks(
-        &config,
-        &activation_scope(&temp),
-        scripted_discovery(Some("generation-stale"), &[("stale", HostSurfaceId::Amp)]),
-        &mut discover,
-        &mut reconcile,
-    )
-    .unwrap();
-
-    assert_eq!(reconciles.load(Ordering::SeqCst), 2);
-    assert_eq!(
-        scans.load(Ordering::SeqCst),
-        2,
-        "every conflict retry must re-discover, not reuse the losing scan"
-    );
-    let final_projection = client.current_projection().unwrap();
-    assert_eq!(final_projection.discovery_revision, "generation-fresh");
-    assert_eq!(handle.catalog_lease, final_projection.projection_id);
 }

@@ -3029,6 +3029,11 @@ dependencies = [
  "jackin-test-support",
  "jackin-tui",
  "jackin-usage",
+ "jackin-usage-broker",
+ "jackin-usage-credential-resolver",
+ "jackin-usage-discovery",
+ "jackin-usage-host-credentials",
+ "jackin-usage-provider-claude",
  "nix 0.31.3",
  "owo-colors 4.3.0",
  "predicates",
@@ -3045,6 +3050,8 @@ dependencies = [
  "tokio",
  "toml",
  "tracing",
+ "tracing-subscriber",
+ "zeroize",
 ]
 
 [[package]]
@@ -4771,6 +4778,7 @@ dependencies = [
  "jackin-usage-host-accounts",
  "jackin-usage-host-credentials",
  "jackin-usage-host-presentation",
+ "jackin-usage-provider-claude",
  "jackin-usage-provider-core",
  "nix 0.31.3",
  "serde",
@@ -4897,11 +4905,8 @@ name = "jackin-usage-ffi"
 version = "0.6.4"
 dependencies = [
  "boltffi",
- "jackin-config",
  "jackin-core",
- "jackin-env",
  "jackin-protocol",
- "jackin-telemetry",
  "jackin-usage",
  "jackin-usage-provider-core",
  "tempfile",
@@ -4953,26 +4958,14 @@ dependencies = [
 name = "jackin-usage-host-runtime"
 version = "0.6.4"
 dependencies = [
- "chrono",
- "jackin-config",
- "jackin-core",
  "jackin-protocol",
  "jackin-usage-broker",
- "jackin-usage-broker-wire",
- "jackin-usage-coordinator",
- "jackin-usage-credential-resolver",
- "jackin-usage-destination",
  "jackin-usage-discovery",
- "jackin-usage-host-accounts",
- "jackin-usage-host-credentials",
- "jackin-usage-host-glance",
  "jackin-usage-host-presentation",
- "jackin-usage-projection",
  "jackin-usage-provider-core",
- "jackin-usage-snapshot-store",
+ "serde",
  "serde_json",
  "tempfile",
- "toml",
 ]
 
 [[package]]
@@ -5032,6 +5025,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "zeroize",
 ]
 
 [[package]]

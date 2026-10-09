@@ -3,14 +3,15 @@
 
 //! Versioned, secret-free usage-broker wire records.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
 use crate::control::{FocusedUsageView, Money};
+use crate::usage_monitor::{MonitorIssue, MonitorOperation, MonitorReply};
 
 /// Usage-broker wire protocol version.
-pub const USAGE_BROKER_PROTOCOL_VERSION: &str = "v3";
+pub const USAGE_BROKER_PROTOCOL_VERSION: &str = "v5";
 
 /// Maximum newline-delimited request or response body.
 pub const USAGE_BROKER_MAX_FRAME_BYTES: usize = 1024 * 1024;
@@ -100,6 +101,22 @@ pub struct UsageCredentialScope {
     pub sources: BTreeSet<UsageCredentialSourceProof>,
 }
 
+/// Secret-free launch facts used by the host broker to derive one Capsule's
+/// canonical capability allowlist.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct UsageRelayForwardedSourcesV1 {
+    /// Exact configured account ids admitted to this Capsule.
+    pub selected_account_ids: BTreeSet<String>,
+    /// Provider surface paired with each selected account id.
+    pub selected_account_surfaces: BTreeMap<String, String>,
+    /// Surfaces with a successfully forwarded profile directory.
+    pub profile_surface_ids: BTreeSet<String>,
+    /// Governed provider environment keys present in the Capsule.
+    pub env_keys: BTreeSet<String>,
+    /// Exact source and material proofs staged for this launch.
+    pub credential_scope: UsageCredentialScope,
+}
+
 /// Opaque authority for one canonical provider account.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct UsageAccountCapability {
@@ -117,6 +134,26 @@ pub struct UsageCatalogEntry {
     pub capability: UsageAccountCapability,
     /// Content-derived revision for this capability's current admission.
     pub revision: String,
+}
+
+/// One selected configured account resolved to its canonical broker capability.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct UsageRelayCapabilityMappingV1 {
+    /// Configured account selected by this launch.
+    pub account_id: String,
+    /// Canonical broker surface for the selection.
+    pub surface_id: String,
+    /// Exact canonical account authority.
+    pub capability: UsageAccountCapability,
+}
+
+/// Broker-owned capability resolution for one Capsule launch.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct UsageRelayCapabilityResolutionV1 {
+    /// Capabilities whose source proof was forwarded into this Capsule.
+    pub capabilities: Vec<UsageAccountCapability>,
+    /// Canonical mappings for selected account/surface pairs in the allowlist.
+    pub selected_accounts: Vec<UsageRelayCapabilityMappingV1>,
 }
 
 /// Lifecycle phase of one account refresh generation.
@@ -1146,19 +1183,6 @@ pub struct UsageGenerationView {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "operation", rename_all = "snake_case")]
 pub enum UsageBrokerOperation {
-    /// Host-only atomic replacement of the broker's current capability catalog.
-    ///
-    /// A Capsule relay must reject this operation; it is never forwarded from
-    /// an in-container caller.
-    ReconcileCatalog {
-        /// Publication lease observed immediately before discovery started.
-        /// The broker rejects the rotation when this is no longer current.
-        expected_projection_id: Option<String>,
-        /// Content-derived current discovery revision.
-        catalog_revision: String,
-        /// Current canonical capability entries.
-        entries: Vec<UsageCatalogEntry>,
-    },
     /// Read the latest immutable canonical projection without provider work.
     CurrentProjection,
     /// Request one broker-owned projection refresh and return the latest publication.
@@ -1239,6 +1263,24 @@ pub enum UsageBrokerOperation {
         /// Bounded client wait in milliseconds.
         timeout_ms: u64,
     },
+    /// Operate the host-only durable usage monitor.
+    ///
+    /// Capsule relays must reject this operation. Monitor state and its
+    /// evidence are available only through the host broker.
+    Monitor {
+        /// Requested monitor operation.
+        request: MonitorOperation,
+    },
+    /// Resolve a Capsule launch against broker-owned discovery and source proofs.
+    ///
+    /// This operation may inspect host configuration and credentials inside
+    /// the broker. Runtime Capsule relays must reject it before forwarding.
+    ResolveRelayCapabilities {
+        /// Workspace and role provenance admitted for this launch.
+        scope_label: String,
+        /// Secret-free facts proving which sources reached this Capsule.
+        forwarded_sources: UsageRelayForwardedSourcesV1,
+    },
 }
 
 /// Versioned request envelope with a build handshake.
@@ -1286,6 +1328,21 @@ pub enum UsageBrokerResponse {
     Error {
         /// Typed sanitized failure.
         error: UsageCoordinationError,
+    },
+    /// Durable monitor operation completed.
+    Monitor {
+        /// Monitor result.
+        reply: MonitorReply,
+    },
+    /// Durable monitor operation failed with a stable issue.
+    MonitorError {
+        /// Safe monitor issue.
+        issue: MonitorIssue,
+    },
+    /// Broker-owned launch capability resolution.
+    RelayCapabilities {
+        /// Exact resolved capabilities and selected account mappings.
+        resolution: Box<UsageRelayCapabilityResolutionV1>,
     },
 }
 

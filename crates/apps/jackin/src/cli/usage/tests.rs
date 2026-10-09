@@ -119,3 +119,126 @@ fn usage_verify_reports_missing_and_untrusted_providers() {
 fn truncates_long_values_with_ascii_ellipsis() {
     assert_eq!(truncate("abcdefghijkl", 8), "abcde...");
 }
+
+#[test]
+fn budget_parser_uses_exact_sgd_minor_units() {
+    assert_eq!(parse_sgd_budget("50").unwrap(), Money::new(5_000, "SGD", 2));
+    assert_eq!(
+        parse_sgd_budget("50.2").unwrap(),
+        Money::new(5_020, "SGD", 2)
+    );
+    assert_eq!(
+        parse_sgd_budget("50.25").unwrap(),
+        Money::new(5_025, "SGD", 2)
+    );
+}
+
+#[test]
+fn budget_parser_rejects_rounding_and_negative_values() {
+    for invalid in ["50.255", "-1", "1.2.3", "NaN", ""] {
+        assert!(parse_sgd_budget(invalid).is_err(), "accepted {invalid:?}");
+    }
+}
+
+#[test]
+fn spend_file_is_bounded_typed_and_requires_explicit_verification() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("spend.json");
+    std::fs::write(
+        &path,
+        r#"{
+            "billing_period_start_epoch": 1800000000,
+            "billing_period_end_epoch": 1802592000,
+            "amount": {"amount_minor": 1234, "currency": "SGD", "exponent": 2},
+            "evidence_at_epoch": 1800000123
+        }"#,
+    )
+    .unwrap();
+
+    let unverified = read_spend_record(&path, "account-1", false).unwrap();
+    assert_eq!(unverified.account_id, "account-1");
+    assert!(!unverified.verified);
+    assert_eq!(unverified.source, SpendRecordSource::OperatorReceipt);
+    let verified = read_spend_record(&path, "account-1", true).unwrap();
+    assert!(verified.verified);
+
+    std::fs::write(&path, "x".repeat(16 * 1024 + 1)).unwrap();
+    let error = read_spend_record(&path, "account-1", true).unwrap_err();
+    assert!(error.downcast_ref::<UsageCommandExit>().is_some());
+}
+
+#[test]
+fn monitor_cli_errors_carry_stdout_json_and_exit_class() {
+    let error = usage_error("broker_unavailable", "not running", 3);
+    let exit = error.downcast_ref::<UsageCommandExit>().unwrap();
+    assert_eq!(exit.exit_code(), 3);
+    let value: serde_json::Value = serde_json::from_str(exit.json()).unwrap();
+    assert_eq!(value["error"]["code"], "broker_unavailable");
+}
+
+#[test]
+fn doctor_treats_unknown_auth_as_informational() {
+    let reply = MonitorReply::Doctor {
+        report: jackin_protocol::usage_monitor::MonitorDoctorReport {
+            provider: MonitorProvider::Claude,
+            broker_available: true,
+            statusline_ingress_supported: true,
+            auth_state: jackin_protocol::usage_monitor::MonitorAuthState::Unknown,
+            issues: vec![MonitorIssue {
+                code: MonitorIssueCode::AuthStatusUnknown,
+                message: "authentication was not inspected".to_owned(),
+                retry_at_epoch: None,
+            }],
+        },
+    };
+
+    assert_eq!(doctor_exit_code(&reply), 0);
+}
+
+#[test]
+fn watch_fresh_attach_uses_current_event_as_cursor_then_only_advances() {
+    // The broker's cursor-zero attach returns only the newest reconciled
+    // current event, not retained history. Its cursor seeds subsequent reads.
+    let fresh_attach_cursor = advance_watch_cursor(0, 17, [17]);
+    assert_eq!(fresh_attach_cursor, 17);
+
+    let live_cursor = advance_watch_cursor(fresh_attach_cursor, 19, [18, 19]);
+    assert_eq!(live_cursor, 19);
+    assert_eq!(advance_watch_cursor(live_cursor, 18, [16, 19]), 19);
+}
+
+#[test]
+fn wait_timeout_is_appended_as_a_typed_transient_status_issue() {
+    let mut issues = vec![MonitorIssue {
+        code: MonitorIssueCode::ResetDueUnverified,
+        message: "reset needs a fresh observation".to_owned(),
+        retry_at_epoch: None,
+    }];
+
+    append_wait_timeout_issue(&mut issues);
+
+    assert_eq!(issues.len(), 2);
+    assert_eq!(issues[0].code, MonitorIssueCode::ResetDueUnverified);
+    assert_eq!(issues[1].code, MonitorIssueCode::WaitTimeout);
+    assert!(issues[1].message.contains("expired"));
+    assert_eq!(issues[1].retry_at_epoch, None);
+}
+
+#[test]
+fn auth_prepare_requires_all_standard_streams_to_be_terminal() {
+    assert!(all_stdio_are_terminal(true, true, true));
+    assert!(!all_stdio_are_terminal(false, true, true));
+    assert!(!all_stdio_are_terminal(true, false, true));
+    assert!(!all_stdio_are_terminal(true, true, false));
+}
+
+#[test]
+fn auth_prepare_rejects_invalid_keychain_service_names() {
+    let too_long = "x".repeat(513);
+    for service in ["", "   ", "a\0b", too_long.as_str()] {
+        let error = validate_keychain_service(service).unwrap_err();
+        let exit = error.downcast_ref::<UsageCommandExit>().unwrap();
+        assert_eq!(exit.exit_code(), 3);
+    }
+    validate_keychain_service("Claude Code-credentials").unwrap();
+}

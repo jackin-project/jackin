@@ -41,12 +41,159 @@ fn parses_usage_verify() {
 }
 
 #[test]
-fn parses_usage_host_projection_json() {
-    let cli =
-        Cli::try_parse_from(["jackin", "usage", "host", "projection", "--format", "json"]).unwrap();
+fn parses_usage_doctor_unattended() {
+    let cli = Cli::try_parse_from([
+        "jackin",
+        "usage",
+        "doctor",
+        "--provider",
+        "claude",
+        "--unattended",
+    ])
+    .unwrap();
     assert!(matches!(cli.command, Some(Command::Usage(ref args))
-        if args.instance.as_deref() == Some("host") && args.format == "json"
-            && matches!(args.scope, Some(usage::UsageScope::Projection))));
+        if args.instance.is_none()
+            && matches!(args.scope, Some(usage::UsageScope::Doctor(ref doctor))
+                if doctor.provider == usage::UsageProviderArg::Claude && doctor.unattended)));
+}
+
+#[test]
+fn parses_usage_auth_prepare_with_keychain_service() {
+    let cli = Cli::try_parse_from([
+        "jackin",
+        "usage",
+        "auth",
+        "prepare",
+        "--provider",
+        "claude",
+        "--keychain-service",
+        "Claude custom",
+    ])
+    .unwrap();
+    assert!(matches!(cli.command, Some(Command::Usage(ref args))
+        if matches!(args.scope, Some(usage::UsageScope::Auth(ref auth))
+            if matches!(auth.command, usage::UsageAuthCommand::Prepare(ref prepare)
+                if prepare.provider == usage::UsageProviderArg::Claude
+                    && prepare.keychain_service.as_deref() == Some("Claude custom")))));
+}
+
+#[test]
+fn parses_usage_monitor_start_with_isolated_data_dir() {
+    let cli = Cli::try_parse_from([
+        "jackin",
+        "usage",
+        "--data-dir",
+        "/tmp/usage-data",
+        "monitor",
+        "start",
+        "--provider",
+        "claude",
+        "--account",
+        "account-1",
+        "--goal",
+        "goal-1",
+        "--session",
+        "session-1",
+        "--budget-sgd",
+        "50.25",
+    ])
+    .unwrap();
+    assert!(matches!(cli.command, Some(Command::Usage(ref args))
+        if args.data_dir.as_deref() == Some(std::path::Path::new("/tmp/usage-data"))
+            && matches!(args.scope, Some(usage::UsageScope::Monitor(ref monitor))
+                if matches!(monitor.command, usage::UsageMonitorCommand::Start(ref start)
+                    if start.provider == usage::UsageProviderArg::Claude
+                        && start.account == "account-1"
+                        && start.goal == "goal-1"
+                        && start.session.as_deref() == Some("session-1")
+                        && start.budget_sgd.as_deref() == Some("50.25")))));
+}
+
+#[test]
+fn parses_usage_statusline_ingest() {
+    let cli = Cli::try_parse_from([
+        "jackin",
+        "usage",
+        "statusline",
+        "ingest",
+        "--account",
+        "account-1",
+        "--format",
+        "json",
+        "--data-dir",
+        "/tmp/usage-data",
+    ])
+    .unwrap();
+    assert!(matches!(cli.command, Some(Command::Usage(ref args))
+        if args.format == "json"
+            && args.data_dir.as_deref() == Some(std::path::Path::new("/tmp/usage-data"))
+            && matches!(args.scope, Some(usage::UsageScope::Statusline(ref statusline))
+                if matches!(statusline.command, usage::UsageStatuslineCommand::Ingest(ref ingest)
+                    if ingest.account == "account-1"))));
+}
+
+#[test]
+fn parses_usage_status_wait_and_required_condition() {
+    let cli = Cli::try_parse_from([
+        "jackin",
+        "usage",
+        "wait",
+        "--monitor",
+        "monitor-1",
+        "--until",
+        "runnable",
+        "--timeout-secs",
+        "1",
+    ])
+    .unwrap();
+    assert!(matches!(cli.command, Some(Command::Usage(ref args))
+        if matches!(args.scope, Some(usage::UsageScope::Wait(ref wait))
+            if wait.monitor == "monitor-1"
+                && wait.until == usage::UsageWaitCondition::Runnable
+                && wait.timeout_secs == 1)));
+
+    let _error =
+        Cli::try_parse_from(["jackin", "usage", "wait", "--monitor", "monitor-1"]).unwrap_err();
+}
+
+#[test]
+fn parses_usage_top_level_status_and_refresh() {
+    let status =
+        Cli::try_parse_from(["jackin", "usage", "status", "--monitor", "monitor-1"]).unwrap();
+    assert!(matches!(status.command, Some(Command::Usage(ref args))
+        if matches!(args.scope, Some(usage::UsageScope::Status(ref status))
+            if status.monitor == "monitor-1")));
+
+    let refresh =
+        Cli::try_parse_from(["jackin", "usage", "refresh", "--monitor", "monitor-1"]).unwrap();
+    assert!(matches!(refresh.command, Some(Command::Usage(ref args))
+        if matches!(args.scope, Some(usage::UsageScope::Refresh(ref refresh))
+            if refresh.monitor == "monitor-1")));
+}
+
+#[test]
+fn parses_usage_service_start() {
+    let cli = Cli::try_parse_from(["jackin", "usage", "service", "start"]).unwrap();
+    assert!(matches!(cli.command, Some(Command::Usage(ref args))
+        if matches!(args.scope, Some(usage::UsageScope::Service(ref service))
+            if matches!(service.command, usage::UsageServiceCommand::Start))));
+}
+
+#[test]
+fn parses_usage_watch_with_bounded_duration() {
+    let cli = Cli::try_parse_from([
+        "jackin",
+        "usage",
+        "watch",
+        "--monitor",
+        "monitor-1",
+        "--timeout-secs",
+        "1",
+    ])
+    .unwrap();
+    assert!(matches!(cli.command, Some(Command::Usage(ref args))
+        if matches!(args.scope, Some(usage::UsageScope::Watch(ref watch))
+            if watch.monitor == "monitor-1" && watch.timeout_secs == Some(1))));
 }
 
 #[test]

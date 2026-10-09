@@ -78,8 +78,18 @@ const fn usage_command_name(scope: Option<&UsageScope>) -> CliCommandName {
         None => CliCommandName::Usage,
         Some(UsageScope::Accounts(_)) => CliCommandName::UsageAccounts,
         Some(UsageScope::Verify) => CliCommandName::UsageVerify,
-        Some(UsageScope::Snapshot(_)) => CliCommandName::UsageSnapshot,
-        Some(UsageScope::Projection) => CliCommandName::UsageSnapshot,
+        Some(
+            UsageScope::Doctor(_)
+            | UsageScope::Service(_)
+            | UsageScope::Monitor(_)
+            | UsageScope::Status(_)
+            | UsageScope::Refresh(_)
+            | UsageScope::Watch(_)
+            | UsageScope::Wait(_)
+            | UsageScope::Statusline(_)
+            | UsageScope::Spend(_)
+            | UsageScope::Auth(_),
+        ) => CliCommandName::Usage,
     }
 }
 

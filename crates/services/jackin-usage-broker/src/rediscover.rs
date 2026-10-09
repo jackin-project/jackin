@@ -19,6 +19,7 @@ use jackin_usage_discovery::{
 use jackin_usage_host_credentials::{
     ProviderCredentialEnvResolver, ProviderCredentialRefreshOutcome,
 };
+use jackin_usage_provider_core::{ProviderErrorKind, ProviderFailureMetadata};
 
 pub(crate) fn rediscover_discovery(
     scope: &UsageDiscoveryScope,
@@ -104,9 +105,11 @@ pub(crate) fn refresh_binding_outcome(
     resolver: &dyn ProviderCredentialEnvResolver,
 ) -> ProviderProbeOutcome {
     match refresh_credential_binding(binding, resolver) {
-        ProviderCredentialRefreshOutcome::Snapshot { view, rate_limit } => {
-            provider_probe_outcome_with_rate_limit(*view, rate_limit)
-        }
+        ProviderCredentialRefreshOutcome::Snapshot {
+            view,
+            rate_limit,
+            provider_error,
+        } => provider_probe_outcome_with_metadata(*view, rate_limit, provider_error),
         ProviderCredentialRefreshOutcome::Missing
         | ProviderCredentialRefreshOutcome::Denied
         | ProviderCredentialRefreshOutcome::InteractionRequired => ProviderProbeOutcome::Failure {
@@ -129,15 +132,54 @@ pub(crate) fn provider_probe_outcome(
     provider_probe_outcome_with_rate_limit(view, None)
 }
 
+#[cfg(test)]
 pub(crate) fn provider_probe_outcome_with_rate_limit(
     view: jackin_protocol::control::FocusedUsageView,
     rate_limit: Option<jackin_usage_provider_core::ProviderRateLimit>,
+) -> ProviderProbeOutcome {
+    provider_probe_outcome_with_metadata(view, rate_limit, None)
+}
+
+pub(crate) fn provider_probe_outcome_with_metadata(
+    view: jackin_protocol::control::FocusedUsageView,
+    rate_limit: Option<jackin_usage_provider_core::ProviderRateLimit>,
+    provider_error: Option<ProviderFailureMetadata>,
 ) -> ProviderProbeOutcome {
     if let Some(rate_limit) = rate_limit {
         return ProviderProbeOutcome::Failure {
             kind: UsageCoordinationErrorKind::RateLimited,
             message: "usage provider rate limit is active".to_owned(),
             retry_at_epoch: rate_limit.retry_at_epoch,
+        };
+    }
+    if let Some(provider_error) = provider_error {
+        let kind = match provider_error.kind {
+            ProviderErrorKind::Timeout => UsageCoordinationErrorKind::ProviderTimeout,
+            ProviderErrorKind::HttpStatus => match provider_error.http_status {
+                Some(401) => UsageCoordinationErrorKind::NeedsSecret,
+                Some(403) => UsageCoordinationErrorKind::Unauthorized,
+                Some(429) => UsageCoordinationErrorKind::RateLimited,
+                _ => UsageCoordinationErrorKind::ProviderUnavailable,
+            },
+            ProviderErrorKind::Transport | ProviderErrorKind::Decode | ProviderErrorKind::Other => {
+                UsageCoordinationErrorKind::ProviderUnavailable
+            }
+        };
+        let fallback = match kind {
+            UsageCoordinationErrorKind::NeedsSecret => {
+                "usage provider credentials require operator action"
+            }
+            UsageCoordinationErrorKind::Unauthorized => {
+                "usage provider denied the configured credential"
+            }
+            UsageCoordinationErrorKind::RateLimited => "usage provider rate limit is active",
+            UsageCoordinationErrorKind::ProviderTimeout => "usage provider request timed out",
+            _ => "usage provider quota is unavailable",
+        };
+        return ProviderProbeOutcome::Failure {
+            kind,
+            message: honest_probe_message(&view, fallback),
+            retry_at_epoch: None,
         };
     }
     match view.status {

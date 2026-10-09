@@ -99,7 +99,31 @@ fn forwarded_scope_selects_only_accounts_backed_by_forwarded_sources() {
             credential_scope: UsageCredentialScope::default(),
         },
     );
-    assert_eq!(env_only, vec![env_capability.clone()]);
+    assert!(
+        env_only.is_empty(),
+        "a forwarded environment key name without an account/source/material proof grants no capability"
+    );
+
+    let env_with_source_proof = forwarded_usage_capabilities(
+        &discovery,
+        scope,
+        &ForwardedUsageSources {
+            selected_account_ids: BTreeSet::new(),
+            selected_account_surfaces: BTreeMap::new(),
+            profile_surface_ids: BTreeSet::new(),
+            env_keys: BTreeSet::from(["AMP_API_KEY".to_owned()]),
+            credential_scope: UsageCredentialScope {
+                sources: BTreeSet::from([UsageCredentialSourceProof {
+                    account_id: "account-env".to_owned(),
+                    surface_id: "amp".to_owned(),
+                    key: "AMP_API_KEY".to_owned(),
+                    source: env_material.source.clone(),
+                    material_fingerprint: env_material.material_fingerprint.clone(),
+                }]),
+            },
+        },
+    );
+    assert_eq!(env_with_source_proof, vec![env_capability.clone()]);
 
     let selected_profile = forwarded_usage_capabilities(
         &discovery,
@@ -192,11 +216,21 @@ fn forwarded_scope_selects_only_accounts_backed_by_forwarded_sources() {
     assert!(wrong_account.is_empty());
 
     assert_eq!(
-        usage_capability_for_selected_account(&discovery, "account-profile", "amp"),
+        usage_capability_for_selected_account_with_sources(
+            &discovery,
+            "account-profile",
+            "amp",
+            None,
+        ),
         Some(profile_capability.clone())
     );
     assert_eq!(
-        usage_capability_for_selected_account(&discovery, "account-profile", "claude"),
+        usage_capability_for_selected_account_with_sources(
+            &discovery,
+            "account-profile",
+            "claude",
+            None,
+        ),
         None
     );
 

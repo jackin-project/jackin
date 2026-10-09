@@ -75,7 +75,11 @@ pub fn provider_credential_snapshot_with_metadata<V: CredentialSnapshotVendors>(
         if key_name == jackin_core::CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME {
             return vendors.claude_oauth_wave_view(secret, now);
         }
-        return (vendors.claude_api_key_view(key_name, secret, now), None, None);
+        return (
+            vendors.claude_api_key_view(key_name, secret, now),
+            None,
+            None,
+        );
     }
     if surface_id == "openrouter" {
         let (view, rate_limit) = vendors.openrouter_key_view(secret, now);

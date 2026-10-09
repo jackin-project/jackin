@@ -72,11 +72,13 @@ pub enum MonitorOperation {
         /// Provider whose interactive authentication should be prepared.
         provider: MonitorProvider,
     },
-    /// Read monitor events after a sequence number, with a bounded long poll.
+    /// Read reconciled monitor events with a bounded long poll.
+    /// `after_sequence == 0` attaches at the latest current event without replaying history;
+    /// nonzero cursors return retained events newer than that sequence.
     Watch {
         /// Stable broker-assigned monitor ID.
         monitor_id: String,
-        /// Last event sequence already observed by the caller.
+        /// Last event sequence already observed by the caller; zero means fresh attach.
         after_sequence: u64,
         /// Maximum wait in milliseconds; the broker clamps this to its limit.
         timeout_ms: u64,
@@ -95,9 +97,10 @@ pub struct MonitorConfig {
     pub goal_id: String,
     /// Optional session identifier to narrow statusline evidence.
     pub session_id: Option<String>,
-    /// Optional model guard. Mismatched statusline evidence cannot update this monitor.
+    /// Optional model guard. Mismatched fresh evidence blocks runnable decisions.
     pub expected_model: Option<String>,
-    /// Optional operator-defined spend ceiling in an explicit currency/scale.
+    /// Operator-defined spend ceiling in an explicit currency/scale.
+    /// Missing or unsupported values block work with `budget_unverifiable`.
     pub budget: Option<Money>,
 }
 
@@ -441,6 +444,8 @@ pub enum MonitorIssueCode {
     ResetDueUnverified,
     /// A fresh quota observation reports no remaining allowance.
     LimitExhausted,
+    /// The configured usage guard requires pausing before full exhaustion.
+    LimitGuardReached,
     /// The monitored operation requires interactive operator input.
     InteractionRequired,
     /// Quota evidence is older than the accepted freshness interval.
@@ -616,7 +621,8 @@ pub enum MonitorReply {
         /// Updated durable monitor status.
         status: Box<MonitorStatus>,
     },
-    /// Bounded event watch returned new events or reached its timeout.
+    /// Bounded event watch returned the current event on fresh attach, newer events,
+    /// or reached its timeout.
     Watch {
         /// Events newer than the caller's cursor.
         events: Vec<MonitorEvent>,

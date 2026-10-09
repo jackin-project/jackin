@@ -10,9 +10,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 mod bridge;
-mod discovery;
 mod dto;
 mod error;
+mod presentation;
 
 pub use bridge::UsageMenuBarBridge;
 pub use dto::{

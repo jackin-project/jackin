@@ -1,44 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Attached broker handle and forwarded sources.
+//! Secret-free source facts forwarded from one host launch.
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use jackin_protocol::usage_broker::{UsageAccountCapability, UsageCredentialScope};
-
-use crate::{ScopedCapability, UsageBrokerClient};
-
-/// Attached broker plus every host-discovered canonical capability.
-#[derive(Debug, Clone)]
-pub struct UsageBrokerHandle {
-    /// Host-only transport client.
-    pub client: UsageBrokerClient,
-    /// Canonical accounts known to this discovery generation.
-    pub capabilities: Vec<UsageAccountCapability>,
-    /// Publication lease fencing this activation's capability set.
-    pub catalog_lease: String,
-    pub(crate) scoped_capabilities: BTreeMap<String, Vec<ScopedCapability>>,
-}
-
-impl UsageBrokerHandle {
-    /// Exact canonical accounts whose credential source was forwarded at launch.
-    #[must_use]
-    pub fn capabilities_for_forwarded_scope(
-        &self,
-        scope_label: &str,
-        sources: &ForwardedUsageSources,
-    ) -> Vec<UsageAccountCapability> {
-        self.scoped_capabilities
-            .get(scope_label)
-            .into_iter()
-            .flatten()
-            .filter(|entry| entry.requirement.is_forwarded(sources))
-            .map(|entry| entry.capability.clone())
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            .collect()
-    }
-}
+use jackin_protocol::usage_broker::{UsageCredentialScope, UsageRelayForwardedSourcesV1};
 
 /// Secret-free launch facts proving which credential sources reached a Capsule.
 #[derive(Debug, Clone, Default)]
@@ -56,4 +22,28 @@ pub struct ForwardedUsageSources {
     pub env_keys: BTreeSet<String>,
     /// Exact source/material proofs staged for this launch.
     pub credential_scope: UsageCredentialScope,
+}
+
+impl From<&ForwardedUsageSources> for UsageRelayForwardedSourcesV1 {
+    fn from(sources: &ForwardedUsageSources) -> Self {
+        Self {
+            selected_account_ids: sources.selected_account_ids.clone(),
+            selected_account_surfaces: sources.selected_account_surfaces.clone(),
+            profile_surface_ids: sources.profile_surface_ids.clone(),
+            env_keys: sources.env_keys.clone(),
+            credential_scope: sources.credential_scope.clone(),
+        }
+    }
+}
+
+impl From<UsageRelayForwardedSourcesV1> for ForwardedUsageSources {
+    fn from(sources: UsageRelayForwardedSourcesV1) -> Self {
+        Self {
+            selected_account_ids: sources.selected_account_ids,
+            selected_account_surfaces: sources.selected_account_surfaces,
+            profile_surface_ids: sources.profile_surface_ids,
+            env_keys: sources.env_keys,
+            credential_scope: sources.credential_scope,
+        }
+    }
 }

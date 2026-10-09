@@ -70,30 +70,31 @@ impl ForwardingRequirement {
             Self::Profile(surface) => sources.profile_surface_ids.contains(surface),
             Self::Env {
                 surface,
-                key,
                 launch_keys,
                 account_ids,
                 material,
+                ..
             } => {
-                if sources.selected_account_ids.is_empty() {
-                    return launch_keys
-                        .iter()
-                        .any(|launch_key| sources.env_keys.contains(launch_key));
-                }
                 let Some(material) = material else {
                     return false;
                 };
                 let account_ids = account_ids
                     .iter()
-                    .filter(|account_id| sources.selected_account_ids.contains(*account_id))
+                    .filter(|account_id| {
+                        sources.selected_account_ids.is_empty()
+                            || sources.selected_account_ids.contains(*account_id)
+                    })
+                    .cloned()
+                    .collect::<BTreeSet<_>>();
+                let forwarded_keys = launch_keys
+                    .intersection(&sources.env_keys)
                     .cloned()
                     .collect::<BTreeSet<_>>();
                 credential_scope_has_matching_proof(
                     &sources.credential_scope,
                     &account_ids,
                     surface,
-                    key,
-                    launch_keys,
+                    &forwarded_keys,
                     material,
                 )
             }
@@ -110,13 +111,11 @@ pub(crate) fn forwarding_requirement(
             ForwardingRequirement::Profile(binding.surface.id().to_owned())
         }
         ValidatedCredentialSource::Env {
-            key,
             launch_keys,
             material,
             ..
         } => ForwardingRequirement::Env {
             surface: binding.surface.id().to_owned(),
-            key: key.clone(),
             launch_keys: launch_keys.clone(),
             account_ids: binding
                 .provenance

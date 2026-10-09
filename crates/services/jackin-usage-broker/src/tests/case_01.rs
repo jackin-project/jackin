@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use std::path::PathBuf;
 
 #[test]
 fn launch_scope_fails_closed_on_rotation_repoint_and_mixed_agent_source() {
@@ -194,6 +195,70 @@ fn discovery_typed_rate_limit_reaches_broker_without_text_parsing() {
     assert_eq!(kind, UsageCoordinationErrorKind::RateLimited);
     assert_eq!(message, "usage provider rate limit is active");
     assert_eq!(retry_at_epoch, Some(1_700_000_037));
+}
+
+#[test]
+fn discovery_typed_provider_failures_keep_auth_timeout_and_transport_kinds() {
+    let cases = [
+        (
+            jackin_usage_provider_core::ProviderFailureMetadata {
+                kind: jackin_usage_provider_core::ProviderErrorKind::HttpStatus,
+                http_status: Some(401),
+            },
+            UsageCoordinationErrorKind::NeedsSecret,
+        ),
+        (
+            jackin_usage_provider_core::ProviderFailureMetadata {
+                kind: jackin_usage_provider_core::ProviderErrorKind::HttpStatus,
+                http_status: Some(403),
+            },
+            UsageCoordinationErrorKind::Unauthorized,
+        ),
+        (
+            jackin_usage_provider_core::ProviderFailureMetadata {
+                kind: jackin_usage_provider_core::ProviderErrorKind::HttpStatus,
+                http_status: Some(429),
+            },
+            UsageCoordinationErrorKind::RateLimited,
+        ),
+        (
+            jackin_usage_provider_core::ProviderFailureMetadata {
+                kind: jackin_usage_provider_core::ProviderErrorKind::Timeout,
+                http_status: None,
+            },
+            UsageCoordinationErrorKind::ProviderTimeout,
+        ),
+        (
+            jackin_usage_provider_core::ProviderFailureMetadata {
+                kind: jackin_usage_provider_core::ProviderErrorKind::Transport,
+                http_status: None,
+            },
+            UsageCoordinationErrorKind::ProviderUnavailable,
+        ),
+        (
+            jackin_usage_provider_core::ProviderFailureMetadata {
+                kind: jackin_usage_provider_core::ProviderErrorKind::Decode,
+                http_status: None,
+            },
+            UsageCoordinationErrorKind::ProviderUnavailable,
+        ),
+    ];
+
+    for (metadata, expected_kind) in cases {
+        let mut view = quota_view();
+        view.status = UsageSnapshotStatus::Stale;
+        view.last_error = Some("same fixture error text".to_owned());
+        let ProviderProbeOutcome::Failure {
+            kind,
+            retry_at_epoch,
+            ..
+        } = provider_probe_outcome_with_metadata(view, None, Some(metadata))
+        else {
+            panic!("typed provider error must remain a broker failure");
+        };
+        assert_eq!(kind, expected_kind);
+        assert_eq!(retry_at_epoch, None);
+    }
 }
 
 #[test]

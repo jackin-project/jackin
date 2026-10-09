@@ -6,15 +6,24 @@ use std::io::{BufRead, BufReader, Read};
 
 use std::os::unix::net::UnixStream;
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use jackin_protocol::usage_broker::{
     USAGE_BROKER_MAX_FRAME_BYTES, USAGE_BROKER_PROTOCOL_VERSION, UsageBrokerOperation,
     UsageBrokerRequest, UsageBrokerResponse, UsageCoordinationError, UsageCoordinationErrorKind,
-    UsageProjectionRefreshStateV1,
+    UsageGenerationView, UsageProjectionRefreshStateV1, UsageRelayCapabilityMappingV1,
+    UsageRelayCapabilityResolutionV1, UsageRelayForwardedSourcesV1,
+};
+use jackin_protocol::usage_monitor::{
+    MonitorIssue, MonitorIssueCode, MonitorOperation, MonitorReply,
 };
 
-use crate::{protocol_error, publish, unavailable};
+use crate::{
+    BROKER_ACTIVATION_ATTEMPTS, BrokerCatalogRefresh, ForwardedUsageSources, MonitorStore,
+    forwarded_usage_capabilities, protocol_error, publish, unavailable,
+    usage_capability_for_selected_account_with_sources,
+};
 use jackin_usage_coordinator::UsageCoordinator;
 
 pub(crate) fn dispatch(
@@ -22,6 +31,9 @@ pub(crate) fn dispatch(
     request: UsageBrokerRequest,
     build_id: &str,
     publisher: &publish::ProjectionPublisher,
+    monitor_store: &MonitorStore,
+    shutdown: &AtomicBool,
+    catalog_refresh: Option<&BrokerCatalogRefresh>,
 ) -> UsageBrokerResponse {
     let UsageBrokerRequest {
         protocol_version,
@@ -49,54 +61,103 @@ pub(crate) fn dispatch(
             },
         };
     }
-    match &operation {
-        UsageBrokerOperation::ReconcileCatalog {
-            expected_projection_id,
-            catalog_revision,
-            entries,
-        } => {
-            return match publisher.reconcile_catalog_if_projection(
-                expected_projection_id.as_deref(),
-                catalog_revision.clone(),
-                entries.clone(),
-                chrono::Utc::now().timestamp(),
-            ) {
-                Ok(projection) => UsageBrokerResponse::Projection {
-                    projection: Box::new(projection),
-                },
-                Err(error) => UsageBrokerResponse::Error { error },
-            };
-        }
-        UsageBrokerOperation::CurrentProjection => return read_projection(publisher),
-        UsageBrokerOperation::RequestRefresh {
-            force,
-            observed_projection_id: _,
-        } => return refresh_projection(coordinator, publisher, *force),
+    if let Some(response) = dispatch_monitor_operation(&operation, monitor_store, shutdown) {
+        return response;
+    }
+    if let Some(response) =
+        dispatch_projection_operation(coordinator, &operation, publisher, catalog_refresh)
+    {
+        return response;
+    }
+    let now = chrono::Utc::now().timestamp();
+    let result = dispatch_capability_operation(
+        coordinator,
+        operation,
+        launch_credential_scope.as_ref(),
+        publisher,
+        now,
+    );
+    match result {
+        Ok(state) => UsageBrokerResponse::State {
+            state: Box::new(state),
+        },
+        Err(error) => UsageBrokerResponse::Error { error },
+    }
+}
+
+fn dispatch_monitor_operation(
+    operation: &UsageBrokerOperation,
+    monitor_store: &MonitorStore,
+    shutdown: &AtomicBool,
+) -> Option<UsageBrokerResponse> {
+    let UsageBrokerOperation::Monitor { request } = operation else {
+        return None;
+    };
+    let now = chrono::Utc::now().timestamp();
+    if matches!(request, MonitorOperation::PrepareAuth { .. }) {
+        return Some(monitor_error(
+            MonitorIssueCode::InteractionRequired,
+            "interactive authentication preparation requires an explicit TTY operator command",
+            None,
+        ));
+    }
+    let stopping = matches!(request, MonitorOperation::ServiceStop);
+    let reply = match monitor_store.operate(request.clone(), now) {
+        Ok(reply) => reply,
+        Err(issue) => return Some(UsageBrokerResponse::MonitorError { issue }),
+    };
+    if stopping && matches!(reply, MonitorReply::ServiceStopped) {
+        shutdown.store(true, Ordering::Release);
+    }
+    Some(UsageBrokerResponse::Monitor { reply })
+}
+
+fn dispatch_projection_operation(
+    coordinator: &UsageCoordinator,
+    operation: &UsageBrokerOperation,
+    publisher: &publish::ProjectionPublisher,
+    catalog_refresh: Option<&BrokerCatalogRefresh>,
+) -> Option<UsageBrokerResponse> {
+    match operation {
+        UsageBrokerOperation::ResolveRelayCapabilities {
+            scope_label,
+            forwarded_sources,
+        } => Some(resolve_relay_capabilities(
+            publisher,
+            catalog_refresh,
+            scope_label,
+            forwarded_sources,
+        )),
+        UsageBrokerOperation::CurrentProjection => Some(read_projection(publisher)),
+        UsageBrokerOperation::RequestRefresh { force, .. } => Some(
+            refresh_projection_with_catalog(coordinator, publisher, *force, catalog_refresh),
+        ),
         UsageBrokerOperation::JoinPublication {
             projection_id,
             timeout_ms,
-        } => return join_publication(publisher, projection_id, *timeout_ms),
+        } => Some(join_publication(publisher, projection_id, *timeout_ms)),
         UsageBrokerOperation::CurrentProjectionForSurface
         | UsageBrokerOperation::RequestRefreshForSurface { .. }
         | UsageBrokerOperation::JoinPublicationForSurface { .. } => {
-            return UsageBrokerResponse::Error {
+            Some(UsageBrokerResponse::Error {
                 error: UsageCoordinationError {
                     kind: UsageCoordinationErrorKind::Unauthorized,
                     message: "scoped projection operation requires a container relay".to_owned(),
                 },
-            };
+            })
         }
-        _ => {}
+        _ => None,
     }
-    let now = chrono::Utc::now().timestamp();
-    let result = match operation {
-        UsageBrokerOperation::ReconcileCatalog { .. } => Err(protocol_error()),
-        UsageBrokerOperation::CurrentProjection
-        | UsageBrokerOperation::RequestRefresh { .. }
-        | UsageBrokerOperation::JoinPublication { .. }
-        | UsageBrokerOperation::CurrentProjectionForSurface
-        | UsageBrokerOperation::RequestRefreshForSurface { .. }
-        | UsageBrokerOperation::JoinPublicationForSurface { .. } => Err(protocol_error()),
+}
+
+fn dispatch_capability_operation(
+    coordinator: &UsageCoordinator,
+    operation: UsageBrokerOperation,
+    launch_credential_scope: Option<&jackin_protocol::usage_broker::UsageCredentialScope>,
+    publisher: &publish::ProjectionPublisher,
+    now: i64,
+) -> Result<UsageGenerationView, UsageCoordinationError> {
+    match operation {
         UsageBrokerOperation::CurrentForCapability { .. }
         | UsageBrokerOperation::RefreshForCapability { .. }
         | UsageBrokerOperation::JoinForCapability { .. } => Err(UsageCoordinationError {
@@ -104,10 +165,10 @@ pub(crate) fn dispatch(
             message: "scoped usage operation requires a container relay".to_owned(),
         }),
         UsageBrokerOperation::Current { capability } => {
-            if let Some(scope) = launch_credential_scope.as_ref()
+            if let Some(scope) = launch_credential_scope
                 && let Err(error) = coordinator.authorize_credential_scope(&capability, scope)
             {
-                return UsageBrokerResponse::Error { error };
+                return Err(error);
             }
             publisher.observe(&capability);
             let result = coordinator.current(&capability, now);
@@ -119,10 +180,10 @@ pub(crate) fn dispatch(
             observed_generation,
             force,
         } => {
-            if let Some(scope) = launch_credential_scope.as_ref()
+            if let Some(scope) = launch_credential_scope
                 && let Err(error) = coordinator.authorize_credential_scope(&capability, scope)
             {
-                return UsageBrokerResponse::Error { error };
+                return Err(error);
             }
             publisher.observe(&capability);
             let result = match launch_credential_scope {
@@ -131,7 +192,7 @@ pub(crate) fn dispatch(
                     observed_generation,
                     force,
                     now,
-                    scope,
+                    scope.clone(),
                 ),
                 None => coordinator.request_refresh(&capability, observed_generation, force, now),
             };
@@ -143,10 +204,10 @@ pub(crate) fn dispatch(
             generation,
             timeout_ms,
         } => {
-            if let Some(scope) = launch_credential_scope.as_ref()
+            if let Some(scope) = launch_credential_scope
                 && let Err(error) = coordinator.authorize_credential_scope(&capability, scope)
             {
-                return UsageBrokerResponse::Error { error };
+                return Err(error);
             }
             publisher.observe(&capability);
             let result = coordinator.join_generation(
@@ -158,12 +219,153 @@ pub(crate) fn dispatch(
             publisher.publish_due(now);
             result
         }
+        _ => Err(protocol_error()),
+    }
+}
+
+/// Resolve a launch from fresh discovery inside the broker, then reconcile
+/// that same generation before returning any authority. A stale catalog scan
+/// cannot win after a newer publication because every reconciliation is CAS
+/// fenced and conflicts trigger a fresh scan.
+fn resolve_relay_capabilities(
+    publisher: &publish::ProjectionPublisher,
+    catalog_refresh: Option<&BrokerCatalogRefresh>,
+    scope_label: &str,
+    forwarded_sources: &UsageRelayForwardedSourcesV1,
+) -> UsageBrokerResponse {
+    if forwarded_sources.profile_surface_ids.is_empty()
+        && forwarded_sources.env_keys.is_empty()
+        && forwarded_sources.credential_scope.sources.is_empty()
+    {
+        return UsageBrokerResponse::RelayCapabilities {
+            resolution: Box::default(),
+        };
+    }
+    let Some(catalog_refresh) = catalog_refresh else {
+        return UsageBrokerResponse::Error {
+            error: unavailable(),
+        };
     };
-    match result {
-        Ok(state) => UsageBrokerResponse::State {
-            state: Box::new(state),
-        },
+
+    let forwarded_sources = ForwardedUsageSources::from(forwarded_sources.clone());
+    match retry_catalog_revision_conflict(|| {
+        catalog_refresh.with_discovery(|discovery| {
+            let catalog_revision = discovery
+                .config_generation
+                .clone()
+                .unwrap_or_else(|| "empty".to_owned());
+            let entries = crate::usage_catalog_entries(&discovery);
+            let diagnostics = crate::catalog_diagnostics::from_discovery(&discovery);
+            let now = chrono::Utc::now().timestamp();
+            let current_projection = publisher.current_projection()?;
+            publisher.reconcile_catalog_if_projection_with_diagnostics(
+                Some(&current_projection.projection_id),
+                catalog_revision,
+                entries,
+                diagnostics,
+                now,
+            )?;
+            {
+                let capabilities =
+                    forwarded_usage_capabilities(&discovery, scope_label, &forwarded_sources);
+                let selected_accounts = forwarded_sources
+                    .selected_account_surfaces
+                    .iter()
+                    .filter(|(account_id, _)| {
+                        forwarded_sources.selected_account_ids.contains(*account_id)
+                    })
+                    .filter_map(|(account_id, surface_id)| {
+                        let capability = usage_capability_for_selected_account_with_sources(
+                            &discovery,
+                            account_id,
+                            surface_id,
+                            Some(&forwarded_sources),
+                        )?;
+                        capabilities
+                            .contains(&capability)
+                            .then(|| UsageRelayCapabilityMappingV1 {
+                                account_id: account_id.clone(),
+                                surface_id: surface_id.clone(),
+                                capability,
+                            })
+                    })
+                    .collect();
+                Ok(UsageBrokerResponse::RelayCapabilities {
+                    resolution: Box::new(UsageRelayCapabilityResolutionV1 {
+                        capabilities,
+                        selected_accounts,
+                    }),
+                })
+            }
+        })
+    }) {
+        Ok(response) => response,
         Err(error) => UsageBrokerResponse::Error { error },
+    }
+}
+
+fn refresh_projection_with_catalog(
+    coordinator: &UsageCoordinator,
+    publisher: &publish::ProjectionPublisher,
+    force: bool,
+    catalog_refresh: Option<&BrokerCatalogRefresh>,
+) -> UsageBrokerResponse {
+    if force && let Some(catalog_refresh) = catalog_refresh {
+        let reconciled = retry_catalog_revision_conflict(|| {
+            catalog_refresh.with_discovery(|discovery| {
+                let catalog_revision = discovery
+                    .config_generation
+                    .clone()
+                    .unwrap_or_else(|| "empty".to_owned());
+                let entries = crate::usage_catalog_entries(&discovery);
+                let diagnostics = crate::catalog_diagnostics::from_discovery(&discovery);
+                let now = chrono::Utc::now().timestamp();
+                let current_projection = publisher.current_projection()?;
+                publisher.reconcile_catalog_if_projection_with_diagnostics(
+                    Some(&current_projection.projection_id),
+                    catalog_revision,
+                    entries,
+                    diagnostics,
+                    now,
+                )?;
+                Ok(())
+            })
+        });
+        if let Err(error) = reconciled {
+            return UsageBrokerResponse::Error { error };
+        }
+    }
+    refresh_projection(coordinator, publisher, force)
+}
+
+/// Retry only catalog lease conflicts. The supplied attempt performs a fresh
+/// broker-owned scan on every call; all other failures stay fail-closed.
+pub(crate) fn retry_catalog_revision_conflict<T>(
+    mut attempt: impl FnMut() -> Result<T, UsageCoordinationError>,
+) -> Result<T, UsageCoordinationError> {
+    let mut last_conflict = None;
+    for _ in 0..BROKER_ACTIVATION_ATTEMPTS {
+        match attempt() {
+            Err(error) if error.kind == UsageCoordinationErrorKind::CatalogRevisionConflict => {
+                last_conflict = Some(error);
+            }
+            result => return result,
+        }
+    }
+    Err(last_conflict.unwrap_or_else(unavailable))
+}
+
+fn monitor_error(
+    code: MonitorIssueCode,
+    message: &str,
+    retry_at_epoch: Option<i64>,
+) -> UsageBrokerResponse {
+    UsageBrokerResponse::MonitorError {
+        issue: MonitorIssue {
+            code,
+            message: message.to_owned(),
+            retry_at_epoch,
+        },
     }
 }
 

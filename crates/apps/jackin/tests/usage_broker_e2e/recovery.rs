@@ -4,6 +4,13 @@
 use std::time::Duration;
 
 use super::*;
+use jackin_protocol::usage_broker::{
+    USAGE_BROKER_PROTOCOL_VERSION, UsageCatalogEntry, UsageProjectionRefreshStateV1,
+    UsageProjectionSchemaV1, UsageProjectionV1,
+};
+use jackin_usage::coordinator::{
+    AccountStateStore, FileAccountStateStore, FileProjectionStateStore, ProjectionStateEnvelope,
+};
 
 const RECOVERY_CLIENTS: usize = 8;
 
@@ -12,6 +19,7 @@ fn usage_broker_killed_owner_recovers_once_without_a_herd() -> Result<()> {
     let temp = tempfile::tempdir()?;
     let root = temp.path();
     let executable = std::env::current_exe()?;
+    seed_authoritative_catalog(root)?;
     let owner_request = child_request(&executable, root, "owner", "owner", None);
     let mut owner = jackin_process::spawn_sync(&owner_request)?;
     wait_until(Duration::from_secs(10), || {
@@ -19,6 +27,25 @@ fn usage_broker_killed_owner_recovers_once_without_a_herd() -> Result<()> {
     });
     owner.kill()?;
     let _owner_status = owner.wait()?;
+
+    // Advance only the persisted fake owner's start time so this process-level
+    // recovery test does not sleep for Claude's full five-minute attempt
+    // floor. The account remains an active, abandoned generation; production
+    // admission still reads and enforces this timestamp. Unit tests cover the
+    // real restart floor boundary without advancing persisted time.
+    let recovery_now = epoch_now();
+    let account_store = FileAccountStateStore::under_data_dir(&root.join("data"));
+    let mut abandoned = account_store
+        .load(&capability(), recovery_now)?
+        .context("killed owner left no persisted account state")?;
+    assert_eq!(abandoned.generation, 1);
+    assert_eq!(abandoned.phase, UsageRefreshPhase::Updating);
+    let original_start = abandoned
+        .started_at_epoch
+        .context("active owner state lacked a start timestamp")?;
+    assert!(original_start >= recovery_now.saturating_sub(300));
+    abandoned.started_at_epoch = Some(recovery_now.saturating_sub(301));
+    account_store.store(&abandoned, recovery_now)?;
 
     let mut recovery = Vec::new();
     for child in 0..RECOVERY_CLIENTS {
@@ -34,6 +61,38 @@ fn usage_broker_killed_owner_recovers_once_without_a_herd() -> Result<()> {
         assert!(child.wait()?.success());
     }
     assert_eq!(entries_with_prefix(root, "provider-call-"), 2);
+    Ok(())
+}
+
+fn seed_authoritative_catalog(root: &Path) -> Result<()> {
+    let broker_instance_id = "e2e-recovery-fixture".to_owned();
+    let catalog_revision = format!("e2e-catalog-{USAGE_BROKER_PROTOCOL_VERSION}");
+    let projection = UsageProjectionV1 {
+        schema_version: UsageProjectionSchemaV1,
+        projection_id: format!("{broker_instance_id}:empty"),
+        generated_at_epoch: epoch_now(),
+        discovery_revision: catalog_revision.clone(),
+        broker_instance_id: broker_instance_id.clone(),
+        broker_generation: 0,
+        refresh_state: UsageProjectionRefreshStateV1::Idle,
+        providers: Vec::new(),
+        unresolved: Vec::new(),
+        issues: Vec::new(),
+    };
+    let envelope = ProjectionStateEnvelope {
+        schema_version: 2,
+        projection,
+        aliases: Vec::new(),
+        catalog_revision,
+        catalog: vec![UsageCatalogEntry {
+            capability: capability(),
+            revision: format!("e2e-shared-account-{USAGE_BROKER_PROTOCOL_VERSION}"),
+        }],
+        retry_deadline_epoch: None,
+        success_deadline_epoch: None,
+        broker_instance_id,
+    };
+    FileProjectionStateStore::under_data_dir(&root.join("data")).store(&envelope)?;
     Ok(())
 }
 
