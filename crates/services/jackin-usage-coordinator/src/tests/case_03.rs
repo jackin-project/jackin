@@ -137,25 +137,15 @@ fn cadence_poll_due_fires_once_per_interval_and_honors_success_cooldown() {
     assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
 
     let due = coordinator.next_due_epoch().unwrap();
-    assert!((1_120..=1_150).contains(&due), "due={due}");
+    assert!((1_300..=1_310).contains(&due), "hard minimum due={due}");
     assert!(coordinator.poll_due(due - 1).is_empty());
     assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
 
-    let suppressed = coordinator.poll_due(due);
-    assert_eq!(suppressed.len(), 1);
-    assert_eq!(suppressed[0].generation, 1);
-    assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
-    let cooldown_due = coordinator.next_due_epoch().unwrap();
-    assert!(
-        (1_300..=1_310).contains(&cooldown_due),
-        "shared success cooldown must win: {cooldown_due}"
-    );
-
-    let second = coordinator.poll_due(cooldown_due);
+    let second = coordinator.poll_due(due);
     assert_eq!(second.len(), 1);
     assert_eq!(second[0].generation, 2);
     assert_eq!(
-        join_ok(&coordinator, &account, 2, cooldown_due + 1).phase,
+        join_ok(&coordinator, &account, 2, due + 1).phase,
         UsageRefreshPhase::Completed
     );
     assert_eq!(executor.calls.load(Ordering::SeqCst), 2);
@@ -208,12 +198,7 @@ fn cadence_shared_retry_after_wins_over_periodic_due() {
     assert_eq!(failed.retry_at_epoch, Some(5_000));
 
     let due = coordinator.next_due_epoch().unwrap();
-    assert!((1_120..=1_150).contains(&due), "due={due}");
-    let suppressed = coordinator.poll_due(due);
-    assert_eq!(suppressed.len(), 1);
-    assert_eq!(suppressed[0].generation, 1);
-    assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
-    assert_eq!(coordinator.next_due_epoch(), Some(5_000));
+    assert_eq!(due, 5_000, "provider deadline must win over cadence");
     assert!(coordinator.poll_due(4_999).is_empty());
 
     executor.set_outcome(ProviderProbeOutcome::success(cadence_quota_view(5_000)));

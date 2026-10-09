@@ -84,9 +84,13 @@ pub(crate) fn finish_success(
     entry.envelope.completed_at_epoch = Some(finished_at_epoch);
     entry.envelope.rate_limit_deadline_epoch = None;
     entry.envelope.retry_deadline_epoch = None;
-    entry.envelope.success_deadline_epoch = Some(finished_at_epoch.saturating_add(
+    let success_deadline = finished_at_epoch.saturating_add(
         i64::try_from(shared.config.success_cooldown.as_secs()).unwrap_or(i64::MAX),
-    ));
+    );
+    entry.envelope.success_deadline_epoch = Some(
+        policy::minimum_attempt_deadline(&job.capability, Some(job.started_at_epoch))
+            .map_or(success_deadline, |deadline| deadline.max(success_deadline)),
+    );
     entry.envelope.consecutive_failures = 0;
     persist_terminal(shared, &mut state, &job.capability, finished_at_epoch);
 }
@@ -152,6 +156,11 @@ pub(crate) fn finish_failure_in_state(
     } else {
         retry_at_epoch
     };
+    let retry_at_epoch =
+        match policy::minimum_attempt_deadline(&job.capability, Some(job.started_at_epoch)) {
+            Some(floor) => Some(retry_at_epoch.map_or(floor, |deadline| deadline.max(floor))),
+            None => retry_at_epoch,
+        };
     entry.envelope.retry_deadline_epoch = retry_at_epoch;
     if kind == UsageCoordinationErrorKind::RateLimited {
         entry.envelope.rate_limit_deadline_epoch = retry_at_epoch;

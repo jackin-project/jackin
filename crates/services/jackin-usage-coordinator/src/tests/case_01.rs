@@ -70,7 +70,7 @@ fn coordinator_revisioned_capabilities_do_not_join_in_flight_probe() {
 }
 
 #[test]
-fn coordinator_post_terminal_manual_refresh_starts_later_generation() {
+fn coordinator_post_terminal_manual_refresh_obeys_claude_minimum_interval() {
     let executor = Arc::new(GateExecutor::new(ProviderProbeOutcome::success(
         quota_view(1_000, 80),
     )));
@@ -91,14 +91,15 @@ fn coordinator_post_terminal_manual_refresh_starts_later_generation() {
         .request_refresh(&account, 0, true, 1_002)
         .unwrap();
     assert_eq!(stale_click.generation, first.generation);
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
     let later_click = coordinator
-        .request_refresh(&account, first.generation, true, 1_002)
+        .request_refresh(&account, first.generation, true, 1_400)
         .unwrap();
     assert_eq!(later_click.generation, 2);
     executor.wait_started(2);
     executor.release(1);
     assert_eq!(
-        join_ok(&coordinator, &account, 2, 1_003).phase,
+        join_ok(&coordinator, &account, 2, 1_401).phase,
         UsageRefreshPhase::Completed
     );
     assert_eq!(executor.calls.load(Ordering::SeqCst), 2);
@@ -176,14 +177,14 @@ fn coordinator_empty_result_is_failure_and_preserves_last_good() {
     drop(join_ok(&coordinator, &account, 1, 1_001));
 
     executor.set_outcome(ProviderProbeOutcome::success(
-        FocusedUsageView::unavailable("empty", 1_002),
+        FocusedUsageView::unavailable("empty", 1_400),
     ));
     coordinator
-        .request_refresh(&account, 1, true, 1_002)
+        .request_refresh(&account, 1, true, 1_400)
         .unwrap();
     executor.wait_started(2);
     executor.release(1);
-    let terminal = join_ok(&coordinator, &account, 2, 1_003);
+    let terminal = join_ok(&coordinator, &account, 2, 1_401);
     assert_eq!(terminal.phase, UsageRefreshPhase::Failed);
     assert_eq!(
         terminal.snapshot.unwrap().buckets[0].remaining_percent,
@@ -218,9 +219,9 @@ fn coordinator_stale_and_error_success_results_schedule_retry() {
         failed_view.last_error = Some("provider result is not current".to_owned());
         executor.set_outcome(ProviderProbeOutcome::success(failed_view));
         let second = coordinator
-            .request_refresh(&account, first.generation, true, 1_002)
+            .request_refresh(&account, first.generation, true, 1_400)
             .unwrap();
-        let failed = join_ok(&coordinator, &account, second.generation, 1_003);
+        let failed = join_ok(&coordinator, &account, second.generation, 1_401);
 
         assert_eq!(failed.phase, UsageRefreshPhase::Failed);
         assert_eq!(
@@ -345,15 +346,15 @@ fn coordinator_failure_shares_retry_deadline_and_last_good() {
         retry_at_epoch: Some(2_000),
     });
     coordinator
-        .request_refresh(&account, 1, true, 1_002)
+        .request_refresh(&account, 1, true, 1_400)
         .unwrap();
     executor.wait_started(2);
     executor.release(1);
-    let failed = join_ok(&coordinator, &account, 2, 1_003);
+    let failed = join_ok(&coordinator, &account, 2, 1_401);
     assert_eq!(failed.retry_at_epoch, Some(2_000));
     assert!(failed.snapshot.is_some());
     let suppressed = coordinator
-        .request_refresh(&account, 2, true, 1_004)
+        .request_refresh(&account, 2, true, 1_404)
         .unwrap();
     assert_eq!(suppressed.generation, 2);
     assert_eq!(executor.calls.load(Ordering::SeqCst), 2);

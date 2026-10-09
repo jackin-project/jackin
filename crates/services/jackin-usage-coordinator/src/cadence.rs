@@ -4,7 +4,7 @@
 
 use jackin_protocol::usage_broker::{UsageAccountCapability, UsageGenerationView};
 
-use super::{UsageCoordinator, cadence_deadline};
+use super::{UsageCoordinator, account_cooldown_deadline, cadence_deadline};
 
 impl UsageCoordinator {
     /// Earliest periodic due time across known accounts, for scheduler sleep.
@@ -16,7 +16,12 @@ impl UsageCoordinator {
             state
                 .accounts
                 .values()
-                .map(|entry| entry.cadence.next_due_epoch)
+                .map(|entry| {
+                    account_cooldown_deadline(&entry.envelope)
+                        .map_or(entry.cadence.next_due_epoch, |deadline| {
+                            deadline.max(entry.cadence.next_due_epoch)
+                        })
+                })
                 .min()
         })
     }
@@ -31,22 +36,22 @@ impl UsageCoordinator {
             let Ok(_catalog_lifecycle) = self.shared.catalog_lifecycle.lock() else {
                 return Vec::new();
             };
-            self.shared
-                .state
-                .lock()
-                .map(|state| {
-                    state
-                        .accounts
-                        .iter()
-                        .filter(|(capability, entry)| {
-                            !entry.revoked
-                                && !state.blocked.contains_key(*capability)
-                                && now_epoch >= entry.cadence.next_due_epoch
-                        })
-                        .map(|(capability, entry)| (capability.clone(), entry.envelope.generation))
-                        .collect()
+            let Ok(state) = self.shared.state.lock() else {
+                return Vec::new();
+            };
+            state
+                .accounts
+                .iter()
+                .filter_map(|(capability, entry)| {
+                    if entry.revoked || state.blocked.contains_key(capability) {
+                        return None;
+                    }
+                    let shared_deadline =
+                        account_cooldown_deadline(&entry.envelope).unwrap_or(i64::MIN);
+                    let next_due = shared_deadline.max(entry.cadence.next_due_epoch);
+                    (now_epoch >= next_due).then(|| (capability.clone(), entry.envelope.generation))
                 })
-                .unwrap_or_default()
+                .collect()
         };
         let mut views = Vec::with_capacity(due.len());
         for (capability, observed) in due {
@@ -74,13 +79,16 @@ impl UsageCoordinator {
         let mut recalculated = 0;
         for (capability, entry) in &mut state.accounts {
             if entry.cadence.next_due_epoch < now_epoch {
-                entry.cadence.next_due_epoch = cadence_deadline(
+                let cadence_due = cadence_deadline(
                     entry.cadence.activity,
                     entry.cadence.low_power,
                     capability,
                     entry.envelope.generation,
                     now_epoch,
                 );
+                entry.cadence.next_due_epoch = account_cooldown_deadline(&entry.envelope)
+                    .filter(|deadline| *deadline > now_epoch)
+                    .map_or(cadence_due, |deadline| deadline.max(cadence_due));
                 recalculated += 1;
             }
         }
@@ -90,7 +98,7 @@ impl UsageCoordinator {
     pub(crate) fn advance_cadence(
         &self,
         capability: &UsageAccountCapability,
-        observed_generation: u64,
+        _observed_generation: u64,
         now_epoch: i64,
     ) {
         let Ok(_catalog_lifecycle) = self.shared.catalog_lifecycle.lock() else {
@@ -102,34 +110,16 @@ impl UsageCoordinator {
         let Some(entry) = state.accounts.get_mut(capability) else {
             return;
         };
-        if entry.envelope.generation > observed_generation {
-            entry.cadence.next_due_epoch = cadence_deadline(
-                entry.cadence.activity,
-                entry.cadence.low_power,
-                capability,
-                entry.envelope.generation,
-                now_epoch,
-            );
-            return;
-        }
-        let shared_deadline = [
-            entry.envelope.rate_limit_deadline_epoch,
-            entry.envelope.retry_deadline_epoch,
-            entry.envelope.success_deadline_epoch,
-        ]
-        .into_iter()
-        .flatten()
-        .filter(|deadline| *deadline > now_epoch)
-        .max();
-        entry.cadence.next_due_epoch = shared_deadline.unwrap_or_else(|| {
-            cadence_deadline(
-                entry.cadence.activity,
-                entry.cadence.low_power,
-                capability,
-                entry.envelope.generation,
-                now_epoch,
-            )
-        });
+        let cadence_due = cadence_deadline(
+            entry.cadence.activity,
+            entry.cadence.low_power,
+            capability,
+            entry.envelope.generation,
+            now_epoch,
+        );
+        entry.cadence.next_due_epoch = account_cooldown_deadline(&entry.envelope)
+            .filter(|deadline| *deadline > now_epoch)
+            .map_or(cadence_due, |deadline| deadline.max(cadence_due));
     }
 
     /// Whether no queued or active generation is retained by this authority.

@@ -11,8 +11,8 @@ use jackin_protocol::usage_broker::{
 
 use super::{
     AccountEntry, AccountStateEnvelope, ProbeJob, UsageCoordinator, catalog_revoked_error,
-    coordination_error, finish_failure, generation_view, record_blocked_terminal, state_error,
-    unavailable_error,
+    coordination_error, finish_failure, generation_view, policy, record_blocked_terminal,
+    state_error, unavailable_error,
 };
 
 impl UsageCoordinator {
@@ -140,6 +140,7 @@ impl UsageCoordinator {
                     envelope.unwrap_or_else(|| AccountStateEnvelope::idle(capability.clone()));
                 let recovery_pending = envelope.phase.is_active();
                 if recovery_pending {
+                    let consecutive_failures = envelope.consecutive_failures.saturating_add(1);
                     envelope.phase = UsageRefreshPhase::Failed;
                     envelope.terminal_result = None;
                     envelope.terminal_error = Some(coordination_error(
@@ -147,9 +148,25 @@ impl UsageCoordinator {
                         "usage refresh owner exited before completion",
                     ));
                     envelope.completed_at_epoch = Some(now_epoch);
-                    envelope.retry_deadline_epoch = None;
+                    let retry_deadline = policy::retry_deadline(
+                        self.shared.config.retry_policy,
+                        &envelope.capability,
+                        envelope.generation,
+                        consecutive_failures,
+                        envelope.retry_deadline_epoch,
+                        now_epoch,
+                    );
+                    envelope.retry_deadline_epoch = match policy::minimum_attempt_deadline(
+                        &envelope.capability,
+                        envelope.started_at_epoch,
+                    ) {
+                        Some(floor) => {
+                            Some(retry_deadline.map_or(floor, |deadline| deadline.max(floor)))
+                        }
+                        None => retry_deadline,
+                    };
                     envelope.success_deadline_epoch = None;
-                    envelope.consecutive_failures = envelope.consecutive_failures.saturating_add(1);
+                    envelope.consecutive_failures = consecutive_failures;
                     if self.shared.store.store(&envelope, now_epoch).is_err() {
                         let error = unavailable_error();
                         state.blocked.insert(capability.clone(), error.clone());

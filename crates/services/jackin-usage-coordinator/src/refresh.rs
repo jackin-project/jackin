@@ -5,15 +5,15 @@
 use std::collections::BTreeMap;
 use std::sync::mpsc::TrySendError;
 
-use super::policy::UsageActivity;
+use super::policy::{self, UsageActivity};
 use jackin_protocol::usage_broker::{
     UsageAccountCapability, UsageCoordinationError, UsageCoordinationErrorKind,
     UsageCredentialScope, UsageGenerationView, UsageRefreshPhase,
 };
 
 use super::{
-    ProbeJob, UsageCoordinator, WorkerMessage, cadence_deadline, catalog_revoked_error,
-    generation_view, unavailable_error,
+    ProbeJob, UsageCoordinator, WorkerMessage, account_cooldown_deadline, cadence_deadline,
+    catalog_revoked_error, generation_view, unavailable_error,
 };
 
 impl UsageCoordinator {
@@ -113,6 +113,8 @@ impl UsageCoordinator {
             || entry
                 .envelope
                 .retry_deadline_epoch
+                .is_some_and(|deadline| deadline > now_epoch)
+            || policy::minimum_attempt_deadline(capability, entry.envelope.started_at_epoch)
                 .is_some_and(|deadline| deadline > now_epoch)
             || (!force
                 && entry
@@ -220,7 +222,10 @@ impl UsageCoordinator {
             entry.envelope.generation,
             now_epoch,
         );
-        entry.cadence.next_due_epoch = entry.cadence.next_due_epoch.min(deadline);
+        let next_due = entry.cadence.next_due_epoch.min(deadline);
+        entry.cadence.next_due_epoch = account_cooldown_deadline(&entry.envelope)
+            .filter(|shared_deadline| *shared_deadline > now_epoch)
+            .map_or(next_due, |shared_deadline| shared_deadline.max(next_due));
         Ok(())
     }
 }

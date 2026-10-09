@@ -65,8 +65,8 @@ pub(crate) use jobs::{ProbeJob, WorkerMessage};
 pub(crate) use outcome::TERMINAL_HISTORY_LIMIT;
 pub use outcome::{ProviderProbeOutcome, UsageProviderExecutor};
 pub(crate) use upkeep::{
-    cadence_deadline, data_bearing, generation_view, record_blocked_terminal, reset_entry,
-    revoke_entry,
+    account_cooldown_deadline, cadence_deadline, data_bearing, generation_view,
+    record_blocked_terminal, reset_entry, reset_envelope, revoke_entry,
 };
 pub(crate) use worker::coordinator_worker;
 

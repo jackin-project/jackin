@@ -32,17 +32,7 @@ pub(crate) fn revoke_entry(entry: &mut AccountEntry, now_epoch: i64) {
 
 pub(crate) fn reset_entry(entry: &mut AccountEntry, now_epoch: i64, revision: String) {
     entry.fenced_generations.insert(entry.envelope.generation);
-    entry.envelope.generation = entry.envelope.generation.saturating_add(1);
-    entry.envelope.phase = UsageRefreshPhase::Idle;
-    entry.envelope.terminal_result = None;
-    entry.envelope.last_good = None;
-    entry.envelope.terminal_error = None;
-    entry.envelope.started_at_epoch = None;
-    entry.envelope.completed_at_epoch = None;
-    entry.envelope.rate_limit_deadline_epoch = None;
-    entry.envelope.retry_deadline_epoch = None;
-    entry.envelope.success_deadline_epoch = None;
-    entry.envelope.consecutive_failures = 0;
+    reset_envelope(&mut entry.envelope);
     entry.history.clear();
     while entry.fenced_generations.len() > TERMINAL_HISTORY_LIMIT {
         let Some(oldest) = entry.fenced_generations.iter().next().copied() else {
@@ -51,9 +41,36 @@ pub(crate) fn reset_entry(entry: &mut AccountEntry, now_epoch: i64, revision: St
         entry.fenced_generations.remove(&oldest);
     }
     entry.recovery_pending = false;
-    entry.cadence.next_due_epoch = now_epoch;
+    entry.cadence.next_due_epoch = account_cooldown_deadline(&entry.envelope)
+        .filter(|deadline| *deadline > now_epoch)
+        .unwrap_or(now_epoch);
     entry.catalog_revision = Some(revision);
     entry.revoked = false;
+}
+
+/// Reset materialized results while retaining provider cooldowns and the
+/// attempt start that still governs the same canonical account.
+pub(crate) fn reset_envelope(envelope: &mut AccountStateEnvelope) {
+    envelope.generation = envelope.generation.saturating_add(1);
+    envelope.phase = UsageRefreshPhase::Idle;
+    envelope.terminal_result = None;
+    envelope.last_good = None;
+    envelope.terminal_error = None;
+    envelope.completed_at_epoch = None;
+}
+
+/// Latest durable refresh deadline for one account, including Claude's hard
+/// attempt floor. Periodic cadence remains an in-memory scheduling hint.
+pub(crate) fn account_cooldown_deadline(envelope: &AccountStateEnvelope) -> Option<i64> {
+    [
+        envelope.rate_limit_deadline_epoch,
+        envelope.retry_deadline_epoch,
+        envelope.success_deadline_epoch,
+        policy::minimum_attempt_deadline(&envelope.capability, envelope.started_at_epoch),
+    ]
+    .into_iter()
+    .flatten()
+    .max()
 }
 
 pub(crate) fn data_bearing(view: &FocusedUsageView) -> bool {

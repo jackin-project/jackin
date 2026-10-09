@@ -6,14 +6,66 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use std::sync::Arc;
 
-use jackin_protocol::usage_broker::{UsageCatalogEntry, UsageCoordinationError};
+use jackin_protocol::usage_broker::{
+    UsageAccountCapability, UsageCatalogEntry, UsageCoordinationError,
+};
 
 use super::{
-    CatalogAccountPreimage, CatalogTransaction, StateStoreError, UsageCoordinator,
-    catalog_entries_from_map, catalog_purge_set, first_catalog_rollback_error,
-    preserve_catalog_error, reconcile_executor_catalog, reset_entry, restore_catalog_preimages,
-    revoke_entry, state_error, unavailable_error, validate_catalog_entries,
+    CatalogAccountPreimage, CatalogTransaction, CoordinatorState, Shared, StateStoreError,
+    UsageCoordinator, catalog_entries_from_map, catalog_purge_set, first_catalog_rollback_error,
+    preserve_catalog_error, reconcile_executor_catalog, reset_entry, reset_envelope,
+    restore_catalog_preimages, revoke_entry, state_error, unavailable_error,
+    validate_catalog_entries,
 };
+
+fn persist_reset_envelopes(
+    shared: &Shared,
+    state: &CoordinatorState,
+    reset_capabilities: &BTreeSet<UsageAccountCapability>,
+    preimages: &BTreeMap<UsageAccountCapability, CatalogAccountPreimage>,
+    now_epoch: i64,
+) -> Result<(), StateStoreError> {
+    for capability in reset_capabilities {
+        let envelope = state
+            .accounts
+            .get(capability)
+            .map(|entry| entry.envelope.clone())
+            .or_else(|| match preimages.get(capability) {
+                Some(CatalogAccountPreimage::Present(envelope)) => {
+                    let mut envelope = (**envelope).clone();
+                    reset_envelope(&mut envelope);
+                    Some(envelope)
+                }
+                Some(CatalogAccountPreimage::Missing | CatalogAccountPreimage::Corrupt) | None => {
+                    None
+                }
+            });
+        if let Some(envelope) = envelope {
+            shared.store.store(&envelope, now_epoch)?;
+        }
+    }
+    Ok(())
+}
+
+fn rollback_catalog_reconciliation(
+    shared: &Arc<Shared>,
+    state: &mut CoordinatorState,
+    previous_state: &CoordinatorState,
+    previous: &BTreeMap<UsageAccountCapability, String>,
+    preimages: &BTreeMap<UsageAccountCapability, CatalogAccountPreimage>,
+    completed_purges: BTreeSet<UsageAccountCapability>,
+    now_epoch: i64,
+) -> Result<(), UsageCoordinationError> {
+    let durable = restore_catalog_preimages(shared, preimages, completed_purges, now_epoch)
+        .map_err(state_error);
+    let executor = reconcile_executor_catalog(
+        shared,
+        previous_state.catalog_revision.as_deref(),
+        &catalog_entries_from_map(previous),
+    );
+    *state = previous_state.clone();
+    first_catalog_rollback_error(durable, executor)
+}
 
 impl UsageCoordinator {
     /// Reconcile the live broker catalog with the last durable catalog.
@@ -73,6 +125,17 @@ impl UsageCoordinator {
             .map(|entry| (entry.capability, entry.revision))
             .collect::<BTreeMap<_, _>>();
         let purge = catalog_purge_set(&state, &previous, &next);
+        let reset_capabilities = purge
+            .iter()
+            .filter(|capability| {
+                next.contains_key(*capability)
+                    && !state
+                        .accounts
+                        .get(*capability)
+                        .is_some_and(|entry| entry.revoked)
+            })
+            .cloned()
+            .collect::<BTreeSet<_>>();
         let preimages = purge
             .iter()
             .map(|capability| {
@@ -115,22 +178,16 @@ impl UsageCoordinator {
                 None => Err(StateStoreError::Unavailable),
             };
             if let Err(error) = result.map_err(state_error) {
-                let durable = restore_catalog_preimages(
+                let rollback = rollback_catalog_reconciliation(
                     &self.shared,
+                    &mut state,
+                    &previous_state,
+                    &previous,
                     &preimages,
                     completed_purges,
                     now_epoch,
-                )
-                .map_err(state_error);
-                let executor = reconcile_executor_catalog(
-                    &self.shared,
-                    previous_state.catalog_revision.as_deref(),
-                    &catalog_entries_from_map(&previous),
                 );
-                return Err(preserve_catalog_error(
-                    error,
-                    first_catalog_rollback_error(durable, executor),
-                ));
+                return Err(preserve_catalog_error(error, rollback));
             }
             completed_purges.insert(capability.clone());
         }
@@ -153,6 +210,25 @@ impl UsageCoordinator {
                 }
                 Some(_) => {}
             }
+        }
+        if let Err(error) = persist_reset_envelopes(
+            &self.shared,
+            &state,
+            &reset_capabilities,
+            &preimages,
+            now_epoch,
+        ) {
+            let primary = state_error(error);
+            let rollback = rollback_catalog_reconciliation(
+                &self.shared,
+                &mut state,
+                &previous_state,
+                &previous,
+                &preimages,
+                completed_purges.clone(),
+                now_epoch,
+            );
+            return Err(preserve_catalog_error(primary, rollback));
         }
         state.catalog = Some(next);
         state.catalog_revision = catalog_revision.map(str::to_owned);

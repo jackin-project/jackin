@@ -13,8 +13,8 @@ use jackin_protocol::usage_broker::{
 
 use super::{
     AccountStateEnvelope, AccountStateStore, TERMINAL_HISTORY_LIMIT, UsageCoordinatorConfig,
-    UsageProviderExecutor, generation_view, reconcile_executor_catalog, restore_catalog_preimages,
-    state_error, unavailable_error,
+    UsageProviderExecutor, account_cooldown_deadline, generation_view, reconcile_executor_catalog,
+    restore_catalog_preimages, state_error, unavailable_error,
 };
 
 /// In-memory periodic cadence for one account. Due times are scheduling
@@ -51,6 +51,9 @@ impl AccountEntry {
         if envelope.phase.is_terminal() {
             history.push_back(generation_view(&envelope));
         }
+        let next_due_epoch = account_cooldown_deadline(&envelope)
+            .filter(|deadline| *deadline > now_epoch)
+            .unwrap_or(now_epoch);
         Self {
             envelope,
             history,
@@ -58,7 +61,7 @@ impl AccountEntry {
             cadence: AccountCadence {
                 activity: UsageActivity::Idle,
                 low_power: false,
-                next_due_epoch: now_epoch,
+                next_due_epoch,
             },
             catalog_revision,
             revoked: false,
