@@ -7,7 +7,7 @@ use jackin_protocol::control::AccountUsageSnapshotView;
 use jackin_protocol::usage_broker::{UsageLimitWindowV1, UsageProjectionV1};
 use serde::Serialize;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::cli::format::{OutputEnvelope, OutputFormat};
 use crate::cli::{BANNER, HELP_STYLES};
@@ -321,20 +321,30 @@ fn run_host(args: &UsageArgs, paths: &JackinPaths) -> Result<()> {
 }
 
 fn run_host_projection(args: &UsageArgs, paths: &JackinPaths) -> Result<()> {
-    use jackin_protocol::usage_broker::UsageProjectionRefreshStateV1;
+    use jackin_protocol::usage_broker::{
+        UsageCoordinationErrorKind, UsageProjectionRefreshStateV1,
+    };
     use jackin_usage::host::UsageBrokerConfig;
 
     let client = UsageBrokerConfig::for_data_dir(paths.data_dir.clone()).client();
     let projection = client.request_refresh(None, false).map_err(|error| {
         anyhow::anyhow!("host usage broker is unavailable ({error:?}); initialize it once with `jackin usage host snapshot --agent claude --format json`")
     })?;
-    let projection = if projection.refresh_state == UsageProjectionRefreshStateV1::Refreshing {
-        client
-            .join_publication(projection.projection_id.clone(), Duration::from_secs(30))
-            .map_err(|error| anyhow::anyhow!(error.message))?
-    } else {
-        projection
-    };
+    let mut projection = projection;
+    if projection.refresh_state == UsageProjectionRefreshStateV1::Refreshing {
+        let deadline = Instant::now() + Duration::from_secs(30);
+        while projection.refresh_state == UsageProjectionRefreshStateV1::Refreshing {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                break;
+            }
+            match client.join_publication(projection.projection_id.clone(), remaining) {
+                Ok(next) => projection = next,
+                Err(error) if error.kind == UsageCoordinationErrorKind::WaitTimeout => break,
+                Err(error) => return Err(anyhow::anyhow!(error.message)),
+            }
+        }
+    }
     if args.output_format() == OutputFormat::Json {
         let envelope = OutputEnvelope::v1(projection);
         println!("{}", serde_json::to_string_pretty(&envelope)?);
