@@ -281,7 +281,7 @@ service prerequisite. No service or authentication was started during diagnosis.
 | Binary/source provenance and broker lookup diagnosis | incident_binary_provenance / incident_lookup_research | Confirmed old CLI and protocol/state lookup contract |
 | Prominent installed-binary/capability and service prerequisite handoff | incident_contract_review | Done; independent broker-override review passes |
 | Offline removed-command rejection / zero access regression | incident_offline_regression | Passed; offline CLI 4/4 |
-| Independent review, scoped verification, commit and push | parent / reviewers | Review/gates done; commit and push follow |
+| Independent review, scoped verification, commit and push | parent / reviewers | Done; implementation checkpoint 7bd6871d pushed to origin |
 
 The original checkout and Claude settings/session remain untouched. No
 compatibility alias, passive auto-start or forced refresh will be introduced.
