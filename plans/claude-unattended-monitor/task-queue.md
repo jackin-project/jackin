@@ -255,3 +255,12 @@ credential trips/HTTP requests and orderly stop. Updated verification and
 handoff record artifact hashes, conservative field freshness, the live hung
 broker limitation and operator setup requirements. Remote push is still
 blocked by SSH-agent signing; no interactive unlock is attempted.
+
+
+## Remote publication update — 2026-10-10
+
+The operator-requested push succeeded without interactive authentication.
+All implementation and evidence commits through `3aeb8631` are published on
+`origin/claude-unattended-monitor`. The earlier SSH-agent signing refusal is
+historical; it no longer blocks publication. Both the isolated worktree and
+original checkout were clean at verification.

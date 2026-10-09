@@ -377,3 +377,12 @@ signing refusal; no interactive unlock or auth was attempted. Operator setup,
 statusline composition and attested fresh SGD receipts remain prerequisites
 for useful runnable evidence; neither fixture proof nor doctor asserts live
 quota or credential availability.
+
+
+## Remote publication update — 2026-10-10
+
+The operator-requested push succeeded without interactive authentication.
+All implementation and evidence commits through `3aeb8631` are published on
+`origin/claude-unattended-monitor`. The earlier SSH-agent signing refusal is
+historical; it no longer blocks publication. Both the isolated worktree and
+original checkout were clean at verification.
