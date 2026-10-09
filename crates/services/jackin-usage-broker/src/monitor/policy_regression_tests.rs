@@ -127,6 +127,33 @@ fn start_monitor(store: &MonitorStore, goal_id: &str, now_epoch: i64) -> Monitor
     *status
 }
 
+fn start_monitor_with_expected_model(
+    store: &MonitorStore,
+    goal_id: &str,
+    expected_model: &str,
+    now_epoch: i64,
+) -> MonitorStatus {
+    let reply = store
+        .operate(
+            MonitorOperation::Start {
+                config: MonitorConfig {
+                    provider: MonitorProvider::Claude,
+                    account_id: ACCOUNT.to_owned(),
+                    goal_id: goal_id.to_owned(),
+                    session_id: None,
+                    expected_model: Some(expected_model.to_owned()),
+                    budget: Some(Money::new(5_000, "SGD", 2)),
+                },
+            },
+            now_epoch,
+        )
+        .expect("start model-guarded monitor");
+    let MonitorReply::Started { status } = reply else {
+        panic!("expected started monitor result");
+    };
+    *status
+}
+
 fn status(store: &MonitorStore, monitor_id: &str, now_epoch: i64) -> MonitorStatus {
     let reply = store
         .operate(
@@ -622,4 +649,293 @@ fn weekly_exhaustion_survives_a_confirmed_five_hour_reset() {
             .iter()
             .any(|issue| issue.code == MonitorIssueCode::ResetDueUnverified)
     );
+}
+
+#[test]
+fn decision_sequence_survives_store_reopen_and_duplicate_input() {
+    let directory = tempfile::tempdir().expect("temporary monitor directory");
+    let reset = NOW + 3_600;
+    let store = MonitorStore::open(directory.path()).expect("open monitor store");
+    ingest(
+        &store,
+        ACCOUNT,
+        observation("session-sequence", Some(8_900), Some(reset), None),
+        NOW,
+    );
+    record_spend(&store, spend_input(ACCOUNT, NOW), NOW);
+    let started = start_monitor(&store, "goal-sequence", NOW);
+    let initial_sequence = started.latest_decision.as_ref().unwrap().sequence;
+    drop(store);
+
+    let reopened = MonitorStore::open(directory.path()).expect("reopen monitor store");
+    let after_reopen = status(&reopened, &started.monitor_id, NOW);
+    assert_eq!(
+        after_reopen.latest_decision.as_ref().unwrap().sequence,
+        initial_sequence,
+        "unchanged persisted state must keep its decision sequence"
+    );
+
+    let threshold_sequence_input = ingest(
+        &reopened,
+        ACCOUNT,
+        observation("session-sequence", Some(9_000), Some(reset), None),
+        NOW + 1,
+    );
+    let threshold = status(&reopened, &started.monitor_id, NOW + 1);
+    let threshold_sequence = threshold.latest_decision.as_ref().unwrap().sequence;
+    assert!(threshold_sequence > initial_sequence);
+    assert!(
+        threshold
+            .latest_decision
+            .as_ref()
+            .unwrap()
+            .actions
+            .iter()
+            .any(|action| matches!(action, MonitorAction::Checkpoint { .. }))
+    );
+    drop(reopened);
+
+    let reopened_again = MonitorStore::open(directory.path()).expect("reopen threshold state");
+    let after_threshold_reopen = status(&reopened_again, &started.monitor_id, NOW + 1);
+    assert_eq!(
+        after_threshold_reopen
+            .latest_decision
+            .as_ref()
+            .unwrap()
+            .sequence,
+        threshold_sequence,
+        "the same monitor ID must retain its current decision across reopen"
+    );
+    let duplicate_sequence = ingest(
+        &reopened_again,
+        ACCOUNT,
+        observation("session-sequence", Some(9_000), Some(reset), None),
+        NOW + 2,
+    );
+    assert_eq!(duplicate_sequence, threshold_sequence_input);
+    let after_duplicate = status(&reopened_again, &started.monitor_id, NOW + 2);
+    assert_eq!(
+        after_duplicate.latest_decision.as_ref().unwrap().sequence,
+        threshold_sequence,
+        "a duplicate callback after restart must not replay the action"
+    );
+}
+
+#[test]
+fn confirming_quota_reset_does_not_clear_expected_model_mismatch() {
+    let directory = tempfile::tempdir().expect("temporary monitor directory");
+    let reset = NOW + 10;
+    let store = MonitorStore::open(directory.path()).expect("open monitor store");
+    ingest(
+        &store,
+        ACCOUNT,
+        observation(
+            "session-model-reset",
+            Some(9_600),
+            Some(reset),
+            Some("claude-opus-4"),
+        ),
+        NOW,
+    );
+    record_spend(&store, spend_input(ACCOUNT, NOW), NOW);
+    let started =
+        start_monitor_with_expected_model(&store, "goal-model-reset", "claude-sonnet-4", NOW);
+    assert!(!started.runnable);
+    assert!(
+        started
+            .issues
+            .iter()
+            .any(|issue| issue.code == MonitorIssueCode::LimitGuardReached)
+    );
+    assert!(
+        started
+            .issues
+            .iter()
+            .any(|issue| issue.code == MonitorIssueCode::ModelMismatch)
+    );
+
+    let deadline = reset + 60;
+    store.tick(deadline).expect("tick at reset grace deadline");
+    let due = status(&store, &started.monitor_id, deadline);
+    assert!(
+        due.issues
+            .iter()
+            .any(|issue| issue.code == MonitorIssueCode::ResetDueUnverified)
+    );
+
+    let recovery_at = deadline + 1;
+    ingest(
+        &store,
+        ACCOUNT,
+        observation(
+            "session-model-recovery",
+            Some(1_000),
+            Some(reset + 3_600),
+            Some("claude-opus-4"),
+        ),
+        recovery_at,
+    );
+    let recovered_quota = status(&store, &started.monitor_id, recovery_at);
+    assert_eq!(
+        recovered_quota.five_hour.used_percentage_basis_points,
+        Some(1_000)
+    );
+    assert!(
+        !recovered_quota
+            .issues
+            .iter()
+            .any(|issue| issue.code == MonitorIssueCode::ResetDueUnverified)
+    );
+    assert!(
+        !recovered_quota
+            .issues
+            .iter()
+            .any(|issue| issue.code == MonitorIssueCode::LimitGuardReached)
+    );
+    assert!(
+        recovered_quota
+            .issues
+            .iter()
+            .any(|issue| issue.code == MonitorIssueCode::ModelMismatch)
+    );
+    assert!(!recovered_quota.runnable);
+}
+
+#[test]
+fn confirming_quota_reset_does_not_clear_spend_pause() {
+    let directory = tempfile::tempdir().expect("temporary monitor directory");
+    let reset = NOW + 10;
+    let store = MonitorStore::open(directory.path()).expect("open monitor store");
+    ingest(
+        &store,
+        ACCOUNT,
+        observation("session-spend-reset", Some(9_600), Some(reset), None),
+        NOW,
+    );
+    record_spend(&store, spend_input(ACCOUNT, NOW), NOW);
+    let started = start_monitor(&store, "goal-spend-reset", NOW);
+    record_spend(
+        &store,
+        SpendRecordInput {
+            amount: Money::new(4_800, "SGD", 2),
+            ..spend_input(ACCOUNT, NOW + 1)
+        },
+        NOW + 1,
+    );
+    let spend_paused = status(&store, &started.monitor_id, NOW + 1);
+    assert!(
+        spend_paused
+            .issues
+            .iter()
+            .any(|issue| issue.code == MonitorIssueCode::BudgetPause)
+    );
+    assert!(
+        spend_paused
+            .issues
+            .iter()
+            .any(|issue| issue.code == MonitorIssueCode::LimitGuardReached)
+    );
+
+    let deadline = reset + 60;
+    store.tick(deadline).expect("tick at reset grace deadline");
+    let recovery_at = deadline + 1;
+    record_spend(
+        &store,
+        SpendRecordInput {
+            amount: Money::new(4_800, "SGD", 2),
+            ..spend_input(ACCOUNT, recovery_at)
+        },
+        recovery_at,
+    );
+    ingest(
+        &store,
+        ACCOUNT,
+        observation(
+            "session-spend-recovery",
+            Some(1_000),
+            Some(reset + 3_600),
+            None,
+        ),
+        recovery_at,
+    );
+    let after_quota_reset = status(&store, &started.monitor_id, recovery_at);
+    assert!(
+        !after_quota_reset
+            .issues
+            .iter()
+            .any(|issue| issue.code == MonitorIssueCode::ResetDueUnverified)
+    );
+    assert!(
+        !after_quota_reset
+            .issues
+            .iter()
+            .any(|issue| issue.code == MonitorIssueCode::LimitGuardReached)
+    );
+    assert!(
+        after_quota_reset
+            .issues
+            .iter()
+            .any(|issue| issue.code == MonitorIssueCode::BudgetPause)
+    );
+    assert!(!after_quota_reset.runnable);
+}
+
+#[test]
+fn confirming_quota_reset_does_not_clear_unverifiable_spend() {
+    let directory = tempfile::tempdir().expect("temporary monitor directory");
+    let reset = NOW + 10;
+    let store = MonitorStore::open(directory.path()).expect("open monitor store");
+    ingest(
+        &store,
+        ACCOUNT,
+        observation(
+            "session-unknown-spend-reset",
+            Some(9_600),
+            Some(reset),
+            None,
+        ),
+        NOW,
+    );
+    let started = start_monitor(&store, "goal-unknown-spend-reset", NOW);
+    assert!(
+        started
+            .issues
+            .iter()
+            .any(|issue| issue.code == MonitorIssueCode::BudgetUnverifiable)
+    );
+
+    let deadline = reset + 60;
+    store.tick(deadline).expect("tick at reset grace deadline");
+    let recovery_at = deadline + 1;
+    ingest(
+        &store,
+        ACCOUNT,
+        observation(
+            "session-unknown-spend-recovery",
+            Some(1_000),
+            Some(reset + 3_600),
+            None,
+        ),
+        recovery_at,
+    );
+    let after_quota_reset = status(&store, &started.monitor_id, recovery_at);
+    assert!(
+        !after_quota_reset
+            .issues
+            .iter()
+            .any(|issue| issue.code == MonitorIssueCode::ResetDueUnverified)
+    );
+    assert!(
+        !after_quota_reset
+            .issues
+            .iter()
+            .any(|issue| issue.code == MonitorIssueCode::LimitGuardReached)
+    );
+    assert!(
+        after_quota_reset
+            .issues
+            .iter()
+            .any(|issue| issue.code == MonitorIssueCode::BudgetUnverifiable)
+    );
+    assert!(!after_quota_reset.runnable);
 }

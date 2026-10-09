@@ -45,10 +45,11 @@ impl BrokerLease {
 
 /// Descriptor-bound broker authority.
 ///
-/// The lease file is never replaced while an owner is alive. Each lifecycle
-/// operation locks this descriptor, verifies the instance, and updates or
-/// removes only the inode it opened. A stale process holding an old descriptor
-/// therefore cannot renew or unlink a replacement lease at the same path.
+/// The lease file is never replaced while an owner is alive. The owner keeps
+/// this descriptor locked for its lifetime, and renew/cleanup verify the
+/// instance before updating or removing only the inode it opened. A stale
+/// process holding an old descriptor therefore cannot renew or unlink a
+/// replacement lease at the same path.
 pub struct BrokerLeaseOwner {
     pub lease: BrokerLease,
     pub file: File,

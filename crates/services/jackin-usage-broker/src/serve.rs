@@ -23,6 +23,62 @@ use crate::{
 };
 
 const CLOCK_WAKE_DETECTION_THRESHOLD_SECS: u64 = 2;
+const MONITOR_TICK_RETRY_DELAY: Duration = Duration::from_secs(1);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ClockSample {
+    wall_epoch: i64,
+    /// Monotonic elapsed time since the owning clock started.
+    monotonic_elapsed: Duration,
+}
+
+trait TickerClock: Send {
+    fn initial_sample(&self) -> ClockSample;
+    fn next_sample(&mut self) -> Option<ClockSample>;
+}
+
+struct SystemTickerClock {
+    started: Instant,
+}
+
+impl SystemTickerClock {
+    fn new() -> Self {
+        Self {
+            started: Instant::now(),
+        }
+    }
+
+    fn sample(&self) -> ClockSample {
+        ClockSample {
+            wall_epoch: chrono::Utc::now().timestamp(),
+            monotonic_elapsed: self.started.elapsed(),
+        }
+    }
+}
+
+impl TickerClock for SystemTickerClock {
+    fn initial_sample(&self) -> ClockSample {
+        self.sample()
+    }
+
+    fn next_sample(&mut self) -> Option<ClockSample> {
+        std::thread::park_timeout(PUBLISH_TICK);
+        Some(self.sample())
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct TickRetry {
+    wake_epoch: i64,
+    after_monotonic: Duration,
+}
+
+struct TickerState {
+    last_sample: ClockSample,
+    last_observed_projection_id: Option<String>,
+    last_ticked_wake: Option<i64>,
+    retry: Option<TickRetry>,
+}
 
 pub(crate) struct ServeConfig {
     pub(crate) listener: UnixListener,
@@ -41,8 +97,15 @@ struct ConnectionContext {
     publisher: publish::ProjectionPublisher,
     monitor_store: Arc<MonitorStore>,
     shutdown: Arc<AtomicBool>,
+    fenced: Arc<AtomicBool>,
     catalog_refresh: Option<Arc<BrokerCatalogRefresh>>,
     wait_pool: Arc<waits::WaitPool>,
+}
+
+impl ConnectionContext {
+    fn is_fenced(&self) -> bool {
+        self.fenced.load(Ordering::Acquire) || self.shutdown.load(Ordering::Acquire)
+    }
 }
 
 pub(crate) fn serve(config: ServeConfig) {
@@ -60,6 +123,7 @@ pub(crate) fn serve(config: ServeConfig) {
     let receiver = Arc::new(Mutex::new(receiver));
     let build_id = Arc::<str>::from(build_id.as_str());
     let shutdown = Arc::new(AtomicBool::new(false));
+    let fenced = Arc::new(AtomicBool::new(false));
     let wait_pool = Arc::new(waits::WaitPool::new(
         Arc::clone(&coordinator),
         Arc::clone(&build_id),
@@ -74,10 +138,11 @@ pub(crate) fn serve(config: ServeConfig) {
         publisher: publisher.clone(),
         monitor_store: Arc::clone(&monitor_store),
         shutdown: Arc::clone(&shutdown),
+        fenced: Arc::clone(&fenced),
         catalog_refresh,
         wait_pool,
     });
-    let workers = spawn_connection_workers(receiver, context);
+    let workers = spawn_connection_workers(receiver, Arc::clone(&context));
     if workers.is_empty() {
         drop(listener);
         drop(cleanup);
@@ -100,15 +165,35 @@ pub(crate) fn serve(config: ServeConfig) {
         Arc::clone(&publisher_shutdown),
     );
     let started = Instant::now();
-    let mut last_activity = started;
-    let mut last_renewal = started;
+    let initial_sample = system_clock_sample(started);
+    let mut last_activity = initial_sample.monotonic_elapsed;
+    let mut last_renewal = initial_sample;
     loop {
         if shutdown.load(Ordering::Acquire) {
             break;
         }
+        // Lease and idle maintenance precede accept so a queued client cannot
+        // postpone wake recovery or allow an expired owner to serve requests.
+        let now = system_clock_sample(started);
+        if interval_elapsed(now, last_renewal, policy.lease_renewal) {
+            if !cleanup.renew() {
+                fenced.store(true, Ordering::Release);
+                break;
+            }
+            last_renewal = now;
+        }
+        if should_exit_idle(
+            now.monotonic_elapsed,
+            last_activity,
+            policy.idle_exit,
+            coordinator.is_idle(),
+            monitor_store.has_active(),
+        ) {
+            break;
+        }
         match listener.accept() {
             Ok((stream, _)) => {
-                last_activity = Instant::now();
+                last_activity = now.monotonic_elapsed;
                 match connections.try_send(stream) {
                     Ok(()) => {}
                     Err(
@@ -124,24 +209,14 @@ pub(crate) fn serve(config: ServeConfig) {
                 }
             }
             Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                let now = Instant::now();
-                if now.duration_since(last_renewal) >= policy.lease_renewal {
-                    if !cleanup.renew(policy.lease_duration) {
-                        break;
-                    }
-                    last_renewal = now;
-                }
-                if now.duration_since(last_activity) >= policy.idle_exit
-                    && coordinator.is_idle()
-                    && !monitor_store.has_active()
-                {
-                    break;
-                }
                 std::thread::park_timeout(Duration::from_millis(50));
             }
             Err(_) => break,
         }
     }
+    // Fence all remaining connections before disconnecting the queue. Workers
+    // check this gate both before handling queued streams and before dispatch.
+    fenced.store(true, Ordering::Release);
     drop(connections);
     for worker in workers {
         drop(worker.join());
@@ -151,6 +226,9 @@ pub(crate) fn serve(config: ServeConfig) {
         drop(ticker.join());
     }
     drop(listener);
+    // Dropping the context joins admitted long polls; keep the lease locked
+    // until those workers and all synchronous connection workers are gone.
+    drop(context);
     drop(cleanup);
 }
 
@@ -174,6 +252,10 @@ fn spawn_connection_workers(
                 let Ok(stream) = stream else {
                     return;
                 };
+                if context.is_fenced() {
+                    drop(stream);
+                    continue;
+                }
                 handle_stream(stream, &context);
             },
         );
@@ -186,22 +268,40 @@ fn spawn_connection_workers(
 }
 
 fn handle_stream(mut stream: UnixStream, context: &ConnectionContext) {
-    let response = match read_request(&mut stream) {
-        Ok(request) if waits::is_wait(&request.operation) => {
-            context.wait_pool.enqueue(stream, request);
+    if context.is_fenced() {
+        return;
+    }
+    let request = match read_request(&mut stream) {
+        Ok(request) => request,
+        Err(error) => {
+            if !context.is_fenced() {
+                write_response(&mut stream, UsageBrokerResponse::Error { error });
+            }
             return;
         }
-        Ok(request) => dispatch(
-            &context.coordinator,
-            request,
-            &context.build_id,
-            &context.publisher,
-            &context.monitor_store,
-            &context.shutdown,
-            context.catalog_refresh.as_deref(),
-        ),
-        Err(error) => UsageBrokerResponse::Error { error },
     };
+    if context.is_fenced() {
+        return;
+    }
+    if waits::is_wait(&request.operation) {
+        if context.is_fenced() {
+            return;
+        }
+        context.wait_pool.enqueue(stream, request);
+        return;
+    }
+    if context.is_fenced() {
+        return;
+    }
+    let response = dispatch(
+        &context.coordinator,
+        request,
+        &context.build_id,
+        &context.publisher,
+        &context.monitor_store,
+        &context.shutdown,
+        context.catalog_refresh.as_deref(),
+    );
     write_response(&mut stream, response);
 }
 
@@ -211,50 +311,137 @@ fn spawn_publisher_ticker(
     monitor_store: Arc<MonitorStore>,
     shutdown: Arc<AtomicBool>,
 ) -> Option<std::thread::JoinHandle<()>> {
+    spawn_publisher_ticker_with_clock(
+        publisher,
+        coordinator,
+        monitor_store,
+        shutdown,
+        Box::new(SystemTickerClock::new()),
+    )
+}
+
+fn spawn_publisher_ticker_with_clock(
+    publisher: publish::ProjectionPublisher,
+    coordinator: Arc<UsageCoordinator>,
+    monitor_store: Arc<MonitorStore>,
+    shutdown: Arc<AtomicBool>,
+    mut clock: Box<dyn TickerClock>,
+) -> Option<std::thread::JoinHandle<()>> {
     // Incremental publication merges completed accounts as they finish. A
     // stalled account never blocks healthy accounts; dispatch also publishes.
     let initial_projection_id = publisher
         .current_projection()
         .ok()
         .map(|projection| projection.projection_id);
-    let mut last_observed_projection_id = initial_projection_id;
+    let last_sample = clock.initial_sample();
     jackin_telemetry::spawn::thread_joined_named("usage-broker-publisher".to_owned(), move || {
-        let mut last_ticked_wake = None;
-        let mut last_tick_epoch = chrono::Utc::now().timestamp();
-        let mut last_tick_instant = Instant::now();
+        let mut state = TickerState {
+            last_sample,
+            last_observed_projection_id: initial_projection_id,
+            last_ticked_wake: None,
+            retry: None,
+        };
         while !shutdown.load(Ordering::Relaxed) {
-            std::thread::park_timeout(PUBLISH_TICK);
+            let Some(sample) = clock.next_sample() else {
+                break;
+            };
             if shutdown.load(Ordering::Relaxed) {
                 break;
             }
-            let now_epoch = chrono::Utc::now().timestamp();
-            if wall_clock_wake_detected(last_tick_epoch, last_tick_instant.elapsed(), now_epoch) {
-                let _recalculated = coordinator.note_wake(now_epoch);
-            }
-            last_tick_epoch = now_epoch;
-            last_tick_instant = Instant::now();
-            if !coordinator.is_idle() {
-                publisher.publish_due(now_epoch);
-            }
-            if let Ok(projection) = publisher.current_projection()
-                && last_observed_projection_id.as_deref() != Some(projection.projection_id.as_str())
-            {
-                let _ignored = monitor_store.observe_projection(&projection, now_epoch);
-                last_observed_projection_id = Some(projection.projection_id);
-            }
-            let next_wake = monitor_store.next_wake();
-            if let Some(wake_epoch) = next_wake
-                && wake_epoch <= now_epoch
-                && last_ticked_wake != Some(wake_epoch)
-            {
-                let _ignored = monitor_store.tick(now_epoch);
-                last_ticked_wake = Some(wake_epoch);
-            } else if next_wake.is_none_or(|wake_epoch| wake_epoch > now_epoch) {
-                last_ticked_wake = None;
-            }
+            publisher_tick_step(&publisher, &coordinator, &monitor_store, sample, &mut state);
         }
     })
     .ok()
+}
+
+fn publisher_tick_step(
+    publisher: &publish::ProjectionPublisher,
+    coordinator: &UsageCoordinator,
+    monitor_store: &MonitorStore,
+    sample: ClockSample,
+    state: &mut TickerState,
+) {
+    let monotonic_elapsed = sample
+        .monotonic_elapsed
+        .saturating_sub(state.last_sample.monotonic_elapsed);
+    if wall_clock_wake_detected(
+        state.last_sample.wall_epoch,
+        monotonic_elapsed,
+        sample.wall_epoch,
+    ) {
+        let _recalculated = coordinator.note_wake(sample.wall_epoch);
+    }
+    state.last_sample = sample;
+
+    if !coordinator.is_idle() {
+        publisher.publish_due(sample.wall_epoch);
+    }
+    if let Ok(projection) = publisher.current_projection()
+        && state.last_observed_projection_id.as_deref() != Some(projection.projection_id.as_str())
+    {
+        let _ignored = monitor_store.observe_projection(&projection, sample.wall_epoch);
+        state.last_observed_projection_id = Some(projection.projection_id);
+    }
+
+    let next_wake = monitor_store.next_wake();
+    if let Some(wake_epoch) = next_wake.filter(|wake_epoch| *wake_epoch <= sample.wall_epoch) {
+        if state
+            .retry
+            .is_some_and(|retry| retry.wake_epoch != wake_epoch)
+        {
+            state.retry = None;
+        }
+        let retry_waiting = state.retry.is_some_and(|retry| {
+            retry.wake_epoch == wake_epoch && sample.monotonic_elapsed < retry.after_monotonic
+        });
+        if state.last_ticked_wake != Some(wake_epoch) && !retry_waiting {
+            match monitor_store.tick(sample.wall_epoch) {
+                Ok(()) => {
+                    state.last_ticked_wake = Some(wake_epoch);
+                    state.retry = None;
+                }
+                Err(_) => {
+                    state.retry = Some(TickRetry {
+                        wake_epoch,
+                        after_monotonic: sample
+                            .monotonic_elapsed
+                            .saturating_add(MONITOR_TICK_RETRY_DELAY),
+                    });
+                }
+            }
+        }
+    } else {
+        state.last_ticked_wake = None;
+        state.retry = None;
+    }
+}
+
+fn system_clock_sample(started: Instant) -> ClockSample {
+    ClockSample {
+        wall_epoch: chrono::Utc::now().timestamp(),
+        monotonic_elapsed: started.elapsed(),
+    }
+}
+
+fn interval_elapsed(now: ClockSample, last: ClockSample, interval: Duration) -> bool {
+    let interval_seconds = interval
+        .as_secs()
+        .saturating_add(u64::from(interval.subsec_nanos() != 0));
+    let wall_interval = i64::try_from(interval_seconds).unwrap_or(i64::MAX);
+    now.wall_epoch.saturating_sub(last.wall_epoch) >= wall_interval
+        || now.monotonic_elapsed.saturating_sub(last.monotonic_elapsed) >= interval
+}
+
+fn should_exit_idle(
+    now_monotonic: Duration,
+    last_activity_monotonic: Duration,
+    idle_exit: Duration,
+    coordinator_idle: bool,
+    has_active_monitor: bool,
+) -> bool {
+    now_monotonic.saturating_sub(last_activity_monotonic) >= idle_exit
+        && coordinator_idle
+        && !has_active_monitor
 }
 
 pub(crate) fn wall_clock_wake_detected(
@@ -275,6 +462,9 @@ pub(crate) fn write_response(stream: &mut UnixStream, response: UsageBrokerRespo
         write_with_deadline(stream, &bytes, Duration::from_secs(1));
     }
 }
+
+#[cfg(test)]
+mod tests;
 
 pub(crate) fn write_with_deadline(stream: &mut UnixStream, mut bytes: &[u8], timeout: Duration) {
     if stream.set_nonblocking(true).is_err() {

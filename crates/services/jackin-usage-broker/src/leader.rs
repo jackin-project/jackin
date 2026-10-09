@@ -27,14 +27,17 @@ pub(crate) fn claim_leader(
 ) -> Result<Option<BrokerLeaseOwner>, UsageCoordinationError> {
     let lease = BrokerLease::new(build_id);
     loop {
-        match open(path, OFlag::O_RDWR | OFlag::O_NOFOLLOW, Mode::empty()) {
+        match open(
+            path,
+            OFlag::O_RDWR | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+            Mode::empty(),
+        ) {
             Ok(fd) => {
                 let mut file = File::from(fd);
                 validate_owned_file(&file, 0o600)?;
-                // A live broker does not hold the lease lock continuously. A
-                // contender therefore either observes the current owner or
-                // takes the same descriptor lock before replacing an expired
-                // payload.
+                // The descriptor lock is held for the entire broker lifetime.
+                // Expiry permits recovery only after the OS releases a dead
+                // owner's lock.
                 if file.try_lock().is_err() {
                     return Ok(None);
                 }
@@ -42,19 +45,29 @@ pub(crate) fn claim_leader(
                     let _ignored = file.unlock();
                     continue;
                 }
-                let result = claim_existing_lease(&mut file, &lease, build_id, lease_duration);
-                let unlock = file.unlock();
-                return match (result, unlock) {
-                    (Ok(Some(())), Ok(())) => Ok(Some(BrokerLeaseOwner { lease, file })),
-                    (Ok(Some(()) | None), Err(_)) => Err(unavailable()),
-                    (Ok(None), Ok(())) => Ok(None),
-                    (Err(error), _) => Err(error),
+                return match claim_existing_lease(&mut file, &lease, build_id, lease_duration) {
+                    // The owner keeps the descriptor lock for its entire
+                    // lifetime. Expiry cannot transfer a live process's
+                    // authority while it is suspended or waking.
+                    Ok(Some(())) => Ok(Some(BrokerLeaseOwner { lease, file })),
+                    Ok(None) => {
+                        file.unlock().map_err(|_| unavailable())?;
+                        Ok(None)
+                    }
+                    Err(error) => {
+                        let _ignored = file.unlock();
+                        Err(error)
+                    }
                 };
             }
             Err(nix::errno::Errno::ENOENT) => {
                 let fd = open(
                     path,
-                    OFlag::O_RDWR | OFlag::O_CREAT | OFlag::O_EXCL | OFlag::O_NOFOLLOW,
+                    OFlag::O_RDWR
+                        | OFlag::O_CREAT
+                        | OFlag::O_EXCL
+                        | OFlag::O_NOFOLLOW
+                        | OFlag::O_CLOEXEC,
                     Mode::from_bits_truncate(0o600),
                 )
                 .map_err(|_| unavailable())?;
@@ -65,7 +78,6 @@ pub(crate) fn claim_leader(
                         validate_owned_file(lease_file, 0o600)?;
                         lease_file.try_lock().map_err(|_| unavailable())?;
                         write_lease(lease_file, &lease).map_err(|_| unavailable())?;
-                        lease_file.unlock().map_err(|_| unavailable())?;
                     }
                     let file = file.take().ok_or_else(unavailable)?;
                     Ok(BrokerLeaseOwner { lease, file })
@@ -121,32 +133,41 @@ pub(crate) fn claim_existing_lease(
     Ok(Some(()))
 }
 
-pub(crate) fn renew_lease(owner: &mut BrokerLeaseOwner, lease_duration: Duration) -> bool {
-    if owner.file.lock().is_err() {
-        return false;
-    }
-    let result = (|| {
+pub(crate) fn renew_lease(owner: &mut BrokerLeaseOwner) -> bool {
+    renew_lease_at(owner, chrono::Utc::now().timestamp())
+}
+
+/// Renew an owner lease at the caller's clock value while retaining its
+/// lifetime descriptor lock.
+///
+/// Expiry makes the lease claimable only while unowned. A sleeping owner may
+/// renew an expired lease when its exact descriptor and persisted identity are
+/// still current. If a successor has replaced that identity, renewal fails.
+pub(crate) fn renew_lease_at(owner: &mut BrokerLeaseOwner, now_epoch: i64) -> bool {
+    (|| {
+        validate_owned_file(&owner.file, 0o600).ok()?;
         if owner.file.metadata().ok()?.nlink() == 0 {
             return Some(false);
         }
         let mut current = read_lease(&mut owner.file).ok()?;
-        if current.instance_id != owner.lease.instance_id {
+        if !lease_matches_owner(&current, &owner.lease) {
             return Some(false);
         }
-        let now = chrono::Utc::now().timestamp();
-        if now.saturating_sub(current.renewed_at_epoch)
-            >= i64::try_from(lease_duration.as_secs()).unwrap_or(i64::MAX)
-        {
-            return Some(false);
-        }
-        current.renewed_at_epoch = now;
+        current.renewed_at_epoch = now_epoch.max(current.renewed_at_epoch);
         write_lease(&mut owner.file, &current).ok()?;
-        owner.lease.renewed_at_epoch = now;
+        owner.lease = current;
         Some(true)
     })()
-    .unwrap_or(false);
-    let unlock = owner.file.unlock();
-    result && unlock.is_ok()
+    .unwrap_or(false)
+}
+
+fn lease_matches_owner(current: &BrokerLease, expected: &BrokerLease) -> bool {
+    current.instance_id == expected.instance_id
+        && current.process_id == expected.process_id
+        && current.process_id == std::process::id()
+        && current.protocol_version == expected.protocol_version
+        && current.build_id == expected.build_id
+        && current.renewed_at_epoch == expected.renewed_at_epoch
 }
 
 pub(crate) fn cleanup_owned_files(
@@ -154,27 +175,40 @@ pub(crate) fn cleanup_owned_files(
     socket_path: &Path,
     owner: &mut BrokerLeaseOwner,
 ) -> bool {
-    if owner.file.lock().is_err() {
-        return false;
-    }
-    let result = (|| -> Result<(), ()> {
+    (|| -> Result<(), ()> {
+        let descriptor = owner.file.metadata().map_err(|_| ())?;
+        if descriptor.uid() != geteuid().as_raw() || descriptor.mode() & 0o777 != 0o600 {
+            return Err(());
+        }
         if owner.file.metadata().map_err(|_| ())?.nlink() == 0 {
             return Err(());
         }
         let current = read_lease(&mut owner.file).map_err(|_| ())?;
-        if current.instance_id != owner.lease.instance_id {
+        if !lease_matches_owner(&current, &owner.lease) {
             return Err(());
         }
         // The lease descriptor remains locked across both unlinks. No valid
         // successor can bind the broker socket between the ownership check
         // and path removal.
+        if !path_matches_file(lease_path, &owner.file)? {
+            return Err(());
+        }
         unlink_owned_path(socket_path)?;
+        if !path_matches_file(lease_path, &owner.file)? {
+            return Err(());
+        }
         unlink_owned_path(lease_path)?;
         Ok(())
     })()
-    .is_ok();
-    let unlock = owner.file.unlock().is_ok();
-    result && unlock
+    .is_ok()
+}
+
+fn path_matches_file(path: &Path, file: &File) -> Result<bool, ()> {
+    let descriptor = file.metadata().map_err(|_| ())?;
+    let entry = fs::symlink_metadata(path).map_err(|_| ())?;
+    Ok(!entry.file_type().is_symlink()
+        && entry.dev() == descriptor.dev()
+        && entry.ino() == descriptor.ino())
 }
 
 pub(crate) fn unlink_owned_path(path: &Path) -> Result<(), ()> {

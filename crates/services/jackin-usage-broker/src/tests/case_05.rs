@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use crate::leader::{read_lease, write_lease};
+use nix::fcntl::{FcntlArg, FdFlag, fcntl};
 
 #[test]
 fn usage_broker_recovers_stale_guard_with_private_permissions() {
@@ -68,11 +70,84 @@ fn broker_lease_uses_expiry_and_build_identity_not_pid_reuse() {
     assert_ne!(replacement.lease.instance_id, live.instance_id);
 
     fs::write(&path, serde_json::to_vec(&replacement.lease).unwrap()).unwrap();
+    drop(replacement);
     assert!(
         claim_leader(&path, "other-build", Duration::from_secs(30))
             .unwrap()
             .is_none()
     );
+}
+
+#[test]
+fn lease_descriptors_are_close_on_exec_for_new_and_recovered_claims() {
+    let temp = tempfile::tempdir().unwrap();
+    let lease_path = temp.path().join("lease");
+    let mut initial = claim_leader(&lease_path, "build", Duration::from_secs(30))
+        .unwrap()
+        .expect("first claimant owns the new lease");
+    assert_close_on_exec(&initial.file);
+
+    let mut expired = initial.lease.clone();
+    expired.renewed_at_epoch -= 31;
+    write_lease(&mut initial.file, &expired).unwrap();
+    initial.file.unlock().unwrap();
+    drop(initial);
+
+    let recovered = claim_leader(&lease_path, "build", Duration::from_secs(30))
+        .unwrap()
+        .expect("expired lease is recoverable after its owner lock is released");
+    assert_close_on_exec(&recovered.file);
+}
+
+fn assert_close_on_exec(file: &fs::File) {
+    let flags = fcntl(file, FcntlArg::F_GETFD).unwrap();
+    assert!(FdFlag::from_bits_truncate(flags).contains(FdFlag::FD_CLOEXEC));
+}
+
+#[test]
+fn expired_current_owner_can_renew_with_a_fake_clock() {
+    let temp = tempfile::tempdir().unwrap();
+    let lease_path = temp.path().join("lease");
+    let mut owner = claim_leader(&lease_path, "build", Duration::from_secs(30))
+        .unwrap()
+        .expect("first claimant owns the lease");
+    let original = owner.lease.clone();
+    let lease_duration = Duration::from_secs(30);
+    owner.lease.renewed_at_epoch -= i64::try_from(lease_duration.as_secs()).unwrap() + 1;
+    write_lease(&mut owner.file, &owner.lease).unwrap();
+    let now_epoch =
+        owner.lease.renewed_at_epoch + i64::try_from(lease_duration.as_secs()).unwrap() + 1;
+
+    assert!(leader::renew_lease_at(&mut owner, now_epoch));
+    assert_eq!(owner.lease.instance_id, original.instance_id);
+    assert_eq!(owner.lease.process_id, std::process::id());
+    assert_eq!(owner.lease.renewed_at_epoch, now_epoch);
+
+    let persisted = read_lease(&mut owner.file).unwrap();
+    assert_eq!(persisted.instance_id, original.instance_id);
+    assert_eq!(persisted.renewed_at_epoch, now_epoch);
+}
+
+#[test]
+fn expired_live_owner_lock_prevents_successor_takeover() {
+    let temp = tempfile::tempdir().unwrap();
+    let lease_path = temp.path().join("lease");
+    let mut owner = claim_leader(&lease_path, "build", Duration::from_secs(30))
+        .unwrap()
+        .expect("first claimant owns the lease");
+    owner.lease.renewed_at_epoch -= 31;
+    write_lease(&mut owner.file, &owner.lease).unwrap();
+    let owner_id = owner.lease.instance_id.clone();
+
+    assert!(
+        claim_leader(&lease_path, "build", Duration::from_secs(30))
+            .unwrap()
+            .is_none(),
+        "the OS-held owner lock fences takeover even after wall-clock expiry"
+    );
+    let current = read_lease(&mut owner.file).unwrap();
+    assert_eq!(current.instance_id, owner_id);
+    assert_eq!(current.renewed_at_epoch, owner.lease.renewed_at_epoch);
 }
 
 #[test]
@@ -91,9 +166,46 @@ fn stale_lease_descriptor_cannot_renew_or_clean_successor_files() {
         .expect("successor owns the replacement lease");
     let successor_id = successor.lease.instance_id.clone();
 
-    assert!(!renew_lease(&mut stale, Duration::from_secs(30)));
+    assert!(!renew_lease(&mut stale));
     assert!(!cleanup_owned_files(&lease_path, &socket_path, &mut stale,));
     let current: BrokerLease = serde_json::from_slice(&fs::read(&lease_path).unwrap()).unwrap();
+    assert_eq!(current.instance_id, successor_id);
+    assert!(socket_path.exists());
+}
+
+#[test]
+fn expired_successor_lease_fences_old_owner_renewal_and_cleanup() {
+    let temp = tempfile::tempdir().unwrap();
+    let lease_path = temp.path().join("lease");
+    let socket_path = temp.path().join("socket");
+    let mut old_owner = claim_leader(&lease_path, "build", Duration::from_secs(30))
+        .unwrap()
+        .expect("first claimant owns the lease");
+    fs::write(&socket_path, b"successor socket").unwrap();
+
+    let mut expired = old_owner.lease.clone();
+    expired.renewed_at_epoch -= 31;
+    write_lease(&mut old_owner.file, &expired).unwrap();
+    // Simulate process death: the open descriptor remains for this stale-owner
+    // assertion, but the OS releases its lifetime lock before succession.
+    old_owner.file.unlock().unwrap();
+    let mut successor = claim_leader(&lease_path, "build", Duration::from_secs(30))
+        .unwrap()
+        .expect("successor claims the expired lease on the same inode");
+    let successor_id = successor.lease.instance_id.clone();
+    assert_ne!(successor_id, old_owner.lease.instance_id);
+
+    assert!(!leader::renew_lease_at(
+        &mut old_owner,
+        successor.lease.renewed_at_epoch + 31,
+    ));
+    assert!(!cleanup_owned_files(
+        &lease_path,
+        &socket_path,
+        &mut old_owner,
+    ));
+
+    let current = read_lease(&mut successor.file).unwrap();
     assert_eq!(current.instance_id, successor_id);
     assert!(socket_path.exists());
 }
