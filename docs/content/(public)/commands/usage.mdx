@@ -9,17 +9,38 @@ description: "Inspect cached Capsule usage and quota data for a running instance
 jackin usage cache accounts [--format human|json]
 jackin usage <INSTANCE> accounts [--sync-host-cache] [--format human|json]
 jackin usage <INSTANCE> verify [--format human|json]
+jackin usage host snapshot --agent <SURFACE> [--format human|json] [--no-refresh]
 ```
 
-`jackin usage` reads the same daemon-cached usage and quota snapshots that the
-Capsule status bar and usage overlay render. It never polls Claude, Codex, Amp,
-or any provider directly from the host command; the selected running Capsule
-daemon owns provider refresh, caching, retry, and stale-state decisions.
+Capsule account commands read the quota snapshots rendered by the Capsule
+status bar and usage overlay. Host snapshot commands use the shared host usage
+broker, which owns provider access, caching, retry, and stale-state decisions.
 
 `<INSTANCE>` accepts a full container name or the short instance id shown by
 [`jackin status`](/commands/status/).
 
 ## Scopes
+
+### host snapshot
+
+```bash
+jackin usage host snapshot --agent claude --format json
+```
+
+Reads the host provider snapshot through the shared usage broker. Repeated
+invocations request a non-forced refresh: fresh broker data is reused, and
+provider retry deadlines such as `Retry-After` remain in force. Both
+`jackin usage --format json` (all host providers) and this surface-scoped
+snapshot command reuse fresh results. The broker applies a
+shared five-minute success cooldown locally; callers may poll more
+often, but they should expect cached state until refresh is due. This is
+jackin's local broker policy, not an Anthropic polling interval.
+
+For Claude Code, run `jackin usage host snapshot --agent claude --format json`
+from a hook or scheduled task and consume its stdout. `--no-refresh` skips the
+broker request, so a fresh CLI process may return an unavailable view. Claude
+credentials stored only in macOS Keychain may require operating-system
+authorization when jackin discovers the host account.
 
 ### cache accounts
 

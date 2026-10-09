@@ -96,7 +96,9 @@ pub(crate) type CliUsageCredentialResolver =
     long_about = "Read the canonical host usage projection.\n\n\
         Human output stays intentionally compact for scripts and quick inspection.\n\
         Use `jackin usage <instance> accounts|verify` for explicit Capsule\n\
-        inspection, or `jackin usage host snapshot` for a provider snapshot."
+        inspection, or `jackin usage host snapshot --agent claude --format json`\n\
+        for a host provider snapshot. Repeated host usage requests reuse fresh\n\
+        broker data and are locally rate-limited by broker policy."
 )]
 pub struct UsageArgs {
     /// Container name, short instance id, `cache`, or `host`; omit for host-wide usage
@@ -128,7 +130,7 @@ pub struct UsageHostSnapshotArgs {
     /// google, cursor, meta, openrouter
     #[arg(long, value_name = "SURFACE")]
     pub agent: String,
-    /// Skip network refresh (read cache / honest refreshing only)
+    /// Skip the broker request (a fresh CLI process may have no local snapshot)
     #[arg(long, default_value_t = false)]
     pub no_refresh: bool,
 }
@@ -236,7 +238,7 @@ fn run_bare_host(args: &UsageArgs, paths: &JackinPaths) -> Result<()> {
             .current(capability.clone())
             .map_err(|error| anyhow::anyhow!(error.message))?;
         let state = client
-            .refresh(capability.clone(), current.generation, true)
+            .refresh(capability.clone(), current.generation, false)
             .map_err(|error| anyhow::anyhow!(error.message))?;
         let state = if state.phase.is_active() {
             client
@@ -364,7 +366,7 @@ fn run_host_snapshot(
                 .current(capability.clone())
                 .map_err(|error| anyhow::anyhow!(error.message))?;
             let mut state = client
-                .refresh(capability.clone(), current.generation, true)
+                .refresh(capability.clone(), current.generation, false)
                 .map_err(|error| anyhow::anyhow!(error.message))?;
             if state.phase.is_active() {
                 state = client
