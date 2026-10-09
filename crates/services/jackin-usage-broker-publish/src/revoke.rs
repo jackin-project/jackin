@@ -49,7 +49,7 @@ pub fn retain_revoked_accounts(
     }
     projection
         .providers
-        .retain(|provider| !provider.accounts.is_empty());
+        .retain(|provider| !provider.accounts.is_empty() || !provider.issues.is_empty());
 
     for previous_provider in &previous.providers {
         for previous_account in &previous_provider.accounts {

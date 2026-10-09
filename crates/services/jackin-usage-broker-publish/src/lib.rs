@@ -9,6 +9,7 @@
 //! coordinator stores, and keeps the last-good publication on failure.
 
 mod account_windows;
+mod catalog_diagnostics;
 mod errors;
 mod freshness;
 mod groups;
@@ -19,6 +20,8 @@ mod revoke;
 mod windows;
 
 pub use account_windows::{failure_lifecycle, project_window, window_category};
+pub(crate) use catalog_diagnostics::apply_catalog_diagnostics;
+pub use catalog_diagnostics::{CatalogDiagnosticCode, CatalogDiagnostics};
 pub use errors::{
     catalog_revision_conflict, first_publisher_rollback_error, issue_recoverability,
     preserve_publisher_error, projection_store_error, publisher_corrupt_state,

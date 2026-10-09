@@ -16,13 +16,19 @@ use super::{AccountIdentityMetadata, account_for_view};
 /// Rebuild provider/account rows from per-account generation views.
 ///
 /// Providers and accounts are rebuilt in settled `(surface_id, account_id)`
-/// order with canonical ranks. Projection-level `unresolved`, `issues`, and
-/// the catalog revision are preserved untouched.
+/// order with canonical ranks. Existing provider issues remain attached,
+/// including diagnostic-only provider rows. Projection-level `unresolved`,
+/// `issues`, and the catalog revision are preserved untouched.
 pub fn merge_views(
     projection: &mut UsageProjectionV1,
     views: &[UsageGenerationView],
     identity_metadata: &BTreeMap<UsageAccountCapability, AccountIdentityMetadata>,
 ) {
+    let previous_providers = std::mem::take(&mut projection.providers);
+    let mut provider_issues = previous_providers
+        .iter()
+        .map(|provider| (provider.provider_id.clone(), provider.issues.clone()))
+        .collect::<BTreeMap<_, _>>();
     let mut ordered = views.to_vec();
     ordered.sort_by(|left, right| {
         (&left.capability.surface_id, &left.capability.account_id)
@@ -54,7 +60,7 @@ pub fn merge_views(
                     is_stale: false,
                 },
                 accounts: Vec::new(),
-                issues: Vec::new(),
+                issues: provider_issues.remove(&surface_id).unwrap_or_default(),
             });
         }
         let Some(provider) = providers.last_mut() else {
@@ -78,6 +84,28 @@ pub fn merge_views(
             .filter(|view| view.capability.surface_id == provider.provider_id)
             .any(|view| view.phase.is_active());
         provider.freshness = aggregate_freshness(provider_active, &provider.accounts);
+    }
+    for previous in previous_providers {
+        if providers
+            .iter()
+            .any(|provider| provider.provider_id == previous.provider_id)
+            || previous.issues.is_empty()
+        {
+            continue;
+        }
+        providers.push(UsageProviderV1 {
+            provider_id: previous.provider_id,
+            display_name: previous.display_name,
+            rank: 0,
+            membership_state: previous.membership_state,
+            freshness: previous.freshness,
+            accounts: Vec::new(),
+            issues: previous.issues,
+        });
+    }
+    providers.sort_by(|left, right| left.provider_id.cmp(&right.provider_id));
+    for (rank, provider) in providers.iter_mut().enumerate() {
+        provider.rank = u32::try_from(rank).unwrap_or(u32::MAX);
     }
     projection.providers = providers;
 }

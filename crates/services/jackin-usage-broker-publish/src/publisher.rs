@@ -16,9 +16,9 @@ use jackin_usage_coordinator::{
 
 /// Server-side incremental publisher. Cheap to clone; all state is shared.
 use super::{
-    catalog_entries, catalog_revision_conflict, first_publisher_rollback_error, merge_views,
-    preserve_publisher_error, projection_store_error, publisher_corrupt_state,
-    publisher_unavailable, retain_revoked_accounts,
+    CatalogDiagnostics, apply_catalog_diagnostics, catalog_entries, catalog_revision_conflict,
+    first_publisher_rollback_error, merge_views, preserve_publisher_error, projection_store_error,
+    publisher_corrupt_state, publisher_unavailable, retain_revoked_accounts,
 };
 
 /// Server-side incremental publisher. Cheap to clone; all state is shared.
@@ -176,6 +176,43 @@ impl ProjectionPublisher {
         entries: Vec<UsageCatalogEntry>,
         now_epoch: i64,
     ) -> Result<UsageProjectionV1, UsageCoordinationError> {
+        self.reconcile_catalog_inner(
+            expected_projection_id,
+            catalog_revision,
+            entries,
+            None,
+            now_epoch,
+        )
+    }
+
+    /// Replace the catalog and its scan diagnostics in one durable transaction.
+    /// Only catalog-derived issue codes are replaced; other issue records and
+    /// canonical account state remain intact.
+    pub fn reconcile_catalog_if_projection_with_diagnostics(
+        &self,
+        expected_projection_id: Option<&str>,
+        catalog_revision: String,
+        entries: Vec<UsageCatalogEntry>,
+        diagnostics: CatalogDiagnostics,
+        now_epoch: i64,
+    ) -> Result<UsageProjectionV1, UsageCoordinationError> {
+        self.reconcile_catalog_inner(
+            expected_projection_id,
+            catalog_revision,
+            entries,
+            Some(diagnostics),
+            now_epoch,
+        )
+    }
+
+    fn reconcile_catalog_inner(
+        &self,
+        expected_projection_id: Option<&str>,
+        catalog_revision: String,
+        entries: Vec<UsageCatalogEntry>,
+        diagnostics: Option<CatalogDiagnostics>,
+        now_epoch: i64,
+    ) -> Result<UsageProjectionV1, UsageCoordinationError> {
         let _catalog_lifecycle = self
             .catalog_lifecycle
             .lock()
@@ -203,6 +240,9 @@ impl ProjectionPublisher {
         let previous = projection.clone();
         let mut next = projection.clone();
         retain_revoked_accounts(&mut next, &previous, &catalog, current_catalog.as_ref());
+        if let Some(diagnostics) = diagnostics.as_ref() {
+            apply_catalog_diagnostics(&mut next, diagnostics);
+        }
         next.discovery_revision = catalog_revision.clone();
         next.broker_generation = next.broker_generation.saturating_add(1);
         next.projection_id = format!("{}:{}", next.broker_instance_id, next.broker_generation);
