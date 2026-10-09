@@ -329,3 +329,28 @@ setup before adapter installation, preserve unknown existing service ownership,
 record real SGD evidence before monitor creation and disclose pre-monitor
 spend. No product code changed. The durable proof and handoff are committed
 and published with this verification checkpoint.
+
+## Observation and policy implementation — active 2026-10-10
+
+Objective: implement the full attached tracker goal, keeping collection separate
+from dispatch and preserving strict SGD semantics until explicit operator approval.
+Current product state is not yet proof of completion. Work remains isolated in
+`/private/tmp/jackin-claude-monitor`; live Claude settings, credentials and
+projects are outside mutation scope.
+
+| Work | Owner | State |
+| --- | --- | --- |
+| Protocol/CLI contract and migration freeze | v2_contract_research + parent | Research active; no shared edits before freeze |
+| Observer, goal policy, atomic baseline and idempotency | v2_engine_research | Research active; ownership assigned after freeze |
+| Official statusline/version/account source contract | v2_source_review | Read-only research active |
+| Operator authorization, passive paths and rate-limit audit | v2_security_review | Read-only independent audit active |
+| CLI + consumer integration | To assign after freeze | Pending |
+| Deterministic tests + independent installed-pair proof | To assign | Pending; fixtures only |
+| Documentation, handoff, completion audit and publication | Parent + independent reviewers | Pending |
+
+Acceptance includes observation without receipt/baseline/dispatch, auditable
+persisted policy, separate readiness, atomic strict activation, no silent
+downgrade, explicit account/session scope, schema migration, idempotent start,
+idle/restart/sleep persistence and all existing provider/freshness/reset/spend
+regressions. Real-account integration will be distinguished from fixture proof;
+the operator-controlled adapter installation remains outside authorized edits.
