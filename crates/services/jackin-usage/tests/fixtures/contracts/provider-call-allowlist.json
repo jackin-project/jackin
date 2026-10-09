@@ -10,7 +10,7 @@
     { "path": "crates/services/jackin-usage-discovery/src/refresh.rs", "symbol": "kimi_snapshot", "classification": "broker_executor" },
     { "path": "crates/services/jackin-usage-discovery/src/refresh.rs", "symbol": "opencode_profile_snapshot", "classification": "broker_executor" },
     { "path": "crates/services/jackin-usage-provider-amp/src/snapshot.rs", "symbol": "fetch_amp_api_usage", "classification": "adapter_internal" },
-    { "path": "crates/services/jackin-usage-provider-claude/src/wave.rs", "symbol": "fetch_claude_oauth_usage", "classification": "adapter_internal" },
+    { "path": "crates/services/jackin-usage-provider-claude/src/wave.rs", "symbol": "fetch_claude_oauth_usage", "classification": "broker_executor" },
     { "path": "crates/services/jackin-usage-provider-codex/src/oauth.rs", "symbol": "fetch_codex_oauth_usage", "classification": "adapter_internal" },
     { "path": "crates/services/jackin-usage-provider-codex/src/oauth.rs", "symbol": "refresh_codex_access_token", "classification": "adapter_internal" },
     { "path": "crates/services/jackin-usage-provider-codex/src/snapshot.rs", "symbol": "codex_profile_snapshot_with_rate_limit", "classification": "adapter_internal" },

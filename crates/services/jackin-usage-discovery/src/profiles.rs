@@ -131,6 +131,15 @@ impl ProfileCredentialReader for SystemProfileCredentialReader {
         {
             use security_framework::item::{ItemClass, ItemSearchOptions};
 
+            // This profile query can run outside the shipped broker binary
+            // (for example through a library discovery caller), so establish
+            // its own no-UI scope before invoking Security.framework.
+            let Ok(_unattended_keychain_guard) =
+                jackin_usage_provider_claude::unattended_keychain_guard()
+            else {
+                return ProfileReadOutcome::ConsentRequired;
+            };
+
             // Reference-only search: no `load_data`, so the grant payload is
             // never read into this process — presence is the whole answer.
             let mut options = ItemSearchOptions::new();
