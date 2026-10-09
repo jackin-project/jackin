@@ -340,12 +340,14 @@ projects are outside mutation scope.
 
 | Work | Owner | State |
 | --- | --- | --- |
-| Protocol/CLI contract and migration freeze | v2_contract_research + parent | Research active; no shared edits before freeze |
-| Observer, goal policy, atomic baseline and idempotency | v2_engine_research | Research active; ownership assigned after freeze |
-| Official statusline/version/account source contract | v2_source_review | Read-only research active |
-| Operator authorization, passive paths and rate-limit audit | v2_security_review | Read-only independent audit active |
-| CLI + consumer integration | To assign after freeze | Pending |
-| Deterministic tests + independent installed-pair proof | To assign | Pending; fixtures only |
+| Protocol/CLI contract and migration freeze | v2_contract_research + parent | Frozen in v2-contract.md; protocol implementation active |
+| Observer, goal policy, atomic baseline and idempotency | v2_engine_research | Engine + explicit migration implementation active |
+| Official statusline/version/account source contract | v2_source_review | Research complete; bounded version parser patch prepared |
+| Operator authorization, passive paths and rate-limit audit | v2_security_review | Research complete; host-only relay regression patch active |
+| CLI integration | v2_cli_implementation | Frozen command implementation active |
+| Existing broker regression migration | v2_verification_research | Fixture migration active; no tool activation |
+| Offline CLI and installed fixture migration | v2_cli_fixture_migration | Implementation active; isolated state only |
+| Deterministic tests + independent installed-pair proof | Parent + verifier to assign | Pending coordinated compile; fixtures only |
 | Documentation, handoff, completion audit and publication | Parent + independent reviewers | Pending |
 
 Acceptance includes observation without receipt/baseline/dispatch, auditable
@@ -354,3 +356,17 @@ downgrade, explicit account/session scope, schema migration, idempotent start,
 idle/restart/sleep persistence and all existing provider/freshness/reset/spend
 regressions. Real-account integration will be distinguished from fixture proof;
 the operator-controlled adapter installation remains outside authorized edits.
+
+Baseline on `cc4a0cb0`: `cargo test --offline --locked -p
+jackin-usage-broker -p jackin-protocol -p jackin-usage-coordinator` passed 274
+tests with one pre-existing ignored test. This is baseline evidence, not v2 proof.
+
+Verification tooling incident: the read-only verification agent invoked
+`mise exec --deny-net -- mbx --help`, which activated a missing configured
+`cargo:codebook-lsp@0.3.42` tool and ran a global Cargo install with crates.io
+traffic. The confirmed installer process tree was terminated; no Claude process
+or project package build was stopped. Tool cache mutation and network traffic
+occurred; exact external request count is unknown. This run is not wholly
+offline. No provider, auth or Keychain verification occurred. Do not activate
+Mise again; use direct offline Cargo commands. Future verification reports must
+distinguish this tooling traffic from fixture provider/credential counters.
