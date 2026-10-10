@@ -399,9 +399,11 @@ fn ticker_polls_approved_source_and_publishes_terminal_result_while_idle() {
         "failed monitor persistence must leave the terminal projection pending"
     );
     let retry_after = ticker_state.observation_retry_after;
+    // Stay below the one-second monotonic persistence retry while wall time
+    // remains in the same whole second.
     let retry_sample = ClockSample {
-        wall_epoch: NOW + 3,
-        monotonic_elapsed: Duration::from_secs(3),
+        wall_epoch: NOW + 2,
+        monotonic_elapsed: Duration::from_millis(2_200),
     };
     harness.set_coordinator_clock(retry_sample);
     publisher_tick_step(
@@ -416,8 +418,8 @@ fn ticker_polls_approved_source_and_publishes_terminal_result_while_idle() {
     fs::remove_file(&state_file).expect("remove test-only symlink");
     fs::rename(&backup_file, &state_file).expect("restore monitor state file");
     let restored_sample = ClockSample {
-        wall_epoch: NOW + 4,
-        monotonic_elapsed: Duration::from_secs(4),
+        wall_epoch: NOW + 3,
+        monotonic_elapsed: Duration::from_millis(3_200),
     };
     harness.set_coordinator_clock(restored_sample);
     publisher_tick_step(
@@ -435,7 +437,7 @@ fn ticker_polls_approved_source_and_publishes_terminal_result_while_idle() {
     assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
     let MonitorReply::Status { status } = harness
         .store
-        .operate(MonitorOperation::Status { monitor_id }, NOW + 4)
+        .operate(MonitorOperation::Status { monitor_id }, NOW + 3)
         .expect("read monitor evidence after terminal publication")
     else {
         panic!("expected monitor status after terminal publication");
