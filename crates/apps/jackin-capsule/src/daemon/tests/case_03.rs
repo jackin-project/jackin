@@ -5,17 +5,17 @@ use super::*;
 
 fn accept_fake_broker_client(
     listener: &std::os::unix::net::UnixListener,
-    deadline: std::time::Instant,
+    deadline: Instant,
 ) -> Option<std::os::unix::net::UnixStream> {
     loop {
         match listener.accept() {
             Ok((stream, _)) => return Some(stream),
-            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+            Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                let remaining = deadline.saturating_duration_since(Instant::now());
                 if remaining.is_zero() {
                     return None;
                 }
-                std::thread::sleep(remaining.min(std::time::Duration::from_millis(5)));
+                std::thread::sleep(remaining.min(Duration::from_millis(5)));
             }
             Err(error) => panic!("accepting fake broker client failed: {error}"),
         }
@@ -244,11 +244,11 @@ fn broker_client_capsule_deduplicates_each_account_and_adopts_terminal_generatio
     };
     let server_capabilities = BTreeSet::from([capability.clone(), second_capability.clone()]);
     let server = std::thread::spawn(move || {
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        let deadline = Instant::now() + Duration::from_secs(5);
         let mut seen = BTreeMap::<UsageAccountCapability, [bool; 3]>::new();
         let mut received = 0;
         for _ in 0..6 {
-            let Some((mut stream, _)) = accept_fake_broker_client(&listener, deadline) else {
+            let Some(mut stream) = accept_fake_broker_client(&listener, deadline) else {
                 break;
             };
             received += 1;
