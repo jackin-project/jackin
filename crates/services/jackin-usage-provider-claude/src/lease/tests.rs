@@ -102,14 +102,20 @@ fn bootstrap_rejects_oversized_and_noncredential_payloads() {
         " ".repeat(MAX_CLAUDE_KEYCHAIN_PAYLOAD_BYTES)
     ));
     for payload in [oversized, Zeroizing::new("not-json".to_owned())] {
+        let payload_bytes = payload.len();
+        let read_count = Mutex::new(0);
         let outcome = bootstrap_claude_credential_with("selected", true, || {
+            *read_count.lock().unwrap() += 1;
             ClaudeKeychainRead::Payload { json: payload }
         })
         .expect("malformed payload is a typed outcome");
-        assert!(matches!(
-            outcome,
-            ClaudeCredentialBootstrapOutcome::Malformed
-        ));
+        assert_eq!(*read_count.lock().unwrap(), 1);
+        let ClaudeCredentialBootstrapOutcome::Malformed(diagnostic) = outcome else {
+            panic!("malformed input must return bounded diagnostic facts");
+        };
+        let diagnostic = serde_json::to_value(diagnostic).expect("diagnostic serializes");
+        assert_eq!(diagnostic["payload_bytes"], payload_bytes);
+        assert!(cached_claude_keychain_payload("selected").is_none());
         clear_bootstrapped_claude_credential();
     }
 }

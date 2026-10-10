@@ -9,6 +9,9 @@ use zeroize::Zeroizing;
 use crate::keychain::{
     ClaudeKeychainPolicyError, ClaudeKeychainRead, read_claude_keychain_item_for_foreground,
 };
+use crate::payload_diagnostic::{
+    ClaudeCredentialPayloadDiagnostic, diagnose_claude_profile_payload,
+};
 
 /// Secret-free result of explicit foreground Claude Keychain bootstrap.
 #[derive(Debug)]
@@ -16,7 +19,8 @@ pub enum ClaudeCredentialBootstrapOutcome {
     Missing,
     Denied,
     InteractionRequired,
-    Malformed,
+    /// Rejected payload with bounded facts that exclude credential values.
+    Malformed(ClaudeCredentialPayloadDiagnostic),
     Acquired(ClaudeCredentialLease),
 }
 
@@ -144,10 +148,18 @@ pub(crate) fn valid_claude_keychain_service(service: &str) -> bool {
         && !service.contains('\0')
 }
 
-fn valid_claude_keychain_payload(payload: &str) -> bool {
-    payload.len() <= MAX_CLAUDE_KEYCHAIN_PAYLOAD_BYTES
-        && crate::credentials::parse_claude_keychain_profile(payload.as_bytes())
-            .is_some_and(|profile| profile.credential.is_some())
+fn valid_claude_keychain_payload(payload: &str) -> Result<(), ClaudeCredentialPayloadDiagnostic> {
+    let bytes = payload.as_bytes();
+    if bytes.len() > MAX_CLAUDE_KEYCHAIN_PAYLOAD_BYTES {
+        return Err(diagnose_claude_profile_payload(bytes));
+    }
+    if crate::credentials::parse_claude_keychain_profile(bytes)
+        .is_some_and(|profile| profile.credential.is_some())
+    {
+        Ok(())
+    } else {
+        Err(diagnose_claude_profile_payload(bytes))
+    }
 }
 
 /// Stable opaque partition for one exact Keychain service. It is independent
@@ -231,8 +243,9 @@ fn bootstrap_claude_credential_with(
 
     match read_item() {
         ClaudeKeychainRead::Payload { json } => {
-            if !valid_claude_keychain_payload(&json) {
-                return Ok(ClaudeCredentialBootstrapOutcome::Malformed);
+            if let Err(diagnostic) = valid_claude_keychain_payload(&json) {
+                json.zeroize();
+                return Ok(ClaudeCredentialBootstrapOutcome::Malformed(diagnostic));
             }
             let generation = next_generation();
             credential_cache().store(service.to_owned(), json, generation);

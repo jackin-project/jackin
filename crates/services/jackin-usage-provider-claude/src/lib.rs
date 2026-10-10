@@ -8,6 +8,7 @@ mod credentials;
 mod keychain;
 mod lease;
 mod oauth_types;
+mod payload_diagnostic;
 mod refresh;
 mod snapshot;
 mod spend;
@@ -36,6 +37,7 @@ pub use oauth_types::{
     ClaudeOAuthExtraUsage, ClaudeOAuthLimit, ClaudeOAuthLimitModel, ClaudeOAuthLimitScope,
     ClaudeOAuthMoney, ClaudeOAuthSpend, ClaudeOAuthUsageResponse, ClaudeOAuthUsageWindow,
 };
+pub use payload_diagnostic::{ClaudeCredentialPayloadDiagnostic, diagnose_claude_profile_payload};
 pub use refresh::{ClaudeResolved, ClaudeWaveResolution};
 pub use snapshot::claude_api_key_snapshot;
 pub use spend::{

@@ -46,13 +46,10 @@ struct ClaudeCredentialDocument {
 struct ClaudeCredentialDocumentOauth {
     #[serde(rename = "accessToken", alias = "access_token")]
     access_token: Option<SecretString>,
-    #[serde(
-        rename = "subscriptionType",
-        alias = "subscription_type",
-        alias = "rateLimitTier",
-        alias = "rate_limit_tier"
-    )]
+    #[serde(rename = "subscriptionType", alias = "subscription_type")]
     subscription_type: Option<String>,
+    #[serde(rename = "rateLimitTier", alias = "rate_limit_tier")]
+    rate_limit_tier: Option<String>,
     #[serde(rename = "refreshToken", alias = "refresh_token")]
     refresh_token: Option<SecretString>,
 }
@@ -104,7 +101,11 @@ pub fn parse_claude_keychain_profile(bytes: &[u8]) -> Option<ClaudeKeychainProfi
             .filter(|token| !token.trim().is_empty());
         Some(ClaudeOAuthCredentials {
             access_token,
-            subscription_type: oauth.subscription_type.as_deref().map(humanize_plan_label),
+            subscription_type: oauth
+                .subscription_type
+                .or(oauth.rate_limit_tier)
+                .as_deref()
+                .map(humanize_plan_label),
             refresh_token,
         })
     });
@@ -165,12 +166,10 @@ pub fn claude_oauth_from_value(value: &serde_json::Value) -> Option<ClaudeOAuthC
     if access_token.is_empty() {
         return None;
     }
-    let subscription_type = oauth
-        .get("subscriptionType")
-        .or_else(|| oauth.get("subscription_type"))
-        .or_else(|| oauth.get("rateLimitTier"))
-        .or_else(|| oauth.get("rate_limit_tier"))
-        .and_then(serde_json::Value::as_str)
+    let subscription_type = optional_string_alias(oauth, "subscriptionType", "subscription_type")?;
+    let rate_limit_tier = optional_string_alias(oauth, "rateLimitTier", "rate_limit_tier")?;
+    let subscription_type = subscription_type
+        .or(rate_limit_tier)
         .map(humanize_plan_label);
     // Optional stable refresh token — used only to derive the coordination
     // discriminator when no `oauthAccount` metadata exists. Never surfaced.
@@ -186,6 +185,24 @@ pub fn claude_oauth_from_value(value: &serde_json::Value) -> Option<ClaudeOAuthC
         subscription_type,
         refresh_token,
     })
+}
+
+fn optional_string_alias<'a>(
+    object: &'a serde_json::Value,
+    camel_case: &str,
+    snake_case: &str,
+) -> Option<Option<&'a str>> {
+    let camel_case_value = object.get(camel_case);
+    let snake_case_value = object.get(snake_case);
+    match (camel_case_value, snake_case_value) {
+        (Some(_), Some(_)) => None,
+        (None, None) => Some(None),
+        (Some(value), None) | (None, Some(value)) => match value {
+            serde_json::Value::Null => Some(None),
+            serde_json::Value::String(value) => Some(Some(value.as_str())),
+            _ => None,
+        },
+    }
 }
 
 #[cfg(any(test, feature = "test-support"))]

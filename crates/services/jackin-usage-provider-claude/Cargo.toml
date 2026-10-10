@@ -29,7 +29,7 @@ jackin-usage-provider-core = { workspace = true }
 
 reqwest = { workspace = true, features = ["blocking", "json", "rustls"] }
 serde = { workspace = true, features = ["derive"] }
-serde_json = { workspace = true }
+serde_json = { workspace = true, features = ["raw_value"] }
 zeroize = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]

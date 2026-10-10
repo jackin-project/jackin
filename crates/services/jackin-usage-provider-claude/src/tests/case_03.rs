@@ -191,6 +191,59 @@ fn claude_oauth_credentials_fall_back_to_rate_limit_tier() {
 }
 
 #[test]
+fn claude_oauth_credentials_preserve_independent_tier_fields_and_precedence() {
+    let payload = br#"{"claudeAiOauth":{"accessToken":"access","subscriptionType":"claude_team","rateLimitTier":"max"}}"#;
+    let keychain = parse_claude_keychain_profile(payload)
+        .expect("both independent metadata fields are valid")
+        .credential
+        .expect("nonblank token");
+    assert_eq!(keychain.subscription_type.as_deref(), Some("Claude Team"));
+
+    let value = serde_json::from_slice(payload).expect("JSON object");
+    let direct = claude_oauth_from_value(&value).expect("direct credential parser");
+    assert_eq!(direct.subscription_type.as_deref(), Some("Claude Team"));
+
+    let fallback = br#"{"claudeAiOauth":{"accessToken":"access","subscriptionType":null,"rateLimitTier":"claude_pro"}}"#;
+    let keychain = parse_claude_keychain_profile(fallback)
+        .expect("null subscription falls back to rate tier")
+        .credential
+        .expect("nonblank token");
+    assert_eq!(keychain.subscription_type.as_deref(), Some("Claude Pro"));
+    let value = serde_json::from_slice(fallback).expect("JSON object");
+    let direct = claude_oauth_from_value(&value).expect("direct credential parser");
+    assert_eq!(direct.subscription_type.as_deref(), Some("Claude Pro"));
+}
+
+#[test]
+fn direct_oauth_parser_rejects_same_field_alias_collisions_and_wrong_types() {
+    for value in [
+        serde_json::json!({
+            "claudeAiOauth": {
+                "accessToken": "access",
+                "subscriptionType": "team",
+                "subscription_type": "max"
+            }
+        }),
+        serde_json::json!({
+            "claudeAiOauth": {
+                "accessToken": "access",
+                "rateLimitTier": "team",
+                "rate_limit_tier": "max"
+            }
+        }),
+        serde_json::json!({
+            "claudeAiOauth": {
+                "accessToken": "access",
+                "subscriptionType": 7,
+                "rateLimitTier": "max"
+            }
+        }),
+    ] {
+        assert!(claude_oauth_from_value(&value).is_none());
+    }
+}
+
+#[test]
 fn claude_organization_type_humanizes_enterprise_tier() {
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("claude.json");
