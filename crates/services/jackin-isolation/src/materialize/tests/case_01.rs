@@ -256,7 +256,9 @@ async fn worktree_config_skips_format_bump_when_already_one() {
 
 #[tokio::test]
 async fn preflight_rejects_readonly() {
-    let mut m = worktree_mount("/workspace/x", "/tmp/x");
+    let dir = tempfile::TempDir::new().unwrap();
+    std::fs::create_dir_all(dir.path().join(".git")).unwrap();
+    let mut m = worktree_mount("/workspace/x", &dir.path().to_string_lossy());
     m.readonly = true;
     let mut runner = FakeRunner::default();
     let err = preflight_worktree(&m, &ctx(), &mut runner)
