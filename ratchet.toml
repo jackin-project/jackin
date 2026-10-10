@@ -18,10 +18,6 @@ kind = "numeric"
 provider = "file_lines_production"
 cap = 1850
 mode = "enforce"
-[[family.entry]]
-key = "crates/tools/jackin-xtask/src/telemetry_registry.rs"
-bound = 1995
-
 [[family]]
 id = "file-size-test"
 kind = "numeric"
