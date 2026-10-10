@@ -277,18 +277,18 @@ pub(super) fn model_status(
             continue;
         };
         let Some(evidence) = monitor.evidence.iter().find(|evidence| {
-            evidence.source == MonitorEvidenceSource::Statusline
+            evidence_is_relevant(evidence, monitor)
+                && evidence.source == MonitorEvidenceSource::Statusline
                 && evidence.session_id.as_deref() == Some(session_id)
                 && matches!(evidence.value, MonitorEvidenceValue::Model { .. })
         }) else {
             unknown = true;
             continue;
         };
-        // Model identity is a descriptor for the current session context, not
-        // quota evidence. Keep its age visible in status, but do not require a
-        // new callback every quota-evidence TTL while the session is active.
-        let context_active = session_is_active(session, now_epoch);
-        if context_active {
+        // Quota or version callbacks can refresh session context without
+        // refreshing model evidence. A configured guard can match only while
+        // the model's own scoped observation is current.
+        if is_current(evidence, now_epoch) {
             mismatch |= monitor
                 .config
                 .expected_model

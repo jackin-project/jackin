@@ -5,8 +5,8 @@
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::os::unix::fs::PermissionsExt as _;
-use std::os::unix::net::UnixListener;
+use std::os::unix::fs::{FileTypeExt as _, MetadataExt as _, PermissionsExt as _};
+use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
@@ -23,7 +23,7 @@ use crate::host::discovery::ProviderCredentialEnvResolver;
 
 use super::client_security;
 use super::{
-    BROKER_LEADER, BrokerStartupCleanup, DiscoveryProviderExecutor,
+    BROKER_LEADER, BrokerSocketIdentity, BrokerStartupCleanup, DiscoveryProviderExecutor,
     EmptyProviderCredentialResolver, LoadedProjection, ServePolicy, UsageBrokerClient,
     UsageBrokerConfig, UsageDiscoveryScope, broker_conflict, claim_leader,
     claude_usage_capability_for_service, connect_probe, load_projection, monitor,
@@ -365,7 +365,52 @@ fn claim_foreground_startup_cleanup(
     let lease = claim_leader(&leader_path, &config.build_id, config.lease_duration)
         .map_err(|_| broker_conflict())?
         .ok_or_else(broker_conflict)?;
-    Ok(BrokerStartupCleanup::new(leader_path, socket_path, lease))
+    let cleanup = BrokerStartupCleanup::new(leader_path, socket_path, lease);
+    prepare_socket_for_startup(config, &cleanup)?;
+    Ok(cleanup)
+}
+
+/// Reclaim a socket only when a previously valid broker lease was expired and
+/// a raw connection is refused or the path has disappeared. Protocol or build
+/// mismatches still count as a live, unrecognized endpoint and are left alone.
+fn prepare_socket_for_startup(
+    config: &UsageBrokerConfig,
+    cleanup: &BrokerStartupCleanup,
+) -> Result<(), UsageCoordinationError> {
+    let socket_path = config.socket_path();
+    let metadata = match fs::symlink_metadata(&socket_path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(_) => return Err(broker_conflict()),
+    };
+    if !metadata.file_type().is_socket() || !cleanup.reclaimed_stale_lease() {
+        return Err(broker_conflict());
+    }
+    let expected = BrokerSocketIdentity {
+        device: metadata.dev(),
+        inode: metadata.ino(),
+    };
+    match UnixStream::connect(&socket_path) {
+        Ok(_stream) => return Err(broker_conflict()),
+        Err(error)
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::ConnectionRefused | std::io::ErrorKind::NotFound
+            ) => {}
+        Err(_) => return Err(broker_conflict()),
+    }
+    let current = match fs::symlink_metadata(&socket_path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(_) => return Err(broker_conflict()),
+    };
+    if !current.file_type().is_socket()
+        || current.dev() != expected.device
+        || current.ino() != expected.inode
+    {
+        return Err(broker_conflict());
+    }
+    fs::remove_file(&socket_path).map_err(|_| broker_conflict())
 }
 
 fn startup_lease_paths(
@@ -390,10 +435,12 @@ fn run_usage_broker_service_with_cleanup(
     on_ready: impl FnOnce(),
 ) -> Result<(), UsageCoordinationError> {
     let socket_path = config.socket_path();
-    if socket_path.exists() {
-        fs::remove_file(&socket_path).map_err(|_| unavailable())?;
-    }
-    let listener = UnixListener::bind(&socket_path).map_err(|_| unavailable())?;
+    let mut cleanup = cleanup;
+    prepare_socket_for_startup(&config, &cleanup)?;
+    let listener = UnixListener::bind(&socket_path).map_err(|_| broker_conflict())?;
+    cleanup
+        .record_socket_identity()
+        .map_err(|_| unavailable())?;
     fs::set_permissions(&socket_path, fs::Permissions::from_mode(0o600))
         .map_err(|_| unavailable())?;
     validate_owned_mode(&socket_path, 0o600)?;
@@ -497,11 +544,12 @@ pub fn ensure_usage_broker_with_executor(
         return Ok(client);
     };
 
-    let cleanup = BrokerStartupCleanup::new(leader_path, socket_path.clone(), lease);
-    if socket_path.exists() {
-        fs::remove_file(&socket_path).map_err(|_| unavailable())?;
-    }
-    let listener = UnixListener::bind(&socket_path).map_err(|_| unavailable())?;
+    let mut cleanup = BrokerStartupCleanup::new(leader_path, socket_path.clone(), lease);
+    prepare_socket_for_startup(&config, &cleanup)?;
+    let listener = UnixListener::bind(&socket_path).map_err(|_| broker_conflict())?;
+    cleanup
+        .record_socket_identity()
+        .map_err(|_| unavailable())?;
     fs::set_permissions(&socket_path, fs::Permissions::from_mode(0o600))
         .map_err(|_| unavailable())?;
     validate_owned_mode(&socket_path, 0o600)?;

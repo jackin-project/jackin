@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::os::unix::fs::symlink;
+use std::os::unix::fs::{FileTypeExt as _, MetadataExt as _, PermissionsExt as _, symlink};
+use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Barrier, Mutex, mpsc};
@@ -1725,7 +1726,10 @@ fn usage_broker_recovers_stale_guard_with_private_permissions() {
     let config = UsageBrokerConfig::for_data_dir(temp.path().to_owned());
     let run_dir = secure_run_directory(&config.data_dir).unwrap();
     let leader = run_dir.join(BROKER_LEADER);
-    fs::write(&leader, "2147483647\n").unwrap();
+    let mut stale_lease = BrokerLease::new(&config.build_id);
+    stale_lease.renewed_at_epoch -=
+        i64::try_from(config.lease_duration.as_secs()).unwrap() + 1;
+    fs::write(&leader, serde_json::to_vec(&stale_lease).unwrap()).unwrap();
     fs::set_permissions(&leader, fs::Permissions::from_mode(0o600)).unwrap();
     let executor = Arc::new(CountingExecutor {
         calls: AtomicUsize::new(0),
@@ -1792,6 +1796,23 @@ fn broker_lease_uses_expiry_and_build_identity_not_pid_reuse() {
 }
 
 #[test]
+fn broker_refuses_legacy_pid_lease_without_mutating_it() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("lease");
+    let legacy_pid = b"2147483647\n";
+    fs::write(&path, legacy_pid).unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+
+    assert!(
+        claim_leader(&path, "build", Duration::from_secs(30))
+            .unwrap()
+            .is_none(),
+        "unknown legacy lease formats cannot authorize takeover"
+    );
+    assert_eq!(fs::read(&path).unwrap(), legacy_pid);
+}
+
+#[test]
 fn stale_lease_descriptor_cannot_renew_or_clean_successor_files() {
     let temp = tempfile::tempdir().unwrap();
     let lease_path = temp.path().join("lease");
@@ -1808,10 +1829,49 @@ fn stale_lease_descriptor_cannot_renew_or_clean_successor_files() {
     let successor_id = successor.lease.instance_id.clone();
 
     assert!(!renew_lease(&mut stale, Duration::from_secs(30)));
-    assert!(!cleanup_owned_files(&lease_path, &socket_path, &mut stale,));
+    assert!(!cleanup_owned_files(&lease_path, &socket_path, None, &mut stale));
     let current: BrokerLease = serde_json::from_slice(&fs::read(&lease_path).unwrap()).unwrap();
     assert_eq!(current.instance_id, successor_id);
     assert!(socket_path.exists());
+}
+
+#[test]
+fn renamed_stale_lease_descriptor_cannot_unlink_successor_lease_or_socket() {
+    let temp = tempfile::tempdir().unwrap();
+    let lease_path = temp.path().join("lease");
+    let renamed_lease_path = temp.path().join("renamed-lease");
+    let socket_path = temp.path().join("socket");
+    let mut stale = claim_leader(&lease_path, "build", Duration::from_secs(30))
+        .unwrap()
+        .expect("first claimant owns the lease");
+
+    fs::rename(&lease_path, &renamed_lease_path).unwrap();
+    let successor = claim_leader(&lease_path, "build", Duration::from_secs(30))
+        .unwrap()
+        .expect("successor claims a new path inode");
+    let successor_id = successor.lease.instance_id.clone();
+    let listener = UnixListener::bind(&socket_path).unwrap();
+    let socket_metadata = fs::symlink_metadata(&socket_path).unwrap();
+    let socket_identity = BrokerSocketIdentity {
+        device: socket_metadata.dev(),
+        inode: socket_metadata.ino(),
+    };
+
+    assert!(!cleanup_owned_files(
+        &lease_path,
+        &socket_path,
+        Some(socket_identity),
+        &mut stale,
+    ));
+    let current: BrokerLease = serde_json::from_slice(&fs::read(&lease_path).unwrap()).unwrap();
+    assert_eq!(current.instance_id, successor_id);
+    assert!(renamed_lease_path.exists());
+    let after_socket = fs::symlink_metadata(&socket_path).unwrap();
+    assert_eq!(
+        (after_socket.dev(), after_socket.ino()),
+        (socket_identity.device, socket_identity.inode),
+    );
+    drop(listener);
 }
 
 #[test]
@@ -2701,6 +2761,194 @@ fn foreground_broker_conflict_precedes_fake_credential_or_guard_access() {
     assert_eq!(error.kind, UsageCoordinationErrorKind::BrokerConflict);
     assert_eq!(bootstrap_calls.load(Ordering::SeqCst), 0);
     assert_eq!(guard_calls.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn foreground_orphan_socket_conflicts_before_credentials_and_stays_untouched() {
+    use super::service::{
+        ForegroundBootstrapOutcome, run_usage_broker_foreground_bootstrap_with_for_test,
+    };
+
+    let temp = tempfile::tempdir().expect("isolated orphan-socket data directory");
+    let config = UsageBrokerConfig::for_data_dir(temp.path().to_owned());
+    let run_dir = secure_run_directory(&config.data_dir).expect("create private run directory");
+    let leader_path = run_dir.join(BROKER_LEADER);
+    let socket_path = config.socket_path();
+    let listener = UnixListener::bind(&socket_path).expect("bind unrecognized orphan socket");
+    let before = fs::symlink_metadata(&socket_path).expect("inspect orphan socket");
+    let before_identity = (before.dev(), before.ino());
+
+    let bootstrap_calls = Arc::new(AtomicUsize::new(0));
+    let guard_calls = Arc::new(AtomicUsize::new(0));
+    let ready_calls = Arc::new(AtomicUsize::new(0));
+    let result = run_usage_broker_foreground_bootstrap_with_for_test(
+        config,
+        host_desktop_scope(temp.path()),
+        "orphan-socket-service",
+        {
+            let calls = Arc::clone(&bootstrap_calls);
+            move |_| {
+                calls.fetch_add(1, Ordering::SeqCst);
+                Ok(ForegroundBootstrapOutcome::<()>::Missing)
+            }
+        },
+        {
+            let calls = Arc::clone(&guard_calls);
+            move || {
+                calls.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            }
+        },
+        {
+            let calls = Arc::clone(&ready_calls);
+            move |_| {
+                calls.fetch_add(1, Ordering::SeqCst);
+            }
+        },
+    );
+
+    let error = match result {
+        Err(error) => error,
+        Ok(_) => panic!("an unrecognized socket must block foreground startup"),
+    };
+    assert_eq!(error.kind, UsageCoordinationErrorKind::BrokerConflict);
+    assert_eq!(bootstrap_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(guard_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(ready_calls.load(Ordering::SeqCst), 0);
+    assert!(!leader_path.exists(), "failed claim must release its lease");
+    let after = fs::symlink_metadata(&socket_path).expect("orphan socket remains");
+    assert!(after.file_type().is_socket());
+    assert_eq!((after.dev(), after.ino()), before_identity);
+    drop(listener);
+}
+
+#[test]
+fn foreground_reclaims_socket_from_expired_lease_before_credentials() {
+    use super::service::{
+        ForegroundBootstrapOutcome, run_usage_broker_foreground_bootstrap_with_for_test,
+    };
+
+    let temp = tempfile::tempdir().expect("isolated stale-socket data directory");
+    let config = UsageBrokerConfig::for_data_dir(temp.path().to_owned());
+    let run_dir = secure_run_directory(&config.data_dir).expect("create private run directory");
+    let leader_path = run_dir.join(BROKER_LEADER);
+    let socket_path = config.socket_path();
+    drop(UnixListener::bind(&socket_path).expect("bind prior broker socket"));
+
+    let mut stale = BrokerLease::new(&config.build_id);
+    stale.renewed_at_epoch -= i64::try_from(config.lease_duration.as_secs()).unwrap() + 1;
+    fs::write(&leader_path, serde_json::to_vec(&stale).unwrap()).unwrap();
+    fs::set_permissions(&leader_path, fs::Permissions::from_mode(0o600)).unwrap();
+
+    let bootstrap_calls = Arc::new(AtomicUsize::new(0));
+    let result = run_usage_broker_foreground_bootstrap_with_for_test(
+        config,
+        host_desktop_scope(temp.path()),
+        "expired-socket-service",
+        {
+            let calls = Arc::clone(&bootstrap_calls);
+            move |_| {
+                calls.fetch_add(1, Ordering::SeqCst);
+                Ok(ForegroundBootstrapOutcome::<()>::Missing)
+            }
+        },
+        || Ok(()),
+        |_| {},
+    );
+
+    assert_eq!(
+        result.expect("missing credential exits after startup claim"),
+        ForegroundBootstrapOutcome::Missing
+    );
+    assert_eq!(bootstrap_calls.load(Ordering::SeqCst), 1);
+    assert!(!socket_path.exists(), "expired lease socket is reclaimed");
+    assert!(!leader_path.exists(), "failed bootstrap releases its lease");
+}
+
+#[test]
+fn foreground_expired_lease_keeps_responsive_unrecognized_socket() {
+    use super::service::{
+        ForegroundBootstrapOutcome, run_usage_broker_foreground_bootstrap_with_for_test,
+    };
+
+    let temp = tempfile::tempdir().expect("isolated responsive-socket data directory");
+    let config = UsageBrokerConfig::for_data_dir(temp.path().to_owned());
+    let run_dir = secure_run_directory(&config.data_dir).expect("create private run directory");
+    let leader_path = run_dir.join(BROKER_LEADER);
+    let socket_path = config.socket_path();
+    let listener = UnixListener::bind(&socket_path).expect("bind responsive unrecognized socket");
+    let before = fs::symlink_metadata(&socket_path).expect("inspect existing socket");
+    let before_identity = (before.dev(), before.ino());
+
+    let mut stale = BrokerLease::new(&config.build_id);
+    stale.renewed_at_epoch -= i64::try_from(config.lease_duration.as_secs()).unwrap() + 1;
+    fs::write(&leader_path, serde_json::to_vec(&stale).unwrap()).unwrap();
+    fs::set_permissions(&leader_path, fs::Permissions::from_mode(0o600)).unwrap();
+
+    let bootstrap_calls = Arc::new(AtomicUsize::new(0));
+    let result = run_usage_broker_foreground_bootstrap_with_for_test(
+        config,
+        host_desktop_scope(temp.path()),
+        "unrecognized-responsive-service",
+        {
+            let calls = Arc::clone(&bootstrap_calls);
+            move |_| {
+                calls.fetch_add(1, Ordering::SeqCst);
+                Ok(ForegroundBootstrapOutcome::<()>::Missing)
+            }
+        },
+        || Ok(()),
+        |_| {},
+    );
+
+    let error = match result {
+        Err(error) => error,
+        Ok(_) => panic!("a responsive unknown endpoint must block startup"),
+    };
+    assert_eq!(error.kind, UsageCoordinationErrorKind::BrokerConflict);
+    assert_eq!(bootstrap_calls.load(Ordering::SeqCst), 0);
+    assert!(!leader_path.exists(), "failed claim releases its lease");
+    let after = fs::symlink_metadata(&socket_path).expect("responsive socket remains");
+    assert_eq!((after.dev(), after.ino()), before_identity);
+    drop(listener);
+}
+
+#[test]
+fn startup_cleanup_never_unlinks_an_unowned_or_replaced_socket() {
+    let temp = tempfile::tempdir().unwrap();
+    let lease_path = temp.path().join("lease");
+    let socket_path = temp.path().join("socket");
+
+    let mut owner = claim_leader(&lease_path, "build", Duration::from_secs(30))
+        .unwrap()
+        .expect("claim test broker lease");
+    fs::write(&socket_path, b"unowned socket path").unwrap();
+    assert!(cleanup_owned_files(&lease_path, &socket_path, None, &mut owner));
+    assert_eq!(fs::read(&socket_path).unwrap(), b"unowned socket path");
+    assert!(!lease_path.exists());
+
+    let lease_path = temp.path().join("replacement-lease");
+    let socket_path = temp.path().join("replacement-socket");
+    let listener = UnixListener::bind(&socket_path).unwrap();
+    let metadata = fs::symlink_metadata(&socket_path).unwrap();
+    let expected = BrokerSocketIdentity {
+        device: metadata.dev(),
+        inode: metadata.ino(),
+    };
+    let mut owner = claim_leader(&lease_path, "build", Duration::from_secs(30))
+        .unwrap()
+        .expect("claim replacement test broker lease");
+    fs::remove_file(&socket_path).unwrap();
+    fs::write(&socket_path, b"replacement path").unwrap();
+    assert!(cleanup_owned_files(
+        &lease_path,
+        &socket_path,
+        Some(expected),
+        &mut owner,
+    ));
+    assert_eq!(fs::read(&socket_path).unwrap(), b"replacement path");
+    assert!(!lease_path.exists());
+    drop(listener);
 }
 
 fn bind_and_start_experimental_observer(

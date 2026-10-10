@@ -6,7 +6,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
-use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
+use std::os::unix::fs::{FileTypeExt as _, MetadataExt as _, PermissionsExt as _};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -20,9 +20,8 @@ use jackin_protocol::usage_broker::{
     UsageRefreshPhase,
 };
 use nix::fcntl::{OFlag, open, openat};
-use nix::sys::signal::kill;
 use nix::sys::stat::{Mode, fchmod, mkdirat};
-use nix::unistd::{Pid, UnlinkatFlags, fsync, geteuid, unlinkat};
+use nix::unistd::{UnlinkatFlags, fsync, geteuid, unlinkat};
 use sha2::{Digest as _, Sha256};
 
 #[cfg(test)]
@@ -316,17 +315,23 @@ impl BrokerLease {
 struct BrokerLeaseOwner {
     lease: BrokerLease,
     file: File,
+    stale_lease_reclaimed: bool,
 }
 
-/// Owns the startup lease and socket until the serve loop takes over. Drop
-/// removes the socket while the descriptor-bound lease is still locked, then
-/// removes that exact lease inode. A successor cannot claim the lease between
-/// those operations and therefore cannot have its socket removed by stale
-/// startup cleanup.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct BrokerSocketIdentity {
+    device: u64,
+    inode: u64,
+}
+
+/// Owns the startup lease and bound socket identity until the serve loop takes
+/// over. Drop removes only the still-matching socket inode while the
+/// descriptor-bound lease is locked, then removes that exact lease inode.
 struct BrokerStartupCleanup {
     lease_path: PathBuf,
     socket_path: PathBuf,
     lease: Option<BrokerLeaseOwner>,
+    socket_identity: Option<BrokerSocketIdentity>,
 }
 
 impl BrokerStartupCleanup {
@@ -335,7 +340,26 @@ impl BrokerStartupCleanup {
             lease_path,
             socket_path,
             lease: Some(lease),
+            socket_identity: None,
         }
+    }
+
+    fn reclaimed_stale_lease(&self) -> bool {
+        self.lease
+            .as_ref()
+            .is_some_and(|lease| lease.stale_lease_reclaimed)
+    }
+
+    fn record_socket_identity(&mut self) -> Result<(), ()> {
+        let metadata = fs::symlink_metadata(&self.socket_path).map_err(|_| ())?;
+        if !metadata.file_type().is_socket() {
+            return Err(());
+        }
+        self.socket_identity = Some(BrokerSocketIdentity {
+            device: metadata.dev(),
+            inode: metadata.ino(),
+        });
+        Ok(())
     }
 
     fn renew(&mut self, lease_duration: Duration) -> bool {
@@ -348,7 +372,12 @@ impl BrokerStartupCleanup {
 impl Drop for BrokerStartupCleanup {
     fn drop(&mut self) {
         if let Some(lease) = self.lease.as_mut() {
-            let _ignored = cleanup_owned_files(&self.lease_path, &self.socket_path, lease);
+            let _ignored = cleanup_owned_files(
+                &self.lease_path,
+                &self.socket_path,
+                self.socket_identity,
+                lease,
+            );
         }
     }
 }
@@ -1305,8 +1334,12 @@ fn claim_leader(
                 let result = claim_existing_lease(&mut file, &lease, build_id, lease_duration);
                 let unlock = file.unlock();
                 return match (result, unlock) {
-                    (Ok(Some(())), Ok(())) => Ok(Some(BrokerLeaseOwner { lease, file })),
-                    (Ok(Some(()) | None), Err(_)) => Err(unavailable()),
+                    (Ok(Some(stale_lease_reclaimed)), Ok(())) => Ok(Some(BrokerLeaseOwner {
+                        lease,
+                        file,
+                        stale_lease_reclaimed,
+                    })),
+                    (Ok(Some(_) | None), Err(_)) => Err(unavailable()),
                     (Ok(None), Ok(())) => Ok(None),
                     (Err(error), _) => Err(error),
                 };
@@ -1328,7 +1361,11 @@ fn claim_leader(
                         lease_file.unlock().map_err(|_| unavailable())?;
                     }
                     let file = file.take().ok_or_else(unavailable)?;
-                    Ok(BrokerLeaseOwner { lease, file })
+                    Ok(BrokerLeaseOwner {
+                        lease,
+                        file,
+                        stale_lease_reclaimed: false,
+                    })
                 })();
                 return match result {
                     Ok(owner) => Ok(Some(owner)),
@@ -1350,7 +1387,7 @@ fn claim_existing_lease(
     replacement: &BrokerLease,
     build_id: &str,
     lease_duration: Duration,
-) -> Result<Option<()>, UsageCoordinationError> {
+) -> Result<Option<bool>, UsageCoordinationError> {
     if file.metadata().map_err(|_| unavailable())?.nlink() == 0 {
         return Ok(None);
     }
@@ -1369,16 +1406,15 @@ fn claim_existing_lease(
             .saturating_sub(existing.renewed_at_epoch)
             >= i64::try_from(lease_duration.as_secs()).unwrap_or(i64::MAX)
     } else {
-        // Preserve compatibility with pre-lease state only when its PID is
-        // demonstrably gone; a malformed live lease fails closed.
-        let pid = String::from_utf8_lossy(&bytes).trim().parse::<i32>().ok();
-        pid.is_some_and(|pid| kill(Pid::from_raw(pid), None).is_err())
+        // Unknown or legacy formats do not carry enough ownership data to
+        // authorize replacing the lease path.
+        return Ok(None);
     };
     if !replace {
         return Ok(None);
     }
     write_lease(file, replacement).map_err(|_| unavailable())?;
-    Ok(Some(()))
+    Ok(Some(true))
 }
 
 fn renew_lease(owner: &mut BrokerLeaseOwner, lease_duration: Duration) -> bool {
@@ -1412,29 +1448,53 @@ fn renew_lease(owner: &mut BrokerLeaseOwner, lease_duration: Duration) -> bool {
 fn cleanup_owned_files(
     lease_path: &Path,
     socket_path: &Path,
+    socket_identity: Option<BrokerSocketIdentity>,
     owner: &mut BrokerLeaseOwner,
 ) -> bool {
     if owner.file.lock().is_err() {
         return false;
     }
     let result = (|| -> Result<(), ()> {
-        if owner.file.metadata().map_err(|_| ())?.nlink() == 0 {
+        let descriptor_metadata = owner.file.metadata().map_err(|_| ())?;
+        let path_metadata = fs::symlink_metadata(lease_path).map_err(|_| ())?;
+        if descriptor_metadata.nlink() == 0
+            || path_metadata.file_type().is_symlink()
+            || path_metadata.dev() != descriptor_metadata.dev()
+            || path_metadata.ino() != descriptor_metadata.ino()
+        {
             return Err(());
         }
         let current = read_lease(&mut owner.file).map_err(|_| ())?;
         if current.instance_id != owner.lease.instance_id {
             return Err(());
         }
-        // The lease descriptor remains locked across both unlinks. No valid
-        // successor can bind the broker socket between the ownership check
-        // and path removal.
-        unlink_owned_path(socket_path)?;
+        // The lease descriptor remains locked while the owned startup socket
+        // and lease are removed. Never remove a socket path that this startup
+        // did not bind, or whose inode has since been replaced.
+        if let Some(identity) = socket_identity {
+            unlink_owned_socket_path(socket_path, identity)?;
+        }
         unlink_owned_path(lease_path)?;
         Ok(())
     })()
     .is_ok();
     let unlock = owner.file.unlock().is_ok();
     result && unlock
+}
+
+fn unlink_owned_socket_path(path: &Path, expected: BrokerSocketIdentity) -> Result<(), ()> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(_) => return Ok(()),
+    };
+    if !metadata.file_type().is_socket()
+        || metadata.dev() != expected.device
+        || metadata.ino() != expected.inode
+    {
+        return Ok(());
+    }
+    unlink_owned_path(path)
 }
 
 fn unlink_owned_path(path: &Path) -> Result<(), ()> {

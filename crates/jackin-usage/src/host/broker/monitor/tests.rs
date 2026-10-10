@@ -5970,7 +5970,7 @@ fn model_status_snapshot(
 }
 
 #[test]
-fn unchanged_model_stays_valid_while_its_session_context_is_active() {
+fn stale_model_evidence_is_unknown_even_while_session_context_is_active() {
     let (monitor, session) =
         model_guard_fixture("claude-sonnet", Some("claude-sonnet"), NOW, NOW + 200);
     let now_epoch = NOW + 301;
@@ -5983,13 +5983,13 @@ fn unchanged_model_stays_valid_while_its_session_context_is_active() {
         Some(MonitorEvidenceFreshness::Stale),
         "descriptor evidence age remains independently visible"
     );
-    assert!(!unknown, "active session context preserves known validity");
+    assert!(unknown, "active context cannot refresh model evidence");
     assert!(!mismatch);
 
     let snapshot = model_status_snapshot(&monitor, &session, now_epoch);
     assert_eq!(
         snapshot.model_guard_validity,
-        MonitorModelGuardValidity::Match
+        MonitorModelGuardValidity::Unknown
     );
     assert_eq!(
         snapshot
@@ -5997,20 +5997,31 @@ fn unchanged_model_stays_valid_while_its_session_context_is_active() {
             .as_ref()
             .map(|field| field.freshness),
         Some(MonitorEvidenceFreshness::Stale),
-        "descriptor_status keeps descriptor age visible while validity remains matched"
+        "descriptor_status keeps descriptor age visible while validity is unknown"
     );
 
     let evaluation = evaluate_model(&monitor, &session, now_epoch);
-    assert!(!evaluation.any_unknown);
-    assert!(!evaluation.blocked);
-    assert!(evaluation.actions.is_empty());
+    assert!(evaluation.any_unknown);
+    assert!(evaluation.blocked);
+    assert!(
+        evaluation
+            .issues
+            .iter()
+            .any(|item| { item.code == MonitorIssueCode::ModelUnknown })
+    );
+    assert!(evaluation.actions.iter().any(|action| matches!(
+        action,
+        MonitorAction::Pause {
+            reason: MonitorIssueCode::ModelUnknown
+        }
+    )));
 }
 
 #[test]
 fn model_mismatch_and_missing_model_still_block_dispatch() {
     let (mismatch_monitor, mismatch_session) =
         model_guard_fixture("claude-sonnet", Some("claude-opus"), NOW, NOW + 200);
-    let mismatch = evaluate_model(&mismatch_monitor, &mismatch_session, NOW + 301);
+    let mismatch = evaluate_model(&mismatch_monitor, &mismatch_session, NOW + 200);
     assert!(mismatch.blocked);
     assert!(
         mismatch
@@ -6021,7 +6032,7 @@ fn model_mismatch_and_missing_model_still_block_dispatch() {
 
     let (missing_monitor, missing_session) =
         model_guard_fixture("claude-sonnet", None, NOW, NOW + 200);
-    let missing = evaluate_model(&missing_monitor, &missing_session, NOW + 301);
+    let missing = evaluate_model(&missing_monitor, &missing_session, NOW + 200);
     assert!(missing.blocked);
     assert!(missing.any_unknown);
     assert!(
@@ -6030,6 +6041,128 @@ fn model_mismatch_and_missing_model_still_block_dispatch() {
             .iter()
             .any(|item| item.code == MonitorIssueCode::ModelUnknown)
     );
+}
+
+#[test]
+fn fresh_quota_callbacks_do_not_refresh_same_or_omitted_model_evidence() {
+    for model_on_refresh in [Some("claude-sonnet"), None] {
+        let (_directory, store) = open_store();
+        let session_id = "session-model-field-ttl";
+        let first_reset = NOW + 100;
+        policy_ingest(
+            &store,
+            ACCOUNT,
+            policy_observation(
+                session_id,
+                Some(1_000),
+                Some(first_reset),
+                Some("claude-sonnet"),
+            ),
+            NOW,
+        );
+        policy_record_spend(&store, policy_spend_input(ACCOUNT, NOW), NOW);
+        let started =
+            start_monitor_with_expected_model(&store, "goal-model-field-ttl", "claude-sonnet", NOW);
+        assert!(started.runnable);
+        assert_eq!(started.lifecycle, MonitorLifecycle::Waiting);
+        assert_eq!(
+            started.model_guard_validity,
+            MonitorModelGuardValidity::Match
+        );
+        assert!(
+            actions(&started)
+                .iter()
+                .any(|action| matches!(action, MonitorAction::Wait { .. }))
+        );
+
+        let reset_deadline = first_reset + MONITOR_RESET_GRACE_SECS;
+        store
+            .tick(reset_deadline)
+            .expect("tick through reset grace with current model evidence");
+        let due = policy_status(&store, &started.monitor_id, reset_deadline);
+        assert_eq!(due.five_hour.reset_validity, MonitorResetValidity::Due);
+        assert_eq!(due.model_guard_validity, MonitorModelGuardValidity::Match);
+        assert!(
+            due.issues
+                .iter()
+                .any(|issue| { issue.code == MonitorIssueCode::ResetDueUnverified })
+        );
+        assert!(!due.runnable);
+
+        let refresh_at = NOW + MONITOR_EVIDENCE_TTL_SECS + 1;
+        let advanced_reset = NOW + 7_200;
+        policy_ingest(
+            &store,
+            ACCOUNT,
+            policy_observation(
+                session_id,
+                Some(1_100),
+                Some(advanced_reset),
+                model_on_refresh,
+            ),
+            refresh_at,
+        );
+        let refreshed = policy_status(&store, &started.monitor_id, refresh_at);
+
+        for window in [&refreshed.five_hour, &refreshed.seven_day] {
+            assert_eq!(
+                window.used_evidence.as_ref().unwrap().freshness,
+                MonitorEvidenceFreshness::Current
+            );
+            assert_eq!(
+                window.reset_evidence.as_ref().unwrap().freshness,
+                MonitorEvidenceFreshness::Current
+            );
+            assert_eq!(window.reset_validity, MonitorResetValidity::Future);
+        }
+        let model_evidence = refreshed
+            .model_evidence
+            .as_ref()
+            .expect("old model evidence remains visible");
+        assert_eq!(model_evidence.evidence_received_at_epoch, NOW);
+        assert_eq!(
+            model_evidence.age_seconds,
+            MONITOR_EVIDENCE_TTL_SECS as u64 + 1
+        );
+        assert_eq!(model_evidence.freshness, MonitorEvidenceFreshness::Stale);
+        assert_eq!(refreshed.model.as_deref(), Some("claude-sonnet"));
+        assert_eq!(
+            refreshed.model_guard_validity,
+            MonitorModelGuardValidity::Unknown
+        );
+        assert!(
+            refreshed
+                .issues
+                .iter()
+                .any(|issue| issue.code == MonitorIssueCode::ModelUnknown)
+        );
+        assert!(
+            !refreshed
+                .issues
+                .iter()
+                .any(|issue| issue.code == MonitorIssueCode::ModelMismatch)
+        );
+        assert_eq!(refreshed.lifecycle, MonitorLifecycle::Paused);
+        assert!(actions(&refreshed).iter().any(|action| matches!(
+            action,
+            MonitorAction::Pause {
+                reason: MonitorIssueCode::ModelUnknown
+            }
+        )));
+        assert!(actions(&refreshed).iter().any(|action| matches!(
+            action,
+            MonitorAction::Pause {
+                reason: MonitorIssueCode::ResetDueUnverified
+            }
+        )));
+        assert!(
+            !actions(&refreshed)
+                .iter()
+                .any(|action| matches!(action, MonitorAction::Wait { .. })),
+            "the reset-grace barrier remains latched because usage did not fall"
+        );
+        assert!(!refreshed.runnable);
+    }
 }
 
 #[test]
