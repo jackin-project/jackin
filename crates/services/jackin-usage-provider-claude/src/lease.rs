@@ -4,7 +4,7 @@
 
 use std::sync::{Arc, Mutex, OnceLock, atomic::AtomicU64};
 
-use zeroize::Zeroizing;
+use zeroize::{Zeroize, Zeroizing};
 
 use crate::keychain::{
     ClaudeKeychainPolicyError, ClaudeKeychainRead, read_claude_keychain_item_for_foreground,
