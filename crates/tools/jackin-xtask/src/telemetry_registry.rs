@@ -793,37 +793,6 @@ impl<'ast> syn::visit::Visit<'ast> for ObservableCallbackScanner {
     }
 }
 
-#[cfg(test)]
-fn source_policy_violations(path: &str, source: &str) -> Vec<&'static str> {
-    source_policy_violations_for_files(&[(path, source)])
-}
-
-#[cfg(test)]
-fn source_policy_violations_for_files(files: &[(&str, &str)]) -> Vec<&'static str> {
-    let parsed = files
-        .iter()
-        .map(|(path, source)| {
-            (
-                (*path).to_owned(),
-                syn::parse_file(source).expect("source-policy fixture must parse"),
-            )
-        })
-        .collect::<Vec<_>>();
-    let indexed = parsed
-        .iter()
-        .map(|(path, syntax)| (path.as_str(), syntax))
-        .collect::<Vec<_>>();
-    let workspace = WorkspaceSpawnTypes::collect(&indexed);
-    let mut violations = Vec::new();
-    for (path, syntax) in &parsed {
-        let mut scanner = SourcePolicyScanner::new(path, syntax, &workspace);
-        scanner.visit_file(syntax);
-        violations.extend(scanner.violations.iter().map(|(_, violation)| *violation));
-    }
-    violations.sort_unstable();
-    violations
-}
-
 fn collect_source_files(
     dir: &Path,
     root: &Path,
@@ -1904,17 +1873,6 @@ fn collect_rust_files(dir: &Path, violations: &mut Vec<String>, root: &Path) -> 
         );
     }
     Ok(())
-}
-
-#[cfg(test)]
-fn contains_legacy_telemetry_name(path: &str, source: &str) -> bool {
-    let fixture = format!("fn namespace_fixture() {{ {source} }}");
-    let Ok(syntax) = syn::parse_file(&fixture) else {
-        return false;
-    };
-    let mut scanner = NamespaceScanner::new(path);
-    scanner.visit_file(&syntax);
-    !scanner.violations.is_empty()
 }
 
 fn is_project_namespace(literal: &str) -> bool {

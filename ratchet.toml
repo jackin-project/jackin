@@ -3,7 +3,8 @@
 # and shrink-only semantics: measured > bound fails (growth); measured < bound
 # fails telling you to tighten the bound; measured == bound is steady state.
 # `kind = "presence"` entries are allowlists: listed keys must still be violations,
-# unlisted violations fail. Regenerate any family: mbx +1.99.0 xtask lint ratchet --print <family>.
+# unlisted violations fail. Regenerate any family with:
+# mbx +1.99.0 xtask lint ratchet --print <family>.
 # deny.toml exceptions and .codebook.toml are deliberately NOT folded here:
 # cargo-deny/codebook own their semantics.
 #
@@ -19,7 +20,7 @@ cap = 1850
 mode = "enforce"
 [[family.entry]]
 key = "crates/tools/jackin-xtask/src/telemetry_registry.rs"
-bound = 2012
+bound = 1995
 
 [[family]]
 id = "file-size-test"
