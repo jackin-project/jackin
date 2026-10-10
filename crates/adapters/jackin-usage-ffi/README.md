@@ -61,12 +61,10 @@ does not split, join, or reorder them.
 
 ```sh
 cargo xtask desktop bindings
-# or: mise run desktop-bindings
 ```
 
 ## XCFramework
 
 ```sh
 cargo xtask desktop xcframework
-# or: mise run desktop-xcframework
 ```

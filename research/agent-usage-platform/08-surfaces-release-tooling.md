@@ -76,9 +76,9 @@ The repository task definitions, not prose aliases, are authoritative. Run throu
 | Purpose | Exact command | Proven owner / qualification |
 |---|---|---|
 | Rust formatting | `rtk mise run fmt` | `mise.toml:99-101`; nonmutating. |
-| Unified Rust tests | `rtk mise run test` | `mise.toml:91-93`; invokes fast `cargo xtask ci --only tests`. |
+| Unified Rust tests | `rtk mise run test` | `mise.toml:91-93`; invokes fast `mise exec -- mbx +1.97.1 xtask ci --only tests`. |
 | Unified Rust lint | `rtk mise run lint` | `mise.toml:95-97`; invokes fast lint gate. |
-| Focused crate tests during iteration | `rtk cargo nextest run -p jackin-usage -p jackin-usage-ffi -p jackin-runtime -p jackin-capsule -p jackin-console -p jackin` | Repository uses nextest in CI; package set corresponds to all changed usage surfaces. Final proof still runs unified tasks. |
+| Focused crate tests during iteration | `rtk mise exec -- mbx +1.97.1 nextest run -p jackin-usage -p jackin-usage-ffi -p jackin-runtime -p jackin-capsule -p jackin-console -p jackin` | Repository uses nextest in CI; package set corresponds to all changed usage surfaces. Final proof still runs unified tasks. |
 | Generated binding drift | `rtk mise run desktop-bindings-check` | `mise.toml:116-119`; never edit generated Swift manually. |
 | Regenerate native project | `rtk mise run desktop-generate` | `mise.toml:124-126`; writes generated Xcode project as intended. |
 | Swift formatting check | `rtk mise run desktop-format-check` | `mise.toml:134-136`. |

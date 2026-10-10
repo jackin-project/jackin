@@ -11,10 +11,8 @@ fn generated_evidence_workflows_are_complete_and_tamper_bound() {
     // all-branches consolidation dropped the two evidence-observer workflow
     // stubs because the pinned renderer rejects non-generated files. The
     // tamper-binding assertions below therefore run against frozen fixtures
-    // (the last rendered observer workflows) plus the live task contract
-    // copied from this repo and a synthesized workflow contract and
-    // ownership state.
-    let root = docs::repo_root().unwrap();
+    // (the last rendered observer workflows) plus a synthesized workflow
+    // contract and ownership state.
     let directory = tempfile::tempdir().unwrap();
     let copy = directory.path();
     for (relative, contents) in [
@@ -31,9 +29,6 @@ fn generated_evidence_workflows_are_complete_and_tamper_bound() {
         fs::create_dir_all(destination.parent().unwrap()).unwrap();
         fs::write(destination, contents).unwrap();
     }
-    let destination = copy.join(MISE_PATH);
-    fs::create_dir_all(destination.parent().unwrap()).unwrap();
-    fs::copy(root.join(MISE_PATH), destination).unwrap();
     let contract = "schema = 2\n\
          \n\
          [generator]\n\
@@ -94,6 +89,7 @@ fn generated_evidence_workflows_are_complete_and_tamper_bound() {
     let state_path = copy.join(WORKFLOW_STATE_PATH);
     fs::create_dir_all(state_path.parent().unwrap()).unwrap();
     fs::write(&state_path, &state).unwrap();
+    assert!(!copy.join("mise.toml").exists());
     validate_workflow_contract(copy).unwrap();
     let pristine_state = fs::read(&state_path).unwrap();
 
@@ -164,8 +160,8 @@ fn generated_evidence_workflows_reject_skip_controls() {
         file: DEFAULT_CI_EVIDENCE_WORKFLOW,
         display_name: "CI first-attempt evidence",
         artifact: CI_EVIDENCE_ARTIFACT_PATH,
-        task: "ci-evidence",
-        command: "cargo xtask ci-evidence run",
+        job_id: "ci-evidence",
+        command: "MISE_AUTO_INSTALL=false mise exec -- mbx +1.97.1 xtask ci-evidence run",
         timeout: 30,
         schedule: Some("47 4 * * *"),
         push_main: false,
@@ -199,8 +195,8 @@ fn push_head_ledger_requires_full_history_checkout() {
         file: DEFAULT_PUSH_HEAD_LEDGER_WORKFLOW,
         display_name: "CI push-head ledger",
         artifact: CI_PUSH_HEAD_LEDGER_ARTIFACT_PATH,
-        task: "ci-push-head-ledger",
-        command: "cargo xtask ci-evidence record-push",
+        job_id: "ci-push-head-ledger",
+        command: "MISE_AUTO_INSTALL=false mise exec -- mbx +1.97.1 xtask ci-evidence record-push",
         timeout: 10,
         schedule: None,
         push_main: true,

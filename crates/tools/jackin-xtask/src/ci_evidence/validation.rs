@@ -769,7 +769,7 @@ struct EvidenceWorkflowContract {
     file: &'static str,
     display_name: &'static str,
     artifact: &'static str,
-    task: &'static str,
+    job_id: &'static str,
     command: &'static str,
     timeout: u64,
     schedule: Option<&'static str>,
@@ -783,18 +783,13 @@ fn validate_generated_evidence_workflows(root: &Path) -> Result<()> {
     let state = fs::read_to_string(&state_path)
         .with_context(|| format!("reading generated workflow state {}", state_path.display()))?;
     validate_generated_ownership_state(root, &state)?;
-    let mise_path = root.join(MISE_PATH);
-    let mise_text = fs::read_to_string(&mise_path)
-        .with_context(|| format!("reading task contract {}", mise_path.display()))?;
-    let mise: toml::Value = toml::from_str(&mise_text)
-        .with_context(|| format!("parsing task contract {}", mise_path.display()))?;
     for contract in [
         EvidenceWorkflowContract {
             file: DEFAULT_CI_EVIDENCE_WORKFLOW,
             display_name: "CI first-attempt evidence",
             artifact: CI_EVIDENCE_ARTIFACT_PATH,
-            task: "ci-evidence",
-            command: "cargo xtask ci-evidence run",
+            job_id: "ci-evidence",
+            command: "MISE_AUTO_INSTALL=false mise exec -- mbx +1.97.1 xtask ci-evidence run",
             timeout: 30,
             schedule: Some("47 4 * * *"),
             push_main: false,
@@ -805,8 +800,8 @@ fn validate_generated_evidence_workflows(root: &Path) -> Result<()> {
             file: DEFAULT_PUSH_HEAD_LEDGER_WORKFLOW,
             display_name: "CI push-head ledger",
             artifact: CI_PUSH_HEAD_LEDGER_ARTIFACT_PATH,
-            task: "ci-push-head-ledger",
-            command: "cargo xtask ci-evidence record-push",
+            job_id: "ci-push-head-ledger",
+            command: "MISE_AUTO_INSTALL=false mise exec -- mbx +1.97.1 xtask ci-evidence record-push",
             timeout: 10,
             schedule: None,
             push_main: true,
@@ -814,14 +809,13 @@ fn validate_generated_evidence_workflows(root: &Path) -> Result<()> {
             full_history: true,
         },
     ] {
-        validate_generated_evidence_workflow(root, &mise, &contract)?;
+        validate_generated_evidence_workflow(root, &contract)?;
     }
     Ok(())
 }
 
 fn validate_generated_evidence_workflow(
     root: &Path,
-    mise: &toml::Value,
     contract: &EvidenceWorkflowContract,
 ) -> Result<()> {
     let workflow_path = root.join(".github/workflows").join(contract.file);
@@ -835,16 +829,6 @@ fn validate_generated_evidence_workflow(
     let parsed: serde_json::Value = serde_yaml_ng::from_slice(&workflow_bytes)
         .with_context(|| format!("parsing generated workflow {}", contract.file))?;
     validate_generated_workflow_shape(&parsed, contract)?;
-    let task_run = mise
-        .get("tasks")
-        .and_then(toml::Value::as_table)
-        .and_then(|tasks| tasks.get(contract.task))
-        .and_then(toml::Value::as_table)
-        .and_then(|task| task.get("run"))
-        .and_then(toml::Value::as_str);
-    if task_run != Some(contract.command) {
-        bail!("task contract is missing artifact-backed task {}", contract.task);
-    }
     Ok(())
 }
 
@@ -959,7 +943,7 @@ fn validate_evidence_job(
 ) -> Result<()> {
     let file = contract.file;
     let display_name = contract.display_name;
-    let task = contract.task;
+    let job_id = contract.job_id;
     let timeout = contract.timeout;
     let jobs = workflow
         .get("jobs")
@@ -969,8 +953,8 @@ fn validate_evidence_job(
         bail!("workflow {file} contains unexpected jobs");
     }
     let job = jobs
-        .get(task)
-        .with_context(|| format!("workflow {file} has no {task} job"))?;
+        .get(job_id)
+        .with_context(|| format!("workflow {file} has no {job_id} job"))?;
     let expected_job_keys = &[
         "name",
         "runs-on",
@@ -1018,7 +1002,7 @@ fn validate_evidence_steps(
     contract: &EvidenceWorkflowContract,
 ) -> Result<()> {
     let file = contract.file;
-    let task = contract.task;
+    let job_id = contract.job_id;
     let artifact = contract.artifact;
     let expected_checkout_keys = if contract.full_history {
         &["persist-credentials", "fetch-depth"][..]
@@ -1076,11 +1060,11 @@ fn validate_evidence_steps(
             .and_then(serde_json::Value::as_str)
             != Some("${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') }}")
         || steps[2].get("name").and_then(serde_json::Value::as_str)
-            != Some(format!("Run {task}").as_str())
+            != Some(format!("Run {job_id}").as_str())
         || steps[2].get("run").and_then(serde_json::Value::as_str)
-            != Some(format!("mise run {task}").as_str())
+            != Some(contract.command)
         || steps[3].get("name").and_then(serde_json::Value::as_str)
-            != Some(format!("Upload {task} artifacts").as_str())
+            != Some(format!("Upload {job_id} artifacts").as_str())
         || !pinned_action(&steps[3], "actions/upload-artifact")
         || steps[3].get("if").and_then(serde_json::Value::as_str) != Some("always()")
     {
@@ -1097,7 +1081,7 @@ fn validate_evidence_steps(
     {
         bail!("workflow {file} artifact upload has unexpected inputs");
     }
-    if artifact_inputs.get("name").and_then(serde_json::Value::as_str) != Some(task)
+    if artifact_inputs.get("name").and_then(serde_json::Value::as_str) != Some(job_id)
         || artifact_inputs
             .get("path")
             .and_then(serde_json::Value::as_str)

@@ -102,7 +102,7 @@ enum Command {
     CiRoute(ci_route::CiRouteArgs),
     /// Run Clippy over the crates affected by worktree changes.
     ///
-    /// Pre-commit hook entry point (`mise run clippy-affected`): selects
+    /// Pre-commit hook entry point (`cargo xtask clippy-affected`): selects
     /// workspace members via the shared affected-crates closure plus
     /// detached packages (`fuzz/*`, `vendor/arrayref`) and runs
     /// Clippy with the exact CI flags.
@@ -128,7 +128,6 @@ enum Command {
     /// jackin❯ desktop (native macOS usage menu bar) build, verify, and release.
     ///
     /// Use as `cargo xtask desktop build|verify|run|…`.
-    /// Prefer mise: `mise run desktop-build`, `mise run desktop-verify`, `mise run desktop-run`.
     #[command(subcommand)]
     Desktop(desktop::DesktopCommand),
     /// Generate pull request body skeletons.

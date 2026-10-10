@@ -8,7 +8,7 @@ This page has two readers. **Role authors** (user-facing) read the
 top half — *what is in the `construct`*, *what tools come for free*,
 *how to extend it from a role's `Dockerfile`*. **Contributors**
 (internals-facing) read the lower half — *how to build, validate,
-and publish the `construct` image itself* (`mise run construct-build-local`,
+and publish the `construct` image itself* (`mise exec -- mbx +1.97.1 xtask construct build-local`,
 CI workflow, advanced publish rehearsal). Operators using jackin❯
 as a product do not need to read either half; `jackin load` pulls
 and updates the `construct` automatically.
@@ -72,7 +72,7 @@ The construct creates an `agent` user with:
 
 ## How it's built
 
-The construct source starts at <RepoFile path="docker/construct/Dockerfile">docker/construct/Dockerfile</RepoFile> in the jackin❯ repository. The declarative build definition lives in <RepoFile path="docker-bake.hcl">docker-bake.hcl</RepoFile> at the repo root, and the supported command surface is the `construct-*` mise tasks defined in <RepoFile path="mise.toml">mise.toml</RepoFile>, backed by the <RepoFile path="crates/tools/jackin-xtask/src/construct.rs">crates/tools/jackin-xtask/src/construct.rs</RepoFile> Rust task runner.
+The construct source starts at <RepoFile path="docker/construct/Dockerfile">docker/construct/Dockerfile</RepoFile> in the jackin❯ repository. The declarative build definition lives in <RepoFile path="docker-bake.hcl">docker-bake.hcl</RepoFile> at the repo root, and the supported command surface is `mise exec -- mbx +1.97.1 xtask construct ...`, backed by the <RepoFile path="crates/tools/jackin-xtask/src/construct.rs">crates/tools/jackin-xtask/src/construct.rs</RepoFile> Rust task runner.
 
 <RepoFile path="docker/construct/versions.env">docker/construct/versions.env</RepoFile> remains the source of truth for the pinned `tirith`, `shellfirm`, and `MISE_VERSION` build args used by <RepoFile path="docker/construct/Dockerfile">docker/construct/Dockerfile</RepoFile>. `mise` is installed with the official standalone installer during the Docker build, which downloads the pinned version's release asset from GitHub — where every version stays available, so the pin never goes stale. The pinned version gives Buildx a stable cache key, and Renovate bumps invalidate the mise install layer when upstream publishes a new release.
 
@@ -80,15 +80,15 @@ The image build compiles the pinned `shellfirm` version from source in a tempora
 
 ## Build workflow
 
-Use the `construct-*` mise tasks for day-to-day construct work. Docker Bake is the underlying build engine, but contributors should treat `mise run` as the supported command surface.
+Run the `mise exec -- mbx +1.97.1 xtask construct ...` commands from the repository root for construct work. Docker Bake is the underlying build engine.
 
 ### Local validation
 
 Before opening a pull request for construct changes, validate the image locally:
 
 ```bash
-mise run construct-init-buildx
-mise run construct-build-local
+mise exec -- mbx +1.97.1 xtask construct init-buildx
+mise exec -- mbx +1.97.1 xtask construct build-local
 ```
 
 By default, local validation loads the image into your Docker daemon as `jackin-local/construct:trixie`, so it does not silently replace the canonical `projectjackin/construct:trixie` base image that normal `jackin` workflows consume.
@@ -96,24 +96,24 @@ By default, local validation loads the image into your Docker daemon as `jackin-
 To test `jackin load` against your local construct build, set `JACKIN_CONSTRUCT_IMAGE` after building:
 
 ```bash
-mise run construct-init-buildx
-mise run construct-build-local
+mise exec -- mbx +1.97.1 xtask construct init-buildx
+mise exec -- mbx +1.97.1 xtask construct build-local
 export JACKIN_CONSTRUCT_IMAGE="jackin-local/construct:trixie"
 ```
 
 With `JACKIN_CONSTRUCT_IMAGE` set, jackin❯ validates role Dockerfiles against the canonical image name as usual (role repos reference a versioned construct tag such as `projectjackin/construct:0.4-trixie`), but substitutes your local image at derived-build time so `docker build` uses `jackin-local/construct:trixie` as the actual base.
 
-Use `mise run construct-inspect` to print the fully resolved Bake config without building the image.
+Use `mise exec -- mbx +1.97.1 xtask construct inspect` to print the fully resolved Bake config without building the image.
 
-If builder state gets stale or confusing, run `mise run construct-doctor-buildx` to inspect it or `mise run construct-reset-buildx` to recreate it. Set `BUILDX_BUILDER` before running the task if you want to isolate this workflow under a different local builder name.
+If builder state gets stale or confusing, run `mise exec -- mbx +1.97.1 xtask construct doctor-buildx` to inspect it or `mise exec -- mbx +1.97.1 xtask construct reset-buildx` to recreate it. Set `BUILDX_BUILDER` before running the command if you want to isolate this workflow under a different local builder name.
 
 ### Platform-specific debugging
 
 To force a specific target architecture during local debugging:
 
 ```bash
-mise run construct-build-platform amd64
-mise run construct-build-platform arm64
+mise exec -- mbx +1.97.1 xtask construct build-platform amd64
+mise exec -- mbx +1.97.1 xtask construct build-platform arm64
 ```
 
 The selected Buildx builder must support the requested platform. These commands select the target architecture; successful cross-architecture execution depends on the builder configuration.
@@ -123,13 +123,13 @@ The selected Buildx builder must support the requested platform. These commands 
 If you need to rehearse the release path against a temporary registry, point `REGISTRY_IMAGE` at your own namespace instead of the canonical `projectjackin/construct` repository:
 
 ```bash
-REGISTRY_IMAGE=ttl.sh/jackin-construct-$USER mise run construct-push-platform amd64
-REGISTRY_IMAGE=ttl.sh/jackin-construct-$USER mise run construct-push-platform arm64
-REGISTRY_IMAGE=ttl.sh/jackin-construct-$USER mise run construct-publish-manifest
+REGISTRY_IMAGE=ttl.sh/jackin-construct-$USER mise exec -- mbx +1.97.1 xtask construct push-platform amd64
+REGISTRY_IMAGE=ttl.sh/jackin-construct-$USER mise exec -- mbx +1.97.1 xtask construct push-platform arm64
+REGISTRY_IMAGE=ttl.sh/jackin-construct-$USER mise exec -- mbx +1.97.1 xtask construct publish-manifest
 ```
 
 <Aside type="caution">
-`mise run construct-push-platform` and `mise run construct-publish-manifest` intentionally refuse to publish to `projectjackin/construct` unless they are running in CI.
+`mise exec -- mbx +1.97.1 xtask construct push-platform` and `mise exec -- mbx +1.97.1 xtask construct publish-manifest` intentionally refuse to publish to `projectjackin/construct` unless they are running in CI.
 </Aside>
 ### CI behavior
 

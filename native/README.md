@@ -100,42 +100,26 @@ Settings is a standard titled `NSWindow` containing a grouped `Form`. It owns me
 
 ```bash
 mise install
-
-# Build + verify + launch.
-mise run desktop
-
-# Individual steps.
-mise run desktop-generate
-mise run desktop-build -- 0.6.0 1
-mise run desktop-verify
-mise run desktop-run
+mise exec -- mbx +1.97.1 xtask desktop build --version 0.6.0 --build 1
+mise exec -- mbx +1.97.1 xtask desktop verify
+mise exec -- mbx +1.97.1 xtask desktop run
 ```
 
-The default bundle is `native/dist/JackinDesktop.app`. Build/verify/run print its absolute path and `DESKTOP_APP=…`. The app begins as an `LSUIElement` status-item process; opening a normal window temporarily gives it regular app menu/window citizenship.
+The default bundle is `native/dist/JackinDesktop.app`. Build/verify/run print its absolute path and `DESKTOP_APP=…`. The app begins as an `LSUIElement` status-item process; opening a normal window temporarily gives it regular app menu/window citizenship. For the local verification cadence, use `mise -C native run ci`.
 
 ## Tests
 
 ```bash
-mise run desktop-ci
-
-mise run desktop-format-check
-mise run desktop-lint
-mise run desktop-deadcode
-mise run desktop-test
-mise run desktop-test-ui
-
-cargo xtask desktop test-swift
+mise -C native run ci
+mise -C native run format-check
+mise -C native exec -- swiftlint lint --strict
+mise -C native run deadcode
+mise exec -- mbx +1.97.1 xtask desktop test
+native/Scripts/run-ui-tests.sh
+mise exec -- mbx +1.97.1 xtask desktop test-swift --jobs 2
 ```
 
-`desktop-ci` is the required macOS PR contract: nonmutating bindings drift
-check, Xcode project generation, formatting, SwiftLint, Rust/FFI plus parity
-harnesses, app build, counted SwiftPM tests, then fail-closed app verify.
-`desktop-merge` adds the UI suite on top; `desktop-scheduled` adds the
-dead-code scan. CI and release invoke these exact `mise run desktop-*` task
-names — one definition per command.
-`desktop-test` covers 291 Rust/FFI tests plus native architecture/parity harnesses. SwiftPM tests protect ownership, navigation normalization, native component confinement, brand tokens, and visual-QA fixture isolation. The UI suite runs the real app host and audits popover, Overview, provider detail, sidebar coordinates, commands, scrolling, recovery, and retained context.
-
-Explicit visual-QA launch flags (`--fixture`, `--open-popover`, `--open-usage`, `--selection`, `--window-size`, `--appearance`) never activate unless `--fixture` is present in argv and never call the bridge or real credentials. Fixture runs carry a persistent visible Fixture badge, and their frozen account/refresh projections exercise immediate selection plus `Updating…` → terminal activity. Environment variables cannot enable fabricated data. Moving fixture code into a debug-only target remains a maintenance follow-up.
+The native mise tasks live in `native/mise.toml`, keeping platform-specific workflows out of the root configuration. `ci` runs the local native gate graph: bindings drift check, Xcode project generation, formatting, SwiftLint, Rust/FFI plus parity harnesses, app build, counted SwiftPM tests, then fail-closed app verification. `merge` adds UI tests against the real app host; `scheduled` adds the dead-code scan. The checked-in GitHub workflow currently does not invoke these native cadences. `desktop test` covers Rust/FFI and native architecture/parity harnesses. SwiftPM tests protect ownership, navigation normalization, native component confinement, brand tokens, and visual-QA fixture isolation. The UI suite audits popover, Overview, provider detail, sidebar coordinates, commands, scrolling, recovery, and retained context.
 
 ## Visual QA
 
@@ -150,22 +134,25 @@ The script rebuilds and verifies the canonical branch-head app, then drives dete
 One path builds local, PR, and release apps:
 
 1. `mise install` installs pinned tools.
-2. `cargo xtask desktop xcframework` creates the arm64 static `target/xcframework/JackinUsage.xcframework` (FFI module `JackinUsageFFI`).
+2. `mise exec -- mbx +1.97.1 xtask desktop xcframework` creates the arm64 static `target/xcframework/JackinUsage.xcframework` (FFI module `JackinUsageFFI`).
 3. `native/Package.swift` consumes it as a binary target.
-4. `mise run desktop-build -- <version> <build>` generates bindings/project, builds `JackinDesktop.app`, and ad-hoc signs local/validation output.
-5. `mise run desktop-verify` proves bundle architecture, metadata, dependency, and signature shape. Release verification additionally requires Developer ID, notarization, staple, and Gatekeeper acceptance.
+4. `mise exec -- mbx +1.97.1 xtask desktop build --version <version> --build <build>` generates bindings/project, builds `JackinDesktop.app`, and ad-hoc signs local/validation output.
+5. `mise exec -- mbx +1.97.1 xtask desktop verify` proves bundle architecture, metadata, dependency, and signature shape. Release verification additionally requires Developer ID, notarization, staple, and Gatekeeper acceptance.
 
 After an XCFramework rename or FFI module change, delete `native/DerivedData` before rebuilding — Xcode caches clang module resolution and otherwise fails with stale module errors.
 
-## CI and release contract
+## Distribution status
+
+The checked-in GitHub Actions workflow does not currently build or publish the macOS app. The release details below describe the intended artifact and manual credential requirements; local validation is available through `mise -C native run ci`.
+
 
 | Surface | Contract |
 |---|---|
-| PR/local validation | macOS 26.0, Xcode 26.6, arm64 static app, tests and bundle verification |
-| Secret-free release validation | fixture version, ad-hoc rejection by release verifier, read-only reconciliation |
-| Publication | `main`/tag only, environment `release-macos`, GitHub-hosted macOS only |
+| Local validation | macOS 26.0, Xcode 26.6, arm64 static app, tests and bundle verification |
+| Manual release validation | fixture version, ad-hoc rejection by release verifier, read-only reconciliation |
+| Publication | Not automated by a checked-in workflow |
 | Artifact | `jackin-desktop-<VERSION>-aarch64-apple-darwin.zip` plus SHA-256, Sigstore bundle, SBOM, attestation |
-| Symbols | `desktop-release` Cargo profile (thin LTO, one codegen unit, line-table debug, no strip); build UUID-checks and archives `native/dist/JackinDesktop.app.dSYM` beside the app, release CI uploads it with the compressed unstripped Rust static library (90-day retention) |
+| Symbols | `desktop-release` Cargo profile (thin LTO, one codegen unit, line-table debug, no strip); build UUID-checks and archives `native/dist/JackinDesktop.app.dSYM` beside the app, the matching dSYM can be archived beside the app |
 | Homebrew | formula and `Casks/jackin-desktop.rb` in one independently reviewed tap PR |
 
 Required `release-macos` secret names:
@@ -181,7 +168,7 @@ Required repository variables:
 - `JACKIN_DEVELOPER_ID_TEAM_ID`
 - `JACKIN_DEVELOPER_ID_CERT_SHA256`
 
-Credential material is never committed. CI removes temporary signing/notary material before supply-chain tooling runs. Until an operator provisions these values and performs the first notarized publication/cask proof, validation is complete but public distribution remains externally gated.
+Credential material is never committed. The `sign-notarize` task removes temporary signing/notary material when it exits. Public distribution requires an operator to provision these values and perform the first notarized publication/cask proof.
 
 ## Local notarization rehearsal
 
@@ -189,8 +176,8 @@ Credential material is never committed. CI removes temporary signing/notary mate
 export DEVELOPER_ID_APPLICATION='Developer ID Application: Your Name (TEAMID)'
 export NOTARY_PROFILE=jackin-notary
 export JACKIN_APP_VERSION=0.6.0 JACKIN_APP_BUILD=1
-mise run desktop-build -- 0.6.0 1
-mise run desktop-sign-notarize
+mise exec -- mbx +1.97.1 xtask desktop build --version 0.6.0 --build 1
+mise -C native run sign-notarize
 ```
 
 See the [public macOS guide](<../docs/content/(public)/guides/macos-usage-menu-bar.mdx>) and [ADR-011](../docs/content/reference/adrs/adr-011-native-macos-usage-menu-bar.mdx) for operator behavior, architecture, component ownership, and verification boundaries.
@@ -200,7 +187,7 @@ See the [public macOS guide](<../docs/content/(public)/guides/macos-usage-menu-b
 Manual host-only integration; never part of CI. Setup on the shipping Xcode:
 
 1. In Xcode 26.6, open Settings → Intelligence and enable external agent access.
-2. Run `mise run desktop-generate`, then open `native/JackinDesktop.xcodeproj`
+2. Run `xcodegen generate --spec native/project.yml`, then open `native/JackinDesktop.xcodeproj`
    in the running Xcode instance.
 3. From the external agent, enumerate the bridge's actually exposed tools
    before depending on any command name.

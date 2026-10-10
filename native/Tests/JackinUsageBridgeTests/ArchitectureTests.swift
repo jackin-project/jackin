@@ -220,8 +220,8 @@ final class ArchitectureTests: XCTestCase {
         )
 
         XCTAssertTrue(text.contains("git -C \"$repo\" status --porcelain"))
-        XCTAssertTrue(text.contains("mise -C \"$repo\" run desktop-build"))
-        XCTAssertTrue(text.contains("mise -C \"$repo\" run desktop-verify"))
+        XCTAssertTrue(text.contains("mise -C \"$repo\" exec -- mbx +1.97.1 xtask desktop build"))
+        XCTAssertTrue(text.contains("mise -C \"$repo\" exec -- mbx +1.97.1 xtask desktop verify"))
         XCTAssertTrue(text.contains("final evidence requires the canonical branch-head app"))
         XCTAssertTrue(text.contains("CAPTURE_INACTIVE_APP:-"))
         XCTAssertTrue(text.contains("unset CAPTURE_INACTIVE_APP"))

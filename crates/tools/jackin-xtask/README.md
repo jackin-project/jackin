@@ -1,6 +1,6 @@
 # jackin-xtask
 
-Workspace automation for CI, lints, docs, releases, schemas, and PRs. Merge-readiness entry points are `cargo xtask ci`, `cargo xtask ci --fast`, and `cargo xtask ci --e2e`.
+Workspace automation for CI, lints, docs, releases, schemas, and PRs. Merge-readiness entry points are `mise exec -- mbx +1.97.1 xtask ci`, `mise exec -- mbx +1.97.1 xtask ci --fast`, and `mise exec -- mbx +1.97.1 xtask ci --e2e`.
 
 ## What this crate owns
 
@@ -16,7 +16,7 @@ Workspace automation for CI, lints, docs, releases, schemas, and PRs. Merge-read
 
 | Module | Owns | Tests |
 |---|---|---|
-| [`main.rs`](src/main.rs) | `cargo xtask` dispatcher | — |
+| [`main.rs`](src/main.rs) | MBX `xtask` dispatcher | — |
 | [`ci.rs`](src/ci.rs) · [`ci/`](src/ci) | CI orchestration | [`tests.rs`](src/ci/tests.rs) |
 | [`ci_audit.rs`](src/ci_audit.rs) · [`ci_cargo_audit.rs`](src/ci_cargo_audit.rs) · [`ci_target.rs`](src/ci_target.rs) | workflow audit, advisory-cache selection, and target transport | sibling `tests.rs` files |
 | [`ci_doc_examples.rs`](src/ci_doc_examples.rs) · [`ci_doc_examples/`](src/ci_doc_examples) | nextest-only documentation-example gate | [`tests.rs`](src/ci_doc_examples/tests.rs) |
@@ -46,9 +46,9 @@ Workspace automation for CI, lints, docs, releases, schemas, and PRs. Merge-read
 
 ## Public API
 
-The `cargo xtask <lane>` CLI. Merge-readiness is `cargo xtask ci` (or `--fast` / `--e2e`). New checks are added as lanes here so they are discoverable from one command.
+The `mise exec -- mbx +1.97.1 xtask <lane>` CLI. Merge-readiness is `mise exec -- mbx +1.97.1 xtask ci` (or `--fast` / `--e2e`). New checks are added as lanes here so they are discoverable from one command.
 
-`cargo xtask lint ratchet` checks every configured family. CI jobs that own one
+`mise exec -- mbx +1.97.1 xtask lint ratchet` checks every configured family. CI jobs that own one
 artifact use repeatable `--only <family>` arguments so they do not measure
 unrelated families or launch nested build work. Artifact-backed families skip
 when their artifact is absent; the job that produces an artifact must run the
@@ -57,12 +57,12 @@ matching scoped ratchet after generation.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-xtask
-cargo clippy -p jackin-xtask --all-targets -- -D warnings
-cargo xtask docs brand
-cargo xtask docs specs
-cargo xtask lint agents
-cargo xtask lint agents --format json
-cargo xtask lint files --format json
-cargo xtask ci --fast
+mise exec -- mbx +1.97.1 nextest run -p jackin-xtask
+mise exec -- mbx +1.97.1 clippy -p jackin-xtask --all-targets -- -D warnings
+mise exec -- mbx +1.97.1 xtask docs brand
+mise exec -- mbx +1.97.1 xtask docs specs
+mise exec -- mbx +1.97.1 xtask lint agents
+mise exec -- mbx +1.97.1 xtask lint agents --format json
+mise exec -- mbx +1.97.1 xtask lint files --format json
+mise exec -- mbx +1.97.1 xtask ci --fast
 ```

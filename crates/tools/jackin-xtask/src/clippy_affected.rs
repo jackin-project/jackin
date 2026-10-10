@@ -1,6 +1,6 @@
 //! Run Clippy over the crates affected by worktree changes.
 //!
-//! Pre-commit hook entry point (`mise run clippy-affected`):
+//! Pre-commit hook entry point (`cargo xtask clippy-affected`):
 //!
 //! ```sh
 //! cargo xtask clippy-affected                  # lint affected members + nested packages

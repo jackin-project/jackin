@@ -28,8 +28,8 @@ fn mise_release_tool_pin_change_requires_preview() {
 
 #[test]
 fn mise_release_tool_aliases_include_cargo_prefixed_tools() {
-    let base = "[tools]\n\"cargo:cargo-zigbuild\" = \"0.22.0\"\n\"cargo:sccache\" = \"0.15.0\"\n";
-    let head = "[tools]\n\"cargo:cargo-zigbuild\" = \"0.23.0\"\n\"cargo:sccache\" = \"0.16.0\"\n";
+    let base = "[tools]\n\"cargo:cargo-zigbuild\" = \"0.22.0\"\n";
+    let head = "[tools]\n\"cargo:cargo-zigbuild\" = \"0.23.0\"\n";
     assert!(mise_release_tools_changed(base, head));
 }
 

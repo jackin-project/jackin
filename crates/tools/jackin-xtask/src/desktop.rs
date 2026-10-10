@@ -1,12 +1,13 @@
 //! jackin❯ desktop (native macOS usage menu bar) assembly and verification.
 //!
-//! Canonical local/CI path — Rust owns orchestration; mise tasks thin-wrap
-//! these subcommands. No shell scripts.
+//! Rust owns desktop build and verification logic; `native/mise.toml` composes
+//! the local format, lint, test, and cadence commands. The UI test driver stays
+//! in `native/Scripts/run-ui-tests.sh`.
 //!
 //! ```sh
 //! cargo xtask desktop build --version 0.6.0 --build 1
 //! cargo xtask desktop verify native/dist/JackinDesktop.app
-//! # or: mise run desktop-build -- 0.6.0 1
+//! # or use the local native cadence: mise -C native run ci
 //! ```
 
 mod bootstrap;
@@ -171,7 +172,7 @@ pub(super) fn resolve_app_path(app: &Path) -> Result<PathBuf> {
     };
     if !path.exists() {
         bail!(
-            "app not found at {}\n  build first: mise run desktop-build\n  or:         cargo xtask desktop build --version 0.6.0 --build 1",
+            "app not found at {}\n  build first: cargo xtask desktop build --version 0.6.0 --build 1",
             path.display()
         );
     }
@@ -791,10 +792,8 @@ fn print_app_ready_banner(app: &Path, version: &str, build: &str) {
     progress(format!("│   app:     {}", abs.display()));
     progress(format!("│   rel:     {}", rel.display()));
     progress("│");
-    progress("│   verify:  mise run desktop-verify");
-    progress("│            cargo xtask desktop verify");
-    progress("│   run:     mise run desktop-run");
-    progress("│            cargo xtask desktop run");
+    progress("│   verify:  cargo xtask desktop verify");
+    progress("│   run:     cargo xtask desktop run");
     progress(format!("│   open:    open {}", abs.display()));
     progress("│");
     progress("│   (menu bar only — no Dock icon; LSUIElement)");
@@ -820,7 +819,7 @@ pub(super) fn resolve_version_build(
 }
 
 /// Prefer flags/env; otherwise read identity from the app plist so
-/// `mise run desktop-verify` works without re-stating the version.
+/// `cargo xtask desktop verify` reads version metadata from the app bundle.
 fn resolve_version_build_for_verify(
     app: &Path,
     version: Option<String>,
@@ -916,7 +915,7 @@ fn bindings_check(root: &Path, profile: &str) -> Result<()> {
         return Ok(());
     }
     let mut report = String::from(
-        "committed boltffi bindings are stale; run `mise run desktop-bindings` and commit:",
+        "committed boltffi bindings are stale; run `cargo xtask desktop bindings` and commit:",
     );
     for difference in &differences {
         report.push_str("\n  ");
@@ -1422,8 +1421,7 @@ pub(super) fn verify_app(
             "ad-hoc / PR"
         }
     ));
-    progress("│   run:     mise run desktop-run");
-    progress("│            cargo xtask desktop run");
+    progress("│   run:     cargo xtask desktop run");
     progress("└─────────────────────────────────────────────────────────────");
     progress("");
     progress(format!("DESKTOP_APP={}", abs.display()));
