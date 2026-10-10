@@ -21,16 +21,18 @@ fn first_credential_uses_home_first_then_handoff_fallback() {
         &[home.clone(), handoff.clone()],
         load_claude_oauth_credentials,
     );
-    assert_eq!(
-        resolved.map(|c| c.access_token),
-        Some("handoff-token".to_owned())
+    assert!(
+        resolved
+            .as_ref()
+            .is_some_and(|c| { c.access_token.as_str() == "handoff-token" })
     );
     // A valid home token wins over the handoff (home is the source of truth).
     fs::write(&home, r#"{"claudeAiOauth":{"accessToken":"home-token"}}"#).expect("rewrite home");
     let resolved = first_credential(&[home, handoff], load_claude_oauth_credentials);
-    assert_eq!(
-        resolved.map(|c| c.access_token),
-        Some("home-token".to_owned())
+    assert!(
+        resolved
+            .as_ref()
+            .is_some_and(|c| { c.access_token.as_str() == "home-token" })
     );
 }
 

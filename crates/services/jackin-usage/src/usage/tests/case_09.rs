@@ -22,7 +22,8 @@ fn credential_file_loaders_reread_updated_container_files() {
     assert_eq!(
         load_claude_oauth_credentials(&claude_path)
             .expect("Claude credentials")
-            .access_token,
+            .access_token
+            .as_str(),
         "old-claude"
     );
     fs::write(
@@ -39,7 +40,8 @@ fn credential_file_loaders_reread_updated_container_files() {
     assert_eq!(
         load_claude_oauth_credentials(&claude_path)
             .expect("updated Claude credentials")
-            .access_token,
+            .access_token
+            .as_str(),
         "new-claude"
     );
 

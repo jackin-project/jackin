@@ -15,13 +15,13 @@ use jackin_protocol::usage_broker::{
 fn broker_conflict_has_a_specific_sanitized_bridge_error_code() {
     use jackin_protocol::usage_broker::{UsageCoordinationError, UsageCoordinationErrorKind};
 
-    let error = super::map_coordination_err(UsageCoordinationError {
+    let error = map_coordination_err(UsageCoordinationError {
         kind: UsageCoordinationErrorKind::BrokerConflict,
         message: "another process owns the usage broker lease".to_owned(),
     });
     assert!(matches!(
         error,
-        crate::error::UsageBridgeError::Rejected { code, .. }
+        UsageBridgeError::Rejected { code, .. }
             if code == "coordination_broker_conflict"
     ));
 }
