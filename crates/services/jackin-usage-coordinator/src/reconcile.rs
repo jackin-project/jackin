@@ -154,7 +154,10 @@ impl UsageCoordinator {
                         StateStoreError::Corrupt => {
                             Ok((capability.clone(), CatalogAccountPreimage::Corrupt))
                         }
-                        StateStoreError::Unavailable => Err(state_error(error)),
+                        StateStoreError::Unavailable
+                        | StateStoreError::SchemaMigrationRequired { .. } => {
+                            Err(state_error(error))
+                        }
                     })
             })
             .collect::<Result<BTreeMap<_, _>, _>>()?;

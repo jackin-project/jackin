@@ -253,6 +253,7 @@ fn account_for_view_preserves_canonical_access_lifecycles() {
             None,
         );
         assert_eq!(account.lifecycle, expected);
+        assert_eq!(account.identity_kind, UsageIdentityKindV1::UnverifiedHandle);
     }
     for (kind, expected) in [
         (

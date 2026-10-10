@@ -274,3 +274,32 @@ fn local_source_capability_metadata_stays_distinct_from_provider_identity() {
     assert_ne!(identity_kind, UsageIdentityKindV1::ProviderAccountId);
     assert_ne!(identity_kind, UsageIdentityKindV1::ProviderStableHandle);
 }
+
+#[test]
+fn missing_discovery_identity_is_unverified_not_provider_authority() {
+    use jackin_usage_host_presentation::HostSurfaceId;
+
+    let discovery = ValidatedUsageDiscovery {
+        config_generation: Some("generation".to_owned()),
+        accounts: Vec::new(),
+        diagnostics: Vec::new(),
+        candidates: Vec::new(),
+        bindings: vec![ValidatedCredentialBinding {
+            surface: HostSurfaceId::Claude,
+            identity: None,
+            source_id: "selected-source".to_owned(),
+            capability_id: "broker-capability".to_owned(),
+            credential_revision: "revision".to_owned(),
+            provenance: BTreeSet::from(["workspace sample".to_owned()]),
+            source: ValidatedCredentialSource::Capability,
+        }],
+    };
+    let capability = capability_for_binding(&discovery.bindings[0], Some("generation"));
+
+    let metadata = publication_identity_metadata(&discovery);
+    let identity_kind = metadata[&capability].identity_kind;
+    assert_eq!(identity_kind, UsageIdentityKindV1::UnverifiedHandle);
+    assert_ne!(identity_kind, UsageIdentityKindV1::ProviderAccountId);
+    assert_ne!(identity_kind, UsageIdentityKindV1::ProviderStableHandle);
+    assert_ne!(identity_kind, UsageIdentityKindV1::LocalSourceHandle);
+}

@@ -93,11 +93,10 @@ pub fn account_for_view(
             }]
         })
         .unwrap_or_default();
-    let fallback_identity_kind = if header_label.trim().is_empty() {
-        UsageIdentityKindV1::ProviderAccountId
-    } else {
-        UsageIdentityKindV1::ProviderStableHandle
-    };
+    // Display labels do not prove whether an identifier came from the
+    // provider or from a local source. Preserve the identity as unverified
+    // until discovery supplies explicit provenance metadata.
+    let fallback_identity_kind = UsageIdentityKindV1::UnverifiedHandle;
     UsageAccountV1 {
         canonical_account_id: view.capability.account_id.clone(),
         identity_kind: identity_metadata

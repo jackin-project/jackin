@@ -93,7 +93,7 @@ fn seed_authoritative_catalog(root: &Path) -> Result<()> {
         issues: Vec::new(),
     };
     let envelope = ProjectionStateEnvelope {
-        schema_version: 2,
+        schema_version: ProjectionStateEnvelope::SCHEMA_VERSION,
         projection,
         aliases: Vec::new(),
         catalog_revision,

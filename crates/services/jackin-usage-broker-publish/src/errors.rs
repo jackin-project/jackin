@@ -18,6 +18,7 @@ pub fn publisher_unavailable() -> UsageCoordinationError {
 pub fn projection_store_error(error: StateStoreError) -> UsageCoordinationError {
     match error {
         StateStoreError::Unavailable => publisher_unavailable(),
+        StateStoreError::SchemaMigrationRequired { .. } => publisher_unavailable(),
         StateStoreError::Corrupt => UsageCoordinationError {
             kind: UsageCoordinationErrorKind::CorruptState,
             message: "usage broker projection state is corrupt".to_owned(),

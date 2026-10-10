@@ -28,7 +28,7 @@ pub(crate) fn publication_identity_metadata(
             Some(CanonicalAccountSubject::SourceCapability(_)) => {
                 UsageIdentityKindV1::LocalSourceHandle
             }
-            None => UsageIdentityKindV1::ProviderAccountId,
+            None => UsageIdentityKindV1::UnverifiedHandle,
         };
         let entry = evidence
             .entry(capability)
