@@ -30,6 +30,13 @@ pub(crate) struct ProbeJob {
 /// for in-process minimum-attempt floors. Implementations must keep
 /// `monotonic` nondecreasing and ensure the two values describe the same
 /// instant.
+#[cfg_attr(
+    not(feature = "test-support"),
+    allow(
+        unreachable_pub,
+        reason = "this type is re-exported only by the test-support feature"
+    )
+)]
 #[derive(Debug, Clone, Copy)]
 pub struct ClockSample {
     /// Wall time since the Unix epoch, including its fractional second.
@@ -38,6 +45,13 @@ pub struct ClockSample {
     pub monotonic: Duration,
 }
 
+#[cfg_attr(
+    not(feature = "test-support"),
+    allow(
+        unreachable_pub,
+        reason = "this constructor is reachable only by the test-support feature"
+    )
+)]
 impl ClockSample {
     /// Create a sample from an epoch timestamp and its paired monotonic value.
     #[must_use]
@@ -71,6 +85,13 @@ impl ClockSample {
 /// [`UsageCoordinator::new_with_clock`] should therefore start its monotonic
 /// counter at zero or another stable origin and advance it monotonically for
 /// the lifetime of that coordinator.
+#[cfg_attr(
+    not(feature = "test-support"),
+    allow(
+        unreachable_pub,
+        reason = "this trait is re-exported only by the test-support feature"
+    )
+)]
 pub trait MonotonicClock: Send + Sync {
     /// Return monotonic elapsed time from this clock instance's origin.
     fn now(&self) -> Duration;
