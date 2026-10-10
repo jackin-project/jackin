@@ -53,6 +53,83 @@ impl AccountStateStore for ResetWriteFailureStore {
     }
 }
 
+struct AfterApplyFailureStore {
+    inner: MemoryStore,
+    store_calls: AtomicUsize,
+    fail_store_on_call: AtomicUsize,
+    fail_purge_after_apply: AtomicUsize,
+    purge_calls: AtomicUsize,
+}
+
+impl AccountStateStore for AfterApplyFailureStore {
+    fn load(
+        &self,
+        capability: &UsageAccountCapability,
+        now_epoch: i64,
+    ) -> Result<Option<AccountStateEnvelope>, StateStoreError> {
+        self.inner.load(capability, now_epoch)
+    }
+
+    fn store(
+        &self,
+        envelope: &AccountStateEnvelope,
+        now_epoch: i64,
+    ) -> Result<(), StateStoreError> {
+        self.inner.store(envelope, now_epoch)?;
+        let call = self.store_calls.fetch_add(1, Ordering::SeqCst) + 1;
+        if self
+            .fail_store_on_call
+            .compare_exchange(call, 0, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+        {
+            return Err(StateStoreError::Unavailable);
+        }
+        Ok(())
+    }
+
+    fn purge(&self, capability: &UsageAccountCapability) -> Result<(), StateStoreError> {
+        self.purge_calls.fetch_add(1, Ordering::SeqCst);
+        self.inner.purge(capability)?;
+        if self.fail_purge_after_apply.swap(0, Ordering::SeqCst) > 0 {
+            return Err(StateStoreError::Unavailable);
+        }
+        Ok(())
+    }
+}
+
+struct PanicAfterDurableStore {
+    inner: FileAccountStateStore,
+    panic_after_store: AtomicUsize,
+    purge_calls: AtomicUsize,
+}
+
+impl AccountStateStore for PanicAfterDurableStore {
+    fn load(
+        &self,
+        capability: &UsageAccountCapability,
+        now_epoch: i64,
+    ) -> Result<Option<AccountStateEnvelope>, StateStoreError> {
+        self.inner.load(capability, now_epoch)
+    }
+
+    fn store(
+        &self,
+        envelope: &AccountStateEnvelope,
+        now_epoch: i64,
+    ) -> Result<(), StateStoreError> {
+        self.inner.store(envelope, now_epoch)?;
+        if self.panic_after_store.swap(0, Ordering::SeqCst) > 0 {
+            panic!("injected crash after durable catalog marker");
+        }
+        Ok(())
+    }
+
+    fn purge(&self, capability: &UsageAccountCapability) -> Result<(), StateStoreError> {
+        self.purge_calls.fetch_add(1, Ordering::SeqCst);
+        self.inner.purge(capability)
+    }
+}
+
 #[test]
 fn coordinator_rate_limit_without_provider_deadline_uses_shared_backoff() {
     let executor = Arc::new(GateExecutor::new(ProviderProbeOutcome::Failure {
@@ -567,6 +644,347 @@ fn failed_catalog_reset_write_restores_retry_state_and_catalog() {
         .unwrap();
     assert_eq!(forced_early.generation, 1);
     assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn after_apply_marker_store_failure_restores_preimage_before_any_purge() {
+    let store = Arc::new(AfterApplyFailureStore {
+        inner: MemoryStore::default(),
+        store_calls: AtomicUsize::new(0),
+        fail_store_on_call: AtomicUsize::new(0),
+        fail_purge_after_apply: AtomicUsize::new(0),
+        purge_calls: AtomicUsize::new(0),
+    });
+    let account = capability("after-apply-marker-store");
+    let executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
+        quota_view(1_000, 80),
+    )));
+    let coordinator = catalog_coordinator_with_fake_clock(
+        Arc::<ImmediateExecutor>::clone(&executor),
+        Arc::<AfterApplyFailureStore>::clone(&store),
+        UsageCoordinatorConfig::default(),
+        [catalog_entry(&account, "revision-a")],
+    );
+    let started = coordinator
+        .request_refresh(&account, 0, true, 1_000)
+        .unwrap();
+    assert_eq!(
+        join_ok(&coordinator, &account, started.generation, 1_001).phase,
+        UsageRefreshPhase::Completed
+    );
+    let before = store.inner.states.lock().unwrap().get(&account).cloned();
+    store.fail_store_on_call.store(
+        store.store_calls.load(Ordering::SeqCst) + 1,
+        Ordering::SeqCst,
+    );
+
+    let error = coordinator
+        .reconcile_catalog([catalog_entry(&account, "revision-b")], 1_002)
+        .unwrap_err();
+    assert_eq!(error.kind, UsageCoordinationErrorKind::Unavailable);
+    assert_eq!(store.purge_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(
+        store.inner.states.lock().unwrap().get(&account).cloned(),
+        before
+    );
+    assert_eq!(
+        coordinator.current(&account, 1_002).unwrap().phase,
+        UsageRefreshPhase::Completed
+    );
+}
+
+#[test]
+fn failed_reconcile_does_not_erase_marker_when_store_preimage_was_missing() {
+    let store = Arc::new(AfterApplyFailureStore {
+        inner: MemoryStore::default(),
+        store_calls: AtomicUsize::new(0),
+        fail_store_on_call: AtomicUsize::new(0),
+        fail_purge_after_apply: AtomicUsize::new(0),
+        purge_calls: AtomicUsize::new(0),
+    });
+    let account = capability("missing-preimage-marker");
+    let executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
+        quota_view(1_000, 80),
+    )));
+    let coordinator = catalog_coordinator_with_fake_clock(
+        Arc::<ImmediateExecutor>::clone(&executor),
+        Arc::<AfterApplyFailureStore>::clone(&store),
+        UsageCoordinatorConfig::default(),
+        [catalog_entry(&account, "revision-a")],
+    );
+    let started = coordinator
+        .request_refresh(&account, 0, true, 1_000)
+        .unwrap();
+    assert_eq!(
+        join_ok(&coordinator, &account, started.generation, 1_001).phase,
+        UsageRefreshPhase::Completed
+    );
+
+    // Simulate a missing durable preimage while the live coordinator retains
+    // evidence that a provider invocation occurred.
+    store.inner.purge(&account).unwrap();
+    store.fail_store_on_call.store(
+        store.store_calls.load(Ordering::SeqCst) + 1,
+        Ordering::SeqCst,
+    );
+    let error = coordinator
+        .reconcile_catalog([catalog_entry(&account, "revision-b")], 1_002)
+        .unwrap_err();
+
+    assert_eq!(error.kind, UsageCoordinationErrorKind::Unavailable);
+    assert_eq!(store.purge_calls.load(Ordering::SeqCst), 0);
+    let marker = store.inner.states.lock().unwrap().get(&account).cloned();
+    let marker = marker.expect("rollback must retain the materialized cooldown marker");
+    assert_eq!(marker.phase, UsageRefreshPhase::Idle);
+    assert_eq!(marker.provider_invoked_at_epoch, Some(1_000));
+    assert!(
+        marker
+            .retry_deadline_epoch
+            .is_some_and(|deadline| deadline >= 1_300)
+    );
+    assert!(marker.terminal_result.is_none());
+    assert!(marker.last_good.is_none());
+    assert!(marker.terminal_error.is_none());
+    assert_eq!(
+        coordinator.current(&account, 1_002).unwrap().phase,
+        UsageRefreshPhase::Completed
+    );
+}
+
+#[test]
+fn after_apply_purge_failure_restores_preimage_and_catalog() {
+    let store = Arc::new(AfterApplyFailureStore {
+        inner: MemoryStore::default(),
+        store_calls: AtomicUsize::new(0),
+        fail_store_on_call: AtomicUsize::new(0),
+        fail_purge_after_apply: AtomicUsize::new(0),
+        purge_calls: AtomicUsize::new(0),
+    });
+    let account = capability("after-apply-purge");
+    let executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
+        quota_view(1_000, 80),
+    )));
+    let coordinator = catalog_coordinator_with_fake_clock(
+        Arc::<ImmediateExecutor>::clone(&executor),
+        Arc::<AfterApplyFailureStore>::clone(&store),
+        UsageCoordinatorConfig::default(),
+        [catalog_entry(&account, "revision-a")],
+    );
+    let started = coordinator
+        .request_refresh(&account, 0, true, 1_000)
+        .unwrap();
+    assert_eq!(
+        join_ok(&coordinator, &account, started.generation, 1_001).phase,
+        UsageRefreshPhase::Completed
+    );
+    let before = store.inner.states.lock().unwrap().get(&account).cloned();
+    store.fail_purge_after_apply.store(1, Ordering::SeqCst);
+
+    // The 300-second attempt floor has elapsed, so this exercises a real
+    // purge rather than the result-free cooldown-marker path.
+    let error = coordinator.reconcile_catalog([], 10_000).unwrap_err();
+    assert_eq!(error.kind, UsageCoordinationErrorKind::Unavailable);
+    assert_eq!(store.purge_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        store.inner.states.lock().unwrap().get(&account).cloned(),
+        before
+    );
+    assert_eq!(
+        coordinator.current(&account, 10_000).unwrap().phase,
+        UsageRefreshPhase::Completed
+    );
+
+    coordinator.reconcile_catalog([], 10_001).unwrap();
+    assert_eq!(store.purge_calls.load(Ordering::SeqCst), 2);
+    assert_eq!(
+        coordinator.current(&account, 10_001).unwrap_err().kind,
+        UsageCoordinationErrorKind::CatalogRevoked
+    );
+}
+
+#[test]
+fn later_marker_store_failure_rolls_back_prior_marker_before_any_purge() {
+    let store = Arc::new(AfterApplyFailureStore {
+        inner: MemoryStore::default(),
+        store_calls: AtomicUsize::new(0),
+        fail_store_on_call: AtomicUsize::new(0),
+        fail_purge_after_apply: AtomicUsize::new(0),
+        purge_calls: AtomicUsize::new(0),
+    });
+    let first = capability("multi-marker-a-first");
+    let failing = capability("multi-marker-z-fails");
+    let executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
+        quota_view(1_000, 80),
+    )));
+    let coordinator = catalog_coordinator_with_fake_clock(
+        Arc::<ImmediateExecutor>::clone(&executor),
+        Arc::<AfterApplyFailureStore>::clone(&store),
+        UsageCoordinatorConfig::default(),
+        [
+            catalog_entry(&failing, "revision-a"),
+            catalog_entry(&first, "revision-a"),
+        ],
+    );
+
+    let first_refresh = coordinator.request_refresh(&first, 0, true, 1_000).unwrap();
+    assert_eq!(
+        join_ok(&coordinator, &first, first_refresh.generation, 1_001).phase,
+        UsageRefreshPhase::Completed
+    );
+    let failing_refresh = coordinator
+        .request_refresh(&failing, 0, true, 1_001)
+        .unwrap();
+    assert_eq!(
+        join_ok(&coordinator, &failing, failing_refresh.generation, 1_002).phase,
+        UsageRefreshPhase::Completed
+    );
+    let before = store.inner.states.lock().unwrap().clone();
+
+    // BTree order writes the first account's marker before the selected
+    // second write applies and fails. Both touched files must be restored.
+    store.fail_store_on_call.store(
+        store.store_calls.load(Ordering::SeqCst) + 2,
+        Ordering::SeqCst,
+    );
+    let error = coordinator.reconcile_catalog([], 1_003).unwrap_err();
+
+    assert_eq!(error.kind, UsageCoordinationErrorKind::Unavailable);
+    assert_eq!(store.purge_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(store.inner.states.lock().unwrap().clone(), before);
+    assert_eq!(
+        coordinator.current(&first, 1_003).unwrap().phase,
+        UsageRefreshPhase::Completed
+    );
+    assert_eq!(
+        coordinator.current(&failing, 1_003).unwrap().phase,
+        UsageRefreshPhase::Completed
+    );
+}
+
+#[test]
+fn crash_after_durable_cooldown_marker_precedes_purge_and_survives_restart() {
+    let temp = tempfile::tempdir().unwrap();
+    let account = capability("crash-after-marker");
+    let store = Arc::new(PanicAfterDurableStore {
+        inner: FileAccountStateStore::at(temp.path().join("accounts")),
+        panic_after_store: AtomicUsize::new(0),
+        purge_calls: AtomicUsize::new(0),
+    });
+    let clock = Arc::new(ManualClock::at(1_000));
+    let executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
+        quota_view(1_000, 80),
+    )));
+    let provider: Arc<dyn UsageProviderExecutor> = Arc::clone(&executor);
+    let state_store: Arc<dyn AccountStateStore> = Arc::clone(&store);
+    let clock_port: Arc<dyn MonotonicClock> = Arc::clone(&clock);
+    let coordinator = UsageCoordinator::start_with_clock(
+        provider,
+        state_store,
+        UsageCoordinatorConfig::default(),
+        Some(BTreeMap::from([(account.clone(), "revision-a".into())])),
+        None,
+        clock_port,
+    );
+    let started = coordinator
+        .request_refresh(&account, 0, true, 1_000)
+        .unwrap();
+    assert_eq!(
+        join_ok(&coordinator, &account, started.generation, 1_001).phase,
+        UsageRefreshPhase::Completed
+    );
+
+    store.panic_after_store.store(1, Ordering::SeqCst);
+    let crash = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = coordinator.reconcile_catalog([], 1_002);
+    }));
+    assert!(
+        crash.is_err(),
+        "injected crash must occur after marker write"
+    );
+    drop(coordinator);
+    assert_eq!(store.purge_calls.load(Ordering::SeqCst), 0);
+
+    let tombstone = store
+        .load(&account, 1_002)
+        .unwrap()
+        .expect("the marker is durable before a catalog purge can begin");
+    assert_eq!(tombstone.phase, UsageRefreshPhase::Idle);
+    assert_eq!(tombstone.provider_invoked_at_epoch, Some(1_000));
+    assert!(tombstone.retry_deadline_epoch.unwrap_or_default() >= 1_300);
+    assert!(tombstone.terminal_result.is_none());
+    assert!(tombstone.last_good.is_none());
+    assert!(tombstone.terminal_error.is_none());
+
+    // The process died before the catalog publication. Restarting with the
+    // old catalog still cannot spend the durable marker's actual-call floor
+    // via a forward wall-clock jump.
+    let restarted_clock = Arc::new(ManualClock::at(50_000));
+    let restarted_executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
+        quota_view(100_301, 80),
+    )));
+    let provider: Arc<dyn UsageProviderExecutor> = Arc::clone(&restarted_executor);
+    let state_store: Arc<dyn AccountStateStore> = Arc::clone(&store);
+    let clock_port: Arc<dyn MonotonicClock> = Arc::clone(&restarted_clock);
+    let restarted = UsageCoordinator::start_with_clock(
+        provider,
+        state_store,
+        UsageCoordinatorConfig::default(),
+        Some(BTreeMap::from([(account.clone(), "revision-a".into())])),
+        None,
+        clock_port,
+    );
+    let restored = restarted.current(&account, 50_000).unwrap();
+    assert_eq!(restored.phase, UsageRefreshPhase::Idle);
+    assert!(restored.snapshot.is_none());
+    assert_eq!(restarted.next_due_epoch(), Some(50_300));
+    restarted_clock.set_wall_epoch(100_000);
+    assert_eq!(restarted.next_due_epoch(), Some(100_300));
+    assert!(restarted.poll_due(100_299).is_empty());
+    assert_eq!(restarted_executor.calls.load(Ordering::SeqCst), 0);
+    restarted_clock.advance(Duration::from_secs(299));
+    assert!(restarted.poll_due(100_299).is_empty());
+    restarted_clock.advance(Duration::from_secs(1));
+    let due = restarted.poll_due(100_300);
+    assert_eq!(due.len(), 1);
+    assert_eq!(due[0].generation, tombstone.generation + 1);
+    assert_eq!(
+        join_ok(&restarted, &account, due[0].generation, 100_301).phase,
+        UsageRefreshPhase::Completed
+    );
+    assert_eq!(restarted_executor.calls.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn corrupt_removed_claude_state_becomes_result_free_uncertainty_marker() {
+    let store = Arc::new(MemoryStore::default());
+    let account = capability("corrupt-removed-state");
+    *store.load_error.lock().unwrap() = Some(StateStoreError::Corrupt);
+    let executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
+        quota_view(1_300, 80),
+    )));
+    let coordinator = catalog_coordinator_with_fake_clock(
+        Arc::<ImmediateExecutor>::clone(&executor),
+        Arc::<MemoryStore>::clone(&store),
+        UsageCoordinatorConfig::default(),
+        [catalog_entry(&account, "revision-a")],
+    );
+
+    coordinator.reconcile_catalog([], 1_000).unwrap();
+    assert!(store.purges.lock().unwrap().is_empty());
+    *store.load_error.lock().unwrap() = None;
+    let marker = store.states.lock().unwrap().get(&account).cloned().unwrap();
+    assert_eq!(marker.phase, UsageRefreshPhase::Idle);
+    assert!(marker.reload_fence_required);
+    assert_eq!(marker.provider_invoked_at_epoch, None);
+    assert!(
+        marker
+            .retry_deadline_epoch
+            .is_some_and(|deadline| deadline >= 1_300)
+    );
+    assert!(marker.terminal_result.is_none());
+    assert!(marker.last_good.is_none());
+    assert!(marker.terminal_error.is_none());
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 0);
 }
 
 #[test]
@@ -1250,7 +1668,7 @@ fn catalog_revision_keeps_pending_marker_and_completion_floor_across_readd() {
 }
 
 #[test]
-fn catalog_revision_change_purges_old_state_and_allows_only_new_revision() {
+fn catalog_revision_change_stores_cooldown_marker_and_allows_new_revision() {
     let executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
         quota_view(1_000, 80),
     )));
@@ -1277,10 +1695,14 @@ fn catalog_revision_change_purges_old_state_and_allows_only_new_revision() {
     assert_eq!(reset.phase, UsageRefreshPhase::Idle);
     assert!(reset.snapshot.is_none());
     assert!(reset.error.is_none());
-    assert_eq!(
-        store.purges.lock().unwrap().as_slice(),
-        std::slice::from_ref(&account)
-    );
+    assert!(store.purges.lock().unwrap().is_empty());
+    let marker = store.states.lock().unwrap().get(&account).cloned().unwrap();
+    assert_eq!(marker.phase, UsageRefreshPhase::Idle);
+    assert!(marker.terminal_result.is_none());
+    assert!(marker.last_good.is_none());
+    assert!(marker.terminal_error.is_none());
+    assert_eq!(marker.generation, reset.generation);
+    assert_eq!(marker.retry_deadline_epoch, Some(1_300));
 
     let next = coordinator
         .request_refresh(&account, reset.generation, true, 1_400)
@@ -1316,19 +1738,19 @@ fn catalog_purge_failure_restores_durable_state_and_keeps_old_catalog() {
     let before = store.states.lock().unwrap().get(&account).cloned();
     *store.purge_error.lock().unwrap() = Some(StateStoreError::Unavailable);
 
-    let error = coordinator.reconcile_catalog([], 1_002).unwrap_err();
+    let error = coordinator.reconcile_catalog([], 10_000).unwrap_err();
     assert_eq!(error.kind, UsageCoordinationErrorKind::Unavailable);
     assert_eq!(store.states.lock().unwrap().get(&account).cloned(), before);
     assert_eq!(
-        coordinator.current(&account, 1_002).unwrap().phase,
+        coordinator.current(&account, 10_000).unwrap().phase,
         UsageRefreshPhase::Completed
     );
 
     *store.purge_error.lock().unwrap() = None;
-    coordinator.reconcile_catalog([], 1_003).unwrap();
+    coordinator.reconcile_catalog([], 10_001).unwrap();
     assert_eq!(
-        coordinator.current(&account, 1_003).unwrap().phase,
-        UsageRefreshPhase::Failed
+        coordinator.current(&account, 10_001).unwrap_err().kind,
+        UsageCoordinationErrorKind::CatalogRevoked
     );
 }
 

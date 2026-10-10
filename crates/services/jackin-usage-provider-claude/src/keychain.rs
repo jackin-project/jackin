@@ -147,7 +147,6 @@ impl Drop for ClaudeUnattendedKeychainGuard {
     reason = "credential type: the keychain payload must never be formatted into a log or error"
 )]
 pub enum ClaudeKeychainRead {
-    #[cfg(any(target_os = "macos", test))]
     Payload {
         json: Zeroizing<String>,
     },
@@ -362,6 +361,15 @@ fn trim_keychain_payload_and_zeroize(json: &mut String) -> ClaudeKeychainRead {
 mod tests {
     use super::*;
     use std::cell::{Cell, RefCell};
+
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn non_macos_public_keychain_reader_stays_missing() {
+        assert!(matches!(
+            read_claude_keychain_item("claude-ai"),
+            ClaudeKeychainRead::Missing
+        ));
+    }
 
     struct RestoreOnDrop<'a>(&'a RefCell<Vec<&'static str>>);
 

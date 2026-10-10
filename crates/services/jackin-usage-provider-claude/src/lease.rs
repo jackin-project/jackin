@@ -230,7 +230,6 @@ fn bootstrap_claude_credential_with(
     }
 
     match read_item() {
-        #[cfg(any(target_os = "macos", test))]
         ClaudeKeychainRead::Payload { json } => {
             if !valid_claude_keychain_payload(&json) {
                 return Ok(ClaudeCredentialBootstrapOutcome::Malformed);

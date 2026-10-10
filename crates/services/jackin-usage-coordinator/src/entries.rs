@@ -115,6 +115,63 @@ impl AccountEntry {
     }
 }
 
+/// Project an in-process monotonic cooldown into the paired wall-clock domain.
+/// Rounding upward keeps scheduler wakeups from preceding admission.
+pub(crate) fn monotonic_cooldown_deadline_epoch(
+    entry: &AccountEntry,
+    clock_sample: ClockSample,
+) -> Option<i64> {
+    entry
+        .cooldown_not_before_monotonic
+        .filter(|deadline| *deadline > clock_sample.monotonic)
+        .map(|deadline| {
+            ClockSample {
+                wall_epoch: clock_sample
+                    .wall_epoch
+                    .saturating_add(deadline.saturating_sub(clock_sample.monotonic)),
+                monotonic: clock_sample.monotonic,
+            }
+            .ceil_epoch()
+        })
+}
+
+/// Persist a conservative wall deadline when a prior Claude invocation (or
+/// an unresolved legacy attempt) is observed outside the process that owned
+/// its monotonic clock origin.
+pub(crate) fn recovered_attempt_deadline_epoch(
+    envelope: &AccountStateEnvelope,
+    clock_sample: ClockSample,
+) -> Option<i64> {
+    if envelope.capability.surface_id != "claude"
+        || (envelope.provider_invoked_at_epoch.is_none() && !envelope.reload_fence_required)
+    {
+        return None;
+    }
+    Some(
+        ClockSample {
+            wall_epoch: clock_sample
+                .wall_epoch
+                .saturating_add(policy::CLAUDE_MIN_ATTEMPT_INTERVAL),
+            monotonic: clock_sample.monotonic,
+        }
+        .ceil_epoch(),
+    )
+}
+
+/// Earliest scheduler wake that respects cadence, durable provider deadlines,
+/// and the active monotonic recovery/admission fence.
+pub(crate) fn effective_due_epoch(entry: &AccountEntry, clock_sample: ClockSample) -> i64 {
+    [
+        Some(entry.cadence.next_due_epoch),
+        account_cooldown_deadline(&entry.envelope),
+        monotonic_cooldown_deadline_epoch(entry, clock_sample),
+    ]
+    .into_iter()
+    .flatten()
+    .max()
+    .unwrap_or(entry.cadence.next_due_epoch)
+}
+
 fn runtime_cooldown_deadline(
     envelope: &AccountStateEnvelope,
     clock_sample: ClockSample,
