@@ -3,7 +3,7 @@
 
 use super::namespace::NamespaceScanner;
 use super::ownership_census;
-use super::source_policy::WorkspaceSpawnTypes;
+use super::source_policy::WorkspaceSpawnTypesBuilder;
 use super::{
     SourcePolicyScanner, event_runtime_severity, generate_rust_sources, repo_root, rust_pascal,
     validate_registry_matches_rust,
@@ -24,11 +24,11 @@ fn source_policy_violations_for_files(files: &[(&str, &str)]) -> Vec<&'static st
             )
         })
         .collect::<Vec<_>>();
-    let indexed = parsed
-        .iter()
-        .map(|(path, syntax)| (path.as_str(), syntax))
-        .collect::<Vec<_>>();
-    let workspace = WorkspaceSpawnTypes::collect(&indexed);
+    let mut builder = WorkspaceSpawnTypesBuilder::new(parsed.iter().map(|(path, _)| path.as_str()));
+    for (path, syntax) in &parsed {
+        builder.add_file(path, syntax);
+    }
+    let workspace = builder.finish();
     let mut violations = Vec::new();
     for (path, syntax) in &parsed {
         let mut scanner = SourcePolicyScanner::new(path, syntax, &workspace);
