@@ -42,14 +42,14 @@ impl CredentialSnapshotVendors for UsageCredentialVendors {
             "claude",
             Some("Claude"),
             now,
-            ClaudeWaveResolution::Resolved(Box::new(ClaudeResolved {
-                access_token: secret.to_owned(),
-                subscription_type: None,
-                account_email: None,
-                organization_type: None,
-                credential_origin: "OAuth · configured source".to_owned(),
-                is_anonymous: true,
-            })),
+            ClaudeWaveResolution::Resolved(Box::new(ClaudeResolved::from_token(
+                secret.to_owned(),
+                None,
+                None,
+                None,
+                "OAuth · configured source".to_owned(),
+                true,
+            ))),
         )
     }
 

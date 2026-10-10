@@ -3,8 +3,10 @@
 //! **Architecture Invariant:** T3.
 //! Broker-owned refreshes supply resolved OAuth material to the HTTP adapter.
 
+mod collector;
 mod credentials;
 mod keychain;
+mod lease;
 mod oauth_types;
 mod refresh;
 mod snapshot;
@@ -12,9 +14,11 @@ mod spend;
 mod wave;
 mod windows;
 
+pub use collector::{ClaudeCollectionError, experimental_claude_usage_snapshot_for_lease};
 pub use credentials::{
-    ClaudeOAuthCredentials, claude_email_from_value, claude_oauth_from_value,
-    claude_organization_type_from_value, load_claude_account_email,
+    ClaudeKeychainProfile, ClaudeOAuthCredentials, claude_email_from_value,
+    claude_oauth_from_value, claude_organization_type_from_value, load_claude_account_email,
+    parse_claude_keychain_profile,
 };
 #[cfg(any(test, feature = "test-support"))]
 pub use credentials::{load_claude_oauth_credentials, load_claude_organization_type};
@@ -22,7 +26,11 @@ pub use credentials::{load_claude_oauth_credentials, load_claude_organization_ty
 pub use keychain::classify_claude_keychain_status;
 pub use keychain::{
     ClaudeKeychainPolicyError, ClaudeKeychainRead, ClaudeUnattendedKeychainGuard,
-    prepare_claude_keychain_auth, read_claude_keychain_item, unattended_keychain_guard,
+    read_claude_keychain_item, unattended_keychain_guard,
+};
+pub use lease::{
+    ClaudeCredentialBootstrapOutcome, ClaudeCredentialLease, bootstrap_claude_credential,
+    claude_source_capability_id_for_service,
 };
 pub use oauth_types::{
     ClaudeOAuthExtraUsage, ClaudeOAuthLimit, ClaudeOAuthLimitModel, ClaudeOAuthLimitScope,

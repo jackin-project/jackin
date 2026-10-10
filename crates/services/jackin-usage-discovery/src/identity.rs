@@ -83,7 +83,7 @@ pub(crate) fn append_profile_read(
     match outcome {
         ProfileReadOutcome::Bytes(bytes) => {
             let mut hex = String::with_capacity(bytes.len().saturating_mul(2));
-            for byte in &bytes {
+            for byte in bytes.iter() {
                 let _ignored = write!(hex, "{byte:02x}");
             }
             evidence.push(format!("{label}:bytes:{}:{hex}", bytes.len()));

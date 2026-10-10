@@ -819,6 +819,7 @@ impl V1SpendAccountState {
             previous_period_record: self
                 .previous_period_record
                 .map(V1SpendRecord::into_spend_record),
+            historical_correction_horizon_epoch: None,
         }
     }
 
@@ -1094,6 +1095,7 @@ impl V1MonitorConfig {
             goal_id: Some(self.goal_id.clone()),
             expected_model: self.expected_model.clone(),
             policy_revision: Some(1),
+            experimental_collector: false,
         }
     }
 }
@@ -1930,6 +1932,8 @@ fn build_bindings(
                     revision: 1,
                     operator_confirmed: false,
                     confirmed_at_epoch: None,
+                    provider_account_id: None,
+                    experimental_collector_approved: false,
                 }],
             ))
         })

@@ -346,6 +346,8 @@ async fn usage_relay_denies_every_monitor_operation_including_operator_claims() 
                 account_id: "local-account".to_owned(),
                 operator_label: "work Claude account".to_owned(),
                 operator_confirmed: true,
+                provider_account_id: None,
+                experimental_collector_approved: false,
             },
         },
         MonitorOperation::ApprovePolicy {
@@ -384,6 +386,7 @@ async fn usage_relay_denies_every_monitor_operation_including_operator_claims() 
                 goal_id: None,
                 expected_model: None,
                 policy_revision: None,
+                experimental_collector: false,
             },
             idempotency_key: "observe-only-start".to_owned(),
         },
@@ -399,6 +402,7 @@ async fn usage_relay_denies_every_monitor_operation_including_operator_claims() 
                 goal_id: Some("approved-goal".to_owned()),
                 expected_model: Some("claude-fixture".to_owned()),
                 policy_revision: Some(1),
+                experimental_collector: false,
             },
             idempotency_key: "dispatch-start".to_owned(),
         },
@@ -416,7 +420,8 @@ async fn usage_relay_denies_every_monitor_operation_including_operator_claims() 
                 session_id: "unbound-session".to_owned(),
             },
             observation: StatuslineObservation {
-                schema_version: jackin_protocol::usage_monitor::USAGE_MONITOR_SCHEMA_VERSION,
+                schema_version:
+                    jackin_protocol::usage_monitor::USAGE_STATUSLINE_INPUT_SCHEMA_VERSION,
                 session_id: "unbound-session".to_owned(),
                 ..StatuslineObservation::default()
             },
@@ -437,9 +442,6 @@ async fn usage_relay_denies_every_monitor_operation_including_operator_claims() 
         },
         MonitorOperation::ServiceStatus,
         MonitorOperation::ServiceStop,
-        MonitorOperation::PrepareAuth {
-            provider: MonitorProvider::Claude,
-        },
         MonitorOperation::Watch {
             monitor_id: "monitor-1".to_owned(),
             after_sequence: 0,

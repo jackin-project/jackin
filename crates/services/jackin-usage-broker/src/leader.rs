@@ -4,7 +4,7 @@
 
 use std::fs::{self, File};
 use std::io::{Read, Seek, SeekFrom, Write};
-use std::os::unix::fs::MetadataExt as _;
+use std::os::unix::fs::{FileTypeExt as _, MetadataExt as _};
 use std::path::Path;
 
 use std::time::{Duration, Instant};
@@ -49,7 +49,11 @@ pub(crate) fn claim_leader(
                     // The owner keeps the descriptor lock for its entire
                     // lifetime. Expiry cannot transfer a live process's
                     // authority while it is suspended or waking.
-                    Ok(Some(())) => Ok(Some(BrokerLeaseOwner { lease, file })),
+                    Ok(Some(stale_lease_reclaimed)) => Ok(Some(BrokerLeaseOwner {
+                        lease,
+                        file,
+                        stale_lease_reclaimed,
+                    })),
                     Ok(None) => {
                         file.unlock().map_err(|_| unavailable())?;
                         Ok(None)
@@ -80,7 +84,11 @@ pub(crate) fn claim_leader(
                         write_lease(lease_file, &lease).map_err(|_| unavailable())?;
                     }
                     let file = file.take().ok_or_else(unavailable)?;
-                    Ok(BrokerLeaseOwner { lease, file })
+                    Ok(BrokerLeaseOwner {
+                        lease,
+                        file,
+                        stale_lease_reclaimed: false,
+                    })
                 })();
                 return match result {
                     Ok(owner) => Ok(Some(owner)),
@@ -102,7 +110,7 @@ pub(crate) fn claim_existing_lease(
     replacement: &BrokerLease,
     build_id: &str,
     lease_duration: Duration,
-) -> Result<Option<()>, UsageCoordinationError> {
+) -> Result<Option<bool>, UsageCoordinationError> {
     if file.metadata().map_err(|_| unavailable())?.nlink() == 0 {
         return Ok(None);
     }
@@ -130,7 +138,7 @@ pub(crate) fn claim_existing_lease(
         return Ok(None);
     }
     write_lease(file, replacement).map_err(|_| unavailable())?;
-    Ok(Some(()))
+    Ok(Some(replace))
 }
 
 pub(crate) fn renew_lease(owner: &mut BrokerLeaseOwner) -> bool {
@@ -173,6 +181,7 @@ fn lease_matches_owner(current: &BrokerLease, expected: &BrokerLease) -> bool {
 pub(crate) fn cleanup_owned_files(
     lease_path: &Path,
     socket_path: &Path,
+    socket_identity: Option<BrokerSocketIdentity>,
     owner: &mut BrokerLeaseOwner,
 ) -> bool {
     (|| -> Result<(), ()> {
@@ -193,7 +202,9 @@ pub(crate) fn cleanup_owned_files(
         if !path_matches_file(lease_path, &owner.file)? {
             return Err(());
         }
-        unlink_owned_path(socket_path)?;
+        if let Some(identity) = socket_identity {
+            unlink_owned_socket_path(socket_path, identity)?;
+        }
         if !path_matches_file(lease_path, &owner.file)? {
             return Err(());
         }
@@ -201,6 +212,27 @@ pub(crate) fn cleanup_owned_files(
         Ok(())
     })()
     .is_ok()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct BrokerSocketIdentity {
+    pub(crate) device: u64,
+    pub(crate) inode: u64,
+}
+
+fn unlink_owned_socket_path(path: &Path, expected: BrokerSocketIdentity) -> Result<(), ()> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(_) => return Ok(()),
+    };
+    if !metadata.file_type().is_socket()
+        || metadata.dev() != expected.device
+        || metadata.ino() != expected.inode
+    {
+        return Ok(());
+    }
+    unlink_owned_path(path)
 }
 
 fn path_matches_file(path: &Path, file: &File) -> Result<bool, ()> {

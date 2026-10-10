@@ -167,9 +167,23 @@ where
     )
         -> Result<ClaudeOAuthUsageResponse, jackin_usage_provider_core::ProviderHttpError>,
 {
-    let (oauth_quota, oauth_error) = split_provider_fetch(Some(
-        fetch(&resolved.access_token).map_err(ProviderError::from),
-    ));
+    let result = fetch(resolved.access_token());
+    claude_resolved_view_from_result(agent, provider, now, resolved, result)
+}
+
+pub(crate) fn claude_resolved_view_from_result(
+    agent: &str,
+    provider: Option<&str>,
+    now: i64,
+    resolved: ClaudeResolved,
+    result: Result<ClaudeOAuthUsageResponse, jackin_usage_provider_core::ProviderHttpError>,
+) -> (
+    FocusedUsageView,
+    Option<ProviderRateLimit>,
+    Option<ProviderFailureMetadata>,
+) {
+    let (oauth_quota, oauth_error) =
+        split_provider_fetch(Some(result.map_err(ProviderError::from)));
     let provider_error = claude_provider_error_label(oauth_error.as_ref());
     let status = if oauth_quota.is_some() {
         UsageSnapshotStatus::Fresh

@@ -60,7 +60,7 @@ impl ProfileCredentialReader for RecordingProfileReader {
             .entry(path.to_path_buf())
             .or_default() += 1;
         match std::fs::read(path) {
-            Ok(bytes) => ProfileReadOutcome::Bytes(bytes),
+            Ok(bytes) => ProfileReadOutcome::Bytes(zeroize::Zeroizing::new(bytes)),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 ProfileReadOutcome::Missing
             }

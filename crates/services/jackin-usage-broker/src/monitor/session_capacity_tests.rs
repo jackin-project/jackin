@@ -5,7 +5,6 @@ use jackin_protocol::usage_monitor::{
     MonitorAccountBindingInput, MonitorConfig, MonitorDispatchReadiness, MonitorIssueCode,
     MonitorOperation, MonitorProvider, MonitorPurpose, MonitorReply, MonitorScope,
     StatuslineObservation, StatuslineQuotaWindow, StatuslineRateLimits,
-    USAGE_MONITOR_SCHEMA_VERSION,
 };
 
 use super::MonitorStore;
@@ -18,7 +17,7 @@ fn observation(session_id: &str, used: i32, reset_at_epoch: i64) -> StatuslineOb
         reset_at_epoch: Some(reset_at_epoch),
     });
     StatuslineObservation {
-        schema_version: USAGE_MONITOR_SCHEMA_VERSION,
+        schema_version: jackin_protocol::usage_monitor::USAGE_STATUSLINE_INPUT_SCHEMA_VERSION,
         session_id: session_id.to_owned(),
         model: None,
         claude_code_version: Some("2.1.80".to_owned()),
@@ -62,6 +61,8 @@ fn stale_sessions_are_pruned_without_lowering_the_account_reset_watermark() {
                     account_id: "acct-session-cap".to_owned(),
                     operator_label: "isolated-test-operator".to_owned(),
                     operator_confirmed: true,
+                    provider_account_id: None,
+                    experimental_collector_approved: false,
                 },
             },
             NOW,
@@ -128,6 +129,7 @@ fn stale_sessions_are_pruned_without_lowering_the_account_reset_watermark() {
                     goal_id: None,
                     expected_model: None,
                     policy_revision: None,
+                    experimental_collector: false,
                 },
                 idempotency_key: "fixture-session-cap-observer".to_owned(),
             },

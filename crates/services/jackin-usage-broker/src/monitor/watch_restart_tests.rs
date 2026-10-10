@@ -6,7 +6,7 @@ use jackin_protocol::usage_monitor::{
     MonitorAccountBindingInput, MonitorConfig, MonitorIssueCode, MonitorOperation, MonitorPolicy,
     MonitorPolicyApprovalInput, MonitorProvider, MonitorPurpose, MonitorReply, MonitorScope,
     SpendRecordInput, SpendRecordSource, StatuslineObservation, StatuslineQuotaWindow,
-    StatuslineRateLimits, USAGE_MONITOR_SCHEMA_VERSION,
+    StatuslineRateLimits,
 };
 
 use super::MonitorStore;
@@ -19,7 +19,7 @@ fn observation() -> StatuslineObservation {
         reset_at_epoch: Some(NOW + 3_600),
     });
     StatuslineObservation {
-        schema_version: USAGE_MONITOR_SCHEMA_VERSION,
+        schema_version: jackin_protocol::usage_monitor::USAGE_STATUSLINE_INPUT_SCHEMA_VERSION,
         session_id: "session-watch-restart".to_owned(),
         model: None,
         claude_code_version: Some("2.1.80".to_owned()),
@@ -42,6 +42,8 @@ fn fresh_watch_after_expired_restart_returns_only_the_reconciled_current_event()
                     account_id: "acct-watch-restart".to_owned(),
                     operator_label: "isolated-test-operator".to_owned(),
                     operator_confirmed: true,
+                    provider_account_id: None,
+                    experimental_collector_approved: false,
                 },
             },
             NOW,
@@ -116,6 +118,7 @@ fn fresh_watch_after_expired_restart_returns_only_the_reconciled_current_event()
                     goal_id: Some("goal-watch-restart".to_owned()),
                     expected_model: None,
                     policy_revision: Some(policy.revision),
+                    experimental_collector: false,
                 },
                 idempotency_key: "fixture-watch-restart".to_owned(),
             },

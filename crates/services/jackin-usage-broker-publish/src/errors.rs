@@ -68,9 +68,9 @@ pub fn catalog_revision_conflict() -> UsageCoordinationError {
 
 pub const fn issue_recoverability(kind: UsageCoordinationErrorKind) -> UsageIssueRecoverabilityV1 {
     match kind {
-        UsageCoordinationErrorKind::NeedsSecret | UsageCoordinationErrorKind::Unauthorized => {
-            UsageIssueRecoverabilityV1::ActionRequired
-        }
+        UsageCoordinationErrorKind::NeedsSecret
+        | UsageCoordinationErrorKind::Unauthorized
+        | UsageCoordinationErrorKind::BrokerConflict => UsageIssueRecoverabilityV1::ActionRequired,
         UsageCoordinationErrorKind::ProtocolMismatch
         | UsageCoordinationErrorKind::CorruptState
         | UsageCoordinationErrorKind::OwnerLost
@@ -78,6 +78,10 @@ pub const fn issue_recoverability(kind: UsageCoordinationErrorKind) -> UsageIssu
         | UsageCoordinationErrorKind::CatalogRevisionConflict => {
             UsageIssueRecoverabilityV1::Terminal
         }
-        _ => UsageIssueRecoverabilityV1::Retryable,
+        UsageCoordinationErrorKind::Unavailable
+        | UsageCoordinationErrorKind::WaitTimeout
+        | UsageCoordinationErrorKind::ProviderTimeout
+        | UsageCoordinationErrorKind::ProviderUnavailable
+        | UsageCoordinationErrorKind::RateLimited => UsageIssueRecoverabilityV1::Retryable,
     }
 }

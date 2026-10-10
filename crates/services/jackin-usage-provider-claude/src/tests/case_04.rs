@@ -5,14 +5,14 @@ use super::*;
 use std::cell::{Cell, RefCell};
 
 fn resolved_for_test() -> ClaudeResolved {
-    ClaudeResolved {
-        access_token: "fixture-token".to_owned(),
-        subscription_type: Some("Claude Max".to_owned()),
-        account_email: Some("operator@example.test".to_owned()),
-        organization_type: None,
-        credential_origin: "OAuth · fixture".to_owned(),
-        is_anonymous: false,
-    }
+    ClaudeResolved::from_token(
+        "fixture-token".to_owned(),
+        Some("Claude Max".to_owned()),
+        Some("operator@example.test".to_owned()),
+        None,
+        "OAuth · fixture".to_owned(),
+        false,
+    )
 }
 
 struct FakeClaudeCredentialSource {
@@ -32,10 +32,15 @@ impl FakeClaudeCredentialSource {
 
     fn resolve_explicitly(&self) -> ClaudeResolved {
         self.read_count.set(self.read_count.get() + 1);
-        let mut resolved = resolved_for_test();
-        resolved.access_token = self.token.borrow().clone();
-        resolved.credential_origin = self.label.to_owned();
-        resolved
+        let resolved = resolved_for_test();
+        ClaudeResolved::from_token(
+            self.token.borrow().clone(),
+            resolved.subscription_type,
+            resolved.account_email,
+            resolved.organization_type,
+            self.label.to_owned(),
+            resolved.is_anonymous,
+        )
     }
 }
 
@@ -68,10 +73,14 @@ fn claude_wave_policy_is_typed_and_does_not_expose_secret() {
     let shared = ClaudeWaveResolution::Resolved(Box::new(resolved_for_test()));
     assert_eq!(claude_wave_policy(&shared), ClaudeWavePolicy::Shared);
 
-    let anonymous = ClaudeWaveResolution::Resolved(Box::new(ClaudeResolved {
-        is_anonymous: true,
-        ..resolved_for_test()
-    }));
+    let anonymous = ClaudeWaveResolution::Resolved(Box::new(ClaudeResolved::from_token(
+        "fixture-token".to_owned(),
+        Some("Claude Max".to_owned()),
+        Some("operator@example.test".to_owned()),
+        None,
+        "OAuth · fixture".to_owned(),
+        true,
+    )));
     assert_eq!(
         claude_wave_policy(&anonymous),
         ClaudeWavePolicy::LocalAnonymous
@@ -198,7 +207,7 @@ fn claude_401_does_not_implicitly_reread_same_source_or_retry() {
         } else {
             "fixture-token"
         };
-        assert_eq!(later_resolved.access_token, expected_later_token);
+        assert_eq!(later_resolved.access_token(), expected_later_token);
 
         let later_fetches = Cell::new(0);
         let (_, later_rate_limit, later_error) = claude_resolved_view_with_fetch(

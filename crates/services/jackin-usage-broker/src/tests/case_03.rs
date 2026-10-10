@@ -282,6 +282,8 @@ fn scoped_probe_refreshes_exact_binding_selected_by_later_sibling_proof() {
         },
         resolver: resolver_for_executor,
         probe_budget: Duration::from_secs(1),
+        collector_lease: None,
+        monitor_store: None,
     };
     let scope = env_scope("zai", "zai", "ZHIPU_API_KEY", &material_b);
     assert!(matches!(

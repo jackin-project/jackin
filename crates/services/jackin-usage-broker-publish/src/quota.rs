@@ -82,6 +82,7 @@ pub fn issue_code(kind: UsageCoordinationErrorKind) -> String {
         UsageCoordinationErrorKind::NeedsSecret => "needs_secret",
         UsageCoordinationErrorKind::RateLimited => "rate_limited",
         UsageCoordinationErrorKind::ProtocolMismatch => "protocol_mismatch",
+        UsageCoordinationErrorKind::BrokerConflict => "broker_conflict",
     }
     .to_owned()
 }

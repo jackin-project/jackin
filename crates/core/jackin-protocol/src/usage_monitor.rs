@@ -7,8 +7,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::control::Money;
 
-/// Version of the durable monitor records and statusline input.
-pub const USAGE_MONITOR_SCHEMA_VERSION: u16 = 2;
+/// Version of durable monitor-state records.
+pub const USAGE_MONITOR_SCHEMA_VERSION: u16 = 4;
+
+/// Version of the normalized statusline input accepted by the monitor.
+pub const USAGE_STATUSLINE_INPUT_SCHEMA_VERSION: u16 = 2;
 
 /// Maximum UTF-8 bytes accepted for one statusline JSON input.
 pub const USAGE_MONITOR_MAX_STATUSLINE_BYTES: usize = 16 * 1024;
@@ -145,6 +148,16 @@ pub struct MonitorAccountBindingInput {
     pub provider: MonitorProvider,
     /// Stable local account partition key selected by the operator.
     pub account_id: String,
+    /// Opaque local source capability ID, derived from the exact selected
+    /// Keychain service. This is not a provider-authenticated account identity
+    /// and never contains the service name or credential material.
+    #[serde(default)]
+    pub provider_account_id: Option<String>,
+    /// Explicit operator approval for this mapped source to use the
+    /// experimental collector. Separate from monitor policy and disabled by
+    /// default.
+    #[serde(default)]
+    pub experimental_collector_approved: bool,
     /// Human-readable operator-supplied label; it is not a credential.
     pub operator_label: String,
     /// Explicit operator confirmation required by the broker.
@@ -161,9 +174,18 @@ pub struct MonitorAccountBinding {
     pub provider: MonitorProvider,
     /// Stable local account partition key.
     pub account_id: String,
+    /// Opaque local source capability ID, derived from the exact selected
+    /// Keychain service. This is not a provider-authenticated account identity
+    /// and never contains the service name or credential material.
+    #[serde(default)]
+    pub provider_account_id: Option<String>,
+    /// Whether the operator explicitly enabled experimental collection for
+    /// this exact source. Older persisted records deserialize as disabled.
+    #[serde(default)]
+    pub experimental_collector_approved: bool,
     /// Human-readable operator-supplied label; it is not a credential.
     pub operator_label: String,
-    /// Revision of the binding, incremented whenever its account mapping changes.
+    /// Revision increments whenever its source mapping or collector approval changes.
     pub revision: u64,
     /// Whether the operator explicitly confirmed this mapping.
     pub operator_confirmed: bool,
@@ -289,11 +311,6 @@ pub enum MonitorOperation {
     ServiceStatus,
     /// Ask the broker service to stop after it commits current monitor state.
     ServiceStop,
-    /// Explicit operator action to prepare provider authentication.
-    PrepareAuth {
-        /// Provider whose interactive authentication should be prepared.
-        provider: MonitorProvider,
-    },
     /// Read reconciled monitor events with a bounded long poll.
     /// A zero cursor attaches at the latest current event without replaying history;
     /// nonzero cursors return retained events newer than that sequence.
@@ -323,6 +340,10 @@ pub struct MonitorConfig {
     pub expected_model: Option<String>,
     /// Exact approved policy revision consumed by a dispatch guard.
     pub policy_revision: Option<u64>,
+    /// Opt in to the experimental foreground collector. Defaults off and does
+    /// not grant authority without a confirmed source binding and consent.
+    #[serde(default)]
+    pub experimental_collector: bool,
 }
 
 /// One Claude quota window from normalized statusline input.
@@ -719,6 +740,9 @@ pub enum MonitorIssueCode {
     LimitGuardReached,
     /// The monitored operation requires interactive operator input.
     InteractionRequired,
+    /// Experimental collection lacks an acquired foreground credential lease
+    /// for the source selected by the approved binding.
+    CollectorAuthRequired,
     /// Quota evidence is older than the accepted freshness interval.
     QuotaStale,
     /// Quota evidence has no reset time, so runnable-after-reset cannot be proved.
@@ -848,6 +872,10 @@ pub struct MonitorDoctorReport {
 pub struct MonitorServiceStatus {
     /// Whether the host broker service is running.
     pub running: bool,
+    /// Opaque local source capability ID selected by a foreground experimental
+    /// collector, or `None` for a passive service. This reports service mode
+    /// only, not credential freshness or provider readiness.
+    pub experimental_collector_source: Option<String>,
     /// Number of active durable monitors.
     pub active_monitors: u32,
     /// Earliest persisted monitor wake time.
@@ -938,13 +966,6 @@ pub enum MonitorReply {
     },
     /// Broker accepted a stop request.
     ServiceStopped,
-    /// Explicit authentication preparation completed without returning secrets.
-    AuthPrepared {
-        /// Provider prepared.
-        provider: MonitorProvider,
-        /// Stable result issues; raw credential material is never returned.
-        issues: Vec<MonitorIssue>,
-    },
 }
 
 #[cfg(test)]
@@ -952,7 +973,7 @@ mod tests {
     use super::{
         MonitorEvidenceFreshness, MonitorFieldEvidence, MonitorOperation, MonitorQuotaWindowStatus,
         SpendRecordInput, SpendRecordSource, StatuslineObservation,
-        USAGE_MONITOR_MAX_STATUSLINE_BYTES,
+        USAGE_MONITOR_MAX_STATUSLINE_BYTES, USAGE_STATUSLINE_INPUT_SCHEMA_VERSION,
     };
     use crate::control::Money;
 
@@ -989,6 +1010,10 @@ mod tests {
         );
         assert_eq!(observation.claude_code_version.as_deref(), Some("2.1.80"));
         assert_eq!(USAGE_MONITOR_MAX_STATUSLINE_BYTES, 16 * 1024);
+        assert_eq!(
+            observation.schema_version,
+            USAGE_STATUSLINE_INPUT_SCHEMA_VERSION
+        );
     }
 
     #[test]
@@ -998,7 +1023,7 @@ mod tests {
                 session_id: "session-1".to_owned(),
             },
             observation: StatuslineObservation {
-                schema_version: 2,
+                schema_version: USAGE_STATUSLINE_INPUT_SCHEMA_VERSION,
                 session_id: "session-1".to_owned(),
                 model: Some("claude-sonnet".to_owned()),
                 claude_code_version: Some("2.1.80".to_owned()),
@@ -1015,16 +1040,20 @@ mod tests {
     }
 
     #[test]
-    fn v2_monitor_control_shapes_are_tagged_and_secret_free() {
+    fn v4_monitor_control_shapes_are_tagged_and_secret_free() {
         use super::{
             MonitorAccountBindingInput, MonitorConfig, MonitorOperation, MonitorPolicy,
             MonitorPolicyApprovalInput, MonitorPurpose, MonitorScope, USAGE_MONITOR_SCHEMA_VERSION,
+            USAGE_STATUSLINE_INPUT_SCHEMA_VERSION,
         };
 
+        let source_capability_id = "c".repeat(64);
         let binding = MonitorOperation::BindAccount {
             binding: MonitorAccountBindingInput {
                 provider: super::MonitorProvider::Claude,
                 account_id: "local-account".to_owned(),
+                provider_account_id: Some(source_capability_id.clone()),
+                experimental_collector_approved: true,
                 operator_label: "work account".to_owned(),
                 operator_confirmed: true,
             },
@@ -1032,7 +1061,29 @@ mod tests {
         let binding_value = serde_json::to_value(binding).expect("binding should encode");
         assert_eq!(binding_value["operation"], "bind_account");
         assert_eq!(binding_value["binding"]["operator_confirmed"], true);
+        assert_eq!(
+            binding_value["binding"]["provider_account_id"],
+            source_capability_id
+        );
+        assert_eq!(
+            binding_value["binding"]["experimental_collector_approved"],
+            true
+        );
         assert!(binding_value["binding"].get("credential").is_none());
+
+        let mut old_binding = binding_value["binding"].clone();
+        old_binding
+            .as_object_mut()
+            .expect("binding should encode as an object")
+            .remove("provider_account_id");
+        old_binding
+            .as_object_mut()
+            .expect("binding should encode as an object")
+            .remove("experimental_collector_approved");
+        let decoded: MonitorAccountBindingInput =
+            serde_json::from_value(old_binding).expect("new binding fields default safely");
+        assert_eq!(decoded.provider_account_id, None);
+        assert!(!decoded.experimental_collector_approved);
 
         let approval = MonitorOperation::ApprovePolicy {
             approval: MonitorPolicyApprovalInput {
@@ -1064,12 +1115,14 @@ mod tests {
                 goal_id: None,
                 expected_model: None,
                 policy_revision: None,
+                experimental_collector: false,
             },
             idempotency_key: "retry-1".to_owned(),
         };
         let start_value = serde_json::to_value(&start).expect("start should encode");
+        assert_eq!(start_value["config"]["experimental_collector"], false);
         let decoded: MonitorOperation =
-            serde_json::from_value(start_value.clone()).expect("v2 start should decode");
+            serde_json::from_value(start_value.clone()).expect("v4 start should decode");
         assert_eq!(decoded, start);
         assert_eq!(start_value["config"]["purpose"], "observe_only");
         assert_eq!(start_value["idempotency_key"], "retry-1");
@@ -1081,8 +1134,26 @@ mod tests {
         });
         serde_json::from_value::<MonitorOperation>(legacy_start)
             .expect_err("legacy budget override must be rejected");
-        assert_eq!(USAGE_MONITOR_SCHEMA_VERSION, 2);
-        assert_eq!(crate::usage_broker::USAGE_BROKER_PROTOCOL_VERSION, "v6");
+        let mut v3_start = start_value.clone();
+        v3_start["config"]
+            .as_object_mut()
+            .expect("config object")
+            .remove("experimental_collector");
+        let decoded: MonitorOperation =
+            serde_json::from_value(v3_start).expect("collector opt-in defaults off");
+        assert!(matches!(
+            decoded,
+            MonitorOperation::Start {
+                config: MonitorConfig {
+                    experimental_collector: false,
+                    ..
+                },
+                ..
+            }
+        ));
+        assert_eq!(USAGE_MONITOR_SCHEMA_VERSION, 4);
+        assert_eq!(USAGE_STATUSLINE_INPUT_SCHEMA_VERSION, 2);
+        assert_eq!(crate::usage_broker::USAGE_BROKER_PROTOCOL_VERSION, "v7");
         assert_eq!(
             serde_json::to_value(super::MonitorBudgetReadiness::Disabled)
                 .expect("readiness should encode"),
@@ -1092,6 +1163,23 @@ mod tests {
             serde_json::to_value(super::MonitorDispatchReadiness::NotAuthorized)
                 .expect("readiness should encode"),
             "not_authorized"
+        );
+
+        serde_json::from_value::<MonitorOperation>(serde_json::json!({
+            "operation": "prepare_auth",
+            "provider": "claude"
+        }))
+        .expect_err("credential bootstrap is not a monitor RPC");
+        serde_json::from_value::<super::MonitorReply>(serde_json::json!({
+            "result": "auth_prepared",
+            "provider": "claude",
+            "issues": []
+        }))
+        .expect_err("credential bootstrap has no monitor reply");
+        assert_eq!(
+            serde_json::to_value(super::MonitorIssueCode::CollectorAuthRequired)
+                .expect("issue code should encode"),
+            "collector_auth_required"
         );
     }
 
@@ -1183,6 +1271,8 @@ mod tests {
             revision: 1,
             operator_confirmed: false,
             confirmed_at_epoch: None,
+            provider_account_id: None,
+            experimental_collector_approved: false,
         };
         let encoded = serde_json::to_value(&migrated).expect("binding should encode");
         assert!(encoded["confirmed_at_epoch"].is_null());
@@ -1192,10 +1282,20 @@ mod tests {
             .as_object_mut()
             .expect("binding should encode as an object")
             .remove("confirmed_at_epoch");
+        unknown_timestamp
+            .as_object_mut()
+            .expect("binding should encode as an object")
+            .remove("provider_account_id");
+        unknown_timestamp
+            .as_object_mut()
+            .expect("binding should encode as an object")
+            .remove("experimental_collector_approved");
         let decoded: MonitorAccountBinding = serde_json::from_value(unknown_timestamp)
-            .expect("an absent unconfirmed binding timestamp should remain unknown");
+            .expect("old binding fields default without granting collection");
         assert_eq!(decoded.confirmed_at_epoch, None);
         assert!(!decoded.operator_confirmed);
+        assert_eq!(decoded.provider_account_id, None);
+        assert!(!decoded.experimental_collector_approved);
 
         let confirmed = MonitorAccountBinding {
             operator_confirmed: true,

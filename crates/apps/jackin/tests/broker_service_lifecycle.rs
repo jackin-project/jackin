@@ -60,6 +60,7 @@ fn broker_service_lifecycle() {
             goal_id: None,
             expected_model: None,
             policy_revision: None,
+            experimental_collector: false,
         },
         idempotency_key: "broker-lifecycle-observer-1".to_owned(),
     };

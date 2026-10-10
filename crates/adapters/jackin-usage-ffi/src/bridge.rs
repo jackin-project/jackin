@@ -756,6 +756,7 @@ fn map_coordination_err(error: UsageCoordinationError) -> UsageBridgeError {
         UsageCoordinationErrorKind::NeedsSecret => "coordination_needs_secret",
         UsageCoordinationErrorKind::RateLimited => "coordination_rate_limited",
         UsageCoordinationErrorKind::ProtocolMismatch => "coordination_protocol_mismatch",
+        UsageCoordinationErrorKind::BrokerConflict => "coordination_broker_conflict",
         UsageCoordinationErrorKind::CatalogRevoked => "coordination_catalog_revoked",
         UsageCoordinationErrorKind::CatalogRevisionConflict => {
             "coordination_catalog_revision_conflict"

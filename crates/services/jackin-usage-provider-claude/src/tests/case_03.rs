@@ -164,7 +164,7 @@ fn claude_oauth_credentials_parse_subscription_label() {
 
     let credentials = load_claude_oauth_credentials(&path).expect("credentials");
 
-    assert_eq!(credentials.access_token, "access");
+    assert_eq!(credentials.access_token.as_str(), "access");
     assert_eq!(credentials.subscription_type.as_deref(), Some("Claude Max"));
 }
 
@@ -186,7 +186,7 @@ fn claude_oauth_credentials_fall_back_to_rate_limit_tier() {
 
     let credentials = load_claude_oauth_credentials(&path).expect("credentials");
 
-    assert_eq!(credentials.access_token, "access");
+    assert_eq!(credentials.access_token.as_str(), "access");
     assert_eq!(credentials.subscription_type.as_deref(), Some("Max"));
 }
 

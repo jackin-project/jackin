@@ -46,7 +46,8 @@ pub(crate) use jackin_usage_broker_wire::UNIX_SOCKET_PATH_LIMIT;
 pub(crate) use jackin_usage_discovery::capability_for_binding;
 pub(crate) use jackin_usage_discovery::usage_catalog_entries;
 pub use service::{
-    ensure_usage_broker_with_executor, run_usage_broker_service,
+    UsageBrokerForegroundReady, ensure_usage_broker_with_executor,
+    run_usage_broker_foreground_bootstrap, run_usage_broker_service,
     run_usage_broker_service_with_executor, run_usage_monitor_service,
 };
 
@@ -74,7 +75,8 @@ pub(crate) use jackin_usage_broker_wire::{
 };
 pub(crate) use jackin_usage_broker_wire::{secure_run_directory, validate_owned_mode};
 pub(crate) use leader::{
-    claim_leader, cleanup_owned_files, connect_probe, renew_lease, wait_for_leader,
+    BrokerSocketIdentity, claim_leader, cleanup_owned_files, connect_probe, renew_lease,
+    wait_for_leader,
 };
 pub(crate) use monitor::MonitorStore;
 pub use monitor::parse_statusline;

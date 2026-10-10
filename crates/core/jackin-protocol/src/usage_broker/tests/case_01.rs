@@ -42,6 +42,14 @@ fn response_round_trip_keeps_typed_sanitized_failure() {
 }
 
 #[test]
+fn broker_conflict_has_a_stable_sanitized_wire_name() {
+    let value = serde_json::to_value(UsageCoordinationErrorKind::BrokerConflict)
+        .expect("broker conflict should encode");
+    assert_eq!(value, "broker_conflict");
+    assert_eq!(USAGE_BROKER_PROTOCOL_VERSION, "v7");
+}
+
+#[test]
 fn projection_operations_and_publication_response_round_trip() {
     let operations = [
         UsageBrokerOperation::CurrentProjection,

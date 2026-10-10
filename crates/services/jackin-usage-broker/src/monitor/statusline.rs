@@ -7,7 +7,8 @@ use serde_json::{Map, Value};
 
 use jackin_protocol::usage_monitor::{
     MonitorIssue, MonitorIssueCode, StatuslineObservation, StatuslineQuotaWindow,
-    StatuslineRateLimits, USAGE_MONITOR_MAX_STATUSLINE_BYTES, USAGE_MONITOR_SCHEMA_VERSION,
+    StatuslineRateLimits, USAGE_MONITOR_MAX_STATUSLINE_BYTES,
+    USAGE_STATUSLINE_INPUT_SCHEMA_VERSION,
 };
 
 const CLAUDE_CODE_RATE_LIMITS_MIN_VERSION: (u64, u64, u64) = (2, 1, 80);
@@ -68,7 +69,7 @@ pub fn parse_statusline(bytes: &[u8]) -> Result<StatuslineObservation, MonitorIs
     }
 
     Ok(StatuslineObservation {
-        schema_version: USAGE_MONITOR_SCHEMA_VERSION,
+        schema_version: USAGE_STATUSLINE_INPUT_SCHEMA_VERSION,
         claude_code_version: claude_version.map(|version| version.raw),
         session_id,
         model,

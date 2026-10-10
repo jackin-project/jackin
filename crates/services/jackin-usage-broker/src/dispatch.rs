@@ -15,9 +15,7 @@ use jackin_protocol::usage_broker::{
     UsageGenerationView, UsageProjectionRefreshStateV1, UsageRelayCapabilityMappingV1,
     UsageRelayCapabilityResolutionV1, UsageRelayForwardedSourcesV1,
 };
-use jackin_protocol::usage_monitor::{
-    MonitorIssue, MonitorIssueCode, MonitorOperation, MonitorReply,
-};
+use jackin_protocol::usage_monitor::{MonitorOperation, MonitorReply};
 
 use crate::{
     BROKER_ACTIVATION_ATTEMPTS, BrokerCatalogRefresh, ForwardedUsageSources, MonitorStore,
@@ -94,13 +92,6 @@ fn dispatch_monitor_operation(
         return None;
     };
     let now = chrono::Utc::now().timestamp();
-    if matches!(request, MonitorOperation::PrepareAuth { .. }) {
-        return Some(monitor_error(
-            MonitorIssueCode::InteractionRequired,
-            "interactive authentication preparation requires an explicit TTY operator command",
-            None,
-        ));
-    }
     let stopping = matches!(request, MonitorOperation::ServiceStop);
     let reply = match monitor_store.operate(request.clone(), now) {
         Ok(reply) => reply,
@@ -353,20 +344,6 @@ pub(crate) fn retry_catalog_revision_conflict<T>(
         }
     }
     Err(last_conflict.unwrap_or_else(unavailable))
-}
-
-fn monitor_error(
-    code: MonitorIssueCode,
-    message: &str,
-    retry_at_epoch: Option<i64>,
-) -> UsageBrokerResponse {
-    UsageBrokerResponse::MonitorError {
-        issue: MonitorIssue {
-            code,
-            message: message.to_owned(),
-            retry_at_epoch,
-        },
-    }
 }
 
 pub(crate) fn read_projection(publisher: &publish::ProjectionPublisher) -> UsageBrokerResponse {

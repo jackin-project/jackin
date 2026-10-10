@@ -35,6 +35,8 @@ fn launch_scope_fails_closed_on_rotation_repoint_and_mixed_agent_source() {
         },
         resolver: Arc::new(NoopCredentialResolver),
         probe_budget: Duration::from_secs(1),
+        collector_lease: None,
+        monitor_store: None,
     };
     let staged_scope = env_scope("shared-account", "amp", "AMP_API_KEY", &staged);
     executor
@@ -130,6 +132,8 @@ fn launch_scope_accepts_provider_native_zhipu_alias_for_canonical_zai_binding() 
         },
         resolver: Arc::new(NoopCredentialResolver),
         probe_budget: Duration::from_secs(1),
+        collector_lease: None,
+        monitor_store: None,
     };
 
     for key in ["ZAI_API_KEY", "ZHIPU_API_KEY", "Z_AI_API_KEY"] {
@@ -352,6 +356,8 @@ fn discovery_executor_rejects_catalog_that_does_not_match_current_scope() {
         },
         resolver: Arc::clone(&resolver),
         probe_budget: Duration::from_secs(1),
+        collector_lease: None,
+        monitor_store: None,
     };
     let error = executor
         .validate_catalog(&[UsageCatalogEntry {

@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `Claude` macOS Keychain reads with an unattended default and a guarded
-//! operator preparation entry point.
+//! `Claude` macOS Keychain reads with an unattended default and an explicit
+//! foreground lease bootstrap.
 
 use zeroize::{Zeroize as _, Zeroizing};
 
@@ -12,6 +12,10 @@ pub enum ClaudeKeychainPolicyError {
     StateUnavailable,
     /// Security.framework could not disable Keychain UI.
     DisableFailed,
+    /// A different foreground Claude source already owns the process cache.
+    ScopeConflict,
+    /// The selected Keychain service is invalid or too long.
+    InvalidService,
 }
 
 /// Process-wide RAII scope that prevents Keychain operations from displaying
@@ -136,8 +140,8 @@ impl Drop for ClaudeUnattendedKeychainGuard {
     }
 }
 
-/// Raw Keychain lookup outcome for one service. Secret-free in its own labels
-/// (`json` carries the payload but the type is never formatted/logged).
+/// Keychain lookup outcome. Payloads are zeroizing and the type is never
+/// formatted or logged.
 #[expect(
     missing_debug_implementations,
     reason = "credential type: the keychain payload must never be formatted into a log or error"
@@ -145,7 +149,7 @@ impl Drop for ClaudeUnattendedKeychainGuard {
 pub enum ClaudeKeychainRead {
     #[cfg(any(target_os = "macos", test))]
     Payload {
-        json: String,
+        json: Zeroizing<String>,
     },
     Denied,
     Missing,
@@ -175,23 +179,44 @@ pub fn classify_claude_keychain_status(code: i32) -> ClaudeKeychainRead {
 /// result is `ConsentRequired` and the item is not searched.
 #[cfg(target_os = "macos")]
 pub fn read_claude_keychain_item(service: &str) -> ClaudeKeychainRead {
-    use security_framework::os::macos::keychain::SecKeychain;
-
-    read_claude_keychain_item_with(
-        false,
-        || SecKeychain::user_interaction_allowed().map_err(|_| ()),
-        || SecKeychain::disable_user_interaction().map_err(|_| ()),
-        || search_claude_keychain_item(service),
-    )
+    if let Some(selected_service) = crate::lease::bootstrapped_claude_service() {
+        return if selected_service == service {
+            crate::lease::cached_claude_keychain_payload(service)
+                .map_or(ClaudeKeychainRead::Missing, |json| {
+                    ClaudeKeychainRead::Payload { json }
+                })
+        } else {
+            ClaudeKeychainRead::Missing
+        };
+    }
+    read_claude_keychain_item_uncached(service)
 }
 
-/// Explicitly prepare Claude credentials from an attached operator terminal.
-///
-/// The provider boundary checks all three standard streams before it queries
-/// or searches Keychain. Headless callers receive `ConsentRequired`, which
-/// maps to the stable `interaction_required` outcome at the broker boundary.
-pub fn prepare_claude_keychain_auth(service: &str) -> ClaudeKeychainRead {
-    prepare_claude_keychain_auth_with(all_stdio_are_terminal(), || {
+/// Exact-service no-UI reread used only after a typed HTTP 401 while the
+/// selected foreground lease is active.
+pub(crate) fn read_claude_keychain_item_uncached(service: &str) -> ClaudeKeychainRead {
+    #[cfg(target_os = "macos")]
+    {
+        use security_framework::os::macos::keychain::SecKeychain;
+
+        read_claude_keychain_item_with(
+            false,
+            || SecKeychain::user_interaction_allowed().map_err(|_| ()),
+            || SecKeychain::disable_user_interaction().map_err(|_| ()),
+            || search_claude_keychain_item(service),
+        )
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = service;
+        ClaudeKeychainRead::Missing
+    }
+}
+
+/// Read credentials from an attached operator terminal. The public API only
+/// exposes the lease bootstrap, which retains this payload in process memory.
+pub(crate) fn read_claude_keychain_item_for_foreground(service: &str) -> ClaudeKeychainRead {
+    read_claude_keychain_item_for_foreground_with(all_stdio_are_terminal(), || {
         #[cfg(target_os = "macos")]
         {
             use security_framework::os::macos::keychain::SecKeychain;
@@ -301,8 +326,8 @@ fn read_claude_keychain_item_with<Guard>(
 }
 
 // Private injection seam: production callers cannot supply or bypass the
-// terminal check performed by `prepare_claude_keychain_auth`.
-fn prepare_claude_keychain_auth_with(
+// terminal check performed by foreground lease bootstrap.
+fn read_claude_keychain_item_for_foreground_with(
     all_stdio_are_terminal: bool,
     read_item: impl FnOnce() -> ClaudeKeychainRead,
 ) -> ClaudeKeychainRead {
@@ -312,7 +337,7 @@ fn prepare_claude_keychain_auth_with(
     read_item()
 }
 
-fn all_stdio_are_terminal() -> bool {
+pub(crate) fn all_stdio_are_terminal() -> bool {
     use std::io::IsTerminal as _;
 
     let stdin_is_terminal = std::io::stdin().is_terminal();
@@ -327,7 +352,9 @@ fn trim_keychain_payload_and_zeroize(json: &mut String) -> ClaudeKeychainRead {
     if payload.is_empty() {
         ClaudeKeychainRead::Missing
     } else {
-        ClaudeKeychainRead::Payload { json: payload }
+        ClaudeKeychainRead::Payload {
+            json: Zeroizing::new(payload),
+        }
     }
 }
 
@@ -389,7 +416,9 @@ mod tests {
         }
 
         fn prepare(&self, all_stdio_are_terminal: bool) -> ClaudeKeychainRead {
-            prepare_claude_keychain_auth_with(all_stdio_are_terminal, || self.read_with_ui(true))
+            read_claude_keychain_item_for_foreground_with(all_stdio_are_terminal, || {
+                self.read_with_ui(true)
+            })
         }
 
         fn read_with_ui(&self, allow_ui: bool) -> ClaudeKeychainRead {
@@ -563,7 +592,7 @@ mod tests {
         let outcome = keychain.read_unattended();
         assert!(matches!(
             outcome,
-            ClaudeKeychainRead::Payload { json } if json == "{\"fixture\":true}"
+            ClaudeKeychainRead::Payload { json } if json.as_str() == "{\"fixture\":true}"
         ));
         assert_eq!(keychain.search_count.get(), 1);
         assert_eq!(keychain.restore_count.get(), 1);
@@ -577,7 +606,7 @@ mod tests {
         assert!(matches!(
             outcome,
             ClaudeKeychainRead::Payload { json }
-                if json == "{\"access_token\":\"fixture-secret\"}"
+                if json.as_str() == "{\"access_token\":\"fixture-secret\"}"
         ));
         assert!(
             secret.is_empty(),

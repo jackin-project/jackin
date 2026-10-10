@@ -17,6 +17,7 @@ use std::io::Read as _;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
+use std::{ffi::OsString, io::IsTerminal as _};
 
 use crate::cli::format::{OutputEnvelope, OutputFormat};
 use crate::cli::{BANNER, HELP_STYLES};
@@ -195,6 +196,9 @@ pub struct UsageMonitorObserveArgs {
     pub idempotency_key: String,
     #[arg(long, value_name = "MODEL")]
     pub expected_model: Option<String>,
+    /// Opt into the experimental collector for a bound Claude account.
+    #[arg(long)]
+    pub experimental_collector: bool,
 }
 
 #[derive(Debug, Args, PartialEq, Eq)]
@@ -215,6 +219,12 @@ pub struct UsageBindingConfirmArgs {
     pub provider: UsageProviderArg,
     #[arg(long, value_name = "ACCOUNT", required = true)]
     pub account: String,
+    /// Opaque source capability ID reported by the foreground service status.
+    #[arg(long = "source-capability-id", value_name = "SOURCE_ID")]
+    pub source_capability_id: Option<String>,
+    /// Approve the mapped source for the experimental Claude collector.
+    #[arg(long)]
+    pub approve_experimental_collector: bool,
     #[arg(long, value_name = "LABEL", required = true)]
     pub operator_label: String,
     /// Confirm this operator-supplied account binding
@@ -660,6 +670,10 @@ fn run_service(paths: &JackinPaths, command: &UsageServiceArgs) -> Result<()> {
 fn run_monitor(paths: &JackinPaths, command: &UsageMonitorArgs) -> Result<()> {
     match &command.command {
         UsageMonitorCommand::Observe(args) => {
+            validate_experimental_collector_scope(
+                args.experimental_collector,
+                args.binding.as_deref(),
+            )?;
             let scope = monitor_scope_from_selection(
                 args.binding.as_deref(),
                 args.binding_revision,
@@ -667,7 +681,14 @@ fn run_monitor(paths: &JackinPaths, command: &UsageMonitorArgs) -> Result<()> {
             )?;
             validate_nonempty("idempotency key", &args.idempotency_key)?;
             validate_expected_model(args.expected_model.as_deref())?;
-            let reply = start_broker(paths)?
+            let client = if args.experimental_collector {
+                let client = attach_client(paths);
+                require_experimental_collector_service(&client)?;
+                client
+            } else {
+                start_broker(paths)?
+            };
+            let reply = client
                 .monitor(MonitorOperation::Start {
                     config: MonitorConfig {
                         provider: args.provider.into(),
@@ -676,6 +697,7 @@ fn run_monitor(paths: &JackinPaths, command: &UsageMonitorArgs) -> Result<()> {
                         goal_id: None,
                         expected_model: args.expected_model.clone(),
                         policy_revision: None,
+                        experimental_collector: args.experimental_collector,
                     },
                     idempotency_key: args.idempotency_key.clone(),
                 })
@@ -701,6 +723,7 @@ fn run_monitor(paths: &JackinPaths, command: &UsageMonitorArgs) -> Result<()> {
                         goal_id: Some(args.goal.clone()),
                         expected_model: args.expected_model.clone(),
                         policy_revision: Some(args.policy_revision),
+                        experimental_collector: false,
                     },
                     idempotency_key: args.idempotency_key.clone(),
                 })
@@ -755,6 +778,64 @@ fn monitor_scope_from_selection(
     }
 }
 
+fn validate_experimental_collector_scope(enabled: bool, binding_id: Option<&str>) -> Result<()> {
+    if enabled && binding_id.is_none() {
+        return Err(usage_error(
+            "invalid_argument",
+            "the experimental collector requires an account-bound observer",
+            3,
+        ));
+    }
+    Ok(())
+}
+
+fn require_experimental_collector_service(
+    client: &jackin_usage::host::UsageBrokerClient,
+) -> Result<()> {
+    let reply = client
+        .monitor(MonitorOperation::ServiceStatus)
+        .map_err(|issue| {
+            if issue.code == MonitorIssueCode::BrokerUnavailable {
+                collector_auth_required_error()
+            } else {
+                issue_error(issue, 3)
+            }
+        })?;
+    let MonitorReply::ServiceStatus { status } = reply else {
+        return Err(usage_error(
+            "unexpected_reply",
+            "broker returned a non-service reply while checking collector mode",
+            3,
+        ));
+    };
+    if foreground_experimental_collector_source(&status).is_some() {
+        Ok(())
+    } else {
+        Err(collector_auth_required_error())
+    }
+}
+
+fn foreground_experimental_collector_source(
+    status: &jackin_protocol::usage_monitor::MonitorServiceStatus,
+) -> Option<&str> {
+    status
+        .running
+        .then_some(status.experimental_collector_source.as_deref())
+        .flatten()
+        .filter(|source| validate_source_capability_id(source).is_ok())
+}
+
+fn collector_auth_required_error() -> anyhow::Error {
+    issue_error(
+        MonitorIssue {
+            code: MonitorIssueCode::CollectorAuthRequired,
+            message: "experimental collection requires a running foreground `usage auth prepare` service for the mapped Claude source; this command does not start or prepare credentials".to_owned(),
+            retry_at_epoch: None,
+        },
+        3,
+    )
+}
+
 fn validate_expected_model(model: Option<&str>) -> Result<()> {
     if let Some(model) = model {
         validate_nonempty("expected model", model)?;
@@ -773,28 +854,28 @@ fn validate_nonempty(field: &str, value: &str) -> Result<()> {
     Ok(())
 }
 
+fn validate_source_capability_id(value: &str) -> Result<()> {
+    if value.len() != 64
+        || !value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err(usage_error(
+            "invalid_argument",
+            "source capability ID must be the 64-character lowercase hex value reported by foreground service status",
+            3,
+        ));
+    }
+    Ok(())
+}
+
 fn run_binding(paths: &JackinPaths, command: &UsageBindingArgs) -> Result<()> {
     match &command.command {
         UsageBindingCommand::Confirm(args) => {
             require_operator_confirmation_terminal()?;
-            validate_nonempty("account ID", &args.account)?;
-            validate_nonempty("operator label", &args.operator_label)?;
-            if !args.confirm {
-                return Err(usage_error(
-                    "confirmation_required",
-                    "account binding requires the explicit --confirm flag",
-                    2,
-                ));
-            }
+            let binding = binding_confirmation_input(args)?;
             let reply = attach_client(paths)
-                .monitor(MonitorOperation::BindAccount {
-                    binding: MonitorAccountBindingInput {
-                        provider: args.provider.into(),
-                        account_id: args.account.clone(),
-                        operator_label: args.operator_label.clone(),
-                        operator_confirmed: true,
-                    },
-                })
+                .monitor(MonitorOperation::BindAccount { binding })
                 .map_err(|issue| issue_error(issue, 3))?;
             if !matches!(&reply, MonitorReply::AccountBound { .. }) {
                 return Err(usage_error(
@@ -806,6 +887,38 @@ fn run_binding(paths: &JackinPaths, command: &UsageBindingArgs) -> Result<()> {
             emit_json(&reply)
         }
     }
+}
+
+fn binding_confirmation_input(
+    args: &UsageBindingConfirmArgs,
+) -> Result<MonitorAccountBindingInput> {
+    validate_nonempty("account ID", &args.account)?;
+    if let Some(source_capability_id) = args.source_capability_id.as_deref() {
+        validate_source_capability_id(source_capability_id)?;
+    }
+    if args.approve_experimental_collector && args.source_capability_id.is_none() {
+        return Err(usage_error(
+            "invalid_argument",
+            "--approve-experimental-collector requires --source-capability-id",
+            3,
+        ));
+    }
+    validate_nonempty("operator label", &args.operator_label)?;
+    if !args.confirm {
+        return Err(usage_error(
+            "confirmation_required",
+            "account binding requires the explicit --confirm flag",
+            2,
+        ));
+    }
+    Ok(MonitorAccountBindingInput {
+        provider: args.provider.into(),
+        account_id: args.account.clone(),
+        provider_account_id: args.source_capability_id.clone(),
+        experimental_collector_approved: args.approve_experimental_collector,
+        operator_label: args.operator_label.clone(),
+        operator_confirmed: true,
+    })
 }
 
 fn run_policy(paths: &JackinPaths, command: &UsagePolicyArgs) -> Result<()> {
@@ -1217,22 +1330,6 @@ fn run_spend(paths: &JackinPaths, command: &UsageSpendArgs) -> Result<()> {
 fn run_auth(paths: &JackinPaths, command: &UsageAuthArgs) -> Result<()> {
     match &command.command {
         UsageAuthCommand::Prepare(args) => {
-            use std::io::IsTerminal as _;
-            if !all_stdio_are_terminal(
-                std::io::stdin().is_terminal(),
-                std::io::stdout().is_terminal(),
-                std::io::stderr().is_terminal(),
-            ) {
-                return Err(issue_error(
-                    MonitorIssue {
-                        code: MonitorIssueCode::InteractionRequired,
-                        message: "authentication preparation requires an attached terminal"
-                            .to_owned(),
-                        retry_at_epoch: None,
-                    },
-                    2,
-                ));
-            }
             if args.provider != UsageProviderArg::Claude {
                 return Err(usage_error(
                     "unsupported_provider",
@@ -1245,7 +1342,23 @@ fn run_auth(paths: &JackinPaths, command: &UsageAuthArgs) -> Result<()> {
                 .as_deref()
                 .unwrap_or(jackin_core::CLAUDE_KEYCHAIN_SERVICE_BASE);
             validate_keychain_service(service)?;
-            let executable = broker_config(paths).service_executable.ok_or_else(|| {
+            if !all_stdio_are_terminal(
+                std::io::stdin().is_terminal(),
+                std::io::stdout().is_terminal(),
+                std::io::stderr().is_terminal(),
+            ) {
+                return Err(issue_error(
+                    MonitorIssue {
+                        code: MonitorIssueCode::InteractionRequired,
+                        message: "authentication preparation requires stdin, stdout, and stderr attached to a terminal"
+                            .to_owned(),
+                        retry_at_epoch: None,
+                    },
+                    2,
+                ));
+            }
+            let config = broker_config(paths);
+            let executable = config.service_executable.clone().ok_or_else(|| {
                 usage_error(
                     "broker_unavailable",
                     "the sibling usage broker executable could not be located",
@@ -1253,11 +1366,7 @@ fn run_auth(paths: &JackinPaths, command: &UsageAuthArgs) -> Result<()> {
                 )
             })?;
             let child = Command::new(executable)
-                .arg("--prepare-auth")
-                .arg("--provider")
-                .arg("claude")
-                .arg("--keychain-service")
-                .arg(service)
+                .args(foreground_auth_bootstrap_args(&config, paths, service))
                 .stdin(Stdio::inherit())
                 .stdout(Stdio::inherit())
                 .stderr(Stdio::inherit())
@@ -1276,6 +1385,29 @@ fn run_auth(paths: &JackinPaths, command: &UsageAuthArgs) -> Result<()> {
             }
         }
     }
+}
+
+fn foreground_auth_bootstrap_args(
+    config: &jackin_usage::host::UsageBrokerConfig,
+    paths: &JackinPaths,
+    service: &str,
+) -> Vec<OsString> {
+    [
+        "--prepare-auth".into(),
+        "--provider".into(),
+        "claude".into(),
+        "--keychain-service".into(),
+        service.into(),
+        "--data-dir".into(),
+        config.data_dir.as_os_str().to_owned(),
+        "--config-root".into(),
+        paths.config_dir.as_os_str().to_owned(),
+        "--operator-home".into(),
+        paths.home_dir.as_os_str().to_owned(),
+        "--build-id".into(),
+        config.build_id.clone().into(),
+    ]
+    .into()
 }
 
 fn all_stdio_are_terminal(stdin: bool, stdout: bool, stderr: bool) -> bool {

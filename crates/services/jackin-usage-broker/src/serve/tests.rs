@@ -14,7 +14,7 @@ use jackin_protocol::usage_monitor::{
     MonitorAccountBindingInput, MonitorConfig, MonitorOperation, MonitorPolicy,
     MonitorPolicyApprovalInput, MonitorProvider, MonitorPurpose, MonitorReply, MonitorScope,
     SpendRecordInput, SpendRecordSource, StatuslineObservation, StatuslineQuotaWindow,
-    StatuslineRateLimits, USAGE_MONITOR_SCHEMA_VERSION,
+    StatuslineRateLimits, USAGE_STATUSLINE_INPUT_SCHEMA_VERSION,
 };
 use jackin_usage_coordinator::policy::UsageActivity;
 use jackin_usage_coordinator::{
@@ -104,6 +104,8 @@ impl TickerHarness {
                         account_id: ACCOUNT_ID.to_owned(),
                         operator_label: "isolated-test-operator".to_owned(),
                         operator_confirmed: true,
+                        provider_account_id: None,
+                        experimental_collector_approved: false,
                     },
                 },
                 NOW,
@@ -114,7 +116,7 @@ impl TickerHarness {
             other => panic!("expected account-bound reply, got {other:?}"),
         };
         let observation = StatuslineObservation {
-            schema_version: USAGE_MONITOR_SCHEMA_VERSION,
+            schema_version: USAGE_STATUSLINE_INPUT_SCHEMA_VERSION,
             session_id: "session-ticker".to_owned(),
             model: None,
             claude_code_version: Some("2.1.80".to_owned()),
@@ -196,6 +198,7 @@ impl TickerHarness {
                         goal_id: Some("goal-serve-ticker".to_owned()),
                         expected_model: None,
                         policy_revision: Some(policy.revision),
+                        experimental_collector: false,
                     },
                     idempotency_key: "fixture-serve-ticker".to_owned(),
                 },

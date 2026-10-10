@@ -46,6 +46,8 @@ fn bind_account(store: &MonitorStore, account_id: &str, now_epoch: i64) -> Monit
                     account_id: account_id.to_owned(),
                     operator_label: TEST_OPERATOR.to_owned(),
                     operator_confirmed: true,
+                    provider_account_id: None,
+                    experimental_collector_approved: false,
                 },
             },
             now_epoch,
@@ -102,6 +104,7 @@ fn observe_config(session_id: &str) -> MonitorConfig {
         goal_id: None,
         expected_model: None,
         policy_revision: None,
+        experimental_collector: false,
     }
 }
 
@@ -121,6 +124,7 @@ fn dispatch_config(
         goal_id: Some(goal_id.to_owned()),
         expected_model: None,
         policy_revision: Some(policy_revision),
+        experimental_collector: false,
     }
 }
 
@@ -172,7 +176,7 @@ fn observation(
     seven_day: Option<StatuslineQuotaWindow>,
 ) -> StatuslineObservation {
     StatuslineObservation {
-        schema_version: USAGE_MONITOR_SCHEMA_VERSION,
+        schema_version: USAGE_STATUSLINE_INPUT_SCHEMA_VERSION,
         session_id: session_id.to_owned(),
         model: model.map(str::to_owned),
         claude_code_version: claude_code_version.map(str::to_owned),
@@ -689,6 +693,7 @@ fn session_fingerprint_keys_are_pruned_with_inactive_account_sessions() {
         goal_id: None,
         expected_model: None,
         policy_revision: None,
+        experimental_collector: false,
     };
     let started =
         start_result(&store, config, "v2-fingerprint-bound", NOW).expect("start account observer");

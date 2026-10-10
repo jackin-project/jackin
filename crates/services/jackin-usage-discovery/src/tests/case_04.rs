@@ -44,8 +44,8 @@ fn disc_antigravity_grant_mints_cli_refresh_material() {
     // Grant present (payload always empty; presence is the whole answer) →
     // anonymous binding with CLI refresh material.
     for grant in [
-        ProfileReadOutcome::Bytes(Vec::new()),
-        ProfileReadOutcome::Bytes(vec![1, 2, 3]),
+        ProfileReadOutcome::Bytes(zeroize::Zeroizing::new(Vec::new())),
+        ProfileReadOutcome::Bytes(zeroize::Zeroizing::new(vec![1, 2, 3])),
     ] {
         let reader = AntigravityGrantReader { grant };
         let ProfileValidation::Anonymous(Some(material)) =

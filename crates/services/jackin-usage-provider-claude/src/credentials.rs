@@ -3,7 +3,9 @@
 //! `Claude` OAuth credential loading.
 
 use jackin_usage_provider_core::{humanize_plan_label, read_json_file};
+use serde::Deserialize;
 use std::path::Path;
+use zeroize::Zeroizing;
 
 // No `Debug`/`Display`: this carries a live access token and (optionally) the
 // stable refresh token, so it must never be formatted into a log or error.
@@ -13,12 +15,104 @@ use std::path::Path;
 )]
 #[derive(Clone)]
 pub struct ClaudeOAuthCredentials {
-    pub access_token: String,
+    pub access_token: Zeroizing<String>,
     pub subscription_type: Option<String>,
     /// Stable rotation-independent identity input. Consumed only inside wave
     /// resolution to derive the opaque account discriminator, then dropped —
     /// never carried into a view, log, snapshot, or coordination key raw.
-    pub refresh_token: Option<String>,
+    pub refresh_token: Option<Zeroizing<String>>,
+}
+
+struct SecretString(Zeroizing<String>);
+
+impl<'de> Deserialize<'de> for SecretString {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        String::deserialize(deserializer).map(|value| Self(Zeroizing::new(value)))
+    }
+}
+
+#[derive(Deserialize)]
+struct ClaudeCredentialDocument {
+    #[serde(rename = "claudeAiOauth", alias = "claude_ai_oauth")]
+    oauth: Option<ClaudeCredentialDocumentOauth>,
+    #[serde(rename = "oauthAccount", alias = "oauth_account")]
+    account: Option<ClaudeCredentialDocumentAccount>,
+}
+
+#[derive(Deserialize)]
+struct ClaudeCredentialDocumentOauth {
+    #[serde(rename = "accessToken", alias = "access_token")]
+    access_token: Option<SecretString>,
+    #[serde(
+        rename = "subscriptionType",
+        alias = "subscription_type",
+        alias = "rateLimitTier",
+        alias = "rate_limit_tier"
+    )]
+    subscription_type: Option<String>,
+    #[serde(rename = "refreshToken", alias = "refresh_token")]
+    refresh_token: Option<SecretString>,
+}
+
+#[derive(Deserialize)]
+struct ClaudeCredentialDocumentAccount {
+    #[serde(rename = "emailAddress", alias = "email_address")]
+    email_address: Option<String>,
+    #[serde(rename = "organizationType", alias = "organization_type")]
+    organization_type: Option<String>,
+}
+
+/// Parsed Keychain profile. Credential strings enter zeroizing containers
+/// during deserialization and never pass through a `serde_json::Value`.
+#[expect(
+    missing_debug_implementations,
+    reason = "credential profile contains live secrets"
+)]
+pub struct ClaudeKeychainProfile {
+    pub credential: Option<ClaudeOAuthCredentials>,
+    pub account_email: Option<String>,
+    pub organization_type: Option<String>,
+}
+
+pub fn parse_claude_keychain_profile(bytes: &[u8]) -> Option<ClaudeKeychainProfile> {
+    let document = serde_json::from_slice::<ClaudeCredentialDocument>(bytes).ok()?;
+    let account_email = document
+        .account
+        .as_ref()
+        .and_then(|account| account.email_address.as_deref())
+        .map(str::trim)
+        .filter(|email| !email.is_empty())
+        .map(str::to_owned);
+    let organization_type = document
+        .account
+        .as_ref()
+        .and_then(|account| account.organization_type.as_deref())
+        .map(str::trim)
+        .filter(|label| !label.is_empty())
+        .map(humanize_plan_label);
+    let credential = document.oauth.and_then(|oauth| {
+        let access_token = oauth.access_token?.0;
+        if access_token.trim().is_empty() {
+            return None;
+        }
+        let refresh_token = oauth
+            .refresh_token
+            .map(|token| token.0)
+            .filter(|token| !token.trim().is_empty());
+        Some(ClaudeOAuthCredentials {
+            access_token,
+            subscription_type: oauth.subscription_type.as_deref().map(humanize_plan_label),
+            refresh_token,
+        })
+    });
+    Some(ClaudeKeychainProfile {
+        credential,
+        account_email,
+        organization_type,
+    })
 }
 
 /// Claude account email (F12): `~/.claude.json` carries `oauthAccount` metadata
@@ -86,9 +180,9 @@ pub fn claude_oauth_from_value(value: &serde_json::Value) -> Option<ClaudeOAuthC
         .and_then(serde_json::Value::as_str)
         .map(str::trim)
         .filter(|token| !token.is_empty())
-        .map(str::to_owned);
+        .map(|token| Zeroizing::new(token.to_owned()));
     Some(ClaudeOAuthCredentials {
-        access_token,
+        access_token: Zeroizing::new(access_token),
         subscription_type,
         refresh_token,
     })

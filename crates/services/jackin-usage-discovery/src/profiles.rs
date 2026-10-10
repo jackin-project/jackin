@@ -6,10 +6,11 @@ use crate::ProfileCredentialMaterial;
 use std::collections::{BTreeMap, BTreeSet};
 
 use std::path::{Path, PathBuf};
+use zeroize::Zeroizing;
 
 #[derive(Clone)]
 pub(crate) enum ProfileReadOutcome {
-    Bytes(Vec<u8>),
+    Bytes(Zeroizing<Vec<u8>>),
     Missing,
     Denied,
     ConsentRequired,
@@ -92,7 +93,7 @@ pub(crate) struct SystemProfileCredentialReader;
 impl ProfileCredentialReader for SystemProfileCredentialReader {
     fn read(&self, path: &Path) -> ProfileReadOutcome {
         match std::fs::read(path) {
-            Ok(bytes) => ProfileReadOutcome::Bytes(bytes),
+            Ok(bytes) => ProfileReadOutcome::Bytes(Zeroizing::new(bytes)),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 ProfileReadOutcome::Missing
             }
@@ -111,7 +112,7 @@ impl ProfileCredentialReader for SystemProfileCredentialReader {
         match jackin_usage_provider_claude::read_claude_keychain_item(&scope.service) {
             #[cfg(any(target_os = "macos", test))]
             jackin_usage_provider_claude::ClaudeKeychainRead::Payload { json } => {
-                ProfileReadOutcome::Bytes(json.into_bytes())
+                ProfileReadOutcome::Bytes(Zeroizing::new(json.as_bytes().to_vec()))
             }
             jackin_usage_provider_claude::ClaudeKeychainRead::Denied => ProfileReadOutcome::Denied,
             jackin_usage_provider_claude::ClaudeKeychainRead::Missing => {
@@ -145,7 +146,9 @@ impl ProfileCredentialReader for SystemProfileCredentialReader {
                 .service(jackin_usage_provider_antigravity::ANTIGRAVITY_KEYCHAIN_SERVICE)
                 .limit(1);
             match options.search() {
-                Ok(results) if !results.is_empty() => ProfileReadOutcome::Bytes(Vec::new()),
+                Ok(results) if !results.is_empty() => {
+                    ProfileReadOutcome::Bytes(Zeroizing::new(Vec::new()))
+                }
                 Ok(_) => ProfileReadOutcome::Missing,
                 Err(error) => match jackin_usage_provider_claude::classify_claude_keychain_status(
                     error.code(),

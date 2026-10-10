@@ -4,6 +4,18 @@
 use super::*;
 use jackin_protocol::usage_broker::{UsageIssueRecoverabilityV1, UsageIssueScopeV1, UsageIssueV1};
 
+#[test]
+fn broker_conflict_requires_operator_action_without_retry() {
+    let kind = UsageCoordinationErrorKind::BrokerConflict;
+
+    assert_eq!(issue_code(kind), "broker_conflict");
+    assert_eq!(failure_lifecycle(kind), UsageLifecycleV1::Error);
+    assert_eq!(
+        issue_recoverability(kind),
+        UsageIssueRecoverabilityV1::ActionRequired
+    );
+}
+
 struct CatalogFixture {
     _temp: tempfile::TempDir,
     coordinator: Arc<UsageCoordinator>,

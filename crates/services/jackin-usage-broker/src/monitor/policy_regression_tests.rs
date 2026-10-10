@@ -9,9 +9,9 @@ use jackin_protocol::control::Money;
 use jackin_protocol::usage_monitor::{
     MonitorAccountBinding, MonitorAccountBindingInput, MonitorAction, MonitorConfig,
     MonitorIssueCode, MonitorOperation, MonitorPolicy, MonitorPolicyApprovalInput,
-    MonitorPolicyRecord, MonitorProvider, MonitorPurpose, MonitorReply, MonitorScope,
-    MonitorStatus, SpendRecordInput, SpendRecordSource, StatuslineObservation,
-    StatuslineQuotaWindow, StatuslineRateLimits, USAGE_MONITOR_SCHEMA_VERSION,
+    MonitorPolicyOrigin, MonitorPolicyRecord, MonitorProvider, MonitorPurpose, MonitorReply,
+    MonitorScope, MonitorStatus, SpendRecordInput, SpendRecordSource, StatuslineObservation,
+    StatuslineQuotaWindow, StatuslineRateLimits,
 };
 
 use crate::projection::empty_projection;
@@ -22,6 +22,55 @@ const NOW: i64 = 1_800_000_000;
 const ACCOUNT: &str = "acct-policy-regressions";
 const BILLING_PERIOD_END: i64 = NOW + 100_000;
 const TEST_OPERATOR: &str = "isolated-test-operator";
+
+fn persisted_policy_fixture() -> super::StoreState {
+    let mut state = super::StoreState::default();
+    state.last_now_epoch = 100;
+    state.next_binding_id = 2;
+    state.bindings.insert(
+        "binding-00000001".to_owned(),
+        vec![MonitorAccountBinding {
+            binding_id: "binding-00000001".to_owned(),
+            provider: MonitorProvider::Claude,
+            account_id: "account-history-test".to_owned(),
+            provider_account_id: None,
+            experimental_collector_approved: false,
+            operator_label: "test operator".to_owned(),
+            revision: 1,
+            operator_confirmed: true,
+            confirmed_at_epoch: Some(10),
+        }],
+    );
+    state
+}
+
+fn persisted_policy_record(
+    revision: u64,
+    previous_policy: Option<MonitorPolicy>,
+    new_policy: MonitorPolicy,
+    budget: Option<Money>,
+) -> MonitorPolicyRecord {
+    MonitorPolicyRecord {
+        provider: MonitorProvider::Claude,
+        account_id: "account-history-test".to_owned(),
+        binding_id: Some("binding-00000001".to_owned()),
+        binding_revision: Some(1),
+        goal_id: "goal-history-test".to_owned(),
+        previous_policy,
+        new_policy,
+        budget,
+        operator_label: Some("test operator".to_owned()),
+        operator_confirmed: true,
+        acknowledge_no_sgd_cap: new_policy == MonitorPolicy::QuotaOnly,
+        recorded_at_epoch: Some(20 + i64::try_from(revision).expect("small test revision")),
+        revision,
+        origin: MonitorPolicyOrigin::Operator,
+    }
+}
+
+fn strict_budget(amount_minor: i64) -> Money {
+    Money::new(amount_minor, "SGD", 2)
+}
 
 fn quota_window(used: Option<i32>, reset: Option<i64>) -> Option<StatuslineQuotaWindow> {
     Some(StatuslineQuotaWindow {
@@ -37,7 +86,7 @@ fn observation(
     model: Option<&str>,
 ) -> StatuslineObservation {
     StatuslineObservation {
-        schema_version: USAGE_MONITOR_SCHEMA_VERSION,
+        schema_version: jackin_protocol::usage_monitor::USAGE_STATUSLINE_INPUT_SCHEMA_VERSION,
         session_id: session_id.to_owned(),
         model: model.map(str::to_owned),
         claude_code_version: Some("2.1.80".to_owned()),
@@ -56,7 +105,7 @@ fn observation_with_windows(
     seven_day_reset: Option<i64>,
 ) -> StatuslineObservation {
     StatuslineObservation {
-        schema_version: USAGE_MONITOR_SCHEMA_VERSION,
+        schema_version: jackin_protocol::usage_monitor::USAGE_STATUSLINE_INPUT_SCHEMA_VERSION,
         session_id: session_id.to_owned(),
         model: None,
         claude_code_version: Some("2.1.80".to_owned()),
@@ -117,6 +166,8 @@ fn bind_account(store: &MonitorStore, account_id: &str, now_epoch: i64) -> Monit
                     account_id: account_id.to_owned(),
                     operator_label: TEST_OPERATOR.to_owned(),
                     operator_confirmed: true,
+                    provider_account_id: None,
+                    experimental_collector_approved: false,
                 },
             },
             now_epoch,
@@ -184,6 +235,7 @@ fn prepare_start(
             goal_id: Some(goal_id.to_owned()),
             expected_model: expected_model.map(str::to_owned),
             policy_revision: Some(policy.revision),
+            experimental_collector: false,
         },
         idempotency_key: format!("fixture-start:{goal_id}:{now_epoch}"),
     }
@@ -1016,4 +1068,173 @@ fn confirming_quota_reset_does_not_clear_stale_spend_evidence() {
             .any(|issue| issue.code == MonitorIssueCode::BudgetUnverifiable)
     );
     assert!(!after_quota_reset.runnable);
+}
+
+#[test]
+fn persisted_strict_policy_cannot_be_downgraded_to_quota_only() {
+    let mut state = persisted_policy_fixture();
+    state.policy_records.insert(
+        "goal-history-test".to_owned(),
+        vec![
+            persisted_policy_record(
+                1,
+                None,
+                MonitorPolicy::StrictSgd,
+                Some(strict_budget(5_000)),
+            ),
+            persisted_policy_record(
+                2,
+                Some(MonitorPolicy::StrictSgd),
+                MonitorPolicy::QuotaOnly,
+                None,
+            ),
+        ],
+    );
+
+    let error = super::validate_store_state(&state).expect_err("strict downgrade must fail");
+    assert_eq!(error.code, MonitorIssueCode::MonitorStoreUnavailable);
+}
+
+#[test]
+fn persisted_strict_budget_cannot_increase() {
+    let mut state = persisted_policy_fixture();
+    state.policy_records.insert(
+        "goal-history-test".to_owned(),
+        vec![
+            persisted_policy_record(
+                1,
+                None,
+                MonitorPolicy::StrictSgd,
+                Some(strict_budget(5_000)),
+            ),
+            persisted_policy_record(
+                2,
+                Some(MonitorPolicy::StrictSgd),
+                MonitorPolicy::StrictSgd,
+                Some(strict_budget(5_001)),
+            ),
+        ],
+    );
+
+    let error = super::validate_store_state(&state).expect_err("budget loosening must fail");
+    assert_eq!(error.code, MonitorIssueCode::MonitorStoreUnavailable);
+}
+
+#[test]
+fn persisted_strict_budget_can_stay_equal_or_tighten() {
+    for next_budget in [5_000, 4_999] {
+        let mut state = persisted_policy_fixture();
+        state.policy_records.insert(
+            "goal-history-test".to_owned(),
+            vec![
+                persisted_policy_record(
+                    1,
+                    None,
+                    MonitorPolicy::StrictSgd,
+                    Some(strict_budget(5_000)),
+                ),
+                persisted_policy_record(
+                    2,
+                    Some(MonitorPolicy::StrictSgd),
+                    MonitorPolicy::StrictSgd,
+                    Some(strict_budget(next_budget)),
+                ),
+            ],
+        );
+
+        super::validate_store_state(&state)
+            .expect("equal or tighter persisted strict policy remains valid");
+    }
+}
+
+#[test]
+fn persisted_unactivated_quota_only_policy_can_be_replaced_with_strict() {
+    let mut state = persisted_policy_fixture();
+    state.policy_records.insert(
+        "goal-history-test".to_owned(),
+        vec![
+            persisted_policy_record(1, None, MonitorPolicy::QuotaOnly, None),
+            persisted_policy_record(
+                2,
+                Some(MonitorPolicy::QuotaOnly),
+                MonitorPolicy::StrictSgd,
+                Some(strict_budget(5_000)),
+            ),
+        ],
+    );
+
+    super::validate_store_state(&state)
+        .expect("an unactivated quota-only policy can be replaced with strict");
+}
+
+#[test]
+fn persisted_migrated_zero_budget_repair_remains_valid() {
+    let mut state = persisted_policy_fixture();
+    let mut migrated =
+        persisted_policy_record(1, None, MonitorPolicy::StrictSgd, Some(strict_budget(0)));
+    migrated.binding_id = None;
+    migrated.binding_revision = None;
+    migrated.operator_label = None;
+    migrated.operator_confirmed = false;
+    migrated.acknowledge_no_sgd_cap = false;
+    migrated.recorded_at_epoch = None;
+    migrated.origin = MonitorPolicyOrigin::MigratedV1;
+    state.policy_records.insert(
+        "goal-history-test".to_owned(),
+        vec![
+            migrated,
+            persisted_policy_record(
+                2,
+                Some(MonitorPolicy::StrictSgd),
+                MonitorPolicy::StrictSgd,
+                Some(strict_budget(1)),
+            ),
+        ],
+    );
+
+    super::validate_store_state(&state)
+        .expect("the explicit migrated zero-budget repair remains valid");
+}
+
+#[test]
+fn persisted_policy_history_cannot_move_between_accounts() {
+    let mut state = persisted_policy_fixture();
+    state.next_binding_id = 3;
+    state.bindings.insert(
+        "binding-00000002".to_owned(),
+        vec![MonitorAccountBinding {
+            binding_id: "binding-00000002".to_owned(),
+            provider: MonitorProvider::Claude,
+            account_id: "different-account".to_owned(),
+            provider_account_id: None,
+            experimental_collector_approved: false,
+            operator_label: "test operator".to_owned(),
+            revision: 1,
+            operator_confirmed: true,
+            confirmed_at_epoch: Some(10),
+        }],
+    );
+    let mut second = persisted_policy_record(
+        2,
+        Some(MonitorPolicy::StrictSgd),
+        MonitorPolicy::StrictSgd,
+        Some(strict_budget(4_999)),
+    );
+    second.account_id = "different-account".to_owned();
+    second.binding_id = Some("binding-00000002".to_owned());
+    state.policy_records.insert(
+        "goal-history-test".to_owned(),
+        vec![
+            persisted_policy_record(
+                1,
+                None,
+                MonitorPolicy::StrictSgd,
+                Some(strict_budget(5_000)),
+            ),
+            second,
+        ],
+    );
+
+    let error = super::validate_store_state(&state).expect_err("account move must fail");
+    assert_eq!(error.code, MonitorIssueCode::MonitorStoreUnavailable);
 }

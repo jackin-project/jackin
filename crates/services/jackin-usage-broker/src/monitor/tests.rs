@@ -10,7 +10,6 @@ use jackin_protocol::usage_monitor::{
     MonitorPolicyRecord, MonitorProvider, MonitorPurpose, MonitorReply, MonitorScope,
     MonitorStatus, SpendRecord, SpendRecordInput, SpendRecordSource, SpendVerification,
     StatuslineObservation, StatuslineQuotaWindow, StatuslineRateLimits,
-    USAGE_MONITOR_SCHEMA_VERSION,
 };
 
 const NOW: i64 = 1_800_000_000;
@@ -58,6 +57,8 @@ fn bind_account(store: &MonitorStore, account_id: &str, now_epoch: i64) -> Monit
                     account_id: account_id.to_owned(),
                     operator_label: "isolated-test-operator".to_owned(),
                     operator_confirmed: true,
+                    provider_account_id: None,
+                    experimental_collector_approved: false,
                 },
             },
             now_epoch,
@@ -67,6 +68,90 @@ fn bind_account(store: &MonitorStore, account_id: &str, now_epoch: i64) -> Monit
         MonitorReply::AccountBound { binding } => binding,
         other => panic!("expected account-bound reply, got {other:?}"),
     }
+}
+
+#[test]
+fn collector_consent_selects_exact_foreground_source_id() {
+    let (_directory, store) = open_store();
+    let source_id = "a".repeat(64);
+    let foreign_source_id = "b".repeat(64);
+    store.set_experimental_collector_source(Some(source_id.clone()));
+
+    let binding = match store
+        .operate(
+            MonitorOperation::BindAccount {
+                binding: MonitorAccountBindingInput {
+                    provider: MonitorProvider::Claude,
+                    account_id: "work-account".to_owned(),
+                    operator_label: "isolated-test-operator".to_owned(),
+                    operator_confirmed: true,
+                    provider_account_id: Some(source_id.clone()),
+                    experimental_collector_approved: true,
+                },
+            },
+            NOW,
+        )
+        .expect("confirm local account and exact source mapping")
+    {
+        MonitorReply::AccountBound { binding } => binding,
+        other => panic!("expected account-bound reply, got {other:?}"),
+    };
+
+    let config = MonitorConfig {
+        provider: MonitorProvider::Claude,
+        purpose: MonitorPurpose::ObserveOnly,
+        scope: MonitorScope::BoundAccount {
+            binding_id: binding.binding_id,
+            binding_revision: binding.revision,
+            session_id: None,
+        },
+        goal_id: None,
+        expected_model: None,
+        policy_revision: None,
+        experimental_collector: true,
+    };
+    assert!(matches!(
+        store
+            .operate(
+                MonitorOperation::Start {
+                    config,
+                    idempotency_key: "collector-source-selection".to_owned(),
+                },
+                NOW,
+            )
+            .expect("start opted-in account observer"),
+        MonitorReply::Started { .. }
+    ));
+
+    assert_eq!(store.collection_accounts(), vec![source_id.clone()]);
+    assert_ne!(store.collection_accounts()[0], "work-account");
+
+    store.set_experimental_collector_source(Some(foreign_source_id));
+    assert!(store.collection_accounts().is_empty());
+}
+
+#[test]
+fn account_binding_rejects_noncanonical_source_capability_ids() {
+    let (_directory, store) = open_store();
+    for source_capability_id in ["not-a-source-id".to_owned(), "A".repeat(64)] {
+        let error = store
+            .operate(
+                MonitorOperation::BindAccount {
+                    binding: MonitorAccountBindingInput {
+                        provider: MonitorProvider::Claude,
+                        account_id: "work-account".to_owned(),
+                        operator_label: "isolated-test-operator".to_owned(),
+                        operator_confirmed: true,
+                        provider_account_id: Some(source_capability_id),
+                        experimental_collector_approved: true,
+                    },
+                },
+                NOW,
+            )
+            .expect_err("source mappings must use the opaque hash wire format");
+        assert_eq!(error.code, MonitorIssueCode::StatuslineInvalid);
+    }
+    assert!(store.lock().bindings.is_empty());
 }
 
 fn approve_strict_policy(
@@ -124,6 +209,7 @@ fn prepare_start(store: &MonitorStore, spec: &StartSpec, now_epoch: i64) -> Prep
             goal_id,
             expected_model: spec.expected_model.clone(),
             policy_revision,
+            experimental_collector: false,
         },
         idempotency_key: format!("fixture-start:{}:{}", spec.goal_id, now_epoch),
     }
@@ -160,7 +246,7 @@ fn observation(
     seven_day: (Option<i32>, Option<i64>),
 ) -> StatuslineObservation {
     StatuslineObservation {
-        schema_version: USAGE_MONITOR_SCHEMA_VERSION,
+        schema_version: jackin_protocol::usage_monitor::USAGE_STATUSLINE_INPUT_SCHEMA_VERSION,
         session_id: session_id.to_owned(),
         model: model.map(str::to_owned),
         claude_code_version: Some("2.1.80".to_owned()),

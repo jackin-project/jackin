@@ -32,6 +32,11 @@ pub(crate) struct SpendAccountState {
     pub current_period_record: Option<SpendRecord>,
     /// Latest verified receipt for the immediately preceding billing period.
     pub previous_period_record: Option<SpendRecord>,
+    /// Latest period boundary after which goal spend history cannot be
+    /// asserted complete. A retained horizon records uncertainty, not proof
+    /// that a correction was received.
+    #[serde(default)]
+    pub historical_correction_horizon_epoch: Option<i64>,
 }
 
 /// Per-monitor spend state. `baseline` is the account total captured at Start;
@@ -82,7 +87,9 @@ pub(super) fn validate_account_spend_state(state: &SpendAccountState) -> bool {
         }
         account_id = Some(record.account_id.as_str());
     }
-    true
+    state
+        .historical_correction_horizon_epoch
+        .is_none_or(|epoch| epoch >= 0)
 }
 
 /// Check spend history before it is trusted by the budget guard or accepted in
@@ -303,6 +310,13 @@ pub(crate) fn record_account_spend(
             }
         }
         if !applied && record.verification == SpendVerification::Verified {
+            if closed_period_receipt {
+                next.historical_correction_horizon_epoch = Some(
+                    next.historical_correction_horizon_epoch
+                        .unwrap_or(0)
+                        .max(record.billing_period_end_epoch),
+                );
+            }
             record.verification = SpendVerification::Unverified;
         }
     }
@@ -447,6 +461,17 @@ pub(crate) fn advance_goal_spend(
     let Some(baseline) = state.baseline.as_ref() else {
         return;
     };
+    if account
+        .historical_correction_horizon_epoch
+        .is_some_and(|period_end| period_end > baseline.billing_period_start_epoch)
+    {
+        // An unretained correction may change spend accumulated after this
+        // goal's baseline. Keep the known estimate, but never restore
+        // completeness from newer receipts.
+        state.rollover_unknown = true;
+        state.cumulative_complete = false;
+        return;
+    }
     if !same_period(baseline, &anchor) && state.closed_period_anchor.is_none() {
         // Historical state may have already folded one or more periods but
         // cannot say which closing total its cumulative amount includes. Do
@@ -1566,6 +1591,50 @@ mod tests {
         .expect("unretained old period stays auditable");
         assert_eq!(correction.verification, SpendVerification::Unverified);
         assert_eq!(account.previous_period_record, prior_period_record);
+        assert_eq!(
+            account.historical_correction_horizon_epoch,
+            Some(PERIOD_START)
+        );
+        assert!(validate_account_spend_state(&account));
+        let persisted = serde_json::to_value(&account).expect("serialize correction horizon");
+        let restored: SpendAccountState =
+            serde_json::from_value(persisted).expect("restore correction horizon");
+        assert_eq!(
+            restored.historical_correction_horizon_epoch,
+            Some(PERIOD_START)
+        );
+    }
+
+    #[test]
+    fn historical_correction_horizon_keeps_goal_spend_incomplete() {
+        let budget = budget(100_000);
+        let (mut account, mut state) = rolled_over_state(&budget);
+        let known_estimate = state.cumulative_goal_spend.clone();
+        account.historical_correction_horizon_epoch = Some(PERIOD_START + 1_001);
+
+        advance_goal_spend(&mut state, &account, Some(&budget), PERIOD_END + 4);
+        assert_eq!(state.cumulative_goal_spend, known_estimate);
+        assert!(state.rollover_unknown);
+        assert!(!state.cumulative_complete);
+
+        let next_period_end = PERIOD_END + 100_000;
+        let (account, _) = record_account_spend(
+            &account,
+            ACCOUNT,
+            receipt(
+                PERIOD_END,
+                next_period_end,
+                amount(300),
+                Some(PERIOD_END + 5),
+                true,
+            ),
+            PERIOD_END + 5,
+        )
+        .expect("new current receipt remains accepted");
+        advance_goal_spend(&mut state, &account, Some(&budget), PERIOD_END + 6);
+        assert_eq!(state.cumulative_goal_spend, known_estimate);
+        assert!(state.rollover_unknown);
+        assert!(!state.cumulative_complete);
     }
 
     #[test]

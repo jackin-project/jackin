@@ -4,6 +4,7 @@
 use super::*;
 use crate::leader::{read_lease, write_lease};
 use nix::fcntl::{FcntlArg, FdFlag, fcntl};
+use std::os::unix::net::UnixStream;
 
 #[test]
 fn usage_broker_recovers_stale_guard_with_private_permissions() {
@@ -167,7 +168,12 @@ fn stale_lease_descriptor_cannot_renew_or_clean_successor_files() {
     let successor_id = successor.lease.instance_id.clone();
 
     assert!(!renew_lease(&mut stale));
-    assert!(!cleanup_owned_files(&lease_path, &socket_path, &mut stale,));
+    assert!(!cleanup_owned_files(
+        &lease_path,
+        &socket_path,
+        None,
+        &mut stale,
+    ));
     let current: BrokerLease = serde_json::from_slice(&fs::read(&lease_path).unwrap()).unwrap();
     assert_eq!(current.instance_id, successor_id);
     assert!(socket_path.exists());
@@ -202,6 +208,7 @@ fn expired_successor_lease_fences_old_owner_renewal_and_cleanup() {
     assert!(!cleanup_owned_files(
         &lease_path,
         &socket_path,
+        None,
         &mut old_owner,
     ));
 
@@ -438,4 +445,64 @@ fn client_clone_forks_subscription_set() {
 
     client.unsubscribe_all();
     assert!(client.subscriptions().is_empty());
+}
+
+#[test]
+fn stale_lease_does_not_reclaim_a_live_foreign_socket() {
+    use std::os::unix::net::UnixListener;
+
+    let temp = tempfile::tempdir().unwrap();
+    let config = UsageBrokerConfig::for_data_dir(temp.path().to_owned());
+    let run_dir = secure_run_directory(&config.data_dir).unwrap();
+    let lease_path = run_dir.join(BROKER_LEADER);
+    let socket_path = config.prepare_socket_path().unwrap();
+    let mut old_owner = claim_leader(&lease_path, &config.build_id, config.lease_duration)
+        .unwrap()
+        .expect("initial owner");
+    let mut expired = old_owner.lease.clone();
+    expired.renewed_at_epoch -= i64::try_from(config.lease_duration.as_secs()).unwrap() + 1;
+    write_lease(&mut old_owner.file, &expired).unwrap();
+    old_owner.file.unlock().unwrap();
+    drop(old_owner);
+    let stale_owner = claim_leader(&lease_path, &config.build_id, config.lease_duration)
+        .unwrap()
+        .expect("expired lease is reclaimable");
+    assert!(stale_owner.stale_lease_reclaimed);
+
+    let listener = UnixListener::bind(&socket_path).unwrap();
+    fs::set_permissions(&socket_path, fs::Permissions::from_mode(0o600)).unwrap();
+    let cleanup = BrokerStartupCleanup::new(lease_path, socket_path.clone(), stale_owner);
+
+    let error = service::prepare_socket_for_startup(&config, &cleanup).unwrap_err();
+    assert_eq!(error.kind, UsageCoordinationErrorKind::BrokerConflict);
+    assert!(socket_path.exists());
+    assert!(UnixStream::connect(&socket_path).is_ok());
+    drop(listener);
+}
+
+#[test]
+fn stale_lease_does_not_reclaim_a_regular_file_at_the_socket_path() {
+    let temp = tempfile::tempdir().unwrap();
+    let config = UsageBrokerConfig::for_data_dir(temp.path().to_owned());
+    let run_dir = secure_run_directory(&config.data_dir).unwrap();
+    let lease_path = run_dir.join(BROKER_LEADER);
+    let socket_path = config.prepare_socket_path().unwrap();
+    let mut old_owner = claim_leader(&lease_path, &config.build_id, config.lease_duration)
+        .unwrap()
+        .expect("initial owner");
+    let mut expired = old_owner.lease.clone();
+    expired.renewed_at_epoch -= i64::try_from(config.lease_duration.as_secs()).unwrap() + 1;
+    write_lease(&mut old_owner.file, &expired).unwrap();
+    old_owner.file.unlock().unwrap();
+    drop(old_owner);
+    let stale_owner = claim_leader(&lease_path, &config.build_id, config.lease_duration)
+        .unwrap()
+        .expect("expired lease is reclaimable");
+    fs::write(&socket_path, b"foreign file").unwrap();
+    fs::set_permissions(&socket_path, fs::Permissions::from_mode(0o600)).unwrap();
+    let cleanup = BrokerStartupCleanup::new(lease_path, socket_path.clone(), stale_owner);
+
+    let error = service::prepare_socket_for_startup(&config, &cleanup).unwrap_err();
+    assert_eq!(error.kind, UsageCoordinationErrorKind::BrokerConflict);
+    assert_eq!(fs::read(&socket_path).unwrap(), b"foreign file");
 }

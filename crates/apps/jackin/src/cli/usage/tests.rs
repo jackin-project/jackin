@@ -242,3 +242,101 @@ fn auth_prepare_rejects_invalid_keychain_service_names() {
     }
     validate_keychain_service("Claude Code-credentials").unwrap();
 }
+
+#[test]
+fn experimental_collector_is_bound_to_an_opaque_foreground_source() {
+    validate_experimental_collector_scope(false, None).unwrap();
+    validate_experimental_collector_scope(true, Some("binding-1")).unwrap();
+    assert!(validate_experimental_collector_scope(true, None).is_err());
+
+    let source_id = "a".repeat(64);
+    let active = jackin_protocol::usage_monitor::MonitorServiceStatus {
+        running: true,
+        experimental_collector_source: Some(source_id.clone()),
+        active_monitors: 0,
+        next_wake_epoch: None,
+    };
+    assert_eq!(
+        foreground_experimental_collector_source(&active),
+        Some(source_id.as_str())
+    );
+    let passive = jackin_protocol::usage_monitor::MonitorServiceStatus {
+        running: false,
+        experimental_collector_source: Some(source_id),
+        active_monitors: 0,
+        next_wake_epoch: None,
+    };
+    assert_eq!(foreground_experimental_collector_source(&passive), None);
+    let malformed = jackin_protocol::usage_monitor::MonitorServiceStatus {
+        running: true,
+        experimental_collector_source: Some("g".repeat(64)),
+        active_monitors: 0,
+        next_wake_epoch: None,
+    };
+    assert_eq!(foreground_experimental_collector_source(&malformed), None);
+}
+
+#[test]
+fn binding_maps_local_account_to_source_and_keeps_approval_explicit() {
+    let source_id = "b".repeat(64);
+    let input = binding_confirmation_input(&UsageBindingConfirmArgs {
+        provider: UsageProviderArg::Claude,
+        account: "work-account".to_owned(),
+        source_capability_id: Some(source_id.clone()),
+        approve_experimental_collector: true,
+        operator_label: "work account".to_owned(),
+        confirm: true,
+    })
+    .unwrap();
+    assert_eq!(input.account_id, "work-account");
+    assert_eq!(
+        input.provider_account_id.as_deref(),
+        Some(source_id.as_str())
+    );
+    assert!(input.experimental_collector_approved);
+
+    let missing_source = binding_confirmation_input(&UsageBindingConfirmArgs {
+        provider: UsageProviderArg::Claude,
+        account: "work-account".to_owned(),
+        source_capability_id: None,
+        approve_experimental_collector: true,
+        operator_label: "work account".to_owned(),
+        confirm: true,
+    })
+    .expect_err("approval cannot exist without an explicit source mapping");
+    assert_eq!(
+        missing_source
+            .downcast_ref::<UsageCommandExit>()
+            .expect("CLI validation error")
+            .exit_code(),
+        3
+    );
+}
+
+#[test]
+fn auth_prepare_passes_exact_service_and_foreground_scope() {
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let config = jackin_usage::host::UsageBrokerConfig::for_data_dir(paths.data_dir.clone());
+    let args = foreground_auth_bootstrap_args(&config, &paths, "Claude Code-credentials")
+        .into_iter()
+        .map(|arg| arg.to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
+
+    let expected = vec![
+        "--prepare-auth".to_owned(),
+        "--provider".to_owned(),
+        "claude".to_owned(),
+        "--keychain-service".to_owned(),
+        "Claude Code-credentials".to_owned(),
+        "--data-dir".to_owned(),
+        paths.data_dir.to_string_lossy().into_owned(),
+        "--config-root".to_owned(),
+        paths.config_dir.to_string_lossy().into_owned(),
+        "--operator-home".to_owned(),
+        paths.home_dir.to_string_lossy().into_owned(),
+        "--build-id".to_owned(),
+        config.build_id,
+    ];
+    assert_eq!(args, expected);
+}

@@ -53,6 +53,9 @@ impl BrokerLease {
 pub struct BrokerLeaseOwner {
     pub lease: BrokerLease,
     pub file: File,
+    /// True only when this owner replaced an expired or demonstrably dead
+    /// lease. Socket recovery is allowed only under this proof.
+    pub stale_lease_reclaimed: bool,
 }
 
 impl std::fmt::Debug for BrokerLeaseOwner {

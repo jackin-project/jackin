@@ -178,36 +178,38 @@ pub(crate) fn claude_profile_identity(
     let mut account_label = None;
     let mut organization_type = None;
     for path in paths {
-        match read_json(reader, &path) {
-            Ok(Some(value)) => {
+        match reader.read(&path) {
+            ProfileReadOutcome::Bytes(bytes) => {
+                let Some(profile) =
+                    jackin_usage_provider_claude::parse_claude_keychain_profile(&bytes)
+                else {
+                    return ProfileValidation::Malformed;
+                };
                 if credential.is_none() {
-                    credential = jackin_usage_provider_claude::claude_oauth_from_value(&value);
+                    credential = profile.credential;
                 }
                 if account_label.is_none() {
-                    account_label = jackin_usage_provider_claude::claude_email_from_value(&value);
+                    account_label = profile.account_email;
                 }
                 if organization_type.is_none() {
-                    organization_type =
-                        jackin_usage_provider_claude::claude_organization_type_from_value(&value);
+                    organization_type = profile.organization_type;
                 }
             }
-            Ok(None) => {}
-            Err(ProfileValidation::Denied) => return ProfileValidation::Denied,
-            Err(ProfileValidation::ConsentRequired) => return ProfileValidation::ConsentRequired,
-            Err(_) => return ProfileValidation::Malformed,
+            ProfileReadOutcome::Missing => {}
+            ProfileReadOutcome::Denied => return ProfileValidation::Denied,
+            ProfileReadOutcome::ConsentRequired => return ProfileValidation::ConsentRequired,
         }
     }
     if let Some(credential) = credential {
         let is_anonymous = account_label.is_none() && credential.refresh_token.is_none();
         let material = Some(Box::new(ProfileCredentialMaterial::Claude(
-            jackin_usage_provider_claude::ClaudeResolved {
-                access_token: credential.access_token,
-                subscription_type: credential.subscription_type,
-                account_email: account_label.clone(),
+            jackin_usage_provider_claude::ClaudeResolved::from_oauth_credentials(
+                credential,
+                account_label.clone(),
                 organization_type,
-                credential_origin: "OAuth · configured profile".to_owned(),
+                "OAuth · configured profile".to_owned(),
                 is_anonymous,
-            },
+            ),
         )));
         return account_label.map_or(ProfileValidation::Anonymous(material.clone()), |label| {
             ProfileValidation::Authenticated {
@@ -223,25 +225,23 @@ pub(crate) fn claude_profile_identity(
     };
     match reader.read_claude_keychain(&scope) {
         ProfileReadOutcome::Bytes(bytes) => {
-            let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
-                return ProfileValidation::Malformed;
-            };
-            let Some(credential) = jackin_usage_provider_claude::claude_oauth_from_value(&value)
+            let Some(profile) = jackin_usage_provider_claude::parse_claude_keychain_profile(&bytes)
             else {
                 return ProfileValidation::Malformed;
             };
-            let account_label = jackin_usage_provider_claude::claude_email_from_value(&value);
+            let Some(credential) = profile.credential else {
+                return ProfileValidation::Malformed;
+            };
+            let account_label = profile.account_email;
             let is_anonymous = account_label.is_none() && credential.refresh_token.is_none();
             let material = Some(Box::new(ProfileCredentialMaterial::Claude(
-                jackin_usage_provider_claude::ClaudeResolved {
-                    access_token: credential.access_token,
-                    subscription_type: credential.subscription_type,
-                    account_email: account_label.clone(),
-                    organization_type:
-                        jackin_usage_provider_claude::claude_organization_type_from_value(&value),
-                    credential_origin: "OAuth · configured profile".to_owned(),
+                jackin_usage_provider_claude::ClaudeResolved::from_oauth_credentials(
+                    credential,
+                    account_label.clone(),
+                    profile.organization_type,
+                    "OAuth · configured profile".to_owned(),
                     is_anonymous,
-                },
+                ),
             )));
             account_label.map_or(ProfileValidation::Anonymous(material.clone()), |label| {
                 ProfileValidation::Authenticated {

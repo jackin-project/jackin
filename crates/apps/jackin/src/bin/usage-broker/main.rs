@@ -7,13 +7,18 @@ use std::io::{IsTerminal as _, Write as _};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use jackin_usage_broker::{UsageBrokerConfig, run_usage_broker_service, run_usage_monitor_service};
+use jackin_protocol::usage_broker::{UsageCoordinationError, UsageCoordinationErrorKind};
+use jackin_usage_broker::{
+    UsageBrokerConfig, UsageBrokerForegroundReady, run_usage_broker_foreground_bootstrap,
+    run_usage_broker_service, run_usage_monitor_service,
+};
 use jackin_usage_credential_resolver::{
     CachedProviderCredentialResolver, ProviderCredentialSecretOutcome,
     ProviderCredentialSecretResolution, ProviderCredentialSecretSource,
 };
 use jackin_usage_discovery::{UsageDiscoveryScope, discover_usage_sources, validate_usage_sources};
 use jackin_usage_host_credentials::ProviderCredentialEnvResolver;
+use jackin_usage_provider_claude::ClaudeCredentialBootstrapOutcome;
 
 #[derive(Default)]
 struct ServiceSecretSource;
@@ -91,17 +96,33 @@ fn main() {
         return;
     }
     if prepare_auth_requested(&args) {
-        let all_stdio_are_terminal = std::io::stdin().is_terminal()
-            && std::io::stdout().is_terminal()
-            && std::io::stderr().is_terminal();
-        let (exit_code, json) = prepare_auth_with(&args, all_stdio_are_terminal, |service| {
-            read_claude_auth_item(service)
-        });
-        let stdout = std::io::stdout();
-        let mut stdout = stdout.lock();
-        let _write_result = writeln!(stdout, "{json}");
-        let _flush_result = stdout.flush();
-        if exit_code != 0 {
+        let result = prepare_auth_with(
+            &args,
+            || {
+                std::io::stdin().is_terminal()
+                    && std::io::stdout().is_terminal()
+                    && std::io::stderr().is_terminal()
+            },
+            |request, on_ready| {
+                let mut config = UsageBrokerConfig::for_data_dir(request.data_dir);
+                config.build_id = request.build_id;
+                config.service_executable = None;
+                let scope = UsageDiscoveryScope::HostDesktop {
+                    config_root: request.config_root,
+                    operator_home: request.operator_home,
+                };
+                run_usage_broker_foreground_bootstrap(
+                    config,
+                    scope,
+                    &request.keychain_service,
+                    on_ready,
+                )
+                .map(ForegroundBootstrapOutcome::from)
+            },
+            write_service_ready,
+        );
+        if let Err((exit_code, json)) = result {
+            write_stdout_json(&json);
             std::process::exit(exit_code);
         }
         return;
@@ -114,95 +135,249 @@ fn main() {
 }
 
 fn prepare_auth_requested(args: &[String]) -> bool {
-    args.iter().skip(1).any(|arg| arg == "--prepare-auth")
+    args.get(1).is_some_and(|arg| arg == "--prepare-auth")
 }
 
-enum AuthReadOutcome {
-    Payload(String),
-    Denied,
-    Missing,
-    ConsentRequired,
+#[derive(PartialEq, Eq)]
+struct ForegroundBootstrapRequest {
+    keychain_service: String,
+    data_dir: PathBuf,
+    config_root: PathBuf,
+    operator_home: PathBuf,
+    build_id: String,
 }
 
-fn read_claude_auth_item(service: &str) -> AuthReadOutcome {
-    use jackin_usage_provider_claude::ClaudeKeychainRead;
-
-    match jackin_usage_provider_claude::prepare_claude_keychain_auth(service) {
-        #[cfg(target_os = "macos")]
-        ClaudeKeychainRead::Payload { json } => AuthReadOutcome::Payload(json),
-        ClaudeKeychainRead::Denied => AuthReadOutcome::Denied,
-        ClaudeKeychainRead::Missing => AuthReadOutcome::Missing,
-        ClaudeKeychainRead::ConsentRequired => AuthReadOutcome::ConsentRequired,
+impl std::fmt::Debug for ForegroundBootstrapRequest {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ForegroundBootstrapRequest")
+            .field("keychain_service", &"REDACTED")
+            .field("data_dir", &self.data_dir)
+            .field("config_root", &self.config_root)
+            .field("operator_home", &self.operator_home)
+            .field("build_id", &self.build_id)
+            .finish()
     }
 }
 
-fn prepare_auth_with(
-    args: &[String],
-    all_stdio_are_terminal: bool,
-    read_item: impl FnOnce(&str) -> AuthReadOutcome,
-) -> (i32, String) {
+type AuthReadyCallback<'a> = Box<dyn FnOnce(UsageBrokerForegroundReady) + 'a>;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ForegroundBootstrapOutcome {
+    Acquired,
+    Missing,
+    Denied,
+    InteractionRequired,
+    Malformed,
+}
+
+impl From<ClaudeCredentialBootstrapOutcome> for ForegroundBootstrapOutcome {
+    fn from(outcome: ClaudeCredentialBootstrapOutcome) -> Self {
+        match outcome {
+            ClaudeCredentialBootstrapOutcome::Acquired(lease) => {
+                // The foreground service owns the lease until the broker loop exits.
+                drop(lease);
+                Self::Acquired
+            }
+            ClaudeCredentialBootstrapOutcome::Missing => Self::Missing,
+            ClaudeCredentialBootstrapOutcome::Denied => Self::Denied,
+            ClaudeCredentialBootstrapOutcome::InteractionRequired => Self::InteractionRequired,
+            ClaudeCredentialBootstrapOutcome::Malformed => Self::Malformed,
+        }
+    }
+}
+
+fn parse_prepare_auth_args(args: &[String]) -> Result<ForegroundBootstrapRequest, (i32, String)> {
     let mut prepare_flag = false;
     let mut provider = None;
     let mut service = None;
+    let mut data_dir = None;
+    let mut config_root = None;
+    let mut operator_home = None;
+    let mut build_id = None;
     let mut args = args.iter().skip(1);
     while let Some(argument) = args.next() {
         match argument.as_str() {
             "--prepare-auth" if !prepare_flag => prepare_flag = true,
-            "--provider" if provider.is_none() => provider = args.next().cloned(),
-            "--keychain-service" if service.is_none() => service = args.next().cloned(),
+            "--provider" if provider.is_none() => {
+                provider = Some(required_option_value(&mut args, "--provider")?);
+            }
+            "--keychain-service" if service.is_none() => {
+                service = Some(required_option_value(&mut args, "--keychain-service")?);
+            }
+            "--data-dir" if data_dir.is_none() => {
+                data_dir = Some(PathBuf::from(required_option_value(
+                    &mut args,
+                    "--data-dir",
+                )?));
+            }
+            "--config-root" if config_root.is_none() => {
+                config_root = Some(PathBuf::from(required_option_value(
+                    &mut args,
+                    "--config-root",
+                )?));
+            }
+            "--operator-home" if operator_home.is_none() => {
+                operator_home = Some(PathBuf::from(required_option_value(
+                    &mut args,
+                    "--operator-home",
+                )?));
+            }
+            "--build-id" if build_id.is_none() => {
+                build_id = Some(required_option_value(&mut args, "--build-id")?);
+            }
             _ => {
-                return auth_error(
+                return Err(auth_error(
                     "invalid_request",
-                    "authentication preparation arguments are invalid",
+                    "authentication bootstrap arguments are invalid",
                     3,
-                );
+                ));
             }
         }
     }
     if !prepare_flag || provider.as_deref() != Some("claude") {
-        return auth_error(
+        return Err(auth_error(
             "invalid_request",
-            "authentication preparation requires --provider claude",
+            "authentication bootstrap requires --provider claude",
             3,
-        );
+        ));
     }
-    let service = service.unwrap_or_else(|| jackin_core::CLAUDE_KEYCHAIN_SERVICE_BASE.to_owned());
-    if service.trim().is_empty() || service.len() > 512 || service.contains('\0') {
-        return auth_error(
+    let keychain_service =
+        service.unwrap_or_else(|| jackin_core::CLAUDE_KEYCHAIN_SERVICE_BASE.to_owned());
+    if keychain_service.trim().is_empty()
+        || keychain_service.len() > 512
+        || keychain_service.contains('\0')
+    {
+        return Err(auth_error(
             "invalid_keychain_service",
             "Keychain service must be nonempty, contain no NUL, and be at most 512 bytes",
             3,
-        );
+        ));
     }
-    if !all_stdio_are_terminal {
-        return auth_error(
+    let Some(build_id) = build_id.filter(|value| !value.trim().is_empty()) else {
+        return Err(auth_error(
+            "invalid_request",
+            "foreground bootstrap requires a nonempty --build-id",
+            3,
+        ));
+    };
+    let (Some(data_dir), Some(config_root), Some(operator_home)) =
+        (data_dir, config_root, operator_home)
+    else {
+        return Err(auth_error(
+            "invalid_request",
+            "foreground bootstrap requires --data-dir, --config-root, and --operator-home",
+            3,
+        ));
+    };
+    if data_dir.as_os_str().is_empty()
+        || config_root.as_os_str().is_empty()
+        || operator_home.as_os_str().is_empty()
+    {
+        return Err(auth_error(
+            "invalid_request",
+            "foreground bootstrap paths must be nonempty",
+            3,
+        ));
+    }
+    Ok(ForegroundBootstrapRequest {
+        keychain_service,
+        data_dir,
+        config_root,
+        operator_home,
+        build_id,
+    })
+}
+
+fn required_option_value<'a>(
+    args: &mut impl Iterator<Item = &'a String>,
+    option: &str,
+) -> Result<String, (i32, String)> {
+    let Some(value) = args.next() else {
+        return Err(auth_error(
+            "invalid_request",
+            &format!("{option} requires a value"),
+            3,
+        ));
+    };
+    if value.starts_with("--") {
+        return Err(auth_error(
+            "invalid_request",
+            &format!("{option} requires a value"),
+            3,
+        ));
+    }
+    Ok(value.clone())
+}
+
+fn prepare_auth_with<'a>(
+    args: &[String],
+    all_stdio_are_terminal: impl FnOnce() -> bool,
+    run_foreground: impl FnOnce(
+        ForegroundBootstrapRequest,
+        AuthReadyCallback<'a>,
+    ) -> Result<ForegroundBootstrapOutcome, UsageCoordinationError>,
+    on_ready: impl FnOnce(UsageBrokerForegroundReady) + 'a,
+) -> Result<(), (i32, String)> {
+    let request = parse_prepare_auth_args(args)?;
+    if !all_stdio_are_terminal() {
+        return Err(auth_error(
             "interaction_required",
             "authentication preparation requires stdin, stdout, and stderr attached to a terminal",
             2,
-        );
+        ));
     }
-
-    use zeroize::Zeroize as _;
-    match read_item(&service) {
-        AuthReadOutcome::Payload(mut json) => {
-            json.zeroize();
-            (
-                0,
-                "{\"version\":1,\"result\":\"auth_prepared\",\"provider\":\"claude\"}".to_owned(),
-            )
-        }
-        AuthReadOutcome::ConsentRequired => auth_error(
+    match run_foreground(request, Box::new(on_ready)).map_err(|error| {
+        let (code, exit_code) = match error.kind {
+            UsageCoordinationErrorKind::BrokerConflict => ("broker_conflict", 3),
+            _ => ("broker_unavailable", 3),
+        };
+        auth_error(code, &error.message, exit_code)
+    })? {
+        ForegroundBootstrapOutcome::Acquired => Ok(()),
+        ForegroundBootstrapOutcome::InteractionRequired => Err(auth_error(
             "interaction_required",
             "Keychain requires operator consent; run preparation in an attached terminal",
             2,
-        ),
-        AuthReadOutcome::Missing => auth_error(
+        )),
+        ForegroundBootstrapOutcome::Missing => Err(auth_error(
             "auth_missing",
             "no Claude credential was found for the selected Keychain service",
             2,
-        ),
-        AuthReadOutcome::Denied => auth_error("auth_denied", "Keychain access was denied", 2),
+        )),
+        ForegroundBootstrapOutcome::Denied => {
+            Err(auth_error("auth_denied", "Keychain access was denied", 2))
+        }
+        ForegroundBootstrapOutcome::Malformed => Err(auth_error(
+            "auth_malformed",
+            "the selected Keychain item is not a valid bounded Claude credential",
+            2,
+        )),
     }
+}
+
+fn write_service_ready(ready: UsageBrokerForegroundReady) {
+    write_stdout_json(&service_ready_json(&ready));
+}
+
+fn service_ready_json(ready: &UsageBrokerForegroundReady) -> String {
+    serde_json::json!({
+        "version": 1,
+        "result": "service_ready",
+        "provider": "claude",
+        "source": {
+            "account_id": ready.capability.account_id.as_str(),
+            "scope": ready.binding_scope,
+        }
+    })
+    .to_string()
+}
+
+fn write_stdout_json(json: &str) {
+    let stdout = std::io::stdout();
+    let mut stdout = stdout.lock();
+    let _write_result = writeln!(stdout, "{json}");
+    let _flush_result = stdout.flush();
 }
 
 fn auth_error(code: &str, message: &str, exit_code: i32) -> (i32, String) {

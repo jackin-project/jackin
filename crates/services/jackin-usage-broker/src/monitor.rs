@@ -30,6 +30,7 @@ use jackin_protocol::usage_monitor::{
     MonitorReply, MonitorResetValidity, MonitorScope, MonitorServiceStatus, MonitorStatus,
     MonitorTrackingReadiness, SpendRecord, SpendRecordInput, SpendVerification,
     StatuslineObservation, StatuslineQuotaWindow, USAGE_MONITOR_SCHEMA_VERSION,
+    USAGE_STATUSLINE_INPUT_SCHEMA_VERSION,
 };
 use serde::{Deserialize, Serialize};
 
@@ -70,6 +71,7 @@ const DECISION_MAX_PARALLEL: u32 = 1;
 struct MonitorStoreInner {
     directory: File,
     state: Mutex<StoreState>,
+    experimental_collector_source: Mutex<Option<String>>,
     changed: Condvar,
 }
 
@@ -251,6 +253,7 @@ impl MonitorStore {
             inner: std::sync::Arc::new(MonitorStoreInner {
                 directory,
                 state: Mutex::new(state),
+                experimental_collector_source: Mutex::new(None),
                 changed: Condvar::new(),
             }),
         })
@@ -293,6 +296,7 @@ impl MonitorStore {
             MonitorOperation::Refresh { monitor_id } => self.refresh(&monitor_id, now_epoch),
             MonitorOperation::ServiceStatus => {
                 self.tick(now_epoch)?;
+                let experimental_collector_source = self.experimental_collector_source();
                 let state = self.lock();
                 let active_monitors = active_monitor_count(&state);
                 Ok(MonitorReply::ServiceStatus {
@@ -300,18 +304,11 @@ impl MonitorStore {
                         running: true,
                         active_monitors,
                         next_wake_epoch: next_wake_for(&state),
+                        experimental_collector_source,
                     },
                 })
             }
             MonitorOperation::ServiceStop => Ok(MonitorReply::ServiceStopped),
-            MonitorOperation::PrepareAuth { provider } => Ok(MonitorReply::AuthPrepared {
-                provider,
-                issues: vec![issue(
-                    MonitorIssueCode::InteractionRequired,
-                    "authentication preparation requires the broker authentication flow",
-                    None,
-                )],
-            }),
             MonitorOperation::Watch {
                 monitor_id,
                 after_sequence,
@@ -381,6 +378,67 @@ impl MonitorStore {
         active_monitor_count(&self.lock()) > 0
     }
 
+    /// Source capability IDs authorized for the experimental Claude collector.
+    /// Only current, confirmed bindings attached to active opted-in monitors
+    /// whose source matches this process's foreground source grant collection.
+    #[must_use]
+    pub(crate) fn collection_accounts(&self) -> Vec<String> {
+        let Some(configured_source) = self.experimental_collector_source() else {
+            return Vec::new();
+        };
+        let state = self.lock();
+        state
+            .monitors
+            .values()
+            .filter(|monitor| {
+                monitor.stopped_at_epoch.is_none()
+                    && monitor.config.experimental_collector
+                    && monitor.config.purpose == MonitorPurpose::ObserveOnly
+                    && monitor.config.provider
+                        == jackin_protocol::usage_monitor::MonitorProvider::Claude
+            })
+            .filter_map(|monitor| {
+                let MonitorScope::BoundAccount {
+                    binding_id,
+                    binding_revision,
+                    ..
+                } = &monitor.config.scope
+                else {
+                    return None;
+                };
+                let binding = current_binding(&state, binding_id)?;
+                (binding.revision == *binding_revision
+                    && binding.provider == monitor.config.provider
+                    && binding.operator_confirmed
+                    && binding.experimental_collector_approved
+                    && Some(binding.account_id.as_str()) == monitor.account_id.as_deref()
+                    && binding.provider_account_id.as_deref() == Some(configured_source.as_str()))
+                .then(|| binding.provider_account_id.clone())
+                .flatten()
+            })
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect()
+    }
+
+    /// Configure the source capability selected by this foreground service.
+    /// The value is ephemeral and does not prove credential or provider health.
+    pub(super) fn set_experimental_collector_source(&self, source: Option<String>) {
+        *self
+            .inner
+            .experimental_collector_source
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = source;
+    }
+
+    fn experimental_collector_source(&self) -> Option<String> {
+        self.inner
+            .experimental_collector_source
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
     /// Earliest persisted evidence-expiry or reset-grace wake.
     #[must_use]
     pub(crate) fn next_wake(&self) -> Option<i64> {
@@ -393,11 +451,25 @@ impl MonitorStore {
         now_epoch: i64,
     ) -> Result<MonitorReply, MonitorIssue> {
         validate_identifier(&input.account_id)?;
+        if input
+            .provider_account_id
+            .as_deref()
+            .is_some_and(|source_id| !valid_source_capability_id(source_id))
+        {
+            return Err(issue(
+                MonitorIssueCode::StatuslineInvalid,
+                "source capability ID must be 64 lowercase hexadecimal characters",
+                None,
+            ));
+        }
         if !valid_bounded_text(&input.operator_label, MAX_OPERATOR_LABEL_LENGTH) {
             return Err(invalid_operator_label());
         }
         if !input.operator_confirmed {
             return Err(operator_confirmation_required());
+        }
+        if input.experimental_collector_approved && input.provider_account_id.is_none() {
+            return Err(binding_required());
         }
 
         let mut guard = self.lock();
@@ -412,9 +484,30 @@ impl MonitorStore {
             })
         });
         let binding = if let Some((binding_id, previous)) = existing {
-            if previous.operator_confirmed && previous.operator_label == input.operator_label {
+            if previous.operator_confirmed
+                && previous.operator_label == input.operator_label
+                && previous.provider_account_id == input.provider_account_id
+                && previous.experimental_collector_approved == input.experimental_collector_approved
+            {
                 previous
             } else {
+                let source_mapping_changed =
+                    previous.provider_account_id != input.provider_account_id;
+                let has_goal_history =
+                    staged
+                        .goals
+                        .values()
+                        .any(|goal| goal.binding_id == binding_id)
+                        || staged.policy_records.values().flatten().any(|policy| {
+                            policy.binding_id.as_deref() == Some(binding_id.as_str())
+                        });
+                if source_mapping_changed && has_goal_history {
+                    return Err(issue(
+                        MonitorIssueCode::AccountMismatch,
+                        "a source capability mapping cannot change after goal history exists",
+                        None,
+                    ));
+                }
                 let revision = previous
                     .revision
                     .checked_add(1)
@@ -423,6 +516,8 @@ impl MonitorStore {
                     binding_id: binding_id.clone(),
                     provider: input.provider,
                     account_id: input.account_id,
+                    provider_account_id: input.provider_account_id,
+                    experimental_collector_approved: input.experimental_collector_approved,
                     operator_label: input.operator_label,
                     revision,
                     operator_confirmed: true,
@@ -449,6 +544,8 @@ impl MonitorStore {
                 binding_id: binding_id.clone(),
                 provider: input.provider,
                 account_id: input.account_id,
+                provider_account_id: input.provider_account_id,
+                experimental_collector_approved: input.experimental_collector_approved,
                 operator_label: input.operator_label,
                 revision: 1,
                 operator_confirmed: true,
@@ -591,9 +688,36 @@ impl MonitorStore {
                 None,
             ));
         }
+        // Keep lock ordering consistent with service-status and collector
+        // account reads, which acquire the ephemeral source before state.
+        let configured_source = config
+            .experimental_collector
+            .then(|| self.experimental_collector_source())
+            .flatten();
         let mut guard = self.lock();
         let mut staged = guard.clone();
         let now_epoch = effective_now(staged.last_now_epoch, now_epoch);
+
+        // Revalidate the source mapping, consent, and foreground lease before
+        // returning even an idempotent replay. A reused start key cannot
+        // restore authority that a later binding revision revoked.
+        if config.experimental_collector {
+            let binding = resolve_scope_binding(&staged, &config.scope, config.provider)?.clone();
+            if !binding.operator_confirmed {
+                return Err(operator_confirmation_required());
+            }
+            validate_collection_binding(&config, &binding)?;
+            if configured_source
+                .as_deref()
+                .is_none_or(|source| binding.provider_account_id.as_deref() != Some(source))
+            {
+                return Err(issue(
+                    MonitorIssueCode::CollectorAuthRequired,
+                    "experimental collection requires a foreground lease for the approved source capability",
+                    None,
+                ));
+            }
+        }
 
         if let Some((monitor_id, existing_config)) = staged
             .monitors
@@ -1062,6 +1186,7 @@ fn prepare_start_authority(
             if !binding.operator_confirmed {
                 return Err(operator_confirmation_required());
             }
+            validate_collection_binding(config, &binding)?;
             Ok(StartAuthority {
                 account_id: Some(binding.account_id),
                 policy: None,
@@ -1073,6 +1198,21 @@ fn prepare_start_authority(
         }
         (MonitorPurpose::DispatchGuard, MonitorScope::Session { .. }) => Err(binding_required()),
     }
+}
+
+fn validate_collection_binding(
+    config: &MonitorConfig,
+    binding: &MonitorAccountBinding,
+) -> Result<(), MonitorIssue> {
+    if config.experimental_collector {
+        if binding.provider_account_id.is_none() {
+            return Err(binding_required());
+        }
+        if !binding.experimental_collector_approved {
+            return Err(operator_confirmation_required());
+        }
+    }
+    Ok(())
 }
 
 fn prepare_dispatch_guard_authority(
@@ -1373,6 +1513,12 @@ fn validate_bindings(state: &StoreState) -> Result<(), MonitorIssue> {
         for binding in history {
             if binding.binding_id != *binding_id
                 || !valid_identifier(&binding.account_id)
+                || binding
+                    .provider_account_id
+                    .as_deref()
+                    .is_some_and(|source_id| !valid_source_capability_id(source_id))
+                || (binding.experimental_collector_approved
+                    && binding.provider_account_id.is_none())
                 || !valid_bounded_text(&binding.operator_label, MAX_OPERATOR_LABEL_LENGTH)
                 || binding.revision <= previous_revision
                 || match (binding.operator_confirmed, binding.confirmed_at_epoch) {
@@ -1399,6 +1545,7 @@ fn validate_policy_records(state: &StoreState) -> Result<(), MonitorIssue> {
         }
         let mut previous_revision = 0;
         let mut previous_policy = None;
+        let mut previous_record: Option<&MonitorPolicyRecord> = None;
         for policy in history {
             if policy.goal_id != *goal_id
                 || !valid_identifier(&policy.account_id)
@@ -1417,6 +1564,8 @@ fn validate_policy_records(state: &StoreState) -> Result<(), MonitorIssue> {
                         policy.acknowledge_no_sgd_cap,
                     )
                     .is_err())
+                || previous_record
+                    .is_some_and(|previous| !policy_transition_is_valid(previous, policy))
             {
                 return Err(store_unavailable());
             }
@@ -1453,9 +1602,25 @@ fn validate_policy_records(state: &StoreState) -> Result<(), MonitorIssue> {
             }
             previous_revision = policy.revision;
             previous_policy = Some(policy.new_policy);
+            previous_record = Some(policy);
         }
     }
     Ok(())
+}
+
+fn policy_transition_is_valid(previous: &MonitorPolicyRecord, next: &MonitorPolicyRecord) -> bool {
+    if previous.provider != next.provider || previous.account_id != next.account_id {
+        return false;
+    }
+
+    match (previous.new_policy, next.new_policy) {
+        (MonitorPolicy::StrictSgd, MonitorPolicy::QuotaOnly) => false,
+        (MonitorPolicy::StrictSgd, MonitorPolicy::StrictSgd) => {
+            budget_is_same_or_tighter(previous.budget.as_ref(), next.budget.as_ref())
+                || is_migrated_zero_sgd_budget_repair(previous)
+        }
+        _ => true,
+    }
 }
 
 fn policy_binding_exists(
@@ -1909,6 +2074,20 @@ fn validate_config(config: &MonitorConfig) -> Result<(), MonitorIssue> {
             }
         }
     }
+    if config.experimental_collector {
+        if config.purpose != MonitorPurpose::ObserveOnly {
+            return Err(issue(
+                MonitorIssueCode::ObservationOnly,
+                "experimental collection is available only to observation-only monitors",
+                None,
+            ));
+        }
+        if config.provider != jackin_protocol::usage_monitor::MonitorProvider::Claude
+            || !matches!(config.scope, MonitorScope::BoundAccount { .. })
+        {
+            return Err(binding_required());
+        }
+    }
     match config.purpose {
         MonitorPurpose::ObserveOnly => {
             if config.goal_id.is_some() || config.policy_revision.is_some() {
@@ -2102,7 +2281,7 @@ fn validate_observation(
     observation: &StatuslineObservation,
     now_epoch: i64,
 ) -> Result<(), MonitorIssue> {
-    if observation.schema_version != USAGE_MONITOR_SCHEMA_VERSION {
+    if observation.schema_version != USAGE_STATUSLINE_INPUT_SCHEMA_VERSION {
         return Err(issue(
             MonitorIssueCode::StatuslineInvalid,
             "statusline schema version is unsupported",
@@ -2166,6 +2345,13 @@ fn valid_identifier(value: &str) -> bool {
         && value
             .chars()
             .all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_'))
+}
+
+fn valid_source_capability_id(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
 fn valid_evidence_fingerprint(key: &str, value: &str) -> bool {

@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use jackin_protocol::control::UsageSnapshotStatus;
 use jackin_protocol::usage_broker::{
     UsageAccountCapability, UsageCatalogEntry, UsageCoordinationError, UsageCoordinationErrorKind,
     UsageCredentialScope,
@@ -25,9 +26,16 @@ use jackin_usage_discovery::{
 };
 use jackin_usage_host_credentials::ProviderCredentialEnvResolver;
 use jackin_usage_host_presentation::HostSurfaceId;
+use jackin_usage_provider_claude::{
+    ClaudeCollectionError, ClaudeCredentialLease, experimental_claude_usage_snapshot_for_lease,
+};
+use jackin_usage_provider_core::{ProviderErrorKind, ProviderFailureMetadata};
 
 const INDEPENDENT_CLAUDE_REFRESH_DISABLED: &str =
     "independent Claude OAuth refresh is disabled; use statusline monitor";
+const COLLECTOR_AUTH_REQUIRED: &str =
+    "Claude collection requires foreground authentication preparation";
+const COLLECTOR_NOT_AUTHORIZED: &str = "Claude collection is not authorized for this source";
 
 pub(crate) struct DiscoveryProviderExecutor {
     pub(crate) bindings: Mutex<BTreeMap<UsageAccountCapability, Vec<ValidatedCredentialBinding>>>,
@@ -35,6 +43,8 @@ pub(crate) struct DiscoveryProviderExecutor {
     pub(crate) scope: UsageDiscoveryScope,
     pub(crate) resolver: Arc<dyn ProviderCredentialEnvResolver>,
     pub(crate) probe_budget: Duration,
+    pub(crate) collector_lease: Option<ClaudeCredentialLease>,
+    pub(crate) monitor_store: Option<Arc<crate::MonitorStore>>,
 }
 
 pub(crate) struct StagedDiscoveryCatalog {
@@ -48,7 +58,122 @@ pub(crate) fn probe_with_scope(
     capability: &UsageAccountCapability,
     launch_scope: Option<&UsageCredentialScope>,
 ) -> ProviderProbeOutcome {
+    if executor.collector_lease.is_some() {
+        if capability.surface_id != HostSurfaceId::Claude.id() {
+            return collector_not_authorized();
+        }
+        return probe_foreground_claude(executor, capability);
+    }
     probe_with_scope_using(executor, capability, launch_scope, refresh_binding_outcome)
+}
+
+fn probe_foreground_claude(
+    executor: &DiscoveryProviderExecutor,
+    capability: &UsageAccountCapability,
+) -> ProviderProbeOutcome {
+    let (Some(lease), Some(monitor_store)) = (
+        executor.collector_lease.as_ref(),
+        executor.monitor_store.as_ref(),
+    ) else {
+        return collector_auth_required();
+    };
+    if !foreground_source_is_authorized(lease, monitor_store, capability) {
+        return collector_not_authorized();
+    }
+
+    let lease = lease.clone();
+    let monitor_store = Arc::clone(monitor_store);
+    let capability = capability.clone();
+    match probe::run_probe_with_budget(executor.probe_budget, move || {
+        let consent_is_current =
+            || foreground_source_is_authorized(&lease, &monitor_store, &capability);
+        match experimental_claude_usage_snapshot_for_lease(
+            "claude",
+            Some("Claude"),
+            chrono::Utc::now().timestamp(),
+            &lease,
+            consent_is_current,
+        ) {
+            Ok(Some((view, rate_limit, failure_metadata))) => {
+                crate::rediscover::provider_probe_outcome_with_metadata(
+                    view,
+                    rate_limit,
+                    failure_metadata,
+                )
+            }
+            Ok(None) => collector_auth_required(),
+            Err(ClaudeCollectionError::ConsentRevoked {
+                provider_http_status: None,
+            }) => collector_not_authorized(),
+            Err(ClaudeCollectionError::ConsentRevoked {
+                provider_http_status: Some(http_status),
+            }) => {
+                let mut view = jackin_protocol::control::FocusedUsageView::unavailable(
+                    "claude",
+                    chrono::Utc::now().timestamp(),
+                );
+                view.status = if http_status == 401 {
+                    UsageSnapshotStatus::NeedsSecret
+                } else {
+                    UsageSnapshotStatus::Error
+                };
+                view.last_error = Some(format!(
+                    "Claude collection consent was revoked after HTTP {http_status}; the provider result was discarded"
+                ));
+                crate::rediscover::provider_probe_outcome_with_metadata(
+                    view,
+                    None,
+                    Some(ProviderFailureMetadata {
+                        kind: ProviderErrorKind::HttpStatus,
+                        http_status: Some(http_status),
+                    }),
+                )
+            }
+        }
+    }) {
+        Ok(outcome) => outcome,
+        Err(_) => probe::probe_timeout_outcome(),
+    }
+}
+
+fn foreground_source_is_authorized(
+    lease: &ClaudeCredentialLease,
+    monitor_store: &crate::MonitorStore,
+    capability: &UsageAccountCapability,
+) -> bool {
+    let source_capability_id = lease.source_capability_id();
+    collection_source_authorizes_broker_capability(
+        source_capability_id,
+        &monitor_store.collection_accounts(),
+        capability,
+    )
+}
+
+fn collection_source_authorizes_broker_capability(
+    source_capability_id: &str,
+    authorized_source_ids: &[String],
+    capability: &UsageAccountCapability,
+) -> bool {
+    capability == &crate::service::claude_usage_capability_for_source_id(source_capability_id)
+        && authorized_source_ids
+            .iter()
+            .any(|authorized| authorized == source_capability_id)
+}
+
+fn collector_auth_required() -> ProviderProbeOutcome {
+    ProviderProbeOutcome::Failure {
+        kind: UsageCoordinationErrorKind::NeedsSecret,
+        message: COLLECTOR_AUTH_REQUIRED.to_owned(),
+        retry_at_epoch: None,
+    }
+}
+
+fn collector_not_authorized() -> ProviderProbeOutcome {
+    ProviderProbeOutcome::Failure {
+        kind: UsageCoordinationErrorKind::Unauthorized,
+        message: COLLECTOR_NOT_AUTHORIZED.to_owned(),
+        retry_at_epoch: None,
+    }
 }
 
 fn probe_with_scope_using<F>(
@@ -161,6 +286,10 @@ impl UsageProviderExecutor for DiscoveryProviderExecutor {
         &self,
         entries: &[UsageCatalogEntry],
     ) -> Result<(), UsageCoordinationError> {
+        if self.collector_lease.is_some() {
+            self.bindings.lock().map_err(|_| unavailable())?.clear();
+            return Ok(());
+        }
         let admitted = entries
             .iter()
             .map(|entry| entry.capability.clone())
@@ -182,6 +311,9 @@ impl UsageProviderExecutor for DiscoveryProviderExecutor {
         &self,
         entries: &[UsageCatalogEntry],
     ) -> Result<(), UsageCoordinationError> {
+        if self.collector_lease.is_some() {
+            return Err(catalog_discovery_mismatch());
+        }
         let Some(discovery) = rediscover_discovery(&self.scope, self.resolver.as_ref()) else {
             return Err(unavailable());
         };
@@ -205,6 +337,13 @@ impl UsageProviderExecutor for DiscoveryProviderExecutor {
         catalog_revision: &str,
         entries: &[UsageCatalogEntry],
     ) -> Result<(), UsageCoordinationError> {
+        if let Some(lease) = self.collector_lease.as_ref() {
+            return crate::service::validate_foreground_catalog_revision(
+                lease.source_capability_id(),
+                catalog_revision,
+                entries,
+            );
+        }
         let Some(discovery) = rediscover_discovery(&self.scope, self.resolver.as_ref()) else {
             return Err(unavailable());
         };
@@ -225,6 +364,10 @@ impl UsageProviderExecutor for DiscoveryProviderExecutor {
         catalog_revision: &str,
         entries: &[UsageCatalogEntry],
     ) -> Result<(), UsageCoordinationError> {
+        if self.collector_lease.is_some() {
+            self.bindings.lock().map_err(|_| unavailable())?.clear();
+            return Ok(());
+        }
         let requested_entries = catalog_entry_map(entries);
         let staged = self
             .validated_catalog
@@ -338,14 +481,16 @@ mod tests {
         binding(
             HostSurfaceId::Claude,
             capability_id,
-            ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Claude(ClaudeResolved {
-                access_token: "fixture-token".to_owned(),
-                subscription_type: None,
-                account_email: Some(format!("{capability_id}@example.test")),
-                organization_type: None,
-                credential_origin: "OAuth · configured profile".to_owned(),
-                is_anonymous: false,
-            })),
+            ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Claude(
+                ClaudeResolved::from_token(
+                    "fixture-token".to_owned(),
+                    None,
+                    Some(format!("{capability_id}@example.test")),
+                    None,
+                    "OAuth · configured profile".to_owned(),
+                    false,
+                ),
+            )),
         )
     }
 
@@ -405,6 +550,8 @@ mod tests {
             scope,
             resolver,
             probe_budget: Duration::from_secs(1),
+            collector_lease: None,
+            monitor_store: None,
         }
     }
 
@@ -516,5 +663,33 @@ mod tests {
             } if message == "fake provider failure"
         ));
         assert_eq!(resolver.refresh_calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn collector_source_id_and_broker_capability_cannot_cross_authorize() {
+        let source_id = "a".repeat(64);
+        let capability = crate::service::claude_usage_capability_for_source_id(&source_id);
+
+        assert!(collection_source_authorizes_broker_capability(
+            &source_id,
+            std::slice::from_ref(&source_id),
+            &capability,
+        ));
+
+        assert!(!collection_source_authorizes_broker_capability(
+            &source_id,
+            std::slice::from_ref(&capability.account_id),
+            &capability,
+        ));
+
+        let confused_capability = UsageAccountCapability {
+            surface_id: capability.surface_id.clone(),
+            account_id: source_id.clone(),
+        };
+        assert!(!collection_source_authorizes_broker_capability(
+            &source_id,
+            std::slice::from_ref(&source_id),
+            &confused_capability,
+        ));
     }
 }

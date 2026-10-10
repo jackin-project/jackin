@@ -7,7 +7,7 @@ use jackin_protocol::usage_monitor::{
     MonitorAccountBindingInput, MonitorConfig, MonitorIssueCode, MonitorOperation, MonitorPolicy,
     MonitorPolicyApprovalInput, MonitorProvider, MonitorPurpose, MonitorReply, MonitorScope,
     MonitorStatus, SpendRecordInput, SpendRecordSource, StatuslineObservation,
-    StatuslineQuotaWindow, StatuslineRateLimits, USAGE_MONITOR_SCHEMA_VERSION,
+    StatuslineQuotaWindow, StatuslineRateLimits, USAGE_STATUSLINE_INPUT_SCHEMA_VERSION,
 };
 use jackin_usage_coordinator::{FileAccountStateStore, UsageCoordinator, UsageCoordinatorConfig};
 use jackin_usage_provider_core::{ProviderError, get_json_bearer};
@@ -242,7 +242,7 @@ fn monitor_observation(reset_at_epoch: i64) -> StatuslineObservation {
         })
     };
     StatuslineObservation {
-        schema_version: USAGE_MONITOR_SCHEMA_VERSION,
+        schema_version: USAGE_STATUSLINE_INPUT_SCHEMA_VERSION,
         session_id: "session-reset".to_owned(),
         model: None,
         claude_code_version: Some("2.1.80".to_owned()),
@@ -283,6 +283,8 @@ fn start_reset_barrier_monitor(
                     account_id: account_id.to_owned(),
                     operator_label: "isolated-test-operator".to_owned(),
                     operator_confirmed: true,
+                    provider_account_id: None,
+                    experimental_collector_approved: false,
                 },
             },
             now_epoch,
@@ -357,6 +359,7 @@ fn start_reset_barrier_monitor(
                     goal_id: Some("goal-reset".to_owned()),
                     expected_model: None,
                     policy_revision: Some(policy.revision),
+                    experimental_collector: false,
                 },
                 idempotency_key: "fixture-reset-barrier".to_owned(),
             },
