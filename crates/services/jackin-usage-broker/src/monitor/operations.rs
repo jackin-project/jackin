@@ -4,6 +4,8 @@
 use super::*;
 use std::path::Path;
 use std::sync::MutexGuard;
+#[cfg(test)]
+use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 impl MonitorStore {
@@ -22,6 +24,9 @@ impl MonitorStore {
             inner: std::sync::Arc::new(MonitorStoreInner {
                 directory,
                 state: Mutex::new(state),
+                collector_admission: Mutex::new(()),
+                #[cfg(test)]
+                collector_admission_waiters: std::sync::atomic::AtomicUsize::new(0),
                 experimental_collector_source: Mutex::new(None),
                 changed: Condvar::new(),
             }),
@@ -190,9 +195,53 @@ impl MonitorStore {
             .collect()
     }
 
+    /// Serialize a collector snapshot and its coordinator admission against
+    /// Stop and binding-source revocation. The callback must only perform
+    /// bounded admission work; it must not call another method that acquires
+    /// this gate or wait for provider completion.
+    pub(crate) fn with_collection_admission<T>(&self, admit: impl FnOnce(&[String]) -> T) -> T {
+        let _admission = self.lock_collector_admission();
+        let source_ids = self.collection_accounts();
+        admit(&source_ids)
+    }
+
+    fn lock_collector_admission(&self) -> MutexGuard<'_, ()> {
+        #[cfg(test)]
+        match self.inner.collector_admission.try_lock() {
+            Ok(guard) => return guard,
+            Err(std::sync::TryLockError::WouldBlock) => {
+                self.inner
+                    .collector_admission_waiters
+                    .fetch_add(1, Ordering::SeqCst);
+                let guard = self
+                    .inner
+                    .collector_admission
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                self.inner
+                    .collector_admission_waiters
+                    .fetch_sub(1, Ordering::SeqCst);
+                return guard;
+            }
+            Err(std::sync::TryLockError::Poisoned(_)) => {}
+        }
+        self.inner
+            .collector_admission
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn collector_admission_waiters(&self) -> usize {
+        self.inner
+            .collector_admission_waiters
+            .load(Ordering::SeqCst)
+    }
+
     /// Configure the source capability selected by this foreground service.
     /// The value is ephemeral and does not prove credential or provider health.
     pub(crate) fn set_experimental_collector_source(&self, source: Option<String>) {
+        let _admission = self.lock_collector_admission();
         *self
             .inner
             .experimental_collector_source
@@ -241,6 +290,7 @@ impl MonitorStore {
             return Err(binding_required());
         }
 
+        let _collector_admission = self.lock_collector_admission();
         let mut guard = self.lock();
         let mut staged = guard.clone();
         let now_epoch = effective_now(staged.last_now_epoch, now_epoch);
@@ -577,6 +627,7 @@ impl MonitorStore {
     }
 
     fn stop(&self, monitor_id: &str, now_epoch: i64) -> Result<MonitorReply, MonitorIssue> {
+        let _collector_admission = self.lock_collector_admission();
         let mut guard = self.lock();
         if let Some(monitor) = guard.monitors.get(monitor_id)
             && monitor.stopped_at_epoch.is_some()

@@ -462,10 +462,20 @@ fn collect_due_for_active_monitors(
     monitor_store: &MonitorStore,
     now_epoch: i64,
 ) {
-    let capabilities = monitor_store
-        .collection_accounts()
-        .into_iter()
-        .map(|source_id| crate::service::claude_usage_capability_for_source_id(&source_id))
+    monitor_store.with_collection_admission(|source_ids| {
+        collect_due_for_sources(source_ids, publisher, coordinator, now_epoch);
+    });
+}
+
+fn collect_due_for_sources(
+    source_ids: &[String],
+    publisher: &publish::ProjectionPublisher,
+    coordinator: &UsageCoordinator,
+    now_epoch: i64,
+) {
+    let capabilities = source_ids
+        .iter()
+        .map(|source_id| crate::service::claude_usage_capability_for_source_id(source_id))
         .collect::<Vec<_>>();
     if capabilities.is_empty() {
         return;

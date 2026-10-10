@@ -15,6 +15,8 @@ mod validation;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::File;
+#[cfg(test)]
+use std::sync::atomic::AtomicUsize;
 use std::sync::{Condvar, Mutex};
 
 use evaluation::{
@@ -93,6 +95,11 @@ const DECISION_MAX_PARALLEL: u32 = 1;
 struct MonitorStoreInner {
     directory: File,
     state: Mutex<StoreState>,
+    /// Linearizes collector dispatch admission against Stop and source-binding
+    /// revocation so a stale observer snapshot cannot start work afterward.
+    collector_admission: Mutex<()>,
+    #[cfg(test)]
+    collector_admission_waiters: AtomicUsize,
     experimental_collector_source: Mutex<Option<String>>,
     changed: Condvar,
 }

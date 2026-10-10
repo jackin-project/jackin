@@ -17,8 +17,8 @@ use jackin_protocol::usage_broker::{
     UsageProjectionRefreshStateV1, UsageRefreshPhase,
 };
 use jackin_protocol::usage_monitor::{
-    MonitorAccountBindingInput, MonitorConfig, MonitorOperation, MonitorProvider, MonitorPurpose,
-    MonitorReply, MonitorScope,
+    MonitorAccountBindingInput, MonitorConfig, MonitorEvidenceSource, MonitorOperation,
+    MonitorProvider, MonitorPurpose, MonitorReply, MonitorScope,
 };
 use jackin_usage_coordinator::{
     FileAccountStateStore, FileProjectionStateStore, ProviderProbeOutcome, UsageCoordinator,
@@ -243,6 +243,10 @@ impl CollectorHarness {
 }
 
 #[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "One fake-clock regression verifies terminal projection publication and monitor persistence retry in the collector path."
+)]
 fn ticker_polls_approved_source_and_publishes_terminal_result_while_idle() {
     use std::fs;
     use std::os::unix::fs::symlink;
@@ -256,7 +260,7 @@ fn ticker_polls_approved_source_and_publishes_terminal_result_while_idle() {
     });
     let executor_trait: Arc<dyn UsageProviderExecutor> = Arc::<GatedExecutor>::clone(&executor);
     let harness = CollectorHarness::new(executor_trait);
-    harness.start_approved_observer();
+    let monitor_id = harness.start_approved_observer();
     let mut ticker_state = harness.ticker_state();
 
     publisher_tick_step(
@@ -363,6 +367,44 @@ fn ticker_polls_approved_source_and_publishes_terminal_result_while_idle() {
         "successful persistence records the completed projection"
     );
     assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
+    let MonitorReply::Status { status } = harness
+        .store
+        .operate(MonitorOperation::Status { monitor_id }, NOW + 3)
+        .expect("read monitor evidence after terminal publication")
+    else {
+        panic!("expected monitor status after terminal publication");
+    };
+    assert_eq!(status.five_hour.used_percentage_basis_points, Some(3_600));
+    assert_eq!(status.seven_day.used_percentage_basis_points, Some(2_800));
+    let evidence_source = |sequence| {
+        status
+            .evidence
+            .iter()
+            .find(|evidence| evidence.sequence == sequence)
+            .map(|evidence| evidence.source)
+    };
+    assert_eq!(
+        evidence_source(
+            status
+                .five_hour
+                .used_evidence
+                .as_ref()
+                .expect("five-hour broker evidence")
+                .evidence_sequence
+        ),
+        Some(MonitorEvidenceSource::BrokerProjection)
+    );
+    assert_eq!(
+        evidence_source(
+            status
+                .seven_day
+                .used_evidence
+                .as_ref()
+                .expect("seven-day broker evidence")
+                .evidence_sequence
+        ),
+        Some(MonitorEvidenceSource::BrokerProjection)
+    );
 }
 
 #[test]
@@ -436,4 +478,110 @@ fn ticker_collector_preserves_minimum_attempt_floor_and_retry_after() {
     );
     tick(NOW + 1_200, Duration::from_secs(1_200), &mut ticker_state);
     assert_eq!(executor.calls.load(Ordering::SeqCst), 3);
+}
+
+#[test]
+fn stop_waits_for_collector_admission_and_later_snapshots_exclude_it() {
+    use std::thread;
+
+    let (started_sender, started_receiver) = mpsc::channel();
+    let (release_sender, release_receiver) = mpsc::sync_channel(0);
+    let executor = Arc::new(GatedExecutor {
+        started: started_sender,
+        release: Mutex::new(release_receiver),
+        calls: AtomicUsize::new(0),
+    });
+    let executor_trait: Arc<dyn UsageProviderExecutor> = Arc::<GatedExecutor>::clone(&executor);
+    let harness = CollectorHarness::new(executor_trait);
+    let monitor_id = harness.start_approved_observer();
+    let source_id = source_id();
+    let store = Arc::clone(&harness.store);
+    let publisher = harness.publisher.clone();
+    let coordinator = Arc::clone(&harness.coordinator);
+    let (snapshot_sender, snapshot_receiver) = mpsc::channel();
+    let (resume_sender, resume_receiver) = mpsc::channel();
+    let admission_thread = thread::spawn(move || {
+        store.with_collection_admission(|selected| {
+            snapshot_sender
+                .send(selected.to_vec())
+                .expect("publish source snapshot to test");
+            resume_receiver
+                .recv()
+                .expect("wait for test to begin collector admission");
+            collect_due_for_sources(selected, &publisher, &coordinator, NOW);
+            started_receiver
+                .recv_timeout(Duration::from_secs(1))
+                .expect("the admitted poll starts before the permit is released");
+        });
+    });
+    assert_eq!(
+        snapshot_receiver
+            .recv_timeout(Duration::from_secs(1))
+            .expect("read source snapshot"),
+        vec![source_id]
+    );
+
+    let store = Arc::clone(&harness.store);
+    let (stop_result_sender, stop_result_receiver) = mpsc::channel();
+    let stop_thread = thread::spawn(move || {
+        let result = store.operate(MonitorOperation::Stop { monitor_id }, NOW + 1);
+        let _ignored = stop_result_sender.send(result);
+    });
+    let deadline = std::time::Instant::now() + Duration::from_secs(1);
+    while harness.store.collector_admission_waiters() == 0 {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "Stop must reach the admission gate while collector admission is held"
+        );
+        thread::yield_now();
+    }
+    assert_eq!(
+        harness.store.collector_admission_waiters(),
+        1,
+        "the Stop call observed the held admission gate and is waiting for it"
+    );
+
+    resume_sender
+        .send(())
+        .expect("allow the protected admission to run");
+    admission_thread
+        .join()
+        .expect("collector admission finishes before Stop");
+    assert!(matches!(
+        stop_result_receiver
+            .recv_timeout(Duration::from_secs(1))
+            .expect("stop completes after collector admission"),
+        Ok(MonitorReply::Stopped { .. })
+    ));
+    stop_thread.join().expect("join stop operation");
+    assert!(harness.store.collection_accounts().is_empty());
+
+    collect_due_for_active_monitors(
+        &harness.publisher,
+        &harness.coordinator,
+        &harness.store,
+        NOW + 2,
+    );
+    assert_eq!(
+        executor.calls.load(Ordering::SeqCst),
+        1,
+        "a post-Stop snapshot cannot dispatch another provider call"
+    );
+    release_sender
+        .send(())
+        .expect("release admitted provider call");
+    let generation = harness
+        .coordinator
+        .current(&harness.capability, NOW + 2)
+        .expect("read admitted generation")
+        .generation;
+    harness
+        .coordinator
+        .join_generation(
+            &harness.capability,
+            generation,
+            Duration::from_secs(1),
+            NOW + 2,
+        )
+        .expect("join admitted provider call");
 }
