@@ -18,8 +18,12 @@ ingress remains optional and passive.
   evidence that direct usage works.
 - CLI-port's planned commands are `usage auth prepare --provider claude
   [--keychain-service SERVICE] [--data-dir PATH]`, binding confirmation with
-  `--provider-account`, and `usage monitor observe ...
-  --experimental-collector`. These are agent-reported planned shapes, not yet
+  `--provider-account ... --approve-experimental-collector`, and `usage
+  monitor observe ... --experimental-collector`. The binding flag records
+  explicit, audited, default-false approval on that binding revision;
+  `observe --experimental-collector` only consumes an already-approved
+  mapping. Neither flag grants dispatch consent, and an unattended caller
+  cannot approve collection. These are agent-reported planned shapes, not yet
   verified by the main-port binary; confirm actual help and output before
   updating operator instructions.
 - The new path requires all-stdio TTY gates, a foreground broker lease before
@@ -34,12 +38,56 @@ ingress remains optional and passive.
   setup, or installed proof is available for this port. Baseline port review,
   independent reviews, offline gates, fresh install/fixture proof, and PR work
   remain pending; the PR is not complete.
-- The earlier untracked `operator-unblock.md` in
-  `/private/tmp/jackin-claude-monitor` is a historical observer-only note.
-  Leave it in place; do not delete it or treat it as direct-collector proof.
-  Its no-auth/no-live-action safety limits carry forward, while this main-port
-  contract defines the new direct CLI path. Do not copy its predecessor
-  installed proof into this port's verification record.
+- The predecessor `operator-unblock.md` was committed and pushed at
+  `771bb088`; the earlier “untracked” description is obsolete. Its archived
+  copy here is [historical-installed-v2-workaround.md](historical-installed-v2-workaround.md).
+  Leave the predecessor branch and source file intact, and do not treat its
+  observer-only workflow or fixture evidence as direct-collector proof. Its
+  safety limits carry forward, while this main-port contract defines the new
+  path. Do not copy predecessor installed proof into this port's verification
+  record.
+
+### Branch consolidation audit
+
+`feat/claude-usage-monitor-main` is the single intended delivery branch. Keep
+`claude-unattended-monitor` preserved and untouched until its changes and the
+main-port agent work are fully inventoried, reconciled, and independently
+reviewed. A direct read-only inventory found 28 usage commits on the
+predecessor after `ff9eb01f`, spanning 232 files (+36,856/-11,218). The older
+25-commit/219-file counts are stale checkpoint figures from before commits
+`a9001732`, `427c104b`, and `771bb088`. The separate PR #1121 dependency
+contains 203 unrelated commits and remains a distinct landing prerequisite;
+do not fold that history into the usage-port inventory. The primary branch
+history contains only the v7 contract/docs commits, while its worktree
+currently carries a dirty 59 tracked-file port plus untracked split modules,
+tests, and docs. The semantic inventory spans protocol, coordinator,
+monitor/broker, Claude auth/provider, CLI/broker binary and integration tests,
+runtime/FFI/telemetry, and usage docs. The full file-level reconciliation is
+still pending, so consolidation is not complete. Do not cherry-pick the
+predecessor history wholesale. Account for each area, its tests, and its
+evidence on the single candidate before closing this item.
+
+The old branch visibly contains the closed-period spend anchor,
+invocation-time floor, and strict budget guard/test changes, but their main-port
+counterparts have not been independently verified. The predecessor's separate
+`landing-queue.md` is absent from this port; it records accepted fixes and
+branch/PR evidence but also contains outdated broad landing instructions. If
+needed, extract only relevant fix evidence into the current verification notes
+after checking it against the candidate. Keep the old branch intact during
+that accounting.
+
+The current security review still has blockers: ordinary token copies are not
+zeroized; the one-shot exact-source 401 reread is incomplete; a selected-source
+cache miss may fall back to other credentials; service validation is
+incomplete; the approved collector is not yet wired into provider execution;
+and the request still uses a Claude Code user agent. These are review findings
+to reconcile in source and offline tests, not claims that the fixes are done.
+
+Compile verification has not passed. The telemetry gate reports eight
+unchanged baseline literals in
+`/private/tmp/jackin-main-telemetry-gate.log`; these findings have no broad
+fix or waiver. Keep the canonical archive tag pending until the port is
+verified and its ownership/reconciliation review is complete.
 
 ### Current queue
 
@@ -65,6 +113,9 @@ ingress remains optional and passive.
   or provider checks under this task.
 - [ ] Reconcile docs and review the final main-port diff. Do not mark the PR
   complete until the actual review, gates, and installed proof are recorded.
+- [ ] Finish the file/commit-level reconciliation of predecessor and agent
+  work; review the single-branch result before considering the preserved
+  predecessor branch for any cleanup.
 
 ## Historical predecessor progress — 2026-10-10
 

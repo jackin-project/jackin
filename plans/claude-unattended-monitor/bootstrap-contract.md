@@ -30,21 +30,27 @@ actual commands:
 ```text
 jackin usage auth prepare --provider claude [--keychain-service SERVICE] [--data-dir PATH]
 
-jackin usage binding confirm --provider claude --account LOCAL_ID --provider-account CANONICAL_ID --operator-label LABEL --confirm --format json --data-dir PATH
+jackin usage binding confirm --provider claude --account LOCAL_ID --provider-account CANONICAL_ID --operator-label LABEL --confirm --approve-experimental-collector --format json --data-dir PATH
 
 jackin usage monitor observe --provider claude --binding BINDING_ID --binding-revision REVISION --idempotency-key KEY --experimental-collector --format json --data-dir PATH
 ```
 
-`--experimental-collector` defaults off. `auth prepare` requires all three
-standard streams to be terminals. Binding confirmation is also an attended
-operator action. Do not pipe or redirect either confirmation command or capture
-their output. A broker status response is secret-free and reports local service
-readiness only; it does not establish endpoint availability or provider
-support. The planned `service_ready` response is emitted once while the
-command remains attached to the foreground service; the operator ends that
-process to release the lease and cache. Do not background or detach it. The
-planned wire/schema versions are protocol v7 and monitor schema 3; verify the
-implementation and migration before publishing those versions as current.
+`--approve-experimental-collector` is a separate, explicit operator decision
+on the binding confirmation. It records
+`binding.experimental_collector_approved=true` on that audited binding revision;
+the default is false. The later `monitor observe --experimental-collector`
+flag can consume only an already-approved mapping. It cannot create approval,
+and no unattended caller may enable provider collection by itself. Neither
+flag authorizes dispatch. `auth prepare` requires all three standard streams
+to be terminals. Binding confirmation is also an attended operator action. Do
+not pipe or redirect either confirmation command or capture their output. A
+broker status response is secret-free and reports local service readiness only;
+it does not establish endpoint availability or provider support. The planned
+`service_ready` response is emitted once while the command remains attached to
+the foreground service; the operator ends that process to release the lease
+and cache. Do not background or detach it. The planned wire/schema versions
+are protocol v7 and monitor schema 3; verify the implementation and migration
+before publishing those versions as current.
 
 Sequence: run `auth prepare` in one attended terminal and leave it in the
 foreground after `service_ready`. From a second attended terminal using the
@@ -131,8 +137,11 @@ Required offline proof before updating the handoff:
   zeroizing cache material, redacts outputs, blocks UI for the service
   lifetime, and clears the cache on stop/restart.
 - Auth preparation and passive status/observer paths make zero provider
-  requests. Default collector state is off; only a confirmed mapping plus
-  `--experimental-collector` enables the selected scope.
+  requests. Default binding approval is false; only an attended binding
+  confirmation with `--approve-experimental-collector`, followed by
+  `monitor observe --experimental-collector`, enables the selected scope.
+  Revisions are audited; the observe flag alone never grants collection or
+  dispatch authority.
 - Fake-adapter tests cover no broad discovery, account isolation, cooldown,
   401 same-source/same-account retry rules, and typed 403/429 failures without
   live requests.
