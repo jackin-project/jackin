@@ -42,13 +42,20 @@ fn local_source_identity_kind_round_trips_in_projection_json() {
 }
 
 fn open_bridge(dir: &std::path::Path) -> UsageMenuBarBridge {
+    open_bridge_with_surfaces(dir, vec!["codex".to_owned(), "claude".to_owned()])
+}
+
+fn open_bridge_with_surfaces(
+    dir: &std::path::Path,
+    enabled_surface_ids: Vec<String>,
+) -> UsageMenuBarBridge {
     let bridge = UsageMenuBarBridge::create();
     bridge
         .open_runtime(OpenConfig {
             data_dir_override: Some(dir.display().to_string()),
             config_root_override: Some(dir.join("config").display().to_string()),
             refresh_floor_secs: 120,
-            enabled_surface_ids: vec!["codex".to_owned(), "claude".to_owned()],
+            enabled_surface_ids,
             allow_live_probes: false,
         })
         .expect("open offline bridge");
@@ -149,6 +156,132 @@ fn fixture_projection() -> UsageProjectionV1 {
         unresolved: Vec::new(),
         issues: Vec::new(),
     }
+}
+
+fn provider_with_glance(
+    source: &UsageProviderV1,
+    provider_id: &str,
+    rank: u32,
+    reset_at_epoch: Option<i64>,
+    remaining: u8,
+) -> UsageProviderV1 {
+    let mut provider = source.clone();
+    provider.provider_id = provider_id.to_owned();
+    provider.display_name = provider_id.to_owned();
+    provider.rank = rank;
+    for account in &mut provider.accounts {
+        account.canonical_account_id = format!("{provider_id}-account-{}", account.rank);
+        account.display_label = format!("{provider_id}-account-{}@example.test", account.rank);
+        for window in &mut account.windows {
+            window.window_id = format!("{provider_id}-window-{}", account.rank);
+            window.value_label = format!("{remaining}% left");
+            window.remaining_percent = Some(UsagePercent::new(remaining).expect("percent"));
+            window.remaining_raw_percent = Some(i32::from(remaining));
+            window.reset_at_epoch = reset_at_epoch;
+        }
+        for group in &mut account.metric_groups {
+            group.group_id = format!("{provider_id}-group-{}", group.rank);
+            group.reset_at_epoch = reset_at_epoch;
+            if let UsageMetricValueV1::Window {
+                remaining_percent,
+                remaining_raw_percent,
+                ..
+            } = &mut group.value
+            {
+                *remaining_percent = Some(UsagePercent::new(remaining).expect("percent"));
+                *remaining_raw_percent = Some(i32::from(remaining));
+            }
+        }
+    }
+    provider
+}
+
+fn fixture_with_provider_glances(specs: &[(&str, u32, Option<i64>, u8)]) -> UsageProjectionV1 {
+    let mut projection = fixture_projection();
+    let source = projection.providers[0].clone();
+    projection.providers = specs
+        .iter()
+        .map(|(provider_id, rank, reset_at_epoch, remaining)| {
+            provider_with_glance(&source, provider_id, *rank, *reset_at_epoch, *remaining)
+        })
+        .collect();
+    projection
+}
+
+#[test]
+fn desktop_projection_ranks_status_rows_before_cap_and_preserves_full_provider_order() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let bridge = open_bridge_with_surfaces(
+        dir.path(),
+        vec![
+            "codex".to_owned(),
+            "claude".to_owned(),
+            "grok".to_owned(),
+            "zai".to_owned(),
+        ],
+    );
+    bridge
+        .apply_publication(fixture_with_provider_glances(&[
+            ("openai", 0, Some(1_800_070_000), 10),
+            ("anthropic", 1, Some(1_800_050_000), 80),
+            ("xai", 2, Some(1_800_050_000), 32),
+            ("zai", 3, Some(1_800_050_000), 32),
+        ]))
+        .expect("fixture publication");
+
+    let projection = bridge.desktop_projection(3).expect("desktop projection");
+    assert_eq!(
+        projection
+            .providers
+            .iter()
+            .map(|provider| provider.group.surface_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["codex", "claude", "grok", "zai"]
+    );
+    assert_eq!(
+        projection
+            .glance_rows
+            .iter()
+            .map(|row| row.surface_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["codex", "claude", "grok", "zai"]
+    );
+    assert_eq!(
+        projection
+            .status_bar_glance_rows
+            .iter()
+            .map(|row| row.surface_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["grok", "zai", "claude"]
+    );
+    bridge.shutdown().expect("shutdown");
+}
+
+#[test]
+fn desktop_projection_ranks_unknown_status_reset_after_known_resets() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let bridge = open_bridge_with_surfaces(
+        dir.path(),
+        vec!["codex".to_owned(), "claude".to_owned(), "amp".to_owned()],
+    );
+    bridge
+        .apply_publication(fixture_with_provider_glances(&[
+            ("openai", 0, None, 5),
+            ("anthropic", 1, Some(1_800_070_000), 80),
+            ("amp", 2, Some(1_800_050_000), 70),
+        ]))
+        .expect("fixture publication");
+
+    let projection = bridge.desktop_projection(3).expect("desktop projection");
+    assert_eq!(
+        projection
+            .status_bar_glance_rows
+            .iter()
+            .map(|row| row.surface_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["amp", "claude", "codex"]
+    );
+    bridge.shutdown().expect("shutdown");
 }
 
 #[test]
