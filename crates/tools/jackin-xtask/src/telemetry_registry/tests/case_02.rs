@@ -70,6 +70,10 @@ fn namespace_scan_resolves_telemetry_attr_bindings_and_rejects_unknown_keys() {
         "use jackin_telemetry::Attr as EventAttr; use jackin_telemetry::schema::attrs as keys; let _ = EventAttr { key: keys::OUTCOME, value: () };"
     ));
     assert!(!contains_legacy_telemetry_name(
+        "crates/services/jackin-telemetry/src/metric/tests/case_01.rs",
+        "use super::*; let _ = Attr { key: attrs::CLI_COMMAND_NAME, value: () }; let _ = Attr { key: schema::attrs::std_attrs::ERROR_TYPE, value: () };"
+    ));
+    assert!(!contains_legacy_telemetry_name(
         "fixture.rs",
         "use jackin_telemetry::Attr; use jackin_telemetry::schema::attrs; let _ = Attr { key: attrs::ALL_KEYS[0], value: () };"
     ));
@@ -104,5 +108,25 @@ fn namespace_scan_resolves_telemetry_attr_bindings_and_rejects_unknown_keys() {
     assert!(contains_legacy_telemetry_name(
         "fixture.rs",
         "use jackin_telemetry::Attr as EventAttr; let _ = EventAttr { key: custom_key!(\"jackin.hidden\"), value: () };"
+    ));
+    assert!(!contains_legacy_telemetry_name(
+        "fixture.rs",
+        "use jackin_telemetry::{schema, Attr}; fn project() { let selected = schema::ALL_KEYS.iter().copied().find(|key| key.starts_with(\"jackin.\")).expect(\"schema key\"); let _ = Attr { key: selected, value: () }; }"
+    ));
+    assert!(contains_legacy_telemetry_name(
+        "fixture.rs",
+        "use jackin_telemetry::{schema, Attr}; fn project() { let selected = schema::ALL_KEYS.iter().copied().map(|_| \"jackin.hidden\").next().expect(\"generated value\"); let _ = Attr { key: selected, value: () }; }"
+    ));
+    assert!(!contains_legacy_telemetry_name(
+        "fixture.rs",
+        "use jackin_telemetry::Attr; fn project(metadata: &jackin_telemetry::schema::EventMetadata) { let _ = metadata.attributes.iter().map(|attribute| Attr { key: attribute.name, value: () }); }"
+    ));
+    assert!(contains_legacy_telemetry_name(
+        "fixture.rs",
+        "use jackin_telemetry::Attr; struct FakeAttribute { name: &'static str } struct FakeMetadata { attributes: Vec<FakeAttribute> } fn project(metadata: &FakeMetadata) { let _ = metadata.attributes.iter().map(|attribute| Attr { key: attribute.name, value: () }); }"
+    ));
+    assert!(contains_legacy_telemetry_name(
+        "fixture.rs",
+        "use jackin_telemetry::Attr; struct FakeAttribute { name: &'static str } fn project(metadata: &jackin_telemetry::schema::EventMetadata, fake: &FakeAttribute) { let _ = metadata.attributes.iter().map(|attribute| { let _ = Attr { key: attribute.name, value: () }; let shadowed = |attribute: &FakeAttribute| Attr { key: attribute.name, value: () }; shadowed(fake) }); }"
     ));
 }

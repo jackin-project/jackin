@@ -44,13 +44,21 @@ fn source_policy_resolves_raw_tracing_import_aliases() {
         "use tracing::{info as emit}; fn raw() { emit!(\"event\"); }",
         "use tracing::*; fn raw() { info!(\"event\"); }",
         "use tracing as t; use t::info as emit; fn raw() { emit!(\"event\"); }",
-        "use tracing::instrument as observe; #[observe] fn raw() {}",
-        "use tracing as t; #[t::instrument] fn raw() {}",
         "use tracing::trace_span as scoped; fn raw() { let _span = scoped!(\"event\"); }",
     ] {
         assert_eq!(
             source_policy_violations(path, source),
             ["raw tracing call outside governed facade"],
+            "{source}"
+        );
+    }
+    for source in [
+        "use tracing::instrument as observe; #[observe] fn raw() {}",
+        "use tracing as t; #[t::instrument] fn raw() {}",
+    ] {
+        assert_eq!(
+            source_policy_violations(path, source),
+            ["tracing instrument outside governed facade"],
             "{source}"
         );
     }

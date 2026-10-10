@@ -1253,10 +1253,31 @@ fn is_schema_constant_name(name: Option<&String>) -> bool {
     })
 }
 
+fn is_event_metadata_type(ty: &syn::Type, bindings: &NamespaceBindings) -> bool {
+    match ty {
+        syn::Type::Reference(reference) => is_event_metadata_type(&reference.elem, bindings),
+        syn::Type::Paren(parenthesized) => is_event_metadata_type(&parenthesized.elem, bindings),
+        syn::Type::Group(group) => is_event_metadata_type(&group.elem, bindings),
+        syn::Type::Path(path) if path.qself.is_none() => {
+            bindings.expand_path(&path.path).is_some_and(|path| {
+                path.last()
+                    .is_some_and(|segment| segment == "EventMetadata")
+                    && path
+                        .windows(2)
+                        .any(|pair| pair == ["schema", "EventMetadata"])
+                    && bindings.is_telemetry_root(&path)
+            })
+        }
+        _ => false,
+    }
+}
+
 struct NamespaceScanner<'a> {
     path: &'a str,
     context: String,
     bindings: NamespaceBindings,
+    event_metadata_bindings: BTreeSet<(String, String)>,
+    event_attribute_bindings: BTreeSet<String>,
     violations: BTreeSet<(usize, String)>,
 }
 
@@ -1288,6 +1309,8 @@ impl<'a> NamespaceScanner<'a> {
                 telemetry_crate: path.starts_with("crates/services/jackin-telemetry/"),
                 ..NamespaceBindings::default()
             },
+            event_metadata_bindings: BTreeSet::new(),
+            event_attribute_bindings: BTreeSet::new(),
             violations: BTreeSet::new(),
         }
     }
@@ -1303,6 +1326,99 @@ impl<'a> NamespaceScanner<'a> {
             expression.span().start().line,
             format!("unresolved telemetry Attr.key expression: {expression:?}"),
         ));
+    }
+
+    fn is_event_metadata_definition(&self, expression: &syn::Expr) -> bool {
+        match expression {
+            syn::Expr::Call(call) => {
+                let syn::Expr::Path(path) = call.func.as_ref() else {
+                    return false;
+                };
+                self.bindings.expand_path(&path.path).is_some_and(|path| {
+                    self.bindings.is_telemetry_root(&path)
+                        && path
+                            .windows(3)
+                            .any(|triple| triple == ["schema", "events", "definition"])
+                })
+            }
+            syn::Expr::MethodCall(call) if call.method == "expect" => {
+                self.is_event_metadata_definition(&call.receiver)
+            }
+            syn::Expr::Paren(expression) => self.is_event_metadata_definition(&expression.expr),
+            syn::Expr::Group(expression) => self.is_event_metadata_definition(&expression.expr),
+            syn::Expr::Reference(expression) => self.is_event_metadata_definition(&expression.expr),
+            _ => false,
+        }
+    }
+
+    fn is_event_metadata_binding(&self, expression: &syn::Expr) -> bool {
+        let syn::Expr::Path(path) = expression else {
+            return false;
+        };
+        path.path.segments.len() == 1
+            && self.event_metadata_bindings.contains(&(
+                self.context.clone(),
+                path.path.segments[0].ident.to_string(),
+            ))
+    }
+
+    fn is_event_metadata_attributes_iter(&self, expression: &syn::Expr) -> bool {
+        match expression {
+            syn::Expr::Field(field) => {
+                matches!(&field.member, syn::Member::Named(member) if member == "attributes")
+                    && self.is_event_metadata_binding(&field.base)
+            }
+            syn::Expr::MethodCall(call)
+                if matches!(
+                    call.method.to_string().as_str(),
+                    "iter" | "iter_mut" | "into_iter" | "filter" | "map" | "copied" | "cloned"
+                ) =>
+            {
+                self.is_event_metadata_attributes_iter(&call.receiver)
+            }
+            syn::Expr::Paren(expression) => {
+                self.is_event_metadata_attributes_iter(&expression.expr)
+            }
+            syn::Expr::Group(expression) => {
+                self.is_event_metadata_attributes_iter(&expression.expr)
+            }
+            syn::Expr::Reference(expression) => {
+                self.is_event_metadata_attributes_iter(&expression.expr)
+            }
+            _ => false,
+        }
+    }
+
+    fn is_schema_all_keys_expression(&self, expression: &syn::Expr) -> bool {
+        match expression {
+            syn::Expr::Path(path) => self
+                .bindings
+                .expand_path(&path.path)
+                .is_some_and(|path| self.bindings.is_schema_all_keys_path(&path)),
+            syn::Expr::MethodCall(call)
+                if matches!(
+                    call.method.to_string().as_str(),
+                    "iter"
+                        | "iter_mut"
+                        | "into_iter"
+                        | "filter"
+                        | "find"
+                        | "copied"
+                        | "cloned"
+                        | "next"
+                        | "nth"
+                        | "expect"
+                ) =>
+            {
+                self.is_schema_all_keys_expression(&call.receiver)
+            }
+            syn::Expr::Paren(expression) => self.is_schema_all_keys_expression(&expression.expr),
+            syn::Expr::Group(expression) => self.is_schema_all_keys_expression(&expression.expr),
+            syn::Expr::Reference(expression) => {
+                self.is_schema_all_keys_expression(&expression.expr)
+            }
+            _ => false,
+        }
     }
 
     fn is_telemetry_attr_path(&self, path: &syn::Path) -> bool {
@@ -1386,8 +1502,14 @@ impl<'a> NamespaceScanner<'a> {
                     {
                         AttrKeySource::Schema
                     }
+                    (Some(name), "name") if self.event_attribute_bindings.contains(name) => {
+                        AttrKeySource::Schema
+                    }
                     _ => AttrKeySource::Unknown,
                 }
+            }
+            syn::Expr::MethodCall(_) if self.is_schema_all_keys_expression(expression) => {
+                AttrKeySource::Schema
             }
             syn::Expr::Index(index) => {
                 let syn::Expr::Path(path) = index.expr.as_ref() else {
@@ -1485,13 +1607,32 @@ impl NamespaceBindings {
     }
 
     fn is_schema_key_path(&self, path: &[String]) -> bool {
-        self.is_schema_all_keys_path(path)
-            || (self.is_telemetry_root(path)
-                && is_schema_constant_name(path.last())
-                && path.windows(2).any(|pair| pair == ["schema", "attrs"])
-                && (path.len() == 4
-                    || (path.len() == 5
-                        && path.get(3).is_some_and(|segment| segment == "std_attrs"))))
+        if self.is_schema_all_keys_path(path) {
+            return true;
+        }
+        let normalized = if self.telemetry_crate
+            && self.has_telemetry_glob()
+            && path.first().is_some_and(|segment| segment == "attrs")
+        {
+            let mut normalized = vec![String::from("schema")];
+            normalized.extend(path.iter().cloned());
+            normalized
+        } else {
+            path.to_vec()
+        };
+        if !self.is_telemetry_root(&normalized) || !is_schema_constant_name(normalized.last()) {
+            return false;
+        }
+        if let Some(index) = normalized
+            .windows(3)
+            .position(|triple| triple == ["schema", "attrs", "std_attrs"])
+        {
+            return normalized.len() == index + 4;
+        }
+        normalized
+            .windows(2)
+            .position(|pair| pair == ["schema", "attrs"])
+            .is_some_and(|index| normalized.len() == index + 3)
     }
 
     fn is_schema_all_keys_path(&self, path: &[String]) -> bool {
@@ -1681,6 +1822,12 @@ impl<'ast> syn::visit::Visit<'ast> for NamespaceScanner<'_> {
         syn::visit::visit_file(self, file);
     }
 
+    fn visit_block(&mut self, block: &'ast syn::Block) {
+        let event_attribute_bindings = self.event_attribute_bindings.clone();
+        syn::visit::visit_block(self, block);
+        self.event_attribute_bindings = event_attribute_bindings;
+    }
+
     fn visit_item_static(&mut self, item: &'ast syn::ItemStatic) {
         let previous = std::mem::replace(&mut self.context, format!("static:{}", item.ident));
         syn::visit::visit_item_static(self, item);
@@ -1695,8 +1842,70 @@ impl<'ast> syn::visit::Visit<'ast> for NamespaceScanner<'_> {
 
     fn visit_item_fn(&mut self, item: &'ast syn::ItemFn) {
         let previous = std::mem::replace(&mut self.context, format!("fn:{}", item.sig.ident));
+        for input in &item.sig.inputs {
+            let syn::FnArg::Typed(argument) = input else {
+                continue;
+            };
+            let syn::Pat::Ident(pattern) = argument.pat.as_ref() else {
+                continue;
+            };
+            if is_event_metadata_type(&argument.ty, &self.bindings) {
+                self.event_metadata_bindings
+                    .insert((self.context.clone(), pattern.ident.to_string()));
+            }
+        }
         syn::visit::visit_item_fn(self, item);
         self.context = previous;
+    }
+
+    fn visit_local(&mut self, local: &'ast syn::Local) {
+        if let (syn::Pat::Ident(pattern), Some(initializer)) = (&local.pat, local.init.as_ref()) {
+            let name = pattern.ident.to_string();
+            self.event_attribute_bindings.remove(&name);
+            if self.is_event_metadata_definition(&initializer.expr) {
+                self.event_metadata_bindings
+                    .insert((self.context.clone(), name));
+            }
+        }
+        syn::visit::visit_local(self, local);
+    }
+
+    fn visit_expr_method_call(&mut self, call: &'ast syn::ExprMethodCall) {
+        let is_event_attribute_iter = self.is_event_metadata_attributes_iter(&call.receiver);
+        self.visit_expr(&call.receiver);
+        for argument in &call.args {
+            if is_event_attribute_iter && let syn::Expr::Closure(closure) = argument {
+                let mut inserted = Vec::new();
+                for input in &closure.inputs {
+                    if let syn::Pat::Ident(pattern) = input {
+                        let name = pattern.ident.to_string();
+                        if self.event_attribute_bindings.insert(name.clone()) {
+                            inserted.push(name);
+                        }
+                    }
+                }
+                self.visit_expr(&closure.body);
+                for name in inserted {
+                    self.event_attribute_bindings.remove(&name);
+                }
+            } else {
+                self.visit_expr(argument);
+            }
+        }
+    }
+
+    fn visit_expr_closure(&mut self, closure: &'ast syn::ExprClosure) {
+        let mut shadowed = Vec::new();
+        for input in &closure.inputs {
+            if let syn::Pat::Ident(pattern) = input {
+                let name = pattern.ident.to_string();
+                if self.event_attribute_bindings.remove(&name) {
+                    shadowed.push(name);
+                }
+            }
+        }
+        syn::visit::visit_expr_closure(self, closure);
+        self.event_attribute_bindings.extend(shadowed);
     }
 
     fn visit_macro(&mut self, invocation: &'ast syn::Macro) {
