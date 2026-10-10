@@ -38,12 +38,12 @@ but teardown prevents new attempts from being admitted.
 
 The installed v3 `state/` is empty: this install has no verified live bootstrap,
 source binding, or monitor. Its readiness is setup-blocked. Do not activate
-collection or dispatch from this handoff yet. Keep the existing Claude goal and
-operator-approved strict/quota policy unchanged; this handoff does not create,
-rename, replace, or authorize dispatch for a goal. Report the missing live
-setup once and stop new dispatch rather than repeatedly running `doctor` or
-`status`. Unknown Claude extra-usage permission is not permission to exceed
-verified quota or spend limits.
+collection or dispatch from this handoff yet. Keep the existing Claude goal
+unchanged, and leave any separately approved dispatch policy, if one exists,
+unchanged; this handoff does not create, rename, replace, or authorize dispatch
+for a goal. Report the missing live setup once and stop new dispatch rather
+than repeatedly running `doctor` or `status`. Unknown Claude extra-usage
+permission is not permission to exceed verified quota or spend limits.
 
 ### Paste-ready note for the existing Claude goal
 

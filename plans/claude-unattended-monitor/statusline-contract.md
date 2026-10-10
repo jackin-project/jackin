@@ -128,15 +128,16 @@ These are audit fields only. They do not renew evidence, alter age limits,
 clear reset barriers, or relax quota/model guards or `runnable` decisions.
 
 Provider refresh throttling is broker-owned and separate from statusline
-callbacks. The rate-limit fix in progress targets a conservative Claude
-minimum-attempt deadline: round provider-response completion up to the next
-epoch second, then add 300 seconds. Recovery of an interrupted active attempt
-starts a fresh 300-second floor from the rounded-up recovery time. The latest
-of those floors, provider `Retry-After`, and retry backoff wins; an explicit
-force refresh may bypass only success cooldown, never a retry, rate-limit, or
-attempt/recovery floor. Focused fake-clock, restart, and forced-refresh
-verification is pending. This is not a claim of verified or live-provider
-behavior.
+callbacks. The current source enforces a conservative Claude minimum-attempt
+deadline: round provider-response completion up to the next epoch second, then
+add 300 seconds. Recovery of an interrupted active attempt starts a fresh
+300-second floor from the rounded-up recovery time. The latest of those floors,
+provider `Retry-After`, and retry backoff wins; an explicit force refresh may
+bypass only success cooldown, never a retry, rate-limit, or attempt/recovery
+floor. The verification record lists the 57-test coordinator scope for checkpoint
+22ac, including the attempt-floor and restart coverage, and the 28-test Claude
+provider/lease lifecycle scope rerun for checkpoint 45a33093. These results do
+not constitute live-provider verification.
 
 ## Composition behavior
 
