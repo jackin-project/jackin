@@ -17,14 +17,17 @@ use jackin_protocol::usage_broker::{
     UsageProjectionRefreshStateV1, UsageRefreshPhase,
 };
 use jackin_protocol::usage_monitor::{
-    MonitorAccountBindingInput, MonitorConfig, MonitorEvidenceSource, MonitorOperation,
-    MonitorProvider, MonitorPurpose, MonitorReply, MonitorScope,
+    MonitorAccountBinding, MonitorAccountBindingInput, MonitorConfig, MonitorEvidenceSource,
+    MonitorLifecycle, MonitorOperation, MonitorProvider, MonitorPurpose, MonitorReply,
+    MonitorScope,
 };
 use jackin_usage_coordinator::{
     ClockSample as CoordinatorClockSample, FileAccountStateStore, FileProjectionStateStore,
     MonotonicClock, ProviderProbeOutcome, UsageCoordinator, UsageCoordinatorConfig,
     UsageProviderExecutor,
 };
+
+mod routing;
 
 const COLLECTOR_ACCOUNT_ID: &str = "collector-test-account";
 const SOURCE_ID_PREFIX: &str = "a";
@@ -171,7 +174,7 @@ impl CollectorHarness {
     fn new(executor: Arc<dyn UsageProviderExecutor>) -> Self {
         let temp = tempfile::tempdir().expect("temporary collector state");
         let source_id = source_id();
-        let capability = crate::service::claude_usage_capability_for_source_id(&source_id);
+        let capability = crate::source_identity::claude_usage_capability_for_source_id(&source_id);
         let catalog = vec![UsageCatalogEntry {
             revision: "collector-test-catalog-revision".to_owned(),
             capability: capability.clone(),
@@ -348,6 +351,18 @@ fn ticker_polls_approved_source_and_publishes_terminal_result_while_idle() {
         updating.refresh_state,
         UsageProjectionRefreshStateV1::Refreshing
     );
+    assert!(matches!(
+        harness
+            .store
+            .operate(
+                MonitorOperation::Stop {
+                    monitor_id: monitor_id.clone(),
+                },
+                NOW + 1,
+            )
+            .expect("stop the observer while its admitted provider call is in flight"),
+        MonitorReply::Stopped { .. }
+    ));
 
     let state_file = harness.monitor_state_file();
     let backup_file = state_file.with_extension("state-backup");
@@ -435,12 +450,80 @@ fn ticker_polls_approved_source_and_publishes_terminal_result_while_idle() {
         "successful persistence records the completed projection"
     );
     assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
+    let MonitorReply::Status {
+        status: stopped_status,
+    } = harness
+        .store
+        .operate(
+            MonitorOperation::Status {
+                monitor_id: monitor_id.clone(),
+            },
+            NOW + 3,
+        )
+        .expect("read the stopped monitor after terminal publication")
+    else {
+        panic!("expected stopped monitor status after terminal publication");
+    };
+    assert_eq!(stopped_status.lifecycle, MonitorLifecycle::Stopped);
+    assert!(
+        stopped_status
+            .evidence
+            .iter()
+            .all(|evidence| evidence.source != MonitorEvidenceSource::BrokerProjection),
+        "Stop keeps the final monitor record unchanged after the admitted provider call completes"
+    );
+    let binding = match harness
+        .store
+        .operate(
+            MonitorOperation::BindAccount {
+                binding: MonitorAccountBindingInput {
+                    provider: MonitorProvider::Claude,
+                    account_id: COLLECTOR_ACCOUNT_ID.to_owned(),
+                    operator_label: "collector-test-operator".to_owned(),
+                    operator_confirmed: true,
+                    provider_account_id: Some(source_id()),
+                    experimental_collector_approved: true,
+                },
+            },
+            NOW + 3,
+        )
+        .expect("read the still-current approved local binding")
+    {
+        MonitorReply::AccountBound { binding } => binding,
+        other => panic!("expected current binding, got {other:?}"),
+    };
+    let MonitorReply::Started { status } = harness
+        .store
+        .operate(
+            MonitorOperation::Start {
+                config: MonitorConfig {
+                    provider: MonitorProvider::Claude,
+                    purpose: MonitorPurpose::ObserveOnly,
+                    scope: MonitorScope::BoundAccount {
+                        binding_id: binding.binding_id,
+                        binding_revision: binding.revision,
+                        session_id: None,
+                    },
+                    goal_id: None,
+                    expected_model: None,
+                    policy_revision: None,
+                    experimental_collector: false,
+                },
+                idempotency_key: "post-stop-terminal-observer".to_owned(),
+            },
+            NOW + 3,
+        )
+        .expect("start a fresh observer for the still-approved local partition")
+    else {
+        panic!("expected fresh observer to start");
+    };
+    let monitor_id = status.monitor_id;
     let MonitorReply::Status { status } = harness
         .store
         .operate(MonitorOperation::Status { monitor_id }, NOW + 3)
-        .expect("read monitor evidence after terminal publication")
+        .expect("read account evidence admitted before Stop")
     else {
-        panic!("expected monitor status after terminal publication");
+        panic!("expected fresh observer status after terminal publication");
     };
     assert_eq!(
         status.five_hour.used_percentage_basis_points,

@@ -40,8 +40,8 @@ use validation::validate_store_state;
 use validation::{spend_snapshot_preserves_history, spend_state_matches_account};
 
 use jackin_protocol::usage_broker::{
-    UsageAccountV1, UsageFreshnessPhaseV1, UsageMetricGroupKindV1, UsageMetricPeriodV1,
-    UsageMetricValueV1, UsageProjectionV1, UsageWindowCategoryV1,
+    UsageAccountV1, UsageFreshnessPhaseV1, UsageIdentityKindV1, UsageMetricGroupKindV1,
+    UsageMetricPeriodV1, UsageMetricValueV1, UsageProjectionV1, UsageWindowCategoryV1,
 };
 use jackin_protocol::usage_monitor::{
     MonitorAccountBinding, MonitorAccountBindingInput, MonitorAction, MonitorAuthState,
@@ -1296,9 +1296,11 @@ fn watch_snapshot(
 fn observe_projection_account(
     state: &mut StoreState,
     account: &UsageAccountV1,
+    destination_account_id: &str,
     now_epoch: i64,
 ) -> Result<bool, MonitorIssue> {
     if !valid_identifier(&account.canonical_account_id)
+        || !valid_identifier(destination_account_id)
         || account.freshness.is_stale
         || account.freshness.phase != UsageFreshnessPhaseV1::Current
     {
@@ -1312,8 +1314,7 @@ fn observe_projection_account(
     if windows.iter().all(Option::is_none) {
         return Ok(false);
     }
-    if !state.accounts.contains_key(&account.canonical_account_id)
-        && state.accounts.len() >= MAX_ACCOUNTS
+    if !state.accounts.contains_key(destination_account_id) && state.accounts.len() >= MAX_ACCOUNTS
     {
         return Err(issue(
             MonitorIssueCode::MonitorStoreUnavailable,
@@ -1324,7 +1325,7 @@ fn observe_projection_account(
 
     let account_state = state
         .accounts
-        .entry(account.canonical_account_id.clone())
+        .entry(destination_account_id.to_owned())
         .or_default();
     if !update_broker_windows(account_state, windows, proposed_sequence) {
         return Ok(false);
@@ -1333,6 +1334,64 @@ fn observe_projection_account(
     state.next_input_sequence = proposed_sequence;
     latch_broker_reset_barriers(account_state, proposed_sequence, now_epoch);
     Ok(true)
+}
+
+/// Remove projection evidence tied to a source when its local binding is
+/// remapped or collector consent is revoked. Statusline observations remain
+/// attached to the operator's stable local partition.
+fn invalidate_local_source_projection(state: &mut StoreState, binding_id: &str, account_id: &str) {
+    if let Some(account) = state.accounts.get_mut(account_id) {
+        account.broker_windows = Default::default();
+        account.latest_reset_epochs = std::array::from_fn(|index| {
+            account.sessions.values().fold(None, |latest, session| {
+                max_option(
+                    latest,
+                    session.windows[index]
+                        .reset
+                        .as_ref()
+                        .map(|reset| reset.value),
+                )
+            })
+        });
+        for barrier in &mut account.reset_barriers {
+            if barrier
+                .as_ref()
+                .is_some_and(|barrier| barrier.source == MonitorEvidenceSource::BrokerProjection)
+            {
+                *barrier = None;
+            }
+        }
+    }
+
+    for monitor in state.monitors.values_mut().filter(|monitor| {
+        matches!(
+            &monitor.config.scope,
+            MonitorScope::BoundAccount { binding_id: configured, .. }
+                if configured == binding_id
+        )
+    }) {
+        let removed = monitor
+            .evidence
+            .iter()
+            .filter(|evidence| evidence.source == MonitorEvidenceSource::BrokerProjection)
+            .map(|evidence| evidence.sequence)
+            .collect::<BTreeSet<_>>();
+        monitor
+            .evidence
+            .retain(|evidence| evidence.source != MonitorEvidenceSource::BrokerProjection);
+        monitor.evidence_fingerprints.retain(|key, _| {
+            !key.ends_with(":account") || !(key.starts_with("used:") || key.starts_with("reset:"))
+        });
+        for barrier in &mut monitor.reset_barriers {
+            if barrier.as_ref().is_some_and(|barrier| {
+                barrier
+                    .dependency_evidence_sequence
+                    .is_some_and(|sequence| removed.contains(&sequence))
+            }) {
+                *barrier = None;
+            }
+        }
+    }
 }
 
 fn latch_broker_reset_barriers(

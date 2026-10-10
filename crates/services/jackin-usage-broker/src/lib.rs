@@ -28,6 +28,7 @@ mod projection;
 mod rediscover;
 mod serve;
 mod service;
+mod source_identity;
 mod startup;
 
 pub(crate) use capabilities::{

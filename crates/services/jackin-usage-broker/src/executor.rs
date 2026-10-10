@@ -154,7 +154,8 @@ fn collection_source_authorizes_broker_capability(
     authorized_source_ids: &[String],
     capability: &UsageAccountCapability,
 ) -> bool {
-    capability == &crate::service::claude_usage_capability_for_source_id(source_capability_id)
+    capability
+        == &crate::source_identity::claude_usage_capability_for_source_id(source_capability_id)
         && authorized_source_ids
             .iter()
             .any(|authorized| authorized == source_capability_id)
@@ -668,7 +669,7 @@ mod tests {
     #[test]
     fn collector_source_id_and_broker_capability_cannot_cross_authorize() {
         let source_id = "a".repeat(64);
-        let capability = crate::service::claude_usage_capability_for_source_id(&source_id);
+        let capability = crate::source_identity::claude_usage_capability_for_source_id(&source_id);
 
         assert!(collection_source_authorizes_broker_capability(
             &source_id,

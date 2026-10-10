@@ -27,11 +27,9 @@ use crate::{
     validate_owned_mode, wait_for_leader,
 };
 use jackin_usage_discovery::{UsageDiscoveryScope, ValidatedUsageDiscovery};
-use jackin_usage_host_accounts::CanonicalAccountIdentity;
 use jackin_usage_host_credentials::{
     ProviderCredentialEnvResolution, ProviderCredentialEnvResolver,
 };
-use jackin_usage_host_presentation::HostSurfaceId;
 use jackin_usage_provider_claude::{
     ClaudeCredentialBootstrapOutcome, bootstrap_claude_credential, unattended_keychain_guard,
 };
@@ -60,21 +58,6 @@ pub struct UsageBrokerForegroundReady {
     pub binding_scope: String,
 }
 
-/// Map the exact opaque source ID to the single broker capability used by the
-/// foreground collector. Keep these identifier domains distinct.
-pub(crate) fn claude_usage_capability_for_source_id(
-    source_capability_id: &str,
-) -> UsageAccountCapability {
-    let identity =
-        CanonicalAccountIdentity::source_capability(HostSurfaceId::Claude, source_capability_id);
-    let subject = identity.account_key();
-    let hashed = jackin_core::account_key_hash("claude", &subject);
-    UsageAccountCapability {
-        surface_id: HostSurfaceId::Claude.id().to_owned(),
-        account_id: hashed.strip_prefix("sha256:").unwrap_or(&hashed).to_owned(),
-    }
-}
-
 /// Bootstrap the exact selected Claude Keychain item, then hold its lease and
 /// the broker lease for the foreground collector service lifetime.
 pub fn run_usage_broker_foreground_bootstrap(
@@ -94,7 +77,8 @@ pub fn run_usage_broker_foreground_bootstrap(
     let _credential_lease = &lease;
     let _unattended_keychain_guard = unattended_keychain_guard().map_err(|_| unavailable())?;
     let source_capability_id = lease.source_capability_id().to_owned();
-    let capability = claude_usage_capability_for_source_id(&source_capability_id);
+    let capability =
+        crate::source_identity::claude_usage_capability_for_source_id(&source_capability_id);
     let monitor_store = Arc::new(MonitorStore::open(&config.data_dir).map_err(|_| unavailable())?);
     monitor_store.set_experimental_collector_source(Some(source_capability_id));
     let catalog_entry = UsageCatalogEntry {
@@ -173,7 +157,8 @@ pub(crate) fn validate_foreground_catalog_revision(
     entries: &[UsageCatalogEntry],
 ) -> Result<(), UsageCoordinationError> {
     if entries.len() != 1
-        || entries[0].capability != claude_usage_capability_for_source_id(source_capability_id)
+        || entries[0].capability
+            != crate::source_identity::claude_usage_capability_for_source_id(source_capability_id)
         || entries[0].revision.is_empty()
         || foreground_catalog_revision(source_capability_id, entries) != catalog_revision
     {

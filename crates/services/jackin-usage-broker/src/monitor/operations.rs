@@ -106,6 +106,8 @@ impl MonitorStore {
                 None,
             )
         })?;
+        let _collector_admission = self.lock_collector_admission();
+        let configured_source = self.experimental_collector_source();
         let mut guard = self.lock();
         let mut staged = guard.clone();
         let now_epoch = effective_now(staged.last_now_epoch, now_epoch);
@@ -115,8 +117,19 @@ impl MonitorStore {
         for provider in &projection.providers {
             if provider.provider_id == "claude" {
                 for account in &provider.accounts {
-                    observations_changed |=
-                        observe_projection_account(&mut staged, account, now_epoch)?;
+                    let destinations = projection_account_destinations(
+                        &staged,
+                        account,
+                        configured_source.as_deref(),
+                    );
+                    for destination in destinations {
+                        observations_changed |= observe_projection_account(
+                            &mut staged,
+                            account,
+                            &destination,
+                            now_epoch,
+                        )?;
+                    }
                 }
             }
         }
@@ -304,6 +317,12 @@ impl MonitorStore {
                     .then_some((binding_id.clone(), latest.clone()))
             })
         });
+        let invalidated_source_binding = existing.as_ref().and_then(|(binding_id, previous)| {
+            (previous.provider_account_id != input.provider_account_id
+                || (previous.experimental_collector_approved
+                    && !input.experimental_collector_approved))
+                .then(|| (binding_id.clone(), previous.account_id.clone()))
+        });
         let binding = if let Some((binding_id, previous)) = existing {
             if previous.operator_confirmed
                 && previous.operator_label == input.operator_label
@@ -375,6 +394,10 @@ impl MonitorStore {
             staged.bindings.insert(binding_id, vec![binding.clone()]);
             binding
         };
+
+        if let Some((binding_id, account_id)) = invalidated_source_binding {
+            invalidate_local_source_projection(&mut staged, &binding_id, &account_id);
+        }
 
         self.commit(&mut guard, staged)?;
         self.inner.changed.notify_all();
@@ -984,4 +1007,37 @@ impl MonitorStore {
         **guard = staged;
         Ok(())
     }
+}
+
+fn projection_account_destinations(
+    state: &StoreState,
+    account: &UsageAccountV1,
+    configured_source: Option<&str>,
+) -> Vec<String> {
+    if account.identity_kind != UsageIdentityKindV1::LocalSourceHandle {
+        return vec![account.canonical_account_id.clone()];
+    }
+    let Some(source_id) = configured_source else {
+        return Vec::new();
+    };
+    let expected_capability =
+        crate::source_identity::claude_usage_capability_for_source_id(source_id);
+    if account.canonical_account_id != expected_capability.account_id {
+        return Vec::new();
+    }
+
+    state
+        .bindings
+        .values()
+        .filter_map(|history| history.last())
+        .filter(|binding| {
+            binding.provider == MonitorProvider::Claude
+                && binding.operator_confirmed
+                && binding.experimental_collector_approved
+                && binding.provider_account_id.as_deref() == Some(source_id)
+        })
+        .map(|binding| binding.account_id.clone())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
 }

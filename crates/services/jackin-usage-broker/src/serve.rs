@@ -475,7 +475,7 @@ fn collect_due_for_sources(
 ) {
     let capabilities = source_ids
         .iter()
-        .map(|source_id| crate::service::claude_usage_capability_for_source_id(source_id))
+        .map(|source_id| crate::source_identity::claude_usage_capability_for_source_id(source_id))
         .collect::<Vec<_>>();
     if capabilities.is_empty() {
         return;
