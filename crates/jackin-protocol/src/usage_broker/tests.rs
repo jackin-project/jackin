@@ -49,14 +49,6 @@ fn response_round_trip_keeps_typed_sanitized_failure() {
 #[test]
 fn projection_operations_and_publication_response_round_trip() {
     let operations = [
-        UsageBrokerOperation::ReconcileCatalog {
-            expected_projection_id: None,
-            catalog_revision: "catalog-2".into(),
-            entries: vec![UsageCatalogEntry {
-                capability: capability(),
-                revision: "credential-2".into(),
-            }],
-        },
         UsageBrokerOperation::CurrentProjection,
         UsageBrokerOperation::RequestRefresh {
             force: true,
@@ -92,6 +84,88 @@ fn projection_operations_and_publication_response_round_trip() {
         serde_json::from_slice::<UsageBrokerResponse>(&bytes).unwrap(),
         response
     );
+}
+
+#[test]
+fn monitor_and_broker_owned_relay_operations_have_v7_wire_shapes() {
+    use crate::usage_monitor::MonitorOperation;
+
+    let monitor = UsageBrokerOperation::Monitor {
+        request: MonitorOperation::ServiceStatus,
+    };
+    let monitor_value = serde_json::to_value(&monitor).unwrap();
+    assert_eq!(monitor_value["operation"], "monitor");
+    assert_eq!(monitor_value["request"]["operation"], "service_status");
+
+    let request = UsageBrokerRequest {
+        protocol_version: USAGE_BROKER_PROTOCOL_VERSION.to_owned(),
+        build_id: "test-build".to_owned(),
+        operation: monitor,
+        launch_credential_scope: None,
+    };
+    let bytes = serde_json::to_vec(&request).unwrap();
+    assert_eq!(
+        serde_json::from_slice::<UsageBrokerRequest>(&bytes).unwrap(),
+        request
+    );
+
+    let response = UsageBrokerResponse::Monitor {
+        reply: MonitorReply::ServiceStopped,
+    };
+    let response_value = serde_json::to_value(&response).unwrap();
+    assert_eq!(response_value["status"], "monitor");
+    assert_eq!(response_value["reply"]["result"], "service_stopped");
+    assert_eq!(
+        serde_json::from_slice::<UsageBrokerResponse>(&serde_json::to_vec(&response).unwrap())
+            .unwrap(),
+        response
+    );
+
+    let relay = UsageBrokerOperation::ResolveRelayCapabilities {
+        scope_label: "workspace:research".to_owned(),
+        forwarded_sources: UsageRelayForwardedSourcesV1::default(),
+    };
+    let relay_value = serde_json::to_value(&relay).unwrap();
+    assert_eq!(relay_value["operation"], "resolve_relay_capabilities");
+    assert_eq!(relay_value["scope_label"], "workspace:research");
+    assert_eq!(
+        serde_json::from_value::<UsageBrokerOperation>(relay_value).unwrap(),
+        relay
+    );
+
+    let failure = UsageBrokerResponse::MonitorError {
+        issue: MonitorIssue {
+            code: crate::usage_monitor::MonitorIssueCode::WaitTimeout,
+            message: "bounded event wait expired".to_owned(),
+            retry_at_epoch: None,
+        },
+    };
+    let failure_value = serde_json::to_value(&failure).unwrap();
+    assert_eq!(failure_value["status"], "monitor_error");
+    assert_eq!(failure_value["issue"]["code"], "wait_timeout");
+    assert_eq!(
+        serde_json::from_value::<UsageBrokerResponse>(failure_value).unwrap(),
+        failure
+    );
+
+    let resolved = UsageBrokerResponse::RelayCapabilities {
+        resolution: Box::new(UsageRelayCapabilityResolutionV1::default()),
+    };
+    let resolved_value = serde_json::to_value(&resolved).unwrap();
+    assert_eq!(resolved_value["status"], "relay_capabilities");
+    assert_eq!(
+        serde_json::from_value::<UsageBrokerResponse>(resolved_value).unwrap(),
+        resolved
+    );
+
+    let removed_catalog_operation = serde_json::json!({
+        "operation": "reconcile_catalog",
+        "expected_projection_id": null,
+        "catalog_revision": "caller-controlled",
+        "entries": [],
+    });
+    serde_json::from_value::<UsageBrokerOperation>(removed_catalog_operation)
+        .expect_err("catalog reconciliation is broker-owned in protocol v7");
 }
 
 #[test]
