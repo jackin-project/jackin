@@ -17,9 +17,9 @@ const MAX_COMPOSED_COMMAND_BYTES: usize = 64 * 1024;
 
 /// Add bounded usage ingestion after a Claude Code statusline command.
 ///
-/// The returned value preserves the input settings semantically, changing only
-/// `statusLine.command`. If settings have no `statusLine`, the returned value
-/// adds a command that consumes input without rendering output before ingesting.
+/// The returned merge patch contains only `statusLine`, preserving its options
+/// and replacing its command. If settings have no `statusLine`, the patch adds
+/// a command that consumes input without rendering output before ingesting.
 /// This function fails closed when it cannot preserve an existing command.
 #[expect(
     clippy::disallowed_methods,
@@ -127,7 +127,11 @@ pub(super) fn compose(
             }),
         );
     }
-    Ok(value)
+    let status_line = root
+        .get("statusLine")
+        .cloned()
+        .context("statusline composition did not produce a statusLine patch")?;
+    Ok(serde_json::json!({ "statusLine": status_line }))
 }
 
 fn wrapper_command(
@@ -314,6 +318,7 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let original = json!({
             "theme": "dark",
+            "env": {"API_SECRET": "statusline-secret-sentinel"},
             "statusLine": {
                 "type": "command",
                 "command": "printf 'old output'",
@@ -331,7 +336,12 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(result["theme"], original["theme"]);
+        let result_object = result.as_object().expect("merge patch should be an object");
+        assert_eq!(result_object.len(), 1);
+        assert!(result_object.contains_key("statusLine"));
+        let result_text = serde_json::to_string(&result).unwrap();
+        assert!(!result_text.contains("statusline-secret-sentinel"));
+        assert!(!result_text.contains("theme"));
         assert_eq!(result["statusLine"]["type"], original["statusLine"]["type"]);
         assert_eq!(
             result["statusLine"]["padding"],
@@ -383,7 +393,8 @@ mod tests {
         assert!(args.contains("--session-only\n"));
         assert!(!args.contains("--binding\n"));
         assert!(!args.contains("--account\n"));
-        assert_eq!(proposed["theme"], original["theme"]);
+        assert_eq!(proposed.as_object().unwrap().len(), 1);
+        assert!(proposed.get("theme").is_none());
         assert_eq!(proposed["statusLine"]["type"], "command");
         assert_eq!(
             std::fs::read(&settings).unwrap(),

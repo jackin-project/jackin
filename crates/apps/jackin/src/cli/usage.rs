@@ -315,7 +315,7 @@ pub struct UsageStatuslineArgs {
 pub enum UsageStatuslineCommand {
     /// Ingest one bounded JSON document from stdin
     Ingest(UsageStatuslineIngestArgs),
-    /// Print a proposed settings JSON value with a composed command
+    /// Print a statusLine-only settings merge patch with a composed command
     Compose(UsageStatuslineComposeArgs),
 }
 

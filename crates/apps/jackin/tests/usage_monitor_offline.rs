@@ -947,7 +947,10 @@ fn isolated_monitor_cli_stays_local_and_fails_closed_until_evidence_is_safe() ->
     );
 
     let bound_settings_path = fixture.root.path().join("bound-statusline-settings.json");
-    let original_bound_settings = serde_json::json!({"theme": "dark"});
+    let original_bound_settings = serde_json::json!({
+        "theme": "dark",
+        "env": {"API_SECRET": "offline-statusline-secret-sentinel"}
+    });
     let original_bound_settings_text = serde_json::to_string(&original_bound_settings)?;
     fs::write(&bound_settings_path, &original_bound_settings_text)?;
     let bound_settings_path = bound_settings_path
@@ -970,7 +973,17 @@ fn isolated_monitor_cli_stays_local_and_fails_closed_until_evidence_is_safe() ->
     let bound_composed = fixture.run_owned(compose_args, None)?;
     expect_exit(&bound_composed, 0)?;
     let bound_composed_settings = json_output(&bound_composed)?;
-    ensure!(bound_composed_settings["theme"] == "dark");
+    ensure!(
+        bound_composed_settings
+            .as_object()
+            .is_some_and(|object| { object.len() == 1 && object.contains_key("statusLine") }),
+        "compose output must be limited to the statusLine merge patch"
+    );
+    ensure!(
+        !String::from_utf8_lossy(&bound_composed.stdout)
+            .contains("offline-statusline-secret-sentinel"),
+        "compose output leaked an unrelated settings value"
+    );
     let composed_command = bound_composed_settings["statusLine"]["command"]
         .as_str()
         .context("bound statusline compose omitted its command")?;
@@ -1357,6 +1370,65 @@ fn statusline_size_limit_rejects_oversized_input_before_broker_access() -> Resul
     expect_exit(&output, 3)?;
     ensure!(json_output(&output)?["error"]["code"] == "statusline_too_large");
     ensure!(!fixture.data_dir.join("usage-broker/run").exists());
+    fixture.assert_no_external_activity()?;
+    Ok(())
+}
+
+#[test]
+fn statusline_compose_keeps_structured_output_quiet_in_debug_mode() -> Result<()> {
+    let fixture = OfflineFixture::new()?;
+    let settings_path = fixture.root.path().join("statusline-settings.json");
+    let original = serde_json::json!({
+        "theme": "dark",
+        "env": {"API_SECRET": "debug-statusline-secret-sentinel"},
+        "statusLine": {
+            "type": "command",
+            "command": "printf 'legacy output'",
+            "padding": 3,
+            "futureOption": {"kept": true}
+        }
+    });
+    let original_bytes = serde_json::to_vec(&original)?;
+    fs::write(&settings_path, &original_bytes)?;
+    let settings_path = settings_path
+        .to_str()
+        .context("temporary statusline settings path is not UTF-8")?;
+
+    let output = fixture.run(
+        &[
+            "statusline",
+            "compose",
+            "--settings",
+            settings_path,
+            "--session-only",
+            "--debug",
+        ],
+        None,
+    )?;
+
+    expect_exit(&output, 0)?;
+    let patch = json_output(&output)?;
+    ensure!(
+        patch
+            .as_object()
+            .is_some_and(|object| object.len() == 1 && object.contains_key("statusLine")),
+        "compose output must contain only the statusLine merge patch"
+    );
+    ensure!(patch["statusLine"]["type"] == "command");
+    ensure!(patch["statusLine"]["padding"] == 3);
+    ensure!(patch["statusLine"]["futureOption"]["kept"] == true);
+    ensure!(patch["statusLine"]["command"] != original["statusLine"]["command"]);
+    ensure!(
+        !String::from_utf8_lossy(&output.stdout).contains("debug-statusline-secret-sentinel"),
+        "compose output leaked an unrelated settings value"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    ensure!(!stderr.contains("debug mode — invocation id"));
+    ensure!(!stderr.contains("telemetry: invocation"));
+    ensure!(
+        fs::read(settings_path)? == original_bytes,
+        "compose must not mutate the settings file"
+    );
     fixture.assert_no_external_activity()?;
     Ok(())
 }
