@@ -1,7 +1,42 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use super::super::measure_file_lines;
 use super::*;
+
+#[test]
+fn file_size_provider_classifies_canonical_test_paths_relative_to_repository_root() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    for path in [
+        "crates/pkg/src/tests.rs",
+        "crates/pkg/src/tests/case_01.rs",
+        "crates/pkg/tests/main.rs",
+        "crates/pkg/src/test_support/production.rs",
+    ] {
+        let file = root.join(path);
+        fs::create_dir_all(file.parent().expect("parent")).expect("mkdir");
+        fs::write(&file, "fn fixture() {}\n").expect("write source");
+    }
+
+    let production = measure_file_lines(root, false).expect("production family");
+    let tests = measure_file_lines(root, true).expect("test family");
+    assert_eq!(
+        production
+            .keys()
+            .map(String::as_str)
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from(["crates/pkg/src/test_support/production.rs"])
+    );
+    assert_eq!(
+        tests.keys().map(String::as_str).collect::<BTreeSet<_>>(),
+        BTreeSet::from([
+            "crates/pkg/src/tests.rs",
+            "crates/pkg/src/tests/case_01.rs",
+            "crates/pkg/tests/main.rs",
+        ])
+    );
+}
 
 #[test]
 fn numeric_growth_fails() {

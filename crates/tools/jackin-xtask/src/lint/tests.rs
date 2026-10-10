@@ -119,3 +119,68 @@ fn print_budget_only_emits_files_over_their_cap() {
     assert!(!report.contains("crates/small.rs"), "{report}");
     assert!(!report.contains("crates/pkg/tests.rs"), "{report}");
 }
+
+#[test]
+fn canonical_case_files_use_test_budget_without_matching_test_substrings_or_ancestors() {
+    let dir = tempfile::tempdir().unwrap();
+    let crates = dir.path().join("crates/pkg");
+    write(&crates.join("src/tests.rs"), &"// test entry\n".repeat(5));
+    write(
+        &crates.join("src/tests/case_02.rs"),
+        &"// test case\n".repeat(1500),
+    );
+    write(
+        &crates.join("src/test_support/production.rs"),
+        &"// production\n".repeat(1500),
+    );
+
+    let counts = measure_lines(dir.path()).unwrap();
+    let budget = Budget {
+        production_cap: 1000,
+        test_cap: 2000,
+        production: Vec::new(),
+        test: Vec::new(),
+    };
+    let violations = collect_violations(dir.path(), &budget, &counts);
+    assert_eq!(violations.len(), 1, "{violations:?}");
+    assert_eq!(
+        violations[0].file,
+        "crates/pkg/src/test_support/production.rs"
+    );
+
+    let test_budget = Budget {
+        production_cap: 2000,
+        test_cap: 1000,
+        production: Vec::new(),
+        test: Vec::new(),
+    };
+    let report = budget_report(dir.path(), &counts, &test_budget);
+    let test_rows = report.split("[[test]]").nth(1).expect("test rows");
+    assert!(
+        test_rows.contains("crates/pkg/src/tests/case_02.rs"),
+        "{report}"
+    );
+    assert!(
+        !test_rows.contains("crates/pkg/src/test_support/production.rs"),
+        "{report}"
+    );
+}
+
+#[test]
+fn test_source_classifier_requires_repository_relative_canonical_paths() {
+    assert!(is_test_source_path(Path::new("crates/pkg/src/tests.rs")));
+    assert!(is_test_source_path(Path::new(
+        "crates/pkg/src/tests/case_01.rs"
+    )));
+    assert!(is_test_source_path(Path::new("crates/pkg/tests/main.rs")));
+    assert!(!is_test_source_path(Path::new(
+        "crates/pkg/src/test_support/case_01.rs"
+    )));
+    assert!(!is_test_source_path(Path::new("crates/pkg/src/lib.rs")));
+    assert!(!is_test_source_path(Path::new(
+        "/private/tmp/tests/repo/crates/pkg/src/lib.rs"
+    )));
+    assert!(!is_test_source_path(Path::new(
+        "../tests/repo/crates/pkg/src/lib.rs"
+    )));
+}

@@ -705,15 +705,12 @@ fn measure_file_lines(root: &Path, tests_only: bool) -> Result<BTreeMap<String, 
     let counts = crate::lint::measure_lines(root)?;
     let mut out = BTreeMap::new();
     for (path, lines) in counts {
-        let is_test = path.file_name().is_some_and(|n| n == "tests.rs");
+        let relative_path = path.strip_prefix(root).unwrap_or(&path);
+        let is_test = crate::lint::is_test_source_path(relative_path);
         if is_test != tests_only {
             continue;
         }
-        let rel = path
-            .strip_prefix(root)
-            .unwrap_or(&path)
-            .to_string_lossy()
-            .replace('\\', "/");
+        let rel = relative_path.to_string_lossy().replace('\\', "/");
         out.insert(rel, lines);
     }
     Ok(out)

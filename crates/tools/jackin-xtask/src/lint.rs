@@ -24,8 +24,6 @@ use crate::ratchet::{self, FILE_SIZE_FAMILIES};
 use crate::report::{Format, Report, Violation};
 
 const PRODUCTION_GLOB: &str = "crates";
-#[cfg(test)]
-const TEST_FILE_NAME: &str = "tests.rs";
 const RERUN: &str = "cargo xtask lint files";
 
 #[derive(Args, Debug)]
@@ -112,8 +110,8 @@ pub(crate) fn run(args: LintFilesArgs) -> Result<()> {
 }
 
 /// Walk `crates/` and return every `.rs` file mapped to its line count.
-/// Test files (basename `tests.rs`) and production files are returned together
-/// so the budget-print path can label them consistently.
+/// Canonical test files (`tests.rs` and files under `tests/`) and production
+/// files are returned together so the budget-print path can label them.
 pub(crate) fn measure_lines(root: &Path) -> Result<BTreeMap<PathBuf, usize>> {
     let crates_dir = root.join(PRODUCTION_GLOB);
     if !crates_dir.is_dir() {
@@ -122,6 +120,29 @@ pub(crate) fn measure_lines(root: &Path) -> Result<BTreeMap<PathBuf, usize>> {
     let mut out = BTreeMap::new();
     walk(&crates_dir, &mut out)?;
     Ok(out)
+}
+
+/// Classify a repository-relative Rust path as test source.
+///
+/// The canonical layout keeps a suite entry point in `tests.rs` and split
+/// cases below a sibling `tests/` directory. Require a relative, normalized
+/// path so an ancestor directory such as `/tmp/tests/...` cannot make every
+/// source file look like a test.
+pub(crate) fn is_test_source_path(relative_path: &Path) -> bool {
+    let mut has_tests_dir = false;
+    for component in relative_path.components() {
+        match component {
+            std::path::Component::RootDir
+            | std::path::Component::Prefix(_)
+            | std::path::Component::ParentDir => return false,
+            std::path::Component::Normal(name) if name == "tests" => has_tests_dir = true,
+            _ => {}
+        }
+    }
+    has_tests_dir
+        || relative_path
+            .file_name()
+            .is_some_and(|name| name == "tests.rs")
 }
 
 fn walk(dir: &Path, out: &mut BTreeMap<PathBuf, usize>) -> Result<()> {
@@ -222,7 +243,7 @@ fn collect_violations(
 
     for (path, lines) in counts {
         let rel = relative(root, path);
-        let is_test = path.file_name().is_some_and(|n| n == TEST_FILE_NAME);
+        let is_test = is_test_source_path(Path::new(&rel));
         let (cap, allowlist) = if is_test {
             (budget.test_cap, &test_allowlist)
         } else {
@@ -328,7 +349,8 @@ fn budget_report(root: &Path, counts: &BTreeMap<PathBuf, usize>, budget: &Budget
     let mut prod: Vec<(&Path, usize)> = Vec::new();
     let mut test: Vec<(&Path, usize)> = Vec::new();
     for (path, lines) in counts {
-        if path.file_name().is_some_and(|n| n == TEST_FILE_NAME) {
+        let rel = relative(root, path);
+        if is_test_source_path(Path::new(&rel)) {
             if *lines > budget.test_cap {
                 test.push((path.as_path(), *lines));
             }
