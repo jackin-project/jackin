@@ -29,6 +29,30 @@ No Keychain item, live credential, account identity/status, or provider
 endpoint has been inspected; the real account remains unknown. No live
 bootstrap or provider request was made.
 
+### Claude metadata alias correction and v5 install
+
+The operator's structural diagnostic exposed a parser bug: serde aliased
+`subscriptionType`, `subscription_type`, `rateLimitTier`, and
+`rate_limit_tier` onto one field, so two distinct metadata values were
+misclassified as a duplicate and rejected as `auth_malformed`. Source commit
+[`cc012603`](https://github.com/jackin-project/jackin/commit/cc012603951c46d3fe909c21538af4c5b0715948)
+separates subscription type from rate limit tier, keeps subscription type as
+the preferred label with rate limit tier as fallback, and marks diagnostics as
+duplicate only for camel/snake spellings of the same field.
+
+Focused MBX tests passed: 39 Claude tests, 3 broker foreground-bootstrap
+tests, 1 fake foreground bootstrap lifecycle test, and 1 malformed-bootstrap
+single-read test. The scoped MBX format check passed. The debug CLI/broker pair
+was installed to the new v5 prefix from that exact signed commit. Independent
+review verified the installed hashes and versions, reran the non-TTY gate with
+a broker marker sentinel, confirmed the marker and data directory stayed
+absent, and rechecked the unchanged v2/v3/v4 hashes. See
+[v5-installation.json](v5-installation.json) for source/tree IDs, command,
+binary hashes, preserved v2/v3/v4 hashes, and the non-TTY install sentinel.
+No Keychain item, live credential, account identity/status, provider endpoint,
+or settings was accessed or changed. The operator must retry their own
+attended account bootstrap; live account readiness remains unknown.
+
 ## Current delivery checkpoint
 
 Delivery branch: `feat/claude-usage-monitor-main`, isolated from the running Claude checkout. Signed source checkpoint `8abfa235cce150d5382d99a5679afab49e098525` is pushed. The final seven-gate MBX rerun, scoped regression matrix, 1.29-second offline pair build, and installed fixture smoke passed. Smoke exited 0, selected the sibling broker, recorded one JSONL watch event, zero proxy requests and credential-command trips, and left no fixture state or open binaries. CLI SHA-256 is `b57e60f2f13b026ae2ec47034b61ecddc69644b230157e621c5ddb5cf447007d`; broker SHA-256 is `30b6f3b1f0777dbe9181851f83fbc2efb3f0356d290e1896bf2ccaf434fbf550`; manifest SHA-256 is `64a0a101224ad5c38f4292a59c5191a44071fc54eab3cc95e8a57a13bc454601`. Source-head CI run [38044592706](https://github.com/jackin-project/jackin/actions/runs/38044592706) passed for 8abfa: Required, all Rust matrix jobs, and Actionlint succeeded; the baseline publication job was skipped by workflow rules. A later documentation/evidence commit requires its own exact-head checks. CI run `38042237548` and its three failed Rust jobs, and the 45a installed pair, are historical. P2 reply `4237302394` links the fixing commit and is resolved. P1 follow-up proof/reply `4237303703` is resolved; general comment `6096529404` has a linked disposition.

@@ -36,6 +36,48 @@ synthetic fixture behavior and the non-TTY interaction gate. No Keychain item,
 credential, account identity/status, live bootstrap, or provider endpoint was
 inspected; actual account status remains unknown.
 
+## Claude metadata alias correction and v5 install
+
+Operator feedback showed that a valid payload with separate `subscriptionType`
+and `rateLimitTier` strings was rejected. The typed parser had attached all
+four camel/snake spellings to one serde field, making the independent metadata
+fields look like duplicate aliases. Commit
+[`cc012603951c46d3fe909c21538af4c5b0715948`](https://github.com/jackin-project/jackin/commit/cc012603951c46d3fe909c21538af4c5b0715948)
+now preserves the fields independently, prefers subscription type when both
+are present, and falls back to rate limit tier when subscription type is
+absent or null. The structural diagnostic still reports each spelling's JSON
+kind and only marks both spellings of one logical field as duplicate.
+
+Focused offline MBX proof passed at source `cc012603`:
+
+| Check | Result |
+| --- | --- |
+| Claude parser, diagnostic, and lease suite | 39 passed, 0 failed |
+| Broker foreground bootstrap mapping | 3 passed, 0 failed |
+| Fake foreground bootstrap/lease lifecycle | 1 passed, 0 failed |
+| Malformed bootstrap read-count/no-start path | 1 passed, 0 failed |
+| `jackin-usage` and `jackin` scoped formatting | passed |
+
+The fixtures include the reported 524-byte structural shape with two different
+metadata values, camel/snake spellings, same-field duplicate rejection,
+subscription-first fallback, null/missing optional fields, wrong-type rejection,
+and value redaction. Bootstrap payload validation accepts the 524-byte shape.
+
+MBX 1.22.0/Rust 1.97.1 installed the debug pair at the new v5 prefix from the
+exact signed source tree. Both binaries report 0.6.4. A non-TTY sentinel
+returned `interaction_required` before broker launch and did not create its
+data directory. Installed v2/v3/v4 hashes match their pre-install values.
+Exact source IDs, command, hashes, tests, and sentinel output are in
+[v5-installation.json](v5-installation.json). Independent review verified the
+installed hashes and versions and reran the sentinel with an executable marker
+at `JACKIN_USAGE_BROKER_BIN`; the marker and data directory remained absent.
+The reviewer rehashed v2/v3/v4 and confirmed they were unchanged.
+
+This is fixture and interaction-gate evidence only. No Keychain item, live
+credential, account identity/status, provider endpoint, or settings was
+accessed or changed. The operator must retry the intended account through its
+normal attended bootstrap; actual account status remains unknown.
+
 ## Current main-port verification snapshot
 
 The canonical branch is `feat/claude-usage-monitor-main`, based on main

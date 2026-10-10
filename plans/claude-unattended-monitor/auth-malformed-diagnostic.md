@@ -41,12 +41,19 @@ For `auth_malformed`, `error.diagnostic` reports only fixed structural facts:
 | `access_token` | Camel and snake field kinds, their optional `camel_case_nonempty` and `snake_case_nonempty` booleans, and `duplicate_alias`. |
 | `subscription_type` | Kinds for `subscription_type`, `subscription_type_snake_case`, `rate_limit_tier`, and `rate_limit_tier_snake_case`, plus `duplicate_alias`. |
 
+The four metadata kinds describe two independent fields. `subscriptionType`
+(`subscription_type`) and `rateLimitTier` (`rate_limit_tier`) may both appear;
+the parser uses subscription type first and falls back to rate limit tier when
+subscription type is absent or null. `duplicate_alias` is true only when both
+spellings of the same field are present, such as `subscriptionType` together
+with `subscription_type`.
+
 Field kinds are `unavailable`, `missing`, `null`, `object`, `string`, `number`,
 `boolean`, or `array`. `unavailable` means the bounded diagnostic could not
 classify that field; it is not the same as `missing`. A nonempty boolean is
 `null` when the field is absent, null, not a string, or contains JSON escapes;
 escaped string content is left undecoded by the diagnostic. `duplicate_alias: true`
-means more than one supported spelling was present for that field.
+means more than one spelling of the same logical field was present.
 
 The credential parser accepts an object containing `claudeAiOauth` or
 `claude_ai_oauth`, with a nonblank string `accessToken` or `access_token`.
