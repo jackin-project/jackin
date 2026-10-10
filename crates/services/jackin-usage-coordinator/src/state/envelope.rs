@@ -11,7 +11,8 @@ use jackin_protocol::usage_broker::{
 
 use serde::{Deserialize, Serialize};
 
-pub(crate) const ACCOUNT_STATE_SCHEMA_VERSION: u32 = 1;
+pub(crate) const ACCOUNT_STATE_SCHEMA_VERSION: u32 = 2;
+pub(crate) const PREVIOUS_ACCOUNT_STATE_SCHEMA_VERSION: u32 = 1;
 pub(crate) const MAX_ACCOUNT_STATE_BYTES: u64 = 512 * 1024;
 pub(crate) const MAX_CLOCK_SKEW_SECS: i64 = 300;
 pub(crate) const MAX_DISPLAY_CHARS: usize = 256;
@@ -43,8 +44,11 @@ pub struct AccountStateEnvelope {
     pub last_good: Option<FocusedUsageView>,
     /// Sanitized terminal failure.
     pub terminal_error: Option<UsageCoordinationError>,
-    /// Generation start timestamp.
+    /// Generation admission timestamp, before queue dispatch.
     pub started_at_epoch: Option<i64>,
+    /// Provider invocation start timestamp, persisted separately from queue
+    /// admission so Claude's minimum interval begins when work actually runs.
+    pub provider_invoked_at_epoch: Option<i64>,
     /// Generation completion timestamp.
     pub completed_at_epoch: Option<i64>,
     /// Provider-mandated rate-limit deadline.
@@ -70,6 +74,7 @@ impl AccountStateEnvelope {
             last_good: None,
             terminal_error: None,
             started_at_epoch: None,
+            provider_invoked_at_epoch: None,
             completed_at_epoch: None,
             rate_limit_deadline_epoch: None,
             retry_deadline_epoch: None,

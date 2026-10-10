@@ -20,6 +20,7 @@ pub(crate) fn revoke_entry(entry: &mut AccountEntry, now_epoch: i64) {
     entry.envelope.terminal_result = None;
     entry.envelope.terminal_error = Some(catalog_revoked_error());
     entry.envelope.started_at_epoch = None;
+    entry.envelope.provider_invoked_at_epoch = None;
     entry.envelope.completed_at_epoch = Some(now_epoch);
     entry.envelope.rate_limit_deadline_epoch = None;
     entry.envelope.retry_deadline_epoch = None;
@@ -49,7 +50,7 @@ pub(crate) fn reset_entry(entry: &mut AccountEntry, now_epoch: i64, revision: St
 }
 
 /// Reset materialized results while retaining provider cooldowns and the
-/// attempt start that still governs the same canonical account.
+/// invocation timestamp that still governs the same canonical account.
 pub(crate) fn reset_envelope(envelope: &mut AccountStateEnvelope) {
     envelope.generation = envelope.generation.saturating_add(1);
     envelope.phase = UsageRefreshPhase::Idle;
@@ -66,7 +67,7 @@ pub(crate) fn account_cooldown_deadline(envelope: &AccountStateEnvelope) -> Opti
         envelope.rate_limit_deadline_epoch,
         envelope.retry_deadline_epoch,
         envelope.success_deadline_epoch,
-        policy::minimum_attempt_deadline(&envelope.capability, envelope.started_at_epoch),
+        policy::minimum_attempt_deadline(&envelope.capability, envelope.provider_invoked_at_epoch),
     ]
     .into_iter()
     .flatten()

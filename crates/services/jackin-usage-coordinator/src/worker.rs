@@ -44,9 +44,9 @@ pub(crate) fn coordinator_worker(
 }
 
 pub(crate) fn execute_probe(shared: &Arc<Shared>, job: ProbeJob) {
-    if !mark_updating(shared, &job) {
+    let Some(provider_invoked_at_epoch) = mark_updating(shared, &job) else {
         return;
-    }
+    };
     let started = Instant::now();
     let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         if let Some(scope) = job.credential_scope.as_ref() {
@@ -57,10 +57,10 @@ pub(crate) fn execute_probe(shared: &Arc<Shared>, job: ProbeJob) {
             shared.executor.probe(&job.capability, job.generation)
         }
     }));
-    let finished_at_epoch = job
-        .started_at_epoch
-        .saturating_add(i64::try_from(started.elapsed().as_secs()).unwrap_or(i64::MAX));
-    if started.elapsed() > shared.config.provider_timeout {
+    let provider_elapsed = started.elapsed();
+    let finished_at_epoch = provider_invoked_at_epoch
+        .saturating_add(i64::try_from(provider_elapsed.as_secs()).unwrap_or(i64::MAX));
+    if provider_elapsed > shared.config.provider_timeout {
         finish_failure(
             shared,
             &job,

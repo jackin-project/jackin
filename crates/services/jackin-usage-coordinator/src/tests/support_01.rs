@@ -2,6 +2,25 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+
+#[derive(Default)]
+pub(super) struct FakeMonotonicClock {
+    elapsed_seconds: AtomicU64,
+}
+
+impl FakeMonotonicClock {
+    pub(super) fn advance(&self, duration: Duration) {
+        self.elapsed_seconds
+            .fetch_add(duration.as_secs(), Ordering::SeqCst);
+    }
+}
+
+impl MonotonicClock for FakeMonotonicClock {
+    fn now(&self) -> Duration {
+        Duration::from_secs(self.elapsed_seconds.load(Ordering::SeqCst))
+    }
+}
+
 #[derive(Default)]
 pub(super) struct MemoryStore {
     pub(super) states: Mutex<BTreeMap<UsageAccountCapability, AccountStateEnvelope>>,

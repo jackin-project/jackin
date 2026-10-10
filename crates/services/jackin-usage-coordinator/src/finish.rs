@@ -12,29 +12,34 @@ use jackin_protocol::usage_broker::{
 use super::state::sanitize_usage_view;
 use super::{CoordinatorState, ProbeJob, Shared, coordination_error, policy, unavailable_error};
 
-pub(crate) fn mark_updating(shared: &Arc<Shared>, job: &ProbeJob) -> bool {
+pub(crate) fn mark_updating(shared: &Arc<Shared>, job: &ProbeJob) -> Option<i64> {
     let Ok(_catalog_lifecycle) = shared.catalog_lifecycle.lock() else {
-        return false;
+        return None;
     };
     let Ok(mut state) = shared.state.lock() else {
-        return false;
+        return None;
     };
-    let Some(entry) = state.accounts.get_mut(&job.capability) else {
-        return false;
-    };
+    let entry = state.accounts.get_mut(&job.capability)?;
     if entry.revoked
         || entry.catalog_revision != job.catalog_revision
         || entry.envelope.generation != job.generation
         || entry.envelope.phase != UsageRefreshPhase::Queued
     {
-        return false;
+        return None;
     }
+    let previous_invocation = entry.envelope.provider_invoked_at_epoch;
+    let queue_wait = shared.clock.now().saturating_sub(job.admitted_at_monotonic);
+    let provider_invoked_at_epoch = job
+        .admitted_at_epoch
+        .saturating_add(i64::try_from(queue_wait.as_secs()).unwrap_or(i64::MAX));
     entry.envelope.phase = UsageRefreshPhase::Updating;
+    entry.envelope.provider_invoked_at_epoch = Some(provider_invoked_at_epoch);
     if shared
         .store
-        .store(&entry.envelope, job.started_at_epoch)
+        .store(&entry.envelope, provider_invoked_at_epoch)
         .is_err()
     {
+        entry.envelope.provider_invoked_at_epoch = previous_invocation;
         // Retain the catalog transaction while resolving the owned generation;
         // reacquiring its lifecycle mutex here would deadlock this worker.
         finish_failure_in_state(
@@ -46,12 +51,12 @@ pub(crate) fn mark_updating(shared: &Arc<Shared>, job: &ProbeJob) -> bool {
                 "usage state store is unavailable",
             ),
             None,
-            job.started_at_epoch,
+            provider_invoked_at_epoch,
         );
-        return false;
+        return None;
     }
     shared.changed.notify_all();
-    true
+    Some(provider_invoked_at_epoch)
 }
 
 pub(crate) fn finish_success(
@@ -88,7 +93,7 @@ pub(crate) fn finish_success(
         i64::try_from(shared.config.success_cooldown.as_secs()).unwrap_or(i64::MAX),
     );
     entry.envelope.success_deadline_epoch = Some(
-        policy::minimum_attempt_deadline(&job.capability, Some(job.started_at_epoch))
+        policy::minimum_attempt_deadline(&job.capability, entry.envelope.provider_invoked_at_epoch)
             .map_or(success_deadline, |deadline| deadline.max(success_deadline)),
     );
     entry.envelope.consecutive_failures = 0;
@@ -156,11 +161,13 @@ pub(crate) fn finish_failure_in_state(
     } else {
         retry_at_epoch
     };
-    let retry_at_epoch =
-        match policy::minimum_attempt_deadline(&job.capability, Some(job.started_at_epoch)) {
-            Some(floor) => Some(retry_at_epoch.map_or(floor, |deadline| deadline.max(floor))),
-            None => retry_at_epoch,
-        };
+    let retry_at_epoch = match policy::minimum_attempt_deadline(
+        &job.capability,
+        entry.envelope.provider_invoked_at_epoch,
+    ) {
+        Some(floor) => Some(retry_at_epoch.map_or(floor, |deadline| deadline.max(floor))),
+        None => retry_at_epoch,
+    };
     entry.envelope.retry_deadline_epoch = retry_at_epoch;
     if kind == UsageCoordinationErrorKind::RateLimited {
         entry.envelope.rate_limit_deadline_epoch = retry_at_epoch;

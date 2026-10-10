@@ -25,6 +25,36 @@ fn atomic_state_round_trip_uses_private_permissions_and_old_or_new_envelopes() {
 }
 
 #[test]
+fn account_state_v1_migration_retains_account_and_starts_conservative_attempt_floor() {
+    let temp = tempfile::tempdir().unwrap();
+    let store = FileAccountStateStore::at(temp.path().join("accounts"));
+    let path = temp.path().join("accounts/claude-account-123.json");
+    store
+        .store(&completed(1_000, "existing@example.test"), 1_000)
+        .unwrap();
+
+    let mut legacy = serde_json::to_value(completed(1_000, "existing@example.test")).unwrap();
+    legacy["schema_version"] = serde_json::json!(PREVIOUS_ACCOUNT_STATE_SCHEMA_VERSION);
+    legacy
+        .as_object_mut()
+        .unwrap()
+        .remove("provider_invoked_at_epoch");
+    fs::write(&path, serde_json::to_vec(&legacy).unwrap()).unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+
+    let migrated = store.load(&capability(), 2_000).unwrap().unwrap();
+    assert_eq!(migrated.schema_version, ACCOUNT_STATE_SCHEMA_VERSION);
+    assert_eq!(migrated.started_at_epoch, Some(1_000));
+    assert_eq!(migrated.provider_invoked_at_epoch, Some(2_000));
+    assert_eq!(
+        migrated.last_good.unwrap().account.account_label,
+        "existing@example.test"
+    );
+    let durable: AccountStateEnvelope = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+    assert_eq!(durable.provider_invoked_at_epoch, Some(2_000));
+}
+
+#[test]
 fn atomic_state_symlink_directory_is_rejected_without_touching_target() {
     let temp = tempfile::tempdir().unwrap();
     let target = temp.path().join("target");

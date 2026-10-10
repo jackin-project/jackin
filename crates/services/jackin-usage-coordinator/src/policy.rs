@@ -115,17 +115,17 @@ pub fn retry_deadline(
     Some(provider_deadline.map_or(fallback, |deadline| deadline.max(fallback)))
 }
 
-/// Claude's persisted generation start is the authority for a hard minimum
+/// Claude's persisted provider invocation is the authority for a hard minimum
 /// interval. This remains enforceable after restart and is independent of the
 /// caller's `force` flag.
 #[must_use]
 pub(crate) fn minimum_attempt_deadline(
     capability: &UsageAccountCapability,
-    started_at_epoch: Option<i64>,
+    provider_invoked_at_epoch: Option<i64>,
 ) -> Option<i64> {
     if capability.surface_id == "claude" {
-        started_at_epoch.map(|started_at| {
-            started_at.saturating_add(
+        provider_invoked_at_epoch.map(|invoked_at| {
+            invoked_at.saturating_add(
                 i64::try_from(CLAUDE_MIN_ATTEMPT_INTERVAL.as_secs()).unwrap_or(i64::MAX),
             )
         })

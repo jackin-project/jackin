@@ -5,6 +5,7 @@
 use std::sync::Arc;
 use std::sync::mpsc::SyncSender;
 use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
 
 use jackin_protocol::usage_broker::{UsageAccountCapability, UsageCredentialScope};
 
@@ -14,9 +15,34 @@ use super::Shared;
 pub(crate) struct ProbeJob {
     pub(crate) capability: UsageAccountCapability,
     pub(crate) generation: u64,
-    pub(crate) started_at_epoch: i64,
+    /// Admission time for this generation. It remains distinct from provider
+    /// invocation time so queue wait never consumes the Claude attempt floor.
+    pub(crate) admitted_at_epoch: i64,
+    pub(crate) admitted_at_monotonic: Duration,
     pub(crate) catalog_revision: Option<String>,
     pub(crate) credential_scope: Option<UsageCredentialScope>,
+}
+
+pub(crate) trait MonotonicClock: Send + Sync {
+    fn now(&self) -> Duration;
+}
+
+pub(crate) struct SystemMonotonicClock {
+    origin: Instant,
+}
+
+impl Default for SystemMonotonicClock {
+    fn default() -> Self {
+        Self {
+            origin: Instant::now(),
+        }
+    }
+}
+
+impl MonotonicClock for SystemMonotonicClock {
+    fn now(&self) -> Duration {
+        self.origin.elapsed()
+    }
 }
 
 pub(crate) enum WorkerMessage {

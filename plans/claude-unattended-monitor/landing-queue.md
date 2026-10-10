@@ -59,6 +59,28 @@ landing action has happened. Re-fetch branch and PR state before acting.
 
 ## Next actions
 
+## Review-fix verification checkpoint
+
+- The three scoped engine findings are fixed. A shared strict-spend predicate
+  blocks authoritative runnable/readiness at SGD45; persisted closed-period
+  anchors account for upward corrections once and preserve uncertainty during
+  migration; provider invocation time now anchors the Claude attempt floor.
+- Offline `cargo test --offline --locked -p jackin-usage-broker
+  -p jackin-usage-coordinator`: exit 0, 133 broker and 47 coordinator tests
+  passed, rerun after the final helper extraction.
+- Offline `cargo clippy --offline --locked -p jackin-usage-broker
+  -p jackin-usage-coordinator --all-targets -- -D warnings`: exit 0.
+- Independent engine reviewer confirmed the three fixes; its scoped review
+  does not establish readiness of the port, hosted checks, installed binaries,
+  or a real Claude account. Installed v2 binaries were not replaced.
+- Read-only operator-state diagnosis: user settings had no `statusLine`, local
+  v2 state had zero bindings/accounts/monitors/goals, and passive doctor
+  returned `broker_unavailable` (exit 3). A session-only composition proposal
+  was printed to `/private/tmp/jackin-session-statusline-proposal.json` without
+  modifying settings. Operator installation and genuine callbacks remain
+  prerequisites for live observation; a receipt/policy is not needed merely
+  to observe. Dispatch approval is a separate gate.
+
 1. Finish the engine and CLI scoped reviews and collect CI evidence for the
    exact candidate head.
 2. Re-fetch main, candidate, PR #1121, checks, and review state. Resolve the

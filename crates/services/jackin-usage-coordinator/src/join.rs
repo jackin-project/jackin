@@ -158,7 +158,7 @@ impl UsageCoordinator {
                     );
                     envelope.retry_deadline_epoch = match policy::minimum_attempt_deadline(
                         &envelope.capability,
-                        envelope.started_at_epoch,
+                        envelope.provider_invoked_at_epoch,
                     ) {
                         Some(floor) => {
                             Some(retry_deadline.map_or(floor, |deadline| deadline.max(floor)))

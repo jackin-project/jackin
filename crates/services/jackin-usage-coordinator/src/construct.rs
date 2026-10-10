@@ -11,8 +11,8 @@ use jackin_protocol::usage_broker::{
 };
 
 use super::{
-    AccountStateStore, CoordinatorState, Shared, UsageCoordinator, UsageCoordinatorConfig,
-    UsageProviderExecutor, coordinator_worker,
+    AccountStateStore, CoordinatorState, MonotonicClock, Shared, SystemMonotonicClock,
+    UsageCoordinator, UsageCoordinatorConfig, UsageProviderExecutor, coordinator_worker,
 };
 
 impl UsageCoordinator {
@@ -86,6 +86,24 @@ impl UsageCoordinator {
         catalog: Option<BTreeMap<UsageAccountCapability, String>>,
         catalog_revision: Option<String>,
     ) -> Self {
+        Self::start_with_clock(
+            executor,
+            store,
+            config,
+            catalog,
+            catalog_revision,
+            Arc::new(SystemMonotonicClock::default()),
+        )
+    }
+
+    pub(crate) fn start_with_clock(
+        executor: Arc<dyn UsageProviderExecutor>,
+        store: Arc<dyn AccountStateStore>,
+        config: UsageCoordinatorConfig,
+        catalog: Option<BTreeMap<UsageAccountCapability, String>>,
+        catalog_revision: Option<String>,
+        clock: Arc<dyn MonotonicClock>,
+    ) -> Self {
         let config = UsageCoordinatorConfig {
             max_concurrency: config.max_concurrency.max(1),
             queue_capacity: config.queue_capacity.max(1),
@@ -102,6 +120,7 @@ impl UsageCoordinator {
             executor,
             store,
             config,
+            clock,
         });
         let (jobs, receiver) = mpsc::sync_channel(config.queue_capacity);
         let receiver = Arc::new(Mutex::new(receiver));

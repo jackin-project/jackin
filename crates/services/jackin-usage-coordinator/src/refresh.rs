@@ -114,8 +114,11 @@ impl UsageCoordinator {
                 .envelope
                 .retry_deadline_epoch
                 .is_some_and(|deadline| deadline > now_epoch)
-            || policy::minimum_attempt_deadline(capability, entry.envelope.started_at_epoch)
-                .is_some_and(|deadline| deadline > now_epoch)
+            || policy::minimum_attempt_deadline(
+                capability,
+                entry.envelope.provider_invoked_at_epoch,
+            )
+            .is_some_and(|deadline| deadline > now_epoch)
             || (!force
                 && entry
                     .envelope
@@ -150,7 +153,8 @@ impl UsageCoordinator {
         let job = ProbeJob {
             capability: capability.clone(),
             generation,
-            started_at_epoch: now_epoch,
+            admitted_at_epoch: now_epoch,
+            admitted_at_monotonic: self.shared.clock.now(),
             catalog_revision,
             credential_scope,
         };

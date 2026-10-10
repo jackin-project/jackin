@@ -1689,6 +1689,27 @@ fn spend_snapshot_preserves_history(snapshot: &SpendState, canonical: &SpendStat
     {
         return false;
     }
+    let closed_period_history_preserved = match (
+        snapshot.closed_period_anchor.as_ref(),
+        canonical.closed_period_anchor.as_ref(),
+    ) {
+        (None, _) => true,
+        (Some(_), None) => false,
+        (Some(snapshot), Some(canonical)) => {
+            if snapshot.billing_period_start_epoch == canonical.billing_period_start_epoch
+                && snapshot.billing_period_end_epoch == canonical.billing_period_end_epoch
+            {
+                canonical.amount.currency == snapshot.amount.currency
+                    && canonical.amount.exponent == snapshot.amount.exponent
+                    && canonical.amount.amount_minor >= snapshot.amount.amount_minor
+            } else {
+                canonical.billing_period_start_epoch >= snapshot.billing_period_end_epoch
+            }
+        }
+    };
+    if !closed_period_history_preserved {
+        return false;
+    }
     let Some(snapshot_cumulative) = snapshot.cumulative_goal_spend.as_ref() else {
         return true;
     };
@@ -1722,6 +1743,10 @@ fn spend_state_matches_account(state: &SpendState, account_id: &str) -> bool {
             .is_none_or(|record| record.account_id == account_id)
         && state
             .period_anchor
+            .as_ref()
+            .is_none_or(|record| record.account_id == account_id)
+        && state
+            .closed_period_anchor
             .as_ref()
             .is_none_or(|record| record.account_id == account_id)
 }
@@ -3459,16 +3484,8 @@ fn evaluate_spend_guard(
     evaluation: &mut MonitorEvaluation,
 ) {
     let spend = spend_policy(monitor, account, now_epoch);
+    evaluation.blocked |= spend_decision_blocks_dispatch(&spend);
     for action in spend.actions {
-        if matches!(
-            action,
-            MonitorAction::ReduceDispatch {
-                max_parallel: Some(0)
-            }
-        ) || matches!(action, MonitorAction::Pause { .. })
-        {
-            evaluation.blocked = true;
-        }
         push_action(&mut evaluation.actions, action);
     }
     for code in spend.issues {
@@ -3476,8 +3493,20 @@ fn evaluate_spend_guard(
     }
     if spend.budget_unverifiable || spend.rollover_unknown {
         evaluation.any_unknown = true;
-        evaluation.blocked = true;
     }
+}
+
+fn spend_decision_blocks_dispatch(spend: &SpendDecision) -> bool {
+    spend.budget_unverifiable
+        || spend.rollover_unknown
+        || spend.actions.iter().any(|action| {
+            matches!(
+                action,
+                MonitorAction::ReduceDispatch {
+                    max_parallel: Some(0)
+                } | MonitorAction::Pause { .. }
+            )
+        })
 }
 
 fn spend_issue(code: MonitorIssueCode) -> MonitorIssue {
@@ -4246,6 +4275,11 @@ fn status_for(
         goal,
         now_epoch,
     );
+    let spend_blocks_dispatch = monitor
+        .policy
+        .as_ref()
+        .is_some_and(|policy| policy.new_policy == MonitorPolicy::StrictSgd)
+        && spend_decision_blocks_dispatch(&spend_policy(monitor, account, now_epoch));
     let readiness = monitor_readiness(MonitorReadinessContext {
         monitor,
         five_hour: &five_hour,
@@ -4255,32 +4289,23 @@ fn status_for(
         current_binding,
         current_policy,
         goal,
+        spend_blocks_dispatch,
     });
     let latest_decision = monitor.latest_decision.clone();
-    let (lifecycle, runnable, readiness) =
-        status_lifecycle(monitor, &issues, latest_decision.as_ref(), readiness);
+    let (lifecycle, runnable, readiness) = status_lifecycle(
+        monitor,
+        &issues,
+        latest_decision.as_ref(),
+        readiness,
+        spend_blocks_dispatch,
+    );
     let version = session.and_then(|session| session.claude_code_version.clone());
     let budget = monitor
         .policy
         .as_ref()
         .filter(|policy| policy.new_policy == MonitorPolicy::StrictSgd)
         .and_then(|policy| policy.budget.clone());
-    let selected_session_id = match &monitor.config.scope {
-        MonitorScope::Session { session_id } => Some(session_id.clone()),
-        MonitorScope::BoundAccount {
-            session_id: Some(session_id),
-            ..
-        } => Some(session_id.clone()),
-        MonitorScope::BoundAccount {
-            session_id: None, ..
-        } => account.and_then(|account| {
-            account
-                .sessions
-                .iter()
-                .max_by_key(|(_, session)| session.last_callback_received_at_epoch)
-                .map(|(session_id, _)| session_id.clone())
-        }),
-    };
+    let selected_session_id = status_session_id(monitor, account);
     MonitorStatus {
         schema_version: USAGE_MONITOR_SCHEMA_VERSION,
         monitor_id: monitor_id.to_owned(),
@@ -4330,11 +4355,34 @@ fn status_for(
     }
 }
 
+fn status_session_id(
+    monitor: &DurableMonitor,
+    account: Option<&AccountObservations>,
+) -> Option<String> {
+    match &monitor.config.scope {
+        MonitorScope::Session { session_id } => Some(session_id.clone()),
+        MonitorScope::BoundAccount {
+            session_id: Some(session_id),
+            ..
+        } => Some(session_id.clone()),
+        MonitorScope::BoundAccount {
+            session_id: None, ..
+        } => account.and_then(|account| {
+            account
+                .sessions
+                .iter()
+                .max_by_key(|(_, session)| session.last_callback_received_at_epoch)
+                .map(|(session_id, _)| session_id.clone())
+        }),
+    }
+}
+
 fn status_lifecycle(
     monitor: &DurableMonitor,
     issues: &[MonitorIssue],
     latest_decision: Option<&MonitorDecision>,
     mut readiness: MonitorReadiness,
+    spend_blocks_dispatch: bool,
 ) -> (MonitorLifecycle, bool, MonitorReadiness) {
     let blocked_issue = issues.iter().any(|item| {
         matches!(
@@ -4366,6 +4414,7 @@ fn status_lifecycle(
     let lifecycle = if monitor.stopped_at_epoch.is_some() {
         MonitorLifecycle::Stopped
     } else if blocked_issue
+        || spend_blocks_dispatch
         || latest_decision.is_some_and(|decision| {
             decision
                 .actions
@@ -4388,6 +4437,7 @@ fn status_lifecycle(
     };
     let runnable = monitor.config.purpose == MonitorPurpose::DispatchGuard
         && !blocked_issue
+        && !spend_blocks_dispatch
         && !unknown_issue
         && matches!(
             lifecycle,
@@ -4413,6 +4463,7 @@ struct MonitorReadinessContext<'a> {
     current_binding: Option<&'a MonitorAccountBinding>,
     current_policy: Option<&'a MonitorPolicyRecord>,
     goal: Option<&'a DurableGoalSpend>,
+    spend_blocks_dispatch: bool,
 }
 
 fn monitor_readiness(context: MonitorReadinessContext<'_>) -> MonitorReadiness {
@@ -4425,6 +4476,7 @@ fn monitor_readiness(context: MonitorReadinessContext<'_>) -> MonitorReadiness {
         current_binding,
         current_policy,
         goal,
+        spend_blocks_dispatch,
     } = context;
     let tracking =
         if session.is_some_and(|session| session.last_callback_received_at_epoch.is_some()) {
@@ -4526,6 +4578,7 @@ fn monitor_readiness(context: MonitorReadinessContext<'_>) -> MonitorReadiness {
     } else if binding_ready
         && policy_ready
         && goal_ready
+        && !spend_blocks_dispatch
         && no_blocking_issues
         && quota == MonitorQuotaReadiness::Ready
         && budget != MonitorBudgetReadiness::Unknown

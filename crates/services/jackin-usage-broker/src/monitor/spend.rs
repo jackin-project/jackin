@@ -42,6 +42,11 @@ pub(crate) struct SpendState {
     pub baseline: Option<SpendRecord>,
     /// Latest account total already folded into cumulative goal spend.
     pub period_anchor: Option<SpendRecord>,
+    /// Latest verified total for the immediately preceding period already
+    /// folded into cumulative spend. This lets later corrections be applied
+    /// exactly once after the period anchor has advanced.
+    #[serde(default)]
+    pub closed_period_anchor: Option<SpendRecord>,
     /// Cumulative goal spend across billing periods, when known.
     pub cumulative_goal_spend: Option<Money>,
     /// A closed-period transition could not yet be proven.
@@ -87,10 +92,12 @@ pub(super) fn validate_account_spend_state(state: &SpendAccountState) -> bool {
 pub(super) fn validate_spend_state(state: &SpendState) -> bool {
     let baseline = state.baseline.as_ref();
     let anchor = state.period_anchor.as_ref();
+    let closed_anchor = state.closed_period_anchor.as_ref();
     let cumulative = state.cumulative_goal_spend.as_ref();
 
     if baseline.is_some_and(|record| !valid_goal_spend_anchor(record))
         || anchor.is_some_and(|record| !valid_goal_spend_anchor(record))
+        || closed_anchor.is_some_and(|record| !valid_goal_spend_anchor(record))
         || cumulative.is_some_and(|amount| !is_supported_sgd(amount) || amount.amount_minor < 0)
     {
         return false;
@@ -103,12 +110,22 @@ pub(super) fn validate_spend_state(state: &SpendState) -> bool {
     }
 
     let Some(baseline) = baseline else {
-        return true;
+        return closed_anchor.is_none_or(|closed| {
+            anchor.is_some_and(|anchor| {
+                closed.account_id == anchor.account_id
+                    && closed.billing_period_end_epoch == anchor.billing_period_start_epoch
+            })
+        });
     };
     let (Some(anchor), Some(cumulative)) = (anchor, cumulative) else {
         return false;
     };
     if baseline.account_id != anchor.account_id
+        || closed_anchor.is_some_and(|closed| {
+            closed.account_id != baseline.account_id
+                || same_period(baseline, anchor)
+                || closed.billing_period_end_epoch != anchor.billing_period_start_epoch
+        })
         || (!state.cumulative_complete && !state.rollover_unknown)
     {
         return false;
@@ -394,6 +411,7 @@ pub(crate) fn capture_goal_baseline(
     SpendState {
         baseline: Some(current.clone()),
         period_anchor: Some(current.clone()),
+        closed_period_anchor: None,
         cumulative_goal_spend: Some(Money::new(0, SGD_CURRENCY, SGD_EXPONENT)),
         rollover_unknown: false,
         cumulative_complete: true,
@@ -417,32 +435,81 @@ pub(crate) fn advance_goal_spend(
         return;
     }
 
-    let (Some(current), Some(anchor), Some(cumulative)) = (
-        account.current_period_record.as_ref(),
-        state.period_anchor.as_ref(),
-        state.cumulative_goal_spend.as_ref(),
+    let (Some(current), Some(anchor), Some(mut cumulative)) = (
+        account.current_period_record.clone(),
+        state.period_anchor.clone(),
+        state.cumulative_goal_spend.clone(),
     ) else {
         state.rollover_unknown = true;
         return;
     };
 
+    let Some(baseline) = state.baseline.as_ref() else {
+        return;
+    };
+    if !same_period(baseline, &anchor) && state.closed_period_anchor.is_none() {
+        // Historical state may have already folded one or more periods but
+        // cannot say which closing total its cumulative amount includes. Do
+        // not infer a correction baseline or restore completeness from newer
+        // evidence.
+        state.rollover_unknown = true;
+        state.cumulative_complete = false;
+        return;
+    }
+
     if !money_matches_budget(&current.amount, budget)
         || current.verification != SpendVerification::Verified
-        || !record_is_fresh(current, now_epoch)
+        || !record_is_fresh(&current, now_epoch)
     {
         return;
     }
 
-    if same_period(anchor, current) {
+    if same_period(&anchor, &current) {
+        let mut reconciled_closed_anchor = None;
+        if let Some(closed_anchor) = state.closed_period_anchor.clone() {
+            let Some(closed) = account
+                .previous_period_record
+                .as_ref()
+                .filter(|record| same_period(record, &closed_anchor))
+            else {
+                state.rollover_unknown = true;
+                state.cumulative_complete = false;
+                return;
+            };
+            if closed != &closed_anchor {
+                let correction_is_verifiable = closed.verification == SpendVerification::Verified
+                    && evidence_time(closed) >= closed.billing_period_end_epoch
+                    && record_is_fresh(closed, now_epoch)
+                    && closed.amount.currency == closed_anchor.amount.currency
+                    && closed.amount.exponent == closed_anchor.amount.exponent
+                    && closed.amount.amount_minor >= closed_anchor.amount.amount_minor;
+                if !correction_is_verifiable {
+                    state.rollover_unknown = true;
+                    state.cumulative_complete = false;
+                    return;
+                }
+                let correction = closed.amount.amount_minor - closed_anchor.amount.amount_minor;
+                let Some(updated) = add_minor(&cumulative, correction) else {
+                    state.rollover_unknown = true;
+                    state.cumulative_complete = false;
+                    return;
+                };
+                cumulative = updated;
+                reconciled_closed_anchor = Some(closed.clone());
+            }
+        }
         if current.amount.amount_minor < anchor.amount.amount_minor {
             state.rollover_unknown = true;
             state.cumulative_complete = false;
             return;
         }
         let increase = current.amount.amount_minor - anchor.amount.amount_minor;
-        if let Some(updated) = add_minor(cumulative, increase) {
+        if let Some(updated) = add_minor(&cumulative, increase) {
             state.cumulative_goal_spend = Some(updated);
             state.period_anchor = Some(current.clone());
+            if let Some(closed_anchor) = reconciled_closed_anchor {
+                state.closed_period_anchor = Some(closed_anchor);
+            }
         } else {
             state.rollover_unknown = true;
             state.cumulative_complete = false;
@@ -460,7 +527,7 @@ pub(crate) fn advance_goal_spend(
         state.cumulative_complete = false;
         return;
     };
-    let rollover_is_proven = same_period(anchor, closed)
+    let rollover_is_proven = same_period(&anchor, closed)
         && closed.verification == SpendVerification::Verified
         && evidence_time(closed) >= closed.billing_period_end_epoch
         && record_is_fresh(closed, now_epoch)
@@ -476,7 +543,7 @@ pub(crate) fn advance_goal_spend(
     }
 
     let closed_increase = closed.amount.amount_minor - anchor.amount.amount_minor;
-    let Some(after_closed_period) = add_minor(cumulative, closed_increase) else {
+    let Some(after_closed_period) = add_minor(&cumulative, closed_increase) else {
         state.rollover_unknown = true;
         state.cumulative_complete = false;
         return;
@@ -489,6 +556,7 @@ pub(crate) fn advance_goal_spend(
 
     state.cumulative_goal_spend = Some(after_rollover);
     state.period_anchor = Some(current.clone());
+    state.closed_period_anchor = Some(closed.clone());
     state.rollover_unknown = false;
     state.cumulative_complete = true;
 }
@@ -809,6 +877,65 @@ mod tests {
         account
     }
 
+    fn rolled_over_state(budget: &Money) -> (SpendAccountState, SpendState) {
+        let start_time = PERIOD_START + 1_000;
+        let mut account = account_with_baseline(start_time, 7_000);
+        let mut state = capture_goal_baseline(&account, Some(budget), start_time);
+
+        let (next_account, _) = record_account_spend(
+            &account,
+            ACCOUNT,
+            receipt(
+                PERIOD_START,
+                PERIOD_END,
+                amount(13_000),
+                Some(PERIOD_END - 10),
+                true,
+            ),
+            PERIOD_END - 10,
+        )
+        .expect("in-period spend");
+        account = next_account;
+        advance_goal_spend(&mut state, &account, Some(budget), PERIOD_END - 5);
+
+        let next_period_end = PERIOD_END + 100_000;
+        let (next_account, _) = record_account_spend(
+            &account,
+            ACCOUNT,
+            receipt(
+                PERIOD_END,
+                next_period_end,
+                amount(200),
+                Some(PERIOD_END + 1),
+                true,
+            ),
+            PERIOD_END + 1,
+        )
+        .expect("next-period receipt");
+        account = next_account;
+        advance_goal_spend(&mut state, &account, Some(budget), PERIOD_END + 1);
+        assert!(state.rollover_unknown);
+
+        let (next_account, _) = record_account_spend(
+            &account,
+            ACCOUNT,
+            receipt(
+                PERIOD_START,
+                PERIOD_END,
+                amount(14_000),
+                Some(PERIOD_END + 2),
+                true,
+            ),
+            PERIOD_END + 2,
+        )
+        .expect("fresh post-close total");
+        account = next_account;
+        advance_goal_spend(&mut state, &account, Some(budget), PERIOD_END + 3);
+        assert!(state.cumulative_complete);
+        assert_eq!(state.cumulative_goal_spend, Some(amount(7_200)));
+        (account, state)
+    }
+
     #[test]
     fn spend_state_validation_blocks_unverified_baselines_and_incompatible_cumulative_money() {
         let now = PERIOD_START + 10;
@@ -896,9 +1023,36 @@ mod tests {
             Some(Money::new(-1, SGD_CURRENCY, SGD_EXPONENT));
         assert!(!validate_spend_state(&negative_cumulative));
 
+        let mut same_period_marker = valid.clone();
+        same_period_marker.closed_period_anchor = same_period_marker.baseline.clone();
+        assert!(!validate_spend_state(&same_period_marker));
+
         let mut partial_state = valid;
         partial_state.period_anchor = None;
         assert!(!validate_spend_state(&partial_state));
+    }
+
+    #[test]
+    fn closed_period_marker_must_match_goal_account_and_anchor_boundary() {
+        let budget = budget(100_000);
+        let (_, valid) = rolled_over_state(&budget);
+        assert!(validate_spend_state(&valid));
+
+        let mut mismatched_account = valid.clone();
+        mismatched_account
+            .closed_period_anchor
+            .as_mut()
+            .expect("closed-period marker")
+            .account_id = "another-account".to_owned();
+        assert!(!validate_spend_state(&mismatched_account));
+
+        let mut noncontiguous_marker = valid;
+        noncontiguous_marker
+            .closed_period_anchor
+            .as_mut()
+            .expect("closed-period marker")
+            .billing_period_end_epoch -= 1;
+        assert!(!validate_spend_state(&noncontiguous_marker));
     }
 
     #[test]
@@ -1281,6 +1435,137 @@ mod tests {
         assert!(!state.rollover_unknown);
         assert!(state.cumulative_complete);
         assert_eq!(state.cumulative_goal_spend, Some(amount(7_200)));
+    }
+
+    #[test]
+    fn post_rollover_closed_period_corrections_are_counted_once_across_restart() {
+        let budget = budget(10_000);
+        let (account, mut state) = rolled_over_state(&budget);
+        let baseline = state.baseline.clone();
+        assert_eq!(
+            state
+                .closed_period_anchor
+                .as_ref()
+                .map(|record| record.amount.amount_minor),
+            Some(14_000)
+        );
+
+        let (account, correction) = record_account_spend(
+            &account,
+            ACCOUNT,
+            receipt(
+                PERIOD_START,
+                PERIOD_END,
+                amount(16_000),
+                Some(PERIOD_END + 4),
+                true,
+            ),
+            PERIOD_END + 4,
+        )
+        .expect("fresh prior-period correction");
+        assert_eq!(correction.verification, SpendVerification::Verified);
+        advance_goal_spend(&mut state, &account, Some(&budget), PERIOD_END + 5);
+        assert_eq!(state.cumulative_goal_spend, Some(amount(9_200)));
+        assert_eq!(
+            state
+                .closed_period_anchor
+                .as_ref()
+                .map(|record| record.amount.amount_minor),
+            Some(16_000)
+        );
+        let decision = evaluate_spend_policy(
+            ACCOUNT,
+            GOAL,
+            Some(&budget),
+            &account,
+            &state,
+            PERIOD_END + 5,
+        );
+        assert!(decision.actions.contains(&MonitorAction::ReduceDispatch {
+            max_parallel: Some(0),
+        }));
+
+        advance_goal_spend(&mut state, &account, Some(&budget), PERIOD_END + 6);
+        assert_eq!(state.cumulative_goal_spend, Some(amount(9_200)));
+
+        let persisted = serde_json::to_value(&state).expect("serialize goal spend state");
+        let mut state: SpendState =
+            serde_json::from_value(persisted).expect("restore goal spend state");
+        advance_goal_spend(&mut state, &account, Some(&budget), PERIOD_END + 7);
+        assert_eq!(state.cumulative_goal_spend, Some(amount(9_200)));
+
+        let (account, correction) = record_account_spend(
+            &account,
+            ACCOUNT,
+            receipt(
+                PERIOD_START,
+                PERIOD_END,
+                amount(18_000),
+                Some(PERIOD_END + 8),
+                true,
+            ),
+            PERIOD_END + 8,
+        )
+        .expect("second fresh prior-period correction");
+        assert_eq!(correction.verification, SpendVerification::Verified);
+        advance_goal_spend(&mut state, &account, Some(&budget), PERIOD_END + 9);
+        assert_eq!(state.cumulative_goal_spend, Some(amount(11_200)));
+        assert_eq!(state.baseline, baseline);
+    }
+
+    #[test]
+    fn historical_rollover_without_closed_marker_fails_closed_after_deserialization() {
+        let budget = budget(10_000);
+        let (account, state) = rolled_over_state(&budget);
+        let mut persisted = serde_json::to_value(&state).expect("serialize goal spend state");
+        persisted
+            .as_object_mut()
+            .expect("state object")
+            .remove("closed_period_anchor");
+        let mut legacy_state: SpendState =
+            serde_json::from_value(persisted).expect("deserialize prior state shape");
+        assert!(validate_spend_state(&legacy_state));
+        assert!(legacy_state.closed_period_anchor.is_none());
+
+        advance_goal_spend(&mut legacy_state, &account, Some(&budget), PERIOD_END + 4);
+        assert_eq!(legacy_state.cumulative_goal_spend, Some(amount(7_200)));
+        assert!(!legacy_state.cumulative_complete);
+        assert!(legacy_state.rollover_unknown);
+        let decision = evaluate_spend_policy(
+            ACCOUNT,
+            GOAL,
+            Some(&budget),
+            &account,
+            &legacy_state,
+            PERIOD_END + 4,
+        );
+        assert!(decision.budget_unverifiable);
+        assert!(decision.actions.contains(&MonitorAction::Pause {
+            reason: MonitorIssueCode::BudgetUnverifiable,
+        }));
+    }
+
+    #[test]
+    fn correction_older_than_retained_previous_period_is_unverified() {
+        let budget = budget(100_000);
+        let (account, _) = rolled_over_state(&budget);
+        let prior_period_record = account.previous_period_record.clone();
+        let received_at = PERIOD_END + 4;
+        let (account, correction) = record_account_spend(
+            &account,
+            ACCOUNT,
+            receipt(
+                PERIOD_START - 100_000,
+                PERIOD_START,
+                amount(500),
+                Some(received_at),
+                true,
+            ),
+            received_at,
+        )
+        .expect("unretained old period stays auditable");
+        assert_eq!(correction.verification, SpendVerification::Unverified);
+        assert_eq!(account.previous_period_record, prior_period_record);
     }
 
     #[test]

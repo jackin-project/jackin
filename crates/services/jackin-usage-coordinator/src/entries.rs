@@ -94,6 +94,7 @@ pub(crate) struct Shared {
     pub(crate) executor: Arc<dyn UsageProviderExecutor>,
     pub(crate) store: Arc<dyn AccountStateStore>,
     pub(crate) config: UsageCoordinatorConfig,
+    pub(crate) clock: Arc<dyn super::MonotonicClock>,
 }
 
 #[derive(Clone)]

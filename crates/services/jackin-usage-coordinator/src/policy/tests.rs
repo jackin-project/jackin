@@ -46,7 +46,7 @@ fn broker_policy_retry_is_positive_exponential_stable_and_provider_wins() {
 }
 
 #[test]
-fn claude_minimum_attempt_deadline_uses_persisted_start() {
+fn claude_minimum_attempt_deadline_uses_persisted_invocation() {
     let capability = UsageAccountCapability {
         account_id: "account".to_owned(),
         surface_id: "claude".to_owned(),

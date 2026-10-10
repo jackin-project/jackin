@@ -10,8 +10,9 @@ use std::sync::atomic::Ordering;
 
 use super::{
     ACCOUNT_STATE_SCHEMA_VERSION, AccountStateEnvelope, MAX_ACCOUNT_STATE_BYTES,
-    PROJECTION_STATE_SCHEMA_VERSION, STATE_QUARANTINE_COUNTER, STATE_TMP_COUNTER, StateStoreError,
-    sanitize_envelope, state_filename, validate_capability, validate_envelope, validate_owned_mode,
+    PREVIOUS_ACCOUNT_STATE_SCHEMA_VERSION, PROJECTION_STATE_SCHEMA_VERSION,
+    STATE_QUARANTINE_COUNTER, STATE_TMP_COUNTER, StateStoreError, sanitize_envelope,
+    state_filename, validate_capability, validate_envelope, validate_owned_mode,
 };
 use jackin_protocol::usage_broker::{UsageAccountCapability, UsageCatalogEntry, UsageProjectionV1};
 use nix::fcntl::{OFlag, open, openat, renameat};
@@ -240,9 +241,41 @@ impl AccountStateStore for FileAccountStateStore {
         if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > MAX_ACCOUNT_STATE_BYTES {
             return Err(StateStoreError::Corrupt);
         }
-        let envelope: AccountStateEnvelope =
+        let mut value: serde_json::Value =
             serde_json::from_slice(&bytes).map_err(|_| StateStoreError::Corrupt)?;
-        validate_envelope(envelope, capability, now_epoch).map(Some)
+        let schema_version = value
+            .get("schema_version")
+            .and_then(serde_json::Value::as_u64)
+            .and_then(|version| u32::try_from(version).ok())
+            .ok_or(StateStoreError::Corrupt)?;
+        let (envelope, migrated) = match schema_version {
+            PREVIOUS_ACCOUNT_STATE_SCHEMA_VERSION => {
+                // v1 recorded queue admission as the attempt start. The actual
+                // provider start cannot be reconstructed, so retain the account
+                // and conservatively begin a fresh floor from migration time.
+                value
+                    .as_object_mut()
+                    .ok_or(StateStoreError::Corrupt)?
+                    .insert("provider_invoked_at_epoch".into(), serde_json::Value::Null);
+                let mut envelope: AccountStateEnvelope =
+                    serde_json::from_value(value).map_err(|_| StateStoreError::Corrupt)?;
+                envelope.provider_invoked_at_epoch = envelope
+                    .started_at_epoch
+                    .map(|admitted| admitted.max(now_epoch));
+                envelope.schema_version = ACCOUNT_STATE_SCHEMA_VERSION;
+                (envelope, true)
+            }
+            ACCOUNT_STATE_SCHEMA_VERSION => (
+                serde_json::from_value(value).map_err(|_| StateStoreError::Corrupt)?,
+                false,
+            ),
+            _ => return Err(StateStoreError::Corrupt),
+        };
+        let envelope = validate_envelope(envelope, capability, now_epoch)?;
+        if migrated {
+            self.store(&envelope, now_epoch)?;
+        }
+        Ok(Some(envelope))
     }
 
     fn store(

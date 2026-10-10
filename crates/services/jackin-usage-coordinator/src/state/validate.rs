@@ -53,6 +53,7 @@ pub(crate) fn validate_envelope(
     }
     let future_limit = now_epoch.saturating_add(MAX_CLOCK_SKEW_SECS);
     if [
+        envelope.provider_invoked_at_epoch,
         envelope.started_at_epoch,
         envelope.completed_at_epoch,
         envelope

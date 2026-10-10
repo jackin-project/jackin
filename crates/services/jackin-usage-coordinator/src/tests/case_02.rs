@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use super::state::PREVIOUS_ACCOUNT_STATE_SCHEMA_VERSION;
 use super::*;
 
 struct ResetWriteFailureStore {
@@ -156,14 +157,23 @@ fn claude_attempt_floor_persists_across_restart_and_force_cannot_bypass() {
         let terminal = join_ok(&coordinator, &account, first.generation, 1_001);
         if failed {
             assert_eq!(terminal.phase, UsageRefreshPhase::Failed);
-            assert_eq!(terminal.retry_at_epoch, Some(1_300));
         } else {
             assert_eq!(terminal.phase, UsageRefreshPhase::Completed);
+        }
+        let invocation = store
+            .load(&account, 1_001)
+            .unwrap()
+            .unwrap()
+            .provider_invoked_at_epoch
+            .expect("provider invocation was persisted");
+        let attempt_floor = invocation.saturating_add(300);
+        if failed {
+            assert_eq!(terminal.retry_at_epoch, Some(attempt_floor));
         }
         drop(coordinator);
 
         let restarted_executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
-            quota_view(1_300, 79),
+            quota_view(attempt_floor, 79),
         )));
         #[expect(
             clippy::clone_on_ref_ptr,
@@ -178,20 +188,191 @@ fn claude_attempt_floor_persists_across_restart_and_force_cannot_bypass() {
                 ..UsageCoordinatorConfig::default()
             },
         );
-        assert_eq!(restarted.current(&account, 1_299).unwrap().generation, 1);
-        assert_eq!(restarted.next_due_epoch(), Some(1_300));
-        assert!(restarted.poll_due(1_299).is_empty());
-        let forced_early = restarted.request_refresh(&account, 1, true, 1_299).unwrap();
+        assert_eq!(
+            restarted
+                .current(&account, attempt_floor - 1)
+                .unwrap()
+                .generation,
+            1
+        );
+        assert_eq!(restarted.next_due_epoch(), Some(attempt_floor));
+        assert!(restarted.poll_due(attempt_floor - 1).is_empty());
+        let forced_early = restarted
+            .request_refresh(&account, 1, true, attempt_floor - 1)
+            .unwrap();
         assert_eq!(forced_early.generation, 1);
         assert_eq!(restarted_executor.calls.load(Ordering::SeqCst), 0);
-        let allowed = restarted.request_refresh(&account, 1, true, 1_300).unwrap();
+        let allowed = restarted
+            .request_refresh(&account, 1, true, attempt_floor)
+            .unwrap();
         assert_eq!(allowed.generation, 2);
         assert_eq!(
-            join_ok(&restarted, &account, 2, 1_301).phase,
+            join_ok(&restarted, &account, 2, attempt_floor + 1).phase,
             UsageRefreshPhase::Completed
         );
         assert_eq!(restarted_executor.calls.load(Ordering::SeqCst), 1);
     }
+}
+
+#[test]
+fn claude_attempt_floor_starts_at_invocation_after_fake_clock_queue_delay() {
+    let executor = Arc::new(GateExecutor::new(ProviderProbeOutcome::success(
+        quota_view(1_000, 80),
+    )));
+    let store = Arc::new(MemoryStore::default());
+    let clock = Arc::new(FakeMonotonicClock::default());
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce concrete ports to coordinator trait objects"
+    )]
+    let provider: Arc<dyn UsageProviderExecutor> = executor.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce concrete ports to coordinator trait objects"
+    )]
+    let state_store: Arc<dyn AccountStateStore> = store.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "share fake clock with the delayed-queue fixture"
+    )]
+    let clock_port: Arc<dyn MonotonicClock> = clock.clone();
+    let coordinator = UsageCoordinator::start_with_clock(
+        provider,
+        state_store,
+        UsageCoordinatorConfig {
+            max_concurrency: 1,
+            queue_capacity: 4,
+            ..UsageCoordinatorConfig::default()
+        },
+        None,
+        None,
+        clock_port,
+    );
+    let blocker = UsageAccountCapability {
+        account_id: "queue-blocker".into(),
+        surface_id: "openai".into(),
+    };
+    let account = capability("delayed-attempt");
+
+    coordinator
+        .request_refresh(&blocker, 0, true, 1_000)
+        .unwrap();
+    executor.wait_started(1);
+    let queued = coordinator
+        .request_refresh(&account, 0, true, 1_000)
+        .unwrap();
+    assert_eq!(queued.phase, UsageRefreshPhase::Queued);
+    clock.advance(Duration::from_secs(400));
+    executor.release(1);
+    executor.wait_started(2);
+    join_ok(&coordinator, &blocker, 1, 1_401);
+
+    let first_invocation = store
+        .states
+        .lock()
+        .unwrap()
+        .get(&account)
+        .unwrap()
+        .provider_invoked_at_epoch
+        .unwrap();
+    assert_eq!(first_invocation, 1_400);
+    executor.release(1);
+    assert_eq!(
+        join_ok(&coordinator, &account, 1, 1_401).phase,
+        UsageRefreshPhase::Completed
+    );
+
+    let forced_early = coordinator
+        .request_refresh(&account, 1, true, first_invocation + 299)
+        .unwrap();
+    assert_eq!(forced_early.generation, 1);
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 2);
+
+    let allowed = coordinator
+        .request_refresh(&account, 1, true, first_invocation + 300)
+        .unwrap();
+    assert_eq!(allowed.generation, 2);
+    executor.wait_started(3);
+    let second_invocation = store
+        .states
+        .lock()
+        .unwrap()
+        .get(&account)
+        .unwrap()
+        .provider_invoked_at_epoch
+        .unwrap();
+    assert!(second_invocation.saturating_sub(first_invocation) >= 300);
+    executor.release(1);
+    assert_eq!(
+        join_ok(&coordinator, &account, 2, second_invocation + 1).phase,
+        UsageRefreshPhase::Completed
+    );
+}
+
+#[test]
+fn account_state_v1_migration_preserves_results_and_enforces_fresh_attempt_floor() {
+    let temp = tempfile::tempdir().unwrap();
+    let store = Arc::new(FileAccountStateStore::at(temp.path().join("accounts")));
+    let account = capability("legacy-attempt");
+    let mut legacy = AccountStateEnvelope::idle(account.clone());
+    legacy.schema_version = PREVIOUS_ACCOUNT_STATE_SCHEMA_VERSION;
+    legacy.generation = 1;
+    legacy.phase = UsageRefreshPhase::Completed;
+    let last_good = quota_view(1_000, 80);
+    legacy.terminal_result = Some(last_good.clone());
+    legacy.last_good = Some(last_good);
+    legacy.started_at_epoch = Some(1_000);
+    legacy.completed_at_epoch = Some(1_001);
+    legacy.success_deadline_epoch = Some(1_002);
+    store.store(&legacy, 1_001).unwrap();
+    let path = temp.path().join("accounts/claude-legacy-attempt.json");
+    let mut bytes = serde_json::to_value(&legacy).unwrap();
+    bytes["schema_version"] = serde_json::json!(PREVIOUS_ACCOUNT_STATE_SCHEMA_VERSION);
+    bytes
+        .as_object_mut()
+        .unwrap()
+        .remove("provider_invoked_at_epoch");
+    std::fs::write(&path, serde_json::to_vec(&bytes).unwrap()).unwrap();
+
+    let executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
+        quota_view(2_300, 79),
+    )));
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce concrete executor to the coordinator port"
+    )]
+    let provider: Arc<dyn UsageProviderExecutor> = executor.clone();
+    let coordinator = UsageCoordinator::new(
+        provider,
+        Arc::<FileAccountStateStore>::clone(&store),
+        UsageCoordinatorConfig::default(),
+    );
+    let restored = coordinator.current(&account, 2_000).unwrap();
+    assert_eq!(restored.generation, 1);
+    assert!(restored.snapshot.is_some());
+    assert_eq!(
+        store
+            .load(&account, 2_000)
+            .unwrap()
+            .unwrap()
+            .provider_invoked_at_epoch,
+        Some(2_000)
+    );
+
+    let forced_early = coordinator
+        .request_refresh(&account, 1, true, 2_299)
+        .unwrap();
+    assert_eq!(forced_early.generation, 1);
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 0);
+    let allowed = coordinator
+        .request_refresh(&account, 1, true, 2_300)
+        .unwrap();
+    assert_eq!(allowed.generation, 2);
+    assert_eq!(
+        join_ok(&coordinator, &account, 2, 2_301).phase,
+        UsageRefreshPhase::Completed
+    );
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
 }
 
 #[test]
@@ -358,6 +539,7 @@ fn coordinator_recovers_persisted_owner_loss_once_without_a_herd() {
     abandoned.generation = 4;
     abandoned.phase = UsageRefreshPhase::Updating;
     abandoned.started_at_epoch = Some(1_000);
+    abandoned.provider_invoked_at_epoch = Some(1_000);
     store
         .states
         .lock()

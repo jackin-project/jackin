@@ -45,6 +45,7 @@ pub(super) fn completed(epoch: i64, label: &str) -> AccountStateEnvelope {
         last_good: Some(view),
         terminal_error: None,
         started_at_epoch: Some(epoch),
+        provider_invoked_at_epoch: Some(epoch),
         completed_at_epoch: Some(epoch),
         rate_limit_deadline_epoch: None,
         retry_deadline_epoch: None,

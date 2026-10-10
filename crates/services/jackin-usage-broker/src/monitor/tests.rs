@@ -1,15 +1,16 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use super::MonitorStore;
+use super::{MonitorStore, SpendState, spend_snapshot_preserves_history};
 use jackin_protocol::control::Money;
 use jackin_protocol::usage_monitor::{
     MonitorAccountBinding, MonitorAccountBindingInput, MonitorAction, MonitorConfig,
-    MonitorEvidenceFreshness, MonitorIssueCode, MonitorLifecycle, MonitorModelGuardValidity,
-    MonitorOperation, MonitorPolicy, MonitorPolicyApprovalInput, MonitorPolicyRecord,
-    MonitorProvider, MonitorPurpose, MonitorReply, MonitorScope, MonitorStatus, SpendRecord,
-    SpendRecordInput, SpendRecordSource, SpendVerification, StatuslineObservation,
-    StatuslineQuotaWindow, StatuslineRateLimits, USAGE_MONITOR_SCHEMA_VERSION,
+    MonitorDispatchReadiness, MonitorEvidenceFreshness, MonitorIssueCode, MonitorLifecycle,
+    MonitorModelGuardValidity, MonitorOperation, MonitorPolicy, MonitorPolicyApprovalInput,
+    MonitorPolicyRecord, MonitorProvider, MonitorPurpose, MonitorReply, MonitorScope,
+    MonitorStatus, SpendRecord, SpendRecordInput, SpendRecordSource, SpendVerification,
+    StatuslineObservation, StatuslineQuotaWindow, StatuslineRateLimits,
+    USAGE_MONITOR_SCHEMA_VERSION,
 };
 
 const NOW: i64 = 1_800_000_000;
@@ -1479,7 +1480,7 @@ fn strict_activation_without_a_start_baseline_is_atomic_and_does_not_reserve_its
 }
 
 #[test]
-fn sgd_spend_thresholds_and_threshold_jumps_emit_all_required_actions() {
+fn sgd_spend_thresholds_emit_actions_and_align_runnable_readiness() {
     let (_directory, store) = open_store();
     let period_start = NOW - 100;
     let period_end = NOW + 10_000;
@@ -1538,31 +1539,10 @@ fn sgd_spend_thresholds_and_threshold_jumps_emit_all_required_actions() {
             NOW + offset,
         );
         let current = status(&store, &started.monitor_id, NOW + offset);
-        assert_eq!(
-            actions(&current).iter().any(|action| matches!(
-                action,
-                MonitorAction::Warn {
-                    reason: MonitorIssueCode::BudgetWarn
-                }
-            )),
-            warn,
-            "spend {amount} minor units"
-        );
-        assert_eq!(has_checkpoint(&current), checkpoint, "spend {amount}");
-        assert_eq!(
-            actions(&current).iter().any(|action| matches!(
-                action,
-                MonitorAction::ReduceDispatch {
-                    max_parallel: Some(0)
-                }
-            )),
-            stop,
-            "spend {amount}"
-        );
-        assert_eq!(
-            has_pause(&current, MonitorIssueCode::BudgetPause),
-            pause,
-            "spend {amount}"
+        assert_spend_threshold_status(
+            &current,
+            amount,
+            (warn, checkpoint, stop, pause),
         );
     }
 
@@ -1619,6 +1599,105 @@ fn sgd_spend_thresholds_and_threshold_jumps_emit_all_required_actions() {
         }
     )));
     assert!(has_pause(&jumped, MonitorIssueCode::BudgetPause));
+}
+
+fn assert_spend_threshold_status(
+    status: &MonitorStatus,
+    amount: i64,
+    expectations: (bool, bool, bool, bool),
+) {
+    let (warn, checkpoint, stop, pause) = expectations;
+    assert_eq!(status.runnable, !stop && !pause, "spend {amount} minor units");
+    assert_eq!(
+        status.readiness.dispatch,
+        if stop || pause {
+            MonitorDispatchReadiness::Blocked
+        } else {
+            MonitorDispatchReadiness::Ready
+        },
+        "spend {amount} minor units"
+    );
+    assert_eq!(
+        actions(status).iter().any(|action| matches!(
+            action,
+            MonitorAction::Warn {
+                reason: MonitorIssueCode::BudgetWarn
+            }
+        )),
+        warn,
+        "spend {amount} minor units"
+    );
+    assert_eq!(has_checkpoint(status), checkpoint, "spend {amount}");
+    assert_eq!(
+        actions(status).iter().any(|action| matches!(
+            action,
+            MonitorAction::ReduceDispatch {
+                max_parallel: Some(0)
+            }
+        )),
+        stop,
+        "spend {amount}"
+    );
+    assert_eq!(
+        has_pause(status, MonitorIssueCode::BudgetPause),
+        pause,
+        "spend {amount}"
+    );
+}
+
+#[test]
+fn spend_snapshots_preserve_closed_period_markers_without_blocking_rollover() {
+    let verified_record = |period_start, period_end, amount_minor| SpendRecord {
+        account_id: "acct-snapshot".to_owned(),
+        billing_period_start_epoch: period_start,
+        billing_period_end_epoch: period_end,
+        amount: Money::new(amount_minor, "SGD", 2),
+        evidence_at_epoch: Some(period_end),
+        evidence_received_at_epoch: period_end + 1,
+        source: SpendRecordSource::OperatorReceipt,
+        verification: SpendVerification::Verified,
+    };
+    let baseline = verified_record(100, 200, 1_000);
+    let old_closed_period = verified_record(100, 200, 1_200);
+    let first_period_anchor = verified_record(200, 300, 300);
+    let snapshot = SpendState {
+        baseline: Some(baseline.clone()),
+        period_anchor: Some(first_period_anchor.clone()),
+        cumulative_goal_spend: Some(Money::new(500, "SGD", 2)),
+        rollover_unknown: false,
+        cumulative_complete: true,
+        closed_period_anchor: Some(old_closed_period.clone()),
+    };
+
+    let mut dropped_marker = snapshot.clone();
+    dropped_marker.closed_period_anchor = None;
+    assert!(!spend_snapshot_preserves_history(&snapshot, &dropped_marker));
+
+    let mut corrected_marker = snapshot.clone();
+    corrected_marker.closed_period_anchor = Some(verified_record(100, 200, 1_300));
+    corrected_marker.cumulative_goal_spend = Some(Money::new(600, "SGD", 2));
+    assert!(spend_snapshot_preserves_history(&snapshot, &corrected_marker));
+
+    let mut regressed_marker = snapshot.clone();
+    regressed_marker.closed_period_anchor = Some(verified_record(100, 200, 1_100));
+    assert!(!spend_snapshot_preserves_history(&snapshot, &regressed_marker));
+
+    let mut wrong_account_marker = snapshot.clone();
+    wrong_account_marker
+        .closed_period_anchor
+        .as_mut()
+        .expect("snapshot has a closed-period marker")
+        .account_id = "acct-other".to_owned();
+    assert!(!super::spend_state_matches_account(
+        &wrong_account_marker,
+        "acct-snapshot"
+    ));
+
+    let mut later_rollover = snapshot.clone();
+    later_rollover.closed_period_anchor = Some(verified_record(200, 300, 600));
+    later_rollover.period_anchor = Some(verified_record(300, 400, 400));
+    later_rollover.cumulative_goal_spend = Some(Money::new(1_200, "SGD", 2));
+    assert!(spend_snapshot_preserves_history(&snapshot, &later_rollover));
 }
 
 #[test]

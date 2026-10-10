@@ -784,6 +784,10 @@ impl V1SpendState {
         SpendState {
             baseline: self.baseline.map(V1SpendRecord::into_spend_record),
             period_anchor: self.period_anchor.map(V1SpendRecord::into_spend_record),
+            // V1 did not retain the last closed receipt folded into its
+            // cumulative value. Preserve its totals; reconciliation marks any
+            // already-rolled state incomplete instead of guessing this value.
+            closed_period_anchor: None,
             cumulative_goal_spend: self.cumulative_goal_spend.map(V1Money::into_money),
             rollover_unknown: self.rollover_unknown,
             cumulative_complete: self.cumulative_complete,
