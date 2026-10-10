@@ -38,13 +38,16 @@ ingress reads its bounded JSON input from stdin.
 
 ## V2 source contract and installed-pair preflight
 
-The frozen v2 contract uses broker wire v6 and monitor/store schema v2. Installed
-binary proof is still pending. The examples here describe the current source
-CLI contract; they do not claim that an existing packaged installation supports
-it. Before using an installed pair, inspect its top-level and nested help. It
-must expose binding confirmation, policy approval, monitor observe/start/stop,
-status, refresh, watch, wait, and statusline ingest/compose with the new scope
-options. A version string alone does not prove command support.
+The frozen v2 contract uses broker wire v6 and monitor/store schema v2. An
+isolated installed CLI/broker pair passed the fixture smoke twice, using private
+temporary state and synthetic callbacks. This proves the recorded pair's command,
+schema, and broker-selection behavior within that fixture; it does not establish
+real-account readiness or support in another packaged installation. No genuine
+account callback or operator setup has been verified. Before using another
+installed pair, inspect its top-level and nested help. It must expose binding
+confirmation, policy approval, monitor observe/start/stop, status, refresh, watch,
+wait, and statusline ingest/compose with the new scope options. A version string
+alone does not prove command support.
 
 V1 migration preserves each goal's strict policy semantics and history with
 origin `migrated_v1`; this is not explicit operator approval. Before any
@@ -297,7 +300,8 @@ The HTTP adapter and coordinator retain offline failure/cooldown coverage, but
 there is no enabled production Claude OAuth opt-in command in this release.
 Other providers can still use the normal broker refresh path. Cached desktop
 Claude rows may be unavailable; the frozen v2 source contract uses durable
-statusline monitoring for Claude quota. Installed-pair proof remains pending.
+statusline monitoring for Claude quota. The isolated installed-pair fixture
+smoke passed; no real-account callback or operator setup has been verified.
 
 ## Spend guard
 
