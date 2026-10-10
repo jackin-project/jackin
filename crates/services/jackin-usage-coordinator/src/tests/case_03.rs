@@ -4,7 +4,7 @@
 use super::*;
 
 #[test]
-fn corrupt_revoked_account_is_quarantined_without_poisoning_rotation() {
+fn corrupt_revoked_account_is_replaced_with_result_free_uncertainty_marker() {
     let temp = tempfile::tempdir().unwrap();
     let accounts = temp.path().join("accounts");
     std::fs::create_dir_all(&accounts).unwrap();
@@ -25,14 +25,22 @@ fn corrupt_revoked_account_is_quarantined_without_poisoning_rotation() {
     );
 
     coordinator.reconcile_catalog([], 1_001).unwrap();
-    assert!(!active.exists());
-    let quarantined = std::fs::read_dir(accounts)
+    assert!(active.exists());
+    assert_ne!(std::fs::read(&active).unwrap(), b"corrupt revoked state");
+    let marker = store.load(&account, 1_001).unwrap().unwrap();
+    assert_eq!(marker.phase, UsageRefreshPhase::Idle);
+    assert!(marker.reload_fence_required);
+    assert_eq!(marker.provider_invoked_at_epoch, None);
+    assert!(marker.terminal_result.is_none());
+    assert!(marker.last_good.is_none());
+    assert!(marker.terminal_error.is_none());
+    let quarantine_entries = std::fs::read_dir(accounts)
         .unwrap()
         .filter_map(Result::ok)
         .map(|entry| entry.file_name().to_string_lossy().into_owned())
         .filter(|name| name.contains(".corrupt."))
         .collect::<Vec<_>>();
-    assert_eq!(quarantined.len(), 1);
+    assert!(quarantine_entries.is_empty());
     assert_eq!(
         coordinator.current(&account, 1_001).unwrap_err().kind,
         UsageCoordinationErrorKind::CatalogRevoked
@@ -268,7 +276,7 @@ fn recovered_monotonic_fence_does_not_shorten_a_later_retry_after() {
     store.states.lock().unwrap().insert(account.clone(), prior);
 
     let executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
-        cadence_quota_view(11_000),
+        cadence_quota_view(21_001),
     )));
     let provider: Arc<dyn UsageProviderExecutor> = executor.clone();
     let state_store: Arc<dyn AccountStateStore> = store;
@@ -289,18 +297,22 @@ fn recovered_monotonic_fence_does_not_shorten_a_later_retry_after() {
     assert_eq!(executor.calls.load(Ordering::SeqCst), 0);
 
     // A later wall jump still leaves the freshly installed monotonic floor in
-    // force; the older persisted retry deadline cannot make it expire early.
+    // force; the persisted 1,000-second retry remains longer than the new
+    // 300-second reload floor.
     clock.set_wall_epoch(20_000);
-    assert_eq!(coordinator.next_due_epoch(), Some(20_300));
-    assert!(coordinator.poll_due(20_299).is_empty());
+    assert_eq!(coordinator.next_due_epoch(), Some(21_000));
+    assert!(coordinator.poll_due(20_999).is_empty());
     assert_eq!(executor.calls.load(Ordering::SeqCst), 0);
 
-    clock.advance(Duration::from_secs(300));
-    let due = coordinator.poll_due(20_300);
+    clock.advance(Duration::from_secs(999));
+    assert!(coordinator.poll_due(20_999).is_empty());
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 0);
+    clock.advance(Duration::from_secs(1));
+    let due = coordinator.poll_due(21_000);
     assert_eq!(due.len(), 1);
     assert_eq!(due[0].generation, 2);
     assert_eq!(
-        join_ok(&coordinator, &account, 2, 20_301).phase,
+        join_ok(&coordinator, &account, 2, 21_001).phase,
         UsageRefreshPhase::Completed
     );
     assert_eq!(executor.calls.load(Ordering::SeqCst), 1);

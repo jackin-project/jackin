@@ -136,10 +136,46 @@ fn one_401_reread_replaces_only_the_selected_generation_once() {
             .map(String::as_str),
         Some(r#"{"claudeAiOauth":{"accessToken":"new-token"}}"#)
     );
-    assert!(!replace_if_exact(
-        &lease,
-        Zeroizing::new("wrong-generation".to_owned())
-    ));
     drop(lease);
     assert!(bootstrapped_claude_service().is_none());
+}
+
+#[test]
+fn stale_generation_cannot_read_or_replace_newer_cached_credential() {
+    let service = "Claude Code-credentials-selected";
+    let cache = ClaudeCredentialCache::default();
+    let stale_generation = 41;
+    let current_generation = 42;
+    cache.store(
+        service.to_owned(),
+        valid_payload("generation-41"),
+        stale_generation,
+    );
+    assert!(cache.replace_if_exact(service, stale_generation, valid_payload("replacement-41")));
+    assert_eq!(
+        cache
+            .payload(service, Some(stale_generation))
+            .as_deref()
+            .map(String::as_str),
+        Some(r#"{"claudeAiOauth":{"accessToken":"replacement-41"}}"#)
+    );
+
+    cache.store(
+        service.to_owned(),
+        valid_payload("generation-42"),
+        current_generation,
+    );
+    assert!(cache.payload(service, Some(stale_generation)).is_none());
+    assert!(!cache.replace_if_exact(
+        service,
+        stale_generation,
+        valid_payload("stale-replacement")
+    ));
+    assert_eq!(
+        cache
+            .payload(service, Some(current_generation))
+            .as_deref()
+            .map(String::as_str),
+        Some(r#"{"claudeAiOauth":{"accessToken":"generation-42"}}"#)
+    );
 }

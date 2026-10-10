@@ -212,8 +212,9 @@ pub(crate) struct Shared {
 pub(crate) enum CatalogAccountPreimage {
     Missing,
     Present(Box<AccountStateEnvelope>),
-    /// The old bytes were unreadable. Rotation quarantines them instead of
-    /// treating one revoked account as a catalog-wide failure.
+    /// The old bytes were unreadable. Claude rotation materializes a
+    /// result-free uncertainty marker before cleanup; other providers may
+    /// quarantine the corrupt preimage.
     Corrupt,
 }
 

@@ -299,7 +299,9 @@ fn claude_attempt_floor_persists_across_restart_and_force_cannot_bypass() {
                 .generation,
             1
         );
-        assert_eq!(restarted.next_due_epoch(), Some(attempt_floor));
+        // Recovery installs a fresh 300-second monotonic floor even when the
+        // prior wall deadline is one second away.
+        assert_eq!(restarted.next_due_epoch(), Some(attempt_floor + 299));
         assert!(restarted.poll_due(attempt_floor - 1).is_empty());
         let forced_early = restarted
             .request_refresh(&account, 1, true, attempt_floor - 1)
@@ -539,7 +541,8 @@ fn catalog_revision_retains_retry_after_across_restart() {
     assert_eq!(reset.phase, UsageRefreshPhase::Idle);
     assert_eq!(reset.generation, 2);
     let durable = store.load(&account, 2_000).unwrap().unwrap();
-    assert_eq!(durable.started_at_epoch, Some(1_000));
+    assert_eq!(durable.started_at_epoch, None);
+    assert_eq!(durable.provider_invoked_at_epoch, Some(1_000));
     assert_eq!(durable.rate_limit_deadline_epoch, Some(5_000));
     assert_eq!(durable.retry_deadline_epoch, Some(5_000));
     drop(coordinator);
@@ -1511,9 +1514,23 @@ fn unresolved_updating_marker_gets_reload_fence_without_fabricated_invocation() 
     assert_eq!(purged_marker.provider_invoked_at_epoch, None);
     assert!(purged_marker.reload_fence_required);
     assert_eq!(purged_marker.rate_limit_deadline_epoch, None);
-    assert_eq!(purged_marker.retry_deadline_epoch, None);
+    assert!(
+        purged_marker
+            .retry_deadline_epoch
+            .is_some_and(|deadline| deadline >= 2_302)
+    );
     assert_eq!(purged_marker.success_deadline_epoch, None);
     drop(removal_coordinator);
+
+    // Clearing the wall projection after removal proves the persisted
+    // uncertainty marker independently reinstalls a monotonic fence on load.
+    {
+        let mut states = store.states.lock().unwrap();
+        let uncertain = states.get_mut(&account).unwrap();
+        uncertain.rate_limit_deadline_epoch = None;
+        uncertain.retry_deadline_epoch = None;
+        uncertain.success_deadline_epoch = None;
+    }
 
     // Restart again while uncertainty remains. A fresh monotonic origin models
     // unavailable boot-clock provenance; moving wall time forward cannot
@@ -1774,8 +1791,10 @@ fn catalog_purge_failure_restores_durable_state_and_keeps_old_catalog() {
 
     *store.purge_error.lock().unwrap() = None;
     coordinator.reconcile_catalog([], 10_001).unwrap();
+    let revoked = coordinator.current(&account, 10_001).unwrap();
+    assert_eq!(revoked.phase, UsageRefreshPhase::Failed);
     assert_eq!(
-        coordinator.current(&account, 10_001).unwrap_err().kind,
+        revoked.error.unwrap().kind,
         UsageCoordinationErrorKind::CatalogRevoked
     );
 }
