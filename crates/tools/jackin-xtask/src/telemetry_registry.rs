@@ -1597,6 +1597,40 @@ impl<'a> NamespaceScanner<'a> {
             }
         }
     }
+
+    fn visit_scoped_closure<'ast>(
+        &mut self,
+        closure: &'ast syn::ExprClosure,
+        event_attribute_iter: bool,
+    ) where
+        Self: syn::visit::Visit<'ast>,
+    {
+        let previous_metadata_bindings = self.event_metadata_bindings.clone();
+        let previous_attribute_bindings = self.event_attribute_bindings.clone();
+        for input in &closure.inputs {
+            let (pattern, metadata_type) = match input {
+                syn::Pat::Ident(_) => (Some(input), None),
+                syn::Pat::Type(pattern) => (Some(pattern.pat.as_ref()), Some(pattern.ty.as_ref())),
+                _ => (None, None),
+            };
+            if let Some(syn::Pat::Ident(pattern)) = pattern {
+                let name = pattern.ident.to_string();
+                self.event_attribute_bindings.remove(&name);
+                self.event_metadata_bindings
+                    .remove(&(self.context.clone(), name.clone()));
+                if event_attribute_iter {
+                    self.event_attribute_bindings.insert(name.clone());
+                }
+                if metadata_type.is_some_and(|ty| is_event_metadata_type(ty, &self.bindings)) {
+                    self.event_metadata_bindings
+                        .insert((self.context.clone(), name));
+                }
+            }
+        }
+        syn::visit::visit_expr_closure(self, closure);
+        self.event_metadata_bindings = previous_metadata_bindings;
+        self.event_attribute_bindings = previous_attribute_bindings;
+    }
 }
 
 impl NamespaceBindings {
@@ -1695,40 +1729,6 @@ impl NamespaceBindings {
             segments = expanded;
         }
         Some(segments)
-    }
-
-    fn visit_scoped_closure<'ast>(
-        &mut self,
-        closure: &'ast syn::ExprClosure,
-        event_attribute_iter: bool,
-    ) where
-        Self: syn::visit::Visit<'ast>,
-    {
-        let previous_metadata_bindings = self.event_metadata_bindings.clone();
-        let previous_attribute_bindings = self.event_attribute_bindings.clone();
-        for input in &closure.inputs {
-            let (pattern, metadata_type) = match input {
-                syn::Pat::Ident(_) => (Some(input), None),
-                syn::Pat::Type(pattern) => (Some(pattern.pat.as_ref()), Some(pattern.ty.as_ref())),
-                _ => (None, None),
-            };
-            if let Some(syn::Pat::Ident(pattern)) = pattern {
-                let name = pattern.ident.to_string();
-                self.event_attribute_bindings.remove(&name);
-                self.event_metadata_bindings
-                    .remove(&(self.context.clone(), name.clone()));
-                if event_attribute_iter {
-                    self.event_attribute_bindings.insert(name.clone());
-                }
-                if metadata_type.is_some_and(|ty| is_event_metadata_type(ty, &self.bindings)) {
-                    self.event_metadata_bindings
-                        .insert((self.context.clone(), name));
-                }
-            }
-        }
-        syn::visit::visit_expr_closure(self, closure);
-        self.event_metadata_bindings = previous_metadata_bindings;
-        self.event_attribute_bindings = previous_attribute_bindings;
     }
 }
 
