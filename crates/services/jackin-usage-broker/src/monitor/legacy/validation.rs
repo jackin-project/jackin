@@ -284,7 +284,11 @@ fn valid_observed<T>(observed: &V1Observed<T>, last_now_epoch: i64) -> bool {
         )
 }
 
-fn valid_timestamp(evidence_at: Option<i64>, received_at: i64, last_now_epoch: i64) -> bool {
+pub(super) fn valid_timestamp(
+    evidence_at: Option<i64>,
+    received_at: i64,
+    last_now_epoch: i64,
+) -> bool {
     received_at >= 0
         && received_at <= last_now_epoch
         && evidence_at.is_none_or(|epoch| {

@@ -914,7 +914,7 @@ impl MonitorStore {
         }
     }
 
-    fn lock(&self) -> MutexGuard<'_, StoreState> {
+    pub(super) fn lock(&self) -> MutexGuard<'_, StoreState> {
         self.inner
             .state
             .lock()

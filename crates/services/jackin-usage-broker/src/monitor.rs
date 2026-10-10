@@ -15,9 +15,9 @@ use std::fs::File;
 use std::sync::{Condvar, Mutex};
 
 use jackin_protocol::control::Money;
-use validation::{
-    spend_snapshot_preserves_history, spend_state_matches_account, validate_store_state,
-};
+use validation::validate_store_state;
+#[cfg(test)]
+use validation::{spend_snapshot_preserves_history, spend_state_matches_account};
 
 use jackin_protocol::usage_broker::{
     UsageAccountV1, UsageFreshnessPhaseV1, UsageMetricGroupKindV1, UsageMetricPeriodV1,
