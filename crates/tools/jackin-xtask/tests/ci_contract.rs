@@ -545,8 +545,9 @@ fn configured_native_build_is_mac26_bounded_locked_and_mbx_routed() -> Result<()
                 .with_context(|| format!("native build source input exists: {path}"))?,
         ));
         ensure!(
-            guard_script.contains(&format!("shasum -a 256 \"$workspace_root/{path}\""))
-                && guard_script.contains(&format!("test \"$actual\" = '{digest}'")),
+            guard_script.contains(&format!(
+                "/usr/bin/shasum -a 256 \"$workspace_root/{path}\" > \"$task_root/sha256.txt\"; read actual rest < \"$task_root/sha256.txt\"; test \"$actual\" = '{digest}'"
+            )),
             "native source guard binds the exact current file digest: {path}"
         );
     }
