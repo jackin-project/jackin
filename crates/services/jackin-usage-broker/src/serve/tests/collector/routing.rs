@@ -236,8 +236,9 @@ fn local_source_projection_routes_only_to_current_approved_local_partitions() {
     );
 
     store.set_experimental_collector_source(Some(source_b));
+    let stale_source_a_projection = local_source_projection(&capability_a, 1, NOW + 2);
     store
-        .observe_projection(&projection_a, NOW + 2)
+        .observe_projection(&stale_source_a_projection, NOW + 2)
         .expect("source-A identity cannot match source B's foreground lease");
     let projection_b = local_source_projection(&capability_b, 20, NOW + 3);
     store
