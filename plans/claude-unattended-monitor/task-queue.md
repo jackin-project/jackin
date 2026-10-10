@@ -4,7 +4,7 @@
 
 Delivery branch: `feat/claude-usage-monitor-main`, isolated from the running Claude checkout. Pushed checkpoint `471efcb2` includes the installed fixture harness. The broker wire is v7, durable monitor schema v4, and statusline input v2. The current direct-CLI contract is [bootstrap-contract.md](bootstrap-contract.md); statusline remains an optional credential-free source.
 
-All Cargo work uses `MISE_AUTO_INSTALL=false mise exec -- cargo ...`, which selects MBX 1.22.0. Main already supplies this route; draft/red PR #1120 is not a prerequisite and remains untouched.
+All Cargo work must run through MBX 1.22.0. Main's `MISE_AUTO_INSTALL=false mise exec -- cargo ...` wrapper selects MBX. Current verification uses the explicit `MISE_AUTO_INSTALL=false mise exec -- mbx <Cargo-subcommand> ...` route with an owned isolated `CARGO_HOME`; the selected Rust toolchain binary directory is on that invocation's PATH solely so MBX can locate its delegate. Do not invoke plain Cargo with that PATH. Disable Mise automatic installation on every invocation. Main already supplies MBX; draft/red PR #1120 is not a prerequisite and remains untouched.
 
 Completed offline gates: protocol 133, broker 173, coordinator 54, CLI 43, app 29; installation 5, lifecycle 2, bootstrap 2, monitor 5; docs 18 tests and 1,293 rendered routes. Installed v3 predecessor pair passed isolated observation, structured-output, sibling selection and composed-statusline checks. Its proxy request and credential-command trip counts were zero; native Keychain calls were not instrumented and successful foreground auth was not exercised. No real-account readiness claim follows.
 
