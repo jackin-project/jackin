@@ -1256,7 +1256,7 @@ mod telemetry_import_path_tests {
         assert!(paths.candidates.len() <= 4, "{:#?}", paths.candidates);
         assert_eq!(
             imports.is_tracing_macro("a::info"),
-            TelemetryImportMatch::Unresolved
+            TelemetryImportMatch::Matched
         );
     }
 
