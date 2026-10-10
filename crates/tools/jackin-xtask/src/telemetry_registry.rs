@@ -13,7 +13,6 @@ use clap::Args;
 use serde::Deserialize;
 use serde_yaml_ng::Value as YamlValue;
 use sha2::{Digest as _, Sha256};
-use syn::parse::Parser as _;
 use syn::visit::Visit as _;
 mod ownership_census;
 mod source_policy;
