@@ -78,12 +78,13 @@ impl PinnedDir {
                 "worktree registry lock requires a Tokio runtime: {error}"
             ))
         })?;
-        let lock = runtime
-            .spawn_blocking(move || acquire_worktree_registry_lock(parent, path))
-            .await
-            .map_err(|error| {
-                std::io::Error::other(format!("worktree registry lock task failed: {error}"))
-            })??;
+        let lock = jackin_telemetry::spawn::joined_blocking_on(&runtime, move || {
+            acquire_worktree_registry_lock(parent, path)
+        })
+        .await
+        .map_err(|error| {
+            std::io::Error::other(format!("worktree registry lock task failed: {error}"))
+        })??;
         self.verify_entry()?;
         let current = fstatat(
             self.fd.as_fd(),

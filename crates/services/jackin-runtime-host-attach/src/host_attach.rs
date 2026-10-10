@@ -149,7 +149,7 @@ pub async fn run_host_attach_session(
         }
         HostAttachTransportPlan::AttachProxy { .. } => {
             let preflight_container = container.clone();
-            tokio::task::spawn_blocking(move || {
+            jackin_telemetry::spawn::joined_blocking(move || {
                 jackin_runtime_snapshot::snapshot::ensure_capsule_protocol_via_docker_exec(
                     &preflight_container,
                 )

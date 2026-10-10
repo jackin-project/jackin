@@ -4651,9 +4651,8 @@ version = "0.6.4"
 dependencies = [
  "jackin-core",
  "jackin-runtime-coordination",
+ "jackin-telemetry",
  "nix 0.31.3",
- "tokio",
- "tracing",
 ]
 
 [[package]]

@@ -432,7 +432,10 @@ where
     R: Send + 'static,
 {
     let span = Span::current();
-    tokio::task::spawn_blocking(move || in_span_scope(span, work))
+    let dispatcher = tracing::dispatcher::get_default(Clone::clone);
+    tokio::task::spawn_blocking(move || {
+        tracing::dispatcher::with_default(&dispatcher, || in_span_scope(span, work))
+    })
 }
 
 pub fn joined_blocking_on<F, R>(handle: &Handle, work: F) -> JoinHandle<R>
@@ -441,7 +444,10 @@ where
     R: Send + 'static,
 {
     let span = Span::current();
-    handle.spawn_blocking(move || in_span_scope(span, work))
+    let dispatcher = tracing::dispatcher::get_default(Clone::clone);
+    handle.spawn_blocking(move || {
+        tracing::dispatcher::with_default(&dispatcher, || in_span_scope(span, work))
+    })
 }
 
 pub fn detached_blocking<F, C, R>(def: &'static SpanDef, work: F, classify: C) -> JoinHandle<R>

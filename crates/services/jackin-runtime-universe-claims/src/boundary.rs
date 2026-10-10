@@ -41,16 +41,9 @@ pub async fn universe_authority(paths: &JackinPaths) -> std::io::Result<PathBuf>
 async fn blocking_work<T: Send + 'static>(
     action: impl FnOnce() -> std::io::Result<T> + Send + 'static,
 ) -> std::io::Result<T> {
-    let dispatcher = tracing::dispatcher::get_default(Clone::clone);
-    let span = tracing::Span::current();
-    tokio::task::spawn_blocking(move || {
-        tracing::dispatcher::with_default(&dispatcher, || {
-            let _span = span.enter();
-            action()
-        })
-    })
-    .await
-    .map_err(std::io::Error::other)?
+    jackin_telemetry::spawn::joined_blocking(action)
+        .await
+        .map_err(std::io::Error::other)?
 }
 
 pub fn generation(authority: &Path) -> std::io::Result<Option<String>> {

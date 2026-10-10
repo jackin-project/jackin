@@ -20,9 +20,8 @@ path = "src/lib.rs"
 
 [dependencies]
 jackin-core = { workspace = true }
+jackin-telemetry = { workspace = true }
 jackin-runtime-coordination = { workspace = true }
-tokio = { workspace = true, features = ["rt"] }
-tracing = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
 nix = { workspace = true, features = ["fs"] }

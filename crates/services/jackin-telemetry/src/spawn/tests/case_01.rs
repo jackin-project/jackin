@@ -76,6 +76,38 @@ async fn handle_blocking_and_local_helpers_execute() {
     );
 }
 
+#[tokio::test(flavor = "current_thread")]
+async fn joined_blocking_preserves_default_dispatcher_without_active_span() {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    };
+
+    #[derive(Clone)]
+    struct EventSeen(Arc<AtomicBool>);
+
+    impl<S> tracing_subscriber::Layer<S> for EventSeen
+    where
+        S: tracing::Subscriber,
+    {
+        fn on_event(
+            &self,
+            _event: &tracing::Event<'_>,
+            _context: tracing_subscriber::layer::Context<'_, S>,
+        ) {
+            self.0.store(true, Ordering::SeqCst);
+        }
+    }
+
+    let seen = Arc::new(AtomicBool::new(false));
+    let subscriber = tracing_subscriber::registry().with(EventSeen(Arc::clone(&seen)));
+    let _default = tracing::subscriber::set_default(subscriber);
+    let joined = joined_blocking(|| tracing::info!("joined blocking event"));
+
+    joined.await.expect("join blocking work");
+    assert!(seen.load(Ordering::SeqCst));
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn helpers_execute_on_multi_thread_runtime() {
     let handle = Handle::current();
