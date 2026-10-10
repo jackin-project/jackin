@@ -99,8 +99,8 @@ pub(crate) use self::claude::{
 pub use self::claude::{
     ClaudeCredentialBootstrapOutcome, ClaudeCredentialLease, ClaudeCredentialPayloadDiagnostic,
     ClaudeKeychainPolicyError, ClaudeKeychainRead, ClaudeUnattendedKeychainGuard,
-    bootstrap_claude_credential, diagnose_claude_profile_payload,
-    prepare_claude_keychain_auth, read_claude_keychain_item, unattended_keychain_guard,
+    bootstrap_claude_credential, diagnose_claude_profile_payload, prepare_claude_keychain_auth,
+    read_claude_keychain_item, unattended_keychain_guard,
 };
 #[cfg(test)]
 pub(crate) use self::claude::{

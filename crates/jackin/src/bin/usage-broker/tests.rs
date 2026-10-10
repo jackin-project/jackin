@@ -173,8 +173,14 @@ fn malformed_auth_json_contains_only_bounded_diagnostic_facts() {
     let value: serde_json::Value = serde_json::from_str(&json).unwrap();
     assert_eq!(value["error"]["code"], "auth_malformed");
     assert_eq!(value["error"]["diagnostic"]["payload_bytes"], fixture.len());
-    assert_eq!(value["error"]["diagnostic"]["access_token"]["camel_case"], "string");
-    assert_eq!(value["error"]["diagnostic"]["access_token"]["camel_case_nonempty"], true);
+    assert_eq!(
+        value["error"]["diagnostic"]["access_token"]["camel_case"],
+        "string"
+    );
+    assert_eq!(
+        value["error"]["diagnostic"]["access_token"]["camel_case_nonempty"],
+        true
+    );
     assert!(!json.contains("fixture-secret-token"));
     assert!(!json.contains("fixture-private@example.test"));
 }

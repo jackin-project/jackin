@@ -3211,9 +3211,11 @@ fn malformed_foreground_bootstrap_reads_once_and_never_starts_collection() {
             let calls = Arc::clone(&bootstrap_calls);
             move |_| {
                 calls.fetch_add(1, Ordering::SeqCst);
-                Ok(ForegroundBootstrapOutcome::<FakeForegroundCredentialLease>::Malformed(
-                    diagnostic,
-                ))
+                Ok(
+                    ForegroundBootstrapOutcome::<FakeForegroundCredentialLease>::Malformed(
+                        diagnostic,
+                    ),
+                )
             }
         },
         {

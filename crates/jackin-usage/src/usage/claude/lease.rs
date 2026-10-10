@@ -201,9 +201,7 @@ pub(crate) fn valid_claude_keychain_service(service: &str) -> bool {
         && !service.contains('\0')
 }
 
-fn valid_claude_keychain_payload(
-    json: &str,
-) -> Result<(), ClaudeCredentialPayloadDiagnostic> {
+fn valid_claude_keychain_payload(json: &str) -> Result<(), ClaudeCredentialPayloadDiagnostic> {
     let bytes = json.as_bytes();
     if bytes.len() > MAX_CLAUDE_KEYCHAIN_PAYLOAD_BYTES {
         return Err(diagnose_claude_profile_payload(bytes));

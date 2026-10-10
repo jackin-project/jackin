@@ -1005,8 +1005,7 @@ impl<'de: 'a, 'a> Deserialize<'de> for ClaudePayloadRawField<'a> {
     where
         D: Deserializer<'de>,
     {
-        <&'de serde_json::value::RawValue>::deserialize(deserializer)
-            .map(|raw| Self(Some(raw)))
+        <&'de serde_json::value::RawValue>::deserialize(deserializer).map(|raw| Self(Some(raw)))
     }
 }
 
@@ -1055,10 +1054,7 @@ struct ClaudePayloadClassified {
     nonempty: Option<bool>,
 }
 
-fn classify_raw(
-    raw: &serde_json::value::RawValue,
-    token: bool,
-) -> ClaudePayloadClassified {
+fn classify_raw(raw: &serde_json::value::RawValue, token: bool) -> ClaudePayloadClassified {
     let value = raw.get().trim_start();
     let kind = match value.as_bytes().first() {
         Some(b'n') => ClaudePayloadFieldKind::Null,
@@ -1070,7 +1066,11 @@ fn classify_raw(
         _ => ClaudePayloadFieldKind::Unavailable,
     };
     let nonempty = (token && kind == ClaudePayloadFieldKind::String)
-        .then(|| value.strip_prefix('"').and_then(|value| value.strip_suffix('"')))
+        .then(|| {
+            value
+                .strip_prefix('"')
+                .and_then(|value| value.strip_suffix('"'))
+        })
         .flatten()
         .filter(|value| !value.contains('\\'))
         .map(|value| !value.trim().is_empty());
@@ -1114,9 +1114,7 @@ fn raw_token_kinds(
     }
 }
 
-fn raw_subscription_kinds(
-    oauth: &ClaudePayloadRawOAuth<'_>,
-) -> ClaudePayloadSubscriptionKinds {
+fn raw_subscription_kinds(oauth: &ClaudePayloadRawOAuth<'_>) -> ClaudePayloadSubscriptionKinds {
     let aliases = [
         &oauth.subscription_camel,
         &oauth.subscription_snake,
@@ -1135,9 +1133,7 @@ fn raw_subscription_kinds(
 
 /// Describe a failed payload without exposing values. Check the size before
 /// parsing so oversized Keychain data cannot cause diagnostic allocations.
-pub fn diagnose_claude_profile_payload(
-    bytes: &[u8],
-) -> ClaudeCredentialPayloadDiagnostic {
+pub fn diagnose_claude_profile_payload(bytes: &[u8]) -> ClaudeCredentialPayloadDiagnostic {
     let payload_bytes = bytes.len();
     let mut diagnostic = ClaudeCredentialPayloadDiagnostic {
         payload_bytes,
@@ -1192,10 +1188,8 @@ pub fn diagnose_claude_profile_payload(
         && let Ok(account) = serde_json::from_str::<ClaudePayloadRawAccount<'_>>(account_raw.get())
     {
         diagnostic.email_address = raw_alias_kinds(&account.email_camel, &account.email_snake);
-        diagnostic.organization_type = raw_alias_kinds(
-            &account.organization_camel,
-            &account.organization_snake,
-        );
+        diagnostic.organization_type =
+            raw_alias_kinds(&account.organization_camel, &account.organization_snake);
     }
     diagnostic
 }
@@ -1993,6 +1987,6 @@ pub(crate) fn fetch_claude_oauth_usage(
 }
 
 #[cfg(test)]
-mod tests;
-#[cfg(test)]
 mod auth_diagnostic_tests;
+#[cfg(test)]
+mod tests;

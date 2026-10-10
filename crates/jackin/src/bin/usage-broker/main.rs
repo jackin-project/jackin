@@ -14,9 +14,7 @@ use jackin_usage::host::{
     ProviderCredentialSecretSource, UsageBrokerConfig, UsageBrokerForegroundReady,
     UsageDiscoveryScope, run_usage_broker_foreground_bootstrap, run_usage_broker_service,
 };
-use jackin_usage::usage::{
-    ClaudeCredentialBootstrapOutcome, ClaudeCredentialPayloadDiagnostic,
-};
+use jackin_usage::usage::{ClaudeCredentialBootstrapOutcome, ClaudeCredentialPayloadDiagnostic};
 
 #[derive(Default)]
 struct ServiceSecretSource;
@@ -339,9 +337,7 @@ fn prepare_auth_with<'a>(
         ForegroundBootstrapOutcome::Denied => {
             Err(auth_error("auth_denied", "Keychain access was denied", 2))
         }
-        ForegroundBootstrapOutcome::Malformed(diagnostic) => {
-            Err(auth_malformed_error(diagnostic))
-        }
+        ForegroundBootstrapOutcome::Malformed(diagnostic) => Err(auth_malformed_error(diagnostic)),
     }
 }
 
