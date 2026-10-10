@@ -78,6 +78,25 @@ credential, account identity/status, provider endpoint, or settings was
 accessed or changed. The operator must retry the intended account through its
 normal attended bootstrap; actual account status remains unknown.
 
+## PR #1123 generated-file CI diagnosis
+
+On PR head `96b068e160a47b92dc6d6f01d38cba4690e83225`, CI run
+[38061798598](https://github.com/jackin-project/jackin/actions/runs/38061798598)
+failed Plan's generated-file comparison with the sole difference
+`.github/PULL_REQUEST_TEMPLATE.md`. The same deterministic failure occurred on
+earlier PR heads `e7e6864` and `cc012603`; it was not caused by the metadata
+parser fix. `PULL_REQUESTS.md` names `docs/PULL_REQUEST_TEMPLATE.md` as the
+canonical template, and that file is unchanged between the PR base and head.
+`.github/AGENTS.md` says `.github/` is generator-owned, so the stale `.github`
+duplicate was removed while preserving the canonical docs template.
+
+The Required job failed only because Plan failed and the Rust matrix jobs were
+skipped; Actionlint passed. Velnor also reported that `mise.lock` line 388 could
+not be parsed, but the lockfile SHA-256 is identical at base and head
+(`d2d1b07a8f02fb07f405ac5b00607b35155207ebcb9651ec1e10ca09ac26e55d`), and the
+Plan job's exit was the extra `.github` file. Local generator parity and the
+fixed-head CI result remain pending.
+
 ## Current main-port verification snapshot
 
 The canonical branch is `feat/claude-usage-monitor-main`, based on main

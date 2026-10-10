@@ -53,6 +53,18 @@ No Keychain item, live credential, account identity/status, provider endpoint,
 or settings was accessed or changed. The operator must retry their own
 attended account bootstrap; live account readiness remains unknown.
 
+### PR #1123 generated-file gate correction
+
+Exact-head CI run `38061798598` failed Plan because `.github/PULL_REQUEST_TEMPLATE.md`
+was outside Velnor's generated preview. It was a stale duplicate: the canonical
+template remains at `docs/PULL_REQUEST_TEMPLATE.md`, as required by
+`PULL_REQUESTS.md`, and `.github/AGENTS.md` states that all `.github/` content is
+generator-owned. The fix removes only that duplicate. Required failed downstream
+because Plan failed; Actionlint passed and the Rust matrix was skipped. Velnor
+also warned about malformed `mise.lock` line 388, but `mise.lock` is byte-identical
+at the PR base and failed head, so that warning did not trigger this failure.
+The fixed head still needs its own exact-head CI result before the PR is ready.
+
 ## Current delivery checkpoint
 
 Delivery branch: `feat/claude-usage-monitor-main`, isolated from the running Claude checkout. Signed source checkpoint `8abfa235cce150d5382d99a5679afab49e098525` is pushed. The final seven-gate MBX rerun, scoped regression matrix, 1.29-second offline pair build, and installed fixture smoke passed. Smoke exited 0, selected the sibling broker, recorded one JSONL watch event, zero proxy requests and credential-command trips, and left no fixture state or open binaries. CLI SHA-256 is `b57e60f2f13b026ae2ec47034b61ecddc69644b230157e621c5ddb5cf447007d`; broker SHA-256 is `30b6f3b1f0777dbe9181851f83fbc2efb3f0356d290e1896bf2ccaf434fbf550`; manifest SHA-256 is `64a0a101224ad5c38f4292a59c5191a44071fc54eab3cc95e8a57a13bc454601`. Source-head CI run [38044592706](https://github.com/jackin-project/jackin/actions/runs/38044592706) passed for 8abfa: Required, all Rust matrix jobs, and Actionlint succeeded; the baseline publication job was skipped by workflow rules. A later documentation/evidence commit requires its own exact-head checks. CI run `38042237548` and its three failed Rust jobs, and the 45a installed pair, are historical. P2 reply `4237302394` links the fixing commit and is resolved. P1 follow-up proof/reply `4237303703` is resolved; general comment `6096529404` has a linked disposition.
