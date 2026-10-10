@@ -270,7 +270,7 @@ impl WorkspaceSpawnTypesBuilder {
 
 #[cfg(test)]
 mod workspace_index_tests {
-    use super::{WorkspaceSpawnTypes, WorkspaceSpawnTypesBuilder, spawn_receiver_type};
+    use super::{WorkspaceSpawnTypesBuilder, spawn_receiver_type};
     use std::sync::Arc;
 
     #[test]
