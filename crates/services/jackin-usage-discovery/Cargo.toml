@@ -37,6 +37,7 @@ jackin-usage-host-credentials = { workspace = true }
 jackin-usage-host-presentation = { workspace = true }
 chrono = { workspace = true, features = ["clock"] }
 serde_json = { workspace = true }
+zeroize = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
