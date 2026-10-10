@@ -1,0 +1,117 @@
+{
+  "source_commit": "cc012603951c46d3fe909c21538af4c5b0715948",
+  "source_tree_sha1": "c4f1693b3bb4b7b2e1ee85de9fc7241d3c34eaa9",
+  "installed_source_commit": "cc012603951c46d3fe909c21538af4c5b0715948",
+  "installed_source_tree_sha1": "c4f1693b3bb4b7b2e1ee85de9fc7241d3c34eaa9",
+  "installed_source_tree_matches_branch": true,
+  "base_commit": "3f3ddd7c48284b648b083305f969ee3e709b74b7",
+  "branch": "fix/auth-malformed-diagnostic-dco",
+  "build_command": [
+    "mbx",
+    "+1.97.1",
+    "install",
+    "--debug",
+    "--offline",
+    "--locked",
+    "--path",
+    "crates/jackin",
+    "--root",
+    "/Users/donbeave/.local/share/jackin-claude-monitor-v5",
+    "--bin",
+    "jackin",
+    "--bin",
+    "jackin-usage-broker",
+    "--force"
+  ],
+  "rust": "1.97.1",
+  "mbx": "1.22.0",
+  "build_profile": "dev",
+  "cargo_profile_elapsed": "46.86s",
+  "cli_version": "0.6.4",
+  "broker_version": "0.6.4",
+  "install_root": "/Users/donbeave/.local/share/jackin-claude-monitor-v5",
+  "source_worktree_clean_at_install": true,
+  "source_code_matches_commit": true,
+  "uncommitted_paths_at_install": [],
+  "binaries": [
+    {
+      "name": "jackin",
+      "path": "/Users/donbeave/.local/share/jackin-claude-monitor-v5/bin/jackin",
+      "sha256": "365d177ad3010a815cb86279eb614d18bbdef6e4df33f390cf22593d0a21be78"
+    },
+    {
+      "name": "jackin-usage-broker",
+      "path": "/Users/donbeave/.local/share/jackin-claude-monitor-v5/bin/jackin-usage-broker",
+      "sha256": "f1fc536027287f062dcfba9b30e44d1bb41c1e5c101634774d4bd5fb4a4eb563"
+    }
+  ],
+  "focused_verification": [
+    {
+      "command": "mbx test --locked --offline -p jackin-usage --lib usage::claude::",
+      "result": "39 passed, 0 failed; includes parser precedence, snake spellings, missing/null, wrong-type rejection, same-field duplicate rejection, redaction, and 524-byte payload validation"
+    },
+    {
+      "command": "mbx +1.97.1 test --offline --locked -p jackin --bin jackin-usage-broker foreground_bootstrap",
+      "result": "3 passed, 0 failed"
+    },
+    {
+      "command": "mbx +1.97.1 test --offline --locked -p jackin-usage --lib foreground_fake_bootstrap_holds_the_same_zeroizing_lease_through_catalog_ready_and_service",
+      "result": "1 passed, 0 failed; fake foreground bootstrap callback called once; no observer was active"
+    },
+    {
+      "command": "mbx +1.97.1 test --offline --locked -p jackin-usage --lib malformed_foreground_bootstrap_reads_once_and_never_starts_collection",
+      "result": "1 passed, 0 failed; one bootstrap callback, zero guard/ready calls"
+    },
+    {
+      "command": "mbx +1.97.1 fmt -p jackin-usage -p jackin -- --check",
+      "result": "passed"
+    }
+  ],
+  "installed_non_tty_check": {
+    "command": "/Users/donbeave/.local/share/jackin-claude-monitor-v5/bin/jackin usage --data-dir /private/tmp/jackin-v5-auth-sentinel-cc012603 auth prepare --provider claude --format json",
+    "exit_code": 2,
+    "output": "{\"version\":1,\"error\":{\"code\":\"interaction_required\",\"message\":\"authentication preparation requires stdin, stdout, and stderr attached to a terminal\"}}",
+    "diagnostic_present": false,
+    "broker_launch_attempted": false,
+    "data_dir_created": false
+  },
+  "unchanged_prior_prefix_sha256": {
+    "v2": {
+      "jackin": "910b51cf01d502bb11d08873ec0ca80190a87b506469e47c0594540ee26fa0a1",
+      "jackin-usage-broker": "b88276de449aa0cb610a394c0a28e14a025de66a42b0e18b7c4f0b8e0844421f"
+    },
+    "v3": {
+      "jackin": "b57e60f2f13b026ae2ec47034b61ecddc69644b230157e621c5ddb5cf447007d",
+      "jackin-usage-broker": "30b6f3b1f0777dbe9181851f83fbc2efb3f0356d290e1896bf2ccaf434fbf550"
+    },
+    "v4": {
+      "jackin": "c281e31a0d5365bfeea552029cda0037d6e361792e64cbdc404ae94db76d154b",
+      "jackin-usage-broker": "c35f73bf9e035c8533d59d089156cc7ec21d8cae2cea3718132efb3b32701406"
+    }
+  },
+  "review": "Source review and independent installed-pair smoke passed.",
+  "independent_installed_review": {
+    "result": "passed",
+    "source_commit_and_tree_match_manifest": true,
+    "installed_cli_and_broker_hashes_match_manifest": true,
+    "cli_version": "0.6.4",
+    "broker_version": "0.6.4",
+    "non_tty_sentinel": {
+      "invocation": "JACKIN_USAGE_BROKER_BIN pointed at an executable marker sentinel; stdin redirected from /dev/null; stdout and stderr captured",
+      "exit_code": 2,
+      "error_code": "interaction_required",
+      "diagnostic_present": false,
+      "marker_created": false,
+      "data_dir_created": false
+    },
+    "v2_v3_v4_hashes_unchanged": true,
+    "review_scope": "No Keychain, live authentication, provider, or settings access. Reviewer removed only its own temporary marker directory."
+  },
+  "verification_scope": "Synthetic fixture verification and a non-TTY interaction gate only. No Keychain item read, live credential access, account identity/status check, live bootstrap, provider request, or settings change occurred.",
+  "actual_account_status": "unknown",
+  "known_limitations": [
+    "The non-TTY sentinel returns before broker launch and does not exercise the parser against any Keychain item.",
+    "Synthetic fixtures establish parser and redaction behavior only; they do not establish that the operator payload is current or valid.",
+    "The operator must retry the account through its normal attended bootstrap; real-account readiness remains unverified."
+  ]
+}

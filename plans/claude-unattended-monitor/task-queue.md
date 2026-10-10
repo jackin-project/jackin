@@ -515,6 +515,52 @@ existing Claude goal has quota-only approval, and no strict policy can downgrade
 On that external blocker Claude should checkpoint, report and exit its goal;
 there is no unattended doctor loop or promised automatic reinvocation.
 
+## Main ancestry content reconciliation — 2026-10-11
+
+The target branch is being reconciled with main at `1c3dd1be4a3b1ed518133ec3899c084c792370ff`.
+The source changes are already represented by grouped target commits; the merge
+must not restore the retired flat `crates/jackin-usage` implementation or its old
+binary test path.
+
+- PR #1123 source merge `835df8071da4b2802eef8619250e3c6b5bbfb4a6`
+  (source head `f04400b4b27ab1e2d93e4caec9dd3addad6e3146`) maps to grouped
+  target commit `06afe425553d2cfe8e56fe26c8b3fe233d51c81d` and its follow-up
+  zeroization/import fixes. The bounded, TTY-only malformed-auth diagnostic,
+  independent subscription/tier parsing, redaction, one-read behavior, and
+  malformed-path no-collection behavior are in the provider, broker, and app
+  paths. The source `auth-malformed-diagnostic.md` is retained as operator
+  guidance; source installation snapshots v4-v6 are retained only as historical
+  provenance, not as validation of this grouped target.
+- PR #1124 source commit `67f77ac01a160335a7b2ca1c101112034b4f5fc9`, merged
+  by `1c3dd1be4a3b1ed518133ec3899c084c792370ff`, maps to grouped target commit
+  `b23144dae7bfa3e8a3e577629088dec1b4711d6e`. A foreground broker remains alive
+  while its authenticated foreground guard is held; passive idle exit and
+  active-monitor behavior remain unchanged. Source installation snapshot v7
+  is historical evidence only and does not qualify the grouped target.
+- The content map is: source `crates/jackin-usage/src/usage.rs` maps to grouped
+  provider re-exports in `crates/services/jackin-usage-provider-claude/src/lib.rs`;
+  source `usage/claude.rs` maps to provider `credentials.rs`, `lease.rs`, and
+  `payload_diagnostic.rs`; source `usage/claude/auth_diagnostic_tests.rs` maps
+  to `payload_diagnostic/tests.rs`; and source `usage/claude/lease/tests.rs`
+  maps to provider `lease/tests.rs`. The source `crates/jackin-usage/Cargo.toml`
+  dependency feature maps to the provider `Cargo.toml`, where `raw_value` is
+  used. Source broker service/tests map to
+  `crates/services/jackin-usage-broker/src/service.rs` and its test modules;
+  the old CLI binary/tests map to `crates/apps/jackin/src/bin/usage-broker/`.
+  Source `serve_loop.rs` and its tests map to grouped `serve.rs` and
+  `serve/tests.rs`. These grouped files remain the implementation and
+  regression-test paths.
+- Source plan changes are preserved as this ledger's mapping and in the v4-v7
+  evidence files, with their original MBX 1.22/Rust 1.97 tool context clearly
+  treated as historical. They do not replace the current wire-v8, MBX 1.23,
+  Rust 1.99 target verification state.
+
+The retired flat source implementation and test paths remain deleted.
+The moved `serde_json` `raw_value` feature remains on the grouped Claude provider,
+where the parser uses it; no unused edge is added back to `jackin-usage`. This
+reconciliation is a source-content port and ancestry merge, not new test or
+installation evidence. No post-merge test run is claimed here.
+
 Final handoff review requested two documentation repairs: scope unknown-spend
 pause explicitly to strict-SGD, and record both pre/post smoke script hashes.
 Both are fixed and installed copies synchronized. Source401 evidence is described

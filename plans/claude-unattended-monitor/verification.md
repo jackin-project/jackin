@@ -648,3 +648,23 @@ billing. Current production source and installed binaries are unchanged; the
 original checkout remains untouched. Real operator binding, reviewed adapter
 installation and genuine spend evidence are still needed before live readiness
 can be claimed.
+
+## Main ancestry reconciliation — 2026-10-11
+
+The target candidate was reconciled against main
+`1c3dd1be4a3b1ed518133ec3899c084c792370ff` from merge base
+`3f3ddd7c48284b648b083305f969ee3e709b74b7`. Main's #1123/#1124 behavior is
+already present in grouped target commits `06afe425553d2cfe8e56fe26c8b3fe233d51c81d`
+and `b23144dae7bfa3e8a3e577629088dec1b4711d6e`; the source-to-target paths and
+behavioral dispositions are listed in `task-queue.md`. The merge keeps those
+grouped paths, leaves retired flat source paths deleted, and does not carry the
+unused `serde_json/raw_value` edge into `jackin-usage`.
+
+Main added `auth-malformed-diagnostic.md` and v4-v7 installation records. The
+documentation and JSON evidence are retained for source history only. Their
+MBX 1.22/Rust 1.97 binaries and wire generations are not evidence for the
+grouped target's current MBX 1.23/Rust 1.99, wire-v8 contract. The target's
+existing verification records remain authoritative for the previously tested
+grouped code. No test, build, installation, or Actions result is claimed for
+the ancestry merge itself; the exact merged head must receive its own required
+checks.
