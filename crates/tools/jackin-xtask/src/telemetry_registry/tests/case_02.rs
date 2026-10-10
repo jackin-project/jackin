@@ -119,11 +119,19 @@ fn namespace_scan_resolves_telemetry_attr_bindings_and_rejects_unknown_keys() {
     ));
     assert!(!contains_legacy_telemetry_name(
         "fixture.rs",
-        "use jackin_telemetry::Attr; fn project(metadata: &jackin_telemetry::schema::EventMetadata) { let _ = metadata.attributes.iter().map(|attribute| Attr { key: attribute.name, value: () }); }"
+        "use jackin_telemetry::schema::EventMetadata as RegistryMetadata; use jackin_telemetry::Attr; fn project(metadata: &RegistryMetadata) { let _ = metadata.attributes.iter().map(|attribute| Attr { key: attribute.name, value: () }); }"
+    ));
+    assert!(!contains_legacy_telemetry_name(
+        "fixture.rs",
+        "use jackin_telemetry::Attr; fn project() { let metadata = jackin_telemetry::schema::events::definition(\"event\").expect(\"registered event\"); let _ = metadata.attributes.iter().map(|attribute| Attr { key: attribute.name, value: () }); }"
     ));
     assert!(contains_legacy_telemetry_name(
         "fixture.rs",
         "use jackin_telemetry::Attr; struct FakeAttribute { name: &'static str } struct FakeMetadata { attributes: Vec<FakeAttribute> } fn project(metadata: &FakeMetadata) { let _ = metadata.attributes.iter().map(|attribute| Attr { key: attribute.name, value: () }); }"
+    ));
+    assert!(contains_legacy_telemetry_name(
+        "fixture.rs",
+        "use jackin_telemetry::Attr; mod local { pub struct FakeAttribute { pub name: &'static str } pub mod schema { use super::FakeAttribute; pub struct EventMetadata { pub attributes: Vec<FakeAttribute> } } } use local::schema::EventMetadata as RegistryMetadata; fn project(metadata: &RegistryMetadata) { let _ = metadata.attributes.iter().map(|attribute| Attr { key: attribute.name, value: () }); }"
     ));
     assert!(contains_legacy_telemetry_name(
         "fixture.rs",
