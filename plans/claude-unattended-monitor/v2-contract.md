@@ -108,3 +108,11 @@ Observation is possible without billing evidence; dispatch under quota-only
 requires explicit operator acceptance of narrower protection. Neither mode
 claims current data during inactivity, automatic reset confirmation, unknown
 extra-usage permission, or a hard per-goal SGD billing cap.
+
+A V1 `MigratedV1` strict record with an exactly zero SGD exponent-2 budget
+may be repaired by a separate explicit operator approval of a positive strict
+budget. This exception never applies to operator-origin policies, currencies,
+or malformed state. Old policy revisions, baseline, cumulative totals and
+historical uncertainty remain intact; an unverifiable migrated baseline still
+blocks activation. This is an audit-preserving correction of an unusable V1
+configuration, not an automatic policy transition.

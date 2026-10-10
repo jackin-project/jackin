@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 
 fn resolved_for_test() -> ClaudeResolved {
     ClaudeResolved {
@@ -12,6 +12,30 @@ fn resolved_for_test() -> ClaudeResolved {
         organization_type: None,
         credential_origin: "OAuth · fixture".to_owned(),
         is_anonymous: false,
+    }
+}
+
+struct FakeClaudeCredentialSource {
+    label: &'static str,
+    token: RefCell<String>,
+    read_count: Cell<usize>,
+}
+
+impl FakeClaudeCredentialSource {
+    fn new(token: &str) -> Self {
+        Self {
+            label: "fixture-keychain-source",
+            token: RefCell::new(token.to_owned()),
+            read_count: Cell::new(0),
+        }
+    }
+
+    fn resolve_explicitly(&self) -> ClaudeResolved {
+        self.read_count.set(self.read_count.get() + 1);
+        let mut resolved = resolved_for_test();
+        resolved.access_token = self.token.borrow().clone();
+        resolved.credential_origin = self.label.to_owned();
+        resolved
     }
 }
 
@@ -120,60 +144,81 @@ fn claude_http_auth_scope_and_rate_failures_keep_typed_status() {
 }
 
 #[test]
-fn claude_401_does_not_reread_credentials_and_uses_only_later_caller_token() {
-    let old_token_calls = Cell::new(0);
-    let (old_view, _, old_error) = claude_resolved_view_with_fetch(
-        "claude",
-        Some("Anthropic / Claude"),
-        1_781_185_560,
-        resolved_for_test(),
-        |token| {
-            assert_eq!(token, "fixture-token");
-            old_token_calls.set(old_token_calls.get() + 1);
-            Err(ProviderHttpError::HttpStatus {
-                status: 401,
-                message: "Claude OAuth usage HTTP 401".to_owned(),
-                retry_after_seconds: None,
-                response_received_at_epoch: None,
-            })
-        },
-    );
+fn claude_401_does_not_implicitly_reread_same_source_or_retry() {
+    const NOW: i64 = 1_781_185_560;
 
-    assert_eq!(
-        old_token_calls.get(),
-        1,
-        "401 does not trigger another fetch"
-    );
-    assert_eq!(old_view.status, UsageSnapshotStatus::NeedsLogin);
-    assert_eq!(
-        old_error.map(|error| (error.kind, error.http_status)),
-        Some((
-            jackin_usage_provider_core::ProviderErrorKind::HttpStatus,
-            Some(401)
-        ))
-    );
+    for mutate_source_during_401 in [false, true] {
+        let source = FakeClaudeCredentialSource::new("fixture-token");
+        let initially_resolved = source.resolve_explicitly();
+        assert_eq!(source.read_count.get(), 1);
+        assert_eq!(initially_resolved.credential_origin, source.label);
 
-    // A later broker invocation may supply a changed credential. The provider
-    // has no source handle to reread, so this is a separate caller-supplied
-    // token, not an automatic same-source retry after 401.
-    let new_token_calls = Cell::new(0);
-    let mut new_credential = resolved_for_test();
-    new_credential.access_token = "new-fixture-token".to_owned();
-    let (_, _, new_error) = claude_resolved_view_with_fetch(
-        "claude",
-        Some("Anthropic / Claude"),
-        1_781_185_560,
-        new_credential,
-        |token| {
-            assert_eq!(token, "new-fixture-token");
-            new_token_calls.set(new_token_calls.get() + 1);
-            Ok(serde_json::from_value(serde_json::json!({}))
-                .expect("empty fake usage response decodes"))
-        },
-    );
+        let first_fetches = Cell::new(0);
+        let (view, rate_limit, provider_error) = claude_resolved_view_with_fetch(
+            "claude",
+            Some("Anthropic / Claude"),
+            NOW,
+            initially_resolved,
+            |token| {
+                assert_eq!(token, "fixture-token");
+                first_fetches.set(first_fetches.get() + 1);
+                if mutate_source_during_401 {
+                    *source.token.borrow_mut() = "changed-after-401".to_owned();
+                }
+                Err(ProviderHttpError::HttpStatus {
+                    status: 401,
+                    message: "Claude OAuth usage HTTP 401".to_owned(),
+                    retry_after_seconds: None,
+                    response_received_at_epoch: Some(NOW),
+                })
+            },
+        );
 
-    assert_eq!(new_token_calls.get(), 1);
-    assert_eq!(new_error, None);
+        assert_eq!(first_fetches.get(), 1, "401 must not retry the HTTP fetch");
+        assert_eq!(source.read_count.get(), 1, "401 must not reread its source");
+        assert_eq!(view.status, UsageSnapshotStatus::NeedsLogin);
+        assert_eq!(rate_limit, None);
+        assert_eq!(
+            provider_error.map(|error| (error.kind, error.http_status)),
+            Some((
+                jackin_usage_provider_core::ProviderErrorKind::HttpStatus,
+                Some(401)
+            ))
+        );
+
+        // The contract permits at most one noninteractive reread, so zero is
+        // valid here: this factory receives only a resolved credential and has
+        // no source handle. A later explicit caller resolution uses the same
+        // fake source, whether its value stayed the same or changed during 401.
+        let later_resolved = source.resolve_explicitly();
+        assert_eq!(source.read_count.get(), 2);
+        assert_eq!(later_resolved.credential_origin, source.label);
+        let expected_later_token = if mutate_source_during_401 {
+            "changed-after-401"
+        } else {
+            "fixture-token"
+        };
+        assert_eq!(later_resolved.access_token, expected_later_token);
+
+        let later_fetches = Cell::new(0);
+        let (_, later_rate_limit, later_error) = claude_resolved_view_with_fetch(
+            "claude",
+            Some("Anthropic / Claude"),
+            NOW + 300,
+            later_resolved,
+            |token| {
+                assert_eq!(token, expected_later_token);
+                later_fetches.set(later_fetches.get() + 1);
+                Ok(serde_json::from_value(serde_json::json!({}))
+                    .expect("empty fake usage response decodes"))
+            },
+        );
+
+        assert_eq!(later_fetches.get(), 1);
+        assert_eq!(later_rate_limit, None);
+        assert_eq!(later_error, None);
+        assert_eq!(source.read_count.get(), 2);
+    }
 }
 
 #[test]

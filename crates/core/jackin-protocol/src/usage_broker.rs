@@ -11,7 +11,7 @@ use crate::control::{FocusedUsageView, Money};
 use crate::usage_monitor::{MonitorIssue, MonitorOperation, MonitorReply};
 
 /// Usage-broker wire protocol version.
-pub const USAGE_BROKER_PROTOCOL_VERSION: &str = "v5";
+pub const USAGE_BROKER_PROTOCOL_VERSION: &str = "v6";
 
 /// Maximum newline-delimited request or response body.
 pub const USAGE_BROKER_MAX_FRAME_BYTES: usize = 1024 * 1024;

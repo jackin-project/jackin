@@ -11,9 +11,10 @@ use std::thread;
 use jackin_protocol::control::{FocusedUsageView, Money};
 use jackin_protocol::usage_broker::UsageAccountCapability;
 use jackin_protocol::usage_monitor::{
-    MonitorConfig, MonitorOperation, MonitorProvider, MonitorReply, SpendRecordInput,
-    SpendRecordSource, StatuslineObservation, StatuslineQuotaWindow, StatuslineRateLimits,
-    USAGE_MONITOR_SCHEMA_VERSION,
+    MonitorAccountBindingInput, MonitorConfig, MonitorOperation, MonitorPolicy,
+    MonitorPolicyApprovalInput, MonitorProvider, MonitorPurpose, MonitorReply, MonitorScope,
+    SpendRecordInput, SpendRecordSource, StatuslineObservation, StatuslineQuotaWindow,
+    StatuslineRateLimits, USAGE_MONITOR_SCHEMA_VERSION,
 };
 use jackin_usage_coordinator::policy::UsageActivity;
 use jackin_usage_coordinator::{
@@ -94,10 +95,29 @@ impl TickerHarness {
     }
 
     fn start_monitor(&self) -> String {
+        let binding = match self
+            .store
+            .operate(
+                MonitorOperation::BindAccount {
+                    binding: MonitorAccountBindingInput {
+                        provider: MonitorProvider::Claude,
+                        account_id: ACCOUNT_ID.to_owned(),
+                        operator_label: "isolated-test-operator".to_owned(),
+                        operator_confirmed: true,
+                    },
+                },
+                NOW,
+            )
+            .expect("bind isolated monitor account")
+        {
+            MonitorReply::AccountBound { binding } => binding,
+            other => panic!("expected account-bound reply, got {other:?}"),
+        };
         let observation = StatuslineObservation {
             schema_version: USAGE_MONITOR_SCHEMA_VERSION,
             session_id: "session-ticker".to_owned(),
             model: None,
+            claude_code_version: Some("2.1.80".to_owned()),
             rate_limits: StatuslineRateLimits {
                 five_hour: Some(StatuslineQuotaWindow {
                     used_percentage_basis_points: Some(2_000),
@@ -112,7 +132,11 @@ impl TickerHarness {
         self.store
             .operate(
                 MonitorOperation::Ingest {
-                    account_id: ACCOUNT_ID.to_owned(),
+                    scope: MonitorScope::BoundAccount {
+                        binding_id: binding.binding_id.clone(),
+                        binding_revision: binding.revision,
+                        session_id: None,
+                    },
                     observation,
                 },
                 NOW,
@@ -134,18 +158,46 @@ impl TickerHarness {
                 NOW,
             )
             .expect("record fresh spend baseline");
+        let policy = match self
+            .store
+            .operate(
+                MonitorOperation::ApprovePolicy {
+                    approval: MonitorPolicyApprovalInput {
+                        binding_id: binding.binding_id.clone(),
+                        binding_revision: binding.revision,
+                        goal_id: "goal-serve-ticker".to_owned(),
+                        new_policy: MonitorPolicy::StrictSgd,
+                        budget: Some(Money::new(5_000, "SGD", 2)),
+                        operator_label: "isolated-test-operator".to_owned(),
+                        operator_confirmed: true,
+                        acknowledge_no_sgd_cap: false,
+                        expected_revision: None,
+                    },
+                },
+                NOW,
+            )
+            .expect("approve strict SGD policy in isolated fixture")
+        {
+            MonitorReply::PolicyApproved { policy } => policy,
+            other => panic!("expected policy-approved reply, got {other:?}"),
+        };
         let reply = self
             .store
             .operate(
                 MonitorOperation::Start {
                     config: MonitorConfig {
                         provider: MonitorProvider::Claude,
-                        account_id: ACCOUNT_ID.to_owned(),
-                        goal_id: "goal-serve-ticker".to_owned(),
-                        session_id: None,
+                        purpose: MonitorPurpose::DispatchGuard,
+                        scope: MonitorScope::BoundAccount {
+                            binding_id: binding.binding_id,
+                            binding_revision: binding.revision,
+                            session_id: None,
+                        },
+                        goal_id: Some("goal-serve-ticker".to_owned()),
                         expected_model: None,
-                        budget: Some(Money::new(5_000, "SGD", 2)),
+                        policy_revision: Some(policy.revision),
                     },
+                    idempotency_key: "fixture-serve-ticker".to_owned(),
                 },
                 NOW,
             )

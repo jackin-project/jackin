@@ -7,9 +7,10 @@ use jackin_protocol::control::AccountUsageSnapshotView;
 use jackin_protocol::control::Money;
 use jackin_protocol::usage_broker::UsageProjectionV1;
 use jackin_protocol::usage_monitor::{
-    MonitorConfig, MonitorIssue, MonitorIssueCode, MonitorOperation, MonitorProvider, MonitorReply,
-    MonitorStatus, SpendRecordInput, SpendRecordSource, StatuslineObservation,
-    USAGE_MONITOR_MAX_STATUSLINE_BYTES,
+    MonitorAccountBindingInput, MonitorConfig, MonitorIssue, MonitorIssueCode, MonitorOperation,
+    MonitorPolicy, MonitorPolicyApprovalInput, MonitorProvider, MonitorPurpose, MonitorReply,
+    MonitorScope, MonitorStatus, MonitorTrackingReadiness, SpendRecordInput, SpendRecordSource,
+    StatuslineObservation, USAGE_MONITOR_MAX_STATUSLINE_BYTES,
 };
 use serde::{Deserialize, Serialize};
 use std::io::Read as _;
@@ -65,6 +66,12 @@ pub enum UsageScope {
     /// Manage an unattended quota monitor
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Monitor(UsageMonitorArgs),
+    /// Confirm a provider account identity binding for quota monitoring
+    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    Binding(UsageBindingArgs),
+    /// Approve a durable quota-monitor policy for a bound account and goal
+    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    Policy(UsagePolicyArgs),
     /// Read the status of a durable monitor
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Status(UsageMonitorIdArgs),
@@ -144,7 +151,9 @@ pub struct UsageMonitorArgs {
 
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum UsageMonitorCommand {
-    /// Create a durable monitor and start the local-only broker if needed
+    /// Start an observation-only monitor and the local-only broker if needed
+    Observe(UsageMonitorObserveArgs),
+    /// Start dispatch guard using an already approved policy
     Start(UsageMonitorStartArgs),
     /// Stop one monitor
     Stop(UsageMonitorIdArgs),
@@ -155,16 +164,114 @@ pub struct UsageMonitorStartArgs {
     #[arg(long, value_enum, required = true)]
     pub provider: UsageProviderArg,
     #[arg(long, value_name = "ID", required = true)]
-    pub account: String,
+    pub binding: String,
+    #[arg(long, value_name = "REVISION", required = true)]
+    pub binding_revision: u64,
     #[arg(long, value_name = "ID", required = true)]
     pub goal: String,
+    #[arg(long, value_name = "REVISION", required = true)]
+    pub policy_revision: u64,
+    #[arg(long, value_name = "KEY", required = true)]
+    pub idempotency_key: String,
     #[arg(long, value_name = "ID")]
     pub session: Option<String>,
     #[arg(long, value_name = "MODEL")]
     pub expected_model: Option<String>,
-    /// SGD budget ceiling, e.g. `50` or `50.25` (default `50`)
-    #[arg(long, value_name = "SGD", default_value = "50")]
+}
+
+#[derive(Debug, Args, PartialEq, Eq)]
+pub struct UsageMonitorObserveArgs {
+    #[arg(long, value_enum, required = true)]
+    pub provider: UsageProviderArg,
+    /// Unbound observer scope. If omitted, pass `--binding` and its revision.
+    #[arg(long, value_name = "ID", required_unless_present = "binding")]
+    pub session: Option<String>,
+    /// Previously confirmed account binding
+    #[arg(long, value_name = "ID", requires = "binding_revision")]
+    pub binding: Option<String>,
+    #[arg(long, value_name = "REVISION", requires = "binding")]
+    pub binding_revision: Option<u64>,
+    #[arg(long, value_name = "KEY", required = true)]
+    pub idempotency_key: String,
+    #[arg(long, value_name = "MODEL")]
+    pub expected_model: Option<String>,
+}
+
+#[derive(Debug, Args, PartialEq, Eq)]
+pub struct UsageBindingArgs {
+    #[command(subcommand)]
+    pub command: UsageBindingCommand,
+}
+
+#[derive(Debug, Subcommand, PartialEq, Eq)]
+pub enum UsageBindingCommand {
+    /// Confirm that one local account label represents the selected provider account
+    Confirm(UsageBindingConfirmArgs),
+}
+
+#[derive(Debug, Args, PartialEq, Eq)]
+pub struct UsageBindingConfirmArgs {
+    #[arg(long, value_enum, required = true)]
+    pub provider: UsageProviderArg,
+    #[arg(long, value_name = "ACCOUNT", required = true)]
+    pub account: String,
+    #[arg(long, value_name = "LABEL", required = true)]
+    pub operator_label: String,
+    /// Confirm this operator-supplied account binding
+    #[arg(long, required = true)]
+    pub confirm: bool,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq)]
+pub enum UsageMonitorPolicyArg {
+    StrictSgd,
+    QuotaOnly,
+}
+
+impl From<UsageMonitorPolicyArg> for MonitorPolicy {
+    fn from(value: UsageMonitorPolicyArg) -> Self {
+        match value {
+            UsageMonitorPolicyArg::StrictSgd => Self::StrictSgd,
+            UsageMonitorPolicyArg::QuotaOnly => Self::QuotaOnly,
+        }
+    }
+}
+
+#[derive(Debug, Args, PartialEq, Eq)]
+pub struct UsagePolicyArgs {
+    #[command(subcommand)]
+    pub command: UsagePolicyCommand,
+}
+
+#[derive(Debug, Subcommand, PartialEq, Eq)]
+pub enum UsagePolicyCommand {
+    /// Explicitly approve a durable policy for one bound account and goal
+    Approve(UsagePolicyApproveArgs),
+}
+
+#[derive(Debug, Args, PartialEq, Eq)]
+pub struct UsagePolicyApproveArgs {
+    #[arg(long, value_name = "ID", required = true)]
+    pub binding: String,
+    #[arg(long, value_name = "REVISION", required = true)]
+    pub binding_revision: u64,
+    #[arg(long, value_name = "GOAL", required = true)]
+    pub goal: String,
+    #[arg(long, value_enum, required = true)]
+    pub policy: UsageMonitorPolicyArg,
+    /// SGD budget ceiling for strict-sgd, e.g. `50.25` (default `50`)
+    #[arg(long, value_name = "SGD", value_parser = parse_sgd_budget_arg)]
     pub budget_sgd: Option<String>,
+    #[arg(long, value_name = "LABEL", required = true)]
+    pub operator_label: String,
+    /// Confirm this persisted policy change
+    #[arg(long, required = true)]
+    pub confirm: bool,
+    /// Acknowledge that quota-only has no SGD spend cap
+    #[arg(long)]
+    pub acknowledge_no_sgd_cap: bool,
+    #[arg(long, value_name = "REVISION")]
+    pub expected_revision: Option<u64>,
 }
 
 #[derive(Debug, Args, PartialEq, Eq)]
@@ -214,16 +321,28 @@ pub enum UsageStatuslineCommand {
 
 #[derive(Debug, Args, PartialEq, Eq)]
 pub struct UsageStatuslineIngestArgs {
-    #[arg(long, value_name = "ID", required = true)]
-    pub account: String,
+    #[command(flatten)]
+    pub scope: UsageStatuslineScopeArgs,
 }
 
 #[derive(Debug, Args, PartialEq, Eq)]
 pub struct UsageStatuslineComposeArgs {
     #[arg(long, value_name = "PATH", required = true)]
     pub settings: PathBuf,
-    #[arg(long, value_name = "ID", required = true)]
-    pub account: String,
+    #[command(flatten)]
+    pub scope: UsageStatuslineScopeArgs,
+}
+
+#[derive(Debug, Args, PartialEq, Eq)]
+pub struct UsageStatuslineScopeArgs {
+    /// Ingest this callback only under its session ID from the JSON payload
+    #[arg(long, required_unless_present = "binding", conflicts_with = "binding")]
+    pub session_only: bool,
+    /// Previously confirmed account binding
+    #[arg(long, value_name = "ID", requires = "binding_revision")]
+    pub binding: Option<String>,
+    #[arg(long, value_name = "REVISION", requires = "binding")]
+    pub binding_revision: Option<u64>,
 }
 
 #[derive(Debug, Args, PartialEq, Eq)]
@@ -328,7 +447,7 @@ pub async fn run(args: &UsageArgs, paths: &JackinPaths) -> Result<()> {
     if !matches!(scope, UsageScope::Accounts(_) | UsageScope::Verify) {
         return Err(usage_error(
             "invalid_scope",
-            "monitor, service, statusline, spend, auth, and doctor commands do not take an instance",
+            "monitor, binding, policy, service, statusline, spend, auth, and doctor commands do not take an instance",
             3,
         ));
     }
@@ -419,6 +538,8 @@ fn run_local_scope(paths: &JackinPaths, scope: &UsageScope) -> Result<()> {
         UsageScope::Doctor(command) => run_doctor(paths, command),
         UsageScope::Service(command) => run_service(paths, command),
         UsageScope::Monitor(command) => run_monitor(paths, command),
+        UsageScope::Binding(command) => run_binding(paths, command),
+        UsageScope::Policy(command) => run_policy(paths, command),
         UsageScope::Status(command) => run_monitor_read(
             paths,
             MonitorOperation::Status {
@@ -538,36 +659,50 @@ fn run_service(paths: &JackinPaths, command: &UsageServiceArgs) -> Result<()> {
 
 fn run_monitor(paths: &JackinPaths, command: &UsageMonitorArgs) -> Result<()> {
     match &command.command {
+        UsageMonitorCommand::Observe(args) => {
+            let scope = monitor_scope_from_selection(
+                args.binding.as_deref(),
+                args.binding_revision,
+                args.session.as_deref(),
+            )?;
+            validate_nonempty("idempotency key", &args.idempotency_key)?;
+            validate_expected_model(args.expected_model.as_deref())?;
+            let reply = start_broker(paths)?
+                .monitor(MonitorOperation::Start {
+                    config: MonitorConfig {
+                        provider: args.provider.into(),
+                        purpose: MonitorPurpose::ObserveOnly,
+                        scope,
+                        goal_id: None,
+                        expected_model: args.expected_model.clone(),
+                        policy_revision: None,
+                    },
+                    idempotency_key: args.idempotency_key.clone(),
+                })
+                .map_err(|issue| issue_error(issue, 3))?;
+            emit_monitor_reply(&reply)
+        }
         UsageMonitorCommand::Start(args) => {
-            let budget = args
-                .budget_sgd
-                .as_deref()
-                .map(parse_sgd_budget)
-                .transpose()?;
-            if args.account.trim().is_empty()
-                || args.goal.trim().is_empty()
-                || args
-                    .session
-                    .as_deref()
-                    .is_some_and(|session| session.trim().is_empty())
-            {
-                return Err(usage_error(
-                    "invalid_argument",
-                    "account, goal, and any supplied session IDs must not be empty",
-                    3,
-                ));
-            }
+            let scope = monitor_scope_from_selection(
+                Some(&args.binding),
+                Some(args.binding_revision),
+                args.session.as_deref(),
+            )?;
+            validate_nonempty("goal", &args.goal)?;
+            validate_nonempty("idempotency key", &args.idempotency_key)?;
+            validate_expected_model(args.expected_model.as_deref())?;
             let client = start_broker(paths)?;
             let reply = client
                 .monitor(MonitorOperation::Start {
                     config: MonitorConfig {
                         provider: args.provider.into(),
-                        account_id: args.account.clone(),
-                        goal_id: args.goal.clone(),
-                        session_id: args.session.clone(),
+                        purpose: MonitorPurpose::DispatchGuard,
+                        scope,
+                        goal_id: Some(args.goal.clone()),
                         expected_model: args.expected_model.clone(),
-                        budget,
+                        policy_revision: Some(args.policy_revision),
                     },
+                    idempotency_key: args.idempotency_key.clone(),
                 })
                 .map_err(|issue| issue_error(issue, 3))?;
             emit_monitor_reply(&reply)
@@ -581,6 +716,193 @@ fn run_monitor(paths: &JackinPaths, command: &UsageMonitorArgs) -> Result<()> {
             emit_json(&reply)
         }
     }
+}
+
+fn monitor_scope_from_selection(
+    binding_id: Option<&str>,
+    binding_revision: Option<u64>,
+    session_id: Option<&str>,
+) -> Result<MonitorScope> {
+    if let Some(session_id) = session_id {
+        validate_nonempty("session ID", session_id)?;
+    }
+    match (binding_id, binding_revision) {
+        (Some(binding_id), Some(binding_revision)) => {
+            validate_nonempty("binding ID", binding_id)?;
+            Ok(MonitorScope::BoundAccount {
+                binding_id: binding_id.to_owned(),
+                binding_revision,
+                session_id: session_id.map(str::to_owned),
+            })
+        }
+        (None, None) => {
+            let session_id = session_id.ok_or_else(|| {
+                usage_error(
+                    "invalid_argument",
+                    "choose a session ID or a binding and binding revision",
+                    3,
+                )
+            })?;
+            Ok(MonitorScope::Session {
+                session_id: session_id.to_owned(),
+            })
+        }
+        _ => Err(usage_error(
+            "invalid_argument",
+            "binding ID and binding revision must be supplied together",
+            3,
+        )),
+    }
+}
+
+fn validate_expected_model(model: Option<&str>) -> Result<()> {
+    if let Some(model) = model {
+        validate_nonempty("expected model", model)?;
+    }
+    Ok(())
+}
+
+fn validate_nonempty(field: &str, value: &str) -> Result<()> {
+    if value.trim().is_empty() || value.contains('\0') {
+        return Err(usage_error(
+            "invalid_argument",
+            &format!("{field} must be nonempty and contain no NUL byte"),
+            3,
+        ));
+    }
+    Ok(())
+}
+
+fn run_binding(paths: &JackinPaths, command: &UsageBindingArgs) -> Result<()> {
+    match &command.command {
+        UsageBindingCommand::Confirm(args) => {
+            require_operator_confirmation_terminal()?;
+            validate_nonempty("account ID", &args.account)?;
+            validate_nonempty("operator label", &args.operator_label)?;
+            if !args.confirm {
+                return Err(usage_error(
+                    "confirmation_required",
+                    "account binding requires the explicit --confirm flag",
+                    2,
+                ));
+            }
+            let reply = attach_client(paths)
+                .monitor(MonitorOperation::BindAccount {
+                    binding: MonitorAccountBindingInput {
+                        provider: args.provider.into(),
+                        account_id: args.account.clone(),
+                        operator_label: args.operator_label.clone(),
+                        operator_confirmed: true,
+                    },
+                })
+                .map_err(|issue| issue_error(issue, 3))?;
+            if !matches!(&reply, MonitorReply::AccountBound { .. }) {
+                return Err(usage_error(
+                    "unexpected_reply",
+                    "broker returned a non-binding reply",
+                    3,
+                ));
+            }
+            emit_json(&reply)
+        }
+    }
+}
+
+fn run_policy(paths: &JackinPaths, command: &UsagePolicyArgs) -> Result<()> {
+    match &command.command {
+        UsagePolicyCommand::Approve(args) => {
+            require_operator_confirmation_terminal()?;
+            let approval = policy_approval_input(args)?;
+            let reply = attach_client(paths)
+                .monitor(MonitorOperation::ApprovePolicy { approval })
+                .map_err(|issue| issue_error(issue, 3))?;
+            if !matches!(&reply, MonitorReply::PolicyApproved { .. }) {
+                return Err(usage_error(
+                    "unexpected_reply",
+                    "broker returned a non-policy reply",
+                    3,
+                ));
+            }
+            emit_json(&reply)
+        }
+    }
+}
+
+fn policy_approval_input(args: &UsagePolicyApproveArgs) -> Result<MonitorPolicyApprovalInput> {
+    validate_nonempty("binding ID", &args.binding)?;
+    validate_nonempty("goal ID", &args.goal)?;
+    validate_nonempty("operator label", &args.operator_label)?;
+    if !args.confirm {
+        return Err(usage_error(
+            "confirmation_required",
+            "policy approval requires the explicit --confirm flag",
+            2,
+        ));
+    }
+    let (new_policy, budget, acknowledge_no_sgd_cap) = match args.policy {
+        UsageMonitorPolicyArg::StrictSgd => {
+            if args.acknowledge_no_sgd_cap {
+                return Err(usage_error(
+                    "invalid_argument",
+                    "--acknowledge-no-sgd-cap applies only to quota-only policy",
+                    3,
+                ));
+            }
+            let budget = parse_sgd_budget(args.budget_sgd.as_deref().unwrap_or("50"))?;
+            (MonitorPolicy::StrictSgd, Some(budget), false)
+        }
+        UsageMonitorPolicyArg::QuotaOnly => {
+            if args.budget_sgd.is_some() {
+                return Err(usage_error(
+                    "invalid_argument",
+                    "--budget-sgd applies only to strict-sgd policy",
+                    3,
+                ));
+            }
+            if !args.acknowledge_no_sgd_cap {
+                return Err(usage_error(
+                    "confirmation_required",
+                    "quota-only policy requires --acknowledge-no-sgd-cap",
+                    2,
+                ));
+            }
+            (MonitorPolicy::QuotaOnly, None, true)
+        }
+    };
+    Ok(MonitorPolicyApprovalInput {
+        binding_id: args.binding.clone(),
+        binding_revision: args.binding_revision,
+        goal_id: args.goal.clone(),
+        new_policy,
+        budget,
+        operator_label: args.operator_label.clone(),
+        operator_confirmed: true,
+        acknowledge_no_sgd_cap,
+        expected_revision: args.expected_revision,
+    })
+}
+
+fn require_operator_confirmation_terminal() -> Result<()> {
+    use std::io::IsTerminal as _;
+    require_operator_terminal(
+        std::io::stdin().is_terminal(),
+        std::io::stdout().is_terminal(),
+        std::io::stderr().is_terminal(),
+    )
+}
+
+fn require_operator_terminal(stdin: bool, stdout: bool, stderr: bool) -> Result<()> {
+    if all_stdio_are_terminal(stdin, stdout, stderr) {
+        return Ok(());
+    }
+    Err(issue_error(
+        MonitorIssue {
+            code: MonitorIssueCode::InteractionRequired,
+            message: "binding confirmation and policy approval require attached stdin, stdout, and stderr terminals".to_owned(),
+            retry_at_epoch: None,
+        },
+        2,
+    ))
 }
 
 fn run_monitor_read(paths: &JackinPaths, operation: MonitorOperation) -> Result<()> {
@@ -605,8 +927,12 @@ fn run_monitor_read(paths: &JackinPaths, operation: MonitorOperation) -> Result<
 
 fn emit_monitor_reply(reply: &MonitorReply) -> Result<()> {
     let code = match reply_status(reply) {
-        Some(status) if status.runnable => 0,
-        Some(_) => 2,
+        Some(status) => monitor_status_exit_code(
+            status.purpose,
+            status.runnable,
+            status.readiness.tracking,
+            matches!(reply, MonitorReply::Started { .. }),
+        ),
         None => {
             return Err(usage_error(
                 "unexpected_reply",
@@ -619,6 +945,21 @@ fn emit_monitor_reply(reply: &MonitorReply) -> Result<()> {
         emit_json(reply)
     } else {
         Err(json_value_exit(reply, code))
+    }
+}
+
+fn monitor_status_exit_code(
+    purpose: MonitorPurpose,
+    runnable: bool,
+    tracking: MonitorTrackingReadiness,
+    is_start_reply: bool,
+) -> i32 {
+    if tracking == MonitorTrackingReadiness::Unavailable {
+        3
+    } else if (is_start_reply && purpose == MonitorPurpose::ObserveOnly) || runnable {
+        0
+    } else {
+        2
     }
 }
 
@@ -805,11 +1146,9 @@ fn run_statusline(paths: &JackinPaths, command: &UsageStatuslineArgs) -> Result<
                 .context("read statusline JSON from stdin")
                 .map_err(|error| usage_error("statusline_invalid", &error.to_string(), 3))?;
             let observation = parse_statusline(&bytes).map_err(|issue| issue_error(issue, 3))?;
+            let scope = statusline_monitor_scope(&args.scope, &observation.session_id)?;
             let reply = attach_client(paths)
-                .monitor(MonitorOperation::Ingest {
-                    account_id: args.account.clone(),
-                    observation,
-                })
+                .monitor(MonitorOperation::Ingest { scope, observation })
                 .map_err(|issue| issue_error(issue, 3))?;
             if !matches!(&reply, MonitorReply::Ingested { .. }) {
                 return Err(usage_error(
@@ -824,12 +1163,36 @@ fn run_statusline(paths: &JackinPaths, command: &UsageStatuslineArgs) -> Result<
             let binary = std::env::current_exe()
                 .map_err(|error| usage_error("path_unavailable", &error.to_string(), 3))?;
             let proposed =
-                statusline::compose(&args.settings, &binary, &args.account, &paths.data_dir)
+                statusline::compose(&args.settings, &binary, &args.scope, &paths.data_dir)
                     .map_err(|error| usage_error("compose_failed", &format!("{error:#}"), 3))?;
             println!("{}", serde_json::to_string_pretty(&proposed)?);
             Ok(())
         }
     }
+}
+
+fn statusline_monitor_scope(
+    selection: &UsageStatuslineScopeArgs,
+    payload_session_id: &str,
+) -> Result<MonitorScope> {
+    if selection.session_only {
+        if selection.binding.is_some() || selection.binding_revision.is_some() {
+            return Err(usage_error(
+                "invalid_argument",
+                "choose exactly `--session-only` or `--binding` with `--binding-revision`",
+                3,
+            ));
+        }
+        validate_nonempty("statusline payload session ID", payload_session_id)?;
+        return Ok(MonitorScope::Session {
+            session_id: payload_session_id.to_owned(),
+        });
+    }
+    monitor_scope_from_selection(
+        selection.binding.as_deref(),
+        selection.binding_revision,
+        None,
+    )
 }
 
 fn run_spend(paths: &JackinPaths, command: &UsageSpendArgs) -> Result<()> {
@@ -999,7 +1362,7 @@ fn parse_sgd_budget(value: &str) -> Result<Money> {
     {
         return Err(usage_error(
             "invalid_budget",
-            "SGD budget must be a nonnegative amount with at most two decimal places",
+            "SGD budget must be a positive amount with at most two decimal places",
             3,
         ));
     }
@@ -1018,7 +1381,22 @@ fn parse_sgd_budget(value: &str) -> Result<Money> {
         .checked_mul(100)
         .and_then(|amount| amount.checked_add(minor))
         .ok_or_else(|| usage_error("invalid_budget", "SGD budget is out of range", 3))?;
+    if amount_minor == 0 {
+        return Err(usage_error(
+            "invalid_budget",
+            "SGD budget must be a positive amount with at most two decimal places",
+            3,
+        ));
+    }
     Ok(Money::new(amount_minor, "SGD", 2))
+}
+
+fn parse_sgd_budget_arg(value: &str) -> std::result::Result<String, String> {
+    parse_sgd_budget(value)
+        .map(|_| value.to_owned())
+        .map_err(|_| {
+            "SGD budget must be a positive amount with at most two decimal places".to_owned()
+        })
 }
 
 fn parse_statusline(bytes: &[u8]) -> Result<StatuslineObservation, MonitorIssue> {
@@ -1049,12 +1427,26 @@ fn usage_error(code: &str, message: &str, exit_code: i32) -> anyhow::Error {
     UsageCommandExit::new(exit_code, json).into()
 }
 
-fn issue_error(issue: MonitorIssue, exit_code: i32) -> anyhow::Error {
+fn issue_error(issue: MonitorIssue, _fallback_exit_code: i32) -> anyhow::Error {
     let code = serde_json::to_value(issue.code)
         .ok()
         .and_then(|value| value.as_str().map(str::to_owned))
         .unwrap_or_else(|| "monitor_error".to_owned());
-    usage_error(&code, &issue.message, exit_code)
+    usage_error(&code, &issue.message, monitor_issue_exit_code(issue.code))
+}
+
+fn monitor_issue_exit_code(code: MonitorIssueCode) -> i32 {
+    match code {
+        MonitorIssueCode::BudgetUnverifiable
+        | MonitorIssueCode::SpendUnavailable
+        | MonitorIssueCode::SpendStale
+        | MonitorIssueCode::SpendUnverified
+        | MonitorIssueCode::PolicyRequired
+        | MonitorIssueCode::BindingRequired
+        | MonitorIssueCode::SgdCapAcknowledgementRequired
+        | MonitorIssueCode::InteractionRequired => 2,
+        _ => 3,
+    }
 }
 
 fn json_value_exit<T: Serialize>(value: &T, exit_code: i32) -> anyhow::Error {
@@ -1382,3 +1774,207 @@ fn truncate(value: &str, max: usize) -> String {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod v2_cli_contract_tests {
+    use super::*;
+
+    fn policy_args(
+        policy: UsageMonitorPolicyArg,
+        budget_sgd: Option<&str>,
+        acknowledge_no_sgd_cap: bool,
+    ) -> UsagePolicyApproveArgs {
+        UsagePolicyApproveArgs {
+            binding: "binding-1".to_owned(),
+            binding_revision: 3,
+            goal: "goal-1".to_owned(),
+            policy,
+            budget_sgd: budget_sgd.map(str::to_owned),
+            operator_label: "operator".to_owned(),
+            confirm: true,
+            acknowledge_no_sgd_cap,
+            expected_revision: None,
+        }
+    }
+
+    #[test]
+    fn operator_terminal_gate_fails_closed_when_any_stream_is_headless() {
+        for streams in [
+            (false, true, true),
+            (true, false, true),
+            (true, true, false),
+            (false, false, false),
+        ] {
+            let error = require_operator_terminal(streams.0, streams.1, streams.2).unwrap_err();
+            let exit = error.downcast_ref::<UsageCommandExit>().unwrap();
+            assert_eq!(exit.exit_code(), 2);
+            let value: serde_json::Value = serde_json::from_str(exit.json()).unwrap();
+            assert_eq!(value["error"]["code"], "interaction_required");
+        }
+        require_operator_terminal(true, true, true).unwrap();
+    }
+
+    #[test]
+    fn monitor_issues_have_stable_blocked_and_invalid_exit_classes() {
+        for code in [
+            MonitorIssueCode::BudgetUnverifiable,
+            MonitorIssueCode::SpendUnavailable,
+            MonitorIssueCode::SpendStale,
+            MonitorIssueCode::SpendUnverified,
+            MonitorIssueCode::PolicyRequired,
+            MonitorIssueCode::BindingRequired,
+            MonitorIssueCode::SgdCapAcknowledgementRequired,
+            MonitorIssueCode::InteractionRequired,
+        ] {
+            let error = issue_error(
+                MonitorIssue {
+                    code,
+                    message: "blocked".to_owned(),
+                    retry_at_epoch: None,
+                },
+                3,
+            );
+            assert_eq!(
+                error
+                    .downcast_ref::<UsageCommandExit>()
+                    .unwrap()
+                    .exit_code(),
+                2,
+                "{code:?}"
+            );
+        }
+
+        for code in [
+            MonitorIssueCode::BrokerUnavailable,
+            MonitorIssueCode::StatuslineInvalid,
+            MonitorIssueCode::IdempotencyConflict,
+            MonitorIssueCode::BindingMismatch,
+        ] {
+            let error = issue_error(
+                MonitorIssue {
+                    code,
+                    message: "invalid or unavailable".to_owned(),
+                    retry_at_epoch: None,
+                },
+                3,
+            );
+            assert_eq!(
+                error
+                    .downcast_ref::<UsageCommandExit>()
+                    .unwrap()
+                    .exit_code(),
+                3,
+                "{code:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn observer_start_reports_tracking_success_without_authorizing_dispatch() {
+        assert_eq!(
+            monitor_status_exit_code(
+                MonitorPurpose::ObserveOnly,
+                false,
+                MonitorTrackingReadiness::Waiting,
+                true,
+            ),
+            0
+        );
+        assert_eq!(
+            monitor_status_exit_code(
+                MonitorPurpose::ObserveOnly,
+                false,
+                MonitorTrackingReadiness::Unavailable,
+                true,
+            ),
+            3
+        );
+        assert_eq!(
+            monitor_status_exit_code(
+                MonitorPurpose::ObserveOnly,
+                false,
+                MonitorTrackingReadiness::Ready,
+                false,
+            ),
+            2
+        );
+        assert_eq!(
+            monitor_status_exit_code(
+                MonitorPurpose::DispatchGuard,
+                false,
+                MonitorTrackingReadiness::Ready,
+                true,
+            ),
+            2
+        );
+        assert_eq!(
+            monitor_status_exit_code(
+                MonitorPurpose::DispatchGuard,
+                true,
+                MonitorTrackingReadiness::Ready,
+                false,
+            ),
+            0
+        );
+    }
+
+    #[test]
+    fn policy_approval_defaults_strict_sgd_and_never_infers_quota_only() {
+        let strict =
+            policy_approval_input(&policy_args(UsageMonitorPolicyArg::StrictSgd, None, false))
+                .unwrap();
+        assert_eq!(strict.new_policy, MonitorPolicy::StrictSgd);
+        assert_eq!(strict.budget, Some(Money::new(5_000, "SGD", 2)));
+        assert!(!strict.acknowledge_no_sgd_cap);
+
+        let quota_only =
+            policy_approval_input(&policy_args(UsageMonitorPolicyArg::QuotaOnly, None, true))
+                .unwrap();
+        assert_eq!(quota_only.new_policy, MonitorPolicy::QuotaOnly);
+        assert_eq!(quota_only.budget, None);
+        assert!(quota_only.acknowledge_no_sgd_cap);
+
+        let missing_ack =
+            policy_approval_input(&policy_args(UsageMonitorPolicyArg::QuotaOnly, None, false))
+                .unwrap_err();
+        assert_eq!(
+            missing_ack
+                .downcast_ref::<UsageCommandExit>()
+                .unwrap()
+                .exit_code(),
+            2
+        );
+    }
+
+    #[test]
+    fn strict_sgd_budget_must_be_positive() {
+        for value in ["0", "0.00", "00.00"] {
+            let error = parse_sgd_budget(value).unwrap_err();
+            let exit = error.downcast_ref::<UsageCommandExit>().unwrap();
+            assert_eq!(exit.exit_code(), 3);
+            let parsed: serde_json::Value = serde_json::from_str(exit.json()).unwrap();
+            assert_eq!(parsed["error"]["code"], "invalid_budget");
+        }
+
+        assert_eq!(parse_sgd_budget("0.01").unwrap(), Money::new(1, "SGD", 2));
+    }
+
+    #[test]
+    fn statusline_session_only_scope_comes_from_the_payload() {
+        let scope = statusline_monitor_scope(
+            &UsageStatuslineScopeArgs {
+                session_only: true,
+                binding: None,
+                binding_revision: None,
+            },
+            "payload-session",
+        )
+        .unwrap();
+        assert_eq!(
+            scope,
+            MonitorScope::Session {
+                session_id: "payload-session".to_owned()
+            }
+        );
+    }
+}

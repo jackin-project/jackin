@@ -340,15 +340,15 @@ projects are outside mutation scope.
 
 | Work | Owner | State |
 | --- | --- | --- |
-| Protocol/CLI contract and migration freeze | v2_contract_research + parent | Frozen in v2-contract.md; protocol implementation active |
-| Observer, goal policy, atomic baseline and idempotency | v2_engine_research | Engine + explicit migration implementation active |
-| Official statusline/version/account source contract | v2_source_review | Research complete; bounded version parser patch prepared |
-| Operator authorization, passive paths and rate-limit audit | v2_security_review | Research complete; host-only relay regression patch active |
-| CLI integration | v2_cli_implementation | Frozen command implementation active |
-| Existing broker regression migration | v2_verification_research | Fixture migration active; no tool activation |
-| Offline CLI and installed fixture migration | v2_cli_fixture_migration | Implementation active; isolated state only |
-| Deterministic tests + independent installed-pair proof | Parent + verifier to assign | Pending coordinated compile; fixtures only |
-| Documentation, handoff, completion audit and publication | Parent + independent reviewers | Pending |
+| Protocol/CLI contract and migration freeze | v2_contract_research + parent | Implemented; wire v6 / store schema 2; protocol gate passed |
+| Observer, goal policy, atomic baseline and idempotency | v2_engine_research | Implemented and independently reviewed; broker 128 tests passed |
+| Official statusline/version/account source contract | v2_source_review | Official research and bounded version parser implemented; v2.1.80 floor |
+| Operator authorization, passive paths and rate-limit audit | v2_security_review | Security/rate reviews complete; relay gate passed; no live verification |
+| CLI integration | v2_cli_implementation | Implemented; 216 CLI unit tests passed |
+| Existing broker regression migration | v2_verification_research | Migrated fixtures; core/consumer gate passed 439 cases |
+| Offline CLI and installed fixture migration | v2_cli_fixture_migration | Implemented; 12 subprocess cases passed; installed proof pending |
+| Deterministic tests + independent installed-pair proof | Parent + verifier to assign | Source gates passed; built/installed fixture workflow pending |
+| Documentation, handoff, completion audit and publication | Parent + independent reviewers | Source docs ready; final install evidence and publication pending |
 
 Acceptance includes observation without receipt/baseline/dispatch, auditable
 persisted policy, separate readiness, atomic strict activation, no silent
@@ -436,3 +436,54 @@ CLI/protocol/statusline/telemetry security review found no issues in its scope;
 this was static review, not live credential verification. Read-only original
 checkout status is still clean; old installed pair hashes match recorded V1
 inspection. The new V2 prefix still does not exist before installation.
+
+Expanded core suite passed 362 tests (broker 126), CLI unit suite 216, and
+all 12 installation/lifecycle/observation subprocess tests passed. Session-bound
+strict activation now succeeds with valid fixture receipt and evidence. Final
+review confirmed the five accepted repairs; it identified one V1 edge still
+being repaired: migrated zero-budget strict records need an explicit operator
+positive-budget correction without clearing history or unknown baseline.
+Clippy is running before the implementation checkpoint.
+
+Clippy found protocol documentation/assertion style issues (fixed), then 19
+broker/parser structural/style issues. Engine owner is splitting validation,
+start and readiness phases and replacing long argument lists with contexts;
+parser owner is naming the version tuple type. Passing tests precede this
+refactor and must be rerun. New migrated-zero regression is being aligned with
+the existing-goal contract: blocked status preserves uncertainty; only a new
+strict goal lacking a compatible baseline rejects admission atomically.
+
+Final consumer audit found no active consumers of removed host projection or
+snapshot syntax, no compatibility aliases, and no independent Swift wire/schema
+pin. Current Rust consumers use shared wire v6; monitor store v1 exists only
+as explicit migration input. Historical blocked roadmap notes were not treated
+as shipped/current behavior. This was a static read-only audit.
+
+Engine refactor is frozen and broker/protocol Clippy now passes; remaining
+Clippy findings are CLI branch/test style and telemetry fixture size, assigned
+to their owners. Core suite is rerunning after the refactor and migrated-zero
+repair. Installed-smoke now verifies the exact fixture broker executable and
+launch arguments from its own PID lease plus ps, not version-string matching.
+
+All-target Clippy passed with -D warnings for jackin, broker, protocol, relay
+and Claude provider. Refactored core rerun passed 126 broker tests but one
+fake HTTP server panicked on a macOS WouldBlock socket read before the second
+request; the fixture owner is making bounded complete-header reads robust,
+without changing admission policy or provider-count assertions. No final core
+pass is claimed for that run.
+
+Final source gates: core/consumer suite passed 439 tests (+1 pre-existing
+ignored); CLI unit suite passed 216; app installation/lifecycle/observation
+subprocess suite passed all 12. Formatting passes on 29 changed Rust files.
+Independent final integrity review has no outstanding finding after the repairs.
+Final Clippy and repeated Retry-After regression run precede implementation
+commit/build/install. Real-account setup and genuine callbacks are still unverified.
+
+Final all-target Clippy passed with -D warnings after the HTTP fixture style
+repairs. Broker unit rerun passed all 128 cases; process/doc completion and
+five repeated Retry-After fixture runs are the final pre-commit gate.
+
+Broker full gate completed successfully. Retry-After/reset fake HTTP fixtures
+passed five consecutive runs (2 tests per run); request-count assertions held.
+All 29 changed Rust files pass scoped rustfmt and git diff --check. The source
+implementation is ready for its coherent checkpoint; installed proof follows.

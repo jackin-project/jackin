@@ -88,14 +88,18 @@ fn parses_usage_monitor_start_with_isolated_data_dir() {
         "start",
         "--provider",
         "claude",
-        "--account",
-        "account-1",
+        "--binding",
+        "binding-1",
+        "--binding-revision",
+        "4",
         "--goal",
         "goal-1",
+        "--policy-revision",
+        "2",
+        "--idempotency-key",
+        "run-1",
         "--session",
         "session-1",
-        "--budget-sgd",
-        "50.25",
     ])
     .unwrap();
     assert!(matches!(cli.command, Some(Command::Usage(ref args))
@@ -103,21 +107,307 @@ fn parses_usage_monitor_start_with_isolated_data_dir() {
             && matches!(args.scope, Some(usage::UsageScope::Monitor(ref monitor))
                 if matches!(monitor.command, usage::UsageMonitorCommand::Start(ref start)
                     if start.provider == usage::UsageProviderArg::Claude
-                        && start.account == "account-1"
+                        && start.binding == "binding-1"
+                        && start.binding_revision == 4
                         && start.goal == "goal-1"
+                        && start.policy_revision == 2
+                        && start.idempotency_key == "run-1"
                         && start.session.as_deref() == Some("session-1")
-                        && start.budget_sgd.as_deref() == Some("50.25")))));
+                        && start.expected_model.is_none()))));
 }
 
 #[test]
-fn parses_usage_statusline_ingest() {
+fn parses_usage_monitor_observe_session_and_bound_scopes() {
+    let session = Cli::try_parse_from([
+        "jackin",
+        "usage",
+        "monitor",
+        "observe",
+        "--provider",
+        "claude",
+        "--session",
+        "session-1",
+        "--idempotency-key",
+        "observer-1",
+    ])
+    .unwrap();
+    assert!(matches!(session.command, Some(Command::Usage(ref args))
+        if matches!(args.scope, Some(usage::UsageScope::Monitor(ref monitor))
+            if matches!(monitor.command, usage::UsageMonitorCommand::Observe(ref observe)
+                if observe.session.as_deref() == Some("session-1")
+                    && observe.binding.is_none()
+                    && observe.idempotency_key == "observer-1"))));
+
+    let bound = Cli::try_parse_from([
+        "jackin",
+        "usage",
+        "monitor",
+        "observe",
+        "--provider",
+        "claude",
+        "--binding",
+        "binding-1",
+        "--binding-revision",
+        "4",
+        "--session",
+        "session-1",
+        "--idempotency-key",
+        "observer-2",
+        "--expected-model",
+        "claude-sonnet-4",
+    ])
+    .unwrap();
+    assert!(matches!(bound.command, Some(Command::Usage(ref args))
+        if matches!(args.scope, Some(usage::UsageScope::Monitor(ref monitor))
+            if matches!(monitor.command, usage::UsageMonitorCommand::Observe(ref observe)
+                if observe.session.as_deref() == Some("session-1")
+                    && observe.binding.as_deref() == Some("binding-1")
+                    && observe.binding_revision == Some(4)
+                    && observe.expected_model.as_deref() == Some("claude-sonnet-4")))));
+
+    let account_wide = Cli::try_parse_from([
+        "jackin",
+        "usage",
+        "monitor",
+        "observe",
+        "--provider",
+        "claude",
+        "--binding",
+        "binding-1",
+        "--binding-revision",
+        "4",
+        "--idempotency-key",
+        "observer-3",
+    ])
+    .unwrap();
+    assert!(
+        matches!(account_wide.command, Some(Command::Usage(ref args))
+        if matches!(args.scope, Some(usage::UsageScope::Monitor(ref monitor))
+            if matches!(monitor.command, usage::UsageMonitorCommand::Observe(ref observe)
+                if observe.session.is_none()
+                    && observe.binding.as_deref() == Some("binding-1")
+                    && observe.binding_revision == Some(4))))
+    );
+}
+
+#[test]
+fn rejects_monitor_scope_conflicts_and_removed_start_aliases() {
+    for args in [
+        vec![
+            "jackin",
+            "usage",
+            "monitor",
+            "observe",
+            "--provider",
+            "claude",
+            "--idempotency-key",
+            "k",
+        ],
+        vec![
+            "jackin",
+            "usage",
+            "monitor",
+            "observe",
+            "--provider",
+            "claude",
+            "--binding",
+            "b",
+            "--idempotency-key",
+            "k",
+        ],
+        vec![
+            "jackin",
+            "usage",
+            "monitor",
+            "start",
+            "--provider",
+            "claude",
+            "--account",
+            "a",
+            "--goal",
+            "g",
+            "--budget-sgd",
+            "50",
+        ],
+        vec![
+            "jackin",
+            "usage",
+            "monitor",
+            "start",
+            "--provider",
+            "claude",
+            "--binding",
+            "b",
+            "--binding-revision",
+            "1",
+            "--goal",
+            "g",
+            "--policy-revision",
+            "1",
+            "--idempotency-key",
+            "k",
+            "--account",
+            "a",
+        ],
+        vec![
+            "jackin",
+            "usage",
+            "monitor",
+            "start",
+            "--provider",
+            "claude",
+            "--binding",
+            "b",
+            "--binding-revision",
+            "1",
+            "--goal",
+            "g",
+            "--policy-revision",
+            "1",
+            "--idempotency-key",
+            "k",
+            "--budget-sgd",
+            "50",
+        ],
+    ] {
+        let _error = Cli::try_parse_from(args).unwrap_err();
+    }
+}
+
+#[test]
+fn parses_binding_confirmation_and_policy_approval() {
+    let binding = Cli::try_parse_from([
+        "jackin",
+        "usage",
+        "binding",
+        "confirm",
+        "--provider",
+        "claude",
+        "--account",
+        "account-1",
+        "--operator-label",
+        "Work Claude",
+        "--confirm",
+    ])
+    .unwrap();
+    assert!(matches!(binding.command, Some(Command::Usage(ref args))
+        if matches!(args.scope, Some(usage::UsageScope::Binding(ref binding))
+            if matches!(binding.command, usage::UsageBindingCommand::Confirm(ref confirm)
+                if confirm.provider == usage::UsageProviderArg::Claude
+                    && confirm.account == "account-1"
+                    && confirm.operator_label == "Work Claude"
+                    && confirm.confirm))));
+
+    let policy = Cli::try_parse_from([
+        "jackin",
+        "usage",
+        "policy",
+        "approve",
+        "--binding",
+        "binding-1",
+        "--binding-revision",
+        "4",
+        "--goal",
+        "goal-1",
+        "--policy",
+        "strict-sgd",
+        "--operator-label",
+        "Cost reviewed",
+        "--confirm",
+    ])
+    .unwrap();
+    assert!(matches!(policy.command, Some(Command::Usage(ref args))
+        if matches!(args.scope, Some(usage::UsageScope::Policy(ref policy))
+            if matches!(policy.command, usage::UsagePolicyCommand::Approve(ref approve)
+                if approve.binding == "binding-1"
+                    && approve.binding_revision == 4
+                    && approve.goal == "goal-1"
+                    && approve.policy == usage::UsageMonitorPolicyArg::StrictSgd
+                    && approve.budget_sgd.is_none()
+                    && approve.operator_label == "Cost reviewed"
+                    && approve.confirm))));
+
+    let quota_only = Cli::try_parse_from([
+        "jackin",
+        "usage",
+        "policy",
+        "approve",
+        "--binding",
+        "binding-1",
+        "--binding-revision",
+        "4",
+        "--goal",
+        "goal-1",
+        "--policy",
+        "quota-only",
+        "--operator-label",
+        "No SGD cap accepted",
+        "--confirm",
+        "--acknowledge-no-sgd-cap",
+    ])
+    .unwrap();
+    assert!(matches!(quota_only.command, Some(Command::Usage(ref args))
+        if matches!(args.scope, Some(usage::UsageScope::Policy(ref policy))
+            if matches!(policy.command, usage::UsagePolicyCommand::Approve(ref approve)
+                if approve.policy == usage::UsageMonitorPolicyArg::QuotaOnly
+                    && approve.acknowledge_no_sgd_cap))));
+}
+
+#[test]
+fn rejects_zero_sgd_budget_during_policy_argument_parsing() {
+    for budget in ["0", "0.00", "00.00"] {
+        let parsed = Cli::try_parse_from([
+            "jackin",
+            "usage",
+            "policy",
+            "approve",
+            "--binding",
+            "binding-1",
+            "--binding-revision",
+            "4",
+            "--goal",
+            "goal-1",
+            "--policy",
+            "strict-sgd",
+            "--budget-sgd",
+            budget,
+            "--operator-label",
+            "Cost reviewed",
+            "--confirm",
+        ]);
+        let _error = parsed.unwrap_err();
+    }
+
+    Cli::try_parse_from([
+        "jackin",
+        "usage",
+        "policy",
+        "approve",
+        "--binding",
+        "binding-1",
+        "--binding-revision",
+        "4",
+        "--goal",
+        "goal-1",
+        "--policy",
+        "strict-sgd",
+        "--budget-sgd",
+        "0.01",
+        "--operator-label",
+        "Cost reviewed",
+        "--confirm",
+    ])
+    .unwrap();
+}
+
+#[test]
+fn parses_usage_statusline_ingest_and_compose_scopes() {
     let cli = Cli::try_parse_from([
         "jackin",
         "usage",
         "statusline",
         "ingest",
-        "--account",
-        "account-1",
+        "--session-only",
         "--format",
         "json",
         "--data-dir",
@@ -129,7 +419,113 @@ fn parses_usage_statusline_ingest() {
             && args.data_dir.as_deref() == Some(std::path::Path::new("/tmp/usage-data"))
             && matches!(args.scope, Some(usage::UsageScope::Statusline(ref statusline))
                 if matches!(statusline.command, usage::UsageStatuslineCommand::Ingest(ref ingest)
-                    if ingest.account == "account-1"))));
+                    if ingest.scope.session_only && ingest.scope.binding.is_none()))));
+
+    let bound = Cli::try_parse_from([
+        "jackin",
+        "usage",
+        "statusline",
+        "compose",
+        "--settings",
+        "/tmp/settings.json",
+        "--binding",
+        "binding-1",
+        "--binding-revision",
+        "4",
+    ])
+    .unwrap();
+    assert!(matches!(bound.command, Some(Command::Usage(ref args))
+        if matches!(args.scope, Some(usage::UsageScope::Statusline(ref statusline))
+            if matches!(statusline.command, usage::UsageStatuslineCommand::Compose(ref compose)
+                if compose.settings.as_path() == std::path::Path::new("/tmp/settings.json")
+                    && !compose.scope.session_only
+                    && compose.scope.binding.as_deref() == Some("binding-1")
+                    && compose.scope.binding_revision == Some(4)))));
+}
+
+#[test]
+fn rejects_statusline_scope_conflicts_and_missing_confirm() {
+    for args in [
+        vec!["jackin", "usage", "statusline", "ingest"],
+        vec!["jackin", "usage", "statusline", "ingest", "--binding", "b"],
+        vec![
+            "jackin",
+            "usage",
+            "statusline",
+            "ingest",
+            "--session-only",
+            "--binding",
+            "b",
+            "--binding-revision",
+            "1",
+        ],
+        vec![
+            "jackin",
+            "usage",
+            "statusline",
+            "ingest",
+            "--session-only",
+            "--account",
+            "a",
+        ],
+        vec![
+            "jackin",
+            "usage",
+            "statusline",
+            "compose",
+            "--settings",
+            "/tmp/settings.json",
+            "--session-only",
+            "--binding",
+            "b",
+            "--binding-revision",
+            "1",
+        ],
+        vec![
+            "jackin",
+            "usage",
+            "binding",
+            "confirm",
+            "--provider",
+            "claude",
+            "--account",
+            "a",
+            "--operator-label",
+            "L",
+        ],
+        vec![
+            "jackin",
+            "usage",
+            "binding",
+            "confirm",
+            "--provider",
+            "claude",
+            "--account",
+            "a",
+            "--operator-label",
+            "L",
+            "--confirm",
+            "--unattended",
+        ],
+        vec![
+            "jackin",
+            "usage",
+            "policy",
+            "approve",
+            "--binding",
+            "b",
+            "--binding-revision",
+            "1",
+            "--goal",
+            "g",
+            "--policy",
+            "quota-only",
+            "--operator-label",
+            "L",
+        ],
+    ] {
+        let _error = Cli::try_parse_from(args).unwrap_err();
+    }
 }
 
 #[test]

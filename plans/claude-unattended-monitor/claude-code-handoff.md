@@ -1,204 +1,256 @@
-# Claude Code handoff
+# Claude Code operator handoff
 
-Verified against implementation commit `6c1709e4bea1db9ee05d56352f11440db165e4e7`
-and installed Jackin 0.6.4. Commands, JSON/JSONL and exit behavior were exercised
-with isolated local state; no live provider or Keychain verification was run.
-See [verification.md](verification.md) for checks, artifact hashes and limitations.
+**V2 install status: pending verification.** The prospective CLI is
+`/Users/donbeave/.local/share/jackin-claude-monitor-v2/bin/jackin`; its expected
+broker is the sibling `jackin-usage-broker`. The existing v1 pair at
+`/Users/donbeave/.local/share/jackin-claude-monitor/bin/` and its state remain
+untouched. Use only the v2 pair after the parent verifies its exact CLI/broker
+binaries and updates this status. Source CLI/protocol names below
+were checked statically; no real account statusline callback, Keychain access,
+or provider request has been verified.
 
-## Binary and command preflight
+## Paste into Claude Code after v2 binary verification
 
-Use `/Users/donbeave/.local/share/jackin-claude-monitor/bin/jackin` for every
-monitor command. Pass this same data directory to each command:
-`--data-dir /Users/donbeave/.local/share/jackin-claude-monitor/state`
-Do not invoke the original repository's `target/debug/jackin` or switch
-binaries during a goal. Version `0.6.4` alone does not prove this CLI
-contract. Run this capability check:
-
-```bash
-/Users/donbeave/.local/share/jackin-claude-monitor/bin/jackin usage --help
-```
-
-Continue only when it lists `monitor`, `status`, `watch` and `wait`, with no
-`host` or `projection` command. Otherwise stop and report the help output and
-binary path to the operator.
-
-The broker executable can be overridden by `JACKIN_USAGE_BROKER_BIN`, which
-takes priority over the CLI's installed sibling. Read only that named setting:
+Use one binary and one isolated data directory throughout:
 
 ```bash
-if [ "${JACKIN_USAGE_BROKER_BIN+x}" = x ]; then
-  printf 'set: %s\n' "$JACKIN_USAGE_BROKER_BIN"
-else
-  printf 'unset\n'
-fi
+JACKIN=/Users/donbeave/.local/share/jackin-claude-monitor-v2/bin/jackin
+DATA=/Users/donbeave/.local/share/jackin-claude-monitor-v2/state
+BROKER=/Users/donbeave/.local/share/jackin-claude-monitor-v2/bin/jackin-usage-broker
 ```
 
-`unset` means the installed CLI will use its sibling
-`/Users/donbeave/.local/share/jackin-claude-monitor/bin/jackin-usage-broker`.
-`set:` identifies a present setting; it must name that exact path. If it is empty or
-names another path, stop before service or monitor commands and report the
-setting and expected path to the operator. Do not unset or change Claude's
-environment. The version and CLI help checks do not validate this broker
-pairing.
+First confirm that `"$JACKIN" usage --help` exposes `doctor`, `service`,
+`binding confirm`, `policy approve`, `monitor observe|start`, `status`,
+`watch`, `wait`, and `statusline compose`. If help or binary pairing differs,
+stop and report the binary paths and output. An unset `JACKIN_USAGE_BROKER_BIN`
+is normal and selects the sibling broker. If explicitly set, it must be a
+non-empty exact `"$BROKER"` path; if empty or different, stop and report it.
+Do not change the environment or fall back to the v1 pair or a repository build.
+The removed `usage host snapshot` and `usage host projection` commands are not
+fallbacks.
 
-`usage host snapshot` and `usage host projection` are removed. If either old
-command is requested or rejected, stop and report the CLI error and binary path
-to the operator. Never retry it with a repository build, snapshot/bootstrap,
-forced provider refresh or authentication command.
+### One-time local setup
 
-## Local setup order
-
-First inspect service status with the installed binary and isolated data
-directory:
+Inspect the service in this v2 data directory:
 
 ```bash
-/Users/donbeave/.local/share/jackin-claude-monitor/bin/jackin usage service status --format json --data-dir /Users/donbeave/.local/share/jackin-claude-monitor/state
+"$JACKIN" usage service status --format json --data-dir "$DATA"
 ```
 
-If it reports `running: true`, reattach only if the operator can identify it as
-the previously verified local-only service for this same data directory. Its
-status reply does not identify its executor. If its mode is unknown, halt this
-setup and report the unknown mode; do not stop the running service.
-`broker_unavailable` alone does not prove no service exists;
-an incompatible or unreachable service may be present. Confirm that this data
-directory has no existing service before a fresh start. That absence is
-confirmed for the current setup, and the user has already authorized this safe
-local-service start; do not ask for authorization again. A fresh start launches
-the sibling broker with `--local-only`; it does not discover accounts, resolve
-credentials, or contact providers. Start the service before proposing or
-installing the statusline adapter:
+If the directory is confirmed new and has never had a service, start it
+explicitly:
 
 ```bash
-/Users/donbeave/.local/share/jackin-claude-monitor/bin/jackin usage service start --format json --data-dir /Users/donbeave/.local/share/jackin-claude-monitor/state
+"$JACKIN" usage service start --format json --data-dir "$DATA"
 ```
 
-Do not use `monitor start` to start the service implicitly. Do not run auth
-preparation, Keychain access, a forced provider refresh, or change the
-environment. If service startup fails or `doctor` reports `broker_unavailable`,
-stop and report the issue; do not fall back to a projection or another refresh
-or auth path.
+This starts the local-only broker; it does not discover accounts, resolve
+credentials, or contact Claude. If a service is already running but its exact
+v2 CLI/broker identity is unknown, or status only reports `broker_unavailable`
+and the directory's history is unclear, stop and report. Do not stop, kill, or
+replace an unknown service.
 
-After the fresh service is running, generate a settings proposal with the same
-binary, account, and data directory. Replace the quoted `SETTINGS_FILE`
-placeholder with the operator-supplied absolute path to the existing Claude
-settings file:
+Run passive readiness once:
 
 ```bash
-/Users/donbeave/.local/share/jackin-claude-monitor/bin/jackin usage statusline compose --account ACCOUNT --settings 'SETTINGS_FILE' --format json --data-dir /Users/donbeave/.local/share/jackin-claude-monitor/state
+"$JACKIN" usage doctor --provider claude --unattended --format json --data-dir "$DATA"
 ```
 
-Review that only `statusLine.command` changes. Composition prints JSON; it does
-not write settings or start Claude. Do not apply it, restart Claude, or change
-project/session settings in this task. Wait for operator review, adapter
-installation, and confirmation that `ACCOUNT` is the bound account before
-continuing. The statusline account, spend receipt and monitor must use the same
-operator-bound `ACCOUNT`; never infer it from a session ID.
+Doctor does not read Keychain or contact Claude. `report.auth_state: "unknown"`
+and `auth_status_unknown` are informational, not evidence of authentication or
+quota readiness. Do not loop doctor to wait for callbacks; use monitor status
+and watch for evidence.
 
-Record a genuine fresh current-period SGD account receipt before the first
-monitor is created:
+If the operator has supplied the exact local account ID and label, use the
+account-bound path. Confirm the binding in an attended terminal:
 
 ```bash
-/Users/donbeave/.local/share/jackin-claude-monitor/bin/jackin usage spend record --account ACCOUNT --file '/absolute/path/to/operator-supplied-current-spend.json' --verified --format json --data-dir /Users/donbeave/.local/share/jackin-claude-monitor/state
+"$JACKIN" usage binding confirm --provider claude --account ACCOUNT_ID --operator-label OPERATOR_LABEL --confirm --format json --data-dir "$DATA"
 ```
 
-The receipt must match the account and active billing period, use SGD with
-exponent 2, and be no more than 300 seconds old. `--verified` records operator
-attestation; Jackin does not independently verify provider billing. A monitor
-captures its baseline only when first created. Because this goal already has
-work before monitoring, that prior spend is untracked and unknown; do not claim
-the SGD50 guard caps whole-goal historical spend or change the goal ID to erase
-that attribution. If the receipt is missing, stale, unverified, or incompatible,
-do not create the monitor or assume zero spend.
+Binding confirmation requires stdin, stdout, and stderr to be terminals. The
+binding is an operator-supplied account label, not provider authentication;
+never infer the account from a session ID. Save `binding.binding_id` and
+`binding.revision`. Repeating the same provider, account ID, and label returns
+the same binding ID and revision. A changed label creates a new revision; do
+not change it during a retry.
 
-## Monitor commands
-
-After setup and receipt recording, use only these commands with this binary and
-data directory:
+Print a bound statusline settings proposal for review:
 
 ```bash
-/Users/donbeave/.local/share/jackin-claude-monitor/bin/jackin usage doctor --provider claude --unattended --format json --data-dir /Users/donbeave/.local/share/jackin-claude-monitor/state
-/Users/donbeave/.local/share/jackin-claude-monitor/bin/jackin usage monitor start --provider claude --account ACCOUNT --goal GOAL --budget-sgd 50 --format json --data-dir /Users/donbeave/.local/share/jackin-claude-monitor/state
-/Users/donbeave/.local/share/jackin-claude-monitor/bin/jackin usage status --monitor MONITOR_ID --format json --data-dir /Users/donbeave/.local/share/jackin-claude-monitor/state
-/Users/donbeave/.local/share/jackin-claude-monitor/bin/jackin usage watch --monitor MONITOR_ID --timeout-secs 300 --format jsonl --data-dir /Users/donbeave/.local/share/jackin-claude-monitor/state
-/Users/donbeave/.local/share/jackin-claude-monitor/bin/jackin usage wait --monitor MONITOR_ID --until runnable --timeout-secs 300 --format json --data-dir /Users/donbeave/.local/share/jackin-claude-monitor/state
+"$JACKIN" usage statusline compose --binding BINDING_ID --binding-revision REVISION --settings '/absolute/path/to/existing/settings.json' --format json --data-dir "$DATA"
 ```
 
-Save the returned `status.monitor_id` as `MONITOR_ID`; a blocked start still
-returns it with exit 2. Reuse the existing goal and monitor. A new monitor or
-goal cannot bypass an account quota pause. A goal started without a valid
-baseline remains budget-unverifiable; a later receipt does not create a
-retroactive zero-spend baseline.
+Review the JSON proposal. Composition only prints JSON and changes
+`statusLine.command` in that proposed value. Do not write it to settings, apply
+it, restart Claude Code, or alter project/session settings in this handoff.
+No real account callback has been verified; do not claim account quota evidence
+or readiness from the proposal.
 
-Read `status.five_hour` and `status.seven_day` independently. Their
-`used_percentage_basis_points` are integers: 9000 means 90%. Missing values,
-`unavailable` or `stale` field freshness, or a non-runnable status mean unknown
-or blocked. Require `used_evidence.freshness` and `reset_evidence.freshness`
-to be `current` independently for each window. Unchanged fields can become
-stale even while a sibling field changes; do not reinterpret the callback as
-fresh evidence for every field. Status replies contain `result`
-and `status`; Watch JSONL contains events with a nested `status`. A fresh Watch attachment supplies the current
-reconciled event, then later events.
+If no account binding is ready, do not invent an account ID or confirm a
+placeholder. Use the unbound session-only path once the real session ID is
+available from a genuine statusline callback or the operator identifies the
+actual Claude session:
 
-Follow each `status.latest_decision.sequence` once per monitor. Persist the last
-handled sequence with the goal checkpoint. Process all actions in order:
+```bash
+"$JACKIN" usage statusline compose --session-only --settings '/absolute/path/to/existing/settings.json' --format json --data-dir "$DATA"
+```
 
-- `checkpoint`: stop starting large packs and ask every active lane to save a
-  commit or durable WIP checkpoint, including exact resume steps.
-- `reduce_dispatch`: honor `max_parallel`; use only small, bounded,
-  checkpointed slices. `max_parallel: 0` means start no new work.
-- `pause`: finish only the current slice, checkpoint, stop new dispatch, and
-  wait for new evidence before resuming.
-- `wait`: if `status.runnable` is true, treat this only as a reevaluation hint;
-  continue work within any checkpoint or dispatch limits. Do not pause solely
-  because `wait` is present. When `status.runnable` is false, checkpoint and
-  use a bounded `usage wait --until runnable`; re-read status before resuming.
-- `warn`: report the issue and keep work within the remaining verified guards.
+Review this proposal without applying it. Never generate an arbitrary session
+ID. Session-only evidence remains unbound, is not merged into an account
+aggregate, and cannot authorize dispatch.
 
-At 90% used, checkpoint and stop large packs; at 91%, reduce concurrency; at
-95%, pause after the current slice. A jump can include all these actions.
-Quota pauses remain latched across idle, sleep, restart and new monitors.
+### Observe without creating a goal
 
-Never run snapshot/bootstrap, interactive auth, or a forced provider refresh
-when unattended. Monitor `refresh` only reconciles local evidence; it does not
-fetch a provider. On degraded readiness, missing evidence, an unavailable
-broker, or an unverifiable budget, checkpoint and report the stable issue code.
-A live hung broker requires operator lifecycle intervention; do not attempt
-unattended process killing or lease replacement.
-`status.runnable` is authoritative regardless of lifecycle or a `wait` action.
-At healthy usage, a future reset can produce `wait` while the status remains
-runnable; this schedules reevaluation and does not block dispatch. `pause` or
-`status.runnable: false` blocks new work. Use `usage wait --until runnable`
-with a bounded timeout only while blocked, then read status again before work.
-Exit 0 means the command's permitted success condition. Exit 2 means
-blocked/degraded; exit 3 means unavailable/invalid. Doctor can return 0 with informational
-`auth_status_unknown`; that is not proof of current quota or credential access.
+Create one observer for the selected scope, using a durable key that you save
+in the checkpoint:
 
-Treat reset times as reevaluation hints only. `reset_due_unverified` is not
-permission to resume. When blocked, keep using bounded waits for fresh paired
-evidence confirming the relevant reset; time passing alone does not release the
-pause. Retain weekly, model and spend guards after a five-hour reset. A bounded
-wait can return `wait_timeout` with exit 2; checkpoint remains in effect and a
-later bounded wait may be issued. Do not bypass Retry-After. Automatic
-resumption and fresh data during inactivity are not guaranteed.
+```bash
+# Bound account, after operator-confirmed binding:
+"$JACKIN" usage monitor observe --provider claude --binding BINDING_ID --binding-revision REVISION --idempotency-key claude-account-observer-v2 --format json --data-dir "$DATA"
 
-Use `status.cumulative_goal_spend` for spend attributed since monitor creation,
-and `status.spend_period_baseline` for its account/period binding. Current spend
-evidence is the `status.evidence` entry with `value.kind: "spend"`; its amount,
-verification and age must be usable: account IDs and billing periods must match
-the baseline, `value.verification` must be `verified`, and `age_seconds` must be
-at most 300. `amount_minor: 5000` with `currency: "SGD"` and `exponent: 2`
-means SGD50. Do not recompute spend by subtracting session cost. Work done
-before the first monitor has no Jackin attribution and remains unknown; a fresh
-receipt cannot make that historical work part of the monitor's cumulative
-spend.
+# Unbound session, only with the actual SESSION_ID described above:
+"$JACKIN" usage monitor observe --provider claude --session SESSION_ID --idempotency-key SESSION_OBSERVER_KEY --format json --data-dir "$DATA"
+```
 
-Treat spend as unknown unless the response has an explicit SGD amount with
-exponent 2, verified fresh evidence and a valid same-account/same-period goal
-baseline. `verified` means an operator attested the receipt; Jackin has not
-independently verified provider billing. Session list-price cost, USD, unknown
-credits and unverified receipts are not billed SGD. Keep the configured SGD50 guard: SGD40 warns, SGD45
-checkpoints and stops new work, and SGD48 pauses. Billing rollover does not
-erase cumulative goal spend. `budget_unverifiable` requires checkpointing and
-reporting, not a zero-spend assumption. Respect the operator-configured
-account-side Anthropic monthly spending limit; Jackin is not a hard per-goal
-SGD billing cap.
+Neither observer needs a spend receipt or creates a goal or dispatch policy.
+Each only records evidence; `status.purpose` is `observe_only`,
+`status.goal_id` is null, `status.readiness.dispatch` is `not_authorized`, and
+`status.runnable` is always false. A successful observer creation can exit 0
+while quota evidence is unknown. Save `status.monitor_id` as `MONITOR_ID`.
+For an unbound observer, `status.account_id` is null and its evidence cannot be
+account-aggregated or later merged into a binding. Do not run
+`wait --until runnable` on an observer; it is never dispatch-runnable.
+
+Retries with the same idempotency key and identical configuration return the
+same monitor, including after it is stopped. Reusing the key with changed
+configuration is an `idempotency_conflict`. A new key creates an intentional
+new monitor; it does not clear account quota pauses or reset goal spend. Check
+`status.lifecycle`: retrying a stopped monitor with its old key returns that
+stopped record and does not reactivate it. Use a new key only for an
+operator-intended new run, never to bypass a pause or policy guard.
+
+### Monitor command schema
+
+These are the current source CLI argument names. `--format` and `--data-dir`
+are global `usage` options:
+
+```bash
+"$JACKIN" usage status --monitor MONITOR_ID --format json --data-dir "$DATA"
+"$JACKIN" usage watch --monitor MONITOR_ID --timeout-secs 300 --format jsonl --data-dir "$DATA"
+```
+
+Status replies have `result` and nested `status`. Watch emits JSONL events with
+`sequence`, `occurred_at_epoch`, and nested `status`. Status includes
+`schema_version`, `readiness.{tracking,quota,budget,dispatch}`, authoritative
+`runnable`, `five_hour`, `seven_day`, `evidence`, `latest_decision`, `issues`,
+and spend fields. A blocked/degraded reply can still contain useful JSON and
+exit 2; exit 3 means unavailable or invalid. Preserve the JSON and stable
+`issues[].code`. These exit codes describe valid commands' runtime outcomes;
+Clap argument/parse errors happen before runtime, exit 2 on stderr, and do not
+produce a JSON reply.
+
+The inspected source uses broker protocol v6 and monitor/statusline schema 2.
+The parent is adding report-only reset/model metadata: per-window
+`reset_validity` (`unknown`, `future`, or `due`) with independent field ages,
+plus `expected_model` and `model_guard_validity`. These fields explain evidence
+validity; they do not change policy or `status.runnable`. Their final JSON paths
+and presence must be confirmed against the verified binary before relying on
+them.
+
+The bounded wait command is for a blocked **dispatch guard** only, and accepts
+`--monitor ID --until runnable --timeout-secs 1..300`:
+
+```bash
+"$JACKIN" usage wait --monitor MONITOR_ID --until runnable --timeout-secs 300 --format json --data-dir "$DATA"
+"$JACKIN" usage status --monitor MONITOR_ID --format json --data-dir "$DATA"
+```
+
+After every wait, re-read status and resume only if `status.runnable` is true.
+A timeout remains blocked and requires checkpoint/reporting; time passing
+alone does not release a pause.
+
+### Decisions, quota evidence, and blockers
+
+Read five-hour and seven-day windows independently. For each, inspect
+`used_percentage_basis_points`, `used_evidence.freshness` and
+`reset_evidence.freshness` separately; 9000 means 90%. Missing or stale fields
+are unknown. A sibling update or repeated identical callback does not renew the
+other field's age. Apply each ordered `status.latest_decision.actions` list
+once per `latest_decision.sequence`, saving the last handled decision sequence
+with the durable goal checkpoint:
+
+- `checkpoint`: stop starting large packs and save durable WIP with exact
+  resume steps.
+- `reduce_dispatch`: obey `max_parallel`; zero means start no new work.
+- `pause`: finish only the bounded current slice, checkpoint, and stop new
+  dispatch.
+- `wait`: if `status.runnable` is true, this is only a reevaluation hint; obey
+  any other actions and continue within their limits. If false, checkpoint,
+  use bounded wait, then re-read status.
+- `warn`: report it and keep work within the remaining verified guards.
+
+Each quota window checkpoints at 90%, reduces dispatch at 91%, and pauses at
+95%; a jump can emit multiple ordered actions. A future reset time is only a
+hint. After a 95% pause, wait for the reset grace and a fresh paired used-plus-
+reset observation with an advanced reset and lower usage than the prior high.
+Only the resulting `status.runnable` can permit work. A five-hour reset does
+not clear a seven-day guard; weekly usage and reset evidence must independently
+be current and clear. `reset_due_unverified`, missing evidence, or a stale
+window stays blocked.
+
+On a broker, callback, quota, or spend blocker, checkpoint the active work,
+report its stable issue code and exit the goal cleanly. Do not retry doctor in
+a loop, invoke authentication, force provider refresh, use old host commands,
+or kill/replace a broker. `usage refresh` is local reconciliation only; it is
+not a way to fetch fresh provider data. Current data during inactivity and
+automatic reset confirmation are not guaranteed.
+
+### Dispatch policy and spend (not approved in this handoff)
+
+Do not run `policy approve` or `monitor start` during this observation setup.
+There is no dispatch policy approved here, and quota-only is not currently
+approved. Both binding and policy approval require an attended terminal on all
+three standard streams plus explicit `--confirm`; there is no headless bypass.
+Only an explicit operator choice can authorize a later policy:
+
+```bash
+# Strict approval is an operator choice; first activation also needs a genuine fresh baseline:
+"$JACKIN" usage policy approve --binding BINDING_ID --binding-revision REVISION --goal EXISTING_GOAL --policy strict-sgd --budget-sgd 50 --operator-label OPERATOR_LABEL --confirm --format json --data-dir "$DATA"
+
+# Quota-only is a separate operator choice and has no SGD spend cap:
+"$JACKIN" usage policy approve --binding BINDING_ID --binding-revision REVISION --goal EXISTING_GOAL --policy quota-only --operator-label OPERATOR_LABEL --confirm --acknowledge-no-sgd-cap --format json --data-dir "$DATA"
+```
+
+Strict first activation requires a fresh, verified, same-account, active-period
+SGD baseline compatible with the approved budget, with exponent 2 and age at
+most 300 seconds. `--verified` on
+`usage spend record --account ACCOUNT_ID --file RECEIPT --verified` is operator
+attestation, not independent provider verification. No receipt is supplied for
+this setup; do not fabricate or record one for observation. A failed strict
+activation must not create a goal or reserve its idempotency key. The first successful
+activation captures the baseline; earlier work remains unknown and is not
+retroactively attributed. Keep cumulative goal spend across billing periods;
+unknown, stale, or unverified spend means checkpoint and pause, never assume
+zero. Quota-only reports spend enforcement disabled and spend unknown.
+
+Policy changes fail closed: any prior strict-SGD policy cannot be changed to
+quota-only, even before activation. An activated quota-only goal cannot be
+changed to strict-SGD. Do not suggest a new goal as a policy-switch or quota
+workaround. Any new attribution boundary requires explicit operator direction
+and its own operator-approved policy; it must preserve the prior goal,
+baseline, spend, decisions, and unknown history. Never rename an existing goal
+or replace its baseline to erase historical uncertainty.
+
+For a later, separately authorized dispatch start, the exact arguments are:
+
+```bash
+"$JACKIN" usage monitor start --provider claude --binding BINDING_ID --binding-revision REVISION --goal EXISTING_GOAL --policy-revision POLICY_REVISION --idempotency-key UNIQUE_START_KEY --format json --data-dir "$DATA"
+```
+
+Reuse the same start key only for the identical configuration; use a new
+unique key for an intentional new run without changing the existing goal.
+With a strict SGD 50 budget, SGD 40 warns, SGD 45 checkpoints and sets
+`max_parallel` to zero, SGD 48 pauses, and reaching the cap blocks dispatch on
+verified cumulative evidence. This is a local dispatch guard, not a cap on
+Anthropic's billed charges. Quota limits remain independent of spend guards.

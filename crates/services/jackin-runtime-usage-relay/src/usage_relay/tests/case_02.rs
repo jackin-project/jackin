@@ -323,3 +323,146 @@ fn hermetic_layout_never_starts_or_queries_the_usage_broker() {
     assert!(!paths.data_dir.exists());
     assert_eq!(fs::read_to_string(&paths.config_file).unwrap(), config);
 }
+
+#[tokio::test]
+async fn usage_relay_denies_every_monitor_operation_including_operator_claims() {
+    use jackin_protocol::usage_monitor::{
+        MonitorAccountBindingInput, MonitorConfig, MonitorOperation, MonitorPolicy,
+        MonitorPolicyApprovalInput, MonitorProvider, MonitorPurpose, MonitorScope,
+        SpendRecordInput, SpendRecordSource, StatuslineObservation,
+    };
+
+    let temp = tempfile::tempdir().unwrap();
+    // A broker client without a running broker proves denial occurs at the
+    // relay boundary: any accidentally forwarded request returns Unavailable.
+    let broker = UsageBrokerConfig::for_data_dir(temp.path().join("data")).client();
+    let allowlist = UsageCapabilitySet::new([]);
+    let binding_id = "operator-confirmed-binding".to_owned();
+
+    let requests = [
+        MonitorOperation::BindAccount {
+            binding: MonitorAccountBindingInput {
+                provider: MonitorProvider::Claude,
+                account_id: "local-account".to_owned(),
+                operator_label: "work Claude account".to_owned(),
+                operator_confirmed: true,
+            },
+        },
+        MonitorOperation::ApprovePolicy {
+            approval: MonitorPolicyApprovalInput {
+                binding_id: binding_id.clone(),
+                binding_revision: 1,
+                goal_id: "approved-goal".to_owned(),
+                new_policy: MonitorPolicy::StrictSgd,
+                budget: Some(jackin_protocol::control::Money::new(5_000, "SGD", 2)),
+                operator_label: "explicit strict approval".to_owned(),
+                operator_confirmed: true,
+                acknowledge_no_sgd_cap: false,
+                expected_revision: None,
+            },
+        },
+        MonitorOperation::ApprovePolicy {
+            approval: MonitorPolicyApprovalInput {
+                binding_id: binding_id.clone(),
+                binding_revision: 1,
+                goal_id: "approved-goal".to_owned(),
+                new_policy: MonitorPolicy::QuotaOnly,
+                budget: None,
+                operator_label: "explicit quota-only approval".to_owned(),
+                operator_confirmed: true,
+                acknowledge_no_sgd_cap: true,
+                expected_revision: None,
+            },
+        },
+        MonitorOperation::Start {
+            config: MonitorConfig {
+                provider: MonitorProvider::Claude,
+                purpose: MonitorPurpose::ObserveOnly,
+                scope: MonitorScope::Session {
+                    session_id: "unbound-session".to_owned(),
+                },
+                goal_id: None,
+                expected_model: None,
+                policy_revision: None,
+            },
+            idempotency_key: "observe-only-start".to_owned(),
+        },
+        MonitorOperation::Start {
+            config: MonitorConfig {
+                provider: MonitorProvider::Claude,
+                purpose: MonitorPurpose::DispatchGuard,
+                scope: MonitorScope::BoundAccount {
+                    binding_id: binding_id.clone(),
+                    binding_revision: 1,
+                    session_id: Some("bound-session".to_owned()),
+                },
+                goal_id: Some("approved-goal".to_owned()),
+                expected_model: Some("claude-fixture".to_owned()),
+                policy_revision: Some(1),
+            },
+            idempotency_key: "dispatch-start".to_owned(),
+        },
+        MonitorOperation::Stop {
+            monitor_id: "monitor-1".to_owned(),
+        },
+        MonitorOperation::Status {
+            monitor_id: "monitor-1".to_owned(),
+        },
+        MonitorOperation::Doctor {
+            provider: MonitorProvider::Claude,
+        },
+        MonitorOperation::Ingest {
+            scope: MonitorScope::Session {
+                session_id: "unbound-session".to_owned(),
+            },
+            observation: StatuslineObservation {
+                schema_version: jackin_protocol::usage_monitor::USAGE_MONITOR_SCHEMA_VERSION,
+                session_id: "unbound-session".to_owned(),
+                ..StatuslineObservation::default()
+            },
+        },
+        MonitorOperation::RecordSpend {
+            record: SpendRecordInput {
+                account_id: "local-account".to_owned(),
+                billing_period_start_epoch: 1,
+                billing_period_end_epoch: 2,
+                amount: jackin_protocol::control::Money::new(0, "SGD", 2),
+                evidence_at_epoch: None,
+                verified: true,
+                source: SpendRecordSource::OperatorReceipt,
+            },
+        },
+        MonitorOperation::Refresh {
+            monitor_id: "monitor-1".to_owned(),
+        },
+        MonitorOperation::ServiceStatus,
+        MonitorOperation::ServiceStop,
+        MonitorOperation::PrepareAuth {
+            provider: MonitorProvider::Claude,
+        },
+        MonitorOperation::Watch {
+            monitor_id: "monitor-1".to_owned(),
+            after_sequence: 0,
+            timeout_ms: 0,
+        },
+    ];
+
+    for request in requests {
+        let description = format!("{request:?}");
+        let denied = dispatch(
+            UsageBrokerOperation::Monitor { request },
+            broker.clone(),
+            allowlist.clone(),
+            UsageCredentialScope::default(),
+        )
+        .await;
+        let UsageBrokerResponse::Error { error } = denied else {
+            panic!("monitor operation was forwarded: {description}");
+        };
+        assert_eq!(
+            error.kind,
+            UsageCoordinationErrorKind::Unauthorized,
+            "monitor operation crossed the relay boundary: {description}"
+        );
+    }
+}

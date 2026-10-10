@@ -89,7 +89,8 @@ fn caller_supplied_catalog_reconciliation_is_not_a_wire_operation() {
         "catalog_revision": "caller-controlled",
         "entries": [],
     });
-    assert!(serde_json::from_value::<UsageBrokerOperation>(operation).is_err());
+    serde_json::from_value::<UsageBrokerOperation>(operation)
+        .expect_err("caller-supplied catalog reconciliation must be rejected");
 }
 
 #[test]

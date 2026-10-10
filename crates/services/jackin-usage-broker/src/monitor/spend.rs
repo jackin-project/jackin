@@ -50,6 +50,103 @@ pub(crate) struct SpendState {
     pub cumulative_complete: bool,
 }
 
+/// Check that persisted account receipts retain their syntactic shape and
+/// account binding. Unverified receipts and unsupported currencies are valid
+/// account history: they remain available for audit but cannot authorize a
+/// budget comparison.
+pub(super) fn validate_account_spend_state(state: &SpendAccountState) -> bool {
+    let records = [
+        state.latest_record.as_ref(),
+        state.current_period_record.as_ref(),
+        state.previous_period_record.as_ref(),
+    ];
+    let mut account_id = None;
+    for record in records.into_iter().flatten() {
+        if record.account_id.trim().is_empty()
+            || record.billing_period_start_epoch < 0
+            || record.billing_period_end_epoch <= record.billing_period_start_epoch
+            || record.amount.amount_minor < 0
+            || !matches!(record.source, SpendRecordSource::OperatorReceipt)
+            || (record.verification != SpendVerification::Unverified
+                && !is_supported_sgd(&record.amount))
+            || (record.verification == SpendVerification::Verified
+                && !verified_evidence_is_coherent(record))
+            || account_id.is_some_and(|account_id| account_id != record.account_id.as_str())
+        {
+            return false;
+        }
+        account_id = Some(record.account_id.as_str());
+    }
+    true
+}
+
+/// Check spend history before it is trusted by the budget guard or accepted in
+/// persisted goal state. A missing baseline is retained for historical V1
+/// state, but an asserted baseline must be paired with a coherent verified
+/// anchor and cumulative total.
+pub(super) fn validate_spend_state(state: &SpendState) -> bool {
+    let baseline = state.baseline.as_ref();
+    let anchor = state.period_anchor.as_ref();
+    let cumulative = state.cumulative_goal_spend.as_ref();
+
+    if baseline.is_some_and(|record| !valid_goal_spend_anchor(record))
+        || anchor.is_some_and(|record| !valid_goal_spend_anchor(record))
+        || cumulative.is_some_and(|amount| !is_supported_sgd(amount) || amount.amount_minor < 0)
+    {
+        return false;
+    }
+
+    // Legacy history can have no original baseline. Preserve it when the
+    // anchor and cumulative amount travel together, but reject partial pairs.
+    if anchor.is_some() != cumulative.is_some() {
+        return false;
+    }
+
+    let Some(baseline) = baseline else {
+        return true;
+    };
+    let (Some(anchor), Some(cumulative)) = (anchor, cumulative) else {
+        return false;
+    };
+    if baseline.account_id != anchor.account_id
+        || (!state.cumulative_complete && !state.rollover_unknown)
+    {
+        return false;
+    }
+
+    if same_period(baseline, anchor) {
+        if anchor.amount.amount_minor < baseline.amount.amount_minor {
+            return false;
+        }
+        let expected_cumulative = anchor.amount.amount_minor - baseline.amount.amount_minor;
+        cumulative.amount_minor == expected_cumulative
+    } else {
+        // The anchor may advance across any number of periods. Gaps are
+        // represented by rollover_unknown/cumulative_complete and remain
+        // fail-closed at evaluation time.
+        anchor.billing_period_start_epoch >= baseline.billing_period_end_epoch
+            && cumulative.amount_minor >= anchor.amount.amount_minor
+    }
+}
+
+fn valid_goal_spend_anchor(record: &SpendRecord) -> bool {
+    !record.account_id.trim().is_empty()
+        && record.billing_period_start_epoch >= 0
+        && record.billing_period_end_epoch > record.billing_period_start_epoch
+        && record.amount.amount_minor >= 0
+        && is_supported_sgd(&record.amount)
+        && record.verification == SpendVerification::Verified
+        && verified_evidence_is_coherent(record)
+        && matches!(record.source, SpendRecordSource::OperatorReceipt)
+}
+
+fn verified_evidence_is_coherent(record: &SpendRecord) -> bool {
+    record.evidence_received_at_epoch >= 0
+        && record.evidence_at_epoch.is_none_or(|evidence_at| {
+            evidence_at >= 0 && evidence_at <= record.evidence_received_at_epoch
+        })
+}
+
 /// Result of evaluating account spend against one monitor's budget.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpendDecision {
@@ -269,6 +366,9 @@ pub(crate) fn capture_goal_baseline(
     budget: Option<&Money>,
     now_epoch: i64,
 ) -> SpendState {
+    if !validate_account_spend_state(account) {
+        return SpendState::default();
+    }
     let (Some(latest), Some(current)) = (
         account.latest_record.as_ref(),
         account.current_period_record.as_ref(),
@@ -310,7 +410,10 @@ pub(crate) fn advance_goal_spend(
     budget: Option<&Money>,
     now_epoch: i64,
 ) {
-    if state.baseline.is_none() {
+    if !validate_spend_state(state)
+        || !validate_account_spend_state(account)
+        || state.baseline.is_none()
+    {
         return;
     }
 
@@ -400,6 +503,16 @@ pub(crate) fn evaluate_spend_policy(
     state: &SpendState,
     now_epoch: i64,
 ) -> SpendDecision {
+    let spend_state_is_valid = validate_spend_state(state);
+    let account_state_is_valid = validate_account_spend_state(account)
+        && [
+            account.latest_record.as_ref(),
+            account.current_period_record.as_ref(),
+            account.previous_period_record.as_ref(),
+        ]
+        .into_iter()
+        .flatten()
+        .all(|record| record.account_id == account_id);
     let latest = account.latest_record.as_ref();
     let mut verification =
         latest.map_or(SpendVerification::Unavailable, |record| record.verification);
@@ -424,12 +537,18 @@ pub(crate) fn evaluate_spend_policy(
         .current_period_record
         .as_ref()
         .is_some_and(|current| money_matches_budget(&current.amount, budget));
+    let cumulative_is_compatible = state
+        .cumulative_goal_spend
+        .as_ref()
+        .is_some_and(|cumulative| money_matches_budget(cumulative, budget));
     let budget_is_valid = budget.is_some_and(valid_budget);
     let budget_unverifiable = !budget_is_valid
+        || !spend_state_is_valid
+        || !account_state_is_valid
         || verification != SpendVerification::Verified
         || !baseline_is_compatible
         || !current_is_compatible
-        || state.cumulative_goal_spend.is_none()
+        || !cumulative_is_compatible
         || !state.cumulative_complete
         || rollover_unknown;
 
@@ -439,8 +558,11 @@ pub(crate) fn evaluate_spend_policy(
     } else if verification == SpendVerification::Stale {
         push_issue(&mut issues, MonitorIssueCode::SpendStale);
     } else if verification != SpendVerification::Verified
+        || !spend_state_is_valid
+        || !account_state_is_valid
         || !baseline_is_compatible
         || !current_is_compatible
+        || !cumulative_is_compatible
     {
         push_issue(&mut issues, MonitorIssueCode::SpendUnverified);
     }
@@ -685,6 +807,112 @@ mod tests {
         .expect("valid account spend receipt");
         assert_eq!(record.verification, SpendVerification::Verified);
         account
+    }
+
+    #[test]
+    fn spend_state_validation_blocks_unverified_baselines_and_incompatible_cumulative_money() {
+        let now = PERIOD_START + 10;
+        let account = account_with_baseline(now, 1_000);
+        let budget = budget(5_000);
+        let valid = capture_goal_baseline(&account, Some(&budget), now);
+        assert!(validate_spend_state(&valid));
+
+        let mut unverified_baseline = valid.clone();
+        unverified_baseline
+            .baseline
+            .as_mut()
+            .expect("captured baseline")
+            .verification = SpendVerification::Unverified;
+        assert!(!validate_spend_state(&unverified_baseline));
+        let decision = evaluate_spend_policy(
+            ACCOUNT,
+            GOAL,
+            Some(&budget),
+            &account,
+            &unverified_baseline,
+            now,
+        );
+        assert!(decision.budget_unverifiable);
+        assert!(decision.actions.contains(&MonitorAction::Pause {
+            reason: MonitorIssueCode::BudgetUnverifiable,
+        }));
+
+        let mut future_evidence_baseline = valid.clone();
+        future_evidence_baseline
+            .baseline
+            .as_mut()
+            .expect("captured baseline")
+            .evidence_at_epoch = Some(now + 1);
+        assert!(!validate_spend_state(&future_evidence_baseline));
+        let decision = evaluate_spend_policy(
+            ACCOUNT,
+            GOAL,
+            Some(&budget),
+            &account,
+            &future_evidence_baseline,
+            now,
+        );
+        assert!(decision.budget_unverifiable);
+
+        let mut incompatible_cumulative = valid.clone();
+        incompatible_cumulative.cumulative_goal_spend = Some(Money::new(0, "USD", SGD_EXPONENT));
+        assert!(!validate_spend_state(&incompatible_cumulative));
+        let decision = evaluate_spend_policy(
+            ACCOUNT,
+            GOAL,
+            Some(&budget),
+            &account,
+            &incompatible_cumulative,
+            now,
+        );
+        assert!(decision.budget_unverifiable);
+        assert!(decision.actions.contains(&MonitorAction::Pause {
+            reason: MonitorIssueCode::BudgetUnverifiable,
+        }));
+
+        let mut future_verified_current = account.clone();
+        future_verified_current
+            .current_period_record
+            .as_mut()
+            .expect("current verified receipt")
+            .evidence_at_epoch = Some(now + 1);
+        assert!(!validate_account_spend_state(&future_verified_current));
+        let decision = evaluate_spend_policy(
+            ACCOUNT,
+            GOAL,
+            Some(&budget),
+            &future_verified_current,
+            &valid,
+            now,
+        );
+        assert!(decision.budget_unverifiable);
+
+        let mut wrong_exponent = valid.clone();
+        wrong_exponent.cumulative_goal_spend = Some(Money::new(0, SGD_CURRENCY, SGD_EXPONENT + 1));
+        assert!(!validate_spend_state(&wrong_exponent));
+
+        let mut negative_cumulative = valid.clone();
+        negative_cumulative.cumulative_goal_spend =
+            Some(Money::new(-1, SGD_CURRENCY, SGD_EXPONENT));
+        assert!(!validate_spend_state(&negative_cumulative));
+
+        let mut partial_state = valid;
+        partial_state.period_anchor = None;
+        assert!(!validate_spend_state(&partial_state));
+    }
+
+    #[test]
+    fn spend_state_validation_preserves_baseline_less_historical_unknowns() {
+        let now = PERIOD_START + 10;
+        let account = account_with_baseline(now, 1_000);
+        let budget = budget(5_000);
+        let mut historical = capture_goal_baseline(&account, Some(&budget), now);
+        historical.baseline = None;
+
+        assert!(validate_spend_state(&historical));
+        let decision =
+            evaluate_spend_policy(ACCOUNT, GOAL, Some(&budget), &account, &historical, now);
+        assert!(decision.budget_unverifiable);
     }
 
     #[test]
@@ -1125,27 +1353,40 @@ mod tests {
     fn threshold_boundaries_are_exact_and_fingerprints_are_stable() {
         let now = PERIOD_START + 1_000;
         let budget = budget(10_000);
-        let account = account_with_baseline(now, 1_000);
-        let mut state = capture_goal_baseline(&account, Some(&budget), now);
-        state.cumulative_goal_spend = Some(amount(3_999));
-        let below = evaluate_spend_policy(ACCOUNT, GOAL, Some(&budget), &account, &state, now);
+        let evaluate_at = |cumulative: i64, evaluated_at: i64| {
+            let baseline_account = account_with_baseline(now, 1_000);
+            let mut state = capture_goal_baseline(&baseline_account, Some(&budget), now);
+            let (account, record) = record_account_spend(
+                &baseline_account,
+                ACCOUNT,
+                receipt(
+                    PERIOD_START,
+                    PERIOD_END,
+                    amount(1_000 + cumulative),
+                    Some(now),
+                    true,
+                ),
+                now,
+            )
+            .expect("verified total matching the threshold fixture");
+            assert_eq!(record.verification, SpendVerification::Verified);
+            advance_goal_spend(&mut state, &account, Some(&budget), now);
+            evaluate_spend_policy(ACCOUNT, GOAL, Some(&budget), &account, &state, evaluated_at)
+        };
+
+        let below = evaluate_at(3_999, now);
         assert!(below.actions.is_empty());
 
-        state.cumulative_goal_spend = Some(amount(4_000));
-        let warn = evaluate_spend_policy(ACCOUNT, GOAL, Some(&budget), &account, &state, now);
+        let warn = evaluate_at(4_000, now);
         assert_eq!(warn.actions.len(), 1);
         assert!(warn.issues.contains(&MonitorIssueCode::BudgetWarn));
-        let repeated =
-            evaluate_spend_policy(ACCOUNT, GOAL, Some(&budget), &account, &state, now + 1);
+        let repeated = evaluate_at(4_000, now + 1);
         assert_eq!(warn.action_fingerprints, repeated.action_fingerprints);
 
-        state.cumulative_goal_spend = Some(amount(4_499));
-        let below_checkpoint =
-            evaluate_spend_policy(ACCOUNT, GOAL, Some(&budget), &account, &state, now);
+        let below_checkpoint = evaluate_at(4_499, now);
         assert_eq!(below_checkpoint.actions, warn.actions);
 
-        state.cumulative_goal_spend = Some(amount(4_500));
-        let checkpoint = evaluate_spend_policy(ACCOUNT, GOAL, Some(&budget), &account, &state, now);
+        let checkpoint = evaluate_at(4_500, now);
         assert!(checkpoint.actions.contains(&MonitorAction::Checkpoint {
             goal_id: GOAL.to_owned()
         }));
@@ -1153,22 +1394,18 @@ mod tests {
             max_parallel: Some(0)
         }));
 
-        state.cumulative_goal_spend = Some(amount(4_799));
-        let below_pause =
-            evaluate_spend_policy(ACCOUNT, GOAL, Some(&budget), &account, &state, now);
+        let below_pause = evaluate_at(4_799, now);
         assert!(!below_pause.actions.contains(&MonitorAction::Pause {
             reason: MonitorIssueCode::BudgetPause
         }));
 
-        state.cumulative_goal_spend = Some(amount(4_800));
-        let pause = evaluate_spend_policy(ACCOUNT, GOAL, Some(&budget), &account, &state, now);
+        let pause = evaluate_at(4_800, now);
         assert!(pause.actions.contains(&MonitorAction::Pause {
             reason: MonitorIssueCode::BudgetPause
         }));
         assert!(!pause.budget_cap_reached);
 
-        state.cumulative_goal_spend = Some(amount(5_000));
-        let cap = evaluate_spend_policy(ACCOUNT, GOAL, Some(&budget), &account, &state, now);
+        let cap = evaluate_at(5_000, now);
         assert!(cap.budget_cap_reached);
         assert!(cap.actions.contains(&MonitorAction::Pause {
             reason: MonitorIssueCode::BudgetPause
@@ -1179,34 +1416,40 @@ mod tests {
     fn lower_custom_budget_caps_each_threshold_proportionally() {
         let now = PERIOD_START + 1_000;
         let budget = budget(3_000);
-        let account = account_with_baseline(now, 1_000);
-        let mut state = capture_goal_baseline(&account, Some(&budget), now);
-
-        state.cumulative_goal_spend = Some(amount(2_399));
-        assert!(
+        let evaluate_at = |cumulative: i64| {
+            let baseline_account = account_with_baseline(now, 1_000);
+            let mut state = capture_goal_baseline(&baseline_account, Some(&budget), now);
+            let (account, record) = record_account_spend(
+                &baseline_account,
+                ACCOUNT,
+                receipt(
+                    PERIOD_START,
+                    PERIOD_END,
+                    amount(1_000 + cumulative),
+                    Some(now),
+                    true,
+                ),
+                now,
+            )
+            .expect("verified total matching the threshold fixture");
+            assert_eq!(record.verification, SpendVerification::Verified);
+            advance_goal_spend(&mut state, &account, Some(&budget), now);
             evaluate_spend_policy(ACCOUNT, GOAL, Some(&budget), &account, &state, now)
-                .actions
-                .is_empty()
-        );
-        state.cumulative_goal_spend = Some(amount(2_400));
-        assert!(
-            evaluate_spend_policy(ACCOUNT, GOAL, Some(&budget), &account, &state, now)
-                .actions
-                .contains(&MonitorAction::Warn {
-                    reason: MonitorIssueCode::BudgetWarn
-                })
-        );
+        };
 
-        state.cumulative_goal_spend = Some(amount(2_699));
+        assert!(evaluate_at(2_399).actions.is_empty());
+        assert!(evaluate_at(2_400).actions.contains(&MonitorAction::Warn {
+            reason: MonitorIssueCode::BudgetWarn
+        }));
+
         assert!(
-            !evaluate_spend_policy(ACCOUNT, GOAL, Some(&budget), &account, &state, now)
+            !evaluate_at(2_699)
                 .actions
                 .contains(&MonitorAction::Checkpoint {
                     goal_id: GOAL.to_owned()
                 })
         );
-        state.cumulative_goal_spend = Some(amount(2_700));
-        let stop = evaluate_spend_policy(ACCOUNT, GOAL, Some(&budget), &account, &state, now);
+        let stop = evaluate_at(2_700);
         assert!(stop.actions.contains(&MonitorAction::Checkpoint {
             goal_id: GOAL.to_owned()
         }));
@@ -1214,27 +1457,13 @@ mod tests {
             max_parallel: Some(0)
         }));
 
-        state.cumulative_goal_spend = Some(amount(2_879));
-        assert!(
-            !evaluate_spend_policy(ACCOUNT, GOAL, Some(&budget), &account, &state, now)
-                .actions
-                .contains(&MonitorAction::Pause {
-                    reason: MonitorIssueCode::BudgetPause
-                })
-        );
-        state.cumulative_goal_spend = Some(amount(2_880));
-        assert!(
-            evaluate_spend_policy(ACCOUNT, GOAL, Some(&budget), &account, &state, now)
-                .actions
-                .contains(&MonitorAction::Pause {
-                    reason: MonitorIssueCode::BudgetPause
-                })
-        );
+        assert!(!evaluate_at(2_879).actions.contains(&MonitorAction::Pause {
+            reason: MonitorIssueCode::BudgetPause
+        }));
+        assert!(evaluate_at(2_880).actions.contains(&MonitorAction::Pause {
+            reason: MonitorIssueCode::BudgetPause
+        }));
 
-        state.cumulative_goal_spend = Some(amount(3_000));
-        assert!(
-            evaluate_spend_policy(ACCOUNT, GOAL, Some(&budget), &account, &state, now)
-                .budget_cap_reached
-        );
+        assert!(evaluate_at(3_000).budget_cap_reached);
     }
 }

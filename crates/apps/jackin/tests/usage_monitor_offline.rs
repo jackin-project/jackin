@@ -18,6 +18,12 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, ensure};
 use assert_cmd::Command;
+use jackin_protocol::control::Money;
+use jackin_protocol::usage_monitor::{
+    MonitorAccountBinding, MonitorAccountBindingInput, MonitorPolicy, MonitorPolicyApprovalInput,
+    MonitorPolicyRecord, MonitorProvider, MonitorReply,
+};
+use jackin_usage::host::UsageBrokerConfig;
 use serde_json::Value;
 use tempfile::TempDir;
 
@@ -185,21 +191,82 @@ impl OfflineFixture {
         }
     }
 
+    fn persisted_monitor_state(&self) -> Result<Value> {
+        let state_path = self
+            .data_dir
+            .join("usage-broker")
+            .join("monitor")
+            .join("state.json");
+        let bytes = fs::read(&state_path).context("read isolated monitor state")?;
+        serde_json::from_slice(&bytes).context("decode isolated monitor state")
+    }
+
+    fn monitor_observe_args(session: &str, idempotency_key: &str) -> Vec<OsString> {
+        [
+            "monitor",
+            "observe",
+            "--provider",
+            "claude",
+            "--session",
+            session,
+            "--expected-model",
+            "claude-sonnet-4-5",
+            "--idempotency-key",
+            idempotency_key,
+        ]
+        .into_iter()
+        .map(OsString::from)
+        .collect()
+    }
+
+    fn monitor_observe_bound_args(
+        binding: &MonitorAccountBinding,
+        idempotency_key: &str,
+    ) -> Vec<OsString> {
+        let binding_revision = binding.revision.to_string();
+        [
+            "monitor",
+            "observe",
+            "--provider",
+            "claude",
+            "--binding",
+            binding.binding_id.as_str(),
+            "--binding-revision",
+            binding_revision.as_str(),
+            "--expected-model",
+            "claude-sonnet-4-5",
+            "--idempotency-key",
+            idempotency_key,
+        ]
+        .into_iter()
+        .map(OsString::from)
+        .collect()
+    }
+
     fn monitor_start_args(
-        account: &str,
+        binding: &MonitorAccountBinding,
         session: &str,
         goal: &str,
-        budget: Option<&str>,
+        policy_revision: u64,
+        idempotency_key: &str,
     ) -> Vec<OsString> {
-        let mut args = [
+        let binding_revision = binding.revision.to_string();
+        let policy_revision = policy_revision.to_string();
+        [
             "monitor",
             "start",
             "--provider",
             "claude",
-            "--account",
-            account,
+            "--binding",
+            binding.binding_id.as_str(),
+            "--binding-revision",
+            binding_revision.as_str(),
             "--goal",
             goal,
+            "--policy-revision",
+            policy_revision.as_str(),
+            "--idempotency-key",
+            idempotency_key,
             "--session",
             session,
             "--expected-model",
@@ -207,12 +274,84 @@ impl OfflineFixture {
         ]
         .into_iter()
         .map(OsString::from)
-        .collect::<Vec<_>>();
-        if let Some(budget) = budget {
-            args.push(OsString::from("--budget-sgd"));
-            args.push(OsString::from(budget));
-        }
-        args
+        .collect()
+    }
+
+    fn session_ingest_args() -> Vec<OsString> {
+        ["statusline", "ingest", "--session-only"]
+            .into_iter()
+            .map(OsString::from)
+            .collect()
+    }
+
+    fn bound_ingest_args(binding: &MonitorAccountBinding) -> Vec<OsString> {
+        let binding_revision = binding.revision.to_string();
+        [
+            "statusline",
+            "ingest",
+            "--binding",
+            binding.binding_id.as_str(),
+            "--binding-revision",
+            binding_revision.as_str(),
+        ]
+        .into_iter()
+        .map(OsString::from)
+        .collect()
+    }
+
+    fn bind_fixture_account(&self, account_id: &str) -> Result<MonitorAccountBinding> {
+        // This is a private test-only same-UID broker DTO path. It supplies
+        // fake operator attestation to this isolated fixture; the CLI's live
+        // operator command remains TTY-gated.
+        let client = UsageBrokerConfig::for_data_dir(self.data_dir.clone()).client();
+        let reply = client
+            .monitor(
+                jackin_protocol::usage_monitor::MonitorOperation::BindAccount {
+                    binding: MonitorAccountBindingInput {
+                        provider: MonitorProvider::Claude,
+                        account_id: account_id.to_owned(),
+                        operator_label: "offline fixture operator".to_owned(),
+                        operator_confirmed: true,
+                    },
+                },
+            )
+            .map_err(|issue| anyhow::anyhow!("fixture binding failed: {issue:?}"))?;
+        let MonitorReply::AccountBound { binding } = reply else {
+            anyhow::bail!("fixture account binding returned an unexpected reply: {reply:?}");
+        };
+        Ok(binding)
+    }
+
+    fn approve_fixture_strict_policy(
+        &self,
+        binding: &MonitorAccountBinding,
+        goal_id: &str,
+        budget: Money,
+    ) -> Result<MonitorPolicyRecord> {
+        // Keep all policy seeding local to the throwaway broker and test
+        // identity; never route fake operator approval through the CLI.
+        let client = UsageBrokerConfig::for_data_dir(self.data_dir.clone()).client();
+        let reply = client
+            .monitor(
+                jackin_protocol::usage_monitor::MonitorOperation::ApprovePolicy {
+                    approval: MonitorPolicyApprovalInput {
+                        binding_id: binding.binding_id.clone(),
+                        binding_revision: binding.revision,
+                        goal_id: goal_id.to_owned(),
+                        new_policy: MonitorPolicy::StrictSgd,
+                        budget: Some(budget),
+                        operator_label: "offline fixture operator".to_owned(),
+                        operator_confirmed: true,
+                        acknowledge_no_sgd_cap: false,
+                        expected_revision: None,
+                    },
+                },
+            )
+            .map_err(|issue| anyhow::anyhow!("fixture policy approval failed: {issue:?}"))?;
+        let MonitorReply::PolicyApproved { policy } = reply else {
+            anyhow::bail!("fixture policy approval returned an unexpected reply: {reply:?}");
+        };
+        Ok(policy)
     }
 
     fn monitor_args(command: &str, monitor_id: &str) -> Vec<OsString> {
@@ -286,10 +425,14 @@ fn create_tripwire(path: &Path) -> Result<()> {
     Ok(())
 }
 
+#[track_caller]
 fn expect_exit(output: &Output, code: i32) -> Result<()> {
+    let caller = std::panic::Location::caller();
     ensure!(
         output.status.code() == Some(code),
-        "expected exit {code}, got {:?}; stdout={}; stderr={}",
+        "operation at {}:{} expected exit {code}, got {:?}; stdout={}; stderr={}",
+        caller.file(),
+        caller.line(),
         output.status.code(),
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr),
@@ -326,6 +469,13 @@ fn monitor_id(reply: &Value) -> Result<String> {
         .and_then(Value::as_str)
         .map(str::to_owned)
         .context("monitor reply omitted its stable ID")
+}
+
+fn monitor_id_sequence(monitor_id: &str) -> Result<u64> {
+    monitor_id
+        .rsplit_once('-')
+        .and_then(|(_, sequence)| sequence.parse().ok())
+        .context("monitor ID did not contain its durable sequence")
 }
 
 fn has_issue(status: &Value, expected: &str) -> Result<bool> {
@@ -397,6 +547,68 @@ fn isolated_usage_help_advertises_monitor_capabilities() -> Result<()> {
 }
 
 #[test]
+fn v2_cli_scopes_are_advertised_without_legacy_monitor_flags() -> Result<()> {
+    let fixture = OfflineFixture::new()?;
+    for (args, required, removed) in [
+        (
+            vec!["monitor", "observe", "--help"],
+            vec![
+                "--session",
+                "--binding",
+                "--binding-revision",
+                "--idempotency-key",
+            ],
+            vec!["--account", "--budget-sgd"],
+        ),
+        (
+            vec!["monitor", "start", "--help"],
+            vec![
+                "--binding",
+                "--binding-revision",
+                "--goal",
+                "--policy-revision",
+                "--idempotency-key",
+            ],
+            vec!["--account", "--budget-sgd"],
+        ),
+        (
+            vec!["statusline", "ingest", "--help"],
+            vec!["--session-only", "--binding", "--binding-revision"],
+            vec!["--account"],
+        ),
+        (
+            vec!["statusline", "compose", "--help"],
+            vec![
+                "--settings",
+                "--session-only",
+                "--binding",
+                "--binding-revision",
+            ],
+            vec!["--account"],
+        ),
+    ] {
+        let output = fixture.run(&args, None)?;
+        expect_exit(&output, 0)?;
+        let help = String::from_utf8_lossy(&output.stdout);
+        for option in required {
+            ensure!(help.contains(option), "help omitted {option}: {help}");
+        }
+        for option in removed {
+            ensure!(
+                !help.contains(option),
+                "help retained removed {option}: {help}"
+            );
+        }
+    }
+    ensure!(
+        !fixture.data_dir.join("usage-broker/run").exists(),
+        "reading v2 command help started a local broker"
+    );
+    fixture.assert_no_external_activity()?;
+    Ok(())
+}
+
+#[test]
 fn removed_host_projection_syntax_fails_before_external_work() -> Result<()> {
     let fixture = OfflineFixture::new()?;
     let run_dir = fixture.data_dir.join("usage-broker/run");
@@ -461,6 +673,49 @@ fn isolated_monitor_cli_stays_local_and_fails_closed_until_evidence_is_safe() ->
         String::from_utf8_lossy(&auth_prepare.stderr)
     );
     let run_dir = fixture.data_dir.join("usage-broker/run");
+
+    // Binding and policy approval are operator actions. Captured stdio is
+    // non-TTY, so both must reject before creating or contacting a broker.
+    for args in [
+        vec![
+            "binding",
+            "confirm",
+            "--provider",
+            "claude",
+            "--account",
+            "fixture-account",
+            "--operator-label",
+            "offline fixture",
+            "--confirm",
+        ],
+        vec![
+            "policy",
+            "approve",
+            "--binding",
+            "fixture-binding",
+            "--binding-revision",
+            "1",
+            "--goal",
+            "fixture-goal",
+            "--policy",
+            "strict-sgd",
+            "--budget-sgd",
+            "50",
+            "--operator-label",
+            "offline fixture",
+            "--confirm",
+        ],
+    ] {
+        let rejected = fixture.run(&args, None)?;
+        expect_exit(&rejected, 2)?;
+        ensure!(json_output(&rejected)?["error"]["code"] == "interaction_required");
+        ensure!(
+            !run_dir.exists(),
+            "headless operator action contacted a broker"
+        );
+        fixture.assert_no_external_activity()?;
+    }
+
     ensure!(!run_dir.exists(), "passive reads started a local broker");
     fixture.assert_no_external_activity()?;
 
@@ -496,8 +751,8 @@ fn isolated_monitor_cli_stays_local_and_fails_closed_until_evidence_is_safe() ->
         ensure!(json_output(&bare_usage)?["providers"].as_array().is_some());
     }
 
-    let malformed = fixture.run(
-        &["statusline", "ingest", "--account", "fixture-account"],
+    let malformed = fixture.run_owned(
+        OfflineFixture::session_ingest_args(),
         Some(b"{\"session_id\":"),
     )?;
     expect_exit(&malformed, 3)?;
@@ -505,31 +760,47 @@ fn isolated_monitor_cli_stays_local_and_fails_closed_until_evidence_is_safe() ->
 
     let mut oversized = vec![b' '; STATUSLINE_MAX_BYTES + 1];
     oversized[0] = b'{';
-    let too_large = fixture.run(
-        &["statusline", "ingest", "--account", "fixture-account"],
-        Some(&oversized),
-    )?;
+    let too_large = fixture.run_owned(OfflineFixture::session_ingest_args(), Some(&oversized))?;
     expect_exit(&too_large, 3)?;
     ensure!(json_output(&too_large)?["error"]["code"] == "statusline_too_large");
 
-    let start_args = OfflineFixture::monitor_start_args(
-        "fixture-account",
-        "offline-session",
-        "fixture-goal",
-        None,
-    );
+    let start_args = OfflineFixture::monitor_observe_args("offline-session", "observer-run-1");
     let started = fixture.run_owned(start_args, None)?;
-    expect_exit(&started, 2)?;
+    expect_exit(&started, 0)?;
     let started_json = json_output(&started)?;
     ensure!(started_json["result"] == "started");
     let monitor_id_value = monitor_id(&started_json)?;
     let initial_status = status_object(&started_json)?;
+    ensure!(initial_status["purpose"] == "observe_only");
+    ensure!(initial_status["scope"]["scope"] == "session");
+    ensure!(initial_status["scope"]["session_id"] == "offline-session");
+    ensure!(initial_status["account_id"].is_null());
+    ensure!(initial_status["goal_id"].is_null());
+    ensure!(initial_status["budget"].is_null());
+    ensure!(initial_status["readiness"]["dispatch"] == "not_authorized");
     ensure!(!runnable(initial_status)?);
     ensure_issue(initial_status, "quota_unknown")?;
     ensure_issue(initial_status, "missing_reset")?;
     ensure_issue(initial_status, "model_unknown")?;
-    ensure_issue(initial_status, "spend_unavailable")?;
-    ensure_issue(initial_status, "budget_unverifiable")?;
+
+    let repeated_start = fixture.run_owned(
+        OfflineFixture::monitor_observe_args("offline-session", "observer-run-1"),
+        None,
+    )?;
+    expect_exit(&repeated_start, 0)?;
+    ensure!(
+        monitor_id(&json_output(&repeated_start)?)? == monitor_id_value,
+        "repeating one observer idempotency key created a second monitor"
+    );
+    let changed_observer = fixture.run_owned(
+        OfflineFixture::monitor_observe_args("different-session", "observer-run-1"),
+        None,
+    )?;
+    expect_exit(&changed_observer, 3)?;
+    ensure!(
+        json_output(&changed_observer)?["error"]["code"] == "idempotency_conflict",
+        "reusing an observer key with a different scope was not rejected"
+    );
 
     let status_args = OfflineFixture::monitor_args("status", &monitor_id_value);
     let blocked = fixture.run_owned(status_args, None)?;
@@ -537,6 +808,7 @@ fn isolated_monitor_cli_stays_local_and_fails_closed_until_evidence_is_safe() ->
     let blocked_json = json_output(&blocked)?;
     ensure!(blocked_json["result"] == "status");
     ensure!(!runnable(status_object(&blocked_json)?)?);
+    ensure!(status_object(&blocked_json)?["readiness"]["dispatch"] == "not_authorized");
     ensure_issue(status_object(&blocked_json)?, "quota_unknown")?;
 
     let watch_start = Instant::now();
@@ -577,13 +849,12 @@ fn isolated_monitor_cli_stays_local_and_fails_closed_until_evidence_is_safe() ->
         "official fixture exceeded the accepted limit"
     );
     exact_limit.resize(STATUSLINE_MAX_BYTES, b' ');
-    let ingest = fixture.run(
-        &["statusline", "ingest", "--account", "fixture-account"],
-        Some(&exact_limit),
-    )?;
+    let ingest = fixture.run_owned(OfflineFixture::session_ingest_args(), Some(&exact_limit))?;
     expect_exit(&ingest, 0)?;
     let ingest_json = json_output(&ingest)?;
     ensure!(ingest_json["result"] == "ingested");
+    ensure!(ingest_json["scope"]["scope"] == "session");
+    ensure!(ingest_json["account_id"].is_null());
     let first_evidence_sequence = ingest_json["evidence_sequence"].clone();
 
     let first_status_args = OfflineFixture::monitor_args("status", &monitor_id_value);
@@ -592,15 +863,15 @@ fn isolated_monitor_cli_stays_local_and_fails_closed_until_evidence_is_safe() ->
     let first_status_json = json_output(&first_status)?;
     let first_status_object = status_object(&first_status_json)?;
     ensure!(!runnable(first_status_object)?);
-    ensure_issue(first_status_object, "spend_unavailable")?;
-    ensure_issue(first_status_object, "budget_unverifiable")?;
+    ensure!(first_status_object["readiness"]["dispatch"] == "not_authorized");
+    ensure!(first_status_object["budget"].is_null());
     let first_field_sequence =
         first_status_object["five_hour"]["used_evidence"]["evidence_sequence"].clone();
     let first_received_at =
         first_status_object["five_hour"]["used_evidence"]["evidence_received_at_epoch"].clone();
 
-    let duplicate_ingest = fixture.run(
-        &["statusline", "ingest", "--account", "fixture-account"],
+    let duplicate_ingest = fixture.run_owned(
+        OfflineFixture::session_ingest_args(),
         Some(&current_statusline),
     )?;
     expect_exit(&duplicate_ingest, 0)?;
@@ -621,8 +892,8 @@ fn isolated_monitor_cli_stays_local_and_fails_closed_until_evidence_is_safe() ->
     ensure!(fresh_status["five_hour"]["used_percentage_basis_points"] == 1234);
     ensure!(fresh_status["five_hour"]["reset_at_epoch"] == five_hour_reset);
     ensure!(fresh_status["spend_period_baseline"].is_null());
-    ensure_issue(fresh_status, "spend_unavailable")?;
-    ensure_issue(fresh_status, "budget_unverifiable")?;
+    ensure!(fresh_status["budget"].is_null());
+    ensure!(fresh_status["readiness"]["dispatch"] == "not_authorized");
     ensure!(
         fresh_status["five_hour"]["used_evidence"]["evidence_sequence"] == first_field_sequence
     );
@@ -637,7 +908,122 @@ fn isolated_monitor_cli_stays_local_and_fails_closed_until_evidence_is_safe() ->
     let refreshed_json = json_output(&refreshed)?;
     let refreshed_status = status_object(&refreshed_json)?;
     ensure!(!runnable(refreshed_status)?);
-    ensure_issue(refreshed_status, "budget_unverifiable")?;
+    ensure!(refreshed_status["readiness"]["dispatch"] == "not_authorized");
+
+    // A session-only callback remains in its unbound partition. Bind the
+    // account through the private fixture DTO and ingest separately before
+    // exercising an account-scoped dispatch guard.
+    let account_binding = fixture.bind_fixture_account("fixture-account")?;
+    let account_ingest = fixture.run_owned(
+        OfflineFixture::bound_ingest_args(&account_binding),
+        Some(&current_statusline),
+    )?;
+    expect_exit(&account_ingest, 0)?;
+    let account_ingest_json = json_output(&account_ingest)?;
+    ensure!(account_ingest_json["scope"]["scope"] == "bound_account");
+    ensure!(account_ingest_json["account_id"] == "fixture-account");
+
+    let bound_observer_args =
+        OfflineFixture::monitor_observe_bound_args(&account_binding, "bound-observer-run-1");
+    let bound_observer = fixture.run_owned(bound_observer_args.clone(), None)?;
+    expect_exit(&bound_observer, 0)?;
+    let bound_observer_json = json_output(&bound_observer)?;
+    let bound_observer_id = monitor_id(&bound_observer_json)?;
+    let bound_observer_status = status_object(&bound_observer_json)?;
+    ensure!(bound_observer_status["purpose"] == "observe_only");
+    ensure!(bound_observer_status["scope"]["scope"] == "bound_account");
+    ensure!(bound_observer_status["scope"]["binding_id"] == account_binding.binding_id);
+    ensure!(bound_observer_status["scope"]["binding_revision"] == account_binding.revision);
+    ensure!(bound_observer_status["account_id"] == "fixture-account");
+    ensure!(bound_observer_status["goal_id"].is_null());
+    ensure!(bound_observer_status["budget"].is_null());
+    ensure!(bound_observer_status["readiness"]["dispatch"] == "not_authorized");
+    ensure!(!runnable(bound_observer_status)?);
+    let repeated_bound_observer = fixture.run_owned(bound_observer_args, None)?;
+    expect_exit(&repeated_bound_observer, 0)?;
+    ensure!(
+        monitor_id(&json_output(&repeated_bound_observer)?)? == bound_observer_id,
+        "repeating a bound observer idempotency key created a second monitor"
+    );
+
+    let bound_settings_path = fixture.root.path().join("bound-statusline-settings.json");
+    let original_bound_settings = serde_json::json!({"theme": "dark"});
+    let original_bound_settings_text = serde_json::to_string(&original_bound_settings)?;
+    fs::write(&bound_settings_path, &original_bound_settings_text)?;
+    let bound_settings_path = bound_settings_path
+        .to_str()
+        .context("temporary statusline settings path is not UTF-8")?;
+    let binding_revision = account_binding.revision.to_string();
+    let compose_args = [
+        "statusline",
+        "compose",
+        "--binding",
+        account_binding.binding_id.as_str(),
+        "--binding-revision",
+        binding_revision.as_str(),
+        "--settings",
+        bound_settings_path,
+    ]
+    .into_iter()
+    .map(OsString::from)
+    .collect::<Vec<_>>();
+    let bound_composed = fixture.run_owned(compose_args, None)?;
+    expect_exit(&bound_composed, 0)?;
+    let bound_composed_settings = json_output(&bound_composed)?;
+    ensure!(bound_composed_settings["theme"] == "dark");
+    let composed_command = bound_composed_settings["statusLine"]["command"]
+        .as_str()
+        .context("bound statusline compose omitted its command")?;
+    ensure!(composed_command.contains(account_binding.binding_id.as_str()));
+    ensure!(composed_command.contains(binding_revision.as_str()));
+    ensure!(
+        fs::read_to_string(bound_settings_path)? == original_bound_settings_text,
+        "bound statusline compose wrote the proposed settings file"
+    );
+
+    let unapproved_start = fixture.run_owned(
+        OfflineFixture::monitor_start_args(
+            &account_binding,
+            "offline-session",
+            "policy-required-goal",
+            1,
+            "policy-required-run",
+        ),
+        None,
+    )?;
+    expect_exit(&unapproved_start, 2)?;
+    ensure!(json_output(&unapproved_start)?["error"]["code"] == "policy_required");
+
+    let strict_goal = "strict-admission-goal";
+    let strict_policy = fixture.approve_fixture_strict_policy(
+        &account_binding,
+        strict_goal,
+        Money::new(5_000, "SGD", 2),
+    )?;
+    let strict_start_args = OfflineFixture::monitor_start_args(
+        &account_binding,
+        "offline-session",
+        strict_goal,
+        strict_policy.revision,
+        "strict-admission-run",
+    );
+    let missing_baseline_start = fixture.run_owned(strict_start_args.clone(), None)?;
+    expect_exit(&missing_baseline_start, 2)?;
+    let missing_baseline_json = json_output(&missing_baseline_start)?;
+    ensure!(missing_baseline_json["error"]["code"] == "budget_unverifiable");
+    ensure!(
+        missing_baseline_json["monitor_id"].is_null(),
+        "failed strict activation returned a monitor ID"
+    );
+    ensure!(
+        missing_baseline_json["status"].is_null(),
+        "failed strict activation returned a partially activated monitor"
+    );
+    let failed_activation_state = fixture.persisted_monitor_state()?;
+    ensure!(
+        failed_activation_state["goals"].get(strict_goal).is_none(),
+        "failed strict activation persisted a partial goal"
+    );
 
     let receipt_epoch = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -687,14 +1073,43 @@ fn isolated_monitor_cli_stays_local_and_fails_closed_until_evidence_is_safe() ->
     expect_exit(&due_account_receipt, 0)?;
     ensure!(json_output(&due_account_receipt)?["record"]["verification"] == "verified");
 
-    // A fresh goal can capture the new receipt; the goal created before the
-    // receipt remains budget-unverifiable. Both goals still share the account
-    // quota guard.
+    // Retrying the exact failed activation after a compatible receipt uses
+    // the same idempotency key and succeeds, proving the failed request did
+    // not reserve the key or persist a partial goal.
+    let strict_start = fixture.run_owned(strict_start_args.clone(), None)?;
+    expect_exit(&strict_start, 0)?;
+    let strict_start_json = json_output(&strict_start)?;
+    ensure!(strict_start_json["result"] == "started");
+    let strict_monitor_id = monitor_id(&strict_start_json)?;
+    ensure!(
+        monitor_id_sequence(&strict_monitor_id)? == monitor_id_sequence(&bound_observer_id)? + 1,
+        "failed strict start consumed a durable monitor ID"
+    );
+    let strict_status = status_object(&strict_start_json)?;
+    ensure!(runnable(strict_status)?);
+    ensure!(strict_status["goal_id"] == strict_goal);
+    ensure!(
+        !has_issue(strict_status, "budget_unverifiable")?,
+        "verified spend receipt did not admit the strict goal"
+    );
+    let repeated_strict_start = fixture.run_owned(strict_start_args, None)?;
+    expect_exit(&repeated_strict_start, 0)?;
+    ensure!(
+        monitor_id(&json_output(&repeated_strict_start)?)? == strict_monitor_id,
+        "retrying a successful strict start with the same key created a duplicate"
+    );
+
+    let reset_policy = fixture.approve_fixture_strict_policy(
+        &account_binding,
+        "reset-goal",
+        Money::new(5_000, "SGD", 2),
+    )?;
     let reset_goal_args = OfflineFixture::monitor_start_args(
-        "fixture-account",
+        &account_binding,
         "offline-session",
         "reset-goal",
-        Some("50"),
+        reset_policy.revision,
+        "reset-goal-run",
     );
     let reset_goal_start = fixture.run_owned(reset_goal_args, None)?;
     expect_exit(&reset_goal_start, 0)?;
@@ -702,10 +1117,7 @@ fn isolated_monitor_cli_stays_local_and_fails_closed_until_evidence_is_safe() ->
     ensure!(reset_goal_json["result"] == "started");
     let reset_goal_id = monitor_id(&reset_goal_json)?;
     let reset_goal_start_status = status_object(&reset_goal_json)?;
-    ensure!(
-        reset_goal_start_status["goal_id"] == "reset-goal" && reset_goal_id != monitor_id_value,
-        "new budgeted goal was merged into an existing goal: {reset_goal_json}"
-    );
+    ensure!(reset_goal_start_status["goal_id"] == "reset-goal");
     ensure!(runnable(reset_goal_start_status)?);
     ensure!(
         !has_issue(reset_goal_start_status, "budget_unverifiable")?,
@@ -723,8 +1135,8 @@ fn isolated_monitor_cli_stays_local_and_fails_closed_until_evidence_is_safe() ->
             "seven_day": {"used_percentage": 96.0, "resets_at": five_hour_reset + 100_000}
         }
     }))?;
-    let guarded_ingest = fixture.run(
-        &["statusline", "ingest", "--account", "fixture-account"],
+    let guarded_ingest = fixture.run_owned(
+        OfflineFixture::bound_ingest_args(&account_binding),
         Some(&guarded_statusline),
     )?;
     expect_exit(&guarded_ingest, 0)?;
@@ -801,8 +1213,8 @@ fn isolated_monitor_cli_stays_local_and_fails_closed_until_evidence_is_safe() ->
             "seven_day": {"used_percentage": 8.0, "resets_at": five_hour_reset + 100_000}
         }
     }))?;
-    let same_reset_ingest = fixture.run(
-        &["statusline", "ingest", "--account", "fixture-account"],
+    let same_reset_ingest = fixture.run_owned(
+        OfflineFixture::bound_ingest_args(&account_binding),
         Some(&same_reset_lower_usage),
     )?;
     expect_exit(&same_reset_ingest, 0)?;
@@ -824,8 +1236,8 @@ fn isolated_monitor_cli_stays_local_and_fails_closed_until_evidence_is_safe() ->
             "seven_day": {"used_percentage": 8.0, "resets_at": advanced_seven_day_reset}
         }
     }))?;
-    let advanced_ingest = fixture.run(
-        &["statusline", "ingest", "--account", "fixture-account"],
+    let advanced_ingest = fixture.run_owned(
+        OfflineFixture::bound_ingest_args(&account_binding),
         Some(&advanced_reset),
     )?;
     expect_exit(&advanced_ingest, 0)?;
@@ -850,17 +1262,24 @@ fn isolated_monitor_cli_stays_local_and_fails_closed_until_evidence_is_safe() ->
             "seven_day": {"used_percentage": 8.0, "resets_at": due_reset_epoch}
         }
     }))?;
-    let due_account_ingest = fixture.run(
-        &["statusline", "ingest", "--account", "due-account"],
+    let due_binding = fixture.bind_fixture_account("due-account")?;
+    let due_account_ingest = fixture.run_owned(
+        OfflineFixture::bound_ingest_args(&due_binding),
         Some(&due_account_statusline),
     )?;
     expect_exit(&due_account_ingest, 0)?;
+    let due_policy = fixture.approve_fixture_strict_policy(
+        &due_binding,
+        "due-wait-goal",
+        Money::new(5_000, "SGD", 2),
+    )?;
     let due_monitor_start = fixture.run_owned(
         OfflineFixture::monitor_start_args(
-            "due-account",
+            &due_binding,
             "due-session",
             "due-wait-goal",
-            Some("50"),
+            due_policy.revision,
+            "due-wait-run",
         ),
         None,
     )?;
@@ -888,50 +1307,6 @@ fn isolated_monitor_cli_stays_local_and_fails_closed_until_evidence_is_safe() ->
     ensure_issue(due_monitor_wait_status, "reset_due_unverified")?;
     ensure_issue(due_monitor_wait_status, "wait_timeout")?;
 
-    // A spend receipt added after goal creation cannot silently rewrite that
-    // goal's missing baseline. The new goal above owns the new attestation.
-    let original_goal_status = fixture.run_owned(
-        OfflineFixture::monitor_args("status", &monitor_id_value),
-        None,
-    )?;
-    expect_exit(&original_goal_status, 2)?;
-    let original_goal_status_json = json_output(&original_goal_status)?;
-    let original_goal_status_object = status_object(&original_goal_status_json)?;
-    ensure!(!runnable(original_goal_status_object)?);
-    ensure_issue(original_goal_status_object, "spend_unavailable")?;
-    ensure_issue(original_goal_status_object, "budget_unverifiable")?;
-
-    let unverified_spend_start_args = OfflineFixture::monitor_start_args(
-        "unverified-account",
-        "unverified-spend-session",
-        "unverified-spend-goal",
-        Some("50"),
-    );
-    let unverified_spend_start = fixture.run_owned(unverified_spend_start_args, None)?;
-    expect_exit(&unverified_spend_start, 2)?;
-    let unverified_spend_json = json_output(&unverified_spend_start)?;
-    let unverified_spend_id = monitor_id(&unverified_spend_json)?;
-    ensure_issue(status_object(&unverified_spend_json)?, "spend_unavailable")?;
-    ensure_issue(
-        status_object(&unverified_spend_json)?,
-        "budget_unverifiable",
-    )?;
-    let unverified_ingest = fixture.run(
-        &["statusline", "ingest", "--account", "unverified-account"],
-        Some(&current_statusline),
-    )?;
-    expect_exit(&unverified_ingest, 0)?;
-    let unverified_status = fixture.run_owned(
-        OfflineFixture::monitor_args("status", &unverified_spend_id),
-        None,
-    )?;
-    expect_exit(&unverified_status, 2)?;
-    let unverified_status_json = json_output(&unverified_status)?;
-    let unverified_status_object = status_object(&unverified_status_json)?;
-    ensure!(!runnable(unverified_status_object)?);
-    ensure_issue(unverified_status_object, "spend_unavailable")?;
-    ensure_issue(unverified_status_object, "budget_unverifiable")?;
-
     let stop_monitor_args = ["monitor", "stop", "--monitor", monitor_id_value.as_str()]
         .into_iter()
         .map(OsString::from)
@@ -948,6 +1323,14 @@ fn isolated_monitor_cli_stays_local_and_fails_closed_until_evidence_is_safe() ->
     expect_exit(&stopped_reset_goal, 0)?;
     ensure!(json_output(&stopped_reset_goal)?["result"] == "stopped");
 
+    let stop_strict_goal_args = ["monitor", "stop", "--monitor", strict_monitor_id.as_str()]
+        .into_iter()
+        .map(OsString::from)
+        .collect();
+    let stopped_strict_goal = fixture.run_owned(stop_strict_goal_args, None)?;
+    expect_exit(&stopped_strict_goal, 0)?;
+    ensure!(json_output(&stopped_strict_goal)?["result"] == "stopped");
+
     let stop_due_monitor_args = ["monitor", "stop", "--monitor", due_monitor_id.as_str()]
         .into_iter()
         .map(OsString::from)
@@ -955,14 +1338,6 @@ fn isolated_monitor_cli_stays_local_and_fails_closed_until_evidence_is_safe() ->
     let stopped_due_monitor = fixture.run_owned(stop_due_monitor_args, None)?;
     expect_exit(&stopped_due_monitor, 0)?;
     ensure!(json_output(&stopped_due_monitor)?["result"] == "stopped");
-
-    let stop_unverified_spend_args = ["monitor", "stop", "--monitor", unverified_spend_id.as_str()]
-        .into_iter()
-        .map(OsString::from)
-        .collect();
-    let stopped_unverified_spend = fixture.run_owned(stop_unverified_spend_args, None)?;
-    expect_exit(&stopped_unverified_spend, 0)?;
-    ensure!(json_output(&stopped_unverified_spend)?["result"] == "stopped");
 
     fixture.assert_no_external_activity()?;
     fixture.stop_service()?;
@@ -976,7 +1351,7 @@ fn statusline_size_limit_rejects_oversized_input_before_broker_access() -> Resul
     let mut oversized = vec![b' '; STATUSLINE_MAX_BYTES + 1];
     oversized[0] = b'{';
     let output = fixture.run(
-        &["statusline", "ingest", "--account", "fixture-account"],
+        &["statusline", "ingest", "--session-only"],
         Some(&oversized),
     )?;
     expect_exit(&output, 3)?;

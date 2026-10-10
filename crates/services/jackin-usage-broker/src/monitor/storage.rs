@@ -9,7 +9,9 @@ use std::os::unix::fs::MetadataExt as _;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use jackin_protocol::usage_monitor::{MonitorIssue, MonitorIssueCode};
+use jackin_protocol::usage_monitor::{
+    MonitorIssue, MonitorIssueCode, USAGE_MONITOR_SCHEMA_VERSION,
+};
 use nix::fcntl::{OFlag, open, openat, renameat};
 use nix::sys::stat::{Mode, fchmod, mkdirat};
 use nix::unistd::{UnlinkatFlags, fsync, geteuid, unlinkat};
@@ -84,7 +86,24 @@ pub(super) fn load(dir: &File) -> Result<Option<StoreState>, MonitorIssue> {
     if bytes.len() > MAX_STORE_BYTES {
         return Err(unavailable());
     }
-    let state = serde_json::from_slice(&bytes).map_err(|_| unavailable())?;
+    let version = serde_json::from_slice::<serde_json::Value>(&bytes)
+        .ok()
+        .and_then(|value| value.get("schema_version")?.as_u64())
+        .and_then(|version| u16::try_from(version).ok())
+        .ok_or_else(unavailable)?;
+    let state = match version {
+        1 => super::legacy::migrate_v1(&bytes)?,
+        USAGE_MONITOR_SCHEMA_VERSION => {
+            serde_json::from_slice(&bytes).map_err(|_| unavailable())?
+        }
+        _ => return Err(unavailable()),
+    };
+    super::validate_store_state(&state)?;
+    if version == 1 {
+        // The converted V2 snapshot replaces V1 only after full semantic
+        // validation; `save` publishes it through the existing fsync+rename path.
+        save(dir, &state)?;
+    }
     Ok(Some(state))
 }
 

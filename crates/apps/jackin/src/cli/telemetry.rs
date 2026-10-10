@@ -14,7 +14,10 @@ use super::{
 use super::DaemonCommand;
 use super::account::AccountCommand;
 use super::role::RoleCommand;
-use super::usage::UsageScope;
+use super::usage::{
+    UsageAuthCommand, UsageBindingCommand, UsageMonitorCommand, UsagePolicyCommand, UsageScope,
+    UsageServiceCommand, UsageSpendCommand, UsageStatuslineCommand,
+};
 
 #[must_use]
 pub const fn command_name(command: &Command) -> CliCommandName {
@@ -78,18 +81,37 @@ const fn usage_command_name(scope: Option<&UsageScope>) -> CliCommandName {
         None => CliCommandName::Usage,
         Some(UsageScope::Accounts(_)) => CliCommandName::UsageAccounts,
         Some(UsageScope::Verify) => CliCommandName::UsageVerify,
-        Some(
-            UsageScope::Doctor(_)
-            | UsageScope::Service(_)
-            | UsageScope::Monitor(_)
-            | UsageScope::Status(_)
-            | UsageScope::Refresh(_)
-            | UsageScope::Watch(_)
-            | UsageScope::Wait(_)
-            | UsageScope::Statusline(_)
-            | UsageScope::Spend(_)
-            | UsageScope::Auth(_),
-        ) => CliCommandName::Usage,
+        Some(UsageScope::Doctor(_)) => CliCommandName::UsageDoctor,
+        Some(UsageScope::Service(args)) => match &args.command {
+            UsageServiceCommand::Start => CliCommandName::UsageServiceStart,
+            UsageServiceCommand::Stop => CliCommandName::UsageServiceStop,
+            UsageServiceCommand::Status => CliCommandName::UsageServiceStatus,
+        },
+        Some(UsageScope::Monitor(args)) => match &args.command {
+            UsageMonitorCommand::Observe(_) => CliCommandName::UsageMonitorObserve,
+            UsageMonitorCommand::Start(_) => CliCommandName::UsageMonitorStart,
+            UsageMonitorCommand::Stop(_) => CliCommandName::UsageMonitorStop,
+        },
+        Some(UsageScope::Binding(args)) => match &args.command {
+            UsageBindingCommand::Confirm(_) => CliCommandName::UsageBindingConfirm,
+        },
+        Some(UsageScope::Policy(args)) => match &args.command {
+            UsagePolicyCommand::Approve(_) => CliCommandName::UsagePolicyApprove,
+        },
+        Some(UsageScope::Status(_)) => CliCommandName::UsageStatus,
+        Some(UsageScope::Refresh(_)) => CliCommandName::UsageRefresh,
+        Some(UsageScope::Watch(_)) => CliCommandName::UsageWatch,
+        Some(UsageScope::Wait(_)) => CliCommandName::UsageWait,
+        Some(UsageScope::Statusline(args)) => match &args.command {
+            UsageStatuslineCommand::Ingest(_) => CliCommandName::UsageStatuslineIngest,
+            UsageStatuslineCommand::Compose(_) => CliCommandName::UsageStatuslineCompose,
+        },
+        Some(UsageScope::Spend(args)) => match &args.command {
+            UsageSpendCommand::Record(_) => CliCommandName::UsageSpendRecord,
+        },
+        Some(UsageScope::Auth(args)) => match &args.command {
+            UsageAuthCommand::Prepare(_) => CliCommandName::UsageAuthPrepare,
+        },
     }
 }
 

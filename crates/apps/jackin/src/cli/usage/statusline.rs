@@ -28,7 +28,7 @@ const MAX_COMPOSED_COMMAND_BYTES: usize = 64 * 1024;
 pub(super) fn compose(
     settings: &Path,
     binary: &Path,
-    account: &str,
+    scope: &super::UsageStatuslineScopeArgs,
     data_dir: &Path,
 ) -> Result<Value> {
     let settings_bytes = match std::fs::File::open(settings) {
@@ -83,14 +83,33 @@ pub(super) fn compose(
     let data_dir = data_dir
         .to_str()
         .context("jackin data directory path must be valid UTF-8")?;
-    if account.is_empty() {
-        bail!("statusline account id must not be empty");
-    }
-    if account.contains('\0') {
-        bail!("statusline account id cannot contain a NUL byte");
-    }
+    let (scope_mode, binding_id, binding_revision) = if scope.session_only {
+        if scope.binding.is_some() || scope.binding_revision.is_some() {
+            bail!("choose exactly `--session-only` or `--binding` with `--binding-revision`");
+        }
+        ("session-only", "", String::new())
+    } else {
+        let binding_id = scope
+            .binding
+            .as_deref()
+            .context("choose `--session-only` or `--binding`")?;
+        let binding_revision = scope
+            .binding_revision
+            .context("`--binding` requires `--binding-revision`")?;
+        if binding_id.trim().is_empty() || binding_id.contains('\0') {
+            bail!("statusline binding id must be nonempty and contain no NUL byte");
+        }
+        ("binding", binding_id, binding_revision.to_string())
+    };
 
-    let composed_command = wrapper_command(&legacy_command, binary, account, data_dir);
+    let composed_command = wrapper_command(
+        &legacy_command,
+        binary,
+        scope_mode,
+        binding_id,
+        &binding_revision,
+        data_dir,
+    );
     if composed_command.len() > MAX_COMPOSED_COMMAND_BYTES {
         bail!("composed Claude Code statusLine.command exceeds the 64 KiB limit");
     }
@@ -111,18 +130,27 @@ pub(super) fn compose(
     Ok(value)
 }
 
-fn wrapper_command(command: &str, binary: &str, account: &str, data_dir: &str) -> String {
+fn wrapper_command(
+    command: &str,
+    binary: &str,
+    scope_mode: &str,
+    binding_id: &str,
+    binding_revision: &str,
+    data_dir: &str,
+) -> String {
     let wrapper = PYTHON_WRAPPER.replace("__MAX_INPUT_BYTES__", &MAX_INPUT_BYTES.to_string());
 
     format!(
-        "sh -c {} jackin-statusline {} {} {} {} {}",
+        "sh -c {} jackin-statusline {} {} {} {} {} {} {}",
         shell_quote(
-            "if command -v python3 >/dev/null 2>&1; then python3 -I -S -c \"$1\" \"$2\" \"$3\" \"$4\" \"$5\"; else \"${SHELL:-/bin/sh}\" -c \"$2\"; fi"
+            "if command -v python3 >/dev/null 2>&1; then python3 -I -S -c \"$1\" \"$2\" \"$3\" \"$4\" \"$5\" \"$6\" \"$7\"; else \"${SHELL:-/bin/sh}\" -c \"$2\"; fi"
         ),
         shell_quote(&wrapper),
         shell_quote(command),
         shell_quote(binary),
-        shell_quote(account),
+        shell_quote(scope_mode),
+        shell_quote(binding_id),
+        shell_quote(binding_revision),
         shell_quote(data_dir),
     )
 }
@@ -135,7 +163,7 @@ import threading
 
 MAX_INPUT_BYTES = __MAX_INPUT_BYTES__
 CAPTURE_LIMIT = MAX_INPUT_BYTES + 1
-legacy_command, jackin_binary, account_id, data_dir = sys.argv[1:5]
+legacy_command, jackin_binary, scope_mode, binding_id, binding_revision, data_dir = sys.argv[1:7]
 shell_path = os.environ.get("SHELL") or "/bin/sh"
 
 try:
@@ -184,6 +212,10 @@ if legacy_status != 0:
     sys.exit(legacy_status if legacy_status > 0 else 128 - legacy_status)
 
 if len(captured) <= MAX_INPUT_BYTES:
+    if scope_mode == "session-only":
+        scope_args = ["--session-only"]
+    else:
+        scope_args = ["--binding", binding_id, "--binding-revision", binding_revision]
     try:
         subprocess.run(
             [
@@ -191,8 +223,7 @@ if len(captured) <= MAX_INPUT_BYTES:
                 "usage",
                 "statusline",
                 "ingest",
-                "--account",
-                account_id,
+                *scope_args,
                 "--format",
                 "json",
                 "--data-dir",
@@ -216,6 +247,7 @@ fn shell_quote(value: &str) -> String {
 
 #[cfg(all(test, unix))]
 mod tests {
+    use super::super::UsageStatuslineScopeArgs;
     use super::*;
     use serde_json::json;
     use std::io::Write;
@@ -237,6 +269,22 @@ mod tests {
         permissions.set_mode(0o700);
         std::fs::set_permissions(&binary_path, permissions).unwrap();
         (settings_path, binary_path)
+    }
+
+    fn session_scope() -> UsageStatuslineScopeArgs {
+        UsageStatuslineScopeArgs {
+            session_only: true,
+            binding: None,
+            binding_revision: None,
+        }
+    }
+
+    fn binding_scope(binding: &str) -> UsageStatuslineScopeArgs {
+        UsageStatuslineScopeArgs {
+            session_only: false,
+            binding: Some(binding.to_owned()),
+            binding_revision: Some(7),
+        }
     }
 
     fn run_composed(
@@ -278,7 +326,7 @@ mod tests {
         let result = compose(
             &settings,
             &binary,
-            "claude-account",
+            &session_scope(),
             &temp.path().join("data"),
         )
         .unwrap();
@@ -312,24 +360,29 @@ mod tests {
     fn adds_a_statusline_for_initial_setup_without_rendering_output() {
         let temp = TempDir::new().unwrap();
         let original = json!({"theme": "dark"});
+        let args_path = temp.path().join("ingress.args");
         let (settings, binary) = fixture(
             &temp,
             original.clone(),
-            "#!/bin/sh\ncat > \"$INPUT_CAPTURE\"\n",
+            "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$ARGS_CAPTURE\"\ncat > \"$INPUT_CAPTURE\"\n",
         );
         let data_dir = temp.path().join("data");
-        let proposed = compose(&settings, &binary, "account", &data_dir).unwrap();
+        let proposed = compose(&settings, &binary, &session_scope(), &data_dir).unwrap();
         let input = br#"{"session_id":"session-1"}"#;
         let input_path = temp.path().join("ingress.json");
         let output = run_composed(
             proposed["statusLine"]["command"].as_str().unwrap(),
             input,
-            &[("INPUT_CAPTURE", &input_path)],
+            &[("INPUT_CAPTURE", &input_path), ("ARGS_CAPTURE", &args_path)],
         );
 
         assert!(output.status.success());
         assert!(output.stdout.is_empty());
         assert_eq!(std::fs::read(input_path).unwrap(), input);
+        let args = std::fs::read_to_string(args_path).unwrap();
+        assert!(args.contains("--session-only\n"));
+        assert!(!args.contains("--binding\n"));
+        assert!(!args.contains("--account\n"));
         assert_eq!(proposed["theme"], original["theme"]);
         assert_eq!(proposed["statusLine"]["type"], "command");
         assert_eq!(
@@ -349,7 +402,13 @@ mod tests {
         permissions.set_mode(0o700);
         std::fs::set_permissions(&binary, permissions).unwrap();
 
-        let proposed = compose(&settings, &binary, "account", &temp.path().join("data")).unwrap();
+        let proposed = compose(
+            &settings,
+            &binary,
+            &session_scope(),
+            &temp.path().join("data"),
+        )
+        .unwrap();
 
         assert_eq!(proposed["statusLine"]["type"], "command");
         assert!(
@@ -372,9 +431,9 @@ mod tests {
             "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$ARGS_CAPTURE\"\ncat > \"$INPUT_CAPTURE\"\nprintf 'ingress-output-must-not-leak\\n'\nexit 7\n",
         );
         let injection_path = temp.path().join("statusline-injection");
-        let account = format!("account ' ; touch {}", injection_path.display());
+        let binding = format!("binding ' ; touch {}", injection_path.display());
         let data_dir = temp.path().join("data directory");
-        let proposed = compose(&settings, &binary, &account, &data_dir).unwrap();
+        let proposed = compose(&settings, &binary, &binding_scope(&binding), &data_dir).unwrap();
         let input = br#"{"session_id":"session-1","rate_limits":{"five_hour":{"used_percentage":18,"resets_at":2000000000}}}"#;
         let output = run_composed(
             proposed["statusLine"]["command"].as_str().unwrap(),
@@ -393,8 +452,9 @@ mod tests {
         assert!(!String::from_utf8_lossy(&output.stdout).contains("ingress-output-must-not-leak"));
         assert_eq!(std::fs::read(&input_path).unwrap(), input);
         let args = std::fs::read_to_string(args_path).unwrap();
-        assert!(args.contains("--account\n"));
-        assert!(args.contains(&account));
+        assert!(args.contains("--binding\n"));
+        assert!(args.contains(&binding));
+        assert!(args.contains("--binding-revision\n7\n"));
         assert!(args.contains("--data-dir\n"));
         assert!(args.contains(data_dir.to_str().unwrap()));
         assert!(args.contains("--format\njson\n"));
@@ -413,7 +473,7 @@ mod tests {
             "#!/bin/sh\necho called > \"$ARGS_CAPTURE\"\ncat > \"$INPUT_CAPTURE\"\n",
         );
         let data_dir = temp.path().join("data");
-        let proposed = compose(&settings, &binary, "account", &data_dir).unwrap();
+        let proposed = compose(&settings, &binary, &session_scope(), &data_dir).unwrap();
         let input = vec![b'x'; MAX_INPUT_BYTES + 1];
         let output = run_composed(
             proposed["statusLine"]["command"].as_str().unwrap(),
@@ -438,7 +498,7 @@ mod tests {
             "#!/bin/sh\necho called > \"$ARGS_CAPTURE\"\nprintf 'broken-json'\nexit 2\n",
         );
         let data_dir = temp.path().join("data");
-        let proposed = compose(&settings, &binary, "account", &data_dir).unwrap();
+        let proposed = compose(&settings, &binary, &session_scope(), &data_dir).unwrap();
         let output = run_composed(
             proposed["statusLine"]["command"].as_str().unwrap(),
             b"{broken",
@@ -467,15 +527,64 @@ mod tests {
             ),
         ] {
             let (settings, binary) = fixture(&temp, settings_value, "#!/bin/sh\nexit 0\n");
-            let error =
-                compose(&settings, &binary, "account", &temp.path().join("data")).unwrap_err();
+            let error = compose(
+                &settings,
+                &binary,
+                &session_scope(),
+                &temp.path().join("data"),
+            )
+            .unwrap_err();
             assert!(error.to_string().contains(expected_error));
         }
 
         let nul_command = json!({"statusLine": {"type": "command", "command": "printf\0bad"}});
         let (settings, binary) = fixture(&temp, nul_command, "#!/bin/sh\nexit 0\n");
-        let error = compose(&settings, &binary, "account", &temp.path().join("data")).unwrap_err();
+        let error = compose(
+            &settings,
+            &binary,
+            &session_scope(),
+            &temp.path().join("data"),
+        )
+        .unwrap_err();
         assert!(error.to_string().contains("cannot contain a NUL byte"));
+    }
+
+    #[test]
+    fn rejects_statusline_scope_without_exactly_one_selection() {
+        let temp = TempDir::new().unwrap();
+        for (scope, expected) in [
+            (
+                UsageStatuslineScopeArgs {
+                    session_only: false,
+                    binding: None,
+                    binding_revision: None,
+                },
+                "--session-only",
+            ),
+            (
+                UsageStatuslineScopeArgs {
+                    session_only: false,
+                    binding: Some("binding".to_owned()),
+                    binding_revision: None,
+                },
+                "--binding-revision",
+            ),
+            (
+                UsageStatuslineScopeArgs {
+                    session_only: true,
+                    binding: Some("binding".to_owned()),
+                    binding_revision: Some(1),
+                },
+                "--session-only",
+            ),
+        ] {
+            let settings = temp.path().join("settings.json");
+            std::fs::write(&settings, b"{}").unwrap();
+            let binary = temp.path().join("jackin");
+            std::fs::write(&binary, "#!/bin/sh\nexit 0\n").unwrap();
+            let error = compose(&settings, &binary, &scope, &temp.path().join("data")).unwrap_err();
+            assert!(error.to_string().contains(expected));
+        }
     }
 
     #[test]
@@ -496,8 +605,13 @@ mod tests {
             let original_bytes = serde_json::to_vec(&original).unwrap();
             std::fs::write(&settings, &original_bytes).unwrap();
 
-            let error =
-                compose(&settings, &binary, "account", &temp.path().join("data")).unwrap_err();
+            let error = compose(
+                &settings,
+                &binary,
+                &session_scope(),
+                &temp.path().join("data"),
+            )
+            .unwrap_err();
             assert!(error.to_string().contains(expected_error));
             assert_eq!(std::fs::read(&settings).unwrap(), original_bytes);
         }
@@ -512,7 +626,13 @@ mod tests {
             json!({"statusLine": {"type": "command", "command": "printf 'legacy\\n'; exit 7"}}),
             "#!/bin/sh\necho called > \"$ARGS_CAPTURE\"\n",
         );
-        let proposed = compose(&settings, &binary, "account", &temp.path().join("data")).unwrap();
+        let proposed = compose(
+            &settings,
+            &binary,
+            &session_scope(),
+            &temp.path().join("data"),
+        )
+        .unwrap();
         let output = run_composed(
             proposed["statusLine"]["command"].as_str().unwrap(),
             b"payload",
@@ -539,7 +659,13 @@ mod tests {
         let path = temp.path().join("path-with-shell-only");
         std::fs::create_dir(&path).unwrap();
         std::os::unix::fs::symlink("/bin/sh", path.join("sh")).unwrap();
-        let proposed = compose(&settings, &binary, "account", &temp.path().join("data")).unwrap();
+        let proposed = compose(
+            &settings,
+            &binary,
+            &session_scope(),
+            &temp.path().join("data"),
+        )
+        .unwrap();
         let output = run_composed(
             proposed["statusLine"]["command"].as_str().unwrap(),
             b"payload",
@@ -562,11 +688,23 @@ mod tests {
         std::fs::set_permissions(&binary, permissions).unwrap();
 
         std::fs::write(&settings, b"{").unwrap();
-        let error = compose(&settings, &binary, "account", &temp.path().join("data")).unwrap_err();
+        let error = compose(
+            &settings,
+            &binary,
+            &session_scope(),
+            &temp.path().join("data"),
+        )
+        .unwrap_err();
         assert!(error.to_string().contains("parse Claude Code settings"));
 
         std::fs::write(&settings, vec![b' '; MAX_SETTINGS_BYTES + 1]).unwrap();
-        let error = compose(&settings, &binary, "account", &temp.path().join("data")).unwrap_err();
+        let error = compose(
+            &settings,
+            &binary,
+            &session_scope(),
+            &temp.path().join("data"),
+        )
+        .unwrap_err();
         assert!(error.to_string().contains("1 MiB composition limit"));
     }
 }

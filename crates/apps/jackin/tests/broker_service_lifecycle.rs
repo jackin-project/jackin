@@ -6,11 +6,18 @@ use std::path::PathBuf;
 use std::sync::{Arc, Barrier};
 use std::thread;
 
-use jackin_protocol::usage_monitor::{MonitorOperation, MonitorReply};
+use jackin_protocol::usage_broker::USAGE_BROKER_PROTOCOL_VERSION;
+use jackin_protocol::usage_monitor::{
+    MonitorConfig, MonitorDispatchReadiness, MonitorOperation, MonitorProvider, MonitorPurpose,
+    MonitorReply, MonitorScope, USAGE_MONITOR_SCHEMA_VERSION,
+};
 use jackin_usage::host::{UsageBrokerConfig, UsageDiscoveryScope, ensure_usage_monitor_process};
 
 #[test]
 fn broker_service_lifecycle() {
+    assert_eq!(USAGE_BROKER_PROTOCOL_VERSION, "v6");
+    assert_eq!(USAGE_MONITOR_SCHEMA_VERSION, 2);
+
     let root = workspace_state_dir();
     let _ignored = fs::remove_dir_all(&root);
     fs::create_dir_all(&root).expect("workspace test state");
@@ -42,6 +49,47 @@ fn broker_service_lifecycle() {
         .map(|result| result.expect("activator thread"))
         .collect::<Vec<_>>();
     let client = clients[0].clone();
+
+    let observer_request = MonitorOperation::Start {
+        config: MonitorConfig {
+            provider: MonitorProvider::Claude,
+            purpose: MonitorPurpose::ObserveOnly,
+            scope: MonitorScope::Session {
+                session_id: "broker-lifecycle-session".to_owned(),
+            },
+            goal_id: None,
+            expected_model: None,
+            policy_revision: None,
+        },
+        idempotency_key: "broker-lifecycle-observer-1".to_owned(),
+    };
+    let MonitorReply::Started {
+        status: observer_status,
+    } = client
+        .monitor(observer_request.clone())
+        .expect("unbound observation start")
+    else {
+        panic!("observer start returned an unexpected monitor reply");
+    };
+    assert!(!observer_status.runnable);
+    assert!(observer_status.goal_id.is_none());
+    assert!(observer_status.account_id.is_none());
+    assert!(observer_status.budget.is_none());
+    assert_eq!(
+        observer_status.readiness.dispatch,
+        MonitorDispatchReadiness::NotAuthorized
+    );
+
+    let MonitorReply::Started {
+        status: retried_status,
+    } = client
+        .monitor(observer_request)
+        .expect("idempotent observer start")
+    else {
+        panic!("observer retry returned an unexpected monitor reply");
+    };
+    assert_eq!(retried_status.monitor_id, observer_status.monitor_id);
+
     let projection_ids = clients
         .iter()
         .map(|client| {

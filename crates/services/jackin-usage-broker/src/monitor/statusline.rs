@@ -10,6 +10,15 @@ use jackin_protocol::usage_monitor::{
     StatuslineRateLimits, USAGE_MONITOR_MAX_STATUSLINE_BYTES, USAGE_MONITOR_SCHEMA_VERSION,
 };
 
+const CLAUDE_CODE_RATE_LIMITS_MIN_VERSION: (u64, u64, u64) = (2, 1, 80);
+const CLAUDE_CODE_VERSION_MAX_LENGTH: usize = 32;
+
+#[derive(Debug)]
+struct ParsedClaudeCodeVersion {
+    raw: String,
+    components: (u64, u64, u64),
+}
+
 /// Parse the supported Claude Code statusline JSON fields.
 ///
 /// Unrelated fields, including all session cost fields, are deliberately
@@ -36,6 +45,7 @@ pub fn parse_statusline(bytes: &[u8]) -> Result<StatuslineObservation, MonitorIs
         )
     })?;
     let session_id = required_text(root, "session_id", 128)?;
+    let claude_version = parse_claude_code_version(root.get("version"))?;
     let model = parse_model(root.get("model"))?;
     let rate_limits = match root.get("rate_limits") {
         None | Some(Value::Null) => StatuslineRateLimits::default(),
@@ -46,13 +56,80 @@ pub fn parse_statusline(bytes: &[u8]) -> Result<StatuslineObservation, MonitorIs
             )
         })?)?,
     };
+    if (rate_limits.five_hour.is_some() || rate_limits.seven_day.is_some())
+        && claude_version
+            .as_ref()
+            .is_some_and(|version| version.components < CLAUDE_CODE_RATE_LIMITS_MIN_VERSION)
+    {
+        return Err(issue(
+            MonitorIssueCode::StatuslineInvalid,
+            "Claude Code versions before 2.1.80 do not support rate_limits",
+        ));
+    }
 
     Ok(StatuslineObservation {
         schema_version: USAGE_MONITOR_SCHEMA_VERSION,
+        claude_code_version: claude_version.map(|version| version.raw),
         session_id,
         model,
         rate_limits,
     })
+}
+
+fn parse_claude_code_version(
+    value: Option<&Value>,
+) -> Result<Option<ParsedClaudeCodeVersion>, MonitorIssue> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    if value.is_null() {
+        return Ok(None);
+    }
+    let Some(raw_version) = value.as_str() else {
+        return Err(issue(
+            MonitorIssueCode::StatuslineInvalid,
+            "statusline version must be a three-part numeric version string",
+        ));
+    };
+    if raw_version.is_empty()
+        || raw_version.len() > CLAUDE_CODE_VERSION_MAX_LENGTH
+        || !raw_version.is_ascii()
+        || raw_version.chars().any(char::is_control)
+    {
+        return Err(issue(
+            MonitorIssueCode::StatuslineInvalid,
+            "statusline version is empty or outside its accepted bounds",
+        ));
+    }
+    let mut components = raw_version.split('.');
+    let parsed = (
+        parse_version_component(components.next()),
+        parse_version_component(components.next()),
+        parse_version_component(components.next()),
+    );
+    let (Some(major), Some(minor), Some(patch), None) =
+        (parsed.0, parsed.1, parsed.2, components.next())
+    else {
+        return Err(issue(
+            MonitorIssueCode::StatuslineInvalid,
+            "statusline version must be a three-part numeric version string",
+        ));
+    };
+    Ok(Some(ParsedClaudeCodeVersion {
+        raw: raw_version.to_owned(),
+        components: (major, minor, patch),
+    }))
+}
+
+fn parse_version_component(value: Option<&str>) -> Option<u64> {
+    let value = value?;
+    if value.is_empty()
+        || !value.bytes().all(|byte| byte.is_ascii_digit())
+        || (value.len() > 1 && value.starts_with('0'))
+    {
+        return None;
+    }
+    value.parse().ok()
 }
 
 fn parse_rate_limits(value: &Map<String, Value>) -> Result<StatuslineRateLimits, MonitorIssue> {
@@ -212,6 +289,7 @@ mod tests {
     fn parses_documented_quota_fields_and_ignores_cost() {
         let input = br#"{
             "session_id":"session-1",
+            "version":"2.1.80",
             "model":{"id":"claude-sonnet-4-5","display_name":"Claude Sonnet 4.5"},
             "rate_limits":{
                 "five_hour":{"used_percentage":89.75,"resets_at":2000000000},
@@ -222,6 +300,7 @@ mod tests {
         }"#;
         let parsed = parse_statusline(input).unwrap();
         assert_eq!(parsed.session_id, "session-1");
+        assert_eq!(parsed.claude_code_version.as_deref(), Some("2.1.80"));
         assert_eq!(parsed.model.as_deref(), Some("claude-sonnet-4-5"));
         let five_hour = parsed.rate_limits.five_hour.unwrap();
         assert_eq!(five_hour.used_percentage_basis_points, Some(8975));
@@ -236,6 +315,7 @@ mod tests {
         let parsed = parse_statusline(br#"{"session_id":"session-1"}"#).unwrap();
         assert!(parsed.rate_limits.five_hour.is_none());
         assert!(parsed.rate_limits.seven_day.is_none());
+        assert_eq!(parsed.claude_code_version, None);
 
         let parsed =
             parse_statusline(br#"{"session_id":"session-1","rate_limits":{"five_hour":{}}}"#)
@@ -243,6 +323,75 @@ mod tests {
         let five_hour = parsed.rate_limits.five_hour.unwrap();
         assert_eq!(five_hour.used_percentage_basis_points, None);
         assert_eq!(five_hour.reset_at_epoch, None);
+    }
+
+    #[test]
+    fn missing_client_version_stays_unknown_when_quota_is_present() {
+        let parsed = parse_statusline(
+            br#"{"session_id":"session-1","rate_limits":{"five_hour":{"used_percentage":23.5}}}"#,
+        )
+        .unwrap();
+
+        assert_eq!(parsed.claude_code_version, None);
+        assert_eq!(
+            parsed
+                .rate_limits
+                .five_hour
+                .unwrap()
+                .used_percentage_basis_points,
+            Some(2350)
+        );
+    }
+
+    #[test]
+    fn rejects_rate_limit_windows_claimed_by_pre_support_client_version() {
+        let input =
+            br#"{"session_id":"session-1","version":"2.1.79","rate_limits":{"five_hour":{}}}"#;
+        assert_eq!(
+            parse_statusline(input).unwrap_err().code,
+            MonitorIssueCode::StatuslineInvalid
+        );
+
+        // A pre-support version is still valid metadata when it claims no
+        // quota window.
+        let input = br#"{"session_id":"session-1","version":"2.1.79"}"#;
+        assert_eq!(
+            parse_statusline(input)
+                .unwrap()
+                .claude_code_version
+                .as_deref(),
+            Some("2.1.79")
+        );
+    }
+
+    #[test]
+    fn rejects_malformed_claimed_client_versions() {
+        for version in ["", "2.1", "v2.1.80", "2.1.80.1", "2.1.80-beta", "02.1.80"] {
+            let input = format!(r#"{{"session_id":"session-1","version":"{version}"}}"#);
+            assert_eq!(
+                parse_statusline(input.as_bytes()).unwrap_err().code,
+                MonitorIssueCode::StatuslineInvalid,
+                "accepted malformed version {version:?}"
+            );
+        }
+
+        assert_eq!(
+            parse_statusline(br#"{"session_id":"session-1","version":2.1}"#)
+                .unwrap_err()
+                .code,
+            MonitorIssueCode::StatuslineInvalid
+        );
+    }
+
+    #[test]
+    fn replaying_unchanged_quota_payload_parses_to_the_same_observation() {
+        let input = br#"{"session_id":"session-1","version":"2.1.80","rate_limits":{"five_hour":{"used_percentage":23.5,"resets_at":2000000000}}}"#;
+        let first = parse_statusline(input).unwrap();
+        let replay = parse_statusline(input).unwrap();
+
+        // The parser carries only source fields; receipt time and freshness
+        // remain the broker's responsibility.
+        assert_eq!(first, replay);
     }
 
     #[test]

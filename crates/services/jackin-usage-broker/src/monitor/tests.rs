@@ -4,10 +4,12 @@
 use super::MonitorStore;
 use jackin_protocol::control::Money;
 use jackin_protocol::usage_monitor::{
-    MonitorAction, MonitorConfig, MonitorEvidenceFreshness, MonitorIssueCode, MonitorLifecycle,
-    MonitorOperation, MonitorProvider, MonitorReply, MonitorStatus, SpendRecord, SpendRecordInput,
-    SpendRecordSource, SpendVerification, StatuslineObservation, StatuslineQuotaWindow,
-    StatuslineRateLimits, USAGE_MONITOR_SCHEMA_VERSION,
+    MonitorAccountBinding, MonitorAccountBindingInput, MonitorAction, MonitorConfig,
+    MonitorEvidenceFreshness, MonitorIssueCode, MonitorLifecycle, MonitorModelGuardValidity,
+    MonitorOperation, MonitorPolicy, MonitorPolicyApprovalInput, MonitorPolicyRecord,
+    MonitorProvider, MonitorPurpose, MonitorReply, MonitorScope, MonitorStatus, SpendRecord,
+    SpendRecordInput, SpendRecordSource, SpendVerification, StatuslineObservation,
+    StatuslineQuotaWindow, StatuslineRateLimits, USAGE_MONITOR_SCHEMA_VERSION,
 };
 
 const NOW: i64 = 1_800_000_000;
@@ -18,19 +20,128 @@ fn open_store() -> (tempfile::TempDir, MonitorStore) {
     (directory, store)
 }
 
+#[derive(Debug, Clone)]
+struct StartSpec {
+    account_id: String,
+    goal_id: String,
+    expected_model: Option<String>,
+    budget: Option<Money>,
+}
+
+#[derive(Debug, Clone)]
+struct PreparedStart {
+    config: MonitorConfig,
+    idempotency_key: String,
+}
+
 fn config(
     account_id: &str,
     goal_id: &str,
     expected_model: Option<&str>,
     budget: Option<Money>,
-) -> MonitorConfig {
-    MonitorConfig {
-        provider: MonitorProvider::Claude,
+) -> StartSpec {
+    StartSpec {
         account_id: account_id.to_owned(),
         goal_id: goal_id.to_owned(),
-        session_id: None,
         expected_model: expected_model.map(str::to_owned),
         budget,
+    }
+}
+
+fn bind_account(store: &MonitorStore, account_id: &str, now_epoch: i64) -> MonitorAccountBinding {
+    match store
+        .operate(
+            MonitorOperation::BindAccount {
+                binding: MonitorAccountBindingInput {
+                    provider: MonitorProvider::Claude,
+                    account_id: account_id.to_owned(),
+                    operator_label: "isolated-test-operator".to_owned(),
+                    operator_confirmed: true,
+                },
+            },
+            now_epoch,
+        )
+        .expect("confirm isolated test account binding")
+    {
+        MonitorReply::AccountBound { binding } => binding,
+        other => panic!("expected account-bound reply, got {other:?}"),
+    }
+}
+
+fn approve_strict_policy(
+    store: &MonitorStore,
+    binding: &MonitorAccountBinding,
+    goal_id: &str,
+    budget: &Money,
+    now_epoch: i64,
+) -> MonitorPolicyRecord {
+    match store
+        .operate(
+            MonitorOperation::ApprovePolicy {
+                approval: MonitorPolicyApprovalInput {
+                    binding_id: binding.binding_id.clone(),
+                    binding_revision: binding.revision,
+                    goal_id: goal_id.to_owned(),
+                    new_policy: MonitorPolicy::StrictSgd,
+                    budget: Some(budget.clone()),
+                    operator_label: "isolated-test-operator".to_owned(),
+                    operator_confirmed: true,
+                    acknowledge_no_sgd_cap: false,
+                    expected_revision: None,
+                },
+            },
+            now_epoch,
+        )
+        .expect("approve strict SGD policy in isolated fixture")
+    {
+        MonitorReply::PolicyApproved { policy } => policy,
+        other => panic!("expected policy-approved reply, got {other:?}"),
+    }
+}
+
+fn prepare_start(store: &MonitorStore, spec: &StartSpec, now_epoch: i64) -> PreparedStart {
+    let binding = bind_account(store, &spec.account_id, now_epoch);
+    let (purpose, goal_id, policy_revision) = if let Some(budget) = spec.budget.as_ref() {
+        let policy = approve_strict_policy(store, &binding, &spec.goal_id, budget, now_epoch);
+        (
+            MonitorPurpose::DispatchGuard,
+            Some(spec.goal_id.clone()),
+            Some(policy.revision),
+        )
+    } else {
+        (MonitorPurpose::ObserveOnly, None, None)
+    };
+    PreparedStart {
+        config: MonitorConfig {
+            provider: MonitorProvider::Claude,
+            purpose,
+            scope: MonitorScope::BoundAccount {
+                binding_id: binding.binding_id,
+                binding_revision: binding.revision,
+                session_id: None,
+            },
+            goal_id,
+            expected_model: spec.expected_model.clone(),
+            policy_revision,
+        },
+        idempotency_key: format!("fixture-start:{}:{}", spec.goal_id, now_epoch),
+    }
+}
+
+fn start_prepared(
+    store: &MonitorStore,
+    prepared: &PreparedStart,
+    now_epoch: i64,
+) -> Result<MonitorStatus, jackin_protocol::usage_monitor::MonitorIssue> {
+    match store.operate(
+        MonitorOperation::Start {
+            config: prepared.config.clone(),
+            idempotency_key: prepared.idempotency_key.clone(),
+        },
+        now_epoch,
+    )? {
+        MonitorReply::Started { status } => Ok(*status),
+        other => panic!("expected started reply, got {other:?}"),
     }
 }
 
@@ -51,6 +162,7 @@ fn observation(
         schema_version: USAGE_MONITOR_SCHEMA_VERSION,
         session_id: session_id.to_owned(),
         model: model.map(str::to_owned),
+        claude_code_version: Some("2.1.80".to_owned()),
         rate_limits: StatuslineRateLimits {
             five_hour: quota(five_hour.0, five_hour.1),
             seven_day: quota(seven_day.0, seven_day.1),
@@ -67,7 +179,14 @@ fn ingest(
     match store
         .operate(
             MonitorOperation::Ingest {
-                account_id: account_id.to_owned(),
+                scope: {
+                    let binding = bind_account(store, account_id, now_epoch);
+                    MonitorScope::BoundAccount {
+                        binding_id: binding.binding_id,
+                        binding_revision: binding.revision,
+                        session_id: None,
+                    }
+                },
                 observation,
             },
             now_epoch,
@@ -96,14 +215,9 @@ fn status(store: &MonitorStore, monitor_id: &str, now_epoch: i64) -> MonitorStat
     }
 }
 
-fn start(store: &MonitorStore, config: MonitorConfig, now_epoch: i64) -> MonitorStatus {
-    match store
-        .operate(MonitorOperation::Start { config }, now_epoch)
-        .expect("start monitor")
-    {
-        MonitorReply::Started { status } => *status,
-        other => panic!("expected started reply, got {other:?}"),
-    }
+fn start(store: &MonitorStore, spec: StartSpec, now_epoch: i64) -> MonitorStatus {
+    let prepared = prepare_start(store, &spec, now_epoch);
+    start_prepared(store, &prepared, now_epoch).expect("start monitor")
 }
 
 fn actions(status: &MonitorStatus) -> &[MonitorAction] {
@@ -373,7 +487,17 @@ fn identical_statusline_does_not_refresh_evidence_age_or_decision_sequence() {
         (Some(2_000), Some(reset)),
     );
     ingest(&store, "acct-age", observation.clone(), NOW);
-    let started = start(&store, config("acct-age", "goal-age", None, None), NOW);
+    seed_zero_sgd_spend(&store, "acct-age", NOW);
+    let started = start(
+        &store,
+        config(
+            "acct-age",
+            "goal-age",
+            None,
+            Some(Money::new(5_000, "SGD", 2)),
+        ),
+        NOW,
+    );
     let sequence = started.latest_decision.as_ref().unwrap().sequence;
     let input_sequence = ingest(&store, "acct-age", observation, NOW + 20);
     let current = status(&store, &started.monitor_id, NOW + 20);
@@ -417,9 +541,15 @@ fn missing_and_stale_quota_fields_remain_unknown_independently() {
         ),
         NOW,
     );
+    seed_zero_sgd_spend(&store, "acct-fields", NOW);
     let started = start(
         &store,
-        config("acct-fields", "goal-fields", None, None),
+        config(
+            "acct-fields",
+            "goal-fields",
+            None,
+            Some(Money::new(5_000, "SGD", 2)),
+        ),
         NOW,
     );
     assert!(!started.runnable);
@@ -944,9 +1074,15 @@ fn lower_usage_from_the_old_reset_cannot_pair_with_a_later_reset_only_observatio
         ),
         NOW,
     );
+    seed_zero_sgd_spend(&store, "acct-reset-pair", NOW);
     let started = start(
         &store,
-        config("acct-reset-pair", "goal-reset-pair", None, None),
+        config(
+            "acct-reset-pair",
+            "goal-reset-pair",
+            None,
+            Some(Money::new(5_000, "SGD", 2)),
+        ),
         NOW,
     );
     let deadline = reset + 60;
@@ -1033,8 +1169,15 @@ fn model_and_spend_evidence_expire_after_the_shared_ttl_boundary() {
     store.tick(NOW + 301).expect("tick one second beyond TTL");
     let expired = status(&store, &started.monitor_id, NOW + 301);
     assert!(!expired.runnable);
-    assert_eq!(expired.model, None);
-    assert!(expired.model_evidence.is_none());
+    assert_eq!(expired.model.as_deref(), Some("claude-sonnet"));
+    assert_eq!(
+        expired.model_evidence.as_ref().unwrap().freshness,
+        MonitorEvidenceFreshness::Stale
+    );
+    assert_eq!(
+        expired.model_guard_validity,
+        MonitorModelGuardValidity::Unknown
+    );
     assert!(has_issue(&expired, MonitorIssueCode::ModelUnknown));
     assert!(has_issue(&expired, MonitorIssueCode::SpendStale));
     assert!(has_issue(&expired, MonitorIssueCode::BudgetUnverifiable));
@@ -1137,7 +1280,17 @@ fn reopening_after_clock_rollback_cannot_revive_stale_statusline_evidence() {
         ),
         NOW,
     );
-    let started = start(&store, config("acct-clock", "goal-clock", None, None), NOW);
+    seed_zero_sgd_spend(&store, "acct-clock", NOW);
+    let started = start(
+        &store,
+        config(
+            "acct-clock",
+            "goal-clock",
+            None,
+            Some(Money::new(5_000, "SGD", 2)),
+        ),
+        NOW,
+    );
     store.tick(NOW + 301).expect("expire evidence");
     let stale = status(&store, &started.monitor_id, NOW + 301);
     assert!(!stale.runnable);
@@ -1163,7 +1316,7 @@ fn reopening_after_clock_rollback_cannot_revive_stale_statusline_evidence() {
 }
 
 #[test]
-fn same_goal_recreation_keeps_cumulative_spend_and_rejects_identity_or_budget_relaxation() {
+fn same_goal_recreation_keeps_cumulative_spend_and_rejects_identity_or_unapproved_policy() {
     let (directory, store) = open_store();
     let period_start = NOW - 100;
     let period_end = NOW + 10_000;
@@ -1184,13 +1337,15 @@ fn same_goal_recreation_keeps_cumulative_spend_and_rejects_identity_or_budget_re
         spend_input("acct-goal", period_start, period_end, 1_000, NOW, "SGD"),
         NOW,
     );
-    let original_config = config(
+    let original_spec = config(
         "acct-goal",
         "durable-goal",
         None,
         Some(Money::new(5_000, "SGD", 2)),
     );
-    let original = start(&store, original_config.clone(), NOW);
+    let original_setup = prepare_start(&store, &original_spec, NOW);
+    let original = start_prepared(&store, &original_setup, NOW)
+        .expect("activate strict goal with fresh verified spend");
     record_spend(
         &store,
         spend_input("acct-goal", period_start, period_end, 2_200, NOW + 1, "SGD"),
@@ -1212,44 +1367,52 @@ fn same_goal_recreation_keeps_cumulative_spend_and_rejects_identity_or_budget_re
         .expect("stop original monitor");
     drop(store);
     let reopened = MonitorStore::open(directory.path()).expect("reopen persisted goal state");
-    let recreated = start(&reopened, original_config, NOW + 3);
+    let recreated_setup = PreparedStart {
+        config: original_setup.config.clone(),
+        idempotency_key: "fixture-start-durable-goal-run-2".to_owned(),
+    };
+    let recreated = start_prepared(&reopened, &recreated_setup, NOW + 3)
+        .expect("new run key recreates stopped monitor without resetting spend");
     assert_ne!(recreated.monitor_id, original.monitor_id);
     assert_eq!(
         recreated.cumulative_goal_spend,
         Some(Money::new(1_200, "SGD", 2))
     );
 
-    let wrong_account = config(
-        "acct-other",
-        "durable-goal",
-        None,
-        Some(Money::new(5_000, "SGD", 2)),
-    );
+    let wrong_binding = bind_account(&reopened, "acct-other", NOW + 4);
     let error = reopened
         .operate(
-            MonitorOperation::Start {
-                config: wrong_account,
+            MonitorOperation::ApprovePolicy {
+                approval: MonitorPolicyApprovalInput {
+                    binding_id: wrong_binding.binding_id,
+                    binding_revision: wrong_binding.revision,
+                    goal_id: "durable-goal".to_owned(),
+                    new_policy: MonitorPolicy::StrictSgd,
+                    budget: Some(Money::new(5_000, "SGD", 2)),
+                    operator_label: "isolated-test-operator".to_owned(),
+                    operator_confirmed: true,
+                    acknowledge_no_sgd_cap: false,
+                    expected_revision: None,
+                },
             },
             NOW + 4,
         )
-        .expect_err("same goal cannot change its canonical account");
+        .expect_err("same goal policy cannot move to a different bound account");
     assert_eq!(error.code, MonitorIssueCode::AccountMismatch);
 
-    let looser_budget = config(
-        "acct-goal",
-        "durable-goal",
-        None,
-        Some(Money::new(5_001, "SGD", 2)),
+    let mut unapproved_policy_revision = recreated_setup.clone();
+    unapproved_policy_revision.config.policy_revision = Some(
+        unapproved_policy_revision
+            .config
+            .policy_revision
+            .expect("strict run has an approved policy revision")
+            .saturating_add(1),
     );
-    let error = reopened
-        .operate(
-            MonitorOperation::Start {
-                config: looser_budget,
-            },
-            NOW + 4,
-        )
-        .expect_err("same goal cannot loosen its budget");
-    assert_eq!(error.code, MonitorIssueCode::StatuslineInvalid);
+    unapproved_policy_revision.idempotency_key =
+        "fixture-start-durable-goal-unapproved-revision".to_owned();
+    let error = start_prepared(&reopened, &unapproved_policy_revision, NOW + 4)
+        .expect_err("a start cannot silently select a different policy revision");
+    assert_eq!(error.code, MonitorIssueCode::PolicyRequired);
 
     let preserved = status(&reopened, &recreated.monitor_id, NOW + 4);
     assert_eq!(
@@ -1259,7 +1422,7 @@ fn same_goal_recreation_keeps_cumulative_spend_and_rejects_identity_or_budget_re
 }
 
 #[test]
-fn same_goal_without_a_start_baseline_never_adopts_a_later_receipt_as_zero_spend() {
+fn strict_activation_without_a_start_baseline_is_atomic_and_does_not_reserve_its_key() {
     let (directory, store) = open_store();
     let reset = NOW + 3_600;
     ingest(
@@ -1273,20 +1436,26 @@ fn same_goal_without_a_start_baseline_never_adopts_a_later_receipt_as_zero_spend
         ),
         NOW,
     );
-    let goal_config = config(
+    let goal_spec = config(
         "acct-no-baseline",
         "goal-no-baseline",
         None,
         Some(Money::new(5_000, "SGD", 2)),
     );
-    let first = start(&store, goal_config.clone(), NOW);
-    assert_eq!(first.cumulative_goal_spend, None);
-    assert!(has_issue(&first, MonitorIssueCode::BudgetUnverifiable));
-    assert!(has_pause(&first, MonitorIssueCode::BudgetUnverifiable));
+    let prepared = prepare_start(&store, &goal_spec, NOW);
+    let state_path = std::path::Path::new(directory.path())
+        .join(crate::BROKER_DIR)
+        .join("monitor")
+        .join("state.json");
+    let before_failed_start = std::fs::read(&state_path).expect("read state after setup");
+    let error = start_prepared(&store, &prepared, NOW + 1)
+        .expect_err("strict activation requires a fresh verified SGD baseline");
+    assert_eq!(error.code, MonitorIssueCode::BudgetUnverifiable);
+    let after_failed_start = std::fs::read(&state_path).expect("read state after rejected start");
+    assert_eq!(after_failed_start, before_failed_start);
 
-    // This is a fresh account total, but it arrived after the goal was
-    // created without a baseline. Its entire amount cannot be attributed to
-    // the goal as a zero-cost starting point.
+    // A failed activation did not reserve its retry key or persist a goal.
+    // A later current-period receipt permits that exact request to activate.
     record_spend(
         &store,
         spend_input(
@@ -1294,38 +1463,19 @@ fn same_goal_without_a_start_baseline_never_adopts_a_later_receipt_as_zero_spend
             NOW - 100,
             NOW + 10_000,
             1_000,
-            NOW + 1,
+            NOW + 2,
             "SGD",
         ),
-        NOW + 1,
+        NOW + 2,
     );
-    let after_receipt = status(&store, &first.monitor_id, NOW + 1);
-    assert_eq!(after_receipt.cumulative_goal_spend, None);
-    assert!(has_issue(
-        &after_receipt,
-        MonitorIssueCode::BudgetUnverifiable
-    ));
-    assert!(has_pause(
-        &after_receipt,
-        MonitorIssueCode::BudgetUnverifiable
-    ));
+    let started = start_prepared(&store, &prepared, NOW + 2)
+        .expect("same retry key succeeds after current spend evidence arrives");
+    assert_eq!(started.goal_id.as_deref(), Some("goal-no-baseline"));
+    assert_eq!(started.cumulative_goal_spend, Some(Money::new(0, "SGD", 2)));
 
-    store
-        .operate(
-            MonitorOperation::Stop {
-                monitor_id: first.monitor_id.clone(),
-            },
-            NOW + 2,
-        )
-        .expect("stop goal without a spend baseline");
-    drop(store);
-
-    let reopened = MonitorStore::open(directory.path()).expect("reopen goal without baseline");
-    let recreated = start(&reopened, goal_config, NOW + 3);
-    assert_ne!(recreated.monitor_id, first.monitor_id);
-    assert_eq!(recreated.cumulative_goal_spend, None);
-    assert!(has_issue(&recreated, MonitorIssueCode::BudgetUnverifiable));
-    assert!(has_pause(&recreated, MonitorIssueCode::BudgetUnverifiable));
+    let replayed = start_prepared(&store, &prepared, NOW + 3)
+        .expect("successful retry remains idempotent for the same key and config");
+    assert_eq!(replayed.monitor_id, started.monitor_id);
 }
 
 #[test]
@@ -1497,9 +1647,9 @@ fn non_sgd_spend_receipts_stay_unverifiable_for_sgd_budget() {
         );
         assert_eq!(receipt.verification, SpendVerification::Unverified);
 
-        let started = start(
+        let prepared = prepare_start(
             &store,
-            config(
+            &config(
                 &account_id,
                 &goal_id,
                 None,
@@ -1507,9 +1657,9 @@ fn non_sgd_spend_receipts_stay_unverifiable_for_sgd_budget() {
             ),
             NOW,
         );
-        assert_eq!(started.cumulative_goal_spend, None);
-        assert!(has_issue(&started, MonitorIssueCode::BudgetUnverifiable));
-        assert!(has_pause(&started, MonitorIssueCode::BudgetUnverifiable));
+        let error = start_prepared(&store, &prepared, NOW)
+            .expect_err("strict SGD activation rejects unsupported currency evidence");
+        assert_eq!(error.code, MonitorIssueCode::BudgetUnverifiable);
     }
 }
 

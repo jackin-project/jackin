@@ -7,8 +7,10 @@ use std::time::{Duration, Instant};
 
 use jackin_protocol::control::Money;
 use jackin_protocol::usage_monitor::{
-    MonitorAction, MonitorConfig, MonitorIssueCode, MonitorOperation, MonitorProvider,
-    MonitorReply, MonitorStatus, SpendRecordInput, SpendRecordSource, StatuslineObservation,
+    MonitorAccountBinding, MonitorAccountBindingInput, MonitorAction, MonitorConfig,
+    MonitorIssueCode, MonitorOperation, MonitorPolicy, MonitorPolicyApprovalInput,
+    MonitorPolicyRecord, MonitorProvider, MonitorPurpose, MonitorReply, MonitorScope,
+    MonitorStatus, SpendRecordInput, SpendRecordSource, StatuslineObservation,
     StatuslineQuotaWindow, StatuslineRateLimits, USAGE_MONITOR_SCHEMA_VERSION,
 };
 
@@ -19,6 +21,7 @@ use super::MonitorStore;
 const NOW: i64 = 1_800_000_000;
 const ACCOUNT: &str = "acct-policy-regressions";
 const BILLING_PERIOD_END: i64 = NOW + 100_000;
+const TEST_OPERATOR: &str = "isolated-test-operator";
 
 fn quota_window(used: Option<i32>, reset: Option<i64>) -> Option<StatuslineQuotaWindow> {
     Some(StatuslineQuotaWindow {
@@ -37,6 +40,7 @@ fn observation(
         schema_version: USAGE_MONITOR_SCHEMA_VERSION,
         session_id: session_id.to_owned(),
         model: model.map(str::to_owned),
+        claude_code_version: Some("2.1.80".to_owned()),
         rate_limits: StatuslineRateLimits {
             five_hour: quota_window(used, reset),
             seven_day: quota_window(used, reset),
@@ -55,6 +59,7 @@ fn observation_with_windows(
         schema_version: USAGE_MONITOR_SCHEMA_VERSION,
         session_id: session_id.to_owned(),
         model: None,
+        claude_code_version: Some("2.1.80".to_owned()),
         rate_limits: StatuslineRateLimits {
             five_hour: quota_window(five_hour_used, five_hour_reset),
             seven_day: quota_window(seven_day_used, seven_day_reset),
@@ -80,10 +85,15 @@ fn ingest(
     observation: StatuslineObservation,
     now_epoch: i64,
 ) -> u64 {
+    let binding = bind_account(store, account_id, now_epoch);
     let reply = store
         .operate(
             MonitorOperation::Ingest {
-                account_id: account_id.to_owned(),
+                scope: MonitorScope::BoundAccount {
+                    binding_id: binding.binding_id,
+                    binding_revision: binding.revision,
+                    session_id: None,
+                },
                 observation,
             },
             now_epoch,
@@ -98,6 +108,104 @@ fn ingest(
     evidence_sequence
 }
 
+fn bind_account(store: &MonitorStore, account_id: &str, now_epoch: i64) -> MonitorAccountBinding {
+    match store
+        .operate(
+            MonitorOperation::BindAccount {
+                binding: MonitorAccountBindingInput {
+                    provider: MonitorProvider::Claude,
+                    account_id: account_id.to_owned(),
+                    operator_label: TEST_OPERATOR.to_owned(),
+                    operator_confirmed: true,
+                },
+            },
+            now_epoch,
+        )
+        .expect("confirm account binding in isolated fixture")
+    {
+        MonitorReply::AccountBound { binding } => binding,
+        other => panic!("expected account-bound result, got {other:?}"),
+    }
+}
+
+#[derive(Debug, Clone)]
+struct PreparedStart {
+    config: MonitorConfig,
+    idempotency_key: String,
+}
+
+fn approve_strict_policy(
+    store: &MonitorStore,
+    binding: &MonitorAccountBinding,
+    goal_id: &str,
+    now_epoch: i64,
+) -> MonitorPolicyRecord {
+    match store
+        .operate(
+            MonitorOperation::ApprovePolicy {
+                approval: MonitorPolicyApprovalInput {
+                    binding_id: binding.binding_id.clone(),
+                    binding_revision: binding.revision,
+                    goal_id: goal_id.to_owned(),
+                    new_policy: MonitorPolicy::StrictSgd,
+                    budget: Some(Money::new(5_000, "SGD", 2)),
+                    operator_label: TEST_OPERATOR.to_owned(),
+                    operator_confirmed: true,
+                    acknowledge_no_sgd_cap: false,
+                    expected_revision: None,
+                },
+            },
+            now_epoch,
+        )
+        .expect("approve strict SGD policy in isolated fixture")
+    {
+        MonitorReply::PolicyApproved { policy } => policy,
+        other => panic!("expected policy-approved result, got {other:?}"),
+    }
+}
+
+fn prepare_start(
+    store: &MonitorStore,
+    goal_id: &str,
+    expected_model: Option<&str>,
+    now_epoch: i64,
+) -> PreparedStart {
+    let binding = bind_account(store, ACCOUNT, now_epoch);
+    let policy = approve_strict_policy(store, &binding, goal_id, now_epoch);
+    PreparedStart {
+        config: MonitorConfig {
+            provider: MonitorProvider::Claude,
+            purpose: MonitorPurpose::DispatchGuard,
+            scope: MonitorScope::BoundAccount {
+                binding_id: binding.binding_id,
+                binding_revision: binding.revision,
+                session_id: None,
+            },
+            goal_id: Some(goal_id.to_owned()),
+            expected_model: expected_model.map(str::to_owned),
+            policy_revision: Some(policy.revision),
+        },
+        idempotency_key: format!("fixture-start:{goal_id}:{now_epoch}"),
+    }
+}
+
+fn start_prepared(
+    store: &MonitorStore,
+    prepared: &PreparedStart,
+    now_epoch: i64,
+) -> Result<MonitorStatus, jackin_protocol::usage_monitor::MonitorIssue> {
+    match store.operate(
+        MonitorOperation::Start {
+            config: prepared.config.clone(),
+            idempotency_key: prepared.idempotency_key.clone(),
+        },
+        now_epoch,
+    )? {
+        MonitorReply::Started { status } => Ok(*status),
+        other => panic!("expected started monitor result, got {other:?}"),
+    }
+}
+
 fn record_spend(store: &MonitorStore, record: SpendRecordInput, now_epoch: i64) {
     let reply = store
         .operate(MonitorOperation::RecordSpend { record }, now_epoch)
@@ -106,25 +214,8 @@ fn record_spend(store: &MonitorStore, record: SpendRecordInput, now_epoch: i64) 
 }
 
 fn start_monitor(store: &MonitorStore, goal_id: &str, now_epoch: i64) -> MonitorStatus {
-    let reply = store
-        .operate(
-            MonitorOperation::Start {
-                config: MonitorConfig {
-                    provider: MonitorProvider::Claude,
-                    account_id: ACCOUNT.to_owned(),
-                    goal_id: goal_id.to_owned(),
-                    session_id: None,
-                    expected_model: None,
-                    budget: Some(Money::new(5_000, "SGD", 2)),
-                },
-            },
-            now_epoch,
-        )
-        .expect("start monitor");
-    let MonitorReply::Started { status } = reply else {
-        panic!("expected started monitor result");
-    };
-    *status
+    let prepared = prepare_start(store, goal_id, None, now_epoch);
+    start_prepared(store, &prepared, now_epoch).expect("start monitor")
 }
 
 fn start_monitor_with_expected_model(
@@ -133,25 +224,8 @@ fn start_monitor_with_expected_model(
     expected_model: &str,
     now_epoch: i64,
 ) -> MonitorStatus {
-    let reply = store
-        .operate(
-            MonitorOperation::Start {
-                config: MonitorConfig {
-                    provider: MonitorProvider::Claude,
-                    account_id: ACCOUNT.to_owned(),
-                    goal_id: goal_id.to_owned(),
-                    session_id: None,
-                    expected_model: Some(expected_model.to_owned()),
-                    budget: Some(Money::new(5_000, "SGD", 2)),
-                },
-            },
-            now_epoch,
-        )
-        .expect("start model-guarded monitor");
-    let MonitorReply::Started { status } = reply else {
-        panic!("expected started monitor result");
-    };
-    *status
+    let prepared = prepare_start(store, goal_id, Some(expected_model), now_epoch);
+    start_prepared(store, &prepared, now_epoch).expect("start model-guarded monitor")
 }
 
 fn status(store: &MonitorStore, monitor_id: &str, now_epoch: i64) -> MonitorStatus {
@@ -327,21 +401,7 @@ fn assert_expiry_is_reconciled_and_notified(trigger: impl FnOnce(&MonitorStore, 
 fn identical_statusline_after_ttl_reconciles_and_notifies_without_refreshing_age() {
     let original = observation("session-expiry", Some(1_000), Some(NOW + 3_600), None);
     assert_expiry_is_reconciled_and_notified(move |store, now_epoch, original_sequence| {
-        let reply = store
-            .operate(
-                MonitorOperation::Ingest {
-                    account_id: ACCOUNT.to_owned(),
-                    observation: original,
-                },
-                now_epoch,
-            )
-            .expect("repeat identical statusline input");
-        let MonitorReply::Ingested {
-            evidence_sequence, ..
-        } = reply
-        else {
-            panic!("expected statusline ingest result");
-        };
+        let evidence_sequence = ingest(store, ACCOUNT, original, now_epoch);
         assert_eq!(
             evidence_sequence, original_sequence,
             "identical input must not refresh evidence"
@@ -430,7 +490,8 @@ fn account_95_barrier_survives_stop_reopen_new_goals_and_requires_a_fresh_paired
     // latch an account-wide barrier.
     ingest(&store, ACCOUNT, triggered, NOW);
     record_spend(&store, spend_input(ACCOUNT, NOW), NOW);
-    let first = start_monitor(&store, "goal-recreated", NOW);
+    let first_setup = prepare_start(&store, "goal-recreated", None, NOW);
+    let first = start_prepared(&store, &first_setup, NOW).expect("start first monitor");
     assert!(!first.runnable);
     assert!(
         first
@@ -459,7 +520,10 @@ fn account_95_barrier_survives_stop_reopen_new_goals_and_requires_a_fresh_paired
         NOW + 302,
     );
     record_spend(&reopened, spend_input(ACCOUNT, NOW + 302), NOW + 302);
-    let recreated = start_monitor(&reopened, "goal-recreated", NOW + 302);
+    let mut recreated_setup = first_setup.clone();
+    recreated_setup.idempotency_key = "fixture-start:goal-recreated:second-run".to_owned();
+    let recreated = start_prepared(&reopened, &recreated_setup, NOW + 302)
+        .expect("start new run for the persisted goal and policy");
     let different_goal = start_monitor(&reopened, "goal-new", NOW + 302);
     for current in [&recreated, &different_goal] {
         assert!(
@@ -881,7 +945,7 @@ fn confirming_quota_reset_does_not_clear_spend_pause() {
 }
 
 #[test]
-fn confirming_quota_reset_does_not_clear_unverifiable_spend() {
+fn confirming_quota_reset_does_not_clear_stale_spend_evidence() {
     let directory = tempfile::tempdir().expect("temporary monitor directory");
     let reset = NOW + 10;
     let store = MonitorStore::open(directory.path()).expect("open monitor store");
@@ -896,9 +960,16 @@ fn confirming_quota_reset_does_not_clear_unverifiable_spend() {
         ),
         NOW,
     );
+    record_spend(&store, spend_input(ACCOUNT, NOW), NOW);
     let started = start_monitor(&store, "goal-unknown-spend-reset", NOW);
     assert!(
-        started
+        !started
+            .issues
+            .iter()
+            .any(|issue| issue.code == MonitorIssueCode::SpendStale)
+    );
+    assert!(
+        !started
             .issues
             .iter()
             .any(|issue| issue.code == MonitorIssueCode::BudgetUnverifiable)
@@ -906,7 +977,8 @@ fn confirming_quota_reset_does_not_clear_unverifiable_spend() {
 
     let deadline = reset + 60;
     store.tick(deadline).expect("tick at reset grace deadline");
-    let recovery_at = deadline + 1;
+    let recovery_at = NOW + 301;
+    assert!(recovery_at > deadline);
     ingest(
         &store,
         ACCOUNT,
@@ -930,6 +1002,12 @@ fn confirming_quota_reset_does_not_clear_unverifiable_spend() {
             .issues
             .iter()
             .any(|issue| issue.code == MonitorIssueCode::LimitGuardReached)
+    );
+    assert!(
+        after_quota_reset
+            .issues
+            .iter()
+            .any(|issue| issue.code == MonitorIssueCode::SpendStale)
     );
     assert!(
         after_quota_reset

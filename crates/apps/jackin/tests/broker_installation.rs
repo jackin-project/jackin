@@ -52,6 +52,16 @@ fn assert_broker_unavailable(
     Ok(value)
 }
 
+fn assert_interaction_required(output: &std::process::Output) -> anyhow::Result<()> {
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stderr.is_empty());
+    let value: serde_json::Value =
+        serde_json::from_slice(&output.stdout).context("expected structured usage error JSON")?;
+    assert_eq!(value["version"], 1);
+    assert_eq!(value["error"]["code"], "interaction_required");
+    Ok(())
+}
+
 #[test]
 fn service_start_missing_sibling_reports_install_hint() -> anyhow::Result<()> {
     let root = tempfile::tempdir()?;
@@ -151,6 +161,62 @@ fn explicit_service_start_preserves_missing_broker_override_path() -> anyhow::Re
     );
     assert!(message.contains("reinstall the complete jackin package"));
     assert!(!data_dir.join("usage-broker/run").exists());
+    Ok(())
+}
+
+#[test]
+fn headless_binding_and_policy_approval_reject_before_broker_activation() -> anyhow::Result<()> {
+    let root = tempfile::tempdir()?;
+    let home = root.path();
+    initialize_empty_config(home)?;
+    let missing = home.join("missing-broker");
+    let data_dir = home.join("isolated-usage-state");
+    let executable = Path::new(env!("CARGO_BIN_EXE_jackin"));
+
+    for args in [
+        vec![
+            "binding",
+            "confirm",
+            "--provider",
+            "claude",
+            "--account",
+            "fixture-account",
+            "--operator-label",
+            "offline fixture",
+            "--confirm",
+        ],
+        vec![
+            "policy",
+            "approve",
+            "--binding",
+            "fixture-binding",
+            "--binding-revision",
+            "1",
+            "--goal",
+            "fixture-goal",
+            "--policy",
+            "strict-sgd",
+            "--budget-sgd",
+            "50",
+            "--operator-label",
+            "offline fixture",
+            "--confirm",
+        ],
+    ] {
+        let output = isolated_command(executable, home)
+            .env("JACKIN_USAGE_BROKER_BIN", &missing)
+            .args(["usage", "--format", "json", "--data-dir"])
+            .arg(&data_dir)
+            .args(args)
+            .output()?;
+        assert_interaction_required(&output)?;
+        assert!(
+            !data_dir.join("usage-broker/run").exists(),
+            "headless operator action activated a broker"
+        );
+        let message = String::from_utf8_lossy(&output.stdout);
+        assert!(!message.contains(missing.to_string_lossy().as_ref()));
+    }
     Ok(())
 }
 

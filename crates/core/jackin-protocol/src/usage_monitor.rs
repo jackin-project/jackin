@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::control::Money;
 
 /// Version of the durable monitor records and statusline input.
-pub const USAGE_MONITOR_SCHEMA_VERSION: u16 = 1;
+pub const USAGE_MONITOR_SCHEMA_VERSION: u16 = 2;
 
 /// Maximum UTF-8 bytes accepted for one statusline JSON input.
 pub const USAGE_MONITOR_MAX_STATUSLINE_BYTES: usize = 16 * 1024;
@@ -21,6 +21,216 @@ pub enum MonitorProvider {
     Claude,
 }
 
+/// Whether a monitor only observes evidence or can authorize dispatch.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum MonitorPurpose {
+    /// Persist and report observations without creating a goal or permitting work.
+    ObserveOnly,
+    /// Evaluate an explicitly approved policy for a linked goal.
+    DispatchGuard,
+}
+
+/// Evidence partition selected by the operator.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(tag = "scope", rename_all = "snake_case", deny_unknown_fields)]
+pub enum MonitorScope {
+    /// Session evidence without any asserted account identity.
+    Session {
+        /// Exact Claude Code session identifier.
+        session_id: String,
+    },
+    /// Evidence assigned to a separately confirmed local account binding.
+    BoundAccount {
+        /// Broker-assigned binding identifier.
+        binding_id: String,
+        /// Binding revision confirmed by the operator.
+        binding_revision: u64,
+        /// Optional session restriction for this account-scoped monitor.
+        session_id: Option<String>,
+    },
+}
+
+/// Explicit policy selected by a durable operator approval.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum MonitorPolicy {
+    /// Enforce an account-bound SGD spend budget in addition to quota guards.
+    StrictSgd,
+    /// Enforce quota guards while explicitly disabling SGD spend enforcement.
+    QuotaOnly,
+}
+
+/// Provenance of a durable policy record.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum MonitorPolicyOrigin {
+    /// Explicit operator action recorded by the broker.
+    Operator,
+    /// Strict behavior carried forward from the pre-v2 monitor schema.
+    MigratedV1,
+}
+
+/// Tracking capability for the selected monitor scope.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum MonitorTrackingReadiness {
+    /// The local observer can accept evidence for this scope.
+    Ready,
+    /// The observer is configured but has not received required evidence yet.
+    Waiting,
+    /// The local broker or evidence path is unavailable.
+    Unavailable,
+}
+
+/// Readiness of required quota evidence.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum MonitorQuotaReadiness {
+    /// All required quota evidence is current and usable.
+    Ready,
+    /// Required quota evidence has not been received.
+    Unknown,
+    /// Required quota evidence is present but stale.
+    Stale,
+    /// A current quota observation is exhausted or past its guard.
+    Exhausted,
+}
+
+/// Readiness of the spend guard.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum MonitorBudgetReadiness {
+    /// Required spend and baseline evidence is verified and current.
+    Verified,
+    /// Required spend or baseline evidence is unavailable or unverifiable.
+    Unknown,
+    /// Required spend evidence is present but stale.
+    Stale,
+    /// The approved policy explicitly disables spend enforcement.
+    Disabled,
+}
+
+/// Final dispatch readiness, separate from tracking and evidence status.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum MonitorDispatchReadiness {
+    /// Current evidence and policy permit dispatch.
+    Ready,
+    /// Dispatch is authorized by policy but blocked by current conditions.
+    Blocked,
+    /// This monitor's purpose never grants dispatch authority.
+    NotAuthorized,
+}
+
+/// Independent readiness dimensions for a durable monitor.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct MonitorReadiness {
+    /// Whether evidence can be tracked for the selected scope.
+    pub tracking: MonitorTrackingReadiness,
+    /// Whether required quota evidence is current and usable.
+    pub quota: MonitorQuotaReadiness,
+    /// Whether the approved spend policy is satisfied or disabled.
+    pub budget: MonitorBudgetReadiness,
+    /// Final dispatch state; must agree with the authoritative runnable field.
+    pub dispatch: MonitorDispatchReadiness,
+}
+
+/// Operator confirmation input for a local account label.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct MonitorAccountBindingInput {
+    /// Provider whose account is represented by the operator label.
+    pub provider: MonitorProvider,
+    /// Stable local account partition key selected by the operator.
+    pub account_id: String,
+    /// Human-readable operator-supplied label; it is not a credential.
+    pub operator_label: String,
+    /// Explicit operator confirmation required by the broker.
+    pub operator_confirmed: bool,
+}
+
+/// Persisted local account binding, including unconfirmed migration records.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct MonitorAccountBinding {
+    /// Broker-assigned stable binding identifier.
+    pub binding_id: String,
+    /// Provider represented by this binding.
+    pub provider: MonitorProvider,
+    /// Stable local account partition key.
+    pub account_id: String,
+    /// Human-readable operator-supplied label; it is not a credential.
+    pub operator_label: String,
+    /// Revision of the binding, incremented whenever its account mapping changes.
+    pub revision: u64,
+    /// Whether the operator explicitly confirmed this mapping.
+    pub operator_confirmed: bool,
+    /// Broker time at which the operator confirmed this binding; absent when unconfirmed.
+    pub confirmed_at_epoch: Option<i64>,
+}
+
+/// Explicit operator approval input for a goal policy.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct MonitorPolicyApprovalInput {
+    /// Binding whose account and revision scope this policy approval.
+    pub binding_id: String,
+    /// Confirmed binding revision selected by the operator.
+    pub binding_revision: u64,
+    /// Operator goal governed by this policy.
+    pub goal_id: String,
+    /// Policy being explicitly approved.
+    pub new_policy: MonitorPolicy,
+    /// Positive SGD amount with exponent 2 for `StrictSgd`; absent for `QuotaOnly`.
+    pub budget: Option<Money>,
+    /// Human-readable operator-supplied audit label; it is not authentication.
+    pub operator_label: String,
+    /// Explicit operator confirmation required by the broker. This is a same-user
+    /// trust-boundary assertion, not cryptographic proof of human presence.
+    pub operator_confirmed: bool,
+    /// Explicit acceptance of having no Jackin SGD spend cap for `QuotaOnly`.
+    pub acknowledge_no_sgd_cap: bool,
+    /// Optional compare-and-swap revision for an existing policy record.
+    pub expected_revision: Option<u64>,
+}
+
+/// Durable policy revision and audit provenance for one account and goal.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct MonitorPolicyRecord {
+    /// Provider in force for this record.
+    pub provider: MonitorProvider,
+    /// Local account partition key in force for this record.
+    pub account_id: String,
+    /// Binding identifier for an operator approval; absent only for V1 migration.
+    pub binding_id: Option<String>,
+    /// Binding revision for an operator approval; absent only for V1 migration.
+    pub binding_revision: Option<u64>,
+    /// Operator goal governed by this policy.
+    pub goal_id: String,
+    /// Policy that was effective before this revision.
+    pub previous_policy: Option<MonitorPolicy>,
+    /// Policy made effective by this revision.
+    pub new_policy: MonitorPolicy,
+    /// SGD ceiling for `StrictSgd`; absent for `QuotaOnly`.
+    pub budget: Option<Money>,
+    /// Human-readable operator label; absent for V1 migration provenance.
+    pub operator_label: Option<String>,
+    /// Whether an operator explicitly confirmed this policy record.
+    pub operator_confirmed: bool,
+    /// Whether the operator acknowledged the missing SGD cap.
+    pub acknowledge_no_sgd_cap: bool,
+    /// Time the broker recorded this policy revision in UTC Unix seconds.
+    /// Unknown for V1 migration; migration must not invent an approval time.
+    pub recorded_at_epoch: Option<i64>,
+    /// Monotonic policy revision within this account and goal scope.
+    pub revision: u64,
+    /// Explicit operator approval or preserved V1 strict-policy provenance.
+    pub origin: MonitorPolicyOrigin,
+}
+
 /// One host-broker operation for durable monitors, statusline evidence, or service control.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "operation", rename_all = "snake_case")]
@@ -29,6 +239,18 @@ pub enum MonitorOperation {
     Start {
         /// Initial monitor configuration.
         config: MonitorConfig,
+        /// Caller-generated key making retries of this exact start idempotent.
+        idempotency_key: String,
+    },
+    /// Persist an operator-confirmed account binding without reading credentials.
+    BindAccount {
+        /// Account binding to create or revise.
+        binding: MonitorAccountBindingInput,
+    },
+    /// Persist an explicit policy approval for one binding and goal.
+    ApprovePolicy {
+        /// Policy approval to record.
+        approval: MonitorPolicyApprovalInput,
     },
     /// Stop one monitor while retaining its final record.
     Stop {
@@ -47,8 +269,8 @@ pub enum MonitorOperation {
     },
     /// Ingest a bounded statusline JSON document. It carries no cost field.
     Ingest {
-        /// Existing canonical account identity selected by the operator.
-        account_id: String,
+        /// Explicit unbound session scope or operator-confirmed account binding.
+        scope: MonitorScope,
         /// Normalized statusline fields from one bounded stdin document.
         observation: StatuslineObservation,
     },
@@ -73,7 +295,7 @@ pub enum MonitorOperation {
         provider: MonitorProvider,
     },
     /// Read reconciled monitor events with a bounded long poll.
-    /// `after_sequence == 0` attaches at the latest current event without replaying history;
+    /// A zero cursor attaches at the latest current event without replaying history;
     /// nonzero cursors return retained events newer than that sequence.
     Watch {
         /// Stable broker-assigned monitor ID.
@@ -91,17 +313,16 @@ pub enum MonitorOperation {
 pub struct MonitorConfig {
     /// Provider whose evidence is monitored.
     pub provider: MonitorProvider,
-    /// Stable canonical account identifier, never a discovery ordinal.
-    pub account_id: String,
-    /// Operator's task or goal identifier.
-    pub goal_id: String,
-    /// Optional session identifier to narrow statusline evidence.
-    pub session_id: Option<String>,
+    /// Whether this monitor only observes or evaluates dispatch permission.
+    pub purpose: MonitorPurpose,
+    /// Evidence partition selected by the operator.
+    pub scope: MonitorScope,
+    /// Operator goal; required only for dispatch guards.
+    pub goal_id: Option<String>,
     /// Optional model guard. Mismatched fresh evidence blocks runnable decisions.
     pub expected_model: Option<String>,
-    /// Operator-defined spend ceiling in an explicit currency/scale.
-    /// Missing or unsupported values block work with `budget_unverifiable`.
-    pub budget: Option<Money>,
+    /// Exact approved policy revision consumed by a dispatch guard.
+    pub policy_revision: Option<u64>,
 }
 
 /// One Claude quota window from normalized statusline input.
@@ -127,7 +348,7 @@ pub struct StatuslineRateLimits {
 /// Normalized Claude statusline input accepted by the monitor.
 ///
 /// The source does not provide a trustworthy account ID or observation time.
-/// The caller supplies the selected account; the broker stamps receipt time.
+/// The caller supplies an explicit scope; the broker stamps receipt time.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct StatuslineObservation {
@@ -137,6 +358,8 @@ pub struct StatuslineObservation {
     pub session_id: String,
     /// Model label used for monitor model guards.
     pub model: Option<String>,
+    /// Claude Code version reported by the statusline, when present.
+    pub claude_code_version: Option<String>,
     /// Claude provider quota windows. The raw statusline percentage is a float;
     /// the adapter converts it to basis points before sending this record.
     pub rate_limits: StatuslineRateLimits,
@@ -152,6 +375,34 @@ pub enum MonitorEvidenceFreshness {
     Stale,
     /// No observation for this field has been received.
     Unavailable,
+}
+
+/// Interpreted state of a reported quota reset epoch, independent of its age.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum MonitorResetValidity {
+    /// No reset epoch is available to interpret.
+    #[default]
+    Unknown,
+    /// The reported reset epoch is later than the broker's current time.
+    Future,
+    /// The reported reset epoch is at or before the broker's current time.
+    Due,
+}
+
+/// Result of comparing current model evidence with the configured model guard.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum MonitorModelGuardValidity {
+    /// No expected model is configured.
+    NotConfigured,
+    /// A model guard is configured, but fresh evidence cannot establish a result.
+    Unknown,
+    /// Fresh scoped model evidence matches the configured expected model.
+    Match,
+    /// At least one fresh scoped model observation differs from the expected model.
+    /// This takes precedence over Unknown when another scoped session lacks fresh evidence.
+    Mismatch,
 }
 
 /// Per-field provenance and age. Statusline has no source timestamp, so its
@@ -181,6 +432,8 @@ pub struct MonitorQuotaWindowStatus {
     pub used_evidence: Option<MonitorFieldEvidence>,
     /// Reset epoch, when observed.
     pub reset_at_epoch: Option<i64>,
+    /// Whether the epoch is unknown, future, or due, independent of evidence freshness.
+    pub reset_validity: MonitorResetValidity,
     /// Evidence metadata for `reset_at_epoch` only.
     pub reset_evidence: Option<MonitorFieldEvidence>,
 }
@@ -348,10 +601,12 @@ pub enum MonitorQuotaWindow {
 pub struct MonitorEvidence {
     /// Monotonic evidence sequence within this monitor.
     pub sequence: u64,
-    /// Account identity to which the value applies.
-    pub account_id: String,
+    /// Account identity to which the value applies, absent for unbound session evidence.
+    pub account_id: Option<String>,
     /// Session identity when the source is session-scoped.
     pub session_id: Option<String>,
+    /// Claude Code version reported alongside this statusline evidence.
+    pub claude_code_version: Option<String>,
     /// Source category for this field.
     pub source: MonitorEvidenceSource,
     /// Field name and value are encoded by `value`; account/session/source apply to this field.
@@ -428,6 +683,22 @@ pub enum MonitorIssueCode {
     StatuslineInvalid,
     /// Observation belongs to another canonical account.
     AccountMismatch,
+    /// A required account binding was not supplied.
+    BindingRequired,
+    /// The binding identifier or revision does not match the requested scope.
+    BindingMismatch,
+    /// No explicit policy approval exists for this account and goal.
+    PolicyRequired,
+    /// The expected policy revision does not match the current revision.
+    PolicyConflict,
+    /// A retry key was reused with a different monitor configuration.
+    IdempotencyConflict,
+    /// An observation-only monitor was used for a dispatch-authorizing operation.
+    ObservationOnly,
+    /// Operator confirmation was not explicitly supplied.
+    OperatorConfirmationRequired,
+    /// Quota-only policy did not include acknowledgement of the missing SGD cap.
+    SgdCapAcknowledgementRequired,
     /// Observation is outside the accepted freshness interval.
     ObservationStale,
     /// No trusted quota observation is available.
@@ -494,25 +765,40 @@ pub struct MonitorStatus {
     pub monitor_id: String,
     /// Provider whose evidence is monitored.
     pub provider: MonitorProvider,
-    /// Stable canonical account ID.
-    pub account_id: String,
-    /// Operator goal linked to the monitor.
-    pub goal_id: String,
-    /// Optional session filter.
+    /// Whether this monitor only observes or evaluates dispatch permission.
+    pub purpose: MonitorPurpose,
+    /// Evidence partition selected by the operator.
+    pub scope: MonitorScope,
+    /// Stable local account ID, absent for an unbound session observer.
+    pub account_id: Option<String>,
+    /// Operator goal linked to a dispatch guard.
+    pub goal_id: Option<String>,
+    /// Session restriction or latest observed session.
     pub session_id: Option<String>,
+    /// Latest Claude Code version reported by an accepted statusline observation.
+    pub claude_code_version: Option<String>,
+    /// Effective policy approval and audit provenance, when applicable.
+    pub policy: Option<MonitorPolicyRecord>,
+    /// Configured model guard target, when present.
+    pub expected_model: Option<String>,
     /// Latest model accepted by the configured model guard.
     pub model: Option<String>,
     /// Evidence metadata for the latest accepted model.
     pub model_evidence: Option<MonitorFieldEvidence>,
+    /// Guard comparison result, separate from model evidence freshness.
+    pub model_guard_validity: MonitorModelGuardValidity,
     /// Current monitor lifecycle.
     pub lifecycle: MonitorLifecycle,
-    /// Whether current evidence explicitly permits runnable work.
+    /// Independent tracking, quota, budget, and dispatch readiness.
+    pub readiness: MonitorReadiness,
+    /// Authoritative final decision about whether work may run.
+    /// This must be false whenever readiness.dispatch is not Ready.
     pub runnable: bool,
     /// Five-hour quota fields and their independent timestamps/freshness.
     pub five_hour: MonitorQuotaWindowStatus,
     /// Seven-day quota fields and their independent timestamps/freshness.
     pub seven_day: MonitorQuotaWindowStatus,
-    /// Optional operator-defined spend ceiling.
+    /// Active operator-defined spend ceiling, absent when spend enforcement is disabled.
     pub budget: Option<Money>,
     /// Cumulative spend attributed to the goal across billing-period rollovers.
     pub cumulative_goal_spend: Option<Money>,
@@ -584,6 +870,16 @@ pub struct MonitorEvent {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "result", rename_all = "snake_case")]
 pub enum MonitorReply {
+    /// Operator-confirmed account binding was durably recorded.
+    AccountBound {
+        /// Current binding record and revision.
+        binding: MonitorAccountBinding,
+    },
+    /// Explicit policy approval or migration-provenance revision was persisted.
+    PolicyApproved {
+        /// Durable policy record.
+        policy: MonitorPolicyRecord,
+    },
     /// Monitor was created and durably recorded.
     Started {
         /// New monitor status.
@@ -606,8 +902,12 @@ pub enum MonitorReply {
     },
     /// Statusline observation was accepted as local evidence.
     Ingested {
-        /// Account that owns the observation.
-        account_id: String,
+        /// Scope under which the observation was accepted.
+        scope: MonitorScope,
+        /// Account that owns the observation, absent for unbound session evidence.
+        account_id: Option<String>,
+        /// Session that emitted the observation.
+        session_id: String,
         /// Monotonic evidence sequence assigned by the broker.
         evidence_sequence: u64,
     },
@@ -659,9 +959,10 @@ mod tests {
     #[test]
     fn statusline_contract_preserves_window_values_in_basis_points() {
         let input = r#"{
-            "schema_version": 1,
+            "schema_version": 2,
             "session_id": "session-1",
             "model": "claude-sonnet",
+            "claude_code_version": "2.1.80",
             "rate_limits": {
                 "five_hour": {"used_percentage_basis_points": 1234, "reset_at_epoch": 1800000000},
                 "seven_day": {"used_percentage_basis_points": 9000, "reset_at_epoch": 1800600000}
@@ -686,25 +987,223 @@ mod tests {
                 .and_then(|w| w.used_percentage_basis_points),
             Some(9000)
         );
+        assert_eq!(observation.claude_code_version.as_deref(), Some("2.1.80"));
         assert_eq!(USAGE_MONITOR_MAX_STATUSLINE_BYTES, 16 * 1024);
     }
 
     #[test]
     fn statusline_ingest_is_a_typed_monitor_operation() {
         let operation = MonitorOperation::Ingest {
-            account_id: "account-1".to_owned(),
+            scope: super::MonitorScope::Session {
+                session_id: "session-1".to_owned(),
+            },
             observation: StatuslineObservation {
-                schema_version: 1,
+                schema_version: 2,
                 session_id: "session-1".to_owned(),
                 model: Some("claude-sonnet".to_owned()),
+                claude_code_version: Some("2.1.80".to_owned()),
                 ..StatuslineObservation::default()
             },
         };
         let value = serde_json::to_value(operation).expect("monitor operation should encode");
 
         assert_eq!(value["operation"], "ingest");
-        assert_eq!(value["account_id"], "account-1");
+        assert_eq!(value["scope"]["scope"], "session");
+        assert_eq!(value["scope"]["session_id"], "session-1");
+        assert_eq!(value["observation"]["claude_code_version"], "2.1.80");
         assert!(value["observation"].get("evidence_at_epoch").is_none());
+    }
+
+    #[test]
+    fn v2_monitor_control_shapes_are_tagged_and_secret_free() {
+        use super::{
+            MonitorAccountBindingInput, MonitorConfig, MonitorOperation, MonitorPolicy,
+            MonitorPolicyApprovalInput, MonitorPurpose, MonitorScope, USAGE_MONITOR_SCHEMA_VERSION,
+        };
+
+        let binding = MonitorOperation::BindAccount {
+            binding: MonitorAccountBindingInput {
+                provider: super::MonitorProvider::Claude,
+                account_id: "local-account".to_owned(),
+                operator_label: "work account".to_owned(),
+                operator_confirmed: true,
+            },
+        };
+        let binding_value = serde_json::to_value(binding).expect("binding should encode");
+        assert_eq!(binding_value["operation"], "bind_account");
+        assert_eq!(binding_value["binding"]["operator_confirmed"], true);
+        assert!(binding_value["binding"].get("credential").is_none());
+
+        let approval = MonitorOperation::ApprovePolicy {
+            approval: MonitorPolicyApprovalInput {
+                binding_id: "binding-1".to_owned(),
+                binding_revision: 1,
+                goal_id: "goal-1".to_owned(),
+                new_policy: MonitorPolicy::QuotaOnly,
+                budget: None,
+                operator_label: "operator".to_owned(),
+                operator_confirmed: true,
+                acknowledge_no_sgd_cap: true,
+                expected_revision: None,
+            },
+        };
+        let approval_value = serde_json::to_value(approval).expect("approval should encode");
+        assert_eq!(approval_value["operation"], "approve_policy");
+        assert_eq!(approval_value["approval"]["new_policy"], "quota_only");
+        assert_eq!(approval_value["approval"]["acknowledge_no_sgd_cap"], true);
+
+        let start = MonitorOperation::Start {
+            config: MonitorConfig {
+                provider: super::MonitorProvider::Claude,
+                purpose: MonitorPurpose::ObserveOnly,
+                scope: MonitorScope::BoundAccount {
+                    binding_id: "binding-1".to_owned(),
+                    binding_revision: 1,
+                    session_id: Some("session-1".to_owned()),
+                },
+                goal_id: None,
+                expected_model: None,
+                policy_revision: None,
+            },
+            idempotency_key: "retry-1".to_owned(),
+        };
+        let start_value = serde_json::to_value(&start).expect("start should encode");
+        let decoded: MonitorOperation =
+            serde_json::from_value(start_value.clone()).expect("v2 start should decode");
+        assert_eq!(decoded, start);
+        assert_eq!(start_value["config"]["purpose"], "observe_only");
+        assert_eq!(start_value["idempotency_key"], "retry-1");
+        let mut legacy_start = start_value.clone();
+        legacy_start["config"]["budget"] = serde_json::json!({
+            "amount_minor": 5_000,
+            "currency": "SGD",
+            "exponent": 2
+        });
+        serde_json::from_value::<MonitorOperation>(legacy_start)
+            .expect_err("legacy budget override must be rejected");
+        assert_eq!(USAGE_MONITOR_SCHEMA_VERSION, 2);
+        assert_eq!(crate::usage_broker::USAGE_BROKER_PROTOCOL_VERSION, "v6");
+        assert_eq!(
+            serde_json::to_value(super::MonitorBudgetReadiness::Disabled)
+                .expect("readiness should encode"),
+            "disabled"
+        );
+        assert_eq!(
+            serde_json::to_value(super::MonitorDispatchReadiness::NotAuthorized)
+                .expect("readiness should encode"),
+            "not_authorized"
+        );
+    }
+
+    #[test]
+    fn missing_statusline_version_stays_unknown() {
+        let input = r#"{
+            "schema_version": 2,
+            "session_id": "session-1",
+            "model": null,
+            "rate_limits": {"five_hour": null, "seven_day": null}
+        }"#;
+        let observation: StatuslineObservation =
+            serde_json::from_str(input).expect("missing optional version should decode as unknown");
+
+        assert_eq!(observation.claude_code_version, None);
+        let encoded = serde_json::to_value(observation).expect("observation should encode");
+        assert!(encoded["claude_code_version"].is_null());
+        assert!(encoded.get("evidence_at_epoch").is_none());
+    }
+
+    #[test]
+    fn model_guard_validity_states_have_stable_names() {
+        use super::MonitorModelGuardValidity;
+
+        assert_eq!(
+            serde_json::to_value(MonitorModelGuardValidity::NotConfigured)
+                .expect("model guard state should encode"),
+            "not_configured"
+        );
+        assert_eq!(
+            serde_json::to_value(MonitorModelGuardValidity::Unknown)
+                .expect("model guard state should encode"),
+            "unknown"
+        );
+        assert_eq!(
+            serde_json::to_value(MonitorModelGuardValidity::Match)
+                .expect("model guard state should encode"),
+            "match"
+        );
+        assert_eq!(
+            serde_json::to_value(MonitorModelGuardValidity::Mismatch)
+                .expect("model guard state should encode"),
+            "mismatch"
+        );
+    }
+
+    #[test]
+    fn migrated_policy_timestamp_remains_unknown() {
+        use super::{MonitorPolicy, MonitorPolicyOrigin, MonitorPolicyRecord, MonitorProvider};
+
+        let migrated = MonitorPolicyRecord {
+            provider: MonitorProvider::Claude,
+            account_id: "account-1".to_owned(),
+            binding_id: None,
+            binding_revision: None,
+            goal_id: "goal-1".to_owned(),
+            previous_policy: None,
+            new_policy: MonitorPolicy::StrictSgd,
+            budget: None,
+            operator_label: None,
+            operator_confirmed: false,
+            acknowledge_no_sgd_cap: false,
+            recorded_at_epoch: None,
+            revision: 1,
+            origin: MonitorPolicyOrigin::MigratedV1,
+        };
+        let encoded = serde_json::to_value(&migrated).expect("policy should encode");
+        assert!(encoded["recorded_at_epoch"].is_null());
+
+        let mut unknown_timestamp = encoded;
+        unknown_timestamp
+            .as_object_mut()
+            .expect("policy should encode as an object")
+            .remove("recorded_at_epoch");
+        let decoded: MonitorPolicyRecord = serde_json::from_value(unknown_timestamp)
+            .expect("an absent migrated policy timestamp should remain unknown");
+        assert_eq!(decoded.recorded_at_epoch, None);
+    }
+
+    #[test]
+    fn migrated_binding_confirmation_time_remains_unknown() {
+        use super::{MonitorAccountBinding, MonitorProvider};
+
+        let migrated = MonitorAccountBinding {
+            binding_id: "legacy-binding-1".to_owned(),
+            provider: MonitorProvider::Claude,
+            account_id: "account-1".to_owned(),
+            operator_label: "migrated v1 binding".to_owned(),
+            revision: 1,
+            operator_confirmed: false,
+            confirmed_at_epoch: None,
+        };
+        let encoded = serde_json::to_value(&migrated).expect("binding should encode");
+        assert!(encoded["confirmed_at_epoch"].is_null());
+
+        let mut unknown_timestamp = encoded;
+        unknown_timestamp
+            .as_object_mut()
+            .expect("binding should encode as an object")
+            .remove("confirmed_at_epoch");
+        let decoded: MonitorAccountBinding = serde_json::from_value(unknown_timestamp)
+            .expect("an absent unconfirmed binding timestamp should remain unknown");
+        assert_eq!(decoded.confirmed_at_epoch, None);
+        assert!(!decoded.operator_confirmed);
+
+        let confirmed = MonitorAccountBinding {
+            operator_confirmed: true,
+            confirmed_at_epoch: Some(1_800_000_000),
+            ..decoded
+        };
+        let confirmed_value = serde_json::to_value(confirmed).expect("binding should encode");
+        assert_eq!(confirmed_value["confirmed_at_epoch"], 1_800_000_000);
     }
 
     #[test]
@@ -719,6 +1218,7 @@ mod tests {
                 freshness: MonitorEvidenceFreshness::Current,
             }),
             reset_at_epoch: Some(1_800_060_000),
+            reset_validity: super::MonitorResetValidity::Future,
             reset_evidence: Some(MonitorFieldEvidence {
                 evidence_sequence: 8,
                 evidence_at_epoch: Some(1_799_999_000),
@@ -731,8 +1231,31 @@ mod tests {
 
         assert_eq!(value["used_percentage_basis_points"], 9_000);
         assert_eq!(value["used_evidence"]["evidence_sequence"], 12);
+        assert_eq!(value["reset_validity"], "future");
         assert_eq!(value["reset_evidence"]["evidence_sequence"], 8);
         assert_eq!(value["reset_evidence"]["freshness"], "stale");
+    }
+
+    #[test]
+    fn unbound_session_evidence_does_not_claim_an_account() {
+        let evidence = super::MonitorEvidence {
+            sequence: 1,
+            account_id: None,
+            session_id: Some("session-1".to_owned()),
+            claude_code_version: Some("2.1.80".to_owned()),
+            source: super::MonitorEvidenceSource::Statusline,
+            evidence_at_epoch: None,
+            evidence_received_at_epoch: 1_800_000_000,
+            age_seconds: 0,
+            value: super::MonitorEvidenceValue::Model {
+                model: "claude-sonnet".to_owned(),
+            },
+        };
+        let value = serde_json::to_value(evidence).expect("evidence should encode");
+
+        assert!(value["account_id"].is_null());
+        assert_eq!(value["session_id"], "session-1");
+        assert_eq!(value["claude_code_version"], "2.1.80");
     }
 
     #[test]

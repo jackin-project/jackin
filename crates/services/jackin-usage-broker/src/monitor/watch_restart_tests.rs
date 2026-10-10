@@ -3,7 +3,8 @@
 
 use jackin_protocol::control::Money;
 use jackin_protocol::usage_monitor::{
-    MonitorConfig, MonitorIssueCode, MonitorOperation, MonitorProvider, MonitorReply,
+    MonitorAccountBindingInput, MonitorConfig, MonitorIssueCode, MonitorOperation, MonitorPolicy,
+    MonitorPolicyApprovalInput, MonitorProvider, MonitorPurpose, MonitorReply, MonitorScope,
     SpendRecordInput, SpendRecordSource, StatuslineObservation, StatuslineQuotaWindow,
     StatuslineRateLimits, USAGE_MONITOR_SCHEMA_VERSION,
 };
@@ -21,6 +22,7 @@ fn observation() -> StatuslineObservation {
         schema_version: USAGE_MONITOR_SCHEMA_VERSION,
         session_id: "session-watch-restart".to_owned(),
         model: None,
+        claude_code_version: Some("2.1.80".to_owned()),
         rate_limits: StatuslineRateLimits {
             five_hour: quota.clone(),
             seven_day: quota,
@@ -32,10 +34,31 @@ fn observation() -> StatuslineObservation {
 fn fresh_watch_after_expired_restart_returns_only_the_reconciled_current_event() {
     let directory = tempfile::tempdir().expect("temporary data directory");
     let store = MonitorStore::open(directory.path()).expect("open monitor store");
+    let binding = match store
+        .operate(
+            MonitorOperation::BindAccount {
+                binding: MonitorAccountBindingInput {
+                    provider: MonitorProvider::Claude,
+                    account_id: "acct-watch-restart".to_owned(),
+                    operator_label: "isolated-test-operator".to_owned(),
+                    operator_confirmed: true,
+                },
+            },
+            NOW,
+        )
+        .expect("bind isolated test account")
+    {
+        MonitorReply::AccountBound { binding } => binding,
+        other => panic!("expected account-bound reply, got {other:?}"),
+    };
     store
         .operate(
             MonitorOperation::Ingest {
-                account_id: "acct-watch-restart".to_owned(),
+                scope: MonitorScope::BoundAccount {
+                    binding_id: binding.binding_id.clone(),
+                    binding_revision: binding.revision,
+                    session_id: None,
+                },
                 observation: observation(),
             },
             NOW,
@@ -57,17 +80,44 @@ fn fresh_watch_after_expired_restart_returns_only_the_reconciled_current_event()
             NOW,
         )
         .expect("record a current SGD baseline");
+    let policy = match store
+        .operate(
+            MonitorOperation::ApprovePolicy {
+                approval: MonitorPolicyApprovalInput {
+                    binding_id: binding.binding_id.clone(),
+                    binding_revision: binding.revision,
+                    goal_id: "goal-watch-restart".to_owned(),
+                    new_policy: MonitorPolicy::StrictSgd,
+                    budget: Some(Money::new(5_000, "SGD", 2)),
+                    operator_label: "isolated-test-operator".to_owned(),
+                    operator_confirmed: true,
+                    acknowledge_no_sgd_cap: false,
+                    expected_revision: None,
+                },
+            },
+            NOW,
+        )
+        .expect("approve isolated strict SGD policy")
+    {
+        MonitorReply::PolicyApproved { policy } => policy,
+        other => panic!("expected policy-approved reply, got {other:?}"),
+    };
     let started = store
         .operate(
             MonitorOperation::Start {
                 config: MonitorConfig {
                     provider: MonitorProvider::Claude,
-                    account_id: "acct-watch-restart".to_owned(),
-                    goal_id: "goal-watch-restart".to_owned(),
-                    session_id: None,
+                    purpose: MonitorPurpose::DispatchGuard,
+                    scope: MonitorScope::BoundAccount {
+                        binding_id: binding.binding_id,
+                        binding_revision: binding.revision,
+                        session_id: None,
+                    },
+                    goal_id: Some("goal-watch-restart".to_owned()),
                     expected_model: None,
-                    budget: Some(Money::new(5_000, "SGD", 2)),
+                    policy_revision: Some(policy.revision),
                 },
+                idempotency_key: "fixture-watch-restart".to_owned(),
             },
             NOW,
         )

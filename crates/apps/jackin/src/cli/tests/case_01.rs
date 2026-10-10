@@ -2,6 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use jackin_telemetry::schema::enums::CliCommandName as Name;
+
+type TelemetryCommandCase = (&'static [&'static str], Name);
 
 #[test]
 fn telemetry_command_vocabulary_exactly_matches_live_cli_tree() {
@@ -30,9 +33,7 @@ fn telemetry_command_vocabulary_exactly_matches_live_cli_tree() {
 
 #[test]
 fn telemetry_command_mapper_covers_every_nested_leaf() {
-    use jackin_telemetry::schema::enums::CliCommandName as Name;
-
-    let cases: &[(&[&str], Name)] = &[
+    let cases: &[TelemetryCommandCase] = &[
         (&["prune", "roles"], Name::PruneRoles),
         (&["prune", "cache"], Name::PruneCache),
         (&["prune", "images"], Name::PruneImages),
@@ -137,21 +138,176 @@ fn telemetry_command_mapper_covers_every_nested_leaf() {
         #[cfg(unix)]
         (&["daemon", "status"], Name::DaemonStatus),
         (&["diagnostics", "validate"], Name::DiagnosticsValidate),
-        (&["usage", "target", "accounts"], Name::UsageAccounts),
-        (&["usage", "target", "verify"], Name::UsageVerify),
-        (
-            &["usage", "host", "snapshot", "--agent", "claude"],
-            Name::UsageSnapshot,
-        ),
     ];
 
     assert_command_names(cases);
+    assert_command_names(usage_read_command_cases());
+    assert_command_names(usage_service_and_monitor_command_cases());
+    assert_command_names(usage_operator_command_cases());
+    assert_command_names(usage_integration_command_cases());
+}
+
+fn usage_read_command_cases() -> &'static [TelemetryCommandCase] {
+    &[
+        (
+            &["usage", "cache", "accounts", "--format", "json"],
+            Name::UsageAccounts,
+        ),
+        (&["usage", "jk-demo-role", "verify"], Name::UsageVerify),
+        (
+            &["usage", "doctor", "--provider", "claude", "--unattended"],
+            Name::UsageDoctor,
+        ),
+        (
+            &["usage", "status", "--monitor", "monitor-1"],
+            Name::UsageStatus,
+        ),
+        (
+            &["usage", "refresh", "--monitor", "monitor-1"],
+            Name::UsageRefresh,
+        ),
+        (
+            &["usage", "watch", "--monitor", "monitor-1"],
+            Name::UsageWatch,
+        ),
+        (
+            &[
+                "usage",
+                "wait",
+                "--monitor",
+                "monitor-1",
+                "--until",
+                "runnable",
+            ],
+            Name::UsageWait,
+        ),
+    ]
+}
+
+fn usage_service_and_monitor_command_cases() -> &'static [TelemetryCommandCase] {
+    &[
+        (&["usage", "service", "start"], Name::UsageServiceStart),
+        (&["usage", "service", "stop"], Name::UsageServiceStop),
+        (&["usage", "service", "status"], Name::UsageServiceStatus),
+        (
+            &[
+                "usage",
+                "monitor",
+                "observe",
+                "--provider",
+                "claude",
+                "--session",
+                "session-1",
+                "--idempotency-key",
+                "observe-1",
+            ],
+            Name::UsageMonitorObserve,
+        ),
+        (
+            &[
+                "usage",
+                "monitor",
+                "start",
+                "--provider",
+                "claude",
+                "--binding",
+                "binding-1",
+                "--binding-revision",
+                "1",
+                "--goal",
+                "goal-1",
+                "--policy-revision",
+                "1",
+                "--idempotency-key",
+                "start-1",
+            ],
+            Name::UsageMonitorStart,
+        ),
+        (
+            &["usage", "monitor", "stop", "--monitor", "monitor-1"],
+            Name::UsageMonitorStop,
+        ),
+    ]
+}
+
+fn usage_operator_command_cases() -> &'static [TelemetryCommandCase] {
+    &[
+        (
+            &[
+                "usage",
+                "binding",
+                "confirm",
+                "--provider",
+                "claude",
+                "--account",
+                "account-1",
+                "--operator-label",
+                "Operator",
+                "--confirm",
+            ],
+            Name::UsageBindingConfirm,
+        ),
+        (
+            &[
+                "usage",
+                "policy",
+                "approve",
+                "--binding",
+                "binding-1",
+                "--binding-revision",
+                "1",
+                "--goal",
+                "goal-1",
+                "--policy",
+                "strict-sgd",
+                "--operator-label",
+                "Operator",
+                "--confirm",
+            ],
+            Name::UsagePolicyApprove,
+        ),
+    ]
+}
+
+fn usage_integration_command_cases() -> &'static [TelemetryCommandCase] {
+    &[
+        (
+            &["usage", "statusline", "ingest", "--session-only"],
+            Name::UsageStatuslineIngest,
+        ),
+        (
+            &[
+                "usage",
+                "statusline",
+                "compose",
+                "--settings",
+                "/tmp/settings.json",
+                "--session-only",
+            ],
+            Name::UsageStatuslineCompose,
+        ),
+        (
+            &[
+                "usage",
+                "spend",
+                "record",
+                "--account",
+                "account-1",
+                "--file",
+                "/tmp/spend.json",
+            ],
+            Name::UsageSpendRecord,
+        ),
+        (
+            &["usage", "auth", "prepare", "--provider", "claude"],
+            Name::UsageAuthPrepare,
+        ),
+    ]
 }
 
 #[test]
 fn telemetry_command_mapper_covers_account_leaves() {
-    use jackin_telemetry::schema::enums::CliCommandName as Name;
-    let cases: &[(&[&str], Name)] = &[
+    let cases: &[TelemetryCommandCase] = &[
         (&["account", "list"], Name::AccountList),
         (&["account", "scan"], Name::AccountScan),
         (

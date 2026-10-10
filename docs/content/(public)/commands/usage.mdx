@@ -10,30 +10,69 @@ jackin usage --format json
 jackin usage service start --format json
 jackin usage service status --format json
 jackin usage service stop --format json
-jackin usage auth prepare --provider claude [--keychain-service SERVICE] --format json
 jackin usage doctor --provider claude --unattended --format json
-jackin usage monitor start --provider claude --account ACCOUNT --goal GOAL --budget-sgd 50 --format json
+jackin usage binding confirm --provider claude --account ACCOUNT --operator-label LABEL --confirm --format json
+jackin usage policy approve --binding ID --binding-revision N --goal GOAL --policy strict-sgd --budget-sgd 50 --operator-label LABEL --confirm --format json
+jackin usage policy approve --binding ID --binding-revision N --goal GOAL --policy quota-only --operator-label LABEL --confirm --acknowledge-no-sgd-cap --format json
+jackin usage monitor observe --provider claude --session SESSION --idempotency-key KEY --format json
+jackin usage monitor observe --provider claude --binding ID --binding-revision N --idempotency-key KEY --format json
+jackin usage monitor start --provider claude --binding ID --binding-revision N --goal GOAL --policy-revision N --idempotency-key KEY --format json
 jackin usage monitor stop --monitor ID --format json
 jackin usage status --monitor ID --format json
 jackin usage refresh --monitor ID --format json
 jackin usage watch --monitor ID --timeout-secs 300 --format jsonl
 jackin usage wait --monitor ID --until runnable --timeout-secs 300 --format json
-jackin usage statusline ingest --account ACCOUNT --format json < statusline.json
-jackin usage statusline compose --account ACCOUNT --settings settings.json --format json
+jackin usage statusline ingest --session-only --format json < statusline.json
+jackin usage statusline ingest --binding ID --binding-revision N --format json < statusline.json
+jackin usage statusline compose --session-only --settings settings.json --format json
+jackin usage statusline compose --binding ID --binding-revision N --settings settings.json --format json
 jackin usage spend record --account ACCOUNT --file account-spend.json --verified --format json
+jackin usage auth prepare --provider claude --format json
 ```
 
-## Binary and migration preflight
+Observer and dispatch-guard commands may also take `--expected-model MODEL`;
+account-bound monitor commands may take `--session SESSION`. A policy approval
+may use `--expected-revision N` for optimistic concurrency. `--format json`
+and `--data-dir PATH` are global options; watch uses JSON Lines. Statusline
+ingress reads its bounded JSON input from stdin.
 
-For a monitor, use one installed `jackin` binary for setup and every follow-up
-command, with the same `--data-dir PATH`. Do not switch to a repository
-`target/debug/jackin`. A version string alone does not prove command support:
-inspect `jackin usage --help` and continue only when it lists `monitor`,
-`status`, `watch` and `wait`, with no `host` or `projection` command.
+## V2 source contract and installed-pair preflight
 
-The broker executable can be selected by `JACKIN_USAGE_BROKER_BIN`, which
-overrides the sibling executable next to `jackin`. Read only that named
-setting, not the full environment:
+The frozen v2 contract uses broker wire v6 and monitor/store schema v2. Installed
+binary proof is still pending. The examples here describe the current source
+CLI contract; they do not claim that an existing packaged installation supports
+it. Before using an installed pair, inspect its top-level and nested help. It
+must expose binding confirmation, policy approval, monitor observe/start/stop,
+status, refresh, watch, wait, and statusline ingest/compose with the new scope
+options. A version string alone does not prove command support.
+
+V1 migration preserves each goal's strict policy semantics and history with
+origin `migrated_v1`; this is not explicit operator approval. Before any
+dispatch under a migrated goal, the operator must confirm the account binding
+and record a new strict policy revision with origin `operator`. Migrated
+bindings remain `operator_confirmed: false` with `confirmed_at_epoch: null`;
+migrated policies remain `operator_confirmed: false` with
+`recorded_at_epoch: null`. Missing callback source times stay unknown; migration
+does not infer an observation time or refresh evidence age.
+
+The only budget-repair exception is a V1 `migrated_v1` strict policy whose
+recorded budget is exactly SGD with exponent 2 and amount zero. A separate
+explicit operator approval may replace it with a positive strict SGD budget,
+creating a new `operator` revision. The migrated policy, baseline, cumulative
+spend, and historical uncertainty remain auditable. This exception never
+permits quota-only or applies to other currencies or malformed state. If the
+migrated baseline is absent or unverifiable, approval can still record the new
+operator policy revision, but the existing migrated goal remains blocked and
+non-runnable for dispatch until valid baseline admission. Repairing the budget
+does not invent a baseline or convert unknown history to zero spend. A new
+strict-goal activation without valid baseline admission is rejected atomically,
+without reserving its idempotency key or assigning a monitor ID.
+
+Use one installed `jackin` binary for setup and every follow-up command, with
+the same explicit `--data-dir PATH`. Do not switch to a repository
+`target/debug/jackin`. The broker executable can be selected by
+`JACKIN_USAGE_BROKER_BIN`, which overrides the sibling executable next to
+`jackin`. Read only that named setting, not the full environment:
 
 ```bash
 printf '%s\n' "${JACKIN_USAGE_BROKER_BIN-<unset>}"
@@ -42,73 +81,153 @@ printf '%s\n' "${JACKIN_USAGE_BROKER_BIN-<unset>}"
 When unset, the selected `jackin` uses its adjacent `jackin-usage-broker`. When
 set, require the value to point to that same installed pair; an empty or other
 path is a provenance mismatch. Stop and report it without unsetting or changing
-Claude's environment. Version and CLI help checks do not validate the broker
-pair.
+Claude's environment. CLI help does not validate the broker pair.
 
 `usage host snapshot` and `usage host projection` were removed. If an old
 invocation is rejected, stop and report the CLI error and binary path; do not
 retry with a repository build, snapshot/bootstrap, forced provider refresh or
-authentication. The bare `usage` command reads the current canonical
-projection, but it is not a replacement for a durable monitor status.
+authentication. The bare `usage` command reads the current canonical projection,
+but it is not a replacement for durable monitor status.
 
 `usage --data-dir PATH` selects isolated broker state. `service status` reports
 whether a broker responds, but not which executor it uses. If a responding
 broker is known to be the previously verified local-only service for this same
-data directory, reattach to it. Otherwise halt this setup and report its mode as
-unknown; do not stop the running service. `service start` attaches to an existing
-broker and cannot prove it is local-only.
-A `broker_unavailable` result alone does not prove absence because an
-incompatible or unreachable service may be present. Confirm the data directory
-has no existing service before starting one. A fresh `service start` launches
-the local-only executor. Use the same installed binary and data directory, and
-start the service before setting up the statusline adapter. Do not use `monitor
-start` to start a service implicitly. Readers, doctor and ingress only attach.
-If `doctor` reports `broker_unavailable`, stop, checkpoint and report the issue
-to the operator instead of switching to a projection, snapshot, provider
-refresh or auth path. Status, doctor, watch and wait attach to the broker
-without credential discovery, authentication or provider requests.
+data directory, reattach to it. Otherwise halt setup and report its mode as
+unknown; do not stop the running service. `service start` attaches to an
+existing broker and cannot prove it is local-only. A `broker_unavailable`
+result alone does not prove absence because an incompatible or unreachable
+service may be present. Confirm that the data directory has no existing service
+before starting one. A fresh `service start` launches the local-only executor.
+Readers, doctor and ingress only attach; monitor observe and start may start the
+broker. Statusline composition only prints a proposal.
 
-Claude statusline monitoring does not require authentication. Passive doctor
-may report `auth_status_unknown`; that is informational and does not prove
-credential access. Do not run auth preparation for unattended monitoring.
+Treat broker unavailability, unsupported ingress, or a CLI/broker provenance
+mismatch as external blockers. Preserve the issue, selected binary and broker
+paths, and data directory, then stop setup for operator resolution. Do not loop
+service start, doctor, ingest, or wait to try to clear a fixed mismatch. Do not
+fall back to removed host commands, forced refresh, credential preparation, or
+a repository build. Bounded wait is for a known transient evidence condition;
+re-read status when it ends and stop dispatch while blocked.
 
-Auth preparation is a separate explicit operator setup action. It requires an operator
-terminal and runs in the broker executable. Unattended credential reads prohibit
-Keychain UI and report `interaction_required` when consent cannot be obtained.
-Preparation does not promise credentials will stay readable forever. Do not use
-auth preparation from a monitoring hook or automated lane.
+## Observation, bindings, and policy
 
-Broker discovery also fails closed for 1Password `OpRef` declarations that would
-require interaction. The Claude auth command prepares only the selected Claude
-Keychain source. It does not prepare 1Password accounts; their missing relay
-capabilities remain unavailable and carry an interaction-required issue.
+`monitor observe` creates durable tracking only. It needs no spend receipt,
+policy approval, or quota evidence. It can use an unbound session scope or a
+separately confirmed local account binding. Unbound session evidence remains
+in an isolated session partition; it does not enter an account aggregate or
+merge retroactively.
+An observer always reports dispatch as `not_authorized` and `runnable: false`;
+its creation exits 0 when tracking starts, including when quota evidence is
+missing.
+
+A binding is an operator-selected account label, not an authenticated provider
+account ID. Claude's statusline payload cannot identify the provider account,
+show an account switch, or reveal which provider credentials Claude Code chose.
+Before changing Claude Code's selected account or provider credentials, the
+operator must review the current binding. Before ingesting evidence from a
+different selected account, confirm a binding or revision mapped to that
+account; the callback cannot update or verify the choice. Binding confirmation
+and policy approval are separate commands. Both require `--confirm`, an operator label, and attached stdin,
+stdout, and stderr terminals before contacting the broker. The broker records
+the exact scope and revision. This is a same-user local trust-boundary
+assertion, not cryptographic proof of human presence. There is no headless
+approval bypass.
+
+A dispatch guard requires a confirmed binding, goal, and already approved
+policy revision. `monitor start` consumes those exact references and a required
+idempotency key; it cannot choose or downgrade policy. Strict SGD requires a
+fresh, compatible, operator-attested baseline before the first goal activation.
+Quota-only requires explicit acknowledgement that Jackin's SGD spend
+protection is disabled; missing or unsupported policy never defaults to
+quota-only. Once a strict policy has been recorded, approving quota-only is
+rejected even before the goal's first activation; do not present this as a
+supported policy transition. Approval records retain the operator label,
+selected scope, policy revision, time, and origin.
+
+Strict activation is atomic. If baseline admission fails, the broker does not
+reserve the idempotency key, assign a monitor ID, or persist a partially
+activated goal. Repeating the same key/configuration returns the original
+record, including after stop; reusing a key with different configuration is an
+idempotency conflict. Use a new key for an intentional new run. New runs do not
+reset cumulative goal spend or account quota-pause state.
+
+## Readiness and exit status
+
+Monitor JSON reports purpose, scope, policy, and independent tracking, quota,
+budget, and dispatch readiness. `runnable` is authoritative. A `Wait` action,
+future reset time, or lifecycle label does not override it. Observation-only
+status is never runnable. Dispatch status, refresh, and wait exit 0 only when
+work is permitted, exit 2 when work is blocked or degraded, and exit 3 for an
+unavailable service or invalid request. An observation start exits 0 when
+tracking is durable even when quota is unknown.
+
+Each quota window reports `reset_validity` as `unknown`, `future`, or `due`,
+independently of reset-field freshness. `unknown` means no usable reset epoch is
+available; `future` and `due` classify the reported epoch against broker time.
+`due` is not confirmation of a reset, fresh quota, or permission to resume.
+
+Status also reports the configured `expected_model` and `model_guard_validity`:
+`not_configured`, `unknown`, `match`, or `mismatch`. `match` requires fresh
+model evidence. With a configured guard, missing or stale model evidence is
+`unknown`; a fresh different model is `mismatch`. The guard compares a model
+label only; a match is not model-specific quota evidence. The statusline does
+not report model-specific limits or permission for extra usage. Unknown extra
+usage permission never authorizes overage. These audit fields do not renew
+evidence, change freshness limits, clear reset barriers, relax guards, or
+override `runnable`.
+
+Passive `doctor` reports broker availability, statusline-ingress capability,
+and auth state without reading credentials or contacting Claude. A successful
+doctor proves only those passive capabilities; `auth_status_unknown` is
+informational and does not establish quota, spend, policy, or dispatch
+readiness.
+
+Auth preparation is a separate explicit operator setup action. It requires an
+operator terminal and runs in the broker executable. Unattended credential reads
+prohibit Keychain UI and report `interaction_required` when consent cannot be
+obtained. Preparation does not promise credentials will stay readable forever.
+Do not use auth preparation from a monitoring hook or automated lane.
 
 ## Local Claude Code evidence
 
 The [official statusline guide](https://code.claude.com/docs/en/statusline)
-documents `rate_limits.five_hour` and `rate_limits.seven_day`. Each may independently
-contain `used_percentage` and a `resets_at` Unix timestamp. The fields were
-introduced in Claude Code [v2.1.80](https://github.com/anthropics/claude-code/blob/v2.1.80/CHANGELOG.md).
-They are conditional, can be absent before an API response, and can disappear
-when a window expires. Jackin does not execute Claude to inspect its installed
-version or obtain quota.
+documents `rate_limits.five_hour` and `rate_limits.seven_day`. Each may
+independently contain `used_percentage` and a `resets_at` Unix timestamp. The
+fields were introduced in Claude Code [v2.1.80](https://github.com/anthropics/claude-code/blob/v2.1.80/CHANGELOG.md).
+`version` in the callback is an optional reported Claude Code version; it is
+stored as `claude_code_version`, separate from Jackin's monitor schema version.
+Quota fields claimed by versions before 2.1.80 are rejected. A missing version
+remains unknown and is not authenticated proof of compatibility. Jackin does
+not execute Claude to inspect its installed version or obtain quota.
 
-The raw callback has a `session_id` and optional model object; it has no verified
-account identity or provider observation timestamp. The operator must bind the
-callback to the correct account. The ingress accepts at most 16 KiB, ignores
-unrelated fields including session cost, and never reads credentials or sends
+The raw callback has a `session_id`, an optional model label, and optional
+five-hour and seven-day quota windows. It has no verified account identity or
+provider observation timestamp, model-specific quota limits, or permission for
+extra usage. Choose either
+`--session-only`, which uses the payload session ID without asserting an
+account, or `--binding ID --binding-revision N`, which assigns observations to
+the operator-confirmed local account mapping. Binding does not authenticate to
+the provider. Ingress accepts at most 16 KiB, ignores unrelated fields
+including session cost and `extra_usage`, and never reads credentials or sends
 provider requests. Missing fields stay unknown. Each field carries its source,
-account/session, receipt time, evidence time when available, sequence and age.
-Repeated identical callbacks preserve evidence age. A timer running the callback
-again does not observe the provider, and inactivity can leave data stale.
-The current local evidence age limit is 300 seconds, evaluated per field.
+account/session, broker receipt time, evidence time when available, sequence,
+and age. Repeated identical callbacks preserve evidence age. A timer running
+the callback again does not observe the provider, and inactivity can leave data
+stale. The local evidence age limit remains 300 seconds, evaluated per field.
 
 `statusline compose` reads the supplied settings file and prints a proposed
 settings document. It preserves an existing command and its output, and proposes
 an ingress command when no statusline exists. It does not install settings or
-modify a running Claude session. Review and apply the proposal during an operator
-setup window. The adapter requires Python 3; if unavailable it retains the old
-command and supplies no monitoring evidence.
+modify a running Claude session. Review and apply the proposal during an
+operator setup window. The wrapper requires a POSIX-compatible shell and Python 3 for ingestion.
+If Python 3 is unavailable, it runs the existing command directly once and
+skips ingestion. It invokes `statusline ingest` with the selected
+`--session-only` or confirmed `--binding`/`--binding-revision` scope, plus the
+explicit data directory and JSON format. The existing command owns the displayed
+stdout and exit status; failed or timed-out ingestion does not replace them. A
+payload over 16 KiB still reaches the existing command but skips ingestion.
+Composition performs no OAuth lookup, Keychain access, provider HTTP request,
+or policy approval.
 
 ## Decisions and resets
 
@@ -177,14 +296,14 @@ guarantee avoidance of Anthropic bans. There is no `claude -p /usage` fallback. 
 The HTTP adapter and coordinator retain offline failure/cooldown coverage, but
 there is no enabled production Claude OAuth opt-in command in this release.
 Other providers can still use the normal broker refresh path. Cached desktop
-Claude rows may be unavailable; the durable statusline monitor is the supported
-Claude quota interface.
+Claude rows may be unavailable; the frozen v2 source contract uses durable
+statusline monitoring for Claude quota. Installed-pair proof remains pending.
 
 ## Spend guard
 
-A goal needs an account-bound, fresh same-period baseline with explicit currency,
-amount and decimal exponent. Record a verified operator receipt before creating
-the goal monitor. The file schema is:
+A goal needs an account-bound, fresh same-period baseline with explicit
+currency, amount, and decimal exponent. Record a verified operator receipt
+before strict goal activation. The file schema is:
 
 ```json
 {
@@ -202,7 +321,7 @@ currency cannot be treated as billed SGD. The account total's increases since
 the baseline are counted conservatively toward the goal; simultaneous goals can
 attribute the same account spending to more than one goal.
 
-The first monitor creation captures the current account total as its spend
+First strict activation captures the current account total as the goal spend
 baseline. The monitor attributes only later increases to that goal. Work already
 done before monitoring is untracked and unknown; the receipt cannot make prior
 spend retroactive. Do not present the SGD50 guard as a whole-goal historical
