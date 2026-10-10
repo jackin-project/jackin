@@ -253,8 +253,8 @@ fn cli_monitor_validation_matches_broker_identifier_and_text_bounds() {
 
 #[test]
 fn cli_monitor_revision_preflight_rejects_zero_and_accepts_positive_values() {
-    assert!(validate_monitor_revision("binding revision", 1).is_ok());
-    assert!(validate_monitor_revision("policy revision", u64::MAX).is_ok());
+    validate_monitor_revision("binding revision", 1).unwrap();
+    validate_monitor_revision("policy revision", u64::MAX).unwrap();
     assert_cli_invalid_argument(validate_monitor_revision("binding revision", 0).unwrap_err());
 }
 
@@ -537,8 +537,8 @@ fn monitor_observe_experimental_collector_is_explicit_and_defaults_off() {
 fn experimental_collector_requires_a_bound_observer_scope() {
     let result = validate_experimental_collector_scope(true, None);
     assert!(result.is_err());
-    assert!(validate_experimental_collector_scope(false, None).is_ok());
-    assert!(validate_experimental_collector_scope(true, Some("binding-1")).is_ok());
+    validate_experimental_collector_scope(false, None).unwrap();
+    validate_experimental_collector_scope(true, Some("binding-1")).unwrap();
 }
 
 #[test]

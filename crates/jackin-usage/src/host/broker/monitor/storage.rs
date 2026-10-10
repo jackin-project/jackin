@@ -40,11 +40,7 @@ pub(super) fn open_store_dir(data_dir: &Path) -> Result<File, MonitorIssue> {
     let broker_dir = File::from(broker_fd);
     validate_owned_dir(&broker_dir, STORE_DIR_MODE)?;
 
-    match mkdirat(
-        &broker_dir,
-        STORE_DIR,
-        Mode::from_bits_truncate(STORE_DIR_MODE as u16),
-    ) {
+    match mkdirat(&broker_dir, STORE_DIR, mode_from_bits(STORE_DIR_MODE)?) {
         Ok(()) | Err(nix::errno::Errno::EEXIST) => {}
         Err(_) => return Err(unavailable()),
     }
@@ -56,8 +52,7 @@ pub(super) fn open_store_dir(data_dir: &Path) -> Result<File, MonitorIssue> {
     )
     .map_err(|_| unavailable())?;
     let store_dir = File::from(store_fd);
-    fchmod(&store_dir, Mode::from_bits_truncate(STORE_DIR_MODE as u16))
-        .map_err(|_| unavailable())?;
+    fchmod(&store_dir, mode_from_bits(STORE_DIR_MODE)?).map_err(|_| unavailable())?;
     validate_owned_dir(&store_dir, STORE_DIR_MODE)?;
     Ok(store_dir)
 }
@@ -298,12 +293,12 @@ pub(super) fn save(dir: &File, state: &StoreState) -> Result<(), MonitorIssue> {
         dir,
         temporary.as_str(),
         OFlag::O_WRONLY | OFlag::O_CREAT | OFlag::O_EXCL | OFlag::O_NOFOLLOW,
-        Mode::from_bits_truncate(STORE_MODE as u16),
+        mode_from_bits(STORE_MODE)?,
     )
     .map_err(|_| unavailable())?;
     let mut file = File::from(fd);
     let result = (|| {
-        fchmod(&file, Mode::from_bits_truncate(STORE_MODE as u16)).map_err(|_| unavailable())?;
+        fchmod(&file, mode_from_bits(STORE_MODE)?).map_err(|_| unavailable())?;
         validate_owned_file(&file)?;
         file.write_all(&bytes).map_err(|_| unavailable())?;
         file.sync_all().map_err(|_| unavailable())?;
@@ -345,4 +340,9 @@ fn unavailable() -> MonitorIssue {
         message: "monitor state is unavailable or invalid".to_owned(),
         retry_at_epoch: None,
     }
+}
+
+fn mode_from_bits(bits: u32) -> Result<Mode, MonitorIssue> {
+    let platform_bits = nix::sys::stat::mode_t::try_from(bits).map_err(|_| unavailable())?;
+    Mode::from_bits(platform_bits).ok_or_else(unavailable)
 }

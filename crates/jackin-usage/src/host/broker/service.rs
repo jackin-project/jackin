@@ -115,6 +115,7 @@ pub fn run_usage_broker_service(
         resolver,
         monitor_store: Some(Arc::clone(&monitor_store)),
         collector_service: None,
+        collector_liveness: None,
         #[cfg(test)]
         claude_collector: None,
         probe_budget: config.coordinator.provider_timeout,
@@ -122,11 +123,14 @@ pub fn run_usage_broker_service(
     run_usage_broker_service_with_cleanup(
         config,
         executor,
-        BTreeMap::new(),
-        None,
-        Some(catalog_refresh),
-        Some(monitor_store),
-        cleanup,
+        BrokerServiceRuntime {
+            identity_metadata: BTreeMap::new(),
+            initial_catalog: None,
+            catalog_refresh: Some(catalog_refresh),
+            monitor_store: Some(monitor_store),
+            collector_liveness: None,
+            cleanup,
+        },
         || {},
     )
 }
@@ -194,6 +198,19 @@ pub(super) enum ForegroundBootstrapOutcome<L> {
     Malformed,
 }
 
+/// Generation capability held by the selected foreground credential lease.
+/// The service binds this exact generation to collector admission and revokes
+/// it when the foreground lifetime ends.
+pub(super) trait ForegroundCredentialLease {
+    fn generation(&self) -> u64;
+}
+
+impl ForegroundCredentialLease for crate::usage::ClaudeCredentialLease {
+    fn generation(&self) -> u64 {
+        crate::usage::ClaudeCredentialLease::generation(self)
+    }
+}
+
 fn foreground_bootstrap_outcome(
     outcome: crate::usage::ClaudeCredentialBootstrapOutcome,
 ) -> ForegroundBootstrapOutcome<crate::usage::ClaudeCredentialLease> {
@@ -223,7 +240,11 @@ fn run_usage_broker_foreground_bootstrap_core<L, G>(
     bootstrap: impl FnOnce(&str) -> Result<ForegroundBootstrapOutcome<L>, UsageCoordinationError>,
     establish_guard: impl FnOnce() -> Result<G, UsageCoordinationError>,
     on_ready: impl FnOnce(UsageBrokerForegroundReady),
-) -> Result<ForegroundBootstrapOutcome<L>, UsageCoordinationError> {
+) -> Result<ForegroundBootstrapOutcome<L>, UsageCoordinationError>
+where
+    L: ForegroundCredentialLease,
+    G: Send + Sync + 'static,
+{
     if !matches!(&scope, UsageDiscoveryScope::HostDesktop { .. }) {
         return Err(unavailable());
     }
@@ -233,11 +254,18 @@ fn run_usage_broker_foreground_bootstrap_core<L, G>(
         return Ok(outcome);
     };
     let _credential_lease = &credential_lease;
-    let _unattended_keychain_guard = establish_guard()?;
+    let collector_liveness = Arc::new(crate::usage::ClaudeCollectorLiveness::new(
+        establish_guard()?
+    ));
+    collector_liveness.bind_generation(credential_lease.generation());
     let monitor_store =
         Arc::new(monitor::MonitorStore::open(&config.data_dir).map_err(|_| unavailable())?);
     let capability = claude_usage_capability_for_service(service);
     monitor_store.set_experimental_collector_source(Some(capability.account_id.clone()));
+    let _collector_source_guard = ForegroundCollectorSourceGuard {
+        monitor_store: Arc::clone(&monitor_store),
+        liveness: Arc::clone(&collector_liveness),
+    };
     let catalog_entry = UsageCatalogEntry {
         revision: jackin_core::account_key_hash("usage-catalog-entry-v3", &capability.account_id),
         capability: capability.clone(),
@@ -258,6 +286,7 @@ fn run_usage_broker_foreground_bootstrap_core<L, G>(
         resolver,
         monitor_store: Some(Arc::clone(&monitor_store)),
         collector_service: Some(service.to_owned()),
+        collector_liveness: Some(Arc::clone(&collector_liveness)),
         #[cfg(test)]
         claude_collector: None,
         probe_budget: config.coordinator.provider_timeout,
@@ -269,18 +298,33 @@ fn run_usage_broker_foreground_bootstrap_core<L, G>(
     run_usage_broker_service_with_cleanup(
         config,
         executor,
-        identity_metadata,
-        Some(ForegroundCatalogSeed {
-            service: service.to_owned(),
-            entry: catalog_entry,
-            diagnostics: publish::CatalogDiagnostics::default(),
-        }),
-        None,
-        Some(monitor_store),
-        cleanup,
+        BrokerServiceRuntime {
+            identity_metadata,
+            initial_catalog: Some(ForegroundCatalogSeed {
+                service: service.to_owned(),
+                entry: catalog_entry,
+                diagnostics: publish::CatalogDiagnostics::default(),
+            }),
+            catalog_refresh: None,
+            monitor_store: Some(monitor_store),
+            collector_liveness: Some(Arc::clone(&collector_liveness)),
+            cleanup,
+        },
         || on_ready(ready),
     )?;
     Ok(ForegroundBootstrapOutcome::Acquired(credential_lease))
+}
+
+struct ForegroundCollectorSourceGuard {
+    monitor_store: Arc<monitor::MonitorStore>,
+    liveness: Arc<crate::usage::ClaudeCollectorLiveness>,
+}
+
+impl Drop for ForegroundCollectorSourceGuard {
+    fn drop(&mut self) {
+        self.liveness.deactivate();
+        self.monitor_store.set_experimental_collector_source(None);
+    }
 }
 
 #[cfg(test)]
@@ -291,7 +335,11 @@ pub(super) fn run_usage_broker_foreground_bootstrap_with_for_test<L, G>(
     bootstrap: impl FnOnce(&str) -> Result<ForegroundBootstrapOutcome<L>, UsageCoordinationError>,
     establish_guard: impl FnOnce() -> Result<G, UsageCoordinationError>,
     on_ready: impl FnOnce(UsageBrokerForegroundReady),
-) -> Result<ForegroundBootstrapOutcome<L>, UsageCoordinationError> {
+) -> Result<ForegroundBootstrapOutcome<L>, UsageCoordinationError>
+where
+    L: ForegroundCredentialLease,
+    G: Send + Sync + 'static,
+{
     run_usage_broker_foreground_bootstrap_core(
         config,
         scope,
@@ -335,11 +383,14 @@ fn run_usage_broker_service_with_executor_and_metadata(
     run_usage_broker_service_with_cleanup(
         config,
         executor,
-        identity_metadata,
-        initial_catalog,
-        catalog_refresh,
-        None,
-        cleanup,
+        BrokerServiceRuntime {
+            identity_metadata,
+            initial_catalog,
+            catalog_refresh,
+            monitor_store: None,
+            collector_liveness: None,
+            cleanup,
+        },
         || {},
     )
 }
@@ -424,23 +475,36 @@ fn startup_lease_paths(
     Ok((leader_path, socket_path))
 }
 
-fn run_usage_broker_service_with_cleanup(
-    config: UsageBrokerConfig,
-    executor: Arc<dyn UsageProviderExecutor>,
+struct BrokerServiceRuntime {
     identity_metadata: BTreeMap<UsageAccountCapability, publish::AccountIdentityMetadata>,
     initial_catalog: Option<ForegroundCatalogSeed>,
     catalog_refresh: Option<Arc<catalog::BrokerCatalogRefresh>>,
     monitor_store: Option<Arc<monitor::MonitorStore>>,
+    collector_liveness: Option<Arc<crate::usage::ClaudeCollectorLiveness>>,
     cleanup: BrokerStartupCleanup,
+}
+
+fn run_usage_broker_service_with_cleanup(
+    config: UsageBrokerConfig,
+    executor: Arc<dyn UsageProviderExecutor>,
+    runtime: BrokerServiceRuntime,
     on_ready: impl FnOnce(),
 ) -> Result<(), UsageCoordinationError> {
+    let BrokerServiceRuntime {
+        identity_metadata,
+        initial_catalog,
+        catalog_refresh,
+        monitor_store,
+        collector_liveness,
+        cleanup,
+    } = runtime;
     let socket_path = config.socket_path();
     let mut cleanup = cleanup;
     prepare_socket_for_startup(&config, &cleanup)?;
     let listener = UnixListener::bind(&socket_path).map_err(|_| broker_conflict())?;
     cleanup
         .record_socket_identity()
-        .map_err(|_| unavailable())?;
+        .map_err(|()| unavailable())?;
     fs::set_permissions(&socket_path, fs::Permissions::from_mode(0o600))
         .map_err(|_| unavailable())?;
     validate_owned_mode(&socket_path, 0o600)?;
@@ -524,6 +588,7 @@ fn run_usage_broker_service_with_cleanup(
         publisher,
         monitor_store,
         catalog_refresh,
+        collector_liveness,
     });
     Ok(())
 }
@@ -552,7 +617,7 @@ pub fn ensure_usage_broker_with_executor(
     let listener = UnixListener::bind(&socket_path).map_err(|_| broker_conflict())?;
     cleanup
         .record_socket_identity()
-        .map_err(|_| unavailable())?;
+        .map_err(|()| unavailable())?;
     fs::set_permissions(&socket_path, fs::Permissions::from_mode(0o600))
         .map_err(|_| unavailable())?;
     validate_owned_mode(&socket_path, 0o600)?;
@@ -615,6 +680,7 @@ pub fn ensure_usage_broker_with_executor(
             publisher,
             monitor_store,
             catalog_refresh: None,
+            collector_liveness: None,
         });
     })
     .map_err(|_| unavailable())?;

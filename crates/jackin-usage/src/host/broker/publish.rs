@@ -413,10 +413,9 @@ impl ProjectionPublisher {
         }
         if let Ok(catalog) = self.catalog.lock()
             && let Some(catalog) = catalog.as_ref()
+            && retain_revoked_accounts(&mut next, &previous, catalog, None).is_err()
         {
-            if retain_revoked_accounts(&mut next, &previous, catalog, None).is_err() {
-                return false;
-            }
+            return false;
         }
         next.broker_generation = next.broker_generation.saturating_add(1);
         next.projection_id = format!("{}:{}", next.broker_instance_id, next.broker_generation);
@@ -730,9 +729,10 @@ fn merge_views(
 /// Unknown IDs pass through unchanged so validation can report them at the
 /// protocol boundary without inventing a mapping.
 pub(super) fn canonical_provider_id(surface_id: &str) -> String {
-    HostSurfaceId::from_id(surface_id)
-        .map(|surface| surface.provider_id().to_owned())
-        .unwrap_or_else(|| surface_id.to_owned())
+    HostSurfaceId::from_id(surface_id).map_or_else(
+        || surface_id.to_owned(),
+        |surface| surface.provider_id().to_owned(),
+    )
 }
 
 /// Normalize the projection rows persisted by schema v2 before the broker
@@ -785,8 +785,7 @@ pub(super) fn migrate_legacy_projection(projection: &mut UsageProjectionV1) -> R
 /// The exact provider ID mapping is one-to-one in `HostSurfaceId::ALL`.
 pub(super) fn surface_id_for_provider(provider_id: &str) -> String {
     host_surface_for_provider(provider_id)
-        .map(|surface| surface.id().to_owned())
-        .unwrap_or_else(|| provider_id.to_owned())
+        .map_or_else(|| provider_id.to_owned(), |surface| surface.id().to_owned())
 }
 
 fn host_surface_for_provider(provider_id: &str) -> Option<HostSurfaceId> {

@@ -249,7 +249,7 @@ impl OfflineFixture {
             if self
                 .broker_thread
                 .as_ref()
-                .is_some_and(|thread| thread.is_finished())
+                .is_some_and(JoinHandle::is_finished)
             {
                 let thread = self
                     .broker_thread

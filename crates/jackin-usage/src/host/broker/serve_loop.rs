@@ -17,7 +17,7 @@ use jackin_protocol::usage_broker::{
 };
 
 use super::catalog::BrokerCatalogRefresh;
-use super::dispatch_ops::dispatch;
+use super::dispatch_ops::{DispatchControls, dispatch_with_liveness};
 use super::monitor::MonitorStore;
 use super::waits;
 use super::{
@@ -93,6 +93,7 @@ pub(super) struct ServeConfig {
     pub(super) publisher: publish::ProjectionPublisher,
     pub(super) monitor_store: Arc<MonitorStore>,
     pub(super) catalog_refresh: Option<Arc<BrokerCatalogRefresh>>,
+    pub(super) collector_liveness: Option<Arc<crate::usage::ClaudeCollectorLiveness>>,
 }
 
 struct ConnectionContext {
@@ -104,6 +105,7 @@ struct ConnectionContext {
     fenced: Arc<AtomicBool>,
     catalog_refresh: Option<Arc<BrokerCatalogRefresh>>,
     wait_pool: Arc<waits::WaitPool>,
+    collector_liveness: Option<Arc<crate::usage::ClaudeCollectorLiveness>>,
 }
 
 impl ConnectionContext {
@@ -122,11 +124,15 @@ pub(super) fn serve(config: ServeConfig) {
         publisher,
         monitor_store,
         catalog_refresh,
+        collector_liveness,
     } = config;
     let (connections, receiver) = mpsc::sync_channel(BROKER_CONNECTION_QUEUE);
     let receiver = Arc::new(Mutex::new(receiver));
     let build_id = Arc::<str>::from(build_id.as_str());
-    let shutdown = Arc::new(AtomicBool::new(false));
+    let shutdown = collector_liveness.as_ref().map_or_else(
+        || Arc::new(AtomicBool::new(false)),
+        |live| live.shutdown_flag(),
+    );
     let fenced = Arc::new(AtomicBool::new(false));
     let wait_pool = Arc::new(waits::WaitPool::new(
         Arc::clone(&coordinator),
@@ -145,14 +151,17 @@ pub(super) fn serve(config: ServeConfig) {
         fenced: Arc::clone(&fenced),
         catalog_refresh,
         wait_pool,
+        collector_liveness: collector_liveness.as_ref().map(Arc::clone),
     });
     let workers = spawn_connection_workers(receiver, Arc::clone(&context));
     if workers.is_empty() {
+        invalidate_foreground_collector(&monitor_store, collector_liveness.as_ref());
         drop(listener);
         drop(cleanup);
         return;
     }
     if listener.set_nonblocking(true).is_err() {
+        invalidate_foreground_collector(&monitor_store, collector_liveness.as_ref());
         drop(connections);
         for worker in workers {
             drop(worker.join());
@@ -218,6 +227,7 @@ pub(super) fn serve(config: ServeConfig) {
             Err(_) => break,
         }
     }
+    invalidate_foreground_collector(&monitor_store, collector_liveness.as_ref());
     // Fence all remaining connections before disconnecting the queue. Workers
     // check this gate both before handling queued streams and before dispatch.
     fenced.store(true, Ordering::Release);
@@ -234,6 +244,16 @@ pub(super) fn serve(config: ServeConfig) {
     // until those workers and all synchronous connection workers are gone.
     drop(context);
     drop(cleanup);
+}
+
+fn invalidate_foreground_collector(
+    monitor_store: &MonitorStore,
+    liveness: Option<&Arc<crate::usage::ClaudeCollectorLiveness>>,
+) {
+    if let Some(liveness) = liveness {
+        liveness.deactivate();
+        monitor_store.set_experimental_collector_source(None);
+    }
 }
 
 fn spawn_connection_workers(
@@ -297,14 +317,17 @@ fn handle_stream(mut stream: UnixStream, context: &ConnectionContext) {
     if context.is_fenced() {
         return;
     }
-    let response = dispatch(
+    let response = dispatch_with_liveness(
         &context.coordinator,
         request,
         &context.build_id,
         &context.publisher,
         &context.monitor_store,
-        &context.shutdown,
-        context.catalog_refresh.as_deref(),
+        DispatchControls {
+            shutdown: &context.shutdown,
+            catalog_refresh: context.catalog_refresh.as_deref(),
+            collector_liveness: context.collector_liveness.as_deref(),
+        },
     );
     write_response(&mut stream, response);
 }

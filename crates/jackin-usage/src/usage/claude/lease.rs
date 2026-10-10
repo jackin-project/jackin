@@ -5,7 +5,9 @@
 
 use std::sync::{Mutex, OnceLock, atomic::AtomicU64};
 
-use zeroize::{Zeroize, Zeroizing};
+#[cfg(any(target_os = "macos", test))]
+use zeroize::Zeroize;
+use zeroize::Zeroizing;
 
 use super::keychain::{
     ClaudeKeychainPolicyError, ClaudeKeychainRead, prepare_claude_keychain_auth,
@@ -48,6 +50,10 @@ impl ClaudeCredentialLease {
     pub fn service(&self) -> &str {
         &self.service
     }
+
+    pub(crate) fn generation(&self) -> u64 {
+        self.generation
+    }
 }
 
 impl std::fmt::Debug for ClaudeCredentialLease {
@@ -85,6 +91,24 @@ impl ClaudeCredentialCache {
             .map(|cached| cached.service.clone())
     }
 
+    #[cfg(test)]
+    fn generation_for(&self, service: &str) -> Option<u64> {
+        self.credential
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_ref()
+            .filter(|cached| cached.service == service)
+            .map(|cached| cached.generation)
+    }
+
+    fn contains_generation(&self, service: &str, generation: u64) -> bool {
+        self.credential
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_ref()
+            .is_some_and(|cached| cached.service == service && cached.generation == generation)
+    }
+
     fn store(&self, service: String, json: Zeroizing<String>, generation: u64) {
         *self
             .credential
@@ -97,19 +121,22 @@ impl ClaudeCredentialCache {
         });
     }
 
-    fn begin_unauthorized_reread(&self, service: &str) -> Option<u64> {
+    fn begin_unauthorized_reread(&self, service: &str, generation: u64) -> bool {
         let mut credential = self
             .credential
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let cached = credential
             .as_mut()
-            .filter(|cached| cached.service == service)?;
+            .filter(|cached| cached.service == service && cached.generation == generation);
+        let Some(cached) = cached else {
+            return false;
+        };
         if cached.unauthorized_reread_attempted {
-            return None;
+            return false;
         }
         cached.unauthorized_reread_attempted = true;
-        Some(cached.generation)
+        true
     }
 
     fn replace_if_exact(&self, service: &str, generation: u64, json: Zeroizing<String>) -> bool {
@@ -247,6 +274,19 @@ pub(crate) fn claude_service_is_bootstrapped(service: &str) -> bool {
         .is_some_and(|cached| cached == service)
 }
 
+#[cfg(test)]
+pub(crate) fn claude_credential_generation(service: &str) -> Option<u64> {
+    cached_credential().generation_for(service)
+}
+
+pub(crate) fn claude_credential_generation_is_current(service: &str, generation: u64) -> bool {
+    cached_credential().contains_generation(service, generation)
+}
+
+pub(crate) fn revoke_bootstrapped_claude_generation(generation: u64) {
+    cached_credential().clear_generation(generation);
+}
+
 /// Replace payload only for the already selected exact service. Used by the
 /// one bounded noninteractive reread after HTTP 401.
 pub(crate) fn replace_bootstrapped_claude_payload(
@@ -260,8 +300,8 @@ pub(crate) fn replace_bootstrapped_claude_payload(
 /// Claim the one process-lease 401 reread. Concurrent or later callers cannot
 /// start another Keychain read, even if the first read failed or found no
 /// changed credential.
-pub(crate) fn begin_bootstrapped_claude_401_reread(service: &str) -> Option<u64> {
-    cached_credential().begin_unauthorized_reread(service)
+pub(crate) fn begin_bootstrapped_claude_401_reread(service: &str, generation: u64) -> bool {
+    cached_credential().begin_unauthorized_reread(service, generation)
 }
 
 #[cfg(test)]

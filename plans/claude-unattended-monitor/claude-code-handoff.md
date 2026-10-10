@@ -1,33 +1,53 @@
 # Claude Code usage observer handoff
 
-**Recorded installed fixture: passed; pair rebuild pending. Real-account/provider
-readiness: unverified.** The installed v3 CLI and matching sibling broker
-recorded below were version `0.6.4`, built from source commit
-`1a45196dbe24d439e596c14e22fbda59799e7b0d`. The pair will be rebuilt after
-dormant-helper cleanup. These hashes and the fixture log describe the prior
-pair only; refresh provenance and rerun the installed fixture after rebuild
-before treating the rebuilt pair as verified or running this handoff.
+**Install checkpoint passed the isolated fixture, but this pair is not final or
+ready for handoff activation.** CLI and matching sibling broker are version
+`0.6.4`, built and installed from source commit
+`8288ef4a4e174624e353f8748304766ce98e5822`. A narrow conservative startup-floor
+source correction for persisted rate deadlines and a generation/liveness gate
+for late 401 Retry-After responses after foreground teardown are pending. An
+abrupt forward wall-clock step between process restarts can expire an
+epoch-based deadline early; this checkpoint does not claim protection against arbitrary clock
+tampering. Rebuild and rerun the installed fixture from the follow-up source
+commit before activating this handoff.
 
 - CLI: `/Users/donbeave/.local/share/jackin-claude-monitor-v3/bin/jackin`
 - Broker: `/Users/donbeave/.local/share/jackin-claude-monitor-v3/bin/jackin-usage-broker`
-- CLI SHA-256: `243469d19697f339e982214e2b1b84dd44fc57f601910dec2a9983b0e397cbe0`
-- Broker SHA-256: `b96073209766236a7f30eee7c34725ff283dd47e6fe30c0df3cc24fcfbf2f5e4`
-- Prior installed fixture log: [/private/tmp/jackin-v3-installed-smoke.log](/private/tmp/jackin-v3-installed-smoke.log)
+- CLI SHA-256: `3b4ff49c100c3aa925fd25535ec5907ddaef0fc10d99a787abe51075f0fc50b2`
+- Broker SHA-256: `3b30926a6cd1ceab8a41aeb7fb09e321e4976f7fb92a6054372529b1a8f0332e`
+- Current installed fixture: [v3-installed-smoke.log](v3-installed-smoke.log)
+- Historical wire-v7 fixture: [v3-installed-smoke-wire7.log](v3-installed-smoke-wire7.log)
+- Installed provenance: `/Users/donbeave/.local/share/jackin-claude-monitor-v3/docs/build-provenance.json`
 
-The isolated installed smoke passed help, sibling selection, passive-service,
-observer, and statusline-fixture checks. It observed zero HTTP proxy requests
-and no dispatch policy approvals. It did **not** instrument native Security
-Framework calls or exercise successful foreground authentication. No real
-account, Keychain authorization, or live provider request was verified; the
-experimental endpoint remains unsupported and may fail. This is not a
-no-dialog or live-readiness guarantee.
+The current checkpoint uses broker wire v8, projection envelope schema 3,
+statusline input schema 2, and durable monitor schema 4. Its isolated fixture
+verified the exact installed sibling broker with
+`JACKIN_USAGE_BROKER_BIN` unset, observed zero HTTP proxy requests and zero
+credential-command tripwire executions, and removed its fixture after orderly
+stop. The fixture does not instrument native Security Framework calls and did
+not exercise successful foreground authentication. Projection migration is
+covered by its dedicated offline tests; installed smoke does not persist a
+projection envelope. No live Keychain authorization, provider request, or
+real-account readiness was verified. The experimental endpoint remains
+unsupported and may fail.
 
-The v3 state directory below is currently empty and isolated; it is not a
-configured account or evidence store. Use it only if creating this new local
-state is intended. Do not point these commands at an old v1/v2 store or any
-existing state that must be preserved. Keep the same verified binary pair and
-data directory for all commands; do not use a repository `target/debug`
-binary.
+The installed v3 `state/` is empty: this install has no verified live bootstrap,
+source binding, or monitor. Its readiness is setup-blocked. Do not activate
+collection or dispatch from this handoff yet. Keep the existing Claude goal and
+operator-approved strict/quota policy unchanged; this handoff does not create,
+rename, replace, or authorize dispatch for a goal. Report the missing live
+setup once and stop new dispatch rather than repeatedly running `doctor` or
+`status`. Unknown Claude extra-usage permission is not permission to exceed
+verified quota or spend limits.
+
+### Paste-ready note for the existing Claude goal
+
+> Keep Jackin alongside this existing Claude goal; do not create or replace the goal, change its policy, or activate collection or dispatch. The v3 state is empty and this source checkpoint awaits follow-up safety fixes: report setup-blocked once and stop new dispatch. After the operator completes attended bootstrap and binding, and separately verifies any already-approved dispatch policy, read `/Users/donbeave/.local/share/jackin-claude-monitor-v3/bin/jackin usage --data-dir /Users/donbeave/.local/share/jackin-claude-monitor-v3/state status --monitor "$MONITOR_ID" --format json`; require `status.schema_version == 4`. Inspect both quota windows and freshness, `runnable`, decision actions, and issue codes. Unknown extra usage is not permission.
+
+The current v3 state directory is isolated and empty. Do not point these
+commands at an old v1/v2 store or any existing state that must be preserved.
+Keep the same verified binary pair and data directory for all commands; do not
+use a repository `target/debug` binary.
 
 ```bash
 JACKIN='/Users/donbeave/.local/share/jackin-claude-monitor-v3/bin/jackin'
@@ -39,7 +59,7 @@ Leave it unset for this install. If it is set to an empty or different path,
 stop and resolve the mismatch; do not change Claude's environment to work
 around it.
 
-## Optional experimental collection without a statusline
+## Deferred experimental collection path
 
 The direct collector does not require a Claude statusline or settings change.
 It is experimental: it calls the observed but undocumented
@@ -64,8 +84,10 @@ active. It makes no provider request itself. macOS may require authorization
 during this attended read; no dialog-free guarantee is implied. Keep this
 terminal and process running while collecting. The secret-free `service_ready`
 record includes `source.account_id` and
-`source.scope: "claude_keychain_service"`; that ID identifies a local Jackin
-source, not an authenticated Anthropic account.
+`source.scope: "claude_keychain_service"`. Treat `source.account_id` as a local
+source handle (`LocalSourceHandle` on wire v8), not a provider-issued stable
+account ID or authenticated Anthropic identity. The `--provider-account` CLI
+option below selects this local handle; it does not certify provider identity.
 
 The cache and lease last only for this foreground process. Exiting or
 restarting it clears the cache and requires another attended bootstrap;

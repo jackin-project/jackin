@@ -147,7 +147,6 @@ impl Drop for ClaudeUnattendedKeychainGuard {
     reason = "credential type: the keychain payload must never be formatted into a log or error"
 )]
 pub enum ClaudeKeychainRead {
-    #[cfg(any(target_os = "macos", test))]
     Payload {
         json: Zeroizing<String>,
     },

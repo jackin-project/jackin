@@ -202,6 +202,25 @@ fn durable_collector_observer_reopens_passively_until_foreground_source_is_confi
 #[test]
 fn experimental_collection_requires_current_binding_approval() {
     let (_directory, store) = open_store();
+    assert_unmapped_collector_approval_requires_a_source(&store);
+
+    let binding =
+        bind_experimental_source(&store, false, NOW, "bind source without collector approval");
+    assert_eq!(binding.revision, 1);
+    assert!(!binding.experimental_collector_approved);
+    let config = collector_config(&binding, MonitorPurpose::ObserveOnly);
+    assert_collector_start_requires_approval(&store, &config);
+
+    let approved =
+        bind_experimental_source(&store, true, NOW + 1, "record explicit collector approval");
+    assert_eq!(approved.revision, 2);
+    assert!(approved.experimental_collector_approved);
+    let config = collector_config(&approved, MonitorPurpose::ObserveOnly);
+    assert_matching_foreground_source_is_required(&store, &config);
+    assert_revoked_approval_rejects_replay(&store, config);
+}
+
+fn assert_unmapped_collector_approval_requires_a_source(store: &MonitorStore) {
     let unmapped_approval = store
         .operate(
             MonitorOperation::BindAccount {
@@ -218,28 +237,36 @@ fn experimental_collection_requires_current_binding_approval() {
         )
         .expect_err("collector approval without a mapped source is invalid");
     assert_eq!(unmapped_approval.code, MonitorIssueCode::BindingRequired);
+}
 
-    let bind = |approved| MonitorOperation::BindAccount {
-        binding: MonitorAccountBindingInput {
-            provider: MonitorProvider::Claude,
-            account_id: "acct-experimental-binding".to_owned(),
-            provider_account_id: Some("source-account-1".to_owned()),
-            experimental_collector_approved: approved,
-            operator_label: "isolated-test-operator".to_owned(),
-            operator_confirmed: true,
-        },
-    };
-    let binding = match store
-        .operate(bind(false), NOW)
-        .expect("bind source without collector approval")
+fn bind_experimental_source(
+    store: &MonitorStore,
+    approved: bool,
+    now_epoch: i64,
+    expectation: &str,
+) -> MonitorAccountBinding {
+    match store
+        .operate(
+            MonitorOperation::BindAccount {
+                binding: MonitorAccountBindingInput {
+                    provider: MonitorProvider::Claude,
+                    account_id: "acct-experimental-binding".to_owned(),
+                    provider_account_id: Some("source-account-1".to_owned()),
+                    experimental_collector_approved: approved,
+                    operator_label: "isolated-test-operator".to_owned(),
+                    operator_confirmed: true,
+                },
+            },
+            now_epoch,
+        )
+        .expect(expectation)
     {
         MonitorReply::AccountBound { binding } => binding,
         other => panic!("expected account-bound reply, got {other:?}"),
-    };
-    assert_eq!(binding.revision, 1);
-    assert!(!binding.experimental_collector_approved);
+    }
+}
 
-    let config = collector_config(&binding, MonitorPurpose::ObserveOnly);
+fn assert_collector_start_requires_approval(store: &MonitorStore, config: &MonitorConfig) {
     let denied = store
         .operate(
             MonitorOperation::Start {
@@ -251,18 +278,9 @@ fn experimental_collection_requires_current_binding_approval() {
         .expect_err("mapped binding without approval must not enable collection");
     assert_eq!(denied.code, MonitorIssueCode::OperatorConfirmationRequired);
     assert!(store.collection_accounts().is_empty());
+}
 
-    let approved = match store
-        .operate(bind(true), NOW + 1)
-        .expect("record explicit collector approval")
-    {
-        MonitorReply::AccountBound { binding } => binding,
-        other => panic!("expected account-bound reply, got {other:?}"),
-    };
-    assert_eq!(approved.revision, 2);
-    assert!(approved.experimental_collector_approved);
-    let config = collector_config(&approved, MonitorPurpose::ObserveOnly);
-
+fn assert_matching_foreground_source_is_required(store: &MonitorStore, config: &MonitorConfig) {
     let state_before_unconfigured_start =
         serde_json::to_value(&*store.lock()).expect("serialize store before unconfigured start");
     let unconfigured = store
@@ -337,14 +355,15 @@ fn experimental_collection_requires_current_binding_approval() {
     );
     assert!(store.collection_accounts().is_empty());
     store.set_experimental_collector_source(Some("source-account-1".to_owned()));
+}
 
-    let revoked = match store
-        .operate(bind(false), NOW + 2)
-        .expect("new binding revision can revoke collector approval")
-    {
-        MonitorReply::AccountBound { binding } => binding,
-        other => panic!("expected account-bound reply, got {other:?}"),
-    };
+fn assert_revoked_approval_rejects_replay(store: &MonitorStore, config: MonitorConfig) {
+    let revoked = bind_experimental_source(
+        store,
+        false,
+        NOW + 2,
+        "new binding revision can revoke collector approval",
+    );
     assert_eq!(revoked.revision, 3);
     assert!(!revoked.experimental_collector_approved);
     assert!(store.collection_accounts().is_empty());
@@ -3652,8 +3671,7 @@ fn v2_store_rejects_wrong_nested_event_schema_without_rewriting_source() {
         .expect("write wrong-schema source");
 
     let error = MonitorStore::open(directory.path())
-        .err()
-        .expect("wrong nested event schema must be rejected");
+        .expect_err("wrong nested event schema must be rejected");
     assert_eq!(error.code, MonitorIssueCode::MonitorStoreUnavailable);
     assert_eq!(
         std::fs::read(persisted_state_path(&directory)).expect("read rejected source"),
@@ -3799,9 +3817,8 @@ fn v3_migration_rejects_goal_monitor_mismatch_without_rewriting_source() {
     std::fs::write(persisted_state_path(&directory), &source_bytes)
         .expect("write inconsistent V3 source");
 
-    let error = MonitorStore::open(directory.path())
-        .err()
-        .expect("inconsistent V3 source must be rejected");
+    let error =
+        MonitorStore::open(directory.path()).expect_err("inconsistent V3 source must be rejected");
     assert_eq!(error.code, MonitorIssueCode::MonitorStoreUnavailable);
     assert_eq!(
         std::fs::read(persisted_state_path(&directory)).expect("read rejected source"),
@@ -3840,8 +3857,7 @@ fn v3_migration_rejects_wrong_or_future_nested_event_schema_without_rewriting_so
             .expect("write wrong-schema source");
 
         let error = MonitorStore::open(directory.path())
-            .err()
-            .expect("wrong nested event schema must be rejected");
+            .expect_err("wrong nested event schema must be rejected");
         assert_eq!(error.code, MonitorIssueCode::MonitorStoreUnavailable);
         assert_eq!(
             std::fs::read(persisted_state_path(&directory)).expect("read rejected source"),
@@ -3851,8 +3867,48 @@ fn v3_migration_rejects_wrong_or_future_nested_event_schema_without_rewriting_so
     }
 }
 
+struct RolledGoalMigrationFixture {
+    directory: tempfile::TempDir,
+    store: MonitorStore,
+    account_id: &'static str,
+    rolled_goal_id: &'static str,
+    later_goal_id: &'static str,
+    rolled_monitor_id: String,
+    later_monitor_id: String,
+    p2_start: i64,
+    p2_end: i64,
+    p3_start: i64,
+    p3_end: i64,
+}
+
+struct RolloverPeriodBounds {
+    p0_start: i64,
+    p0_end: i64,
+    p1_start: i64,
+    p1_end: i64,
+    p2_start: i64,
+    p2_end: i64,
+}
+
+struct StrictGoalStart<'a> {
+    goal_id: &'a str,
+    idempotency_key: &'a str,
+    budget: &'a Money,
+    approval_at: i64,
+    start_at: i64,
+    approval_expectation: &'a str,
+    start_expectation: &'a str,
+}
+
 #[test]
 fn v3_rolled_goal_migration_latches_uncertainty_across_later_rollovers() {
+    let fixture = create_rolled_goal_migration_fixture();
+    let fixture = migrate_rolled_goal_fixture(fixture);
+    assert_rolled_goal_v3_migration_state(&fixture);
+    assert_rolled_goal_v3_latch_survives_later_rollovers(&fixture);
+}
+
+fn create_rolled_goal_migration_fixture() -> RolledGoalMigrationFixture {
     let (directory, store) = open_store();
     let account_id = "acct-v3-rolled";
     let rolled_goal_id = "goal-v3-rolled";
@@ -3884,78 +3940,138 @@ fn v3_rolled_goal_migration_latches_uncertainty_across_later_rollovers() {
         NOW,
     );
     let binding = v2_bind_account(&store, account_id, NOW + 1);
-    let rolled_policy = approve_policy(
+    let rolled_monitor = start_v3_strict_goal(
         &store,
         &binding,
+        StrictGoalStart {
+            goal_id: rolled_goal_id,
+            idempotency_key: "v3-rolled-goal",
+            budget: &budget,
+            approval_at: NOW + 2,
+            start_at: NOW + 3,
+            approval_expectation: "approve first strict goal",
+            start_expectation: "start first strict goal",
+        },
+    );
+    record_v3_rollover_history(
+        &store,
+        account_id,
+        RolloverPeriodBounds {
+            p0_start,
+            p0_end,
+            p1_start,
+            p1_end,
+            p2_start,
+            p2_end,
+        },
+    );
+    let later_monitor = start_v3_strict_goal(
+        &store,
+        &binding,
+        StrictGoalStart {
+            goal_id: later_goal_id,
+            idempotency_key: "v3-later-goal",
+            budget: &budget,
+            approval_at: p2_start + 3,
+            start_at: p2_start + 4,
+            approval_expectation: "approve later strict goal in current period",
+            start_expectation: "start later strict goal in current period",
+        },
+    );
+    assert_pre_migration_goal_states(&store, rolled_goal_id, later_goal_id);
+
+    RolledGoalMigrationFixture {
+        directory,
+        store,
+        account_id,
         rolled_goal_id,
+        later_goal_id,
+        rolled_monitor_id: rolled_monitor.monitor_id,
+        later_monitor_id: later_monitor.monitor_id,
+        p2_start,
+        p2_end,
+        p3_start,
+        p3_end,
+    }
+}
+
+fn start_v3_strict_goal(
+    store: &MonitorStore,
+    binding: &MonitorAccountBinding,
+    request: StrictGoalStart<'_>,
+) -> MonitorStatus {
+    let policy = approve_policy(
+        store,
+        binding,
+        request.goal_id,
         MonitorPolicy::StrictSgd,
-        Some(budget.clone()),
+        Some(request.budget.clone()),
         ApprovalOptions {
             acknowledge_no_sgd_cap: false,
             expected_revision: None,
-            now_epoch: NOW + 2,
+            now_epoch: request.approval_at,
         },
     )
-    .expect("approve first strict goal");
-    let rolled_monitor = start_result(
-        &store,
-        dispatch_config(&binding, rolled_goal_id, rolled_policy.revision),
-        "v3-rolled-goal",
-        NOW + 3,
+    .expect(request.approval_expectation);
+    start_result(
+        store,
+        dispatch_config(binding, request.goal_id, policy.revision),
+        request.idempotency_key,
+        request.start_at,
     )
-    .expect("start first strict goal");
+    .expect(request.start_expectation)
+}
 
+fn record_v3_rollover_history(
+    store: &MonitorStore,
+    account_id: &str,
+    periods: RolloverPeriodBounds,
+) {
+    let RolloverPeriodBounds {
+        p0_start,
+        p0_end,
+        p1_start,
+        p1_end,
+        p2_start,
+        p2_end,
+    } = periods;
     record_spend(
-        &store,
+        store,
         spend_input(account_id, p0_start, p0_end, 13_000, p0_end - 1, "SGD"),
         p0_end - 1,
     );
     record_spend(
-        &store,
+        store,
         spend_input(account_id, p1_start, p1_end, 200, p1_start + 1, "SGD"),
         p1_start + 1,
     );
     record_spend(
-        &store,
+        store,
         spend_input(account_id, p0_start, p0_end, 14_000, p0_end + 2, "SGD"),
         p0_end + 2,
     );
     record_spend(
-        &store,
+        store,
         spend_input(account_id, p1_start, p1_end, 1_000, p1_end - 1, "SGD"),
         p1_end - 1,
     );
     record_spend(
-        &store,
+        store,
         spend_input(account_id, p1_start, p1_end, 1_200, p1_end + 1, "SGD"),
         p1_end + 1,
     );
     record_spend(
-        &store,
+        store,
         spend_input(account_id, p2_start, p2_end, 300, p2_start + 1, "SGD"),
         p2_start + 1,
     );
+}
 
-    let later_policy = approve_policy(
-        &store,
-        &binding,
-        later_goal_id,
-        MonitorPolicy::StrictSgd,
-        Some(budget.clone()),
-        ApprovalOptions {
-            acknowledge_no_sgd_cap: false,
-            expected_revision: None,
-            now_epoch: p2_start + 3,
-        },
-    )
-    .expect("approve later strict goal in current period");
-    let later_monitor = start_result(
-        &store,
-        dispatch_config(&binding, later_goal_id, later_policy.revision),
-        "v3-later-goal",
-        p2_start + 4,
-    )
-    .expect("start later strict goal in current period");
+fn assert_pre_migration_goal_states(
+    store: &MonitorStore,
+    rolled_goal_id: &str,
+    later_goal_id: &str,
+) {
     let before_migration = store.lock().clone();
     assert_eq!(
         before_migration.goals[rolled_goal_id]
@@ -3979,8 +4095,23 @@ fn v3_rolled_goal_migration_latches_uncertainty_across_later_rollovers() {
             .unwrap()
             .cumulative_complete
     );
+}
 
-    let mut snapshot = serde_json::to_value(before_migration).expect("serialize V3 fixture");
+fn migrate_rolled_goal_fixture(fixture: RolledGoalMigrationFixture) -> RolledGoalMigrationFixture {
+    let RolledGoalMigrationFixture {
+        directory,
+        store,
+        account_id,
+        rolled_goal_id,
+        later_goal_id,
+        rolled_monitor_id,
+        later_monitor_id,
+        p2_start,
+        p2_end,
+        p3_start,
+        p3_end,
+    } = fixture;
+    let mut snapshot = serde_json::to_value(store.lock().clone()).expect("serialize V3 fixture");
     snapshot["schema_version"] = serde_json::json!(3);
     snapshot["accounts"][account_id]["spend"]
         .as_object_mut()
@@ -3997,17 +4128,42 @@ fn v3_rolled_goal_migration_latches_uncertainty_across_later_rollovers() {
     }
     drop(store);
     overwrite_persisted_state(&directory, &snapshot);
+    let store = MonitorStore::open(directory.path()).expect("migrate rolled V3 store");
+    RolledGoalMigrationFixture {
+        directory,
+        store,
+        account_id,
+        rolled_goal_id,
+        later_goal_id,
+        rolled_monitor_id,
+        later_monitor_id,
+        p2_start,
+        p2_end,
+        p3_start,
+        p3_end,
+    }
+}
 
-    let migrated = MonitorStore::open(directory.path()).expect("migrate rolled V3 store");
+fn assert_rolled_goal_v3_migration_state(fixture: &RolledGoalMigrationFixture) {
+    let RolledGoalMigrationFixture {
+        store,
+        account_id,
+        rolled_goal_id,
+        later_goal_id,
+        rolled_monitor_id,
+        later_monitor_id,
+        p2_start,
+        ..
+    } = fixture;
     {
-        let state = migrated.lock();
+        let state = store.lock();
         assert_eq!(
-            state.accounts[account_id]
+            state.accounts[*account_id]
                 .spend
                 .historical_correction_horizon_epoch,
-            Some(p2_start)
+            Some(*p2_start)
         );
-        let rolled = state.goals[rolled_goal_id]
+        let rolled = state.goals[*rolled_goal_id]
             .spend_state
             .as_ref()
             .expect("preserved rolled goal estimate");
@@ -4022,18 +4178,18 @@ fn v3_rolled_goal_migration_latches_uncertainty_across_later_rollovers() {
         assert!(rolled.rollover_unknown);
         assert!(!rolled.cumulative_complete);
 
-        let later = state.goals[later_goal_id]
+        let later = state.goals[*later_goal_id]
             .spend_state
             .as_ref()
             .expect("preserved current-period goal");
         assert_eq!(
             later.baseline.as_ref().unwrap().billing_period_start_epoch,
-            p2_start
+            *p2_start
         );
         assert!(!later.rollover_unknown);
         assert!(later.cumulative_complete);
     }
-    let rolled_after_migration = status(&migrated, &rolled_monitor.monitor_id, p2_start + 5);
+    let rolled_after_migration = status(store, rolled_monitor_id, *p2_start + 5);
     assert_eq!(
         rolled_after_migration.readiness.budget,
         MonitorBudgetReadiness::Unknown
@@ -4043,24 +4199,37 @@ fn v3_rolled_goal_migration_latches_uncertainty_across_later_rollovers() {
         MonitorDispatchReadiness::Blocked
     );
     assert!(!rolled_after_migration.runnable);
-    let later_after_migration = status(&migrated, &later_monitor.monitor_id, p2_start + 5);
+    let later_after_migration = status(store, later_monitor_id, *p2_start + 5);
     assert_eq!(
         later_after_migration.readiness.budget,
         MonitorBudgetReadiness::Verified
     );
     assert!(later_after_migration.runnable);
+}
 
+fn assert_rolled_goal_v3_latch_survives_later_rollovers(fixture: &RolledGoalMigrationFixture) {
+    let RolledGoalMigrationFixture {
+        store,
+        account_id,
+        rolled_monitor_id,
+        later_monitor_id,
+        p2_start,
+        p2_end,
+        p3_start,
+        p3_end,
+        ..
+    } = fixture;
     record_spend(
-        &migrated,
-        spend_input(account_id, p2_start, p2_end, 400, p2_end + 1, "SGD"),
-        p2_end + 1,
+        store,
+        spend_input(account_id, *p2_start, *p2_end, 400, *p2_end + 1, "SGD"),
+        *p2_end + 1,
     );
     record_spend(
-        &migrated,
-        spend_input(account_id, p3_start, p3_end, 50, p3_start + 2, "SGD"),
-        p3_start + 2,
+        store,
+        spend_input(account_id, *p3_start, *p3_end, 50, *p3_start + 2, "SGD"),
+        *p3_start + 2,
     );
-    let rolled_after_p3 = status(&migrated, &rolled_monitor.monitor_id, p3_start + 2);
+    let rolled_after_p3 = status(store, rolled_monitor_id, *p3_start + 2);
     assert_eq!(
         rolled_after_p3.cumulative_goal_spend,
         Some(Money::new(8_500, "SGD", 2))
@@ -4070,7 +4239,7 @@ fn v3_rolled_goal_migration_latches_uncertainty_across_later_rollovers() {
         MonitorBudgetReadiness::Unknown
     );
     assert!(!rolled_after_p3.runnable);
-    let later_after_p3 = status(&migrated, &later_monitor.monitor_id, p3_start + 2);
+    let later_after_p3 = status(store, later_monitor_id, *p3_start + 2);
     assert_eq!(
         later_after_p3.cumulative_goal_spend,
         Some(Money::new(150, "SGD", 2))
@@ -4090,9 +4259,8 @@ fn future_store_schema_is_rejected() {
     storage::save(&store.inner.directory, &future).expect("write future-version fixture");
     drop(store);
 
-    let error = MonitorStore::open(directory.path())
-        .err()
-        .expect("future monitor schema must be rejected");
+    let error =
+        MonitorStore::open(directory.path()).expect_err("future monitor schema must be rejected");
     assert_eq!(error.code, MonitorIssueCode::MonitorStoreUnavailable);
 }
 
@@ -5958,8 +6126,10 @@ fn model_status_snapshot(
     session: &SessionObservation,
     now_epoch: i64,
 ) -> MonitorStatus {
-    let mut state = StoreState::default();
-    state.last_now_epoch = now_epoch;
+    let mut state = StoreState {
+        last_now_epoch: now_epoch,
+        ..StoreState::default()
+    };
     let MonitorScope::Session { session_id } = &monitor.config.scope else {
         panic!("model descriptor fixture must use a session scope");
     };

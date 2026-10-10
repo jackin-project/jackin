@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use super::catalog::BrokerCatalogRefresh;
-use super::dispatch_ops::dispatch;
+use super::dispatch_ops::{DispatchControls, dispatch_with_liveness};
 use super::monitor::{MONITOR_WATCH_TIMEOUT_CAP_MS, MonitorStore};
 use super::serve_loop::write_response;
 use super::unavailable;
@@ -87,14 +87,17 @@ impl WaitPool {
             "usage-broker-wait".to_owned(),
             move || {
                 account_for_dispatch_time(&mut request.operation, accepted.elapsed());
-                let response = dispatch(
+                let response = dispatch_with_liveness(
                     &coordinator,
                     request,
                     &build_id,
                     &publisher,
                     &monitor_store,
-                    &shutdown,
-                    catalog_refresh.as_deref(),
+                    DispatchControls {
+                        shutdown: shutdown.as_ref(),
+                        catalog_refresh: catalog_refresh.as_deref(),
+                        collector_liveness: None,
+                    },
                 );
                 write_response(&mut worker_stream, response);
             },

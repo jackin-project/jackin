@@ -23,6 +23,13 @@ use super::{
 };
 use crate::coordinator::UsageCoordinator;
 
+pub(super) struct DispatchControls<'a> {
+    pub(super) shutdown: &'a AtomicBool,
+    pub(super) catalog_refresh: Option<&'a BrokerCatalogRefresh>,
+    pub(super) collector_liveness: Option<&'a crate::usage::ClaudeCollectorLiveness>,
+}
+
+#[cfg(test)]
 pub(super) fn dispatch(
     coordinator: &UsageCoordinator,
     request: UsageBrokerRequest,
@@ -31,6 +38,28 @@ pub(super) fn dispatch(
     monitor_store: &MonitorStore,
     shutdown: &AtomicBool,
     catalog_refresh: Option<&BrokerCatalogRefresh>,
+) -> UsageBrokerResponse {
+    dispatch_with_liveness(
+        coordinator,
+        request,
+        build_id,
+        publisher,
+        monitor_store,
+        DispatchControls {
+            shutdown,
+            catalog_refresh,
+            collector_liveness: None,
+        },
+    )
+}
+
+pub(super) fn dispatch_with_liveness(
+    coordinator: &UsageCoordinator,
+    request: UsageBrokerRequest,
+    build_id: &str,
+    publisher: &publish::ProjectionPublisher,
+    monitor_store: &MonitorStore,
+    controls: DispatchControls<'_>,
 ) -> UsageBrokerResponse {
     let UsageBrokerRequest {
         protocol_version,
@@ -59,7 +88,7 @@ pub(super) fn dispatch(
         };
     }
     if let Some(response) =
-        dispatch_monitor_operation(&operation, publisher, monitor_store, shutdown)
+        dispatch_monitor_operation(&operation, publisher, monitor_store, &controls)
     {
         return response;
     }
@@ -68,7 +97,7 @@ pub(super) fn dispatch(
         &operation,
         publisher,
         monitor_store,
-        catalog_refresh,
+        controls.catalog_refresh,
     ) {
         return response;
     }
@@ -93,7 +122,7 @@ fn dispatch_monitor_operation(
     operation: &UsageBrokerOperation,
     publisher: &publish::ProjectionPublisher,
     monitor_store: &MonitorStore,
-    shutdown: &AtomicBool,
+    controls: &DispatchControls<'_>,
 ) -> Option<UsageBrokerResponse> {
     let UsageBrokerOperation::Monitor { request } = operation else {
         return None;
@@ -121,7 +150,12 @@ fn dispatch_monitor_operation(
         Err(issue) => return Some(UsageBrokerResponse::MonitorError { issue }),
     };
     if stopping && matches!(reply, MonitorReply::ServiceStopped) {
-        shutdown.store(true, Ordering::Release);
+        if let Some(liveness) = controls.collector_liveness {
+            liveness.deactivate();
+        } else {
+            controls.shutdown.store(true, Ordering::Release);
+        }
+        monitor_store.set_experimental_collector_source(None);
     }
     Some(UsageBrokerResponse::Monitor { reply })
 }

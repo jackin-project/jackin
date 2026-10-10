@@ -3,12 +3,21 @@
 
 use super::*;
 use std::cell::{Cell, RefCell};
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, mpsc};
 
 fn test_lease_lock() -> std::sync::MutexGuard<'static, ()> {
     static LOCK: Mutex<()> = Mutex::new(());
     LOCK.lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+struct DropTrackedGuard(Arc<AtomicBool>);
+
+impl Drop for DropTrackedGuard {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::Release);
+    }
 }
 
 #[test]
@@ -27,21 +36,15 @@ fn cache_is_bounded_to_one_exact_service_and_zeroizing_payload() {
     let selected = cache
         .payload("Claude Code-credentials-a")
         .expect("exact service cache hit");
-    assert!(selected.as_str() == "selected-token");
+    assert_eq!(selected.as_str(), "selected-token");
     assert!(cache.payload("Claude Code-credentials-b").is_none());
-    assert_eq!(
-        cache.begin_unauthorized_reread("Claude Code-credentials-a"),
-        Some(5)
-    );
+    assert!(cache.begin_unauthorized_reread("Claude Code-credentials-a", 5));
     assert!(cache.replace_if_exact(
         "Claude Code-credentials-a",
         5,
         Zeroizing::new("rotated-token".to_owned())
     ));
-    assert_eq!(
-        cache.begin_unauthorized_reread("Claude Code-credentials-a"),
-        None
-    );
+    assert!(!cache.begin_unauthorized_reread("Claude Code-credentials-a", 5));
     assert!(!cache.replace_if_exact(
         "Claude Code-credentials-b",
         5,
@@ -187,7 +190,7 @@ fn typed_401_allows_one_changed_exact_source_retry() {
         || true,
     );
 
-    assert!(result.is_ok());
+    result.expect("a changed exact-source credential succeeds after one retry");
     assert_eq!(fetch_count.get(), 2);
     assert_eq!(reread_count.get(), 1);
     assert_eq!(&*seen_tokens.borrow(), &["old-token", "new-token"]);
@@ -447,6 +450,287 @@ fn revoked_consent_after_keychain_reread_skips_retry_and_preserves_401() {
             .is_some_and(|payload| payload.as_str() == original)
     );
     assert_eq!(resolved.access_token.as_str(), "old-token");
+    clear_bootstrapped_claude_credential();
+}
+
+#[test]
+fn stop_before_retry_admission_skips_fetch_after_changed_credential_reread() {
+    let _serial = test_lease_lock();
+    clear_bootstrapped_claude_credential();
+    let service = "Claude Code-credentials-selected";
+    let original = r#"{"claudeAiOauth":{"accessToken":"old-token"}}"#;
+    let replacement = r#"{"claudeAiOauth":{"accessToken":"new-token"}}"#;
+    let generation = next_generation();
+    cached_credential().store(
+        service.to_owned(),
+        Zeroizing::new(original.to_owned()),
+        generation,
+    );
+    let lease = ClaudeCredentialLease {
+        service: service.to_owned(),
+        generation,
+    };
+    let liveness = Arc::new(crate::usage::ClaudeCollectorLiveness::new(()));
+    liveness.bind_generation(generation);
+    let fetch_count = Arc::new(AtomicUsize::new(0));
+    let reread_count = Arc::new(AtomicUsize::new(0));
+    let admission_count = Arc::new(AtomicUsize::new(0));
+    let (retry_admission_tx, retry_admission_rx) = mpsc::channel();
+    let (retry_admission_release_tx, retry_admission_release_rx) = mpsc::channel();
+    let mut resolved = resolved_from_payload(original, service);
+
+    let task_liveness = Arc::clone(&liveness);
+    let task_current_liveness = Arc::clone(&liveness);
+    let task_fetch_count = Arc::clone(&fetch_count);
+    let task_reread_count = Arc::clone(&reread_count);
+    let task_admission_count = Arc::clone(&admission_count);
+    let task = std::thread::spawn(move || {
+        super::super::fetch_claude_with_one_401_reread_with_admission(
+            service,
+            &mut resolved,
+            move |_| {
+                let attempt = task_fetch_count.fetch_add(1, Ordering::SeqCst);
+                if attempt == 0 {
+                    Err(crate::usage::ProviderHttpError::HttpStatus {
+                        status: 401,
+                        message: "unauthorized".to_owned(),
+                        retry_after_seconds: None,
+                        response_received_at_epoch: None,
+                    })
+                } else {
+                    serde_json::from_str::<crate::usage::ClaudeOAuthUsageResponse>("{}")
+                        .map_err(|error| crate::usage::ProviderHttpError::Decode(error.to_string()))
+                }
+            },
+            move |_| {
+                task_reread_count.fetch_add(1, Ordering::SeqCst);
+                ClaudeKeychainRead::Payload {
+                    json: Zeroizing::new(replacement.to_owned()),
+                }
+            },
+            move || {
+                let attempt = task_admission_count.fetch_add(1, Ordering::SeqCst);
+                if attempt == 2 {
+                    retry_admission_tx
+                        .send(())
+                        .expect("signal before retry admission");
+                    retry_admission_release_rx
+                        .recv()
+                        .expect("release retry admission after stop");
+                }
+                task_liveness.admit_if(|generation| {
+                    claude_credential_generation_is_current(service, generation)
+                })
+            },
+            move || {
+                task_current_liveness.is_current_if(|generation| {
+                    claude_credential_generation_is_current(service, generation)
+                })
+            },
+        )
+    });
+
+    retry_admission_rx
+        .recv()
+        .expect("changed credential reaches the retry admission gate");
+    liveness.deactivate();
+    drop(lease);
+    assert!(cached_credential().payload(service).is_none());
+    let newer_generation = next_generation();
+    let newer_payload = r#"{"claudeAiOauth":{"accessToken":"newer-session-token"}}"#;
+    cached_credential().store(
+        service.to_owned(),
+        Zeroizing::new(newer_payload.to_owned()),
+        newer_generation,
+    );
+    drop(liveness);
+    retry_admission_release_tx
+        .send(())
+        .expect("retry admission observes deactivation");
+
+    assert!(matches!(
+        task.join().expect("collector exits after denied admission"),
+        Err(super::super::ClaudeFetchError::ConsentRevoked {
+            provider_http_status: Some(401)
+        })
+    ));
+    assert_eq!(fetch_count.load(Ordering::SeqCst), 1);
+    assert_eq!(reread_count.load(Ordering::SeqCst), 1);
+    assert_eq!(admission_count.load(Ordering::SeqCst), 3);
+    assert!(
+        cached_credential()
+            .payload(service)
+            .is_some_and(|payload| payload.as_str() == newer_payload)
+    );
+    clear_bootstrapped_claude_credential();
+}
+
+#[test]
+fn revoked_generation_cannot_replace_cache_or_clear_newer_generation() {
+    let _serial = test_lease_lock();
+    clear_bootstrapped_claude_credential();
+    let service = "Claude Code-credentials-selected";
+    let original = r#"{"claudeAiOauth":{"accessToken":"old-token"}}"#;
+    let old_generation = next_generation();
+    cached_credential().store(
+        service.to_owned(),
+        Zeroizing::new(original.to_owned()),
+        old_generation,
+    );
+    let (write_ready_tx, write_ready_rx) = mpsc::channel();
+    let (write_release_tx, write_release_rx) = mpsc::channel();
+    let delayed_write = std::thread::spawn(move || {
+        write_ready_tx.send(()).expect("signal before cache write");
+        write_release_rx
+            .recv()
+            .expect("release delayed cache write after revocation");
+        replace_bootstrapped_claude_payload(
+            service,
+            old_generation,
+            Zeroizing::new(r#"{"claudeAiOauth":{"accessToken":"stale-token"}}"#.to_owned()),
+        )
+    });
+
+    write_ready_rx
+        .recv()
+        .expect("cache write is paused before its generation check");
+    revoke_bootstrapped_claude_generation(old_generation);
+    assert!(cached_credential().payload(service).is_none());
+    let newer_generation = next_generation();
+    let newer_payload = r#"{"claudeAiOauth":{"accessToken":"newer-session-token"}}"#;
+    cached_credential().store(
+        service.to_owned(),
+        Zeroizing::new(newer_payload.to_owned()),
+        newer_generation,
+    );
+    assert!(!begin_bootstrapped_claude_401_reread(
+        service,
+        old_generation
+    ));
+    write_release_tx
+        .send(())
+        .expect("stale cache write checks its old generation");
+
+    assert!(
+        !delayed_write
+            .join()
+            .expect("cache replacement completes without writing stale data")
+    );
+    assert!(
+        cached_credential()
+            .payload(service)
+            .is_some_and(|payload| payload.as_str() == newer_payload)
+    );
+    clear_bootstrapped_claude_credential();
+}
+
+#[test]
+fn service_stop_and_lease_release_during_blocked_401_reread_skip_retry_and_keep_no_ui_guard() {
+    let _serial = test_lease_lock();
+    clear_bootstrapped_claude_credential();
+    let service = "Claude Code-credentials-selected";
+    let original = r#"{"claudeAiOauth":{"accessToken":"old-token"}}"#;
+    let replacement = r#"{"claudeAiOauth":{"accessToken":"new-token"}}"#;
+    let generation = next_generation();
+    cached_credential().store(
+        service.to_owned(),
+        Zeroizing::new(original.to_owned()),
+        generation,
+    );
+    let lease = ClaudeCredentialLease {
+        service: service.to_owned(),
+        generation,
+    };
+    let mut resolved = resolved_from_payload(original, service);
+    let source_alive = Arc::new(AtomicBool::new(true));
+    let guard_dropped = Arc::new(AtomicBool::new(false));
+    let liveness = Arc::new(crate::usage::ClaudeCollectorLiveness::new(
+        DropTrackedGuard(Arc::clone(&guard_dropped)),
+    ));
+    liveness.bind_generation(generation);
+    let fetch_count = Arc::new(AtomicUsize::new(0));
+    let reread_count = Arc::new(AtomicUsize::new(0));
+    let (reread_started_tx, reread_started_rx) = mpsc::channel();
+    let (reread_release_tx, reread_release_rx) = mpsc::channel();
+
+    let task_liveness = Arc::clone(&liveness);
+    let task_admission_liveness = Arc::clone(&liveness);
+    let task_source_alive = Arc::clone(&source_alive);
+    let task_admission_source_alive = Arc::clone(&source_alive);
+    let task_fetch_count = Arc::clone(&fetch_count);
+    let task_reread_count = Arc::clone(&reread_count);
+    let task = std::thread::spawn(move || {
+        super::super::fetch_claude_with_one_401_reread_with_admission(
+            service,
+            &mut resolved,
+            move |_| {
+                let attempt = task_fetch_count.fetch_add(1, Ordering::SeqCst);
+                if attempt == 0 {
+                    Err(crate::usage::ProviderHttpError::HttpStatus {
+                        status: 401,
+                        message: "unauthorized".to_owned(),
+                        retry_after_seconds: None,
+                        response_received_at_epoch: None,
+                    })
+                } else {
+                    serde_json::from_str::<crate::usage::ClaudeOAuthUsageResponse>("{}")
+                        .map_err(|error| crate::usage::ProviderHttpError::Decode(error.to_string()))
+                }
+            },
+            move |requested_service| {
+                assert_eq!(requested_service, service);
+                task_reread_count.fetch_add(1, Ordering::SeqCst);
+                reread_started_tx
+                    .send(())
+                    .expect("signal that the bounded reread is blocked");
+                reread_release_rx
+                    .recv()
+                    .expect("release the blocked test reread");
+                ClaudeKeychainRead::Payload {
+                    json: Zeroizing::new(replacement.to_owned()),
+                }
+            },
+            move || {
+                task_admission_liveness.admit_if(|generation| {
+                    task_admission_source_alive.load(Ordering::Acquire)
+                        && claude_credential_generation_is_current(service, generation)
+                })
+            },
+            move || {
+                task_liveness.is_current_if(|generation| {
+                    task_source_alive.load(Ordering::Acquire)
+                        && claude_credential_generation_is_current(service, generation)
+                })
+            },
+        )
+    });
+
+    reread_started_rx
+        .recv()
+        .expect("first typed 401 starts one exact-service reread");
+    assert!(!guard_dropped.load(Ordering::Acquire));
+
+    // Model the synchronous ServiceStop fence, source invalidation, and lease
+    // release while the noninteractive Keychain operation is still blocked.
+    source_alive.store(false, Ordering::Release);
+    liveness.deactivate();
+    drop(lease);
+    drop(liveness);
+    assert!(!guard_dropped.load(Ordering::Acquire));
+    reread_release_tx
+        .send(())
+        .expect("finish the blocked reread without waiting in service teardown");
+
+    assert!(matches!(
+        task.join()
+            .expect("collector task returns after reread release"),
+        Err(super::super::ClaudeFetchError::ConsentRevoked {
+            provider_http_status: Some(401)
+        })
+    ));
+    assert_eq!(fetch_count.load(Ordering::SeqCst), 1);
+    assert_eq!(reread_count.load(Ordering::SeqCst), 1);
+    assert!(guard_dropped.load(Ordering::Acquire));
     clear_bootstrapped_claude_credential();
 }
 

@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::collections::BTreeMap;
+
 use super::super::{
     MonitorAccountBinding, MonitorPolicy, MonitorPolicyOrigin, MonitorPolicyRecord, StoreState,
     validate_store_state,
@@ -19,12 +21,12 @@ fn valid_state() -> StoreState {
         next_input_sequence: 0,
         next_binding_id: 2,
         last_now_epoch: 100,
-        accounts: Default::default(),
-        unbound_sessions: Default::default(),
-        bindings: Default::default(),
-        policy_records: Default::default(),
-        monitors: Default::default(),
-        goals: Default::default(),
+        accounts: BTreeMap::new(),
+        unbound_sessions: BTreeMap::new(),
+        bindings: BTreeMap::new(),
+        policy_records: BTreeMap::new(),
+        monitors: BTreeMap::new(),
+        goals: BTreeMap::new(),
     };
     state.bindings.insert(
         BINDING_ID.to_owned(),

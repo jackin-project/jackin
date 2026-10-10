@@ -8,8 +8,10 @@ start/resume and after assistant messages, `/compact`, permission-mode changes,
 Vim-mode toggles, command changes, and `refreshInterval` timers. Reset or
 prompt-cache expiration times in the last payload can also trigger a run.
 Updates debounce by 300 ms; a newly triggered update cancels the in-flight
-command. `refreshInterval` repeats the callback with its last payload. It does
-not fetch new provider usage data.
+command. The official guide says `refreshInterval` reruns the command, but does
+not promise a provider-usage refresh or specify that timer callbacks receive a
+fresh provider sample. Jackin treats a timer callback as an execution, not proof
+of a new provider observation.
 
 The official [statusline guide](https://code.claude.com/docs/en/statusline)
 documents these fields:
@@ -24,20 +26,38 @@ documents these fields:
 | `rate_limits.seven_day.used_percentage` | 7-day window utilization, 0–100 |
 | `rate_limits.seven_day.resets_at` | 7-day reset time, Unix epoch seconds |
 
-Claude Code added the subscription quota fields in [v2.1.80](https://github.com/anthropics/claude-code/blob/v2.1.80/CHANGELOG.md).
-Each rate-limit window is optional, and its percentage and reset are
-independently optional. Windows may disappear after reset. Missing or malformed
-data stays unknown; it is never converted to 0%. `used_percentage` is
-utilization, not remaining quota, tokens, or spend. A reported `version` is
-bounded metadata stored as `claude_code_version`, separate from Jackin's monitor
-schema version. Quota fields claimed by a reported version before 2.1.80 are
-rejected. A missing version is unknown, not authenticated proof of compatibility;
-Jackin does not inspect the Claude Code executable to establish its version.
+The [v2.1.80 changelog](https://github.com/anthropics/claude-code/blob/v2.1.80/CHANGELOG.md)
+records the addition of the five-hour and seven-day subscription quota fields.
+The current guide says `rate_limits` appears only for Claude.ai Pro/Max
+subscribers or behind a Claude apps gateway that sets a spend limit, and only
+after the session's first API response. Each documented window may be absent
+independently and is dropped after its `resets_at` passes. Jackin also accepts a
+present window with either inner field omitted or null; the official guide does
+not explicitly guarantee those partial-window shapes, so this is parser
+tolerance. Missing or malformed data stays unknown; it is never converted to
+0%. `used_percentage` is utilization, not remaining quota, tokens, or spend.
+A reported `version` is bounded metadata stored as `claude_code_version`,
+separate from Jackin's monitor schema version. Rejecting quota fields when a
+reported version is before 2.1.80 is Jackin's conservative policy based on the
+release note, not authenticated runtime-version verification. A missing version
+is unknown; Jackin does not inspect the Claude Code executable to establish its
+version.
 
 For quota and model inputs, the adapter consumes the five-hour and seven-day
-windows and optional model label. The statusline does not provide model-specific
-quota limits or permission for extra usage; the adapter ignores `extra_usage`
-and cost fields.
+windows and optional model label. The current guide also documents
+`rate_limits.spend_limit`, available from Claude Code v2.1.251 behind a
+qualifying gateway; Jackin ignores that object, including its reset and
+percentage. Its `used_usd`, `limit_usd`, and `period` fields require v2.1.284 or
+later on both Claude Code and the gateway; Jackin also ignores them. These USD
+fields are not billed amounts: `used_usd` is a gateway estimate and `limit_usd`
+is the configured limit. Jackin does not map them to its SGD spend evidence or
+treat them as permission for extra usage. Anthropic
+documents paid-plan usage credits as allowing continued pay-as-you-go use after
+included limits; the statusline input does not report whether credits are
+enabled or available. The statusline guide does not document an `extra_usage`
+field or model-specific quota limits. Jackin ignores unrelated `extra_usage`
+and session cost fields; the documented `cost.total_cost_usd` is a client-side
+list-price estimate that may differ from the actual bill.
 
 The callback has no provider account ID or authoritative observation time.
 `session_id` identifies a session, not an account. The callback cannot detect
@@ -234,3 +254,6 @@ live readiness.
 
 - [Customize your status line — Claude Code Docs](https://code.claude.com/docs/en/statusline)
 - [Claude Code changelog, v2.1.80](https://github.com/anthropics/claude-code/blob/v2.1.80/CHANGELOG.md)
+- [Manage usage credits for paid Claude plans — Claude Help Center](https://support.claude.com/en/articles/12429409-manage-usage-credits-for-paid-claude-plans)
+
+References checked 2026-10-10.

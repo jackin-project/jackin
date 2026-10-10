@@ -1,36 +1,104 @@
 {
-  "scope": "offline isolated fixtures only",
-  "protocol": {
-    "passed": 133,
-    "log": "/private/tmp/jackin-mbx-protocol-final.log"
+  "source_commit": "8288ef4a4e174624e353f8748304766ce98e5822",
+  "scope": "offline fixtures and installed pair only",
+  "candidate_status": "checkpoint_only_not_final",
+  "build": {
+    "result": "PASS",
+    "tool": "mbx 1.22.0",
+    "rust": "1.97.1",
+    "mode": "offline locked",
+    "cli_sha256": "3b4ff49c100c3aa925fd25535ec5907ddaef0fc10d99a787abe51075f0fc50b2",
+    "broker_sha256": "3b30926a6cd1ceab8a41aeb7fb09e321e4976f7fb92a6054372529b1a8f0332e"
   },
-  "broker": {
-    "passed": 173,
-    "log": "/private/tmp/jackin-mbx-broker-tests-final-7.log"
-  },
-  "claude_auth": {
-    "passed": 25,
-    "log": "/private/tmp/jackin-mbx-claude-tests-final-3.log"
-  },
-  "cli": {
-    "passed": 43
-  },
-  "app": {
-    "passed": 29
+  "source_gates": {
+    "production_five_package_compile": {
+      "result": "PASS",
+      "log": "/private/tmp/jackin-mbx-v4-five-package-check-final.log"
+    },
+    "final_seven_package_scoped_check": {
+      "result": "PASS",
+      "log": "/private/tmp/jackin-mbx-v4-scoped-check-final-retry.log"
+    },
+    "seven_package_formatting": {
+      "result": "PASS",
+      "log": "/private/tmp/jackin-mbx-v4-fmt-final4.log"
+    },
+    "protocol": {
+      "passed": 135,
+      "log": "/private/tmp/jackin-mbx-v4-protocol-full.log"
+    },
+    "projection": {
+      "passed": 10,
+      "log": "/private/tmp/jackin-mbx-v4-usage-projection-tests-retry.log"
+    },
+    "discovery": {
+      "passed": 41,
+      "log": "/private/tmp/jackin-mbx-v4-usage-discovery-tests.log"
+    },
+    "claude_provider": {
+      "passed": 25,
+      "log": "/private/tmp/jackin-mbx-v4-usage-claude.log"
+    },
+    "coordinator": {
+      "passed": 50,
+      "log": "/private/tmp/jackin-mbx-v4-usage-coordinator-tests.log"
+    },
+    "coordinator_state": {
+      "passed": 11,
+      "log": "/private/tmp/jackin-mbx-v4-usage-coordinator-state-tests.log"
+    },
+    "host_broker": {
+      "passed": 183,
+      "log": "/private/tmp/jackin-mbx-v4-usage-host-broker-retry2.log"
+    },
+    "host_inventory": {
+      "passed": 13,
+      "log": "/private/tmp/jackin-mbx-v4-usage-host-tests-final.log"
+    },
+    "runtime_usage_relay": {
+      "passed": 21,
+      "log": "/private/tmp/jackin-mbx-v4-runtime-usage-relay-final.log"
+    },
+    "cli_usage": {
+      "passed": 43,
+      "log": "/private/tmp/jackin-mbx-v4-jackin-cli-usage-lib.log"
+    },
+    "app": {
+      "passed": 29,
+      "log": "/private/tmp/jackin-mbx-v4-jackin-app-tests.log"
+    },
+    "broker_migrations_and_limits": {
+      "covered_by_host_broker_suite": 183
+    },
+    "real_account_readiness": "unverified"
   },
   "installed_smoke": {
     "result": "PASS",
+    "log": "plans/claude-unattended-monitor/v3-installed-smoke.log",
+    "wire_protocol": 8,
+    "projection_envelope_schema": 3,
+    "statusline_input_schema": 2,
+    "monitor_schema": 4,
+    "broker_selection": "verified exact installed sibling invocation; JACKIN_USAGE_BROKER_BIN unset",
     "http_proxy_requests": 0,
     "credential_command_executions": 0,
     "native_security_framework": "not instrumented",
     "foreground_auth_success": "not exercised",
-    "dispatch_policy_approvals": "none"
+    "dispatch_policy_approvals": "none",
+    "fixture_removed_after_orderly_stop": true
   },
   "pending": [
-    "dormant CLI helper removal and final rebuild",
-    "consumer regression runs",
-    "branch consolidation proof",
-    "GitHub required checks and landing"
+    "A conservative startup-floor correction for persisted rate deadlines and generation/liveness fencing of late 401 Retry-After responses after foreground teardown require a source follow-up; this checkpoint is not final.",
+    "Rebuild and rerun the installed smoke from the follow-up source commit before treating the pair as final or activating the handoff.",
+    "Live attended bootstrap, local source binding, provider/account readiness, and any dispatch-policy approval remain operator-controlled and unverified.",
+    "Native Security Framework calls were not instrumented; fixture tripwires do not establish OS-level Keychain or egress behavior."
   ],
-  "real_account_readiness": "unverified"
+  "real_account_readiness": "unverified",
+  "historical_installed_smoke": {
+    "source_commit": "1a45196dbe24d439e596c14e22fbda59799e7b0d",
+    "wire_protocol": 7,
+    "result": "PASS",
+    "log": "plans/claude-unattended-monitor/v3-installed-smoke-wire7.log",
+    "current_v8_evidence": false
+  }
 }

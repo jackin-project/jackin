@@ -1,14 +1,18 @@
 # Foreground Claude bootstrap and explicit usage collection
 
-**Status: implemented in source; the recorded v3 installed fixture passed, and
-the post-cleanup pair rebuild is pending. Real Keychain authorization,
-successful foreground bootstrap, real-account binding, and live provider
-collection remain unverified.** The recorded CLI and matching broker were built
-from source commit `1a45196dbe24d439e596c14e22fbda59799e7b0d`; their hashes and
-fixture results describe that prior pair only. Refresh provenance and rerun
-the installed fixture after the dormant-helper cleanup rebuild. See the
-[recorded handoff](claude-code-handoff.md) and
-[fixture log](/private/tmp/jackin-v3-installed-smoke.log).
+**Status: implemented in source. The installed wire-v8 fixture passed at
+checkpoint `8288ef4a4e174624e353f8748304766ce98e5822`; rebuild and rerun the
+matching pair after the current lifecycle and recovery fixes before treating
+the final source as verified. Successful attended Keychain authorization and
+foreground bootstrap, real-account binding, and live provider collection
+remain unverified. The initial attended Keychain read may prompt; later
+unattended reads run under a no-UI guard and fail with `interaction_required`
+if UI would be required. That guard does not guarantee credential availability
+or validity.**
+The checkpoint pair's hashes and fixture results describe that checkpoint
+only, not the current follow-up source. See the [recorded handoff](claude-code-handoff.md),
+[installation evidence](v3-installation.json), and
+[fixture log](v3-installed-smoke.log).
 
 ## Implemented path and limits
 
@@ -20,7 +24,7 @@ After explicit local-source binding and collector approval, an observation-only
 monitor can use the experimental Claude usage collector. The statusline remains
 an optional, separate evidence source. The installed fixture did not exercise
 successful foreground authentication or a live account/provider request, so
-neither live readiness nor dialog-free credential availability is established.
+neither live readiness nor continuous credential availability is established.
 The passive local service and ordinary observer do not bootstrap credentials or
 make provider requests; collection requires the running foreground bootstrap,
 the stored binding approval, and the explicit observer flag.
@@ -92,9 +96,29 @@ required.
    IPC. Expose only secret-free status/opaque capability data.
 4. Establish the no-UI guard after the attended credential read, then serve the
    normal broker in the same foreground process while retaining the lease.
-   `auth prepare` does not issue an HTTP request. Stop/restart ends the cache
-   lifetime and drops the zeroizing value. There is no detached bootstrap or
-   auth-bootstrap IPC operation.
+   `auth prepare` does not issue an HTTP request. Stop/restart closes the
+   collector generation and revokes its cached credential. There is no
+   detached bootstrap or auth-bootstrap IPC operation. The initial attended
+   read may use normal macOS authorization. Subsequent unattended Keychain
+   reads are guarded: if they would require UI, return
+   `interaction_required` without presenting a dialog. This no-UI behavior
+   does not ensure that credentials remain present, valid, or accepted by the
+   provider, and native live authorization has not been verified here.
+
+## Collector generation admission and shutdown
+
+Each foreground bootstrap binds a collector lifecycle gate to one exact
+credential-cache generation. Admission checks that the gate is active, the
+cached generation is still current, and the selected source and explicit
+collection approval still match. The admission check is synchronized with
+deactivation. Stop closes the gate and revokes only that generation's cache
+entry; later operations cannot obtain a permit from it.
+
+A permit keeps the generation's no-UI guard alive but does not hold the
+lifecycle lock across provider or Keychain I/O. Deactivation does not physically
+cancel or join an operation that already received a permit. Such I/O may finish
+after stop; the stopped generation cannot admit another operation. A new
+foreground bootstrap creates a new generation.
 
 The selected credential source is not a provider identity assertion. A local
 monitor account must be explicitly bound to the canonical local source handle
@@ -159,14 +183,24 @@ attempt permits it. Unchanged, missing, denied, or different-account
 credentials get no retry. Never rotate tokens, switch sources, or persist
 credentials. Do not use `claude -p /usage` as an auth or collector fallback.
 
-Shared provider rate-limit hardening is in progress. The target rule anchors a
-Claude attempt floor at the provider-response completion time rounded upward
-to an epoch second, then adds 300 seconds. Recovery of an interrupted active
-attempt starts a conservative 300-second floor from the recovery time, also
-rounded upward. The latest of these floors, provider `Retry-After`, and retry
-backoff wins; explicit force cannot bypass those deadlines. Focused fake-clock,
-restart, and force-path verification is still pending, and no live provider
-rate-limit behavior is claimed. See the [statusline contract](statusline-contract.md).
+On restart, the coordinator reconstructs a 300-second monotonic minimum-attempt
+floor only when persisted Claude state records an actual provider invocation;
+queued work without an invocation timestamp gets no attempt floor. Automatic
+scheduling waits until the latest applicable time among that floor, persisted
+provider rate-limit, retry and success-cooldown deadlines, the in-process
+monotonic cooldown, and periodic cadence. Dispatch admission independently
+enforces the applicable cooldown deadlines. When a purge has a pending attempt
+or active cooldown, catalog removal or rotation writes a cooldown tombstone or
+pending-attempt marker before purging state, retaining the invocation and
+deadline fence for a later re-add. Explicit force cannot bypass the attempt
+floor, provider rate-limit deadline, or retry deadline; it may bypass only
+success cooldown.
+Persisted deadlines use wall-clock epochs. A sufficiently large clock change
+between restarts can make an epoch deadline appear expired early, so this does
+not guarantee that a `Retry-After` interval survives arbitrary clock jumps.
+Focused lifecycle and recovery regressions are in source; their final MBX
+verification is pending. This is not a claim of live-provider rate-limit
+behavior.
 
 An observation may collect quota evidence without an SGD receipt, goal, or
 dispatch policy. It remains `observe_only`, `goal_id=null`,
@@ -213,20 +247,25 @@ Keep strict history intact. Any migration incompatibility fails closed.
 
 The current source implements the foreground bootstrap, selected-service
 zeroizing cache, no-UI guard, explicit binding approval, and opt-in observer
-path. The recorded v3 installed fixture passed help, sibling selection,
-passive-service, observer, and statusline-fixture checks. It observed zero HTTP
-proxy requests and no dispatch policy approvals. This fixture did not instrument
-native Security Framework calls and did not exercise successful foreground
-authentication. It used fixture state, not a real account or configured
-evidence store. That prior binary pair used wire v7; its fixture record remains
-historical evidence for that pair and says nothing about current wire v8.
+path. The matching CLI and broker built at checkpoint
+`8288ef4a4e174624e353f8748304766ce98e5822` passed the isolated v3 installed
+fixture for help, sibling selection, passive-service, observer, and statusline
+checks. The fixture observed zero HTTP-proxy requests and no dispatch policy
+approvals. It did not instrument native Security Framework calls or exercise
+successful foreground authentication. It used fixture state, not a real
+account or configured evidence store. Its exact source provenance, binary
+hashes, and result are recorded in [v3-installation.json](v3-installation.json).
+The earlier wire-v7 pair is historical evidence only.
 
-The exact recorded pair will be rebuilt after dormant-helper cleanup; refresh
-its source provenance and binary hashes and rerun the installed fixture before
-claiming that rebuilt pair is verified. Neither the prior fixture nor current
+The checkpoint fixture does not cover the current lifecycle and recovery
+follow-up changes. Rebuild the matching pair from the final source, refresh its
+provenance and binary hashes, and rerun the installed fixture after the
+remaining MBX and Linux gates pass. Neither the checkpoint fixture nor current
 source tests establish successful authorization on this Mac, a stable
-provider-account identity, successful live collection, or an absence of
-Keychain authorization dialogs. The route remains experimental, undocumented,
+provider-account identity, or successful live collection. The no-UI guarantee
+applies to unattended Keychain reads after the guard is established; the
+attended initial read may prompt, and credential availability and provider
+acceptance are not guaranteed. The route remains experimental, undocumented,
 and unsupported; it can return 403 or change without notice. This document
 does not make a provider-readiness claim or authorize live credential/provider
 checks.

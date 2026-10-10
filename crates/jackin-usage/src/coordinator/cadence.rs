@@ -6,6 +6,7 @@ use std::collections::BTreeSet;
 
 use jackin_protocol::usage_broker::{UsageAccountCapability, UsageGenerationView};
 
+use super::entries::effective_due_epoch;
 use super::{UsageCoordinator, account_cooldown_deadline, cadence_deadline};
 
 impl UsageCoordinator {
@@ -13,17 +14,13 @@ impl UsageCoordinator {
     /// `None` when no account is tracked yet.
     #[must_use]
     pub fn next_due_epoch(&self) -> Option<i64> {
+        let clock_sample = self.shared.clock.sample(0);
         let _catalog_lifecycle = self.shared.catalog_lifecycle.lock().ok()?;
         self.shared.state.lock().ok().and_then(|state| {
             state
                 .accounts
                 .values()
-                .map(|entry| {
-                    account_cooldown_deadline(&entry.envelope)
-                        .map_or(entry.cadence.next_due_epoch, |deadline| {
-                            deadline.max(entry.cadence.next_due_epoch)
-                        })
-                })
+                .map(|entry| effective_due_epoch(entry, clock_sample))
                 .min()
         })
     }
@@ -41,6 +38,7 @@ impl UsageCoordinator {
         for capability in &selected {
             drop(self.current(capability, now_epoch));
         }
+        let clock_sample = self.shared.clock.sample(now_epoch);
         let _catalog_lifecycle = self.shared.catalog_lifecycle.lock().ok()?;
         self.shared.state.lock().ok().and_then(|state| {
             state
@@ -51,12 +49,7 @@ impl UsageCoordinator {
                         && !entry.revoked
                         && !state.blocked.contains_key(*capability)
                 })
-                .map(|(_, entry)| {
-                    account_cooldown_deadline(&entry.envelope)
-                        .map_or(entry.cadence.next_due_epoch, |deadline| {
-                            deadline.max(entry.cadence.next_due_epoch)
-                        })
-                })
+                .map(|(_, entry)| effective_due_epoch(entry, clock_sample))
                 .min()
         })
     }
@@ -97,6 +90,7 @@ impl UsageCoordinator {
         now_epoch: i64,
         selected: Option<&BTreeSet<UsageAccountCapability>>,
     ) -> Vec<UsageGenerationView> {
+        let clock_sample = self.shared.clock.sample(now_epoch);
         let due: Vec<(UsageAccountCapability, u64)> = {
             let Ok(_catalog_lifecycle) = self.shared.catalog_lifecycle.lock() else {
                 return Vec::new();
@@ -114,9 +108,7 @@ impl UsageCoordinator {
                     {
                         return None;
                     }
-                    let shared_deadline =
-                        account_cooldown_deadline(&entry.envelope).unwrap_or(i64::MIN);
-                    let next_due = shared_deadline.max(entry.cadence.next_due_epoch);
+                    let next_due = effective_due_epoch(entry, clock_sample);
                     (now_epoch >= next_due).then(|| (capability.clone(), entry.envelope.generation))
                 })
                 .collect()

@@ -42,10 +42,7 @@ use serde::{Deserialize, Serialize};
 
 use super::super::HostSurfaceId;
 
-use self::spend::{
-    SpendAccountState, SpendDecision, SpendState, advance_goal_spend, capture_goal_baseline,
-    evaluate_spend_policy, record_account_spend,
-};
+use self::spend::{SpendAccountState, SpendDecision, SpendState, record_account_spend};
 
 use self::evidence::{apply_statusline, apply_unbound_statusline};
 use self::projection::observe_projection_account;

@@ -1,23 +1,32 @@
 # Branch consolidation inventory
 
-Audited 2026-10-10. Read-only inventory; no source implementation, branch, or
-Git ref was changed for this record.
+Audited 2026-10-10. Static inventory; no source implementation, branch, or Git
+ref was changed for this record.
 
 ## Current supplemental review
 
-The independent 28-commit source audit covered the groups below against `471efcb2` plus the canonical worktree. It found two concrete omissions: lifetime broker lease ownership across sleep (`f669ec77`) and the retired public `HostUsageRuntime` path (`29db1854`). Both are being repaired before consolidation or landing is declared complete. It also requested the catalog-diagnostic incremental-publication/clean-scan regression from `013e5e6`; two offline regressions have been added and await execution.
+The independent 28-commit source audit covered the groups below against source
+tip `771bb088` and canonical target `8288ef4a`, including the current
+uncommitted rate-limit and security fixes. The requested lifetime lease,
+legacy-runtime removal, and catalog-diagnostic publication regressions are
+present in source and fixtures. This review finds the source consolidation
+semantically ready at the static level. The selected offline gates were green
+at `8288ef4a` before the current rate-limit/security fixes; those fixes still
+need their final rebuild and gate rerun. The installed `8288ef4a` smoke
+checkpoint passed, but the final-fix binary has not been rebuilt, so this is
+not an overall readiness or release claim.
 
 | Source group | Current disposition |
 | --- | --- |
-| `e5ee84f`, `4492d3c` | Intentionally re-expressed as wire v7, store v4; observation never grants dispatch. |
-| `2031b55`, `427c104` | Invocation floor, catalog cooldowns, SGD45 readiness stop, closed-period corrections and historical uncertainty mapped to current coordinator/spend code and fixtures. |
-| `2e984db`, `887a1b4`, `e586381` | Exact-source attended bootstrap and guarded reads represented; dormant CLI fallback removal complete in source, with focused forbidden-route guards. No live Keychain proof. |
-| `4c6ba90`, `013e5e6`, `d06582d` | Opaque typed diagnostics and atomic catalog publication represented; restored publication lifecycle regressions pending execution. |
-| `29db185`, `f669ec7` | Concrete remaining legacy-runtime and lifetime-lease fixes in progress. |
-| `6c1709e`, `7bd6871` | CLI/wait/help/installation contracts represented; installed predecessor fixture passed, final pair rebuild pending. |
-| Remaining documentation/design commits | Preserve dated v2 evidence as historical; current v3 handoff and bootstrap contract supersede active commands. Do not import predecessor success claims. |
+| `e5ee84f`, `4492d3c` | Source observation/dispatch semantics are re-expressed in current wire v8, projection v3, and store v4 contracts, with explicit migration; source wire v7 is historical, not the target version. Observation never grants dispatch. |
+| `2031b55`, `427c104` | Invocation floors, catalog cooldowns, the SGD45 readiness stop, closed-period corrections, and historical uncertainty map to current coordinator/spend code and fixtures. Final gates must be rerun after the pending rate-limit/security fixes. |
+| `2e984db`, `887a1b4`, `e586381` | Exact-source attended bootstrap, guarded Keychain reads, and removal of the Claude CLI fallback are represented with forbidden-route guards. No live Keychain proof. |
+| `4c6ba90`, `013e5e6`, `d06582d` | Opaque typed diagnostics, atomic catalog publication, incremental diagnostic retention, and clean-scan clearing are represented in source and fixtures. Their selected offline gates passed at `8288ef4a`; final-fix rerun remains pending. |
+| `29db185`, `f669ec7` | The legacy public `HostUsageRuntime` path is removed; the projection runtime and active broker client remain. Lifetime lease ownership, wake renewal, stale-owner fencing, and dead-owner reclamation are represented in source and fixtures. |
+| `6c1709e`, `7bd6871` | Direct CLI monitor/status/watch/wait contracts are retained. The installed `8288ef4a` smoke checkpoint passed; rebuild and installed check after the pending fixes remain. Predecessor install evidence is not target proof. |
+| Remaining documentation/design commits | Preserve dated v2 evidence as historical. Current wire v8, projection v3, store v4, and the bootstrap contract supersede predecessor command and schema claims. Do not import predecessor success claims. |
 
-The archive tag still peels to source tip `771bb088dd93451654f992aeef1b8976ad84ec85`. There is one delivery branch, `feat/claude-usage-monitor-main`; no raw merge of the 203 unrelated Rust-policy commits is authorized or needed. Source branch retirement waits for final consolidation/landing gates. Current source tests and installation provenance are tracked in [verification.md](verification.md). All Cargo verification uses the Mise-to-MBX wrapper.
+The archive tag still peels to source tip `771bb088dd93451654f992aeef1b8976ad84ec85`. There is one delivery branch, `feat/claude-usage-monitor-main`; no raw merge of the 203 unrelated Rust-policy commits is authorized or needed. Source branch retirement waits for final consolidation/landing gates. Checkpoint gate and installation provenance are tracked in [verification.md](verification.md); they do not cover the pending final-fix rebuild. All Cargo verification uses the Mise-to-MBX wrapper.
 
 ## Earlier inventory snapshot
 

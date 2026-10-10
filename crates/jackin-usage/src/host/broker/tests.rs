@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::os::unix::fs::{FileTypeExt as _, MetadataExt as _, PermissionsExt as _, symlink};
+use std::os::unix::fs::symlink;
 use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Barrier, Mutex, mpsc};
 use std::thread;
 
@@ -219,6 +219,7 @@ fn launch_scope_fails_closed_on_rotation_repoint_and_mixed_agent_source() {
         resolver: Arc::new(NoopCredentialResolver),
         monitor_store: None,
         collector_service: None,
+        collector_liveness: None,
         claude_collector: None,
         probe_budget: Duration::from_secs(1),
     };
@@ -316,6 +317,7 @@ fn launch_scope_accepts_provider_native_zhipu_alias_for_canonical_zai_binding() 
         resolver: Arc::new(NoopCredentialResolver),
         monitor_store: None,
         collector_service: None,
+        collector_liveness: None,
         claude_collector: None,
         probe_budget: Duration::from_secs(1),
     };
@@ -555,6 +557,7 @@ fn discovery_executor_rejects_catalog_that_does_not_match_current_scope() {
         resolver: Arc::clone(&resolver),
         monitor_store: None,
         collector_service: None,
+        collector_liveness: None,
         claude_collector: None,
         probe_budget: Duration::from_secs(1),
     };
@@ -606,9 +609,10 @@ fn foreground_discovery_executor_rejects_non_claude_before_credentials_or_collec
             config_root,
             operator_home: temp.path().join("home"),
         },
-        resolver: resolver.clone(),
+        resolver: Arc::<CountingCredentialResolver>::clone(&resolver),
         monitor_store: None,
         collector_service: Some("fixture-claude-service".to_owned()),
+        collector_liveness: None,
         claude_collector: Some({
             let collector_calls = Arc::clone(&collector_calls);
             Arc::new(move |_, _| {
@@ -643,9 +647,10 @@ fn discovery_executor_rejects_unselected_catalog_rows_without_credential_or_prov
         bindings: Mutex::new(BTreeMap::new()),
         validated_catalog: Mutex::new(None),
         scope: scope.clone(),
-        resolver: resolver.clone(),
+        resolver: Arc::<CountingCredentialResolver>::clone(&resolver),
         monitor_store: None,
         collector_service: None,
+        collector_liveness: None,
         claude_collector: Some({
             let fake_collector_calls = Arc::clone(&fake_collector_calls);
             Arc::new(move |_, _| {
@@ -1127,32 +1132,7 @@ fn broker_migrates_v2_projection_before_exposure_and_preserves_durable_history()
         surface_id: "codex".to_owned(),
     };
     let account_store = FileAccountStateStore::under_data_dir(&config.data_dir);
-    let mut account_history = AccountStateEnvelope::idle(claude_capability.clone());
-    account_history.generation = 7;
-    account_history.phase = UsageRefreshPhase::Failed;
-    let mut historical_result = quota_view();
-    historical_result.fetched_at_epoch = 970;
-    historical_result.account.account_label = "historical account".to_owned();
-    for bucket in &mut historical_result.buckets {
-        bucket.remaining_percent = Some(97);
-    }
-    historical_result.status_bar_label = "Claude Weekly: 97% left".to_owned();
-    account_history.terminal_result = Some(historical_result);
-    account_history.last_good = account_history.terminal_result.clone();
-    account_history.started_at_epoch = Some(960);
-    account_history.provider_invoked_at_epoch = Some(961);
-    account_history.completed_at_epoch = Some(970);
-    account_history.rate_limit_deadline_epoch = Some(1_100);
-    account_history.retry_deadline_epoch = Some(1_120);
-    account_history.success_deadline_epoch = Some(1_300);
-    account_history.consecutive_failures = 2;
-    account_store
-        .store(&account_history, now_epoch)
-        .expect("persist existing coordinator history");
-    let history_before = account_store
-        .load(&claude_capability, now_epoch)
-        .expect("read coordinator history before migration")
-        .expect("coordinator history exists");
+    let history_before = seed_legacy_claude_history(&account_store, &claude_capability, now_epoch);
     assert_eq!(
         history_before
             .terminal_result
@@ -1163,132 +1143,8 @@ fn broker_migrates_v2_projection_before_exposure_and_preserves_durable_history()
         "the durable history fixture retains its original 97% remaining value"
     );
 
-    let freshness = UsageFreshnessV1 {
-        generation: 7,
-        phase: UsageFreshnessPhaseV1::Stale,
-        last_good_at_epoch: Some(970),
-        retry_at_epoch: Some(1_120),
-        is_stale: true,
-    };
-    let codex_account = UsageAccountV1 {
-        canonical_account_id: "codex-account".to_owned(),
-        identity_kind: UsageIdentityKindV1::ProviderStableHandle,
-        rank: 0,
-        display_label: "codex".to_owned(),
-        plan_label: None,
-        status_label: None,
-        lifecycle: UsageLifecycleV1::Available,
-        freshness: freshness.clone(),
-        provenance_count: 3,
-        windows: vec![UsageLimitWindowV1 {
-            window_id: "codex-account:0".to_owned(),
-            rank: 0,
-            category: UsageWindowCategoryV1::Session,
-            label: "Session".to_owned(),
-            value_label: "72% left".to_owned(),
-            reset_label: "in 20 minutes".to_owned(),
-            remaining_percent: Some(UsagePercent::clamp_raw(72)),
-            remaining_raw_percent: Some(72),
-            used_percent: None,
-            used_raw_percent: None,
-            reset_at_epoch: Some(2_200),
-            quota_state: UsageQuotaStateV1::Available,
-            pace_label: None,
-            runs_out_label: None,
-        }],
-        metric_groups: Vec::new(),
-        credential_expires_at_epoch: None,
-        issues: Vec::new(),
-    };
-    let claude_account = UsageAccountV1 {
-        canonical_account_id: "claude-account".to_owned(),
-        identity_kind: UsageIdentityKindV1::ProviderAccountId,
-        rank: 0,
-        display_label: "historic Claude identity".to_owned(),
-        plan_label: None,
-        status_label: None,
-        lifecycle: UsageLifecycleV1::Available,
-        freshness: freshness.clone(),
-        provenance_count: 2,
-        windows: Vec::new(),
-        metric_groups: Vec::new(),
-        credential_expires_at_epoch: None,
-        issues: Vec::new(),
-    };
-    let legacy_projection = UsageProjectionV1 {
-        schema_version: UsageProjectionSchemaV1,
-        projection_id: "legacy-instance:7".to_owned(),
-        generated_at_epoch: 980,
-        discovery_revision: "legacy-catalog-revision".to_owned(),
-        broker_instance_id: "legacy-instance".to_owned(),
-        broker_generation: 7,
-        refresh_state: UsageProjectionRefreshStateV1::Idle,
-        // Schema v2 used raw surface IDs and sorted them lexically, so Claude
-        // preceded Codex here. The canonical host order is Codex then Claude.
-        providers: vec![
-            UsageProviderV1 {
-                provider_id: "claude".to_owned(),
-                display_name: "claude".to_owned(),
-                rank: 0,
-                membership_state: UsageMembershipStateV1::Current,
-                freshness: freshness.clone(),
-                accounts: vec![claude_account],
-                issues: Vec::new(),
-            },
-            UsageProviderV1 {
-                provider_id: "codex".to_owned(),
-                display_name: "codex".to_owned(),
-                rank: 1,
-                membership_state: UsageMembershipStateV1::Current,
-                freshness,
-                accounts: vec![codex_account],
-                issues: Vec::new(),
-            },
-        ],
-        unresolved: vec![
-            UsageUnresolvedV1 {
-                provider_id: "claude".to_owned(),
-                capability_id: "claude-candidate".to_owned(),
-                configuration_count: 1,
-                state: UsageLifecycleV1::NeedsSecret,
-                issues: Vec::new(),
-            },
-            UsageUnresolvedV1 {
-                provider_id: "codex".to_owned(),
-                capability_id: "codex-candidate".to_owned(),
-                configuration_count: 2,
-                state: UsageLifecycleV1::NeedsSecret,
-                issues: Vec::new(),
-            },
-        ],
-        issues: Vec::new(),
-    };
-    legacy_projection
-        .validate()
-        .expect("fixture matches schema-v2 row ranks");
-
-    let legacy_envelope = ProjectionStateEnvelope {
-        schema_version: ProjectionStateEnvelope::MIGRATABLE_SCHEMA_VERSION,
-        projection: legacy_projection,
-        aliases: vec![ProjectionAlias {
-            capability_id: "legacy-capability".to_owned(),
-            canonical_account_id: "claude-account".to_owned(),
-        }],
-        catalog_revision: "legacy-catalog-revision".to_owned(),
-        catalog: vec![
-            UsageCatalogEntry {
-                capability: claude_capability.clone(),
-                revision: "claude-revision".to_owned(),
-            },
-            UsageCatalogEntry {
-                capability: codex_capability,
-                revision: "codex-revision".to_owned(),
-            },
-        ],
-        retry_deadline_epoch: Some(1_150),
-        success_deadline_epoch: Some(1_300),
-        broker_instance_id: "legacy-instance".to_owned(),
-    };
+    let legacy_envelope =
+        legacy_v2_projection_envelope(claude_capability.clone(), codex_capability);
     let projection_path = config.data_dir.join(BROKER_DIR).join("projection.json");
     fs::create_dir_all(projection_path.parent().unwrap()).unwrap();
     fs::write(
@@ -1388,6 +1244,171 @@ fn broker_migrates_v2_projection_before_exposure_and_preserves_durable_history()
             .expect("coordinator history remains readable"),
         Some(history_before)
     );
+}
+
+fn seed_legacy_claude_history(
+    account_store: &FileAccountStateStore,
+    capability: &UsageAccountCapability,
+    now_epoch: i64,
+) -> AccountStateEnvelope {
+    let mut account_history = AccountStateEnvelope::idle(capability.clone());
+    account_history.generation = 7;
+    account_history.phase = UsageRefreshPhase::Failed;
+    let mut historical_result = quota_view();
+    historical_result.fetched_at_epoch = 970;
+    historical_result.account.account_label = "historical account".to_owned();
+    for bucket in &mut historical_result.buckets {
+        bucket.remaining_percent = Some(97);
+    }
+    historical_result.status_bar_label = "Claude Weekly: 97% left".to_owned();
+    account_history.terminal_result = Some(historical_result);
+    account_history.last_good = account_history.terminal_result.clone();
+    account_history.started_at_epoch = Some(960);
+    account_history.provider_invoked_at_epoch = Some(961);
+    account_history.completed_at_epoch = Some(970);
+    account_history.rate_limit_deadline_epoch = Some(1_100);
+    account_history.retry_deadline_epoch = Some(1_120);
+    account_history.success_deadline_epoch = Some(1_300);
+    account_history.consecutive_failures = 2;
+    account_store
+        .store(&account_history, now_epoch)
+        .expect("persist existing coordinator history");
+    account_store
+        .load(capability, now_epoch)
+        .expect("read coordinator history before migration")
+        .expect("coordinator history exists")
+}
+
+fn legacy_v2_projection_envelope(
+    claude_capability: UsageAccountCapability,
+    codex_capability: UsageAccountCapability,
+) -> ProjectionStateEnvelope {
+    let freshness = UsageFreshnessV1 {
+        generation: 7,
+        phase: UsageFreshnessPhaseV1::Stale,
+        last_good_at_epoch: Some(970),
+        retry_at_epoch: Some(1_120),
+        is_stale: true,
+    };
+    let codex_account = UsageAccountV1 {
+        canonical_account_id: "codex-account".to_owned(),
+        identity_kind: UsageIdentityKindV1::ProviderStableHandle,
+        rank: 0,
+        display_label: "codex".to_owned(),
+        plan_label: None,
+        status_label: None,
+        lifecycle: UsageLifecycleV1::Available,
+        freshness: freshness.clone(),
+        provenance_count: 3,
+        windows: vec![UsageLimitWindowV1 {
+            window_id: "codex-account:0".to_owned(),
+            rank: 0,
+            category: UsageWindowCategoryV1::Session,
+            label: "Session".to_owned(),
+            value_label: "72% left".to_owned(),
+            reset_label: "in 20 minutes".to_owned(),
+            remaining_percent: Some(UsagePercent::clamp_raw(72)),
+            remaining_raw_percent: Some(72),
+            used_percent: None,
+            used_raw_percent: None,
+            reset_at_epoch: Some(2_200),
+            quota_state: UsageQuotaStateV1::Available,
+            pace_label: None,
+            runs_out_label: None,
+        }],
+        metric_groups: Vec::new(),
+        credential_expires_at_epoch: None,
+        issues: Vec::new(),
+    };
+    let claude_account = UsageAccountV1 {
+        canonical_account_id: "claude-account".to_owned(),
+        identity_kind: UsageIdentityKindV1::ProviderAccountId,
+        rank: 0,
+        display_label: "historic Claude identity".to_owned(),
+        plan_label: None,
+        status_label: None,
+        lifecycle: UsageLifecycleV1::Available,
+        freshness: freshness.clone(),
+        provenance_count: 2,
+        windows: Vec::new(),
+        metric_groups: Vec::new(),
+        credential_expires_at_epoch: None,
+        issues: Vec::new(),
+    };
+    let projection = UsageProjectionV1 {
+        schema_version: UsageProjectionSchemaV1,
+        projection_id: "legacy-instance:7".to_owned(),
+        generated_at_epoch: 980,
+        discovery_revision: "legacy-catalog-revision".to_owned(),
+        broker_instance_id: "legacy-instance".to_owned(),
+        broker_generation: 7,
+        refresh_state: UsageProjectionRefreshStateV1::Idle,
+        // Schema v2 used raw surface IDs and sorted them lexically, so Claude
+        // preceded Codex here. The canonical host order is Codex then Claude.
+        providers: vec![
+            UsageProviderV1 {
+                provider_id: "claude".to_owned(),
+                display_name: "claude".to_owned(),
+                rank: 0,
+                membership_state: UsageMembershipStateV1::Current,
+                freshness: freshness.clone(),
+                accounts: vec![claude_account],
+                issues: Vec::new(),
+            },
+            UsageProviderV1 {
+                provider_id: "codex".to_owned(),
+                display_name: "codex".to_owned(),
+                rank: 1,
+                membership_state: UsageMembershipStateV1::Current,
+                freshness,
+                accounts: vec![codex_account],
+                issues: Vec::new(),
+            },
+        ],
+        unresolved: vec![
+            UsageUnresolvedV1 {
+                provider_id: "claude".to_owned(),
+                capability_id: "claude-candidate".to_owned(),
+                configuration_count: 1,
+                state: UsageLifecycleV1::NeedsSecret,
+                issues: Vec::new(),
+            },
+            UsageUnresolvedV1 {
+                provider_id: "codex".to_owned(),
+                capability_id: "codex-candidate".to_owned(),
+                configuration_count: 2,
+                state: UsageLifecycleV1::NeedsSecret,
+                issues: Vec::new(),
+            },
+        ],
+        issues: Vec::new(),
+    };
+    projection
+        .validate()
+        .expect("fixture matches schema-v2 row ranks");
+
+    ProjectionStateEnvelope {
+        schema_version: ProjectionStateEnvelope::MIGRATABLE_SCHEMA_VERSION,
+        projection,
+        aliases: vec![ProjectionAlias {
+            capability_id: "legacy-capability".to_owned(),
+            canonical_account_id: "claude-account".to_owned(),
+        }],
+        catalog_revision: "legacy-catalog-revision".to_owned(),
+        catalog: vec![
+            UsageCatalogEntry {
+                capability: claude_capability,
+                revision: "claude-revision".to_owned(),
+            },
+            UsageCatalogEntry {
+                capability: codex_capability,
+                revision: "codex-revision".to_owned(),
+            },
+        ],
+        retry_deadline_epoch: Some(1_150),
+        success_deadline_epoch: Some(1_300),
+        broker_instance_id: "legacy-instance".to_owned(),
+    }
 }
 
 fn freshness_for_legacy_projection() -> UsageFreshnessV1 {
@@ -1739,6 +1760,7 @@ fn scoped_probe_refreshes_exact_binding_selected_by_later_sibling_proof() {
         resolver: resolver_for_executor,
         monitor_store: None,
         collector_service: None,
+        collector_liveness: None,
         claude_collector: None,
         probe_budget: Duration::from_secs(1),
     };
@@ -2777,6 +2799,7 @@ struct FakeForegroundState {
     credential_drops: AtomicUsize,
     guard_drops: AtomicUsize,
     credential_active: AtomicBool,
+    credential_generation: AtomicU64,
     guard_active: AtomicBool,
     cached_secret: Mutex<Option<Zeroizing<String>>>,
     call_order: Mutex<Vec<&'static str>>,
@@ -2790,6 +2813,7 @@ impl Default for FakeForegroundState {
             credential_drops: AtomicUsize::new(0),
             guard_drops: AtomicUsize::new(0),
             credential_active: AtomicBool::new(false),
+            credential_generation: AtomicU64::new(0),
             guard_active: AtomicBool::new(false),
             cached_secret: Mutex::new(None),
             call_order: Mutex::new(Vec::new()),
@@ -2798,6 +2822,14 @@ impl Default for FakeForegroundState {
 }
 
 struct FakeForegroundCredentialLease(Arc<FakeForegroundState>);
+
+impl service::ForegroundCredentialLease for FakeForegroundCredentialLease {
+    fn generation(&self) -> u64 {
+        let generation = self.0.credential_generation.load(Ordering::SeqCst);
+        assert_ne!(generation, 0, "fake lease must carry its test generation");
+        generation
+    }
+}
 
 impl Drop for FakeForegroundCredentialLease {
     fn drop(&mut self) {
@@ -2937,6 +2969,7 @@ fn foreground_fake_bootstrap_holds_the_same_zeroizing_lease_through_catalog_read
                     *state.cached_secret.lock().expect("fake cache mutex") =
                         Some(Zeroizing::new("test-only in-process credential".to_owned()));
                     state.credential_active.store(true, Ordering::SeqCst);
+                    state.credential_generation.store(7, Ordering::SeqCst);
                     Ok(ForegroundBootstrapOutcome::Acquired(
                         FakeForegroundCredentialLease(state),
                     ))
@@ -2979,6 +3012,60 @@ fn foreground_fake_bootstrap_holds_the_same_zeroizing_lease_through_catalog_read
     let ready = ready_receiver
         .recv_timeout(Duration::from_secs(10))
         .expect("foreground broker reports readiness after catalog reconciliation");
+    assert_foreground_ready_projection(&config, &client, service, &ready, &state, &removed_sibling);
+
+    assert!(state.credential_active.load(Ordering::SeqCst));
+    assert!(state.guard_active.load(Ordering::SeqCst));
+    assert!(
+        state
+            .cached_secret
+            .lock()
+            .expect("fake cache mutex")
+            .is_some()
+    );
+    assert_eq!(
+        client
+            .monitor(MonitorOperation::ServiceStop)
+            .expect("stop isolated foreground broker"),
+        MonitorReply::ServiceStopped
+    );
+    let outcome = service_thread
+        .join()
+        .expect("join foreground broker thread")
+        .expect("foreground service exits cleanly");
+    assert!(state.credential_active.load(Ordering::SeqCst));
+    assert!(!state.guard_active.load(Ordering::SeqCst));
+    assert!(
+        state
+            .cached_secret
+            .lock()
+            .expect("fake cache mutex")
+            .is_some()
+    );
+    assert_eq!(state.guard_drops.load(Ordering::SeqCst), 1);
+    let ForegroundBootstrapOutcome::Acquired(credential_lease) = outcome else {
+        panic!("foreground service returns the acquired process-local lease");
+    };
+    drop(credential_lease);
+    assert!(!state.credential_active.load(Ordering::SeqCst));
+    assert!(
+        state
+            .cached_secret
+            .lock()
+            .expect("fake cache mutex")
+            .is_none()
+    );
+    assert_eq!(state.credential_drops.load(Ordering::SeqCst), 1);
+}
+
+fn assert_foreground_ready_projection(
+    config: &UsageBrokerConfig,
+    client: &UsageBrokerClient,
+    service: &str,
+    ready: &UsageBrokerForegroundReady,
+    state: &FakeForegroundState,
+    removed_sibling: &UsageAccountCapability,
+) {
     assert_eq!(
         ready.capability,
         claude_usage_capability_for_service(service)
@@ -3048,56 +3135,13 @@ fn foreground_fake_bootstrap_holds_the_same_zeroizing_lease_through_catalog_read
     );
     assert!(revoked_projection_sibling.windows.is_empty());
     let revoked_account_state = FileAccountStateStore::under_data_dir(&config.data_dir)
-        .load(&removed_sibling, chrono::Utc::now().timestamp())
+        .load(removed_sibling, chrono::Utc::now().timestamp())
         .expect("read revoked sibling cooldown tombstone")
         .expect("cooldown tombstone remains durable after removal");
     assert_eq!(revoked_account_state.phase, UsageRefreshPhase::Idle);
     assert!(revoked_account_state.terminal_result.is_none());
     assert!(revoked_account_state.last_good.is_none());
     assert!(revoked_account_state.success_deadline_epoch.is_some());
-
-    assert!(state.credential_active.load(Ordering::SeqCst));
-    assert!(state.guard_active.load(Ordering::SeqCst));
-    assert!(
-        state
-            .cached_secret
-            .lock()
-            .expect("fake cache mutex")
-            .is_some()
-    );
-    assert_eq!(
-        client
-            .monitor(MonitorOperation::ServiceStop)
-            .expect("stop isolated foreground broker"),
-        MonitorReply::ServiceStopped
-    );
-    let outcome = service_thread
-        .join()
-        .expect("join foreground broker thread")
-        .expect("foreground service exits cleanly");
-    assert!(state.credential_active.load(Ordering::SeqCst));
-    assert!(!state.guard_active.load(Ordering::SeqCst));
-    assert!(
-        state
-            .cached_secret
-            .lock()
-            .expect("fake cache mutex")
-            .is_some()
-    );
-    assert_eq!(state.guard_drops.load(Ordering::SeqCst), 1);
-    let ForegroundBootstrapOutcome::Acquired(credential_lease) = outcome else {
-        panic!("foreground service returns the acquired process-local lease");
-    };
-    drop(credential_lease);
-    assert!(!state.credential_active.load(Ordering::SeqCst));
-    assert!(
-        state
-            .cached_secret
-            .lock()
-            .expect("fake cache mutex")
-            .is_none()
-    );
-    assert_eq!(state.credential_drops.load(Ordering::SeqCst), 1);
 }
 
 #[test]
@@ -3124,7 +3168,7 @@ fn foreground_broker_conflict_precedes_fake_credential_or_guard_access() {
             let calls = Arc::clone(&bootstrap_calls);
             move |_| {
                 calls.fetch_add(1, Ordering::SeqCst);
-                Ok(ForegroundBootstrapOutcome::<()>::Missing)
+                Ok(ForegroundBootstrapOutcome::<FakeForegroundCredentialLease>::Missing)
             }
         },
         {
@@ -3136,9 +3180,8 @@ fn foreground_broker_conflict_precedes_fake_credential_or_guard_access() {
         },
         |_| {},
     );
-    let error = match result {
-        Err(error) => error,
-        Ok(_) => panic!("a second foreground service cannot bootstrap against the held lease"),
+    let Err(error) = result else {
+        panic!("a second foreground service cannot bootstrap against the held lease");
     };
     assert_eq!(error.kind, UsageCoordinationErrorKind::BrokerConflict);
     assert_eq!(bootstrap_calls.load(Ordering::SeqCst), 0);
@@ -3171,7 +3214,7 @@ fn foreground_orphan_socket_conflicts_before_credentials_and_stays_untouched() {
             let calls = Arc::clone(&bootstrap_calls);
             move |_| {
                 calls.fetch_add(1, Ordering::SeqCst);
-                Ok(ForegroundBootstrapOutcome::<()>::Missing)
+                Ok(ForegroundBootstrapOutcome::<FakeForegroundCredentialLease>::Missing)
             }
         },
         {
@@ -3189,9 +3232,8 @@ fn foreground_orphan_socket_conflicts_before_credentials_and_stays_untouched() {
         },
     );
 
-    let error = match result {
-        Err(error) => error,
-        Ok(_) => panic!("an unrecognized socket must block foreground startup"),
+    let Err(error) = result else {
+        panic!("an unrecognized socket must block foreground startup");
     };
     assert_eq!(error.kind, UsageCoordinationErrorKind::BrokerConflict);
     assert_eq!(bootstrap_calls.load(Ordering::SeqCst), 0);
@@ -3231,17 +3273,17 @@ fn foreground_reclaims_socket_from_expired_lease_before_credentials() {
             let calls = Arc::clone(&bootstrap_calls);
             move |_| {
                 calls.fetch_add(1, Ordering::SeqCst);
-                Ok(ForegroundBootstrapOutcome::<()>::Missing)
+                Ok(ForegroundBootstrapOutcome::<FakeForegroundCredentialLease>::Missing)
             }
         },
         || Ok(()),
         |_| {},
     );
 
-    assert_eq!(
+    assert!(matches!(
         result.expect("missing credential exits after startup claim"),
         ForegroundBootstrapOutcome::Missing
-    );
+    ));
     assert_eq!(bootstrap_calls.load(Ordering::SeqCst), 1);
     assert!(!socket_path.exists(), "expired lease socket is reclaimed");
     assert!(!leader_path.exists(), "failed bootstrap releases its lease");
@@ -3276,16 +3318,15 @@ fn foreground_expired_lease_keeps_responsive_unrecognized_socket() {
             let calls = Arc::clone(&bootstrap_calls);
             move |_| {
                 calls.fetch_add(1, Ordering::SeqCst);
-                Ok(ForegroundBootstrapOutcome::<()>::Missing)
+                Ok(ForegroundBootstrapOutcome::<FakeForegroundCredentialLease>::Missing)
             }
         },
         || Ok(()),
         |_| {},
     );
 
-    let error = match result {
-        Err(error) => error,
-        Ok(_) => panic!("a responsive unknown endpoint must block startup"),
+    let Err(error) = result else {
+        panic!("a responsive unknown endpoint must block startup");
     };
     assert_eq!(error.kind, UsageCoordinationErrorKind::BrokerConflict);
     assert_eq!(bootstrap_calls.load(Ordering::SeqCst), 0);
@@ -3450,6 +3491,7 @@ fn foreground_ticker_polls_only_current_selected_capability_from_approved_monito
         resolver: Arc::new(NoopCredentialResolver),
         monitor_store: Some(Arc::clone(&monitor_store)),
         collector_service: Some(selected_service.to_owned()),
+        collector_liveness: Some(Arc::new(crate::usage::ClaudeCollectorLiveness::new(()))),
         claude_collector: Some(Arc::new(move |capability, service| {
             collector_calls
                 .lock()
@@ -3542,6 +3584,7 @@ fn foreground_ticker_polls_only_current_selected_capability_from_approved_monito
             resolver: Arc::new(NoopCredentialResolver),
             monitor_store: Some(monitor_store),
             collector_service: Some(selected_service.to_owned()),
+            collector_liveness: Some(Arc::new(crate::usage::ClaudeCollectorLiveness::new(()))),
             claude_collector: Some(Arc::new(|_, _| {
                 panic!("unselected canonical capability must not reach the fake collector")
             })),

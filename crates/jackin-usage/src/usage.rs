@@ -82,12 +82,14 @@ pub use self::claude::classify_claude_keychain_status;
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
 pub(crate) use self::claude::{
-    ClaudeCollectionError, ClaudeOAuthCredentials, ClaudeOAuthEnvToken, ClaudeOAuthExtraUsage,
-    ClaudeOAuthLimit, ClaudeOAuthLimitModel, ClaudeOAuthLimitScope, ClaudeOAuthMoney,
-    ClaudeOAuthSpend, ClaudeOAuthUsageResponse, ClaudeOAuthUsageWindow, ClaudeProfilePayload,
-    ClaudeQuotaWindow, ClaudeResolved, ClaudeSpend, ClaudeWavePolicy, ClaudeWaveResolution,
+    ClaudeCollectionError, ClaudeCollectorLiveness, ClaudeCollectorOperationPermit,
+    ClaudeOAuthCredentials, ClaudeOAuthEnvToken, ClaudeOAuthExtraUsage, ClaudeOAuthLimit,
+    ClaudeOAuthLimitModel, ClaudeOAuthLimitScope, ClaudeOAuthMoney, ClaudeOAuthSpend,
+    ClaudeOAuthUsageResponse, ClaudeOAuthUsageWindow, ClaudeProfilePayload, ClaudeQuotaWindow,
+    ClaudeResolved, ClaudeSpend, ClaudeWavePolicy, ClaudeWaveResolution,
     bootstrapped_claude_service, claude_account_identity, claude_api_key_snapshot,
-    claude_error_is_scope_restriction, claude_oauth_candidates, claude_provider_error_label,
+    claude_credential_generation_is_current, claude_error_is_scope_restriction,
+    claude_oauth_candidates, claude_provider_error_label, claude_service_is_bootstrapped,
     claude_snapshot, claude_source_capability_id_for_service, claude_spend_bucket,
     claude_view_from_wave_with_metadata, claude_view_from_wave_with_rate_limit, claude_wave_policy,
     experimental_claude_usage_snapshot_for_service, fetch_claude_oauth_usage,

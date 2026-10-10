@@ -673,10 +673,7 @@ fn has_claude_usage_command(tokens: &[RustSourceToken]) -> bool {
             .position(|token| matches!(token, RustSourceToken::Punctuation(';' | '}')))
             .map_or(tokens.len(), |offset| after_constructor + offset);
         let arguments = &tokens[after_constructor..statement_end];
-        let executable = program
-            .rsplit(|character| character == '/' || character == '\\')
-            .next()
-            .unwrap_or(program);
+        let executable = program.rsplit(['/', '\\']).next().unwrap_or(program);
         if executable == "claude"
             && has_argument_method(arguments)
             && has_string_argument(arguments, "-p")
@@ -696,20 +693,16 @@ fn has_claude_usage_command(tokens: &[RustSourceToken]) -> bool {
         if contains_claude_usage_command(program) {
             return true;
         }
-        let executable_is_claude = program
-            .rsplit(|character| character == '/' || character == '\\')
-            .next()
-            .unwrap_or(program)
-            == "claude";
-        if executable_is_claude {
-            if let (Some(variable), Some(scope_end)) = (
-                variable_assigned_to_constructor(tokens, index),
-                enclosing_block_end(tokens, index),
-            ) {
-                if variable_runs_claude_usage_command(tokens, &variable, index, scope_end) {
-                    return true;
-                }
-            }
+        let executable_is_claude =
+            program.rsplit(['/', '\\']).next().unwrap_or(program) == "claude";
+        if executable_is_claude
+            && variable_assigned_to_constructor(tokens, index)
+                .zip(enclosing_block_end(tokens, index))
+                .is_some_and(|(variable, scope_end)| {
+                    variable_runs_claude_usage_command(tokens, &variable, index, scope_end)
+                })
+        {
+            return true;
         }
     }
     false
@@ -801,20 +794,11 @@ fn variable_runs_claude_usage_command(
                 && is_punctuation(tokens.get(cursor + 2), '(')
             {
                 saw_argument_method = true;
-                cursor += 3;
-                let mut depth = 1usize;
-                while cursor < scope_end && depth > 0 {
-                    match tokens.get(cursor) {
-                        Some(RustSourceToken::Punctuation('(')) => depth += 1,
-                        Some(RustSourceToken::Punctuation(')')) => depth -= 1,
-                        Some(RustSourceToken::StringLiteral(value)) if depth > 0 => {
-                            saw_print_flag |= value == "-p";
-                            saw_usage_argument |= value == "/usage";
-                        }
-                        _ => {}
-                    }
-                    cursor += 1;
-                }
+                let (after_call, found_print_flag, found_usage_argument) =
+                    scan_builder_arguments(tokens, cursor + 2, scope_end);
+                saw_print_flag |= found_print_flag;
+                saw_usage_argument |= found_usage_argument;
+                cursor = after_call;
             }
             index = cursor.max(index + 1);
         } else {
@@ -822,6 +806,30 @@ fn variable_runs_claude_usage_command(
         }
     }
     saw_argument_method && saw_print_flag && saw_usage_argument
+}
+
+fn scan_builder_arguments(
+    tokens: &[RustSourceToken],
+    opening_paren: usize,
+    scope_end: usize,
+) -> (usize, bool, bool) {
+    let mut cursor = opening_paren + 1;
+    let mut depth = 1usize;
+    let mut saw_print_flag = false;
+    let mut saw_usage_argument = false;
+    while cursor < scope_end && depth > 0 {
+        match tokens.get(cursor) {
+            Some(RustSourceToken::Punctuation('(')) => depth += 1,
+            Some(RustSourceToken::Punctuation(')')) => depth -= 1,
+            Some(RustSourceToken::StringLiteral(value)) if depth > 0 => {
+                saw_print_flag |= value == "-p";
+                saw_usage_argument |= value == "/usage";
+            }
+            _ => {}
+        }
+        cursor += 1;
+    }
+    (cursor, saw_print_flag, saw_usage_argument)
 }
 
 fn command_program(tokens: &[RustSourceToken], start: usize) -> Option<(&str, usize)> {

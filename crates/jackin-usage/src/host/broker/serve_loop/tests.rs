@@ -365,6 +365,7 @@ fn connection_context(
         fenced,
         catalog_refresh: None,
         wait_pool,
+        collector_liveness: None,
     })
 }
 

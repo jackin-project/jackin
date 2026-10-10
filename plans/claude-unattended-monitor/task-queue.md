@@ -2,25 +2,28 @@
 
 ## Current delivery checkpoint
 
-Delivery branch: `feat/claude-usage-monitor-main`, isolated from the running Claude checkout. Pushed checkpoint `471efcb2` includes the installed fixture harness. The current candidate uses broker wire v8, projection schema v3, durable monitor schema v4, and statusline input v2. `LocalSourceHandle` remains distinct from provider identity. The previously installed v3 pair uses wire v7 and is historical evidence only; it does not verify the current v8 candidate. The current direct-CLI contract is [bootstrap-contract.md](bootstrap-contract.md); statusline remains an optional credential-free source.
+Delivery branch: `feat/claude-usage-monitor-main`, isolated from the running Claude checkout. Pushed checkpoint `471efcb2` includes the installed fixture harness. The current source checkpoint is `8288ef4a` (`8288ef4a4e174624e353f8748304766ce98e5822`); it uses broker wire v8, projection schema v3, durable monitor schema v4, and statusline input v2. `LocalSourceHandle` remains distinct from provider identity. The prior installed v3 pair used wire v7 and is historical evidence only. The current direct-CLI contract is [bootstrap-contract.md](bootstrap-contract.md); statusline remains an optional credential-free source.
 
-An earlier five-package MBX consumer compile check passed before the wire-v8, projection-v3, and clock-fix changes; that result is historical. The current production five-package compile passed, the final seven-package scoped check passed, and seven-package formatting passed. Current selected offline gates also passed, including protocol (135), projection (10), discovery (41), Claude provider (25), coordinator (50), coordinator state (11), broker (183, 0 failed and 511 filtered), host inventory (13), runtime (21), CLI (43), app (29), console (61), FFI (9), capsule (11), bootstrap (2), monitor (5), installation (5), lifecycle (2), and contract baseline (10). Docs typecheck/tests/build, repository-link validation, and roadmap/research metadata checks passed. These are separate overlapping scopes, not an aggregate count; exact log paths are in [verification.md](verification.md). The current v8 installed pair has not been rebuilt; remaining integration, reconciliation, and landing gates are pending.
+At checkpoint `8288ef4a`, the MBX offline/locked build, selected offline scopes, and isolated installed-pair smoke passed. The smoke asserts wire v8 and monitor schema v4; it recorded zero HTTP-proxy requests and credential-command executions. These are checkpoint results, not final acceptance. Later bounded source tests and independent reviews cover the retry/cooldown and security lifecycle roots, and the corrected contract baseline passes 10/10. The current consumer/integration matrix now passes, including app and broker installation. Final scoped formatting and strict Clippy pass; Linux Required CI rerun and final installed-pair rebuild/smoke remain pending. Linux Required CI had failed at checkpoint 8288 on `--modes` enum imports and Clippy nesting; local passes do not substitute for the required CI rerun. Exact evidence is recorded in [verification.md](verification.md); overlapping test counts are not a total.
 
 All Cargo work must run through MBX 1.22.0. Main's Mise Cargo wrapper selects MBX, but injecting the toolchain directory before `mise exec` can shadow that wrapper. Current invocations use `MISE_AUTO_INSTALL=false mise exec -- mbx <Cargo-subcommand>` with an owned isolated `CARGO_HOME`. For commands that can launch nested Cargo, inject wrapper-first PATH **after** Mise using `MISE_AUTO_INSTALL=false mise exec -- env PATH="<mise-command-wrappers>/bin:<selected-rust-toolchain>/bin:$PATH" mbx ...`; setting PATH before Mise is insufficient. Do not invoke plain Cargo. Main already supplies MBX; draft/red PR #1120 is not a prerequisite and remains untouched.
 
 Previously recorded pre-v8 offline gates: protocol 133, broker 173, coordinator 54, CLI 43, app 29; installation 5, lifecycle 2, bootstrap 2, monitor 5; docs 18 tests and 1,293 rendered routes. The prior installed v3 pair used wire v7 and passed isolated observation, structured-output, sibling selection and composed-statusline checks. Its proxy request and credential-command trip counts were zero; native Keychain calls were not instrumented and successful foreground auth was not exercised. These results are historical and do not validate the current v8 candidate. No real-account readiness claim follows.
 
-The pre-v8 cleanup removed dormant Claude CLI diagnostic/parser paths and strengthened provider-call inventory detection for both direct calls and callbacks. Its recorded post-cleanup provider contract 2/2 and broker 173/173 results are historical. Current-source checks are listed in [verification.md](verification.md); the installed wire-v8 pair has not been rebuilt. Remaining queue:
+The pre-v8 cleanup removed dormant Claude CLI diagnostic/parser paths and strengthened provider-call inventory detection for both direct calls and callbacks. Its recorded post-cleanup provider contract 2/2 and broker 173/173 results are historical. Current-source checks and checkpoint 8288 installed-smoke evidence are listed in [verification.md](verification.md); those results are not final acceptance. Remaining queue:
 
-- [x] Pre-v8 checkpoint: Claude fake-auth/provider 25 and initial contract 8 passed; forbidden-command guard extended and independently reviewed Ready within documented syntactic limits. Current-source Claude-provider (25), contract-baseline (10), and final seven-package scoped checks passed; see [verification.md](verification.md).
+- [x] Historical checkpoints: Claude fake-auth/provider 25 and initial contract 8 passed; forbidden-command guard was extended and independently reviewed Ready within documented syntactic limits. The later contract run had 9 passing and 1 failing test before the 33-row inventory fixture correction; the corrected current run now passes 10/10. Latest bounded results are recorded in [verification.md](verification.md).
 - [x] Pre-v8 checkpoint: FFI passive/consumer regression 9 passed through MBX; docs typecheck and 18 tests passed after published research updates. These results do not establish current wire-v8 behavior.
-- [x] Verify current wire-v8 publication provider order against `HostSurfaceId::ALL`, account ordering by full display label with canonical-account-ID tie-break, and diagnostic-label lookup across the canonical surface inventory. Current host inventory passed 13 tests and broker passed 183; see `/private/tmp/jackin-mbx-v4-usage-host-tests-final.log` and `/private/tmp/jackin-mbx-v4-usage-host-broker-retry2.log`.
-- [x] Verify the 300-second attempt floor with fractional Retry-After under forced refresh and after broker restart; assert that no request occurs before the persisted deadline. Current forced-refresh Retry-After coverage is included in the 13 host tests; the broker retry scope passed 183 tests. See `/private/tmp/jackin-mbx-v4-usage-host-tests-final.log` and `/private/tmp/jackin-mbx-v4-usage-host-broker-retry2.log`.
-- [x] Verify explicit `LocalSourceHandle` identity stays distinct from provider ID and stable-account identity through discovery, serialization, deduplication, and publication. Current protocol passed 135 tests, contract baseline 10, discovery 41, and broker 183; see the corresponding logs listed in [verification.md](verification.md).
-- [ ] Port missing lifetime leader lock from predecessor `f669ec77`, verify deterministic sleep/wake/takeover and owned-path cleanup tests.
-- [ ] Finish removal of public retired host runtime after confirming active presentation dependencies; update crate README/generated internals docs.
-- [ ] Verify newly restored catalog-diagnostic publication lifecycle regressions, remaining consumers, and final independent reviews.
-- [ ] Commit and push cleanup; rebuild/install the matching current wire-v8 pair through MBX and rerun the isolated installed workflow.
+- [x] Verify current wire-v8 publication provider order against `HostSurfaceId::ALL`, account ordering by full display label with canonical-account-ID tie-break, and diagnostic-label lookup across the canonical surface inventory. The latest host-inventory scope passed 13 tests and the broker scope passed 183. See `/private/tmp/jackin-mbx-v4-final-host-tests.log` and `/private/tmp/jackin-mbx-v4-final-host-broker.log`.
+- [x] Verify the 300-second attempt floor with fractional Retry-After under forced refresh, restart recovery, projection cadence, and active cooldown tombstones in loaded, lazy-loaded, and pending-before-purge states. Independent review confirmed the corrected tombstone assertion: non-pending-reset clears `started_at_epoch` while retaining `provider_invoked=1000` and `RetryAfter=5000`; restart at 1101 with a fresh 300-second floor chooses `max(1300, 1401)`. See `/private/tmp/jackin-mbx-v4-final-coordinator-tests2.log`, `/private/tmp/jackin-mbx-v4-final-coordinator-state-tests.log`, and `/private/tmp/jackin-mbx-v4-final-host-broker.log`.
+- [x] Verify explicit `LocalSourceHandle` identity stays distinct from provider ID and stable-account identity through discovery, serialization, deduplication, and publication. Discovery passed 41 tests, host inventory passed 13, and the corrected 33-row contract baseline passed 10/10; see [verification.md](verification.md).
+- [x] Reconcile the lifetime leader lock from predecessor `f669ec77`: ownership stays held on the exact inode across sleep, lock descriptors use `O_CLOEXEC`, and dead-owner takeover, wake/renewal, and owned-path cleanup regressions pass in the latest 183-test broker scope. See `/private/tmp/jackin-mbx-v4-final-host-broker.log`.
+- [x] Remove the unused public `HostUsageRuntime` and all references while retaining active `HostUsageProjectionRuntime`; reference review and the latest seven-package source check passed. See `/private/tmp/jackin-mbx-v4-final-source-check.log`.
+- [x] Verify catalog-diagnostic incremental publication, authoritative clean-scan clearing, revocation labels, and bounded independent reviews. The latest broker scope passed 183 tests, including catalog-diagnostic publication regressions; see `/private/tmp/jackin-mbx-v4-final-host-broker.log`.
+- [x] Close the scoped security lifecycle gate: each initial HTTP request, credential reread, and retry requires a generation permit; deactivation blocks new permits, already-admitted I/O may finish, and cache mutation is serialized against the exact generation. The 28-test Claude suite and independent review cover the stop/revoke races. Static review and fake fixtures do not constitute native Keychain runtime proof; see [verification.md](verification.md).
+- [x] Complete the current consumer/integration matrix: runtime, CLI, app, console, FFI, capsule, bootstrap, monitor, broker lifecycle, and broker installation scopes passed; see [verification.md](verification.md).
+- [x] Record final scoped formatting and strict Clippy across all targets; see [verification.md](verification.md).
+- [ ] Rerun Linux Required CI on the fixed source, then rebuild/install and smoke the matching current wire-v8 pair through MBX. The 8288 build and isolated smoke passed but remain checkpoint evidence, not final proof.
 - [ ] Refresh provenance, handoff and evidence; commit and push all relevant task documents.
 - [ ] Complete branch reconciliation, exact-head PR reviews/comments and required CI; land only after gates pass.
 - [ ] Operator-controlled real credential/account/provider verification remains outside offline acceptance. Do not modify running Claude settings, credentials, environment or worktrees.
@@ -79,7 +82,11 @@ fix or waiver. Any canonical tag for the consolidated port remains pending
 until that port is verified and its ownership/reconciliation review is
 complete.
 
-### Current queue
+### Historical branch-port queue
+
+The checkboxes below preserve statuses from that earlier branch audit. They
+are not the current delivery checklist; use the queue under “Current delivery
+checkpoint” above for present status.
 
 - [done] Confirm the local Cargo wrapper path and MBX 1.22.0 route; PR #1120
   is not needed to enable MBX on main and remains open/draft with failed
@@ -545,11 +552,11 @@ Verification tooling incident: the read-only verification agent invoked
 traffic. The confirmed installer process tree was terminated; no Claude process
 or project package build was stopped. Tool cache mutation and network traffic
 occurred; exact external request count is unknown. This run is not wholly
-offline. No provider, auth or Keychain verification occurred. In response to
-the installer incident, that historical verification run avoided Mise and
-used direct offline Cargo. This is not current guidance; the MBX contract at
-the top of this file supersedes that workaround and disables Mise automatic
-installation on every invocation.
+offline. No provider, auth or Keychain verification occurred. As an
+incident-specific workaround, that historical verification run avoided Mise
+and used direct offline Cargo. Do not reuse that workaround as a run
+instruction; the current MBX contract at the top of this file supersedes it
+and disables Mise automatic installation on every invocation.
 Future verification reports must distinguish this tooling traffic from
 fixture provider/credential counters.
 

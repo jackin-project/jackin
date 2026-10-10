@@ -3,18 +3,26 @@
 ## Current main-port verification snapshot
 
 The canonical branch is `feat/claude-usage-monitor-main`, based on main
-`868ce535`. Pushed checkpoint `471efcb2` is earlier source evidence. The
-current candidate uses broker wire v8, projection schema v3, durable monitor
-schema v4 (unchanged), and statusline input v2; `LocalSourceHandle` is distinct
-from provider identity.
+`868ce535`. Pushed checkpoint `471efcb2` is earlier source evidence. The latest
+source checkpoint recorded here is `8288ef4a4e174624e353f8748304766ce98e5822`.
+It uses broker wire v8, projection schema v3, durable monitor schema v4
+(unchanged), and statusline input v2; `LocalSourceHandle` is distinct from
+provider identity. Checkpoint 8288 passed the selected offline source checks,
+MBX build, and isolated installed smoke described below. Later bounded source
+tests and independent reviews cover the retry/cooldown and security lifecycle
+roots, and the corrected contract baseline now passes 10/10. The current
+consumer/integration matrix passes, including app and broker installation.
+Final scoped formatting and strict Clippy across all targets pass. Linux
+Required CI rerun and final installed-pair rebuild/smoke remain open.
 
 The earlier five-package MBX consumer compile check predates the current
-wire-v8, projection-v3, and clock-fix changes and is historical. The current
-production five-package compile passed, the final seven-package scoped check
-passed, and seven-package formatting passed. The selected current-source
-offline gates below passed. The v8 installed-pair rebuild remains pending;
-source checks do not establish installed wire-v8 behavior or real-account
-readiness.
+wire-v8, projection-v3, and clock-fix changes and is historical. At checkpoint
+8288, the production five-package compile, final seven-package scoped check,
+seven-package formatting, and selected offline gates below passed. Required
+Linux CI failed at that checkpoint on the `--modes` enum-import and
+Clippy-nesting issues. Earlier local seven-package check, formatting, and
+Clippy runs passed, and the final scoped formatting and strict Clippy recheck
+now pass. The full Linux Required CI rerun remains pending.
 
 Current Cargo verification must use MBX 1.22.0 with offline/locked flags.
 Earlier checks used the checked-in Mise-to-MBX Cargo wrapper. Current isolated
@@ -25,7 +33,7 @@ below preserve old transcripts and are not current run instructions. The local
 wrapper and prior build output verify MBX 1.22.0; PR #1120 is not required to
 enable it and remains draft with failing required checks.
 
-| Current source scope | Result | Evidence |
+| Checkpoint 8288 selected source scope | Result | Evidence |
 | --- | --- | --- |
 | Production five-package compile | Passed | `/private/tmp/jackin-mbx-v4-five-package-check-final.log` |
 | Final seven-package scoped check | Passed after test-scanner fix | `/private/tmp/jackin-mbx-v4-scoped-check-final-retry.log` |
@@ -54,9 +62,111 @@ enable it and remains draft with failing required checks.
 | Roadmap metadata scan | 18 pages passed | `/private/tmp/jackin-mbx-v4-roadmap-audit.log` |
 | Research metadata scan | 63 pages passed | `/private/tmp/jackin-mbx-v4-research-check.log` |
 
-These are independent scopes and overlap; do not sum their counts. The
-installation integration tests do not rebuild or smoke the current installed
-v8 pair. Broader reconciliation, installation, and landing remain open.
+These are independent scopes and overlap; do not sum their counts. They record
+passing selected source checks at checkpoint 8288, not final acceptance. The
+broker run covers the lifetime leader lock remaining held on its exact inode
+across sleep, `O_CLOEXEC` descriptors, dead-owner takeover, wake/renewal, and
+owned-path cleanup. Its passing cases include
+`expired_lease_is_reclaimed_after_dead_owner_releases_lifetime_lock`,
+`live_lease_owner_blocks_expired_takeover_and_can_renew_after_waking`,
+`stale_lease_descriptor_cannot_renew_or_clean_successor_files`, and
+`spawned_ticker_reconciles_one_sleep_jump_and_wakes_monitor_watch`. The same
+183-test run passes
+`interaction_diagnostics_survive_new_catalog_incremental_publish_and_revocation`,
+`clean_catalog_scan_clears_catalog_diagnostics_and_keeps_unrelated_provider_issues`,
+and `cleared_diagnostic_removes_empty_provider_row`.
+
+The unused public `HostUsageRuntime` and its references were removed; the
+active `HostUsageProjectionRuntime` remains. This was checked against current
+consumers and the seven-package scoped check. The retry/cooldown and security
+lifecycle roots were open at checkpoint 8288; their latest targeted test and
+review evidence is recorded below. The Linux Required job failed at 8288 on
+the `--modes` enum-import and Clippy-nesting issues, and has not yet been
+rerun.
+
+## Latest bounded source verification
+
+These scoped results are newer than the checkpoint 8288 matrix above. They
+verify the current working candidate at source checkpoint 8288; they do not
+establish that a final installed pair or full Linux CI run has been produced.
+Each suite is an independent scope and overlaps other suites; do not sum test
+counts.
+
+| Current bounded scope | Result | Evidence |
+| --- | --- | --- |
+| Seven-package scoped formatting | Passed | `/private/tmp/jackin-mbx-v4-final-fmt-seven.log` |
+| Seven-package source check | Passed | `/private/tmp/jackin-mbx-v4-final-source-check.log` |
+| Seven-package strict Clippy, all targets | Passed, exit 0 | `/private/tmp/jackin-mbx-v4-final-clippy-seven.log` |
+| Coordinator | 57 passed | `/private/tmp/jackin-mbx-v4-final-coordinator-tests2.log` |
+| Coordinator state | 11 passed | `/private/tmp/jackin-mbx-v4-final-coordinator-state-tests.log` |
+| Host broker | 183 passed, 0 failed, 522 filtered | `/private/tmp/jackin-mbx-v4-final-host-broker.log` |
+| Host inventory | 13 passed | `/private/tmp/jackin-mbx-v4-final-host-tests.log` |
+| Projection | 10 passed | `/private/tmp/jackin-mbx-v4-usage-projection-tests-retry.log` |
+| Discovery | 41 passed | `/private/tmp/jackin-mbx-v4-usage-discovery-tests.log` |
+| Runtime usage relay | 21 passed | `/private/tmp/jackin-mbx-v4-final-runtime-tests.log` |
+| CLI usage | 43 passed | `/private/tmp/jackin-mbx-v4-final-cli-usage-tests.log` |
+| FFI bridge | 9 passed | `/private/tmp/jackin-mbx-v4-final-ffi-tests.log` |
+| Console | 61 passed | `/private/tmp/jackin-mbx-v4-final-console-tests.log` |
+| Capsule | 11 passed, 1 filtered | `/private/tmp/jackin-mbx-v4-final-capsule-tests.log` |
+| Offline bootstrap integration | 2 passed | `/private/tmp/jackin-mbx-v4-final-integration-bootstrap.log` |
+| Offline monitor integration | 5 passed | `/private/tmp/jackin-mbx-v4-final-integration-monitor.log` |
+| App | 29 passed | `/private/tmp/jackin-mbx-v4-final-app-tests.log` |
+| Broker installation integration | 5 passed | `/private/tmp/jackin-mbx-v4-final-integration-broker-installation.log` |
+| Broker service lifecycle integration | 2 passed | `/private/tmp/jackin-mbx-v4-final-integration-broker-lifecycle.log` |
+| Claude provider and lease lifecycle | 28 passed | `/private/tmp/jackin-mbx-v4-final-claude-tests.log` |
+| Contract baseline | 10 passed | `/private/tmp/jackin-mbx-v4-final-contract-baseline2.log` |
+
+The retry/cooldown suites cover restart floor recovery, projection cadence,
+and active cooldown tombstones across loaded, lazy-loaded, and
+pending-before-purge paths. Independent review confirmed the corrected
+tombstone assertion: a non-pending-reset tombstone clears
+`started_at_epoch` while retaining `provider_invoked=1000` and
+`RetryAfter=5000`; restart at 1101 with a fresh 300-second floor chooses
+`max(1300, 1401)`.
+
+The current Claude lifecycle tests and independent review confirm that each
+initial HTTP request, credential reread, and retry needs a generation permit;
+deactivation prevents new permits, previously admitted I/O may finish, and
+cache updates are serialized against the exact generation. An earlier
+pre-permit race concern was withdrawn after review of the current liveness
+mutex. Static review and fake fixtures do not prove native Keychain runtime
+behavior.
+
+The corrected contract baseline now passes 10/10 with the exact 33-row
+provider-call inventory. The earlier 9/10 run failed because its inventory
+expected the pre-rename wrapper route; it is superseded by the passing result
+in the table. Host inventory, runtime, CLI, app, FFI, console, capsule,
+bootstrap/monitor, broker-lifecycle, and broker-installation results complete
+the current consumer/integration matrix. Final scoped formatting and strict
+Clippy across all targets pass. Linux Required CI and a rebuilt installed pair
+are still pending.
+
+Passive usage `status`, `watch`, `wait`, `doctor`, and `current` reads remain
+credential- and network-free in the selected offline scopes. Standalone
+interactive console startup is an active consumer: it can request broker
+refresh for known accounts, so the passive guarantee does not apply to every
+CLI command. Claude provider requests remain foreground-only and require the
+capability, approval, and persisted 300-second rate floor. No live account or
+native Keychain runtime verification is claimed.
+
+## Checkpoint 8288 installed fixture evidence
+
+The MBX 1.22.0 / Rust 1.97.1 offline, locked binary build and isolated installed
+smoke passed for source commit
+`8288ef4a4e174624e353f8748304766ce98e5822`. The directory retains its historical
+`jackin-claude-monitor-v3` name, but this installed pair uses broker wire v8,
+monitor schema v4, projection schema v3 in source, and statusline input v2.
+The exact build command, installed paths, and binary hashes are in
+`/private/tmp/jackin-v3-provenance-8288ef4a.json`; the installed transcript is
+`/private/tmp/jackin-v3-installed-smoke-8288ef4a.log`.
+The smoke verified the installed sibling broker with
+`JACKIN_USAGE_BROKER_BIN` unset, wire v8 and monitor schema v4, zero
+HTTP-proxy requests, zero credential-command executions, and orderly fixture
+cleanup. Native Security Framework calls were not instrumented; foreground
+auth success and dispatch approval were not exercised. The smoke does not
+assert persistence of a projection envelope. This is checkpoint evidence only:
+rebuild and rerun from final source after the contract, consumer, and Linux
+Required CI gates pass.
 
 Previously recorded pre-v8 scopes: protocol 133; broker 173; Claude
 fake-auth/provider 25; CLI usage 43; app 29; coordinator 54. These historical
@@ -65,18 +175,12 @@ Docker/e2e-feature executable ran zero tests and is not e2e proof. Prior logs
 and source provenance are recorded in `v3-checks.json` and
 `v3-installation.json`.
 
-The prior pair, built through MBX from
-`1a45196dbe24d439e596c14e22fbda59799e7b0d`, is installed at
-`/Users/donbeave/.local/share/jackin-claude-monitor-v3/bin`. It used wire
-v7/store v4. Its historical isolated fixture smoke passed: exact installed
-sibling invocation and hashes, observation without a receipt or goal, preserved
-statusline execution, structured responses, zero HTTP-proxy requests, and zero
-credential command executions. Native Security Framework calls were not
-instrumented; successful foreground auth, live provider acceptance and
-real-account usage were not exercised. `JACKIN_USAGE_BROKER_BIN` is unset; the
-intended v3 state is empty. This v7 smoke does not verify the v8 candidate or
-establish real-account readiness. Nothing here approves a dispatch policy or
-modifies the running Claude session. The old v2 installation remains untouched.
+Before checkpoint 8288, the pair built through MBX from
+`1a45196dbe24d439e596c14e22fbda59799e7b0d` used wire v7/store v4. Its earlier
+isolated fixture smoke is historical and was superseded in the same install
+directory by the checkpoint 8288 wire-v8 pair above. The v7 smoke does not
+verify the current pair. Nothing here approves a dispatch policy or modifies
+the running Claude session. The old v2 installation remains untouched.
 
 The previously described pre-v8 cleanup removed dormant CLI fallback helpers
 and repaired the provider-call inventory, including callback routes. Its checks,

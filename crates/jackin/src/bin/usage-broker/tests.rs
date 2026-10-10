@@ -116,7 +116,7 @@ fn foreground_bootstrap_passes_exact_service_and_reports_safe_source_scope() {
         },
     );
 
-    assert!(result.is_ok());
+    result.unwrap();
     let output = ready_output.borrow().clone().unwrap();
     let value: serde_json::Value = serde_json::from_str(&output).unwrap();
     assert_eq!(value["version"], 1);

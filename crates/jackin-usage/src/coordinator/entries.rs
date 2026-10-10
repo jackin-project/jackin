@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use std::sync::{Arc, Condvar, Mutex};
 
-use super::policy::UsageActivity;
+use super::policy::{CLAUDE_MIN_ATTEMPT_INTERVAL, UsageActivity};
 use jackin_protocol::usage_broker::{
     UsageAccountCapability, UsageCatalogEntry, UsageCoordinationError, UsageGenerationView,
 };
@@ -35,8 +35,8 @@ pub(crate) struct AccountEntry {
     pub(crate) cadence: AccountCadence,
     pub(crate) catalog_revision: Option<String>,
     pub(crate) revoked: bool,
-    /// In-process mirror of Claude's durable wall-clock cooldown. This keeps
-    /// clock adjustments from shortening the minimum interval before restart.
+    /// In-process monotonic guard for Claude deadlines, plus the conservative
+    /// attempt floor installed when loading a prior invocation after restart.
     pub(crate) cooldown_not_before_monotonic: Option<Duration>,
     /// A provider dispatch reserved by a generation that outlived its catalog
     /// revision. Re-added capabilities stay blocked until the work completes
@@ -63,7 +63,13 @@ impl AccountEntry {
         let next_due_epoch = account_cooldown_deadline(&envelope)
             .filter(|deadline| *deadline > now_epoch)
             .unwrap_or(now_epoch);
-        let cooldown_not_before_monotonic = runtime_cooldown_deadline(&envelope, clock_sample);
+        let cooldown_not_before_monotonic = [
+            runtime_cooldown_deadline(&envelope, clock_sample),
+            recovered_attempt_deadline(&envelope, clock_sample),
+        ]
+        .into_iter()
+        .flatten()
+        .max();
         Self {
             envelope,
             history,
@@ -89,9 +95,52 @@ impl AccountEntry {
     }
 
     pub(crate) fn refresh_runtime_cooldown(&mut self, clock_sample: ClockSample) {
-        self.cooldown_not_before_monotonic =
-            runtime_cooldown_deadline(&self.envelope, clock_sample);
+        self.cooldown_not_before_monotonic = [
+            self.cooldown_not_before_monotonic,
+            runtime_cooldown_deadline(&self.envelope, clock_sample),
+        ]
+        .into_iter()
+        .flatten()
+        .max();
     }
+}
+
+fn recovered_attempt_deadline(
+    envelope: &AccountStateEnvelope,
+    clock_sample: ClockSample,
+) -> Option<Duration> {
+    // Monotonic origins do not survive process restarts. If a provider
+    // invocation was durably reserved, conservatively treat it as recent for
+    // one full interval after recovery, even when its epoch deadline appears
+    // expired. Queued-only records have no invocation marker and are excluded.
+    if envelope.capability.surface_id != "claude" || envelope.provider_invoked_at_epoch.is_none() {
+        return None;
+    }
+    Some(
+        clock_sample
+            .monotonic
+            .saturating_add(CLAUDE_MIN_ATTEMPT_INTERVAL),
+    )
+}
+
+/// Wall-clock counterpart for a persisted invocation whose account entry has
+/// not been loaded into this process's monotonic clock domain yet.
+pub(crate) fn recovered_attempt_deadline_epoch(
+    envelope: &AccountStateEnvelope,
+    clock_sample: ClockSample,
+) -> Option<i64> {
+    if envelope.capability.surface_id != "claude" || envelope.provider_invoked_at_epoch.is_none() {
+        return None;
+    }
+    Some(
+        ClockSample {
+            wall_epoch: clock_sample
+                .wall_epoch
+                .saturating_add(CLAUDE_MIN_ATTEMPT_INTERVAL),
+            monotonic: clock_sample.monotonic,
+        }
+        .ceil_epoch(),
+    )
 }
 
 fn runtime_cooldown_deadline(
@@ -108,6 +157,42 @@ fn runtime_cooldown_deadline(
         return None;
     }
     Some(clock_sample.monotonic.saturating_add(remaining))
+}
+
+/// Earliest scheduler wake that honors cadence, persisted cooldowns, and the
+/// live monotonic cooldown mirror. The monotonic deadline is projected through
+/// the paired clock sample so schedulers can wait for an in-memory recovery
+/// floor without dispatching a request that admission must suppress.
+pub(crate) fn effective_due_epoch(entry: &AccountEntry, clock_sample: ClockSample) -> i64 {
+    [
+        Some(entry.cadence.next_due_epoch),
+        account_cooldown_deadline(&entry.envelope),
+        monotonic_cooldown_deadline_epoch(entry, clock_sample),
+    ]
+    .into_iter()
+    .flatten()
+    .max()
+    .unwrap_or(entry.cadence.next_due_epoch)
+}
+
+/// Project an active in-memory Claude cooldown into the paired wall-clock
+/// domain, rounding up so persisting it cannot shorten the monotonic guard.
+pub(crate) fn monotonic_cooldown_deadline_epoch(
+    entry: &AccountEntry,
+    clock_sample: ClockSample,
+) -> Option<i64> {
+    entry
+        .cooldown_not_before_monotonic
+        .filter(|deadline| *deadline > clock_sample.monotonic)
+        .map(|deadline| {
+            ClockSample {
+                wall_epoch: clock_sample
+                    .wall_epoch
+                    .saturating_add(deadline.saturating_sub(clock_sample.monotonic)),
+                monotonic: clock_sample.monotonic,
+            }
+            .ceil_epoch()
+        })
 }
 
 #[derive(Clone, Default)]

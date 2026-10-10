@@ -129,12 +129,11 @@ impl FileProjectionStateStore {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
             Err(_) => return Err(StateStoreError::Unavailable),
         };
-        let value = match serde_json::from_slice::<serde_json::Value>(&bytes) {
-            Ok(value @ serde_json::Value::Object(_)) => value,
-            Ok(_) | Err(_) => {
-                self.quarantine()?;
-                return Err(StateStoreError::Corrupt);
-            }
+        let Ok(value @ serde_json::Value::Object(_)) =
+            serde_json::from_slice::<serde_json::Value>(&bytes)
+        else {
+            self.quarantine()?;
+            return Err(StateStoreError::Corrupt);
         };
         let Some(schema_version) = value
             .get("schema_version")

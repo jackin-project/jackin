@@ -132,10 +132,10 @@ impl AccountStateStore for AdvancingUpdatingStore {
         envelope: &AccountStateEnvelope,
         now_epoch: i64,
     ) -> Result<(), StateStoreError> {
-        if envelope.phase == UsageRefreshPhase::Updating {
-            if let Some(delay) = self.delay_once.lock().unwrap().take() {
-                self.clock.advance(delay);
-            }
+        if envelope.phase == UsageRefreshPhase::Updating
+            && let Some(delay) = self.delay_once.lock().unwrap().take()
+        {
+            self.clock.advance(delay);
         }
         self.inner.store(envelope, now_epoch)
     }
@@ -256,6 +256,25 @@ fn quota_view(epoch: i64, percent: u8) -> FocusedUsageView {
     }];
     view.last_error = None;
     view
+}
+
+fn completed_claude_attempt(
+    account: &UsageAccountCapability,
+    invoked_at_epoch: i64,
+    success_deadline_epoch: i64,
+) -> AccountStateEnvelope {
+    let completed_at_epoch = invoked_at_epoch.saturating_add(1);
+    let view = quota_view(completed_at_epoch, 80);
+    let mut envelope = AccountStateEnvelope::idle(account.clone());
+    envelope.generation = 1;
+    envelope.phase = UsageRefreshPhase::Completed;
+    envelope.terminal_result = Some(view.clone());
+    envelope.last_good = Some(view);
+    envelope.started_at_epoch = Some(invoked_at_epoch);
+    envelope.provider_invoked_at_epoch = Some(invoked_at_epoch);
+    envelope.completed_at_epoch = Some(completed_at_epoch);
+    envelope.success_deadline_epoch = Some(success_deadline_epoch);
+    envelope
 }
 
 fn coordinator(
@@ -1136,39 +1155,63 @@ fn claude_attempt_floor_persists_across_restart_and_force_cannot_bypass() {
         let restarted_executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
             quota_view(attempt_floor, 79),
         )));
+        let restart_epoch = attempt_floor - 1;
+        let restart_clock = Arc::new(FakeMonotonicClock::with_wall_epoch(Duration::from_secs(
+            u64::try_from(restart_epoch).unwrap(),
+        )));
         #[expect(
             clippy::clone_on_ref_ptr,
             reason = "coerce concrete executor to shared trait object"
         )]
         let provider_executor: Arc<dyn UsageProviderExecutor> = restarted_executor.clone();
-        let restarted = UsageCoordinator::new(
+        #[expect(
+            clippy::clone_on_ref_ptr,
+            reason = "coerce paired fake clock to the coordinator clock port"
+        )]
+        let restart_clock_port: Arc<dyn MonotonicClock> = restart_clock.clone();
+        let restarted = UsageCoordinator::start_with_clock(
             provider_executor,
             Arc::<FileAccountStateStore>::clone(&store),
             UsageCoordinatorConfig {
                 success_cooldown: Duration::from_secs(1),
                 ..UsageCoordinatorConfig::default()
             },
+            None,
+            None,
+            restart_clock_port,
         );
         assert_eq!(
             restarted
-                .current(&account, attempt_floor - 1)
+                .current(&account, restart_epoch)
                 .unwrap()
                 .generation,
             1
         );
-        assert_eq!(restarted.next_due_epoch(), Some(attempt_floor));
-        assert!(restarted.poll_due(attempt_floor - 1).is_empty());
+        assert_eq!(
+            restarted.next_due_epoch(),
+            Some(restart_epoch.saturating_add(300))
+        );
+        assert!(restarted.poll_due(restart_epoch).is_empty());
         let forced_early = restarted
-            .request_refresh(&account, 1, true, attempt_floor - 1)
+            .request_refresh(&account, 1, true, restart_epoch)
             .unwrap();
         assert_eq!(forced_early.generation, 1);
         assert_eq!(restarted_executor.calls.load(Ordering::SeqCst), 0);
+
+        restart_clock.advance(Duration::from_secs(299));
+        let before_recovery_floor = restarted
+            .request_refresh(&account, 1, true, restart_epoch + 299)
+            .unwrap();
+        assert_eq!(before_recovery_floor.generation, 1);
+        assert_eq!(restarted_executor.calls.load(Ordering::SeqCst), 0);
+        restart_clock.advance(Duration::from_secs(1));
+        let recovery_deadline_epoch = restart_epoch + 300;
         let allowed = restarted
-            .request_refresh(&account, 1, true, attempt_floor)
+            .request_refresh(&account, 1, true, recovery_deadline_epoch)
             .unwrap();
         assert_eq!(allowed.generation, 2);
         assert_eq!(
-            join_ok(&restarted, &account, 2, attempt_floor + 1).phase,
+            join_ok(&restarted, &account, 2, recovery_deadline_epoch + 1).phase,
             UsageRefreshPhase::Completed
         );
         assert_eq!(restarted_executor.calls.load(Ordering::SeqCst), 1);
@@ -1338,7 +1381,7 @@ fn claude_attempt_spacing_uses_completion_pair_and_monotonic_gate() {
         .request_refresh(&account, 1, true, 1_302)
         .unwrap();
     assert_eq!(early.generation, 1);
-    clock.jump_wall_forward(Duration::from_secs(3_600));
+    clock.jump_wall_forward(Duration::from_hours(1));
     let wall_jump = coordinator
         .request_refresh(&account, 1, true, 4_902)
         .unwrap();
@@ -1355,7 +1398,301 @@ fn claude_attempt_spacing_uses_completion_pair_and_monotonic_gate() {
     assert_eq!(executor.calls.load(Ordering::SeqCst), 2);
     let starts = executor.starts.lock().unwrap();
     let elapsed = starts[1].monotonic.saturating_sub(first_start.monotonic);
-    assert!(elapsed >= Duration::from_secs(300));
+    assert!(elapsed >= Duration::from_mins(5));
+}
+
+#[test]
+fn claude_restart_after_forward_wall_jump_uses_fresh_monotonic_attempt_floor() {
+    let account = capability("restart-forward-wall-jump");
+    let store = Arc::new(MemoryStore::default());
+    store
+        .store(&completed_claude_attempt(&account, 1_000, 1_300), 1_001)
+        .unwrap();
+    let clock = Arc::new(FakeMonotonicClock::with_wall_epoch(Duration::from_secs(
+        5_000,
+    )));
+    let executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
+        quota_view(5_300, 79),
+    )));
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce fixture ports to coordinator trait objects"
+    )]
+    let provider: Arc<dyn UsageProviderExecutor> = executor.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce fixture ports to coordinator trait objects"
+    )]
+    let state_store: Arc<dyn AccountStateStore> = store.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce paired fake clock to the coordinator clock port"
+    )]
+    let clock_port: Arc<dyn MonotonicClock> = clock.clone();
+    let coordinator = UsageCoordinator::start_with_clock(
+        provider,
+        state_store,
+        UsageCoordinatorConfig::default(),
+        None,
+        None,
+        clock_port,
+    );
+
+    assert_eq!(
+        coordinator.next_due_epoch_for_capabilities([account.clone()], 5_000),
+        Some(5_300)
+    );
+    assert!(
+        coordinator
+            .poll_due_for_capabilities([account.clone()], 5_000)
+            .is_empty()
+    );
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 0);
+    coordinator
+        .set_activity(&account, UsageActivity::DirectInteraction, false, 5_000)
+        .unwrap();
+    assert_eq!(
+        coordinator.next_due_epoch_for_capabilities([account.clone()], 5_000),
+        Some(5_300)
+    );
+
+    let immediate = coordinator
+        .request_refresh(&account, 1, true, 5_000)
+        .unwrap();
+    assert_eq!(immediate.generation, 1);
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 0);
+
+    clock.advance(Duration::from_secs(1));
+    assert_eq!(coordinator.note_wake(5_001), 1);
+    assert_eq!(
+        coordinator.next_due_epoch_for_capabilities([account.clone()], 5_001),
+        Some(5_300)
+    );
+
+    clock.advance(Duration::from_secs(298));
+    let before_floor = coordinator
+        .request_refresh(&account, 1, true, 5_299)
+        .unwrap();
+    assert_eq!(before_floor.generation, 1);
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 0);
+
+    assert_eq!(
+        coordinator.next_due_epoch_for_capabilities([account.clone()], 5_299),
+        Some(5_300)
+    );
+    clock.jump_wall_forward(Duration::from_hours(1));
+    assert_eq!(
+        coordinator.next_due_epoch_for_capabilities([account.clone()], 8_899),
+        Some(8_900)
+    );
+    assert!(
+        coordinator
+            .poll_due_for_capabilities([account.clone()], 8_899)
+            .is_empty()
+    );
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 0);
+
+    clock.advance(Duration::from_secs(1));
+    let due = coordinator.poll_due_for_capabilities([account.clone()], 8_900);
+    assert_eq!(due.len(), 1);
+    assert_eq!(due[0].generation, 2);
+    assert_eq!(
+        join_ok(&coordinator, &account, 2, 8_901).phase,
+        UsageRefreshPhase::Completed
+    );
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn claude_recovery_floor_does_not_shorten_later_persisted_retry_after() {
+    let account = capability("restart-later-retry-after");
+    let store = Arc::new(MemoryStore::default());
+    let mut failed = completed_claude_attempt(&account, 900, 1_300);
+    failed.phase = UsageRefreshPhase::Failed;
+    failed.terminal_result = None;
+    failed.terminal_error = Some(coordination_error(
+        UsageCoordinationErrorKind::RateLimited,
+        "provider rate limited",
+    ));
+    failed.rate_limit_deadline_epoch = Some(1_700);
+    failed.retry_deadline_epoch = Some(1_700);
+    store.store(&failed, 1_000).unwrap();
+    let clock = Arc::new(FakeMonotonicClock::with_wall_epoch(Duration::from_secs(
+        1_000,
+    )));
+    let executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
+        quota_view(1_700, 79),
+    )));
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce fixture ports to coordinator trait objects"
+    )]
+    let provider: Arc<dyn UsageProviderExecutor> = executor.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce fixture ports to coordinator trait objects"
+    )]
+    let state_store: Arc<dyn AccountStateStore> = store.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce paired fake clock to the coordinator clock port"
+    )]
+    let clock_port: Arc<dyn MonotonicClock> = clock.clone();
+    let coordinator = UsageCoordinator::start_with_clock(
+        provider,
+        state_store,
+        UsageCoordinatorConfig::default(),
+        None,
+        None,
+        clock_port,
+    );
+
+    let initial = coordinator
+        .request_refresh(&account, 1, true, 1_000)
+        .unwrap();
+    assert_eq!(initial.generation, 1);
+    clock.advance(Duration::from_mins(5));
+    let floor_passed = coordinator
+        .request_refresh(&account, 1, true, 1_300)
+        .unwrap();
+    assert_eq!(floor_passed.generation, 1);
+    clock.advance(Duration::from_secs(399));
+    let retry_still_active = coordinator
+        .request_refresh(&account, 1, true, 1_699)
+        .unwrap();
+    assert_eq!(retry_still_active.generation, 1);
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 0);
+
+    clock.advance(Duration::from_secs(1));
+    let retry_expired = coordinator
+        .request_refresh(&account, 1, true, 1_700)
+        .unwrap();
+    assert_eq!(retry_expired.generation, 2);
+    assert_eq!(
+        join_ok(&coordinator, &account, 2, 1_701).phase,
+        UsageRefreshPhase::Completed
+    );
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn claude_restart_without_invocation_evidence_has_no_recovery_floor() {
+    let account = capability("restart-no-attempt");
+    let store = Arc::new(MemoryStore::default());
+    store
+        .store(&AccountStateEnvelope::idle(account.clone()), 5_000)
+        .unwrap();
+    let clock = Arc::new(FakeMonotonicClock::with_wall_epoch(Duration::from_secs(
+        5_000,
+    )));
+    let executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
+        quota_view(5_000, 79),
+    )));
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce fixture ports to coordinator trait objects"
+    )]
+    let provider: Arc<dyn UsageProviderExecutor> = executor.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce fixture ports to coordinator trait objects"
+    )]
+    let state_store: Arc<dyn AccountStateStore> = store.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce paired fake clock to the coordinator clock port"
+    )]
+    let clock_port: Arc<dyn MonotonicClock> = clock.clone();
+    let coordinator = UsageCoordinator::start_with_clock(
+        provider,
+        state_store,
+        UsageCoordinatorConfig::default(),
+        None,
+        None,
+        clock_port,
+    );
+
+    let admitted = coordinator
+        .request_refresh(&account, 0, true, 5_000)
+        .unwrap();
+    assert_eq!(admitted.generation, 1);
+    assert_eq!(
+        join_ok(&coordinator, &account, 1, 5_001).phase,
+        UsageRefreshPhase::Completed
+    );
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn catalog_revoke_and_readd_preserves_recovery_floor_across_wall_jump() {
+    let account = capability("readd-keeps-recovery-floor");
+    let store = Arc::new(MemoryStore::default());
+    store
+        .store(&completed_claude_attempt(&account, 1_000, 1_300), 1_001)
+        .unwrap();
+    let clock = Arc::new(FakeMonotonicClock::with_wall_epoch(Duration::from_secs(
+        5_000,
+    )));
+    let executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
+        quota_view(8_900, 79),
+    )));
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce fixture ports to coordinator trait objects"
+    )]
+    let provider: Arc<dyn UsageProviderExecutor> = executor.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce fixture ports to coordinator trait objects"
+    )]
+    let state_store: Arc<dyn AccountStateStore> = store.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce paired fake clock to the coordinator clock port"
+    )]
+    let clock_port: Arc<dyn MonotonicClock> = clock.clone();
+    let coordinator = UsageCoordinator::start_with_clock(
+        provider,
+        state_store,
+        UsageCoordinatorConfig::default(),
+        Some(BTreeMap::from([(account.clone(), "revision-a".into())])),
+        None,
+        clock_port,
+    );
+    assert_eq!(
+        coordinator.current(&account, 5_000).unwrap().phase,
+        UsageRefreshPhase::Completed
+    );
+
+    clock.jump_wall_forward(Duration::from_hours(1));
+    coordinator.reconcile_catalog([], 8_600).unwrap();
+    coordinator
+        .reconcile_catalog([catalog_entry(&account, "revision-b")], 8_600)
+        .unwrap();
+    let readded = coordinator.current(&account, 8_600).unwrap();
+    assert_eq!(readded.phase, UsageRefreshPhase::Idle);
+
+    let before_floor = coordinator
+        .request_refresh(&account, readded.generation, true, 8_600)
+        .unwrap();
+    assert_eq!(before_floor.generation, readded.generation);
+    clock.advance(Duration::from_secs(299));
+    let still_before_floor = coordinator
+        .request_refresh(&account, readded.generation, true, 8_899)
+        .unwrap();
+    assert_eq!(still_before_floor.generation, readded.generation);
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 0);
+
+    clock.advance(Duration::from_secs(1));
+    let after_floor = coordinator
+        .request_refresh(&account, readded.generation, true, 8_900)
+        .unwrap();
+    assert_eq!(after_floor.generation, readded.generation + 1);
+    assert_eq!(
+        join_ok(&coordinator, &account, after_floor.generation, 8_901).phase,
+        UsageRefreshPhase::Completed
+    );
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
 }
 
 #[test]
@@ -1458,7 +1795,8 @@ fn catalog_revision_retains_retry_after_across_restart() {
     assert_eq!(reset.phase, UsageRefreshPhase::Idle);
     assert_eq!(reset.generation, 2);
     let durable = store.load(&account, 2_000).unwrap().unwrap();
-    assert_eq!(durable.started_at_epoch, Some(1_000));
+    assert_eq!(durable.started_at_epoch, None);
+    assert_eq!(durable.provider_invoked_at_epoch, Some(1_000));
     assert_eq!(durable.rate_limit_deadline_epoch, Some(5_000));
     assert_eq!(durable.retry_deadline_epoch, Some(5_000));
     drop(coordinator);
@@ -1466,25 +1804,62 @@ fn catalog_revision_retains_retry_after_across_restart() {
     let restarted_executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
         quota_view(5_000, 75),
     )));
+    let restart_clock = Arc::new(FakeMonotonicClock::with_wall_epoch(Duration::from_secs(
+        2_000,
+    )));
     #[expect(
         clippy::clone_on_ref_ptr,
         reason = "coerce concrete executor to shared trait object"
     )]
     let provider_executor: Arc<dyn UsageProviderExecutor> = restarted_executor.clone();
-    let restarted = UsageCoordinator::with_catalog(
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce paired fake clock to the coordinator clock port"
+    )]
+    let restart_clock_port: Arc<dyn MonotonicClock> = restart_clock.clone();
+    let restarted = UsageCoordinator::start_with_clock(
         provider_executor,
         store,
         UsageCoordinatorConfig::default(),
-        [catalog_entry(&account, "credential-revision-b")],
+        Some(BTreeMap::from([(
+            account.clone(),
+            "credential-revision-b".into(),
+        )])),
+        None,
+        restart_clock_port,
     );
-    let restored = restarted.current(&account, 4_999).unwrap();
+    let restored = restarted.current(&account, 2_000).unwrap();
     assert_eq!(restored.generation, 2);
     assert_eq!(restored.retry_at_epoch, Some(5_000));
-    let forced_early = restarted.request_refresh(&account, 2, true, 4_999).unwrap();
+    assert_eq!(
+        restarted.next_due_epoch_for_capabilities([account.clone()], 2_000),
+        Some(5_000)
+    );
+    let forced_early = restarted.request_refresh(&account, 2, true, 2_000).unwrap();
     assert_eq!(forced_early.generation, 2);
     assert_eq!(restarted_executor.calls.load(Ordering::SeqCst), 0);
-    let allowed = restarted.request_refresh(&account, 2, true, 5_000).unwrap();
-    assert_eq!(allowed.generation, 3);
+    assert!(
+        restarted
+            .poll_due_for_capabilities([account.clone()], 2_000)
+            .is_empty()
+    );
+    restart_clock.advance(Duration::from_secs(2_999));
+    assert_eq!(
+        restarted.next_due_epoch_for_capabilities([account.clone()], 4_999),
+        Some(5_000)
+    );
+    let before_retry_after = restarted.request_refresh(&account, 2, true, 4_999).unwrap();
+    assert_eq!(before_retry_after.generation, 2);
+    assert_eq!(restarted_executor.calls.load(Ordering::SeqCst), 0);
+    assert!(
+        restarted
+            .poll_due_for_capabilities([account.clone()], 4_999)
+            .is_empty()
+    );
+    restart_clock.advance(Duration::from_secs(1));
+    let due = restarted.poll_due_for_capabilities([account.clone()], 5_000);
+    assert_eq!(due.len(), 1);
+    assert_eq!(due[0].generation, 3);
     assert_eq!(
         join_ok(&restarted, &account, 3, 5_001).phase,
         UsageRefreshPhase::Completed
@@ -1898,42 +2273,7 @@ fn revoked_attempt_waits_for_delayed_probe_and_completion_cooldown_before_readd(
     assert!(readded_pending.terminal_result.is_none());
     assert!(readded_pending.last_good.is_none());
     assert!(readded_pending.terminal_error.is_none());
-    let restart_store = Arc::new(MemoryStore::default());
-    restart_store.store(&readded_pending, 1_301).unwrap();
-    let restart_executor = Arc::new(GateExecutor::new(ProviderProbeOutcome::success(
-        quota_view(1_301, 80),
-    )));
-    #[expect(
-        clippy::clone_on_ref_ptr,
-        reason = "coerce restart fixture ports to coordinator trait objects"
-    )]
-    let restart_provider: Arc<dyn UsageProviderExecutor> = restart_executor.clone();
-    #[expect(
-        clippy::clone_on_ref_ptr,
-        reason = "coerce restart fixture ports to coordinator trait objects"
-    )]
-    let restart_state_store: Arc<dyn AccountStateStore> = restart_store.clone();
-    #[expect(
-        clippy::clone_on_ref_ptr,
-        reason = "share fake clock with the restart fixture"
-    )]
-    let restart_clock: Arc<dyn MonotonicClock> = clock.clone();
-    let restarted = UsageCoordinator::start_with_clock(
-        restart_provider,
-        restart_state_store,
-        UsageCoordinatorConfig::default(),
-        Some(BTreeMap::from([(account.clone(), "revision-b".into())])),
-        None,
-        restart_clock,
-    );
-    let recovered = restarted.current(&account, 1_301).unwrap();
-    assert_eq!(recovered.phase, UsageRefreshPhase::Failed);
-    assert_eq!(recovered.retry_at_epoch, Some(1_602));
-    let restarted_early = restarted
-        .request_refresh(&account, recovered.generation, true, 1_301)
-        .unwrap();
-    assert_eq!(restarted_early.generation, recovered.generation);
-    assert_eq!(restart_executor.calls.load(Ordering::SeqCst), 0);
+    assert_restarted_pending_fence(&account, &readded_pending, &clock);
 
     let current = coordinator.current(&account, 1_301).unwrap();
     let blocked = coordinator
@@ -1961,7 +2301,7 @@ fn revoked_attempt_waits_for_delayed_probe_and_completion_cooldown_before_readd(
     assert!(finished.terminal_result.is_none());
     assert!(finished.last_good.is_none());
 
-    clock.advance(Duration::from_secs(300));
+    clock.advance(Duration::from_mins(5));
     let early = coordinator
         .request_refresh(&account, current.generation, true, 1_700)
         .unwrap();
@@ -1980,15 +2320,56 @@ fn revoked_attempt_waits_for_delayed_probe_and_completion_cooldown_before_readd(
     assert_eq!(allowed.generation, current.generation + 1);
     executor.wait_started(2);
     let second_start = clock.sample(1_701);
-    assert!(
-        second_start.monotonic.saturating_sub(first_start.monotonic) >= Duration::from_secs(300)
-    );
+    assert!(second_start.monotonic.saturating_sub(first_start.monotonic) >= Duration::from_mins(5));
     coordinator.reconcile_catalog([], 1_701).unwrap();
     executor.release(1);
     executor.wait_idle();
     let finished = wait_for_idle_cooldown_tombstone(&*store, &account, 2_400, 2_400);
     assert_eq!(finished.rate_limit_deadline_epoch, Some(2_400));
     assert!(finished.terminal_error.is_none());
+}
+
+fn assert_restarted_pending_fence(
+    account: &UsageAccountCapability,
+    readded_pending: &AccountStateEnvelope,
+    clock: &Arc<FakeMonotonicClock>,
+) {
+    let restart_store = Arc::new(MemoryStore::default());
+    restart_store.store(readded_pending, 1_301).unwrap();
+    let restart_executor = Arc::new(GateExecutor::new(ProviderProbeOutcome::success(
+        quota_view(1_301, 80),
+    )));
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce restart fixture ports to coordinator trait objects"
+    )]
+    let restart_provider: Arc<dyn UsageProviderExecutor> = restart_executor.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce restart fixture ports to coordinator trait objects"
+    )]
+    let restart_state_store: Arc<dyn AccountStateStore> = restart_store.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "share fake clock with the restart fixture"
+    )]
+    let restart_clock: Arc<dyn MonotonicClock> = clock.clone();
+    let restarted = UsageCoordinator::start_with_clock(
+        restart_provider,
+        restart_state_store,
+        UsageCoordinatorConfig::default(),
+        Some(BTreeMap::from([(account.clone(), "revision-b".into())])),
+        None,
+        restart_clock,
+    );
+    let recovered = restarted.current(account, 1_301).unwrap();
+    assert_eq!(recovered.phase, UsageRefreshPhase::Failed);
+    assert_eq!(recovered.retry_at_epoch, Some(1_602));
+    let restarted_early = restarted
+        .request_refresh(account, recovered.generation, true, 1_301)
+        .unwrap();
+    assert_eq!(restarted_early.generation, recovered.generation);
+    assert_eq!(restart_executor.calls.load(Ordering::SeqCst), 0);
 }
 
 #[test]
@@ -2089,7 +2470,7 @@ fn catalog_revocation_clears_materialized_results_but_preserves_cooldown_and_fen
 }
 
 #[test]
-fn catalog_revision_change_purges_old_state_and_allows_only_new_revision() {
+fn catalog_revision_change_replaces_old_state_with_cooldown_tombstone() {
     let executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
         quota_view(1_000, 80),
     )));
@@ -2116,10 +2497,12 @@ fn catalog_revision_change_purges_old_state_and_allows_only_new_revision() {
     assert_eq!(reset.phase, UsageRefreshPhase::Idle);
     assert!(reset.snapshot.is_none());
     assert!(reset.error.is_none());
-    assert_eq!(
-        store.purges.lock().unwrap().as_slice(),
-        std::slice::from_ref(&account)
-    );
+    assert!(store.purges.lock().unwrap().is_empty());
+    let tombstone = store.load(&account, 1_002).unwrap().unwrap();
+    assert_eq!(tombstone.phase, UsageRefreshPhase::Idle);
+    assert!(tombstone.terminal_result.is_none());
+    assert!(tombstone.last_good.is_none());
+    assert!(account_cooldown_deadline(&tombstone).is_some_and(|deadline| deadline > 1_002));
 
     let next = coordinator
         .request_refresh(&account, reset.generation, true, 1_400)
@@ -2137,11 +2520,17 @@ fn catalog_purge_failure_restores_durable_state_and_keeps_old_catalog() {
         quota_view(1_000, 80),
     )));
     let store = Arc::new(MemoryStore::default());
-    let account = capability("account-a");
+    let account = UsageAccountCapability {
+        account_id: "account-a".into(),
+        surface_id: "codex".into(),
+    };
     let coordinator = UsageCoordinator::with_catalog(
         Arc::<ImmediateExecutor>::clone(&executor),
         Arc::<MemoryStore>::clone(&store),
-        UsageCoordinatorConfig::default(),
+        UsageCoordinatorConfig {
+            success_cooldown: Duration::ZERO,
+            ..UsageCoordinatorConfig::default()
+        },
         [catalog_entry(&account, "revision-a")],
     );
     let generation = coordinator
@@ -2512,6 +2901,7 @@ enum TombstoneStoreEvent {
         phase: UsageRefreshPhase,
         generation: u64,
         result_free: bool,
+        cooldown_deadline_epoch: Option<i64>,
     },
     Purge(UsageAccountCapability),
 }
@@ -2547,6 +2937,7 @@ impl AccountStateStore for TombstoneWriteFailureStore {
                 result_free: envelope.terminal_result.is_none()
                     && envelope.last_good.is_none()
                     && envelope.terminal_error.is_none(),
+                cooldown_deadline_epoch: account_cooldown_deadline(envelope),
             });
         let is_tombstone = envelope.phase == UsageRefreshPhase::Idle
             && envelope.terminal_result.is_none()
@@ -2656,9 +3047,12 @@ fn removed_account_cooldown_survives_restart(
         tombstone.rate_limit_deadline_epoch,
         before_removal.rate_limit_deadline_epoch
     );
+    let expected_retry_deadline = before_removal
+        .retry_deadline_epoch
+        .map_or(1_300, |deadline| deadline.max(1_300));
     assert_eq!(
         tombstone.retry_deadline_epoch,
-        before_removal.retry_deadline_epoch
+        Some(expected_retry_deadline)
     );
     assert_eq!(
         tombstone.success_deadline_epoch,
@@ -2671,35 +3065,302 @@ fn removed_account_cooldown_survives_restart(
     drop(first);
 
     let second_executor = Arc::new(ImmediateExecutor::new(outcome));
-    let second = UsageCoordinator::with_catalog(
+    let recovery_epoch = 1_101;
+    let restart_clock = Arc::new(FakeMonotonicClock::with_wall_epoch(Duration::from_secs(
+        u64::try_from(recovery_epoch).unwrap(),
+    )));
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce restart fake clock to the coordinator clock port"
+    )]
+    let restart_clock_port: Arc<dyn MonotonicClock> = restart_clock.clone();
+    let second = UsageCoordinator::start_with_clock(
         Arc::<ImmediateExecutor>::clone(&second_executor),
         Arc::<FileAccountStateStore>::clone(&store),
         config,
-        [catalog_entry(&account, "revision-b")],
+        Some(BTreeMap::from([(account.clone(), "revision-b".into())])),
+        None,
+        restart_clock_port,
     );
-    let readded = second.current(&account, 1_101).unwrap();
+    let readded = second.current(&account, recovery_epoch).unwrap();
     assert_eq!(readded.phase, UsageRefreshPhase::Idle);
     assert!(readded.snapshot.is_none());
     assert!(readded.error.is_none());
     assert_eq!(readded.generation, tombstone.generation);
+    let recovery_floor_epoch = recovery_epoch.saturating_add(300);
+    let effective_deadline = deadline.max(recovery_floor_epoch);
     assert_eq!(
-        second.next_due_epoch_for_capabilities([account.clone()], 1_101),
-        Some(deadline)
+        second.next_due_epoch_for_capabilities([account.clone()], recovery_epoch),
+        Some(effective_deadline)
     );
 
-    let suppressed = second
-        .request_refresh(&account, readded.generation, true, deadline - 1)
+    let suppressed_at_recovery = second
+        .request_refresh(&account, readded.generation, true, recovery_epoch)
         .unwrap();
-    assert_eq!(suppressed.generation, readded.generation);
+    assert_eq!(suppressed_at_recovery.generation, readded.generation);
     assert_eq!(second_executor.calls.load(Ordering::SeqCst), 0);
 
+    restart_clock.advance(Duration::from_secs(
+        u64::try_from(effective_deadline - recovery_epoch - 1).unwrap(),
+    ));
+    let suppressed_before_deadline = second
+        .request_refresh(&account, readded.generation, true, effective_deadline - 1)
+        .unwrap();
+    assert_eq!(suppressed_before_deadline.generation, readded.generation);
+    assert_eq!(second_executor.calls.load(Ordering::SeqCst), 0);
+
+    restart_clock.advance(Duration::from_secs(1));
     let at_deadline = second
-        .request_refresh(&account, readded.generation, true, deadline)
+        .request_refresh(&account, readded.generation, true, effective_deadline)
         .unwrap();
     assert_eq!(at_deadline.generation, readded.generation.saturating_add(1));
-    let after_deadline = join_ok(&second, &account, at_deadline.generation, deadline + 1);
+    let after_deadline = join_ok(
+        &second,
+        &account,
+        at_deadline.generation,
+        effective_deadline + 1,
+    );
     assert!(after_deadline.phase.is_terminal());
     assert_eq!(second_executor.calls.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn claude_active_recovery_floor_survives_remove_after_forward_wall_jump() {
+    let temp = tempfile::tempdir().unwrap();
+    let store = Arc::new(FileAccountStateStore::at(temp.path().join("accounts")));
+    let account = capability("recovery-floor-removed-after-wall-jump");
+    store
+        .store(&completed_claude_attempt(&account, 1_000, 1_300), 1_001)
+        .unwrap();
+
+    let first_clock = Arc::new(FakeMonotonicClock::with_wall_epoch(Duration::from_secs(
+        5_000,
+    )));
+    let first_executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
+        quota_view(5_300, 80),
+    )));
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce concrete executor to shared trait object"
+    )]
+    let first_provider: Arc<dyn UsageProviderExecutor> = first_executor.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce file store to shared trait object"
+    )]
+    let first_store: Arc<dyn AccountStateStore> = store.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce paired fake clock to the coordinator clock port"
+    )]
+    let first_clock_port: Arc<dyn MonotonicClock> = first_clock.clone();
+    let first = UsageCoordinator::start_with_clock(
+        first_provider,
+        first_store,
+        UsageCoordinatorConfig::default(),
+        Some(BTreeMap::from([(account.clone(), "revision-a".into())])),
+        None,
+        first_clock_port,
+    );
+
+    assert_eq!(first.current(&account, 5_000).unwrap().generation, 1);
+    first_clock.jump_wall_forward(Duration::from_hours(1));
+    first.reconcile_catalog([], 8_600).unwrap();
+    assert_eq!(first_executor.calls.load(Ordering::SeqCst), 0);
+    let tombstone = store.load(&account, 8_600).unwrap().unwrap();
+    assert_eq!(tombstone.phase, UsageRefreshPhase::Idle);
+    assert!(tombstone.terminal_result.is_none());
+    assert!(tombstone.last_good.is_none());
+    assert!(tombstone.terminal_error.is_none());
+    assert_eq!(tombstone.provider_invoked_at_epoch, Some(1_000));
+    assert_eq!(tombstone.retry_deadline_epoch, Some(8_900));
+    assert_eq!(account_cooldown_deadline(&tombstone), Some(8_900));
+    drop(first);
+
+    let restart_clock = Arc::new(FakeMonotonicClock::with_wall_epoch(Duration::from_secs(
+        8_600,
+    )));
+    let restarted_executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
+        quota_view(8_900, 79),
+    )));
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce concrete executor to shared trait object"
+    )]
+    let restarted_provider: Arc<dyn UsageProviderExecutor> = restarted_executor.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce file store to shared trait object"
+    )]
+    let restarted_store: Arc<dyn AccountStateStore> = store.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce paired fake clock to the coordinator clock port"
+    )]
+    let restart_clock_port: Arc<dyn MonotonicClock> = restart_clock.clone();
+    let restarted = UsageCoordinator::start_with_clock(
+        restarted_provider,
+        restarted_store,
+        UsageCoordinatorConfig::default(),
+        Some(BTreeMap::from([(account.clone(), "revision-b".into())])),
+        None,
+        restart_clock_port,
+    );
+    let readded = restarted.current(&account, 8_600).unwrap();
+    assert_eq!(readded.phase, UsageRefreshPhase::Idle);
+    assert_eq!(readded.generation, tombstone.generation);
+    assert!(readded.snapshot.is_none());
+    assert!(readded.error.is_none());
+    assert_eq!(
+        restarted.next_due_epoch_for_capabilities([account.clone()], 8_600),
+        Some(8_900)
+    );
+    assert!(
+        restarted
+            .poll_due_for_capabilities([account.clone()], 8_600)
+            .is_empty()
+    );
+    assert_eq!(restarted_executor.calls.load(Ordering::SeqCst), 0);
+
+    restart_clock.advance(Duration::from_secs(299));
+    let early = restarted
+        .request_refresh(&account, readded.generation, true, 8_899)
+        .unwrap();
+    assert_eq!(early.generation, readded.generation);
+    assert_eq!(restarted_executor.calls.load(Ordering::SeqCst), 0);
+    assert_eq!(
+        restarted.next_due_epoch_for_capabilities([account.clone()], 8_899),
+        Some(8_900)
+    );
+
+    restart_clock.advance(Duration::from_secs(1));
+    let due = restarted.poll_due_for_capabilities([account.clone()], 8_900);
+    assert_eq!(due.len(), 1);
+    assert_eq!(due[0].generation, readded.generation.saturating_add(1));
+    assert_eq!(
+        join_ok(&restarted, &account, due[0].generation, 8_901).phase,
+        UsageRefreshPhase::Completed
+    );
+    assert_eq!(restarted_executor.calls.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn claude_lazy_account_removal_preserves_expired_invocation_after_wall_jump() {
+    let temp = tempfile::tempdir().unwrap();
+    let store = Arc::new(FileAccountStateStore::at(temp.path().join("accounts")));
+    let account = capability("lazy-recovery-floor-removed-after-wall-jump");
+    store
+        .store(&completed_claude_attempt(&account, 1_000, 1_300), 1_001)
+        .unwrap();
+
+    let first_clock = Arc::new(FakeMonotonicClock::with_wall_epoch(Duration::from_secs(
+        5_000,
+    )));
+    let first_executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
+        quota_view(5_300, 80),
+    )));
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce concrete executor to shared trait object"
+    )]
+    let first_provider: Arc<dyn UsageProviderExecutor> = first_executor.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce file store to shared trait object"
+    )]
+    let first_store: Arc<dyn AccountStateStore> = store.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce paired fake clock to the coordinator clock port"
+    )]
+    let first_clock_port: Arc<dyn MonotonicClock> = first_clock.clone();
+    let first = UsageCoordinator::start_with_clock(
+        first_provider,
+        first_store,
+        UsageCoordinatorConfig::default(),
+        Some(BTreeMap::from([(account.clone(), "revision-a".into())])),
+        None,
+        first_clock_port,
+    );
+
+    // Leave the account unloaded: removal must retain prior invocation
+    // evidence from the durable preimage without relying on `current()`.
+    first_clock.jump_wall_forward(Duration::from_hours(1));
+    first.reconcile_catalog([], 8_600).unwrap();
+    assert_eq!(first_executor.calls.load(Ordering::SeqCst), 0);
+    let tombstone = store.load(&account, 8_600).unwrap().unwrap();
+    assert_eq!(tombstone.phase, UsageRefreshPhase::Idle);
+    assert!(tombstone.terminal_result.is_none());
+    assert!(tombstone.last_good.is_none());
+    assert!(tombstone.terminal_error.is_none());
+    assert_eq!(tombstone.provider_invoked_at_epoch, Some(1_000));
+    assert_eq!(tombstone.retry_deadline_epoch, Some(8_900));
+    drop(first);
+
+    let restart_clock = Arc::new(FakeMonotonicClock::with_wall_epoch(Duration::from_secs(
+        8_600,
+    )));
+    let restarted_executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
+        quota_view(8_900, 79),
+    )));
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce concrete executor to shared trait object"
+    )]
+    let restarted_provider: Arc<dyn UsageProviderExecutor> = restarted_executor.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce file store to shared trait object"
+    )]
+    let restarted_store: Arc<dyn AccountStateStore> = store.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce paired fake clock to the coordinator clock port"
+    )]
+    let restart_clock_port: Arc<dyn MonotonicClock> = restart_clock.clone();
+    let restarted = UsageCoordinator::start_with_clock(
+        restarted_provider,
+        restarted_store,
+        UsageCoordinatorConfig::default(),
+        Some(BTreeMap::from([(account.clone(), "revision-b".into())])),
+        None,
+        restart_clock_port,
+    );
+    let readded = restarted.current(&account, 8_600).unwrap();
+    assert_eq!(readded.phase, UsageRefreshPhase::Idle);
+    assert_eq!(readded.generation, tombstone.generation);
+    assert_eq!(
+        restarted.next_due_epoch_for_capabilities([account.clone()], 8_600),
+        Some(8_900)
+    );
+    assert!(
+        restarted
+            .poll_due_for_capabilities([account.clone()], 8_600)
+            .is_empty()
+    );
+    assert_eq!(restarted_executor.calls.load(Ordering::SeqCst), 0);
+
+    restart_clock.advance(Duration::from_secs(299));
+    let forced_early = restarted
+        .request_refresh(&account, readded.generation, true, 8_899)
+        .unwrap();
+    assert_eq!(forced_early.generation, readded.generation);
+    assert!(
+        restarted
+            .poll_due_for_capabilities([account.clone()], 8_899)
+            .is_empty()
+    );
+    assert_eq!(restarted_executor.calls.load(Ordering::SeqCst), 0);
+
+    restart_clock.advance(Duration::from_secs(1));
+    let due = restarted.poll_due_for_capabilities([account.clone()], 8_900);
+    assert_eq!(due.len(), 1);
+    assert_eq!(due[0].generation, readded.generation.saturating_add(1));
+    assert_eq!(
+        join_ok(&restarted, &account, due[0].generation, 8_901).phase,
+        UsageRefreshPhase::Completed
+    );
+    assert_eq!(restarted_executor.calls.load(Ordering::SeqCst), 1);
 }
 
 #[test]
@@ -2744,8 +3405,8 @@ fn general_provider_retry_after_survives_remove_readd_and_restart() {
 fn local_exponential_backoff_survives_remove_readd_and_restart() {
     let config = UsageCoordinatorConfig {
         retry_policy: UsagePolicy {
-            retry_base: Duration::from_secs(600),
-            retry_cap: Duration::from_secs(600),
+            retry_base: Duration::from_mins(10),
+            retry_cap: Duration::from_mins(10),
             ..UsagePolicy::default()
         },
         ..UsageCoordinatorConfig::default()
@@ -2812,11 +3473,17 @@ fn failed_purge_after_removal_restores_catalog_and_preimage() {
         fail_purge_after_removal: AtomicUsize::new(0),
         events: Mutex::new(Vec::new()),
     });
-    let account = capability("purge-rollback-account");
+    let account = UsageAccountCapability {
+        account_id: "purge-rollback-account".into(),
+        surface_id: "codex".into(),
+    };
     let coordinator = UsageCoordinator::with_catalog(
         Arc::<ImmediateExecutor>::clone(&executor),
         Arc::<TombstoneWriteFailureStore>::clone(&store),
-        UsageCoordinatorConfig::default(),
+        UsageCoordinatorConfig {
+            success_cooldown: Duration::ZERO,
+            ..UsageCoordinatorConfig::default()
+        },
         [catalog_entry(&account, "revision-a")],
     );
     let queued = coordinator
@@ -2841,7 +3508,157 @@ fn failed_purge_after_removal_restores_catalog_and_preimage() {
     assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
 }
 
-fn failed_later_purge_case(revision_reset: bool, pending_preimage_missing: bool) {
+fn assert_later_purge_store_order(
+    store: &TombstoneWriteFailureStore,
+    pending_preimage: &AccountStateEnvelope,
+    restored_pending: &AccountStateEnvelope,
+    pending_preimage_missing: bool,
+    terminal_preimage: &AccountStateEnvelope,
+    later_purge_preimage: &AccountStateEnvelope,
+) {
+    let events = store.events.lock().unwrap().clone();
+    assert_eq!(events.len(), 6);
+    assert!(matches!(
+        &events[0],
+        TombstoneStoreEvent::Store {
+            capability,
+            phase: UsageRefreshPhase::Updating,
+            generation,
+            result_free: true,
+            ..
+        } if capability == &pending_preimage.capability
+            && *generation > pending_preimage.generation
+    ));
+    let marker_generation = match &events[0] {
+        TombstoneStoreEvent::Store { generation, .. } => *generation,
+        event @ TombstoneStoreEvent::Purge(_) => {
+            panic!("expected pending marker write first, got {event:?}");
+        }
+    };
+    let expected_terminal_deadline =
+        account_cooldown_deadline(terminal_preimage).expect("terminal cooldown");
+    assert!(matches!(
+        &events[1],
+        TombstoneStoreEvent::Store {
+            capability,
+            phase: UsageRefreshPhase::Idle,
+            result_free: true,
+            cooldown_deadline_epoch: Some(deadline),
+            generation: _,
+        } if capability == &terminal_preimage.capability
+            && *deadline == expected_terminal_deadline
+    ));
+    assert_eq!(
+        events[2],
+        TombstoneStoreEvent::Purge(later_purge_preimage.capability.clone())
+    );
+    assert_eq!(
+        events[3],
+        TombstoneStoreEvent::Store {
+            capability: pending_preimage.capability.clone(),
+            phase: UsageRefreshPhase::Updating,
+            generation: if pending_preimage_missing {
+                marker_generation
+            } else {
+                pending_preimage.generation
+            },
+            result_free: true,
+            cooldown_deadline_epoch: account_cooldown_deadline(restored_pending),
+        }
+    );
+    assert_eq!(
+        events[4],
+        TombstoneStoreEvent::Store {
+            capability: terminal_preimage.capability.clone(),
+            phase: terminal_preimage.phase,
+            generation: terminal_preimage.generation,
+            result_free: false,
+            cooldown_deadline_epoch: account_cooldown_deadline(terminal_preimage),
+        }
+    );
+    assert_eq!(
+        events[5],
+        TombstoneStoreEvent::Store {
+            capability: later_purge_preimage.capability.clone(),
+            phase: later_purge_preimage.phase,
+            generation: later_purge_preimage.generation,
+            result_free: true,
+            cooldown_deadline_epoch: account_cooldown_deadline(later_purge_preimage),
+        }
+    );
+}
+
+fn assert_missing_pending_restart_fence(
+    pending: &UsageAccountCapability,
+    restored_pending: &AccountStateEnvelope,
+    clock: &Arc<FakeMonotonicClock>,
+) {
+    let restart_store = Arc::new(MemoryStore::default());
+    restart_store.store(restored_pending, 1_001).unwrap();
+    let restart_executor = Arc::new(GateExecutor::new(ProviderProbeOutcome::success(
+        quota_view(1_001, 80),
+    )));
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce restart fixture ports to coordinator trait objects"
+    )]
+    let restart_provider: Arc<dyn UsageProviderExecutor> = restart_executor.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce restart fixture ports to coordinator trait objects"
+    )]
+    let restart_state_store: Arc<dyn AccountStateStore> = restart_store.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "share fake clock with the restart fixture"
+    )]
+    let restart_clock: Arc<dyn MonotonicClock> = clock.clone();
+    let restarted = UsageCoordinator::start_with_clock(
+        restart_provider,
+        restart_state_store,
+        UsageCoordinatorConfig::default(),
+        Some(BTreeMap::from([(pending.clone(), "revision-a".into())])),
+        None,
+        restart_clock,
+    );
+    let recovered = restarted.current(pending, 1_001).unwrap();
+    assert_eq!(recovered.phase, UsageRefreshPhase::Failed);
+    assert_eq!(recovered.retry_at_epoch, Some(1_300));
+    let early = restarted
+        .request_refresh(pending, recovered.generation, true, 1_001)
+        .unwrap();
+    assert_eq!(early.generation, recovered.generation);
+    assert_eq!(restart_executor.calls.load(Ordering::SeqCst), 0);
+}
+
+fn assert_pending_join_and_finish(
+    coordinator: &UsageCoordinator,
+    executor: &GateExecutor,
+    pending: &UsageAccountCapability,
+    active_generation: u64,
+) {
+    let current = coordinator.current(pending, 1_001).unwrap();
+    assert_eq!(current.phase, UsageRefreshPhase::Updating);
+    let joiner = coordinator
+        .request_refresh(pending, current.generation, true, 1_001)
+        .unwrap();
+    assert_eq!(joiner.generation, active_generation);
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
+
+    executor.release(1);
+    executor.wait_idle();
+    assert_eq!(
+        join_ok(coordinator, pending, active_generation, 1_002).phase,
+        UsageRefreshPhase::Completed
+    );
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
+}
+
+fn failed_later_purge_case(
+    revision_reset: bool,
+    pending_preimage_missing: bool,
+    terminal_retry_after: bool,
+) {
     let executor = Arc::new(GateExecutor::new(ProviderProbeOutcome::success(
         quota_view(1_000, 80),
     )));
@@ -2852,7 +3669,29 @@ fn failed_later_purge_case(revision_reset: bool, pending_preimage_missing: bool)
         events: Mutex::new(Vec::new()),
     });
     let pending = capability("a-pending-account");
-    let later_purge = capability("z-later-purge-account");
+    let terminal = capability("m-terminal-cooldown-account");
+    let later_purge = UsageAccountCapability {
+        account_id: "z-later-purge-account".into(),
+        surface_id: "codex".into(),
+    };
+    let terminal_preimage = if terminal_retry_after {
+        let mut envelope = completed_claude_attempt(&terminal, 900, 1_300);
+        envelope.phase = UsageRefreshPhase::Failed;
+        envelope.terminal_result = None;
+        envelope.success_deadline_epoch = None;
+        envelope.terminal_error = Some(coordination_error(
+            UsageCoordinationErrorKind::RateLimited,
+            "provider rate limited",
+        ));
+        envelope.rate_limit_deadline_epoch = Some(1_700);
+        envelope.retry_deadline_epoch = Some(1_700);
+        envelope
+    } else {
+        completed_claude_attempt(&terminal, 900, 1_300)
+    };
+    let later_purge_preimage = AccountStateEnvelope::idle(later_purge.clone());
+    store.inner.store(&terminal_preimage, 1_001).unwrap();
+    store.inner.store(&later_purge_preimage, 1_001).unwrap();
     let clock = Arc::new(FakeMonotonicClock::with_wall_epoch(Duration::from_secs(
         1_000,
     )));
@@ -2877,31 +3716,23 @@ fn failed_later_purge_case(revision_reset: bool, pending_preimage_missing: bool)
         UsageCoordinatorConfig::default(),
         Some(BTreeMap::from([
             (pending.clone(), "revision-a".into()),
+            (terminal.clone(), "revision-a".into()),
             (later_purge.clone(), "revision-a".into()),
         ])),
         None,
         clock_port,
     );
 
-    let completed = coordinator
-        .request_refresh(&later_purge, 0, true, 1_000)
-        .unwrap();
-    executor.wait_started(1);
-    executor.release(1);
-    executor.wait_idle();
-    assert_eq!(
-        join_ok(&coordinator, &later_purge, completed.generation, 1_001).phase,
-        UsageRefreshPhase::Completed
-    );
-
     let active = coordinator
         .request_refresh(&pending, 0, true, 1_001)
         .unwrap();
-    executor.wait_started(2);
+    executor.wait_started(1);
     let pending_preimage = store.inner.load(&pending, 1_001).unwrap().unwrap();
-    let completed_preimage = store.inner.load(&later_purge, 1_001).unwrap().unwrap();
     assert_eq!(pending_preimage.phase, UsageRefreshPhase::Updating);
-    assert_eq!(completed_preimage.phase, UsageRefreshPhase::Completed);
+    assert_eq!(
+        store.inner.load(&terminal, 1_001).unwrap(),
+        Some(terminal_preimage.clone())
+    );
     if pending_preimage_missing {
         assert!(
             store
@@ -2940,118 +3771,47 @@ fn failed_later_purge_case(revision_reset: bool, pending_preimage_missing: bool)
         assert_eq!(restored_pending, pending_preimage.clone());
     }
     assert_eq!(
+        store.inner.load(&terminal, 1_001).unwrap(),
+        Some(terminal_preimage.clone())
+    );
+    assert_eq!(
         store.inner.load(&later_purge, 1_001).unwrap(),
-        Some(completed_preimage.clone())
+        Some(later_purge_preimage.clone())
     );
 
-    let events = store.events.lock().unwrap().clone();
-    assert_eq!(events.len(), 4);
-    assert!(matches!(
-        &events[0],
-        TombstoneStoreEvent::Store {
-            capability,
-            phase: UsageRefreshPhase::Updating,
-            generation,
-            result_free: true,
-        } if capability == &pending && *generation > pending_preimage.generation
-    ));
-    let marker_generation = match &events[0] {
-        TombstoneStoreEvent::Store { generation, .. } => *generation,
-        event => panic!("expected pending marker write first, got {event:?}"),
-    };
-    assert_eq!(events[1], TombstoneStoreEvent::Purge(later_purge.clone()));
-    assert_eq!(
-        events[2],
-        TombstoneStoreEvent::Store {
-            capability: pending.clone(),
-            phase: UsageRefreshPhase::Updating,
-            generation: if pending_preimage_missing {
-                marker_generation
-            } else {
-                pending_preimage.generation
-            },
-            result_free: true,
-        }
+    assert_later_purge_store_order(
+        &store,
+        &pending_preimage,
+        &restored_pending,
+        pending_preimage_missing,
+        &terminal_preimage,
+        &later_purge_preimage,
     );
 
     if pending_preimage_missing {
-        let restart_store = Arc::new(MemoryStore::default());
-        restart_store.store(&restored_pending, 1_001).unwrap();
-        let restart_executor = Arc::new(GateExecutor::new(ProviderProbeOutcome::success(
-            quota_view(1_001, 80),
-        )));
-        #[expect(
-            clippy::clone_on_ref_ptr,
-            reason = "coerce restart fixture ports to coordinator trait objects"
-        )]
-        let restart_provider: Arc<dyn UsageProviderExecutor> = restart_executor.clone();
-        #[expect(
-            clippy::clone_on_ref_ptr,
-            reason = "coerce restart fixture ports to coordinator trait objects"
-        )]
-        let restart_state_store: Arc<dyn AccountStateStore> = restart_store.clone();
-        #[expect(
-            clippy::clone_on_ref_ptr,
-            reason = "share fake clock with the restart fixture"
-        )]
-        let restart_clock: Arc<dyn MonotonicClock> = clock.clone();
-        let restarted = UsageCoordinator::start_with_clock(
-            restart_provider,
-            restart_state_store,
-            UsageCoordinatorConfig::default(),
-            Some(BTreeMap::from([(pending.clone(), "revision-a".into())])),
-            None,
-            restart_clock,
-        );
-        let recovered = restarted.current(&pending, 1_001).unwrap();
-        assert_eq!(recovered.phase, UsageRefreshPhase::Failed);
-        assert_eq!(recovered.retry_at_epoch, Some(1_300));
-        let early = restarted
-            .request_refresh(&pending, recovered.generation, true, 1_001)
-            .unwrap();
-        assert_eq!(early.generation, recovered.generation);
-        assert_eq!(restart_executor.calls.load(Ordering::SeqCst), 0);
+        assert_missing_pending_restart_fence(&pending, &restored_pending, &clock);
     }
-    assert_eq!(
-        events[3],
-        TombstoneStoreEvent::Store {
-            capability: later_purge.clone(),
-            phase: completed_preimage.phase,
-            generation: completed_preimage.generation,
-            result_free: false,
-        }
-    );
-
-    let current = coordinator.current(&pending, 1_001).unwrap();
-    assert_eq!(current.phase, UsageRefreshPhase::Updating);
-    let joiner = coordinator
-        .request_refresh(&pending, current.generation, true, 1_001)
-        .unwrap();
-    assert_eq!(joiner.generation, active.generation);
-    assert_eq!(executor.calls.load(Ordering::SeqCst), 2);
-
-    executor.release(1);
-    executor.wait_idle();
-    assert_eq!(
-        join_ok(&coordinator, &pending, active.generation, 1_002).phase,
-        UsageRefreshPhase::Completed
-    );
-    assert_eq!(executor.calls.load(Ordering::SeqCst), 2);
+    assert_pending_join_and_finish(&coordinator, &executor, &pending, active.generation);
 }
 
 #[test]
-fn failed_later_purge_restores_pending_marker_before_retry() {
-    failed_later_purge_case(false, false);
+fn failed_later_purge_prewrites_lazy_success_tombstone_before_purge() {
+    failed_later_purge_case(false, false, false);
 }
 
 #[test]
 fn failed_later_purge_during_revision_reset_restores_pending_marker() {
-    failed_later_purge_case(true, false);
+    failed_later_purge_case(true, false, false);
 }
 
 #[test]
 fn failed_later_purge_with_missing_pending_preimage_preserves_restart_fence() {
-    failed_later_purge_case(false, true);
+    failed_later_purge_case(false, true, false);
+}
+
+#[test]
+fn failed_later_purge_prewrites_lazy_retry_after_tombstone_before_purge() {
+    failed_later_purge_case(false, false, true);
 }
 
 struct CapabilityRecordingExecutor {

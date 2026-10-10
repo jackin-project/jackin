@@ -84,16 +84,14 @@ fn window_remaining_percent(group: &UsageMetricGroupV1) -> Option<u8> {
     match &group.value {
         UsageMetricValueV1::Window {
             remaining_percent, ..
-        } => remaining_percent.map(|percent| percent.get()),
+        } => remaining_percent.map(UsagePercent::get),
         _ => None,
     }
 }
 
 fn window_used_percent(group: &UsageMetricGroupV1) -> Option<u8> {
     match &group.value {
-        UsageMetricValueV1::Window { used_percent, .. } => {
-            used_percent.map(|percent| percent.get())
-        }
+        UsageMetricValueV1::Window { used_percent, .. } => used_percent.map(UsagePercent::get),
         _ => None,
     }
 }
@@ -648,44 +646,12 @@ fn seed_broker_catalog(data_dir: &std::path::Path, capability: &UsageAccountCapa
         .expect("seed durable exact-capability catalog");
 }
 
-#[test]
-fn broker_publication_matches_capsule_metrics_and_native_presentation() {
-    use jackin_console::tui::screens::usage::render_at;
-    use jackin_console::tui::state::ManagerState;
-    use ratatui::{Terminal, backend::TestBackend};
-
-    let temp = tempfile::tempdir().expect("tempdir");
-    let capability = UsageAccountCapability {
-        account_id: "canon-account-1".to_owned(),
-        surface_id: "codex".to_owned(),
-    };
-    let now_epoch = 1_700_000_000;
-    seed_broker_catalog(temp.path(), &capability);
-    let executor = Arc::new(SequencedPublisherExecutor {
-        view: publisher_parity_view(now_epoch),
-        calls: AtomicUsize::new(0),
-    });
-    let broker_executor: Arc<dyn UsageProviderExecutor> = executor.clone();
-    let client = ensure_usage_broker_with_executor(
-        UsageBrokerConfig::for_data_dir(temp.path().to_path_buf()),
-        broker_executor,
-    )
-    .expect("broker");
-    let requested = client
-        .refresh(capability.clone(), 0, true)
-        .expect("request first generation");
-    let first = client
-        .join(
-            capability.clone(),
-            requested.generation,
-            Duration::from_secs(5),
-        )
-        .expect("join first generation");
-    assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
-    let capsule_view = first.snapshot.as_ref().expect("last-good view");
+fn assert_initial_broker_publication(
+    capsule_view: &FocusedUsageView,
+    projection: &UsageProjectionV1,
+    now_epoch: i64,
+) {
     assert_eq!(capsule_view.account.account_label, "work@example.test");
-
-    let projection = client.current_projection().expect("current publication");
     projection.validate().expect("valid broker publication");
     assert_eq!(projection.providers.len(), 1);
     assert_eq!(projection.providers[0].provider_id, "openai");
@@ -759,10 +725,22 @@ fn broker_publication_matches_capsule_metrics_and_native_presentation() {
         window_remaining_percent(&published_account.metric_groups[2]),
         None
     );
+}
 
-    let mut projection_runtime = HostUsageProjectionRuntime::open(
+fn assert_native_presentation_and_render(
+    capsule_view: &FocusedUsageView,
+    projection: &UsageProjectionV1,
+    data_dir: &std::path::Path,
+    now_epoch: i64,
+) -> HostUsageProjectionRuntime {
+    use jackin_console::tui::screens::usage::render_at;
+    use jackin_console::tui::state::ManagerState;
+    use ratatui::{Terminal, backend::TestBackend};
+
+    let capsule_bucket = usage_bucket_presentation(&capsule_view.buckets[0]);
+    let projection_runtime = HostUsageProjectionRuntime::open(
         projection.clone(),
-        HostUsageProjectionConfig::under_data_dir(temp.path()),
+        HostUsageProjectionConfig::under_data_dir(data_dir),
     )
     .expect("open presentation runtime");
     let presentation = projection_runtime.provider_presentation("codex").unwrap();
@@ -782,7 +760,7 @@ fn broker_publication_matches_capsule_metrics_and_native_presentation() {
     );
     assert_eq!(presentation.detail_metric_groups.len(), 4);
 
-    let mut screen = UsageScreenState::from_projection(&projection);
+    let mut screen = UsageScreenState::from_projection(projection);
     assert_eq!(screen.accounts.len(), 1);
     assert_eq!(screen.accounts[0].canonical_account_id, "canon-account-1");
     assert_eq!(
@@ -817,6 +795,46 @@ fn broker_publication_matches_capsule_metrics_and_native_presentation() {
     assert!(rendered.contains("work@example.test"), "{rendered}");
     assert!(rendered.contains("unverified handle"), "{rendered}");
     assert!(rendered.contains("57% left"), "{rendered}");
+    projection_runtime
+}
+
+#[test]
+fn broker_publication_matches_capsule_metrics_and_native_presentation() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let capability = UsageAccountCapability {
+        account_id: "canon-account-1".to_owned(),
+        surface_id: "codex".to_owned(),
+    };
+    let now_epoch = 1_700_000_000;
+    seed_broker_catalog(temp.path(), &capability);
+    let executor = Arc::new(SequencedPublisherExecutor {
+        view: publisher_parity_view(now_epoch),
+        calls: AtomicUsize::new(0),
+    });
+    let broker_executor = Arc::clone(&executor);
+    let broker_executor: Arc<dyn UsageProviderExecutor> = broker_executor;
+    let client = ensure_usage_broker_with_executor(
+        UsageBrokerConfig::for_data_dir(temp.path().to_path_buf()),
+        broker_executor,
+    )
+    .expect("broker");
+    let requested = client
+        .refresh(capability.clone(), 0, true)
+        .expect("request first generation");
+    let first = client
+        .join(
+            capability.clone(),
+            requested.generation,
+            Duration::from_secs(5),
+        )
+        .expect("join first generation");
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
+    let capsule_view = first.snapshot.as_ref().expect("last-good view");
+
+    let projection = client.current_projection().expect("current publication");
+    assert_initial_broker_publication(capsule_view, &projection, now_epoch);
+    let mut projection_runtime =
+        assert_native_presentation_and_render(capsule_view, &projection, temp.path(), now_epoch);
 
     let next_request = client
         .refresh(capability.clone(), first.generation, true)

@@ -147,6 +147,12 @@ fn telemetry_command_mapper_covers_every_nested_leaf() {
     ];
 
     assert_command_names(cases);
+    assert_usage_command_mapper_cases();
+}
+
+fn assert_usage_command_mapper_cases() {
+    use jackin_telemetry::schema::enums::CliCommandName as Name;
+
     let usage_cases: &[(&[&str], Name)] = &[
         (
             &["usage", "doctor", "--provider", "claude", "--unattended"],

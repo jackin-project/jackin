@@ -32,16 +32,15 @@ pub(crate) fn revoke_envelope(
     now_epoch: i64,
     clock_sample: ClockSample,
 ) {
-    if envelope.phase == UsageRefreshPhase::Updating {
-        if let Some(floor) =
+    if envelope.phase == UsageRefreshPhase::Updating
+        && let Some(floor) =
             policy::minimum_attempt_deadline(&envelope.capability, Some(clock_sample.ceil_epoch()))
-        {
-            envelope.retry_deadline_epoch = Some(
-                envelope
-                    .retry_deadline_epoch
-                    .map_or(floor, |deadline| deadline.max(floor)),
-            );
-        }
+    {
+        envelope.retry_deadline_epoch = Some(
+            envelope
+                .retry_deadline_epoch
+                .map_or(floor, |deadline| deadline.max(floor)),
+        );
     }
     envelope.generation = envelope.generation.saturating_add(1);
     envelope.phase = UsageRefreshPhase::Failed;

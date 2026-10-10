@@ -955,17 +955,14 @@ fn require_operator_terminal(stdin: bool, stdout: bool, stderr: bool) -> Result<
 }
 
 fn run_monitor_read(paths: &JackinPaths, operation: MonitorOperation) -> Result<()> {
-    let monitor_id = match &operation {
-        MonitorOperation::Status { monitor_id } | MonitorOperation::Refresh { monitor_id } => {
-            monitor_id
-        }
-        _ => {
-            return Err(usage_error(
-                "invalid_argument",
-                "monitor read requires a status or refresh operation",
-                3,
-            ));
-        }
+    let (MonitorOperation::Status { monitor_id } | MonitorOperation::Refresh { monitor_id }) =
+        &operation
+    else {
+        return Err(usage_error(
+            "invalid_argument",
+            "monitor read requires a status or refresh operation",
+            3,
+        ));
     };
     validate_monitor_identifier("monitor ID", monitor_id)?;
     let expects_refresh = matches!(&operation, MonitorOperation::Refresh { .. });

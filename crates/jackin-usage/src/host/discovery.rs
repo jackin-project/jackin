@@ -823,33 +823,15 @@ fn enumerate_registered_accounts(
             agent, directory, ..
         } = &account.credential
         {
-            let root = resolve_profile_root(operator_home, directory);
-            let claude_service = if *agent == Agent::Claude {
-                jackin_core::claude_keychain_scope(&root, operator_home, operator_home)
-                    .map(|scope| scope.service)
-            } else {
-                None
-            };
-            candidates
-                .entry(CredentialSourceKey::Profile {
-                    agent: *agent,
-                    root,
-                    claude_service,
-                })
-                .and_modify(|candidate| {
-                    candidate.provenance.extend(provenance.clone());
-                    if candidate.account_label.is_none() {
-                        candidate.account_label = label.clone();
-                    }
-                })
-                .or_insert_with(|| CandidateAccumulator {
-                    surface,
-                    kind: UsageCredentialKind::Profile,
-                    provenance,
-                    env_keys: BTreeSet::new(),
-                    account_label: label.clone(),
-                    operator_home: Some(operator_home.to_path_buf()),
-                });
+            add_registered_profile_candidate(
+                *agent,
+                directory,
+                surface,
+                provenance,
+                label,
+                operator_home,
+                candidates,
+            );
             continue;
         }
 
@@ -958,6 +940,44 @@ fn enumerate_registered_accounts(
             diagnostics.push(account_diagnostic(surface, id, Some(entry.name), 1, issue));
         }
     }
+}
+
+fn add_registered_profile_candidate(
+    agent: Agent,
+    directory: &Path,
+    surface: HostSurfaceId,
+    provenance: BTreeSet<String>,
+    label: Option<String>,
+    operator_home: &Path,
+    candidates: &mut BTreeMap<CredentialSourceKey, CandidateAccumulator>,
+) {
+    let root = resolve_profile_root(operator_home, directory);
+    let claude_service = if agent == Agent::Claude {
+        jackin_core::claude_keychain_scope(&root, operator_home, operator_home)
+            .map(|scope| scope.service)
+    } else {
+        None
+    };
+    candidates
+        .entry(CredentialSourceKey::Profile {
+            agent,
+            root,
+            claude_service,
+        })
+        .and_modify(|candidate| {
+            candidate.provenance.extend(provenance.clone());
+            if candidate.account_label.is_none() {
+                candidate.account_label = label.clone();
+            }
+        })
+        .or_insert_with(|| CandidateAccumulator {
+            surface,
+            kind: UsageCredentialKind::Profile,
+            provenance,
+            env_keys: BTreeSet::new(),
+            account_label: label,
+            operator_home: Some(operator_home.to_path_buf()),
+        });
 }
 
 fn provider_surface(provider: AiProvider) -> HostSurfaceId {

@@ -1049,16 +1049,15 @@ fn claude_profile_identity(
         );
     }
 
-    match reader.read_claude_keychain(&scope) {
-        outcome => match read_claude_payload(outcome) {
-            Ok(Some(profile)) => claude_profile_material(
-                profile,
-                format!("OAuth · macOS Keychain ({})", scope.service),
-                &scope.service,
-            ),
-            Ok(None) => ProfileValidation::Missing,
-            Err(outcome) => outcome,
-        },
+    let outcome = reader.read_claude_keychain(&scope);
+    match read_claude_payload(outcome) {
+        Ok(Some(profile)) => claude_profile_material(
+            profile,
+            format!("OAuth · macOS Keychain ({})", scope.service),
+            &scope.service,
+        ),
+        Ok(None) => ProfileValidation::Missing,
+        Err(outcome) => outcome,
     }
 }
 

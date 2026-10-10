@@ -364,29 +364,26 @@ fn load_projection(config: &UsageBrokerConfig) -> Result<LoadedProjection, Usage
         ) => return Err(unavailable()),
     };
     let has_loaded_envelope = loaded.is_some();
-    let (projection, envelope) = match loaded {
-        Some(mut envelope) => {
-            if envelope.schema_version == ProjectionStateEnvelope::MIGRATABLE_SCHEMA_VERSION {
-                publish::migrate_legacy_projection(&mut envelope.projection)
-                    .map_err(|_| unavailable())?;
-                envelope.schema_version = ProjectionStateEnvelope::SCHEMA_VERSION;
-            }
-            (envelope.projection.clone(), envelope)
+    let (projection, envelope) = if let Some(mut envelope) = loaded {
+        if envelope.schema_version == ProjectionStateEnvelope::MIGRATABLE_SCHEMA_VERSION {
+            publish::migrate_legacy_projection(&mut envelope.projection)
+                .map_err(|_| unavailable())?;
+            envelope.schema_version = ProjectionStateEnvelope::SCHEMA_VERSION;
         }
-        None => {
-            let projection = empty_projection(&config.build_id);
-            let envelope = ProjectionStateEnvelope {
-                schema_version: ProjectionStateEnvelope::SCHEMA_VERSION,
-                catalog_revision: projection.discovery_revision.clone(),
-                catalog: Vec::new(),
-                broker_instance_id: projection.broker_instance_id.clone(),
-                projection: projection.clone(),
-                aliases: Vec::new(),
-                retry_deadline_epoch: None,
-                success_deadline_epoch: None,
-            };
-            (projection, envelope)
-        }
+        (envelope.projection.clone(), envelope)
+    } else {
+        let projection = empty_projection(&config.build_id);
+        let envelope = ProjectionStateEnvelope {
+            schema_version: ProjectionStateEnvelope::SCHEMA_VERSION,
+            catalog_revision: projection.discovery_revision.clone(),
+            catalog: Vec::new(),
+            broker_instance_id: projection.broker_instance_id.clone(),
+            projection: projection.clone(),
+            aliases: Vec::new(),
+            retry_deadline_epoch: None,
+            success_deadline_epoch: None,
+        };
+        (projection, envelope)
     };
     store.store(&envelope).map_err(|_| unavailable())?;
     let catalog = has_loaded_envelope.then(|| envelope.catalog.clone());
@@ -398,6 +395,10 @@ fn load_projection(config: &UsageBrokerConfig) -> Result<LoadedProjection, Usage
     })
 }
 
+#[cfg(test)]
+type TestClaudeCollector =
+    dyn Fn(&UsageAccountCapability, &str) -> ProviderProbeOutcome + Send + Sync;
+
 struct DiscoveryProviderExecutor {
     bindings: Mutex<BTreeMap<UsageAccountCapability, Vec<ValidatedCredentialBinding>>>,
     validated_catalog: Mutex<Option<StagedDiscoveryCatalog>>,
@@ -405,9 +406,9 @@ struct DiscoveryProviderExecutor {
     resolver: Arc<dyn ProviderCredentialEnvResolver>,
     monitor_store: Option<Arc<monitor::MonitorStore>>,
     collector_service: Option<String>,
+    collector_liveness: Option<Arc<crate::usage::ClaudeCollectorLiveness>>,
     #[cfg(test)]
-    claude_collector:
-        Option<Arc<dyn Fn(&UsageAccountCapability, &str) -> ProviderProbeOutcome + Send + Sync>>,
+    claude_collector: Option<Arc<TestClaudeCollector>>,
     probe_budget: Duration,
 }
 
@@ -515,17 +516,43 @@ fn probe_claude_with_scope(
     let consent_monitor_store = Arc::clone(monitor_store);
     let consent_service = service.clone();
     let consent_capability = capability.clone();
-    let consent_is_current = move || {
-        claude_usage_capability_for_service(&consent_service) == consent_capability
+    let authorized_source: Arc<dyn Fn(u64) -> bool + Send + Sync> = Arc::new(move |generation| {
+        crate::usage::claude_credential_generation_is_current(&consent_service, generation)
+            && claude_usage_capability_for_service(&consent_service) == consent_capability
             && consent_monitor_store
                 .collection_accounts()
                 .iter()
                 .any(|account_id| account_id == &consent_capability.account_id)
+    });
+    let consent_liveness = executor.collector_liveness.as_ref().map(Arc::clone);
+    let liveness_for_current = consent_liveness.as_ref().map(Arc::clone);
+    let source_for_current = Arc::clone(&authorized_source);
+    let consent_is_current = move || {
+        liveness_for_current.as_ref().is_some_and(|liveness| {
+            liveness.is_current_if(|generation| source_for_current(generation))
+        })
+    };
+    let liveness_for_admission = consent_liveness;
+    let admit_operation = move || {
+        liveness_for_admission.as_ref().and_then(|liveness| {
+            let authorized_source = Arc::clone(&authorized_source);
+            liveness.admit_if(move |generation| authorized_source(generation))
+        })
     };
 
     #[cfg(test)]
     if let Some(collector) = executor.claude_collector.as_ref() {
-        return if consent_is_current() {
+        let lifecycle_is_current = executor
+            .collector_liveness
+            .as_ref()
+            .is_some_and(|liveness| liveness.is_current());
+        return if lifecycle_is_current
+            && claude_usage_capability_for_service(&service) == *capability
+            && monitor_store
+                .collection_accounts()
+                .iter()
+                .any(|account_id| account_id == &capability.account_id)
+        {
             collector(capability, &service)
         } else {
             collector_not_authorized()
@@ -538,12 +565,15 @@ fn probe_claude_with_scope(
             Some("Claude"),
             chrono::Utc::now().timestamp(),
             &service,
+            admit_operation,
             consent_is_current,
         );
         match result {
-            Ok(Some((view, rate_limit, failure_metadata))) => {
-                provider_probe_outcome_with_metadata(view, rate_limit, failure_metadata)
-            }
+            Ok(Some(snapshot)) => provider_probe_outcome_with_metadata(
+                snapshot.view,
+                snapshot.rate_limit,
+                snapshot.failure_metadata,
+            ),
             Ok(None) => collector_auth_required(),
             Err(crate::usage::ClaudeCollectionError::ConsentRevoked {
                 provider_http_status: None,
@@ -1180,50 +1210,45 @@ fn claim_leader_at(
                 };
             }
             Err(nix::errno::Errno::ENOENT) => {
-                let fd = open(
-                    path,
-                    OFlag::O_RDWR
-                        | OFlag::O_CREAT
-                        | OFlag::O_EXCL
-                        | OFlag::O_NOFOLLOW
-                        | OFlag::O_CLOEXEC,
-                    Mode::from_bits_truncate(0o600),
-                )
-                .map_err(|_| unavailable())?;
-                let mut file = Some(File::from(fd));
-                let result = (|| -> Result<BrokerLeaseOwner, UsageCoordinationError> {
-                    {
-                        let lease_file = file.as_mut().ok_or_else(unavailable)?;
-                        validate_owned_file(lease_file, 0o600)?;
-                        lease_file.try_lock().map_err(|_| unavailable())?;
-                        if !lease_path_matches_open_file(path, lease_file) {
-                            return Err(unavailable());
-                        }
-                        write_lease(lease_file, &lease).map_err(|_| unavailable())?;
-                        if !lease_path_matches_open_file(path, lease_file) {
-                            return Err(unavailable());
-                        }
-                    }
-                    let file = file.take().ok_or_else(unavailable)?;
-                    Ok(BrokerLeaseOwner {
-                        lease,
-                        file,
-                        stale_lease_reclaimed: false,
-                    })
-                })();
-                return match result {
-                    Ok(owner) => Ok(Some(owner)),
-                    Err(error) => {
-                        if let Some(file) = file.as_mut() {
-                            let _ignored = unlink_created_lease(path, file);
-                        }
-                        Err(error)
-                    }
-                };
+                return create_new_lease(path, lease).map(Some);
             }
             Err(_) => return Err(unavailable()),
         }
     }
+}
+
+fn create_new_lease(
+    path: &Path,
+    lease: BrokerLease,
+) -> Result<BrokerLeaseOwner, UsageCoordinationError> {
+    let fd = open(
+        path,
+        OFlag::O_RDWR | OFlag::O_CREAT | OFlag::O_EXCL | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+        Mode::from_bits_truncate(0o600),
+    )
+    .map_err(|_| unavailable())?;
+    let mut file = File::from(fd);
+    let result = (|| {
+        validate_owned_file(&file, 0o600)?;
+        file.try_lock().map_err(|_| unavailable())?;
+        if !lease_path_matches_open_file(path, &file) {
+            return Err(unavailable());
+        }
+        write_lease(&mut file, &lease).map_err(|_| unavailable())?;
+        if !lease_path_matches_open_file(path, &file) {
+            return Err(unavailable());
+        }
+        Ok(())
+    })();
+    if let Err(error) = result {
+        let _ignored = unlink_created_lease(path, &mut file);
+        return Err(error);
+    }
+    Ok(BrokerLeaseOwner {
+        lease,
+        file,
+        stale_lease_reclaimed: false,
+    })
 }
 
 fn claim_existing_lease(
@@ -1268,7 +1293,7 @@ fn renew_lease_at(path: &Path, owner: &mut BrokerLeaseOwner, now_epoch: i64) -> 
     if !lease_path_matches_open_file(path, &owner.file) {
         return false;
     }
-    let result = (|| {
+    (|| {
         let mut current = read_lease(&mut owner.file).ok()?;
         if current.instance_id != owner.lease.instance_id
             || current.process_id != owner.lease.process_id
@@ -1291,8 +1316,7 @@ fn renew_lease_at(path: &Path, owner: &mut BrokerLeaseOwner, now_epoch: i64) -> 
         owner.lease.renewed_at_epoch = current.renewed_at_epoch;
         Some(true)
     })()
-    .unwrap_or(false);
-    result
+    .unwrap_or(false)
 }
 
 fn lease_path_matches_open_file(path: &Path, file: &File) -> bool {
@@ -1316,7 +1340,7 @@ fn cleanup_owned_files(
     socket_identity: Option<BrokerSocketIdentity>,
     owner: &mut BrokerLeaseOwner,
 ) -> bool {
-    let result = (|| -> Result<(), ()> {
+    (|| -> Result<(), ()> {
         if !lease_path_matches_open_file(lease_path, &owner.file) {
             return Err(());
         }
@@ -1342,8 +1366,7 @@ fn cleanup_owned_files(
         unlink_owned_path(lease_path)?;
         Ok(())
     })()
-    .is_ok();
-    result
+    .is_ok()
 }
 
 fn unlink_owned_socket_path(path: &Path, expected: BrokerSocketIdentity) -> Result<(), ()> {

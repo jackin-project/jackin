@@ -15,6 +15,9 @@ use super::refresh::{
 )]
 use super::*;
 use serde::{Deserialize, Deserializer};
+use std::any::Any;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use zeroize::Zeroizing;
 
 const CLAUDE_KEYCHAIN_CREDENTIAL_ORIGIN: &str = "OAuth · macOS Keychain";
@@ -28,9 +31,128 @@ pub use keychain::{
     prepare_claude_keychain_auth, read_claude_keychain_item, unattended_keychain_guard,
 };
 pub(crate) use lease::bootstrapped_claude_service;
+pub(crate) use lease::claude_credential_generation_is_current;
+pub(crate) use lease::claude_service_is_bootstrapped;
 pub use lease::{
     ClaudeCredentialBootstrapOutcome, ClaudeCredentialLease, bootstrap_claude_credential,
 };
+
+/// Per-foreground-generation admission gate and no-UI guard lifetime.
+///
+/// A timed-out provider task may outlive its broker worker while blocked in a
+/// noninteractive Keychain reread. Its operation permit retains this scope
+/// until the admitted operation finishes. Deactivation closes later admissions and
+/// revokes the exact cached credential generation without joining that task.
+pub(crate) struct ClaudeCollectorLiveness {
+    state: Mutex<ClaudeCollectorState>,
+    shutdown: Arc<AtomicBool>,
+    _unattended_guard: Arc<dyn Any + Send + Sync>,
+}
+
+struct ClaudeCollectorState {
+    active: bool,
+    generation: Option<u64>,
+}
+
+/// A short-lived admission token for one operation in a foreground generation.
+/// It keeps the no-UI guard alive without holding the lifecycle mutex over I/O.
+/// Admission is the logical ordering point; an admitted call may run or finish
+/// after deactivation and cannot be physically cancelled.
+pub(crate) struct ClaudeCollectorOperationPermit {
+    _liveness: Arc<ClaudeCollectorLiveness>,
+    generation: u64,
+}
+
+impl ClaudeCollectorOperationPermit {
+    fn generation(&self) -> u64 {
+        self.generation
+    }
+}
+
+impl ClaudeCollectorLiveness {
+    pub(crate) fn new(guard: impl Any + Send + Sync + 'static) -> Self {
+        Self {
+            state: Mutex::new(ClaudeCollectorState {
+                active: true,
+                generation: None,
+            }),
+            shutdown: Arc::new(AtomicBool::new(false)),
+            _unattended_guard: Arc::new(guard),
+        }
+    }
+
+    pub(crate) fn bind_generation(&self, generation: u64) {
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        assert!(state.active && state.generation.is_none());
+        state.generation = Some(generation);
+    }
+
+    pub(crate) fn shutdown_flag(&self) -> Arc<AtomicBool> {
+        Arc::clone(&self.shutdown)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn is_current(&self) -> bool {
+        let state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        state.active && !self.shutdown.load(Ordering::Acquire)
+    }
+
+    pub(crate) fn is_current_if(&self, authorized: impl FnOnce(u64) -> bool) -> bool {
+        let state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        state.active
+            && !self.shutdown.load(Ordering::Acquire)
+            && state.generation.is_some_and(authorized)
+    }
+
+    /// Admit one operation while ordering its generation and consent checks
+    /// against deactivation. The returned permit does not lock lifecycle state.
+    pub(crate) fn admit_if(
+        self: &Arc<Self>,
+        authorized: impl FnOnce(u64) -> bool,
+    ) -> Option<ClaudeCollectorOperationPermit> {
+        let state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if !state.active || self.shutdown.load(Ordering::Acquire) {
+            return None;
+        }
+        let generation = state.generation?;
+        if !authorized(generation) {
+            return None;
+        }
+        Some(ClaudeCollectorOperationPermit {
+            _liveness: Arc::clone(self),
+            generation,
+        })
+    }
+
+    /// Close admissions and revoke this generation without waiting for any
+    /// previously admitted provider or Keychain operation to finish.
+    pub(crate) fn deactivate(&self) {
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if !state.active {
+            return;
+        }
+        state.active = false;
+        self.shutdown.store(true, Ordering::Release);
+        if let Some(generation) = state.generation {
+            lease::revoke_bootstrapped_claude_generation(generation);
+        }
+    }
+}
 
 /// Claude OAuth credential candidates, home-first — the single source of truth
 /// for the path precedence, shared by `claude_snapshot` (token + identity) and
@@ -385,35 +507,29 @@ fn claude_resolved_view(
     (view, None, None)
 }
 
-/// Explicit broker-only Claude collector. The callback rechecks persisted
-/// opt-in and exact current account mapping at each request and reread boundary.
+/// Explicit broker-only Claude collector. The admission callback rechecks
+/// persisted opt-in and exact current account mapping before every request and
+/// reread; the current callback fences results after those operations return.
 /// This function can only use the one exact foreground-bootstrap cache entry;
 /// it never resolves files, environment values, or another Keychain service.
-pub(crate) fn experimental_claude_usage_snapshot_for_service<C>(
+pub(crate) fn experimental_claude_usage_snapshot_for_service<C, A>(
     agent: &str,
     provider: Option<&str>,
     now: i64,
     service: &str,
+    admit_operation: A,
     consent_is_current: C,
-) -> Result<
-    Option<(
-        FocusedUsageView,
-        Option<ProviderRateLimit>,
-        Option<ProviderFailureMetadata>,
-    )>,
-    ClaudeCollectionError,
->
+) -> Result<Option<ClaudeServiceUsageSnapshot>, ClaudeCollectionError>
 where
     C: Fn() -> bool,
+    A: Fn() -> Option<ClaudeCollectorOperationPermit>,
 {
     if !consent_is_current() {
         return Err(ClaudeCollectionError::ConsentRevoked {
             provider_http_status: None,
         });
     }
-    if !lease::valid_claude_keychain_service(service)
-        || !lease::claude_service_is_bootstrapped(service)
-    {
+    if !lease::valid_claude_keychain_service(service) || !claude_service_is_bootstrapped(service) {
         return Ok(None);
     }
     let Some(payload) = lease::cached_claude_keychain_payload(service) else {
@@ -432,11 +548,12 @@ where
         profile.organization_type,
         Some(service.to_owned()),
     );
-    let result = fetch_claude_with_one_401_reread(
+    let result = fetch_claude_with_one_401_reread_with_admission(
         service,
         &mut resolved,
         fetch_claude_oauth_usage,
         keychain::read_claude_keychain_item_uncached,
+        admit_operation,
         consent_is_current,
     );
     let result = match result {
@@ -455,13 +572,13 @@ where
     } else {
         now
     };
-    Ok(Some(claude_result_view(
-        agent,
-        provider,
-        observed_at,
-        resolved,
-        result,
-    )))
+    let (view, rate_limit, failure_metadata) =
+        claude_result_view(agent, provider, observed_at, resolved, result);
+    Ok(Some(ClaudeServiceUsageSnapshot {
+        view,
+        rate_limit,
+        failure_metadata,
+    }))
 }
 
 /// Secret-free collector gate outcome. Retain an HTTP status when revocation
@@ -471,16 +588,23 @@ pub(crate) enum ClaudeCollectionError {
     ConsentRevoked { provider_http_status: Option<u16> },
 }
 
+pub(crate) struct ClaudeServiceUsageSnapshot {
+    pub(crate) view: FocusedUsageView,
+    pub(crate) rate_limit: Option<ProviderRateLimit>,
+    pub(crate) failure_metadata: Option<ProviderFailureMetadata>,
+}
+
 #[derive(Debug)]
 enum ClaudeFetchError {
     Provider(ProviderHttpError),
     ConsentRevoked { provider_http_status: Option<u16> },
 }
 
+#[cfg(test)]
 fn fetch_claude_with_one_401_reread<F, R>(
     service: &str,
     resolved: &mut ClaudeResolved,
-    mut fetch: F,
+    fetch: F,
     reread: R,
     consent_is_current: impl Fn() -> bool,
 ) -> Result<ClaudeOAuthUsageResponse, ClaudeFetchError>
@@ -488,12 +612,45 @@ where
     F: FnMut(&str) -> Result<ClaudeOAuthUsageResponse, ProviderHttpError>,
     R: FnOnce(&str) -> ClaudeKeychainRead,
 {
-    if !consent_is_current() {
-        return Err(ClaudeFetchError::ConsentRevoked {
-            provider_http_status: None,
-        });
+    let liveness = Arc::new(ClaudeCollectorLiveness::new(()));
+    if let Some(generation) = lease::claude_credential_generation(service) {
+        liveness.bind_generation(generation);
     }
-    let first = fetch(resolved.access_token.as_str()).map_err(ClaudeFetchError::Provider);
+    let consent_is_current = Arc::new(consent_is_current);
+    let consent_for_admission = Arc::clone(&consent_is_current);
+    let liveness_for_admission = Arc::clone(&liveness);
+    fetch_claude_with_one_401_reread_with_admission(
+        service,
+        resolved,
+        fetch,
+        reread,
+        move || liveness_for_admission.admit_if(|_| consent_for_admission()),
+        move || consent_is_current(),
+    )
+}
+
+fn fetch_claude_with_one_401_reread_with_admission<F, R, A, C>(
+    service: &str,
+    resolved: &mut ClaudeResolved,
+    mut fetch: F,
+    reread: R,
+    mut admit_operation: A,
+    consent_is_current: C,
+) -> Result<ClaudeOAuthUsageResponse, ClaudeFetchError>
+where
+    F: FnMut(&str) -> Result<ClaudeOAuthUsageResponse, ProviderHttpError>,
+    R: FnOnce(&str) -> ClaudeKeychainRead,
+    A: FnMut() -> Option<ClaudeCollectorOperationPermit>,
+    C: Fn() -> bool,
+{
+    let first = {
+        let Some(_permit) = admit_operation() else {
+            return Err(ClaudeFetchError::ConsentRevoked {
+                provider_http_status: None,
+            });
+        };
+        fetch(resolved.access_token.as_str()).map_err(ClaudeFetchError::Provider)
+    };
     if !matches!(
         &first,
         Err(ClaudeFetchError::Provider(ProviderHttpError::HttpStatus {
@@ -508,15 +665,24 @@ where
         }
         return first;
     }
+    let (generation, reread) = {
+        let Some(permit) = admit_operation() else {
+            return Err(ClaudeFetchError::ConsentRevoked {
+                provider_http_status: Some(401),
+            });
+        };
+        let generation = permit.generation();
+        if !lease::begin_bootstrapped_claude_401_reread(service, generation) {
+            return first;
+        }
+        (generation, reread(service))
+    };
     if !consent_is_current() {
         return Err(ClaudeFetchError::ConsentRevoked {
             provider_http_status: Some(401),
         });
     }
-    let Some(generation) = lease::begin_bootstrapped_claude_401_reread(service) else {
-        return first;
-    };
-    let ClaudeKeychainRead::Payload { json } = reread(service) else {
+    let ClaudeKeychainRead::Payload { json } = reread else {
         return first;
     };
     if json.len() > lease::MAX_CLAUDE_KEYCHAIN_PAYLOAD_BYTES {
@@ -540,13 +706,21 @@ where
     {
         return first;
     }
-    if !consent_is_current() {
+    let Some(permit) = admit_operation() else {
+        return Err(ClaudeFetchError::ConsentRevoked {
+            provider_http_status: Some(401),
+        });
+    };
+    if permit.generation() != generation {
         return Err(ClaudeFetchError::ConsentRevoked {
             provider_http_status: Some(401),
         });
     }
     resolved.access_token = credential.access_token;
-    let retried = fetch(resolved.access_token.as_str()).map_err(ClaudeFetchError::Provider);
+    let retried = {
+        let _permit = permit;
+        fetch(resolved.access_token.as_str()).map_err(ClaudeFetchError::Provider)
+    };
     if !consent_is_current() {
         return match retried {
             Err(provider_error) => Err(provider_error),
@@ -556,7 +730,12 @@ where
         };
     }
     if !lease::replace_bootstrapped_claude_payload(service, generation, json) {
-        return retried;
+        return match retried {
+            Err(provider_error) => Err(provider_error),
+            Ok(_) => Err(ClaudeFetchError::ConsentRevoked {
+                provider_http_status: None,
+            }),
+        };
     }
     retried
 }
@@ -781,7 +960,7 @@ pub(crate) fn load_claude_oauth_credentials(path: &Path) -> Option<ClaudeOAuthCr
 /// `claude /login` is picked up without an app restart (flow W5).
 #[derive(Default)]
 pub(crate) struct ClaudeKeychainState {
-    inner: std::sync::Mutex<ClaudeKeychainInner>,
+    inner: Mutex<ClaudeKeychainInner>,
 }
 
 #[derive(Default)]
@@ -895,23 +1074,26 @@ where
         ClaudeKeychainRead::Denied => ClaudeWaveResolution::Denied,
         #[cfg(any(target_os = "macos", test))]
         ClaudeKeychainRead::Payload { json } => {
-            match parse_claude_profile_payload(json.as_bytes()) {
-                Some(profile) if profile.credential.is_some() => {
-                    // Valid Keychain payload: may still collect account/tier
-                    // metadata from the same-scope file probe, but the file
-                    // credential can never replace the Keychain one.
-                    let probe = file_probe();
-                    let origin = format!("OAuth · macOS Keychain ({})", scope.service);
-                    ClaudeWaveResolution::Resolved(Box::new(claude_resolved(
-                        profile.credential.expect("checked above"),
-                        origin,
-                        profile.account_email.or(probe.account_email),
-                        profile.organization_type.or(probe.organization_type),
-                        Some(scope.service.clone()),
-                    )))
-                }
-                _ => resolve_claude_fallback(scope, file_probe(), env_reader()),
-            }
+            let Some(ClaudeProfilePayload {
+                credential: Some(credential),
+                account_email,
+                organization_type,
+            }) = parse_claude_profile_payload(json.as_bytes())
+            else {
+                return resolve_claude_fallback(scope, file_probe(), env_reader());
+            };
+            // Valid Keychain payload: may still collect account/tier metadata
+            // from the same-scope file probe, but the file credential can
+            // never replace the Keychain one.
+            let probe = file_probe();
+            let origin = format!("OAuth · macOS Keychain ({})", scope.service);
+            ClaudeWaveResolution::Resolved(Box::new(claude_resolved(
+                credential,
+                origin,
+                account_email.or(probe.account_email),
+                organization_type.or(probe.organization_type),
+                Some(scope.service.clone()),
+            )))
         }
         ClaudeKeychainRead::Missing | ClaudeKeychainRead::ConsentRequired => {
             resolve_claude_fallback(scope, file_probe(), env_reader())

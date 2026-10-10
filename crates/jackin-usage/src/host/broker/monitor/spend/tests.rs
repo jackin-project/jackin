@@ -749,9 +749,17 @@ fn correction_older_than_retained_previous_period_is_unverified() {
     assert!(!state.rollover_unknown);
 }
 
-#[test]
-fn unretained_correction_after_two_rollovers_latches_only_affected_goal() {
-    let budget = budget(100_000);
+struct TwoRolloverSpendState {
+    account: SpendAccountState,
+    state: SpendState,
+    later_goal_state: SpendState,
+    latest_p2: Option<SpendRecord>,
+    p0_start: i64,
+    p0_end: i64,
+    p2_start: i64,
+}
+
+fn spend_state_after_two_rollovers(budget: &Money) -> TwoRolloverSpendState {
     let p0_start = PERIOD_START;
     let p0_end = p0_start + 100;
     let p1_start = p0_end;
@@ -766,7 +774,7 @@ fn unretained_correction_after_two_rollovers_latches_only_affected_goal() {
         baseline_at,
     )
     .expect("fresh p0 baseline");
-    let mut state = capture_goal_baseline(&account, Some(&budget), baseline_at);
+    let mut state = capture_goal_baseline(&account, Some(budget), baseline_at);
     assert!(state.cumulative_complete);
 
     // Fold p0 spend, then prove the first rollover with a post-close p0 total.
@@ -777,7 +785,7 @@ fn unretained_correction_after_two_rollovers_latches_only_affected_goal() {
         p0_end - 1,
     )
     .expect("fresh p0 total");
-    advance_goal_spend(&mut state, &account, Some(&budget), p0_end - 1);
+    advance_goal_spend(&mut state, &account, Some(budget), p0_end - 1);
 
     (account, _) = record_account_spend(
         &account,
@@ -786,7 +794,7 @@ fn unretained_correction_after_two_rollovers_latches_only_affected_goal() {
         p1_start + 1,
     )
     .expect("fresh p1 opening total");
-    advance_goal_spend(&mut state, &account, Some(&budget), p1_start + 1);
+    advance_goal_spend(&mut state, &account, Some(budget), p1_start + 1);
     assert!(state.rollover_unknown);
 
     (account, _) = record_account_spend(
@@ -796,7 +804,7 @@ fn unretained_correction_after_two_rollovers_latches_only_affected_goal() {
         p0_end + 2,
     )
     .expect("fresh p0 closing total");
-    advance_goal_spend(&mut state, &account, Some(&budget), p0_end + 3);
+    advance_goal_spend(&mut state, &account, Some(budget), p0_end + 3);
     assert!(state.cumulative_complete);
     assert_eq!(state.cumulative_goal_spend, Some(amount(7_200)));
 
@@ -809,7 +817,7 @@ fn unretained_correction_after_two_rollovers_latches_only_affected_goal() {
         p1_end - 1,
     )
     .expect("fresh p1 total");
-    advance_goal_spend(&mut state, &account, Some(&budget), p1_end - 1);
+    advance_goal_spend(&mut state, &account, Some(budget), p1_end - 1);
 
     (account, _) = record_account_spend(
         &account,
@@ -818,7 +826,7 @@ fn unretained_correction_after_two_rollovers_latches_only_affected_goal() {
         p1_end + 1,
     )
     .expect("fresh p1 closing total");
-    advance_goal_spend(&mut state, &account, Some(&budget), p1_end + 2);
+    advance_goal_spend(&mut state, &account, Some(budget), p1_end + 2);
 
     (account, _) = record_account_spend(
         &account,
@@ -833,12 +841,36 @@ fn unretained_correction_after_two_rollovers_latches_only_affected_goal() {
         p2_start + 1,
     )
     .expect("fresh p2 opening total");
-    advance_goal_spend(&mut state, &account, Some(&budget), p2_start + 1);
+    advance_goal_spend(&mut state, &account, Some(budget), p2_start + 1);
     assert!(state.cumulative_complete);
     assert_eq!(state.cumulative_goal_spend, Some(amount(8_500)));
-    let mut later_goal_state = capture_goal_baseline(&account, Some(&budget), p2_start + 1);
+    let later_goal_state = capture_goal_baseline(&account, Some(budget), p2_start + 1);
     assert!(later_goal_state.cumulative_complete);
     let latest_p2 = account.latest_record.clone();
+
+    TwoRolloverSpendState {
+        account,
+        state,
+        later_goal_state,
+        latest_p2,
+        p0_start,
+        p0_end,
+        p2_start,
+    }
+}
+
+#[test]
+fn unretained_correction_after_two_rollovers_latches_only_affected_goal() {
+    let budget = budget(100_000);
+    let TwoRolloverSpendState {
+        account,
+        mut state,
+        mut later_goal_state,
+        latest_p2,
+        p0_start,
+        p0_end,
+        p2_start,
+    } = spend_state_after_two_rollovers(&budget);
 
     let (account, correction) = record_account_spend(
         &account,

@@ -1,37 +1,65 @@
 {
-  "source_commit": "1a45196dbe24d439e596c14e22fbda59799e7b0d",
+  "source_commit": "8288ef4a4e174624e353f8748304766ce98e5822",
   "build_command": [
+    "CARGO_HOME=/private/tmp/jackin-usage-cargo-home-pkfelzdu",
+    "MISE_AUTO_INSTALL=false",
     "mise",
     "exec",
     "--",
-    "cargo",
-    "build",
-    "--offline",
-    "--locked",
-    "-p",
-    "jackin",
-    "--bin",
-    "jackin",
-    "--bin",
-    "jackin-usage-broker"
+    "sh",
+    "-c",
+    "export PATH=\"/Users/donbeave/.local/share/mise/command-wrappers/bin:/Users/donbeave/.rustup/toolchains/1.97.1-aarch64-apple-darwin/bin:$PATH\"; exec mbx build --offline --locked -p jackin --bin jackin --bin jackin-usage-broker"
   ],
   "rust": "1.97.1",
   "mbx": "1.22.0",
-  "broker_protocol": 7,
+  "cli_version": "0.6.4",
+  "broker_version": "0.6.4",
+  "broker_protocol": 8,
+  "projection_envelope_schema": 3,
+  "statusline_input_schema": 2,
   "monitor_schema": 4,
+  "install_root": "/Users/donbeave/.local/share/jackin-claude-monitor-v3",
+  "state_dir": "/Users/donbeave/.local/share/jackin-claude-monitor-v3/state",
+  "broker_selection": "verified exact installed sibling invocation with JACKIN_USAGE_BROKER_BIN unset",
   "binaries": [
     {
       "name": "jackin",
       "path": "/Users/donbeave/.local/share/jackin-claude-monitor-v3/bin/jackin",
       "built_path": "/Users/donbeave/Library/Caches/mbx/targets/v1/36fc15a60d93a06cc01fd219079b34bfc60b422fdb07037233807370e40b3159/debug/jackin",
-      "sha256": "243469d19697f339e982214e2b1b84dd44fc57f601910dec2a9983b0e397cbe0"
+      "sha256": "3b4ff49c100c3aa925fd25535ec5907ddaef0fc10d99a787abe51075f0fc50b2"
     },
     {
       "name": "jackin-usage-broker",
       "path": "/Users/donbeave/.local/share/jackin-claude-monitor-v3/bin/jackin-usage-broker",
       "built_path": "/Users/donbeave/Library/Caches/mbx/targets/v1/36fc15a60d93a06cc01fd219079b34bfc60b422fdb07037233807370e40b3159/debug/jackin-usage-broker",
-      "sha256": "b96073209766236a7f30eee7c34725ff283dd47e6fe30c0df3cc24fcfbf2f5e4"
+      "sha256": "3b30926a6cd1ceab8a41aeb7fb09e321e4976f7fb92a6054372529b1a8f0332e"
     }
   ],
-  "verification_scope": "isolated offline fixtures; no real account or native Keychain verification"
+  "installed_smoke": {
+    "result": "PASS",
+    "log": "/private/tmp/jackin-v3-installed-smoke-8288ef4a.log",
+    "http_proxy_requests": 0,
+    "credential_command_executions": 0,
+    "native_security_framework": "not instrumented",
+    "foreground_auth_success": "not exercised",
+    "dispatch_policy_approvals": "none",
+    "fixture_removed_after_orderly_stop": true
+  },
+  "verification_scope": "MBX offline/locked build and isolated installed smoke passed; live Keychain authorization, foreground auth success, provider/account readiness, and dispatch approval remain unverified",
+  "schema_verification": {
+    "broker_protocol": "installed smoke asserted wire-v8",
+    "monitor_schema": "installed smoke asserted durable monitor schema 4",
+    "projection_envelope_schema": "schema 3 migration covered by dedicated offline migration tests; installed smoke does not persist/assert a projection envelope",
+    "statusline_input_schema": "source and selected offline gates use schema 2"
+  },
+  "known_limitations": [
+    "Native Security Framework calls were not instrumented; proxy and credential-command tripwires observed zero calls in isolated fixtures.",
+    "Successful foreground authentication and live provider/account readiness were not exercised.",
+    "An abrupt forward wall-clock step between process restarts can expire an epoch-based persisted deadline early; this build does not claim protection against arbitrary clock tampering."
+  ],
+  "previous_pair_source_commit": "1a45196dbe24d439e596c14e22fbda59799e7b0d",
+  "previous_pair_sha256": {
+    "jackin": "243469d19697f339e982214e2b1b84dd44fc57f601910dec2a9983b0e397cbe0",
+    "jackin-usage-broker": "b96073209766236a7f30eee7c34725ff283dd47e6fe30c0df3cc24fcfbf2f5e4"
+  }
 }
