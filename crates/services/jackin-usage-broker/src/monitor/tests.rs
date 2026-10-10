@@ -1539,11 +1539,7 @@ fn sgd_spend_thresholds_emit_actions_and_align_runnable_readiness() {
             NOW + offset,
         );
         let current = status(&store, &started.monitor_id, NOW + offset);
-        assert_spend_threshold_status(
-            &current,
-            amount,
-            (warn, checkpoint, stop, pause),
-        );
+        assert_spend_threshold_status(&current, amount, (warn, checkpoint, stop, pause));
     }
 
     ingest(
@@ -1607,7 +1603,11 @@ fn assert_spend_threshold_status(
     expectations: (bool, bool, bool, bool),
 ) {
     let (warn, checkpoint, stop, pause) = expectations;
-    assert_eq!(status.runnable, !stop && !pause, "spend {amount} minor units");
+    assert_eq!(
+        status.runnable,
+        !stop && !pause,
+        "spend {amount} minor units"
+    );
     assert_eq!(
         status.readiness.dispatch,
         if stop || pause {
@@ -1671,16 +1671,25 @@ fn spend_snapshots_preserve_closed_period_markers_without_blocking_rollover() {
 
     let mut dropped_marker = snapshot.clone();
     dropped_marker.closed_period_anchor = None;
-    assert!(!spend_snapshot_preserves_history(&snapshot, &dropped_marker));
+    assert!(!spend_snapshot_preserves_history(
+        &snapshot,
+        &dropped_marker
+    ));
 
     let mut corrected_marker = snapshot.clone();
     corrected_marker.closed_period_anchor = Some(verified_record(100, 200, 1_300));
     corrected_marker.cumulative_goal_spend = Some(Money::new(600, "SGD", 2));
-    assert!(spend_snapshot_preserves_history(&snapshot, &corrected_marker));
+    assert!(spend_snapshot_preserves_history(
+        &snapshot,
+        &corrected_marker
+    ));
 
     let mut regressed_marker = snapshot.clone();
     regressed_marker.closed_period_anchor = Some(verified_record(100, 200, 1_100));
-    assert!(!spend_snapshot_preserves_history(&snapshot, &regressed_marker));
+    assert!(!spend_snapshot_preserves_history(
+        &snapshot,
+        &regressed_marker
+    ));
 
     let mut wrong_account_marker = snapshot.clone();
     wrong_account_marker
