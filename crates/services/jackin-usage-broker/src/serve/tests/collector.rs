@@ -6,7 +6,7 @@ use super::*;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use jackin_protocol::control::{
     FocusedUsageView, QuotaBucketView, StatusSlot, UsageConfidence, UsageSeverity,
@@ -527,10 +527,10 @@ fn stop_waits_for_collector_admission_and_later_snapshots_exclude_it() {
         let result = store.operate(MonitorOperation::Stop { monitor_id }, NOW + 1);
         let _ignored = stop_result_sender.send(result);
     });
-    let deadline = std::time::Instant::now() + Duration::from_secs(1);
+    let deadline = Instant::now() + Duration::from_secs(1);
     while harness.store.collector_admission_waiters() == 0 {
         assert!(
-            std::time::Instant::now() < deadline,
+            Instant::now() < deadline,
             "Stop must reach the admission gate while collector admission is held"
         );
         thread::yield_now();

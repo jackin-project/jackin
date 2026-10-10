@@ -5,6 +5,8 @@ use super::*;
 use std::path::Path;
 use std::sync::MutexGuard;
 #[cfg(test)]
+use std::sync::atomic::AtomicUsize;
+#[cfg(test)]
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
@@ -26,7 +28,7 @@ impl MonitorStore {
                 state: Mutex::new(state),
                 collector_admission: Mutex::new(()),
                 #[cfg(test)]
-                collector_admission_waiters: std::sync::atomic::AtomicUsize::new(0),
+                collector_admission_waiters: AtomicUsize::new(0),
                 experimental_collector_source: Mutex::new(None),
                 changed: Condvar::new(),
             }),
