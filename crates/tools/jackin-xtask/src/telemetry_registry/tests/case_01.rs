@@ -65,6 +65,19 @@ fn source_policy_resolves_raw_tracing_import_aliases() {
 }
 
 #[test]
+fn source_policy_treats_self_imports_as_identity_not_alias_cycles() {
+    for source in [
+        "use jackin_config::{self, AppConfig}; fn safe(_: jackin_config::AppConfig) {}",
+        "use jackin_usage_store_backend::{self, DbOperation}; fn safe(_: jackin_usage_store_backend::DbOperation) {}",
+    ] {
+        assert!(
+            source_policy_violations("crates/group/example/src/lib.rs", source).is_empty(),
+            "identity self-import must not create a cyclic alias: {source}"
+        );
+    }
+}
+
+#[test]
 fn source_policy_fails_closed_on_growing_cyclic_macro_aliases() {
     let violations = source_policy_violations(
         "crates/group/example/src/lib.rs",

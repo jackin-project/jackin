@@ -94,6 +94,12 @@ impl TelemetryImports {
     }
 
     fn record_alias_path(&mut self, local: &str, source: &str) {
+        // `use crate_name::{self, Item}` imports the existing crate name; it
+        // does not create an alias edge. Recording `crate_name -> crate_name`
+        // makes every path through that import look cyclic to the resolver.
+        if local == source {
+            return;
+        }
         self.aliases
             .entry(local.to_owned())
             .or_default()
