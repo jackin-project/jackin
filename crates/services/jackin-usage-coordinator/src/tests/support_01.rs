@@ -394,7 +394,16 @@ pub(super) fn assert_updating_store_failure_terminates(persistent: bool) {
         assert_eq!(store.failed_updates.load(Ordering::SeqCst), 1);
         assert!(coordinator.is_idle());
         coordinator.reconcile_catalog([], 1_003).unwrap();
-        assert_eq!(store.load(&account, 1_003).unwrap(), None);
+        let tombstone = store
+            .load(&account, 1_003)
+            .unwrap()
+            .expect("catalog removal must retain the failed generation's retry fence");
+        assert_eq!(tombstone.phase, UsageRefreshPhase::Idle);
+        assert!(tombstone.terminal_result.is_none());
+        assert!(tombstone.last_good.is_none());
+        assert!(tombstone.terminal_error.is_none());
+        assert_eq!(tombstone.provider_invoked_at_epoch, None);
+        assert_eq!(tombstone.retry_deadline_epoch, Some(1_030));
         drop(coordinator);
         completed.send(()).unwrap();
     });

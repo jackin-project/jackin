@@ -572,15 +572,15 @@ fn coordinator_recovers_persisted_owner_loss_once_without_a_herd() {
         .unwrap();
     assert_eq!(recovered.generation, 4);
     assert_eq!(recovered.phase, UsageRefreshPhase::Failed);
-    assert_eq!(recovered.retry_at_epoch, Some(1_300));
+    assert_eq!(recovered.retry_at_epoch, Some(1_301));
     assert_eq!(executor.calls.load(Ordering::SeqCst), 0);
 
     let recovered = coordinator
-        .request_refresh(&account, 0, true, 1_300)
+        .request_refresh(&account, 0, true, 1_301)
         .unwrap();
     executor.wait_started(1);
     let joiner = coordinator
-        .request_refresh(&account, 0, true, 1_300)
+        .request_refresh(&account, 0, true, 1_301)
         .unwrap();
     assert_eq!(recovered.generation, 5);
     assert_eq!(joiner.generation, 5);
@@ -730,29 +730,243 @@ fn claude_cooldown_uses_monotonic_time_when_wall_clock_jumps_forward() {
     );
 
     clock.set_wall_epoch(2_500);
+    coordinator
+        .reconcile_catalog([catalog_entry(&account, "revision-b")], 2_500)
+        .unwrap();
     let after_forward_jump = coordinator
         .request_refresh(&account, first.generation, true, 2_500)
         .unwrap();
-    assert_eq!(after_forward_jump.generation, first.generation);
+    assert_eq!(after_forward_jump.generation, first.generation + 1);
     assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
 
     clock.advance(Duration::from_secs(299));
     let before_monotonic_floor = coordinator
-        .request_refresh(&account, first.generation, true, 2_799)
+        .request_refresh(&account, after_forward_jump.generation, true, 2_799)
         .unwrap();
-    assert_eq!(before_monotonic_floor.generation, first.generation);
+    assert_eq!(
+        before_monotonic_floor.generation,
+        after_forward_jump.generation
+    );
     assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
 
     clock.advance(Duration::from_secs(1));
     let allowed = coordinator
-        .request_refresh(&account, first.generation, true, 2_800)
+        .request_refresh(&account, after_forward_jump.generation, true, 2_800)
         .unwrap();
-    assert_eq!(allowed.generation, first.generation + 1);
-    assert_eq!(executor.calls.load(Ordering::SeqCst), 2);
+    assert_eq!(allowed.generation, after_forward_jump.generation + 1);
     assert_eq!(
         join_ok(&coordinator, &account, allowed.generation, 2_800).phase,
         UsageRefreshPhase::Completed
     );
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 2);
+}
+
+#[test]
+fn restart_reload_fence_blocks_forward_wall_jump_but_not_fresh_accounts() {
+    let account = capability("restart-fenced");
+    let fresh_account = capability("fresh-account");
+    let store = Arc::new(MemoryStore::default());
+    let initial_executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
+        quota_view(1_000, 80),
+    )));
+    let initial_clock = Arc::new(ManualClock::at(1_000));
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce concrete ports to coordinator trait objects"
+    )]
+    let initial_provider: Arc<dyn UsageProviderExecutor> = initial_executor.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce concrete ports to coordinator trait objects"
+    )]
+    let state_store: Arc<dyn AccountStateStore> = store.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "share the controllable clock with the coordinator"
+    )]
+    let initial_clock_port: Arc<dyn MonotonicClock> = initial_clock.clone();
+    let initial = UsageCoordinator::start_with_clock(
+        initial_provider,
+        state_store,
+        UsageCoordinatorConfig::default(),
+        Some(BTreeMap::from([(account.clone(), "revision-a".into())])),
+        None,
+        initial_clock_port,
+    );
+    let first = initial.request_refresh(&account, 0, true, 1_000).unwrap();
+    assert_eq!(
+        join_ok(&initial, &account, first.generation, 1_000).phase,
+        UsageRefreshPhase::Completed
+    );
+    let persisted = store.load(&account, 1_000).unwrap().unwrap();
+    assert_eq!(persisted.provider_invoked_at_epoch, Some(1_000));
+    drop(initial);
+
+    // A fresh monotonic origin models restart/reboot where no trustworthy
+    // boot-relative clock provenance survived. The wall clock is already
+    // beyond the old deadline, so only the conservative reload fence blocks.
+    let restarted_executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
+        quota_view(2_800, 79),
+    )));
+    let restarted_clock = Arc::new(ManualClock::at(2_000));
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce concrete ports to coordinator trait objects"
+    )]
+    let restarted_provider: Arc<dyn UsageProviderExecutor> = restarted_executor.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce concrete ports to coordinator trait objects"
+    )]
+    let state_store: Arc<dyn AccountStateStore> = store.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "share the controllable clock with the coordinator"
+    )]
+    let restarted_clock_port: Arc<dyn MonotonicClock> = restarted_clock.clone();
+    let restarted = UsageCoordinator::start_with_clock(
+        restarted_provider,
+        state_store,
+        UsageCoordinatorConfig::default(),
+        Some(BTreeMap::from([
+            (account.clone(), "revision-a".into()),
+            (fresh_account.clone(), "revision-a".into()),
+        ])),
+        None,
+        restarted_clock_port,
+    );
+    let initially_suppressed = restarted
+        .request_refresh(&account, first.generation, true, 2_000)
+        .unwrap();
+    assert_eq!(initially_suppressed.generation, first.generation);
+    assert_eq!(restarted_executor.calls.load(Ordering::SeqCst), 0);
+
+    let fresh = restarted
+        .request_refresh(&fresh_account, 0, true, 2_000)
+        .unwrap();
+    assert_eq!(fresh.generation, 1);
+    assert_eq!(
+        join_ok(&restarted, &fresh_account, fresh.generation, 2_000).phase,
+        UsageRefreshPhase::Completed
+    );
+    assert_eq!(restarted_executor.calls.load(Ordering::SeqCst), 1);
+
+    restarted_clock.set_wall_epoch(2_500);
+    let after_forward_jump = restarted
+        .request_refresh(&account, first.generation, true, 2_500)
+        .unwrap();
+    assert_eq!(after_forward_jump.generation, first.generation);
+    assert_eq!(restarted_executor.calls.load(Ordering::SeqCst), 1);
+
+    restarted_clock.advance(Duration::from_secs(299));
+    let before_reload_fence = restarted
+        .request_refresh(&account, first.generation, true, 2_799)
+        .unwrap();
+    assert_eq!(before_reload_fence.generation, first.generation);
+    assert_eq!(restarted_executor.calls.load(Ordering::SeqCst), 1);
+
+    restarted_clock.advance(Duration::from_secs(1));
+    let allowed = restarted
+        .request_refresh(&account, first.generation, true, 2_800)
+        .unwrap();
+    assert_eq!(allowed.generation, first.generation + 1);
+    assert_eq!(
+        join_ok(&restarted, &account, allowed.generation, 2_800).phase,
+        UsageRefreshPhase::Completed
+    );
+    assert_eq!(restarted_executor.calls.load(Ordering::SeqCst), 2);
+    assert_eq!(
+        store
+            .load(&account, 2_800)
+            .unwrap()
+            .unwrap()
+            .provider_invoked_at_epoch,
+        Some(2_800),
+        "the reload wait must not rewrite the actual invocation timestamp"
+    );
+}
+
+#[test]
+fn unresolved_updating_marker_gets_reload_fence_without_fabricated_invocation() {
+    let account = capability("unresolved-reload");
+    let mut unresolved = AccountStateEnvelope::idle(account.clone());
+    unresolved.generation = 7;
+    unresolved.phase = UsageRefreshPhase::Updating;
+    unresolved.started_at_epoch = Some(1_000);
+    assert_eq!(unresolved.provider_invoked_at_epoch, None);
+    let store = Arc::new(MemoryStore::default());
+    store
+        .states
+        .lock()
+        .unwrap()
+        .insert(account.clone(), unresolved);
+    let executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
+        quota_view(2_800, 78),
+    )));
+    let clock = Arc::new(ManualClock::at(2_000));
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce concrete ports to coordinator trait objects"
+    )]
+    let provider: Arc<dyn UsageProviderExecutor> = executor.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce concrete ports to coordinator trait objects"
+    )]
+    let state_store: Arc<dyn AccountStateStore> = store.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "share the controllable clock with the coordinator"
+    )]
+    let clock_port: Arc<dyn MonotonicClock> = clock.clone();
+    let coordinator = UsageCoordinator::start_with_clock(
+        provider,
+        state_store,
+        UsageCoordinatorConfig::default(),
+        Some(BTreeMap::from([(account.clone(), "revision-a".into())])),
+        None,
+        clock_port,
+    );
+
+    let recovered = coordinator
+        .request_refresh(&account, 0, true, 2_000)
+        .unwrap();
+    assert_eq!(recovered.generation, 7);
+    assert_eq!(recovered.phase, UsageRefreshPhase::Failed);
+    assert_eq!(recovered.retry_at_epoch, Some(2_300));
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 0);
+    assert_eq!(
+        store
+            .load(&account, 2_000)
+            .unwrap()
+            .unwrap()
+            .provider_invoked_at_epoch,
+        None,
+        "an unresolved attempt is not evidence of an actual provider call"
+    );
+
+    clock.set_wall_epoch(2_500);
+    let after_forward_jump = coordinator
+        .request_refresh(&account, 7, true, 2_500)
+        .unwrap();
+    assert_eq!(after_forward_jump.generation, 7);
+    clock.advance(Duration::from_secs(299));
+    let before_reload_fence = coordinator
+        .request_refresh(&account, 7, true, 2_799)
+        .unwrap();
+    assert_eq!(before_reload_fence.generation, 7);
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 0);
+
+    clock.advance(Duration::from_secs(1));
+    let allowed = coordinator
+        .request_refresh(&account, 7, true, 2_800)
+        .unwrap();
+    assert_eq!(allowed.generation, 8);
+    assert_eq!(
+        join_ok(&coordinator, &account, allowed.generation, 2_800).phase,
+        UsageRefreshPhase::Completed
+    );
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
 }
 
 #[test]
@@ -1009,7 +1223,16 @@ fn catalog_purge_prevents_restart_resurrection() {
         [catalog_entry(&account, "revision-a")],
     );
     second.reconcile_catalog([], 1_002).unwrap();
-    assert_eq!(store.load(&account, 1_002).unwrap(), None);
+    let tombstone = store
+        .load(&account, 1_002)
+        .unwrap()
+        .expect("revocation retains only the active account cooldown tombstone");
+    assert_eq!(tombstone.phase, UsageRefreshPhase::Idle);
+    assert!(tombstone.terminal_result.is_none());
+    assert!(tombstone.last_good.is_none());
+    assert!(tombstone.terminal_error.is_none());
+    assert_eq!(tombstone.provider_invoked_at_epoch, Some(1_000));
+    assert_eq!(tombstone.success_deadline_epoch, Some(1_300));
     drop(second);
 
     let restarted = catalog_coordinator_with_fake_clock(

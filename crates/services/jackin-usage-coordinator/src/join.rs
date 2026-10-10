@@ -139,6 +139,8 @@ impl UsageCoordinator {
                 let recovery_sample = self.shared.clock.sample(now_epoch);
                 let mut envelope =
                     envelope.unwrap_or_else(|| AccountStateEnvelope::idle(capability.clone()));
+                let reload_safety_fence = envelope.provider_invoked_at_epoch.is_some()
+                    || envelope.phase == UsageRefreshPhase::Updating;
                 let recovery_pending = envelope.phase.is_active();
                 if recovery_pending {
                     let recovering_invoked_attempt = envelope.phase == UsageRefreshPhase::Updating;
@@ -193,6 +195,7 @@ impl UsageCoordinator {
                     AccountEntry::new(
                         envelope,
                         recovery_pending,
+                        reload_safety_fence,
                         now_epoch,
                         recovery_sample,
                         catalog_revision,

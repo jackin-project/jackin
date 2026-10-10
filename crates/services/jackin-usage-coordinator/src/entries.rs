@@ -15,7 +15,7 @@ use jackin_protocol::usage_broker::{
 use super::{
     AccountStateEnvelope, AccountStateStore, ClockSample, TERMINAL_HISTORY_LIMIT,
     UsageCoordinatorConfig, UsageProviderExecutor, account_cooldown_deadline, generation_view,
-    reconcile_executor_catalog, restore_catalog_preimages, state_error, unavailable_error,
+    policy, reconcile_executor_catalog, restore_catalog_preimages, state_error, unavailable_error,
 };
 
 /// In-memory periodic cadence for one account. Due times are scheduling
@@ -51,6 +51,7 @@ impl AccountEntry {
     pub(crate) fn new(
         envelope: AccountStateEnvelope,
         recovery_pending: bool,
+        reload_safety_fence: bool,
         now_epoch: i64,
         clock_sample: ClockSample,
         catalog_revision: Option<String>,
@@ -62,7 +63,21 @@ impl AccountEntry {
         let next_due_epoch = account_cooldown_deadline(&envelope)
             .filter(|deadline| *deadline > now_epoch)
             .unwrap_or(now_epoch);
-        let cooldown_not_before_monotonic = runtime_cooldown_deadline(&envelope, clock_sample);
+        let mut cooldown_not_before_monotonic = runtime_cooldown_deadline(&envelope, clock_sample);
+        if reload_safety_fence && envelope.capability.surface_id == "claude" {
+            // A wall deadline cannot prove that a prior invocation's full
+            // interval elapsed across a process restart or clock jump. No
+            // trustworthy boot-relative clock is persisted, so conservatively
+            // start a fresh monotonic fence on load. This is not an invocation
+            // timestamp; queued work still has no provider-call floor.
+            let reload_deadline = clock_sample
+                .monotonic
+                .saturating_add(policy::CLAUDE_MIN_ATTEMPT_INTERVAL);
+            cooldown_not_before_monotonic = Some(
+                cooldown_not_before_monotonic
+                    .map_or(reload_deadline, |deadline| deadline.max(reload_deadline)),
+            );
+        }
         Self {
             envelope,
             history,
@@ -88,8 +103,15 @@ impl AccountEntry {
     }
 
     pub(crate) fn refresh_runtime_cooldown(&mut self, clock_sample: ClockSample) {
-        self.cooldown_not_before_monotonic =
-            runtime_cooldown_deadline(&self.envelope, clock_sample);
+        let existing = self
+            .cooldown_not_before_monotonic
+            .filter(|deadline| *deadline > clock_sample.monotonic);
+        let durable = runtime_cooldown_deadline(&self.envelope, clock_sample);
+        self.cooldown_not_before_monotonic = match (existing, durable) {
+            (Some(existing), Some(durable)) => Some(existing.max(durable)),
+            (Some(existing), None) => Some(existing),
+            (None, durable) => durable,
+        };
     }
 }
 
