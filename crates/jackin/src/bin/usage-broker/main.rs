@@ -14,7 +14,9 @@ use jackin_usage::host::{
     ProviderCredentialSecretSource, UsageBrokerConfig, UsageBrokerForegroundReady,
     UsageDiscoveryScope, run_usage_broker_foreground_bootstrap, run_usage_broker_service,
 };
-use jackin_usage::usage::ClaudeCredentialBootstrapOutcome;
+use jackin_usage::usage::{
+    ClaudeCredentialBootstrapOutcome, ClaudeCredentialPayloadDiagnostic,
+};
 
 #[derive(Default)]
 struct ServiceSecretSource;
@@ -141,13 +143,13 @@ struct ForegroundBootstrapRequest {
 
 type AuthReadyCallback<'a> = Box<dyn FnOnce(UsageBrokerForegroundReady) + 'a>;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 enum ForegroundBootstrapOutcome {
     Acquired,
     Missing,
     Denied,
     InteractionRequired,
-    Malformed,
+    Malformed(ClaudeCredentialPayloadDiagnostic),
 }
 
 impl From<ClaudeCredentialBootstrapOutcome> for ForegroundBootstrapOutcome {
@@ -162,7 +164,7 @@ impl From<ClaudeCredentialBootstrapOutcome> for ForegroundBootstrapOutcome {
             ClaudeCredentialBootstrapOutcome::Missing => Self::Missing,
             ClaudeCredentialBootstrapOutcome::Denied => Self::Denied,
             ClaudeCredentialBootstrapOutcome::InteractionRequired => Self::InteractionRequired,
-            ClaudeCredentialBootstrapOutcome::Malformed => Self::Malformed,
+            ClaudeCredentialBootstrapOutcome::Malformed(diagnostic) => Self::Malformed(diagnostic),
         }
     }
 }
@@ -337,11 +339,9 @@ fn prepare_auth_with<'a>(
         ForegroundBootstrapOutcome::Denied => {
             Err(auth_error("auth_denied", "Keychain access was denied", 2))
         }
-        ForegroundBootstrapOutcome::Malformed => Err(auth_error(
-            "auth_malformed",
-            "the selected Keychain item is not a valid bounded Claude credential",
-            2,
-        )),
+        ForegroundBootstrapOutcome::Malformed(diagnostic) => {
+            Err(auth_malformed_error(diagnostic))
+        }
     }
 }
 
@@ -376,6 +376,19 @@ fn auth_error(code: &str, message: &str, exit_code: i32) -> (i32, String) {
     })
     .to_string();
     (exit_code, json)
+}
+
+fn auth_malformed_error(diagnostic: ClaudeCredentialPayloadDiagnostic) -> (i32, String) {
+    let json = serde_json::json!({
+        "version": 1,
+        "error": {
+            "code": "auth_malformed",
+            "message": "the selected Keychain item is not a valid bounded Claude credential",
+            "diagnostic": diagnostic,
+        }
+    })
+    .to_string();
+    (2, json)
 }
 
 /// Survive the activating client's death so a later launch reuses this

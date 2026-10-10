@@ -180,8 +180,8 @@ pub fn run_usage_broker_foreground_bootstrap(
         ForegroundBootstrapOutcome::InteractionRequired => {
             crate::usage::ClaudeCredentialBootstrapOutcome::InteractionRequired
         }
-        ForegroundBootstrapOutcome::Malformed => {
-            crate::usage::ClaudeCredentialBootstrapOutcome::Malformed
+        ForegroundBootstrapOutcome::Malformed(diagnostic) => {
+            crate::usage::ClaudeCredentialBootstrapOutcome::Malformed(diagnostic)
         }
     })
 }
@@ -195,7 +195,7 @@ pub(super) enum ForegroundBootstrapOutcome<L> {
     Missing,
     Denied,
     InteractionRequired,
-    Malformed,
+    Malformed(crate::usage::ClaudeCredentialPayloadDiagnostic),
 }
 
 /// Generation capability held by the selected foreground credential lease.
@@ -227,8 +227,8 @@ fn foreground_bootstrap_outcome(
         crate::usage::ClaudeCredentialBootstrapOutcome::InteractionRequired => {
             ForegroundBootstrapOutcome::InteractionRequired
         }
-        crate::usage::ClaudeCredentialBootstrapOutcome::Malformed => {
-            ForegroundBootstrapOutcome::Malformed
+        crate::usage::ClaudeCredentialBootstrapOutcome::Malformed(diagnostic) => {
+            ForegroundBootstrapOutcome::Malformed(diagnostic)
         }
     }
 }

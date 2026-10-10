@@ -1,5 +1,28 @@
 # Claude unattended usage monitor
 
+## Bounded auth diagnostic follow-up on main
+
+This narrow follow-up is being developed on isolated branch
+`fix/auth-malformed-diagnostic`, based on remote main
+`3f3ddd7c48284b648b083305f969ee3e709b74b7`. It adds a
+redacted structural diagnostic to `auth_malformed` only when all operator TTY
+streams are attached. The operator command is
+`jackin usage --data-dir PATH auth prepare --provider claude`; the TTY-only
+`error.diagnostic` contains fixed JSON kinds, recognized camel/snake alias
+presence, duplicate-alias booleans, access-token string/nonempty facts, and
+payload/limit byte counts. It exposes no credential values, token length,
+identifiers, snippets, or unknown keys. Payloads above 65,536 bytes skip JSON
+classification. Expiry and account/provider readiness are not established by
+this check.
+
+At this checkpoint, MBX source check and independent read-only review pass.
+Focused fixture tests are compiling but have not passed yet; installed v4
+pair build and fixture verification are pending. No Keychain item, live
+credential, account identity/status, or provider endpoint has been inspected;
+the real account remains unknown. The v3 installation record below is
+historical and untouched. Add the exact source commit, test result, v4 hashes,
+and fixture scope here only after those steps complete.
+
 ## Current delivery checkpoint
 
 Delivery branch: `feat/claude-usage-monitor-main`, isolated from the running Claude checkout. Signed source checkpoint `8abfa235cce150d5382d99a5679afab49e098525` is pushed. The final seven-gate MBX rerun, scoped regression matrix, 1.29-second offline pair build, and installed fixture smoke passed. Smoke exited 0, selected the sibling broker, recorded one JSONL watch event, zero proxy requests and credential-command trips, and left no fixture state or open binaries. CLI SHA-256 is `b57e60f2f13b026ae2ec47034b61ecddc69644b230157e621c5ddb5cf447007d`; broker SHA-256 is `30b6f3b1f0777dbe9181851f83fbc2efb3f0356d290e1896bf2ccaf434fbf550`; manifest SHA-256 is `64a0a101224ad5c38f4292a59c5191a44071fc54eab3cc95e8a57a13bc454601`. Source-head CI run [38044592706](https://github.com/jackin-project/jackin/actions/runs/38044592706) passed for 8abfa: Required, all Rust matrix jobs, and Actionlint succeeded; the baseline publication job was skipped by workflow rules. A later documentation/evidence commit requires its own exact-head checks. CI run `38042237548` and its three failed Rust jobs, and the 45a installed pair, are historical. P2 reply `4237302394` links the fixing commit and is resolved. P1 follow-up proof/reply `4237303703` is resolved; general comment `6096529404` has a linked disposition.

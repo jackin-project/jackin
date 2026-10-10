@@ -97,8 +97,9 @@ pub(crate) use self::claude::{
     push_claude_dollar_windows, resolve_claude_wave,
 };
 pub use self::claude::{
-    ClaudeCredentialBootstrapOutcome, ClaudeCredentialLease, ClaudeKeychainPolicyError,
-    ClaudeKeychainRead, ClaudeUnattendedKeychainGuard, bootstrap_claude_credential,
+    ClaudeCredentialBootstrapOutcome, ClaudeCredentialLease, ClaudeCredentialPayloadDiagnostic,
+    ClaudeKeychainPolicyError, ClaudeKeychainRead, ClaudeUnattendedKeychainGuard,
+    bootstrap_claude_credential, diagnose_claude_profile_payload,
     prepare_claude_keychain_auth, read_claude_keychain_item, unattended_keychain_guard,
 };
 #[cfg(test)]

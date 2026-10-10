@@ -3189,6 +3189,58 @@ fn foreground_broker_conflict_precedes_fake_credential_or_guard_access() {
 }
 
 #[test]
+fn malformed_foreground_bootstrap_reads_once_and_never_starts_collection() {
+    use super::service::{
+        ForegroundBootstrapOutcome, run_usage_broker_foreground_bootstrap_with_for_test,
+    };
+
+    let temp = tempfile::tempdir().expect("isolated malformed data directory");
+    let config = UsageBrokerConfig::for_data_dir(temp.path().to_owned());
+    let diagnostic = crate::usage::diagnose_claude_profile_payload(
+        br#"{"claudeAiOauth":{"accessToken":false}}"#,
+    );
+    let bootstrap_calls = Arc::new(AtomicUsize::new(0));
+    let guard_calls = Arc::new(AtomicUsize::new(0));
+    let ready_calls = Arc::new(AtomicUsize::new(0));
+
+    let result = run_usage_broker_foreground_bootstrap_with_for_test(
+        config,
+        host_desktop_scope(temp.path()),
+        "fixture-malformed-service",
+        {
+            let calls = Arc::clone(&bootstrap_calls);
+            move |_| {
+                calls.fetch_add(1, Ordering::SeqCst);
+                Ok(ForegroundBootstrapOutcome::<FakeForegroundCredentialLease>::Malformed(
+                    diagnostic,
+                ))
+            }
+        },
+        {
+            let calls = Arc::clone(&guard_calls);
+            move || {
+                calls.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            }
+        },
+        {
+            let calls = Arc::clone(&ready_calls);
+            move |_| {
+                calls.fetch_add(1, Ordering::SeqCst);
+            }
+        },
+    );
+
+    assert!(matches!(
+        result.expect("malformed payload exits after the single bootstrap"),
+        ForegroundBootstrapOutcome::Malformed(_)
+    ));
+    assert_eq!(bootstrap_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(guard_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(ready_calls.load(Ordering::SeqCst), 0);
+}
+
+#[test]
 fn foreground_orphan_socket_conflicts_before_credentials_and_stays_untouched() {
     use super::service::{
         ForegroundBootstrapOutcome, run_usage_broker_foreground_bootstrap_with_for_test,

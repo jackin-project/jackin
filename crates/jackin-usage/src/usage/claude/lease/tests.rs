@@ -88,11 +88,17 @@ fn service_identity_hash_preserves_exact_selected_bytes() {
 #[test]
 fn bootstrap_payload_validation_rejects_oversized_and_noncredential_json() {
     let valid = r#"{"claudeAiOauth":{"accessToken":"selected-token"}}"#;
-    assert!(valid_claude_keychain_payload(valid));
-    assert!(!valid_claude_keychain_payload(r#"{"claudeAiOauth":{}}"#));
-    assert!(!valid_claude_keychain_payload("not-json"));
+    assert!(valid_claude_keychain_payload(valid).is_ok());
+    assert!(valid_claude_keychain_payload(r#"{"claudeAiOauth":{}}"#).is_err());
+    assert!(valid_claude_keychain_payload("not-json").is_err());
     let oversized_payload = format!("{valid}{}", " ".repeat(MAX_CLAUDE_KEYCHAIN_PAYLOAD_BYTES));
-    assert!(!valid_claude_keychain_payload(&oversized_payload));
+    let oversized_diagnostic = valid_claude_keychain_payload(&oversized_payload)
+        .expect_err("oversized payload is rejected");
+    assert_eq!(oversized_diagnostic.payload_bytes, oversized_payload.len());
+    assert_eq!(
+        oversized_diagnostic.json,
+        super::super::ClaudePayloadJsonState::SkippedOversize
+    );
 }
 
 #[test]
