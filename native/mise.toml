@@ -9,7 +9,12 @@ run = "find Sources Tests UITests Tools Scripts -name '*.swift' ! -path '*/Jacki
 
 [tasks.format-check]
 description = "Fail on jackin❯ desktop Swift formatting violations"
-run = "find Sources Tests UITests Tools Scripts -name '*.swift' ! -path '*/JackinUsageBindings/*' -print0 | xargs -0 xcrun swift-format lint --configuration .swift-format --strict --parallel"
+run = "export DEVELOPER_DIR=/Applications/Xcode_26.6.app/Contents/Developer; find Sources Tests UITests Tools Scripts -name '*.swift' ! -path '*/JackinUsageBindings/*' -print0 | xargs -0 xcrun swift-format lint --configuration .swift-format --strict --parallel"
+
+[tasks.lint]
+description = "Fail on jackin❯ desktop SwiftLint violations"
+run = "swiftlint lint --strict"
+tools = { swiftlint = "0.65.1" }
 
 [tasks.deadcode]
 description = "Scan jackin❯ desktop for unused declarations"
@@ -17,13 +22,13 @@ run = "periphery scan --project JackinDesktop.xcodeproj --schemes JackinDesktop 
 
 [tasks.ci]
 description = "PR cadence: full nonmutating jackin❯ desktop gate graph"
-dir = ".."
 run = '''
 set -euo pipefail
+cd ..
 mbx +1.99.0 xtask desktop bindings-check
 xcodegen generate --spec native/project.yml
-mise -C native run format-check
-swiftlint lint --strict
+find native/Sources native/Tests native/UITests native/Tools native/Scripts -name '*.swift' ! -path '*/JackinUsageBindings/*' -print0 | xargs -0 xcrun swift-format lint --configuration native/.swift-format --strict --parallel
+swiftlint lint --strict --config native/.swiftlint.yml
 mbx +1.99.0 xtask desktop test
 export JACKIN_APP_VERSION="${JACKIN_APP_VERSION:-0.6.0}"
 export JACKIN_APP_BUILD="${JACKIN_APP_BUILD:-1}"
