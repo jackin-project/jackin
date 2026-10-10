@@ -1014,8 +1014,12 @@ fn projection_account_destinations(
     account: &UsageAccountV1,
     configured_source: Option<&str>,
 ) -> Vec<String> {
-    if account.identity_kind != UsageIdentityKindV1::LocalSourceHandle {
-        return vec![account.canonical_account_id.clone()];
+    match account.identity_kind {
+        UsageIdentityKindV1::ProviderAccountId | UsageIdentityKindV1::ProviderStableHandle => {
+            return vec![account.canonical_account_id.clone()];
+        }
+        UsageIdentityKindV1::UnverifiedHandle => return Vec::new(),
+        UsageIdentityKindV1::LocalSourceHandle => {}
     }
     let Some(source_id) = configured_source else {
         return Vec::new();

@@ -160,6 +160,21 @@ fn local_source_projection_routes_only_to_current_approved_local_partitions() {
         "a binding without collector consent cannot consume source evidence"
     );
 
+    let mut unverified_projection = local_source_projection(&capability_a, 1, NOW);
+    let unverified_account = &mut unverified_projection.providers[0].accounts[0];
+    unverified_account.canonical_account_id = "local-alpha".to_owned();
+    unverified_account.identity_kind = UsageIdentityKindV1::UnverifiedHandle;
+    store
+        .observe_projection(&unverified_projection, NOW)
+        .expect("observe unverified projection without routing it to a local partition");
+    assert_eq!(
+        monitor_status(&store, &monitor_a, NOW)
+            .seven_day
+            .used_percentage_basis_points,
+        Some(4_300),
+        "an unverified canonical ID cannot stand in for a local source capability"
+    );
+
     store
         .operate(
             MonitorOperation::Ingest {

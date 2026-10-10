@@ -8,12 +8,14 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use std::collections::BTreeMap;
+
 use jackin_protocol::control::{
     FocusedUsageView, QuotaBucketView, StatusSlot, UsageConfidence, UsageSeverity,
     UsageSnapshotStatus, UsageSource,
 };
 use jackin_protocol::usage_broker::{
-    UsageAccountCapability, UsageCatalogEntry, UsageFreshnessPhaseV1,
+    UsageAccountCapability, UsageCatalogEntry, UsageFreshnessPhaseV1, UsageIdentityKindV1,
     UsageProjectionRefreshStateV1, UsageRefreshPhase,
 };
 use jackin_protocol::usage_monitor::{
@@ -179,6 +181,13 @@ impl CollectorHarness {
             revision: "collector-test-catalog-revision".to_owned(),
             capability: capability.clone(),
         }];
+        let identity_metadata = BTreeMap::from([(
+            capability.clone(),
+            publish::AccountIdentityMetadata {
+                identity_kind: UsageIdentityKindV1::LocalSourceHandle,
+                provenance_count: 1,
+            },
+        )]);
         let coordinator_clock = Arc::new(CollectorCoordinatorClock::at(NOW));
         let coordinator_clock_for_coordinator: Arc<dyn MonotonicClock> = coordinator_clock.clone();
         let coordinator = Arc::new(UsageCoordinator::with_catalog_and_clock(
@@ -195,7 +204,8 @@ impl CollectorHarness {
             ))),
             FileProjectionStateStore::under_data_dir(temp.path()),
         )
-        .with_catalog(catalog);
+        .with_catalog(catalog)
+        .with_identity_metadata(identity_metadata);
         let store = Arc::new(MonitorStore::open(temp.path()).expect("open monitor state"));
         store.set_experimental_collector_source(Some(source_id));
         Self {
