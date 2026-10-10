@@ -222,6 +222,7 @@ pub(super) struct WorkspaceSpawnTypes {
 }
 
 impl WorkspaceSpawnTypes {
+    #[cfg(test)]
     pub(super) fn collect(files: &[(&str, &syn::File)]) -> Self {
         let mut builder = WorkspaceSpawnTypesBuilder::new(files.iter().map(|(path, _)| *path));
         for (path, syntax) in files {
@@ -278,7 +279,7 @@ impl WorkspaceSpawnTypesBuilder {
 
 #[cfg(test)]
 mod workspace_index_tests {
-    use super::{WorkspaceSpawnTypes, spawn_receiver_type};
+    use super::{WorkspaceSpawnTypes, WorkspaceSpawnTypesBuilder, spawn_receiver_type};
     use std::sync::Arc;
 
     #[test]
