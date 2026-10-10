@@ -379,33 +379,59 @@ fn spawned_ticker_reconciles_one_sleep_jump_and_wakes_monitor_watch() {
     let (watch_result, watcher) =
         watch_for_next_event(Arc::clone(&harness.store), monitor_id, cursor);
     let (shutdown, samples, ready, ticker) = spawn_ticker(&harness);
-    samples
-        .send(ClockSample {
-            wall_epoch: NOW + 11 * 60,
-            monotonic_elapsed: Duration::from_millis(200),
-        })
-        .expect("send post-sleep sample");
+    let sleep_jump = ClockSample {
+        wall_epoch: NOW + 11 * 60,
+        monotonic_elapsed: Duration::from_millis(200),
+    };
+    assert!(wall_clock_wake_detected(
+        NOW,
+        sleep_jump.monotonic_elapsed,
+        sleep_jump.wall_epoch,
+    ));
+    samples.send(sleep_jump).expect("send post-sleep sample");
     wait_ticker_ready(&ready);
 
     assert_watch_event(&watch_result);
     assert_eq!(harness.executor.calls.load(Ordering::SeqCst), 0);
+    let after_idle_window = ClockSample {
+        wall_epoch: NOW + 22 * 60,
+        monotonic_elapsed: Duration::from_mins(11),
+    };
+    samples
+        .send(after_idle_window)
+        .expect("send sample after eleven idle minutes");
+    wait_ticker_ready(&ready);
+
     assert!(
         !should_exit_idle(
-            Duration::from_mins(11),
+            after_idle_window.monotonic_elapsed,
             Duration::ZERO,
             Duration::from_mins(10),
             harness.coordinator.is_idle(),
             harness.store.has_active(),
+            false,
         ),
         "an active monitor keeps the service out of idle exit after wake"
     );
     assert!(should_exit_idle(
-        Duration::from_mins(11),
+        after_idle_window.monotonic_elapsed,
         Duration::ZERO,
         Duration::from_mins(10),
         true,
         false,
+        false,
     ));
+    assert!(
+        !should_exit_idle(
+            after_idle_window.monotonic_elapsed,
+            Duration::ZERO,
+            Duration::from_mins(10),
+            true,
+            false,
+            true,
+        ),
+        "foreground collector liveness keeps a prepared broker alive beyond the idle timeout"
+    );
 
     shutdown_ticker(shutdown, samples, ticker);
     watcher.join().expect("join watch thread");
