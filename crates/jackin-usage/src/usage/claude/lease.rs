@@ -5,7 +5,6 @@
 
 use std::sync::{Mutex, OnceLock, atomic::AtomicU64};
 
-#[cfg(any(target_os = "macos", test))]
 use zeroize::Zeroize;
 use zeroize::Zeroizing;
 
@@ -233,7 +232,6 @@ pub fn bootstrap_claude_credential(
     }
 
     match prepare_claude_keychain_auth(service) {
-        #[cfg(any(target_os = "macos", test))]
         ClaudeKeychainRead::Payload { mut json } => {
             if !valid_claude_keychain_payload(&json) {
                 json.zeroize();

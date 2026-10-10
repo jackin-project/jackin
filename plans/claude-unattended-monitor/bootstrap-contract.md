@@ -1,18 +1,16 @@
 # Foreground Claude bootstrap and explicit usage collection
 
-**Status: implemented in source. The installed wire-v8 fixture passed at
-checkpoint `8288ef4a4e174624e353f8748304766ce98e5822`; rebuild and rerun the
-matching pair after the current lifecycle and recovery fixes before treating
-the final source as verified. Successful attended Keychain authorization and
-foreground bootstrap, real-account binding, and live provider collection
+**Status: implemented in source. The matching pair built from checkpoint
+`22ac3581a70310b9792f03d71168ee8bdd799591` passed the final MBX build and
+isolated installed fixture. Linux Required CI has three reported Clippy
+failures, so PR CI remains pending. Successful attended Keychain authorization
+and foreground bootstrap, real-account binding, and live provider collection
 remain unverified. The initial attended Keychain read may prompt; later
 unattended reads run under a no-UI guard and fail with `interaction_required`
 if UI would be required. That guard does not guarantee credential availability
 or validity.**
-The checkpoint pair's hashes and fixture results describe that checkpoint
-only, not the current follow-up source. See the [recorded handoff](claude-code-handoff.md),
-[installation evidence](v3-installation.json), and
-[fixture log](v3-installed-smoke.log).
+The pair's source provenance, hashes, and fixture results are recorded in the
+[installation manifest](v3-installation.json) and [fixture log](v3-installed-smoke.log).
 
 ## Implemented path and limits
 
@@ -198,9 +196,10 @@ success cooldown.
 Persisted deadlines use wall-clock epochs. A sufficiently large clock change
 between restarts can make an epoch deadline appear expired early, so this does
 not guarantee that a `Retry-After` interval survives arbitrary clock jumps.
-Focused lifecycle and recovery regressions are in source; their final MBX
-verification is pending. This is not a claim of live-provider rate-limit
-behavior.
+The lifecycle and recovery fixes pass the current 57-test coordinator scope
+and 28-test Claude provider and lease lifecycle scope. Linux Required CI has
+three reported Clippy failures; PR CI remains pending. This is not a claim of
+live-provider rate-limit behavior.
 
 An observation may collect quota evidence without an SGD receipt, goal, or
 dispatch policy. It remains `observe_only`, `goal_id=null`,
@@ -247,28 +246,28 @@ Keep strict history intact. Any migration incompatibility fails closed.
 
 The current source implements the foreground bootstrap, selected-service
 zeroizing cache, no-UI guard, explicit binding approval, and opt-in observer
-path. The matching CLI and broker built at checkpoint
-`8288ef4a4e174624e353f8748304766ce98e5822` passed the isolated v3 installed
-fixture for help, sibling selection, passive-service, observer, and statusline
-checks. The fixture observed zero HTTP-proxy requests and no dispatch policy
-approvals. It did not instrument native Security Framework calls or exercise
-successful foreground authentication. It used fixture state, not a real
-account or configured evidence store. Its exact source provenance, binary
-hashes, and result are recorded in [v3-installation.json](v3-installation.json).
-The earlier wire-v7 pair is historical evidence only.
+path. The matching CLI and broker built from checkpoint
+`22ac3581a70310b9792f03d71168ee8bdd799591` passed the offline, locked MBX build
+in 37.02 seconds (0 B reported) and the isolated v3 installed fixture. The
+fixture verified the exact installed sibling broker with
+`JACKIN_USAGE_BROKER_BIN` unset, and observed zero HTTP-proxy requests and zero
+credential-command executions. It did not instrument native Security
+Framework calls or exercise successful foreground authentication. It used
+fixture state, not a real account or configured evidence store. Source
+provenance, binary hashes, and fixture result are recorded in
+[v3-installation.json](v3-installation.json) and
+[v3-installed-smoke.log](v3-installed-smoke.log).
 
-The checkpoint fixture does not cover the current lifecycle and recovery
-follow-up changes. Rebuild the matching pair from the final source, refresh its
-provenance and binary hashes, and rerun the installed fixture after the
-remaining MBX and Linux gates pass. Neither the checkpoint fixture nor current
-source tests establish successful authorization on this Mac, a stable
-provider-account identity, or successful live collection. The no-UI guarantee
-applies to unattended Keychain reads after the guard is established; the
-attended initial read may prompt, and credential availability and provider
-acceptance are not guaranteed. The route remains experimental, undocumented,
-and unsupported; it can return 403 or change without notice. This document
-does not make a provider-readiness claim or authorize live credential/provider
-checks.
+The 57-test coordinator scope and 28-test Claude provider and lease lifecycle
+scope pass for the current source. Linux Required CI has three reported Clippy
+failures, and PR CI remains pending. Neither the build, fixture, nor source
+tests establish successful authorization on this Mac, a stable provider-account
+identity, or successful live collection. The no-UI guarantee applies to
+unattended Keychain reads after the guard is established; the attended initial
+read may prompt, and credential availability and provider acceptance are not
+guaranteed. The route remains experimental, undocumented, and unsupported; it
+can return 403 or change without notice. This document does not make a
+provider-readiness claim or authorize live credential/provider checks.
 
 No auth/settings/Claude-project writes, live Keychain or provider checks,
 operator setup, or PR completion are part of this contract-writing task.

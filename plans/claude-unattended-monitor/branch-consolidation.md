@@ -6,27 +6,28 @@ ref was changed for this record.
 ## Current supplemental review
 
 The independent 28-commit source audit covered the groups below against source
-tip `771bb088` and canonical target `8288ef4a`, including the current
-uncommitted rate-limit and security fixes. The requested lifetime lease,
-legacy-runtime removal, and catalog-diagnostic publication regressions are
-present in source and fixtures. This review finds the source consolidation
-semantically ready at the static level. The selected offline gates were green
-at `8288ef4a` before the current rate-limit/security fixes; those fixes still
-need their final rebuild and gate rerun. The installed `8288ef4a` smoke
-checkpoint passed, but the final-fix binary has not been rebuilt, so this is
-not an overall readiness or release claim.
+tip `771bb088` and canonical target `22ac3581a70310b9792f03d71168ee8bdd799591`.
+The target source is committed and pushed, and the installer confirmed its
+clean build capture. Static review found the lifetime lease, legacy-runtime
+removal, and catalog-diagnostic publication behavior in source and fixtures.
+The latest bounded source gates recorded in [verification.md](verification.md)
+include 57 coordinator tests, 11 coordinator-state tests, and 28 Claude
+provider/lease lifecycle tests, alongside the selected consumer, integration,
+formatting, and Clippy scopes. These source results do not close the final
+installed-pair rebuild/smoke or the new Linux Required CI run; no completion,
+merge, or release readiness is claimed here.
 
 | Source group | Current disposition |
 | --- | --- |
 | `e5ee84f`, `4492d3c` | Source observation/dispatch semantics are re-expressed in current wire v8, projection v3, and store v4 contracts, with explicit migration; source wire v7 is historical, not the target version. Observation never grants dispatch. |
-| `2031b55`, `427c104` | Invocation floors, catalog cooldowns, the SGD45 readiness stop, closed-period corrections, and historical uncertainty map to current coordinator/spend code and fixtures. Final gates must be rerun after the pending rate-limit/security fixes. |
+| `2031b55`, `427c104` | Invocation floors, catalog cooldowns, the SGD45 readiness stop, closed-period corrections, and historical uncertainty map to current coordinator/spend code and fixtures; latest bounded coordinator and spend scopes are recorded in verification.md. |
 | `2e984db`, `887a1b4`, `e586381` | Exact-source attended bootstrap, guarded Keychain reads, and removal of the Claude CLI fallback are represented with forbidden-route guards. No live Keychain proof. |
-| `4c6ba90`, `013e5e6`, `d06582d` | Opaque typed diagnostics, atomic catalog publication, incremental diagnostic retention, and clean-scan clearing are represented in source and fixtures. Their selected offline gates passed at `8288ef4a`; final-fix rerun remains pending. |
-| `29db185`, `f669ec7` | The legacy public `HostUsageRuntime` path is removed; the projection runtime and active broker client remain. Lifetime lease ownership, wake renewal, stale-owner fencing, and dead-owner reclamation are represented in source and fixtures. |
-| `6c1709e`, `7bd6871` | Direct CLI monitor/status/watch/wait contracts are retained. The installed `8288ef4a` smoke checkpoint passed; rebuild and installed check after the pending fixes remain. Predecessor install evidence is not target proof. |
+| `4c6ba90`, `013e5e6`, `d06582d` | Opaque typed diagnostics, atomic catalog publication, incremental diagnostic retention, and clean-scan clearing are represented in source and fixtures; the latest recorded broker scope includes these regressions. |
+| `29db185`, `f669ec7` | The legacy public `HostUsageRuntime` path is removed; the projection runtime and active broker client remain. Lifetime lease ownership, wake renewal, stale-owner fencing, and dead-owner reclamation are represented in source and fixtures; the latest broker and Claude lifecycle scopes are recorded in verification.md. |
+| `6c1709e`, `7bd6871` | Direct CLI monitor/status/watch/wait contracts are retained. The clean 22ac source build capture is confirmed; final installed-pair rebuild/smoke remains pending. Predecessor install evidence and the 8288 checkpoint are not final target proof. |
 | Remaining documentation/design commits | Preserve dated v2 evidence as historical. Current wire v8, projection v3, store v4, and the bootstrap contract supersede predecessor command and schema claims. Do not import predecessor success claims. |
 
-The archive tag still peels to source tip `771bb088dd93451654f992aeef1b8976ad84ec85`. There is one delivery branch, `feat/claude-usage-monitor-main`; no raw merge of the 203 unrelated Rust-policy commits is authorized or needed. Source branch retirement waits for final consolidation/landing gates. Checkpoint gate and installation provenance are tracked in [verification.md](verification.md); they do not cover the pending final-fix rebuild. All Cargo verification uses the Mise-to-MBX wrapper.
+The archive tag still peels to source tip `771bb088dd93451654f992aeef1b8976ad84ec85`. There is one delivery branch, `feat/claude-usage-monitor-main`; no raw merge of the 203 unrelated Rust-policy commits is authorized or needed. Final installed-pair proof, Linux Required CI, and branch/PR review remain open; this inventory does not authorize branch retirement or merge. Gate and installation provenance are tracked in [verification.md](verification.md). All Cargo verification uses the Mise-to-MBX wrapper.
 
 ## Earlier inventory snapshot
 

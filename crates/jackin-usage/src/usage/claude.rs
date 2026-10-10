@@ -1072,7 +1072,6 @@ where
 {
     match state.read_with(&scope.service, keychain_reader) {
         ClaudeKeychainRead::Denied => ClaudeWaveResolution::Denied,
-        #[cfg(any(target_os = "macos", test))]
         ClaudeKeychainRead::Payload { json } => {
             let Some(ClaudeProfilePayload {
                 credential: Some(credential),

@@ -4,16 +4,21 @@
 
 The canonical branch is `feat/claude-usage-monitor-main`, based on main
 `868ce535`. Pushed checkpoint `471efcb2` is earlier source evidence. The latest
-source checkpoint recorded here is `8288ef4a4e174624e353f8748304766ce98e5822`.
-It uses broker wire v8, projection schema v3, durable monitor schema v4
+signed, committed, and pushed source checkpoint is
+`22ac3581a70310b9792f03d71168ee8bdd799591`. It uses broker wire v8, projection
+schema v3, durable monitor schema v4
 (unchanged), and statusline input v2; `LocalSourceHandle` is distinct from
-provider identity. Checkpoint 8288 passed the selected offline source checks,
-MBX build, and isolated installed smoke described below. Later bounded source
-tests and independent reviews cover the retry/cooldown and security lifecycle
-roots, and the corrected contract baseline now passes 10/10. The current
-consumer/integration matrix passes, including app and broker installation.
-Final scoped formatting and strict Clippy across all targets pass. Linux
-Required CI rerun and final installed-pair rebuild/smoke remain open.
+provider identity. The earlier checkpoint 8288 passed selected offline source
+checks, MBX build, and isolated installed smoke. All scoped source tests,
+independent reviews, consumer/integration tests, formatting, and strict Clippy
+passed on checkpoint 22ac3581. Its installed pair also passed the isolated
+fixture smoke below. The subsequent frozen cfg fix passes seven-package
+format, source-check, and strict-Clippy scopes, plus affected Claude, broker,
+and discovery tests; it is not yet represented by a new source checkpoint.
+The prior Linux CI run had five failed Rust jobs, all reporting the same three
+E0004 match-site diagnostics; one Required aggregate check failed from those
+jobs. A green Required CI rerun and a new checkpoint's installed build/smoke
+remain pending.
 
 The earlier five-package MBX consumer compile check predates the current
 wire-v8, projection-v3, and clock-fix changes and is historical. At checkpoint
@@ -21,8 +26,12 @@ wire-v8, projection-v3, and clock-fix changes and is historical. At checkpoint
 seven-package formatting, and selected offline gates below passed. Required
 Linux CI failed at that checkpoint on the `--modes` enum-import and
 Clippy-nesting issues. Earlier local seven-package check, formatting, and
-Clippy runs passed, and the final scoped formatting and strict Clippy recheck
-now pass. The full Linux Required CI rerun remains pending.
+Clippy runs passed for checkpoint 22ac3581. The subsequent frozen cfg fix now
+passes its selected seven-package MBX format/check/Clippy scopes and affected
+tests; a new source checkpoint and green Required CI rerun remain pending.
+The prior Linux CI run had five failed Rust jobs, all reporting the same three
+E0004 match-site diagnostics; one Required aggregate check failed from those
+jobs.
 
 Current Cargo verification must use MBX 1.22.0 with offline/locked flags.
 Earlier checks used the checked-in Mise-to-MBX Cargo wrapper. Current isolated
@@ -81,14 +90,21 @@ active `HostUsageProjectionRuntime` remains. This was checked against current
 consumers and the seven-package scoped check. The retry/cooldown and security
 lifecycle roots were open at checkpoint 8288; their latest targeted test and
 review evidence is recorded below. The Linux Required job failed at 8288 on
-the `--modes` enum-import and Clippy-nesting issues, and has not yet been
-rerun.
+the `--modes` enum-import and Clippy-nesting issues. The later Linux CI run
+had five failed Rust jobs, all reporting the same three E0004 match-site
+diagnostics; one Required aggregate check failed from those jobs. The frozen
+cfg fix's selected MBX checks and affected test suites now pass, while a green
+Required CI rerun remains pending.
 
 ## Latest bounded source verification
 
 These scoped results are newer than the checkpoint 8288 matrix above. They
-verify the current working candidate at source checkpoint 8288; they do not
-establish that a final installed pair or full Linux CI run has been produced.
+verify signed, pushed source checkpoint
+`22ac3581a70310b9792f03d71168ee8bdd799591`; they do not cover the subsequent
+frozen cfg fix. The installed pair for 22ac3581 passed its fixture smoke below.
+The prior Linux CI run had five failed Rust jobs, all reporting the same three
+E0004 match-site diagnostics; one Required aggregate check failed from those
+jobs.
 Each suite is an independent scope and overlaps other suites; do not sum test
 counts.
 
@@ -116,6 +132,25 @@ counts.
 | Claude provider and lease lifecycle | 28 passed | `/private/tmp/jackin-mbx-v4-final-claude-tests.log` |
 | Contract baseline | 10 passed | `/private/tmp/jackin-mbx-v4-final-contract-baseline2.log` |
 
+## Frozen cfg-fix worktree verification
+
+These results cover the frozen cfg fix in the worktree after checkpoint
+22ac3581. They do not identify a new committed source checkpoint and do not
+cover a new installed pair. Each affected suite is an independent scope.
+
+| Scope | Result | Evidence |
+| --- | --- | --- |
+| Seven-package formatting | Passed | `/private/tmp/jackin-mbx-v4-linux-payload-fmt.log` |
+| Seven-package source check | Passed | `/private/tmp/jackin-mbx-v4-linux-payload-check.log` |
+| Seven-package strict Clippy, all targets | Passed | `/private/tmp/jackin-mbx-v4-linux-payload-clippy.log` |
+| Claude provider and lease lifecycle | 28 passed | `/private/tmp/jackin-mbx-v4-linux-payload-claude.log` |
+| Host broker | 183 passed, 0 failed, 522 filtered | `/private/tmp/jackin-mbx-v4-linux-payload-broker.log` |
+| Discovery | 41 passed | `/private/tmp/jackin-mbx-v4-linux-payload-discovery.log` |
+
+The prior Linux CI run still needs a green Required rerun after the cfg fix.
+Record a new source checkpoint, then build/install and smoke that exact source;
+the installed 22ac pair below does not cover this fix.
+
 The retry/cooldown suites cover restart floor recovery, projection cadence,
 and active cooldown tombstones across loaded, lazy-loaded, and
 pending-before-purge paths. Independent review confirmed the corrected
@@ -137,9 +172,40 @@ provider-call inventory. The earlier 9/10 run failed because its inventory
 expected the pre-rename wrapper route; it is superseded by the passing result
 in the table. Host inventory, runtime, CLI, app, FFI, console, capsule,
 bootstrap/monitor, broker-lifecycle, and broker-installation results complete
-the current consumer/integration matrix. Final scoped formatting and strict
-Clippy across all targets pass. Linux Required CI and a rebuilt installed pair
-are still pending.
+the current consumer/integration matrix for checkpoint 22ac3581. Scoped
+formatting and strict Clippy across all targets passed for that checkpoint.
+Its MBX installed pair passed the isolated fixture smoke. The frozen cfg fix
+passes the additional worktree checks above but remains uncheckpointed; the
+prior Linux CI run had five failed Rust jobs, all reporting the same three
+E0004 match-site diagnostics, and one Required aggregate check failed from
+those jobs. A green Required CI rerun and installed smoke of a new checkpoint
+remain pending.
+
+## Installed fixture checkpoint 22ac3581
+
+The installed pair for signed, pushed checkpoint
+`22ac3581a70310b9792f03d71168ee8bdd799591` through MBX 1.22.0 with offline,
+locked flags. Build time was 37.02 seconds and reported network transfer was
+0 bytes. Build log: `/private/tmp/jackin-mbx-build-22ac3581.log`.
+
+The installed fixture smoke passed:
+`/private/tmp/jackin-v3-installed-smoke-22ac3581.log`. It verified the exact
+installed CLI hash `7f7d99960351b1da8fe3da9cd6ac35d577261bcdc42325a40d5e2d146d2d8225`
+and broker hash `b74c9cae283f454fcffe6b5c13e6fd498017fec3d808c97a8aeba72ea7f5bcc0`,
+also recorded in [v3-installation.json](v3-installation.json) and
+[v3-checks.json](v3-checks.json). It selected the installed sibling broker
+with `JACKIN_USAGE_BROKER_BIN` unset, and recorded zero HTTP-proxy requests and
+zero credential-command executions. The fixture state was empty afterward;
+the service process and its open files were absent after orderly stop. The
+provenance manifest SHA-256 is
+`3982ae357883ec5e67ab586790dc1b195024290e4731e9f963dbbb8555381738`.
+The frozen installed transcript is [v3-installed-smoke.log](v3-installed-smoke.log).
+
+Native Security Framework calls were not instrumented; foreground auth
+success, live account/provider readiness, and dispatch approval were not
+tested. Real-account setup remains operator-controlled and unverified.
+Checkpoint 8288's earlier fixture transcript is preserved in
+`v3-installed-smoke-checkpoint-8288.log` and does not describe the 22ac pair.
 
 Passive usage `status`, `watch`, `wait`, `doctor`, and `current` reads remain
 credential- and network-free in the selected offline scopes. Standalone
@@ -164,9 +230,10 @@ The smoke verified the installed sibling broker with
 HTTP-proxy requests, zero credential-command executions, and orderly fixture
 cleanup. Native Security Framework calls were not instrumented; foreground
 auth success and dispatch approval were not exercised. The smoke does not
-assert persistence of a projection envelope. This is checkpoint evidence only:
-rebuild and rerun from final source after the contract, consumer, and Linux
-Required CI gates pass.
+assert persistence of a projection envelope. This section is historical
+evidence for source checkpoint 8288. The separate installed pair for checkpoint
+22ac3581 is recorded above; a new pair must be built after the frozen cfg fix
+receives its own source checkpoint and required gates pass.
 
 Previously recorded pre-v8 scopes: protocol 133; broker 173; Claude
 fake-auth/provider 25; CLI usage 43; app 29; coordinator 54. These historical

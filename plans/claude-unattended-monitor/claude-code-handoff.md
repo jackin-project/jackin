@@ -1,35 +1,38 @@
 # Claude Code usage observer handoff
 
-**Install checkpoint passed the isolated fixture, but this pair is not final or
-ready for handoff activation.** CLI and matching sibling broker are version
+**Installed pair verified in an isolated fixture; live account setup remains
+unverified and setup-blocked.** CLI and matching sibling broker are version
 `0.6.4`, built and installed from source commit
-`8288ef4a4e174624e353f8748304766ce98e5822`. A narrow conservative startup-floor
-source correction for persisted rate deadlines and a generation/liveness gate
-for late 401 Retry-After responses after foreground teardown are pending. An
-abrupt forward wall-clock step between process restarts can expire an
-epoch-based deadline early; this checkpoint does not claim protection against arbitrary clock
-tampering. Rebuild and rerun the installed fixture from the follow-up source
-commit before activating this handoff.
+`22ac3581a70310b9792f03d71168ee8bdd799591` with MBX `1.22.0` and Rust
+`1.97.1` using offline, locked inputs.
 
 - CLI: `/Users/donbeave/.local/share/jackin-claude-monitor-v3/bin/jackin`
 - Broker: `/Users/donbeave/.local/share/jackin-claude-monitor-v3/bin/jackin-usage-broker`
-- CLI SHA-256: `3b4ff49c100c3aa925fd25535ec5907ddaef0fc10d99a787abe51075f0fc50b2`
-- Broker SHA-256: `3b30926a6cd1ceab8a41aeb7fb09e321e4976f7fb92a6054372529b1a8f0332e`
+- CLI SHA-256: `7f7d99960351b1da8fe3da9cd6ac35d577261bcdc42325a40d5e2d146d2d8225`
+- Broker SHA-256: `b74c9cae283f454fcffe6b5c13e6fd498017fec3d808c97a8aeba72ea7f5bcc0`
 - Current installed fixture: [v3-installed-smoke.log](v3-installed-smoke.log)
+- Prior wire-v8 checkpoint: [v3-installed-smoke-checkpoint-8288.log](v3-installed-smoke-checkpoint-8288.log)
 - Historical wire-v7 fixture: [v3-installed-smoke-wire7.log](v3-installed-smoke-wire7.log)
 - Installed provenance: `/Users/donbeave/.local/share/jackin-claude-monitor-v3/docs/build-provenance.json`
 
-The current checkpoint uses broker wire v8, projection envelope schema 3,
-statusline input schema 2, and durable monitor schema 4. Its isolated fixture
+The installed pair uses broker wire v8, projection envelope schema 3,
+statusline input schema 2, and durable monitor schema 4. The isolated fixture
 verified the exact installed sibling broker with
 `JACKIN_USAGE_BROKER_BIN` unset, observed zero HTTP proxy requests and zero
 credential-command tripwire executions, and removed its fixture after orderly
-stop. The fixture does not instrument native Security Framework calls and did
-not exercise successful foreground authentication. Projection migration is
-covered by its dedicated offline tests; installed smoke does not persist a
-projection envelope. No live Keychain authorization, provider request, or
-real-account readiness was verified. The experimental endpoint remains
+stop. Projection migration is covered by dedicated offline source tests; the
+installed smoke does not persist a projection envelope. The fixture does not
+instrument native Security Framework calls and did not exercise successful
+foreground authentication. No live Keychain authorization, provider request,
+or real-account readiness was verified. The experimental endpoint remains
 unsupported and may fail.
+
+Source checks cover the persisted 300-second recovery floor and generation /
+liveness admission for foreground retry after credential reread. An abrupt
+forward wall-clock step between processes can still make an epoch-based
+persisted deadline appear expired early; this is not a guarantee against
+arbitrary clock tampering. Previously admitted I/O may finish after teardown,
+but teardown prevents new attempts from being admitted.
 
 The installed v3 `state/` is empty: this install has no verified live bootstrap,
 source binding, or monitor. Its readiness is setup-blocked. Do not activate
@@ -42,7 +45,7 @@ verified quota or spend limits.
 
 ### Paste-ready note for the existing Claude goal
 
-> Keep Jackin alongside this existing Claude goal; do not create or replace the goal, change its policy, or activate collection or dispatch. The v3 state is empty and this source checkpoint awaits follow-up safety fixes: report setup-blocked once and stop new dispatch. After the operator completes attended bootstrap and binding, and separately verifies any already-approved dispatch policy, read `/Users/donbeave/.local/share/jackin-claude-monitor-v3/bin/jackin usage --data-dir /Users/donbeave/.local/share/jackin-claude-monitor-v3/state status --monitor "$MONITOR_ID" --format json`; require `status.schema_version == 4`. Inspect both quota windows and freshness, `runnable`, decision actions, and issue codes. Unknown extra usage is not permission.
+> Keep Jackin alongside this existing Claude goal; do not create or replace the goal, change its policy, or activate collection or dispatch. The v3 state is empty: report setup-blocked once and stop new dispatch. After the operator completes attended bootstrap and binding, and separately verifies any already-approved dispatch policy, read `/Users/donbeave/.local/share/jackin-claude-monitor-v3/bin/jackin usage --data-dir /Users/donbeave/.local/share/jackin-claude-monitor-v3/state status --monitor "$MONITOR_ID" --format json`; require `status.schema_version == 4`. Inspect both quota windows and freshness, `runnable`, decision actions, and issue codes. Unknown extra usage is not permission.
 
 The current v3 state directory is isolated and empty. Do not point these
 commands at an old v1/v2 store or any existing state that must be preserved.
