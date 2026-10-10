@@ -17,10 +17,12 @@ const MAX_COMPOSED_COMMAND_BYTES: usize = 64 * 1024;
 
 /// Add bounded usage ingestion after a Claude Code statusline command.
 ///
-/// The returned value preserves the input settings semantically, changing only
-/// `statusLine.command`. If settings have no `statusLine`, the returned value
-/// adds a command that consumes input without rendering output before ingesting.
-/// This function fails closed when it cannot preserve an existing command.
+/// The returned JSON merge patch contains only the composed `statusLine`,
+/// preserving its existing properties and command semantics. Operators must
+/// merge this property into the existing settings rather than replace the file
+/// with the patch. If settings have no `statusLine`, the patch adds a command
+/// that consumes input without rendering output before ingesting. This function
+/// fails closed when it cannot preserve an existing command.
 #[expect(
     clippy::disallowed_methods,
     reason = "bounded synchronous settings input is read only by this operator CLI, outside render/runtime threads"
@@ -127,7 +129,11 @@ pub(super) fn compose(
             }),
         );
     }
-    Ok(value)
+    let status_line = root
+        .get("statusLine")
+        .cloned()
+        .context("composed Claude Code statusLine is missing")?;
+    Ok(serde_json::json!({ "statusLine": status_line }))
 }
 
 fn wrapper_command(

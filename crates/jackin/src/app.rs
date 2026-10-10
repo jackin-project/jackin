@@ -90,6 +90,7 @@ pub async fn run(cli: Cli, lifecycle: crate::lifecycle::ProductLifecycle) -> Res
         Some(cmd) => cmd,
         None => Command::Console(cli.console_args),
     };
+    let announce_teardown = should_announce_run_teardown(&command);
     let command_name = crate::cli::command_name(&command);
     let app_mode = command_app_mode(&command);
     let paths = JackinPaths::detect()?;
@@ -104,7 +105,7 @@ pub async fn run(cli: Cli, lifecycle: crate::lifecycle::ProductLifecycle) -> Res
     // subscriber exists, so configuration failures share the one-shot harness.
     if let Some(requested) = jackin_diagnostics::unsupported_otlp_protocol() {
         let result = Err(crate::error::JackinError::UnsupportedOtlpProtocol { requested }.into());
-        finish_invocation(&diagnostics, invocation, &result);
+        finish_invocation(&diagnostics, invocation, &result, announce_teardown);
         return result;
     }
 
@@ -114,7 +115,7 @@ pub async fn run(cli: Cli, lifecycle: crate::lifecycle::ProductLifecycle) -> Res
         Ok(loaded) => loaded,
         Err(error) => {
             let result: Result<()> = Err(error.into());
-            finish_invocation(&diagnostics, invocation, &result);
+            finish_invocation(&diagnostics, invocation, &result, announce_teardown);
             return result;
         }
     };
@@ -200,7 +201,7 @@ pub async fn run(cli: Cli, lifecycle: crate::lifecycle::ProductLifecycle) -> Res
     if interactive {
         invocation.exit_requested();
     }
-    finish_invocation(&diagnostics, invocation, &result);
+    finish_invocation(&diagnostics, invocation, &result, announce_teardown);
     result
 }
 
@@ -208,13 +209,20 @@ fn finish_invocation(
     diagnostics: &jackin_diagnostics::RunDiagnostics,
     invocation: crate::lifecycle::InvocationTelemetry,
     result: &Result<()>,
+    announce_teardown: bool,
 ) {
     record_run_error(result);
     // Emit per-stage duration summary before the run guard drops (Defect 47.5).
     // The guard's Drop then flushes OTLP, so the summary makes the export.
     diagnostics.emit_run_summary();
-    announce_run_teardown(diagnostics);
+    if announce_teardown {
+        announce_run_teardown(diagnostics);
+    }
     let _classification = invocation.finish(result);
+}
+
+fn should_announce_run_teardown(command: &Command) -> bool {
+    !matches!(command, Command::Usage(_))
 }
 
 fn load_startup_config(

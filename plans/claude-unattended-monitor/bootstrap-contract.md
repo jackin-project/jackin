@@ -48,9 +48,9 @@ broker status response is secret-free and reports local service readiness only;
 it does not establish endpoint availability or provider support. The planned
 `service_ready` response is emitted once while the command remains attached to
 the foreground service; the operator ends that process to release the lease
-and cache. Do not background or detach it. The planned wire/schema versions
-are protocol v7 and monitor schema 3; verify the implementation and migration
-before publishing those versions as current.
+and cache. Do not background or detach it. The candidate versions are broker
+wire v7, normalized statusline input v2, and durable monitor state v4. Keep
+wire and callback input versions unchanged for the durable-state migration.
 
 Sequence: run `auth prepare` in one attended terminal and leave it in the
 foreground after `service_ready`. From a second attended terminal using the
@@ -90,6 +90,36 @@ resolve a different Claude source. Only the explicitly enabled collector may
 make the narrow usage request. Do not let a whole-projection refresh, a bare
 `usage` display, statusline ingress, or another caller implicitly enable it.
 
+## Statusline compose output and operator merge
+
+`usage statusline compose` reads the supplied settings file but prints a JSON
+Merge Patch with exactly one top-level property: `statusLine`. Its value is the
+proposed statusline object. If the input already has a command statusline, the
+proposal preserves its `type` and other statusline command metadata/options,
+changing only `command` to compose the existing command with Jackin ingestion.
+If the input has no statusline, the proposal adds a command statusline. The
+new-statusline patch shape is:
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "<composed command>"
+  }
+}
+```
+
+When an existing statusline is present, its additional `statusLine` properties
+are also preserved in the patch. The output does not echo unrelated top-level
+settings or environment values.
+
+Composition is read-only: Jackin never applies the patch or writes or modifies
+Claude settings. The operator reviews the patch and, if choosing to enable the
+integration, manually merges only its `statusLine` property into the existing
+settings file. Preserve every other setting. Never replace the complete
+settings file with the patch. This contract authorizes no live Claude settings
+change.
+
 ## Experimental collector and evidence
 
 Research targets the observed Claude usage route `GET /api/oauth/usage`. It is
@@ -121,13 +151,23 @@ intentional overage.
 
 ## Migration and verification gates
 
-The current port plan carries protocol v7 and monitor schema 3. The migration
-must preserve goals, policy origin/revisions, spend provenance, event and
-decision sequences, evidence ages, cooldowns, and existing guards. Initialize
-provider-account mappings and experimental-collector opt-ins empty. Existing
-records must not gain collection permission automatically; unmapped active
-guards remain blocked/unknown until explicit operator reconfirmation. Keep
-strict history intact. Any migration incompatibility fails closed.
+The candidate port carries broker wire v7, normalized statusline input v2, and
+durable monitor schema v4. Migrate V1, V2, and V3 snapshots explicitly to V4.
+Preserve strict policy, baselines, spend and other history, action/event
+sequences, evidence ages, cooldowns, and existing unknown/latched state. The V4
+durable field `historical_correction_horizon_epoch` records the latest verified
+closed billing period that can no longer be corrected from retained account
+receipts. It prevents later receipts from rolling an affected goal back to a
+complete/known state. An older unretained correction remains audit-only and
+unverified; if its horizon crosses a goal's baseline, keep that goal's known
+cumulative-spend estimate while latching cumulative completeness false and
+rollover unknown. Fresh newer receipts must not clear that affected-goal latch;
+goals whose baseline is later than the horizon remain independently evaluated.
+
+Initialize provider-account mappings and experimental-collector opt-ins empty.
+Existing records must not gain collection permission automatically; unmapped
+active guards remain blocked/unknown until explicit operator reconfirmation.
+Keep strict history intact. Any migration incompatibility fails closed.
 
 Required offline proof before updating the handoff:
 
@@ -145,9 +185,12 @@ Required offline proof before updating the handoff:
 - Fake-adapter tests cover no broad discovery, account isolation, cooldown,
   401 same-source/same-account retry rules, and typed 403/429 failures without
   live requests.
-- Migration fixtures preserve all historical policy/evidence and leave new
-  mapping/opt-in state empty. Strict and explicitly approved quota-only paths
-  remain distinct.
+- V1/V2/V3-to-V4 migration fixtures preserve strict policy, baselines, spend
+  history, action/event sequences, and existing unknown/latched states while
+  leaving new mapping/opt-in state empty. Exercise correction horizons across
+  migration, including preservation of cumulative estimates and affected-goal
+  unknown latches. Strict and explicitly approved quota-only paths remain
+  distinct.
 - Build the exact local split/install artifact with the collector capability
   enabled, inspect its real help/output schema, then run the isolated installed
   fixture. Do not carry predecessor test counts or installed fixture results

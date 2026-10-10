@@ -344,11 +344,29 @@ and age. Repeated identical callbacks preserve evidence age. A timer running
 the callback again does not observe the provider, and inactivity can leave data
 stale. The local evidence age limit remains 300 seconds, evaluated per field.
 
-`statusline compose` reads the supplied settings file and prints a proposed
-settings document. It preserves an existing command and its output, and proposes
-an ingress command when no statusline exists. It does not install settings or
-modify a running Claude session. Review and manually install an approved
-proposal during an operator setup window. The wrapper requires a
+`statusline compose` reads the supplied settings file and prints a JSON Merge
+Patch containing only the top-level `statusLine` property. For an existing
+statusline, that object preserves its command metadata and other options while
+replacing only `command`; if none exists, it proposes a command statusline.
+For a new statusline, the patch has this shape:
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "<composed command>"
+  }
+}
+```
+
+When a statusline already exists, its additional `statusLine` properties are
+also preserved in the patch.
+
+The patch does not include unrelated settings keys or environment values. It
+does not write settings or modify a running Claude session. Review the patch,
+then manually merge only its `statusLine` property into the existing settings
+file, preserving every other setting. Never replace the whole settings file
+with the patch. The wrapper requires a
 POSIX-compatible shell and Python 3 for ingestion.
 If Python 3 is unavailable, it runs the existing command directly once and
 skips ingestion. It invokes `statusline ingest` with the selected

@@ -6,6 +6,34 @@ use super::*;
 use clap::Parser as _;
 
 #[test]
+fn usage_commands_suppress_the_automatic_teardown_notice() {
+    for argv in [
+        ["jackin", "usage", "--format", "json"].as_slice(),
+        [
+            "jackin",
+            "usage",
+            "doctor",
+            "--provider",
+            "claude",
+            "--unattended",
+        ]
+        .as_slice(),
+    ] {
+        let cli = Cli::try_parse_from(argv).expect("usage argv should parse");
+        let command = cli.command.expect("usage command should be present");
+
+        assert!(
+            !should_announce_run_teardown(&command),
+            "usage commands must keep stderr available for structured output"
+        );
+    }
+
+    let cli = Cli::try_parse_from(["jackin", "doctor"]).expect("doctor argv should parse");
+    let command = cli.command.expect("doctor command should be present");
+    assert!(should_announce_run_teardown(&command));
+}
+
+#[test]
 fn usage_auth_and_passive_startup_skip_fresh_account_config_bootstrap() {
     let temp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());

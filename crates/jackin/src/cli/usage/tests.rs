@@ -969,6 +969,7 @@ fn statusline_preserves_settings_and_statusline_options() {
     let temp = StatuslineTempDir::new().unwrap();
     let original = statusline_json!({
         "theme": "dark",
+        "env": {"API_SECRET": "test-only-api-secret-sentinel"},
         "statusLine": {
             "type": "command",
             "command": "printf 'old output'",
@@ -986,7 +987,20 @@ fn statusline_preserves_settings_and_statusline_options() {
     )
     .unwrap();
 
-    assert_eq!(result["theme"], original["theme"]);
+    assert_eq!(
+        result
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        vec!["statusLine"]
+    );
+    assert!(
+        !serde_json::to_string(&result)
+            .unwrap()
+            .contains("test-only-api-secret-sentinel")
+    );
     assert_eq!(result["statusLine"]["type"], original["statusLine"]["type"]);
     assert_eq!(
         result["statusLine"]["padding"],
@@ -1040,7 +1054,15 @@ fn statusline_adds_a_statusline_for_initial_setup_without_rendering_output() {
     assert!(args.contains("--session-only\n"));
     assert!(!args.contains("--binding\n"));
     assert!(!args.contains("--account\n"));
-    assert_eq!(proposed["theme"], original["theme"]);
+    assert_eq!(
+        proposed
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        vec!["statusLine"]
+    );
     assert_eq!(proposed["statusLine"]["type"], "command");
     assert_eq!(
         std::fs::read(&settings).unwrap(),
