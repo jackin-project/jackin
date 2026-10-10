@@ -572,7 +572,7 @@ successful validation of the newly imported task contract. DCO also remains
 failed. Do not describe the PR as green or merge-ready.
 
 The private candidate now contains two additional test-only commits on top of
-that remote head: `070034b6436f4e5fc1b9b7c2516eaadcc89eea8a` binds the native
+that remote head: `070034b6436f4e5fc1b9b7c2516eaadcc89eea8d` binds the native
 task to the root and native Mise lock inputs, and
 `7f21345fccf5485f0f9ec2838fe58238c3809a3f` binds the native lock path to its
 digest. The exact `ci_contract` selectors are
@@ -619,3 +619,13 @@ read or changed. Corrected installed smoke passed again with zero credential
 tripwire/proxy counts and owned cleanup. Manifest/log/schema examples updated
 from this fresh run; real-account prerequisites and dispatch approval remain
 unverified. The correction and evidence are committed/pushed as one checkpoint.
+
+## PR #1121 check result follow-up — 2026-10-11
+
+Run `38094316284` completed on head `7c82463b25fc0ab1702add50226d9cbbc71507a0`
+with failure: Actionlint, Plan, and Required failed, all 27 Rust package jobs
+and baseline publication were skipped, and DCO failed. The failed Actionlint
+and Plan jobs both stop in Setup Mise: the action installs 2026.9.18 while the
+checked-in config requires 2026.10.7. This confirms the PR still has no current
+full-CI success; the new contract tests remain unexecuted because the generated
+workflow is not yet the owner-v1 task-manifest output.
