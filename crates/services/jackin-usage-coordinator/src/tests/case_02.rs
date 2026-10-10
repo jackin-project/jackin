@@ -796,8 +796,10 @@ fn after_apply_purge_failure_restores_preimage_and_catalog() {
 
     coordinator.reconcile_catalog([], 10_001).unwrap();
     assert_eq!(store.purge_calls.load(Ordering::SeqCst), 2);
+    let revoked = coordinator.current(&account, 10_001).unwrap();
+    assert_eq!(revoked.phase, UsageRefreshPhase::Failed);
     assert_eq!(
-        coordinator.current(&account, 10_001).unwrap_err().kind,
+        revoked.error.unwrap().kind,
         UsageCoordinationErrorKind::CatalogRevoked
     );
 }
