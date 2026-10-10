@@ -121,9 +121,17 @@ where
             });
         }
     };
-    Ok(Some(claude_resolved_view_from_result(
-        agent, provider, now, resolved, result,
-    )))
+    let provider_http_status = match &result {
+        Err(ProviderHttpError::HttpStatus { status, .. }) => Some(*status),
+        Ok(_) | Err(_) => None,
+    };
+    let view = claude_resolved_view_from_result(agent, provider, now, resolved, result);
+    if !consent_is_current() {
+        return Err(ClaudeCollectionError::ConsentRevoked {
+            provider_http_status,
+        });
+    }
+    Ok(Some(view))
 }
 
 #[derive(Debug)]
@@ -395,11 +403,12 @@ mod tests {
             |_| panic!("successful request must not reread Keychain"),
             || {
                 consent_checks.set(consent_checks.get() + 1);
-                consent_checks.get() < 3
+                consent_checks.get() < 4
             },
         );
 
         assert_eq!(requests.get(), 1);
+        assert_eq!(consent_checks.get(), 4);
         assert!(matches!(
             result,
             Err(ClaudeCollectionError::ConsentRevoked {

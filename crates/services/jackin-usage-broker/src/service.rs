@@ -106,7 +106,7 @@ pub fn run_usage_broker_foreground_bootstrap(
     let identity_metadata = BTreeMap::from([(
         capability.clone(),
         publish::AccountIdentityMetadata {
-            identity_kind: UsageIdentityKindV1::ProviderStableHandle,
+            identity_kind: UsageIdentityKindV1::LocalSourceHandle,
             provenance_count: 1,
         },
     )]);

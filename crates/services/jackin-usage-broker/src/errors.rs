@@ -22,13 +22,11 @@ pub(crate) fn publication_identity_metadata(
         let capability = capability_for_binding(binding, discovery.config_generation.as_deref());
         let identity_kind = match binding.identity.as_ref().map(|identity| &identity.subject) {
             Some(CanonicalAccountSubject::ProviderId(_)) => UsageIdentityKindV1::ProviderAccountId,
-            Some(
-                CanonicalAccountSubject::ProviderStableHandle(_)
-                | CanonicalAccountSubject::SourceCapability(_),
-            ) => {
-                // Wire V1 has no separate source-scoped kind; both are stable
-                // non-secret handles and never carry the capability itself.
+            Some(CanonicalAccountSubject::ProviderStableHandle(_)) => {
                 UsageIdentityKindV1::ProviderStableHandle
+            }
+            Some(CanonicalAccountSubject::SourceCapability(_)) => {
+                UsageIdentityKindV1::LocalSourceHandle
             }
             None => UsageIdentityKindV1::ProviderAccountId,
         };
