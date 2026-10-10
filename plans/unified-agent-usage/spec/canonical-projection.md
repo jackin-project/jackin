@@ -34,12 +34,16 @@ typed provisional identity. Source ordinals MUST NOT be durable IDs.
 ### Requirement: deterministic membership and order
 
 Current read-only configuration discovery SHALL own host membership. Durable history
-MUST NOT resurrect absent members. Providers SHALL use the settled provider-only names
-and order: OpenAI, Anthropic, Amp, xAI, Z.AI, Kimi, MiniMax, OpenCode. Accounts SHALL
-sort in Rust with a pinned ICU4X collator using runtime locale and deterministic `und`
-fallback, case-insensitive full display label, then stable ID. The locked ICU/data
-version plus `und`, English, Turkish, and Vietnamese goldens SHALL freeze ranks;
-adapters SHALL consume serialized ranks and never sort.
+MUST NOT resurrect absent members. Providers SHALL use canonical IDs and labels in
+`HostSurfaceId::ALL` order: OpenAI (`openai`), Anthropic (`anthropic`), Amp (`amp`),
+xAI (`xai`), Z.AI (`zai`), Kimi (`kimi`), MiniMax (`minimax`), OpenCode (`opencode`),
+Google (`google`), Cursor (`cursor`), Meta (`meta`), OpenRouter (`openrouter`).
+Accounts SHALL sort in Rust with a pinned ICU4X collator using the deterministic `und` locale,
+case-insensitive full display label, then stable ID. The active broker publication
+contract has no runtime-locale input: the former `ProjectionMetadata::locale` input
+was removed with the retired projection path, and no current runtime config supplies a
+locale to the broker. The locked ICU/data version plus an `und` golden SHALL freeze
+ranks; adapters SHALL consume serialized ranks and never sort.
 
 #### Scenario: refresh does not reorder accounts
 

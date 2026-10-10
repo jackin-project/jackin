@@ -4,6 +4,115 @@
 use super::*;
 
 #[test]
+fn usage_commands_suppress_the_automatic_teardown_notice() {
+    for argv in [
+        ["jackin", "usage", "--format", "json"].as_slice(),
+        [
+            "jackin",
+            "usage",
+            "doctor",
+            "--provider",
+            "claude",
+            "--unattended",
+        ]
+        .as_slice(),
+    ] {
+        let cli = Cli::try_parse_from(argv).expect("usage argv should parse");
+        let command = cli.command.expect("usage command should be present");
+
+        assert!(
+            !should_announce_run_teardown(&command),
+            "usage commands must keep stderr available for structured output"
+        );
+    }
+
+    let cli = Cli::try_parse_from(["jackin", "doctor"]).expect("doctor argv should parse");
+    let command = cli.command.expect("doctor command should be present");
+    assert!(should_announce_run_teardown(&command));
+}
+
+#[test]
+fn usage_auth_and_passive_startup_skip_fresh_account_config_bootstrap() {
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let passive = Cli::try_parse_from(["jackin", "usage"])
+        .expect("bare usage should parse")
+        .command
+        .expect("explicit usage command should be present");
+    assert!(matches!(&passive, Command::Usage(args) if args.scope.is_none()));
+
+    let auth_prepare =
+        Cli::try_parse_from(["jackin", "usage", "auth", "prepare", "--provider", "claude"])
+            .expect("the current foreground auth command should parse")
+            .command
+            .expect("explicit usage command should be present");
+    assert_usage_auth_prepare(&auth_prepare);
+
+    for command in [&passive, &auth_prepare] {
+        let (config, bootstrap) = load_startup_config(command, &paths)
+            .expect("usage startup should skip config loading on a fresh home");
+
+        assert!(config.accounts.is_empty());
+        assert!(config.bootstrap.is_none());
+        assert!(!bootstrap.fresh_install);
+        assert!(bootstrap.added_accounts.is_empty());
+        assert!(bootstrap.issues.is_empty());
+    }
+
+    assert!(!paths.config_dir.exists());
+    assert!(!paths.jackin_home.exists());
+    assert!(!paths.data_dir.exists());
+}
+
+#[test]
+fn usage_startup_ignores_inline_account_credentials_without_reading_or_rewriting_config() {
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    std::fs::create_dir_all(&paths.config_dir).unwrap();
+    let config_contents = format!(
+        "version = \"{}\"\n\n[accounts.claude]\nname = \"Claude\"\nprovider = \"anthropic\"\n[accounts.claude.credential]\ntype = \"api_key\"\nvalue = \"inline-account-credential-must-not-be-read\"\n\n[telemetry]\nlevel = \"debug\"\ncategories = [\"usage\"]\n",
+        jackin_config::CURRENT_CONFIG_VERSION,
+    );
+    std::fs::write(&paths.config_file, &config_contents).unwrap();
+    let cli = Cli::try_parse_from(["jackin", "usage", "auth", "prepare", "--provider", "claude"])
+        .expect("auth command should parse");
+    let command = cli
+        .command
+        .expect("explicit usage command should be present");
+    assert_usage_auth_prepare(&command);
+
+    let (config, bootstrap) = load_startup_config(&command, &paths)
+        .expect("usage startup must not inspect selected account config");
+
+    assert!(config.accounts.is_empty());
+    assert_eq!(config.telemetry, jackin_config::TelemetryConfig::default());
+    assert!(!bootstrap.fresh_install);
+    assert!(bootstrap.added_accounts.is_empty());
+    assert_eq!(
+        std::fs::read_to_string(&paths.config_file).unwrap(),
+        config_contents
+    );
+    assert!(!paths.jackin_home.exists());
+    assert!(!paths.data_dir.exists());
+}
+
+fn assert_usage_auth_prepare(command: &Command) {
+    assert!(matches!(
+        command,
+        Command::Usage(args)
+            if matches!(
+                args.scope.as_ref(),
+                Some(crate::cli::usage::UsageScope::Auth(auth))
+                    if matches!(
+                        &auth.command,
+                        crate::cli::usage::UsageAuthCommand::Prepare(prepare)
+                            if prepare.provider == crate::cli::usage::UsageProviderArg::Claude
+                    )
+            )
+    ));
+}
+
+#[test]
 fn retired_launch_command_is_rejected() {
     let error = Cli::try_parse_from(["jackin", "launch", "agent-smith", "workspace"])
         .expect_err("retired launch syntax must not parse");

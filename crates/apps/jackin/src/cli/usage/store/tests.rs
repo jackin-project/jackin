@@ -117,3 +117,20 @@ fn host_account_cache_exports_owned_operations_without_payloads() {
         assert!(!export.contains_span_text(prohibited));
     }
 }
+
+async fn count_account_rows(path: PathBuf) -> Result<i64> {
+    let conn = open_store(&path).await?;
+    operation(DbOperation::Select, async {
+        let mut rows = conn
+            .query("SELECT COUNT(*) FROM account_usage_snapshots", ())
+            .await
+            .context("count host usage account rows")?;
+        let row = rows
+            .next()
+            .await
+            .context("read host usage account count")?
+            .ok_or_else(|| anyhow::anyhow!("missing host usage account count row"))?;
+        row_i64(&row, 0)
+    })
+    .await
+}

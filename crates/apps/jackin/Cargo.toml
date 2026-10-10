@@ -53,7 +53,6 @@ jackin-usage-credential-resolver = { workspace = true }
 jackin-usage-discovery = { workspace = true }
 jackin-usage-host-credentials = { workspace = true }
 jackin-usage-provider-claude = { workspace = true }
-zeroize = { workspace = true }
 jackin-process = { workspace = true }
 jackin-telemetry = { workspace = true }
 clap = { workspace = true, features = ["derive", "color", "env"] }

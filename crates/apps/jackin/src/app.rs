@@ -91,7 +91,7 @@ pub async fn run(cli: Cli, lifecycle: crate::lifecycle::ProductLifecycle) -> Res
         None => Command::Console(cli.console_args),
     };
     let command_name = crate::cli::command_name(&command);
-    let suppress_cli_notices = matches!(&command, Command::Usage(_));
+    let suppress_cli_notices = !should_announce_run_teardown(&command);
     let app_mode = command_app_mode(&command);
     let mut paths = JackinPaths::detect()?;
     if let Command::Usage(args) = &command
@@ -116,22 +116,13 @@ pub async fn run(cli: Cli, lifecycle: crate::lifecycle::ProductLifecycle) -> Res
 
     // The startup bootstrap report threads first-run discovery into
     // `account scan` so a fresh-config scan prints the true imported count.
-    let (mut config, startup_bootstrap) = match &command {
-        // Role authoring is repository-local. Usage is also isolated from
-        // startup discovery so even passive commands cannot touch provider
-        // credentials, Keychain, or 1Password while loading configuration.
-        Command::Role(_) | Command::Usage(_) => (
-            AppConfig::default(),
-            jackin_config::BootstrapReport::default(),
-        ),
-        _ => match AppConfig::load_or_init_detailed(&paths) {
-            Ok(loaded) => loaded,
-            Err(error) => {
-                let result: Result<()> = Err(error.into());
-                finish_invocation(&diagnostics, invocation, &result, suppress_cli_notices);
-                return result;
-            }
-        },
+    let (mut config, startup_bootstrap) = match load_startup_config(&command, &paths) {
+        Ok(loaded) => loaded,
+        Err(error) => {
+            let result: Result<()> = Err(error);
+            finish_invocation(&diagnostics, invocation, &result, suppress_cli_notices);
+            return result;
+        }
     };
     apply_telemetry_config(&config);
     let interactive = app_mode == jackin_telemetry::schema::enums::AppMode::Interactive;
@@ -217,6 +208,26 @@ pub async fn run(cli: Cli, lifecycle: crate::lifecycle::ProductLifecycle) -> Res
     }
     finish_invocation(&diagnostics, invocation, &result, suppress_cli_notices);
     result
+}
+
+fn load_startup_config(
+    command: &Command,
+    paths: &JackinPaths,
+) -> Result<(AppConfig, jackin_config::BootstrapReport)> {
+    match command {
+        // Role authoring is repository-local. Usage is also isolated from
+        // startup discovery so even passive commands cannot touch provider
+        // credentials, Keychain, or 1Password while loading configuration.
+        Command::Role(_) | Command::Usage(_) => Ok((
+            AppConfig::default(),
+            jackin_config::BootstrapReport::default(),
+        )),
+        _ => Ok(AppConfig::load_or_init_detailed(paths)?),
+    }
+}
+
+fn should_announce_run_teardown(command: &Command) -> bool {
+    !matches!(command, Command::Usage(_))
 }
 
 fn finish_invocation(

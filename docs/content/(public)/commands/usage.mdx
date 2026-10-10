@@ -11,23 +11,25 @@ jackin usage service start --format json
 jackin usage service status --format json
 jackin usage service stop --format json
 jackin usage doctor --provider claude --unattended --format json
-jackin usage binding confirm --provider claude --account ACCOUNT --operator-label LABEL --confirm --format json
-jackin usage policy approve --binding ID --binding-revision N --goal GOAL --policy strict-sgd --budget-sgd 50 --operator-label LABEL --confirm --format json
-jackin usage policy approve --binding ID --binding-revision N --goal GOAL --policy quota-only --operator-label LABEL --confirm --acknowledge-no-sgd-cap --format json
+jackin usage binding confirm --provider claude --account LOCAL_ID [--source-capability-id SOURCE_CAPABILITY_ID] --operator-label LABEL --confirm --format json
+jackin usage binding confirm --provider claude --account LOCAL_ID --source-capability-id SOURCE_CAPABILITY_ID --operator-label LABEL --confirm --approve-experimental-collector --format json
+jackin usage policy approve --binding ID --binding-revision 1 --goal GOAL --policy strict-sgd --budget-sgd 50 --operator-label LABEL --confirm --format json
+jackin usage policy approve --binding ID --binding-revision 1 --goal GOAL --policy quota-only --operator-label LABEL --confirm --acknowledge-no-sgd-cap --format json
 jackin usage monitor observe --provider claude --session SESSION --idempotency-key KEY --format json
-jackin usage monitor observe --provider claude --binding ID --binding-revision N --idempotency-key KEY --format json
-jackin usage monitor start --provider claude --binding ID --binding-revision N --goal GOAL --policy-revision N --idempotency-key KEY --format json
+jackin usage monitor observe --provider claude --binding ID --binding-revision 1 --idempotency-key KEY --format json
+jackin usage monitor observe --provider claude --binding ID --binding-revision 1 --idempotency-key KEY --experimental-collector --format json
+jackin usage monitor start --provider claude --binding ID --binding-revision 1 --goal GOAL --policy-revision 1 --idempotency-key KEY --format json
 jackin usage monitor stop --monitor ID --format json
 jackin usage status --monitor ID --format json
 jackin usage refresh --monitor ID --format json
 jackin usage watch --monitor ID --timeout-secs 300 --format jsonl
 jackin usage wait --monitor ID --until runnable --timeout-secs 300 --format json
 jackin usage statusline ingest --session-only --format json < statusline.json
-jackin usage statusline ingest --binding ID --binding-revision N --format json < statusline.json
+jackin usage statusline ingest --binding ID --binding-revision 1 --format json < statusline.json
 jackin usage statusline compose --session-only --settings settings.json --format json
-jackin usage statusline compose --binding ID --binding-revision N --settings settings.json --format json
+jackin usage statusline compose --binding ID --binding-revision 1 --settings settings.json --format json
 jackin usage spend record --account ACCOUNT --file account-spend.json --verified --format json
-jackin usage auth prepare --provider claude --format json
+jackin usage --data-dir PATH auth prepare --provider claude [--keychain-service SERVICE]
 ```
 
 Observer and dispatch-guard commands may also take `--expected-model MODEL`;
@@ -36,18 +38,83 @@ may use `--expected-revision N` for optimistic concurrency. `--format json`
 and `--data-dir PATH` are global options; watch uses JSON Lines. Statusline
 ingress reads its bounded JSON input from stdin.
 
-## V2 source contract and installed-pair preflight
+## Implementation status
 
-The frozen v2 contract uses broker wire v6 and monitor/store schema v2. An
-isolated installed CLI/broker pair passed the fixture smoke twice, using private
-temporary state and synthetic callbacks. This proves the recorded pair's command,
-schema, and broker-selection behavior within that fixture; it does not establish
-real-account readiness or support in another packaged installation. No genuine
-account callback or operator setup has been verified. Before using another
-installed pair, inspect its top-level and nested help. It must expose binding
-confirmation, policy approval, monitor observe/start/stop, status, refresh, watch,
-wait, and statusline ingest/compose with the new scope options. A version string
-alone does not prove command support.
+The foreground `auth prepare` bootstrap and experimental collector described
+below are candidate behavior under implementation on main. They remain
+unverified until the matching installed CLI/broker pair passes verification. A
+predecessor v2 fixture using synthetic data does not validate this candidate,
+and no real account, Keychain grant, or provider request has been verified.
+Experimental collection does not establish Anthropic support or provider
+readiness.
+
+### Candidate durable monitor schema 4
+
+The candidate durable monitor store advances to schema 4 to persist a
+monotonic historical correction horizon for account spend. When a closed-period
+correction can no longer be applied from retained receipts, the horizon keeps
+affected goal accounting incomplete or unknown; later receipts or clock
+rollback cannot clear that protection.
+
+The V1, V2, and V3 migrations carry forward existing policy revisions and
+origins, baselines and cumulative estimates, quota-pause latches, and
+unknown/incomplete markers. They do not clear an existing latch or unknown
+state. V1 strict history remains migrated and unconfirmed; V2 known state is
+preserved unchanged.
+
+V3 snapshots without the correction horizon decode it as `None`. If migration
+finds no affected forward rollover, that horizon stays `None` and known goal
+state is preserved. For a V3 strict goal with a baseline and a forward
+billing-period transition in its retained goal or account anchors, migration
+preserves its cumulative estimate but conservatively marks spend unknown and
+incomplete, even when a closed-period anchor exists; that anchor cannot rule out
+an older lost correction. It records the latest affected forward anchor start
+as the account horizon, so later receipts or clock rollback cannot clear that
+uncertainty. Goals whose baseline starts at that horizon remain known; a later
+horizon is required to mark their spend incomplete.
+
+Migration does not invent a baseline, zero spend, approval, or quota evidence.
+Invalid and unsupported future schemas fail closed before stored state is
+replaced.
+
+The current source versions are independent: broker wire protocol v8, durable
+monitor-store schema 4, normalized statusline input schema v2, durable account-
+state envelope schema 3, and durable projection-envelope schema 3. The broker
+migrates a v2 projection envelope by
+canonicalizing its serialized provider IDs and persisting v3 before exposing
+the projection; ordinary projection reads accept only v3. This migration is
+separate from the monitor-store schema migration.
+
+Use one installed `jackin` binary and its matching sibling broker throughout,
+with the same explicit `--data-dir PATH`. Do not switch to a repository
+`target/debug/jackin`. If `JACKIN_USAGE_BROKER_BIN` is set, it must name the
+matching sibling executable; an empty or different path is a provenance
+mismatch. Do not change Claude's environment to work around a mismatch.
+
+`usage host snapshot` and `usage host projection` were removed. The bare
+`jackin usage` command reads the current cached projection; it does not force a
+provider request. `usage refresh --monitor ID` reconciles local monitor evidence
+and returns status; it is not a provider refresh command.
+
+`usage service start` starts the passive statusline service. It does not inspect
+credentials or contact providers. The foreground bootstrap below claims its
+broker lease before it accesses Keychain. If any service already owns the lease,
+or ownership cannot be established, bootstrap returns `broker_conflict` without
+attaching, stopping, replacing, or unlinking that service. Do not start the
+passive service first on a data directory intended for the collector.
+
+An ordinary `monitor observe` without `--experimental-collector` is also passive
+and can start the local passive broker. If you intend to collect on that data
+directory, run attended `auth prepare` before starting the passive service or
+ordinary observer. Do not stop or replace an existing or unknown service to
+make room; resolve the `broker_conflict` through the responsible operator.
+
+`jackin usage --data-dir PATH service status --format json` reports
+`experimental_collector_source` as an opaque canonical local source ID when
+the foreground collector service is running, and `null` for a passive
+service. This field reports service mode only. It does not prove that
+credentials are still valid, quota evidence is fresh, or the endpoint is
+available; it is not an authenticated provider account ID.
 
 V1 migration preserves each goal's strict policy semantics and history with
 origin `migrated_v1`; this is not explicit operator approval. Before any
@@ -71,70 +138,74 @@ does not invent a baseline or convert unknown history to zero spend. A new
 strict-goal activation without valid baseline admission is rejected atomically,
 without reserving its idempotency key or assigning a monitor ID.
 
-Use one installed `jackin` binary for setup and every follow-up command, with
-the same explicit `--data-dir PATH`. Do not switch to a repository
-`target/debug/jackin`. The broker executable can be selected by
-`JACKIN_USAGE_BROKER_BIN`, which overrides the sibling executable next to
-`jackin`. Read only that named setting, not the full environment:
+The foreground bootstrap is a separate path from `service start`:
 
 ```bash
-printf '%s\n' "${JACKIN_USAGE_BROKER_BIN-<unset>}"
+jackin usage --data-dir PATH auth prepare --provider claude [--keychain-service SERVICE]
 ```
 
-When unset, the selected `jackin` uses its adjacent `jackin-usage-broker`. When
-set, require the value to point to that same installed pair; an empty or other
-path is a provenance mismatch. Stop and report it without unsetting or changing
-Claude's environment. CLI help does not validate the broker pair.
+All three standard streams must be terminals. Bootstrap first claims the exact
+broker lease, then reads the selected Claude Keychain source while interaction
+is allowed. It retains the credential in zeroizing memory and activates the
+lifetime no-UI guard in that same foreground process. It emits a secret-free
+`service_ready` record, then remains running; use a second terminal for binding
+and monitor commands. The readiness record means only that the local bootstrap
+completed. It does not certify the experimental endpoint or current quota.
+During this foreground service lifetime, collection uses the cached source and
+does not repeat a Keychain lookup. The source cache and broker lease are
+ephemeral: stopping or restarting the foreground process clears the cache, and
+the collector requires another attended `auth prepare` before it can run again.
+Provider authorization may expire sooner and require another attended
+preparation. No permanent credential availability or no-dialog guarantee is
+implied.
 
-`usage host snapshot` and `usage host projection` were removed. If an old
-invocation is rejected, stop and report the CLI error and binary path; do not
-retry with a repository build, snapshot/bootstrap, forced provider refresh or
-authentication. The bare `usage` command reads the current canonical projection,
-but it is not a replacement for durable monitor status.
-
-`usage --data-dir PATH` selects isolated broker state. `service status` reports
-whether a broker responds, but not which executor it uses. If a responding
-broker is known to be the previously verified local-only service for this same
-data directory, reattach to it. Otherwise halt setup and report its mode as
-unknown; do not stop the running service. `service start` attaches to an
-existing broker and cannot prove it is local-only. A `broker_unavailable`
-result alone does not prove absence because an incompatible or unreachable
-service may be present. Confirm that the data directory has no existing service
-before starting one. A fresh `service start` launches the local-only executor.
-Readers, doctor and ingress only attach; monitor observe and start may start the
-broker. Statusline composition only prints a proposal.
-
-Treat broker unavailability, unsupported ingress, or a CLI/broker provenance
-mismatch as external blockers. Preserve the issue, selected binary and broker
-paths, and data directory, then stop setup for operator resolution. Do not loop
-service start, doctor, ingest, or wait to try to clear a fixed mismatch. Do not
-fall back to removed host commands, forced refresh, credential preparation, or
-a repository build. Bounded wait is for a known transient evidence condition;
-re-read status when it ends and stop dispatch while blocked.
+The readiness record includes a derived `source.account_id` with
+`source.scope: "claude_keychain_service"`; it omits the service string and
+credential. The account ID is descriptive broker identity metadata classified as
+a local source handle. It is neither an authenticated Anthropic account nor the
+source capability ID used by the collector binding. While the foreground service
+runs, read `experimental_collector_source` from
+`jackin usage --data-dir PATH service status --format json` and pass that exact
+opaque local ID as `--source-capability-id`. A non-null value identifies the
+selected local source and service mode; it does not prove credential validity,
+quota freshness, or provider readiness. If the service is already active or
+ownership is unknown, preserve the conflict and resolve it with the operator.
+Do not call `service stop` to make bootstrap succeed.
 
 ## Observation, bindings, and policy
 
-`monitor observe` creates durable tracking only. It needs no spend receipt,
-policy approval, or quota evidence. It can use an unbound session scope or a
-separately confirmed local account binding. Unbound session evidence remains
-in an isolated session partition; it does not enter an account aggregate or
-merge retroactively.
+`monitor observe` creates a durable observation-only monitor. Without
+`--experimental-collector`, it remains passive: it needs no spend receipt,
+dispatch policy approval, Claude authentication, or quota evidence, and can
+receive statusline observations. It can use an unbound session scope or a
+separately confirmed local binding. Unbound session evidence remains in an
+isolated session partition; it does not enter an account aggregate or merge
+retroactively. The optional `--experimental-collector` flag is available only
+for an account-bound observer. It requests experimental polling for that source,
+but cannot approve collection on its own.
+
 An observer always reports dispatch as `not_authorized` and `runnable: false`;
 its creation exits 0 when tracking starts, including when quota evidence is
 missing.
 
-A binding is an operator-selected account label, not an authenticated provider
-account ID. Claude's statusline payload cannot identify the provider account,
-show an account switch, or reveal which provider credentials Claude Code chose.
-Before changing Claude Code's selected account or provider credentials, the
-operator must review the current binding. Before ingesting evidence from a
-different selected account, confirm a binding or revision mapped to that
-account; the callback cannot update or verify the choice. Binding confirmation
-and policy approval are separate commands. Both require `--confirm`, an operator label, and attached stdin,
-stdout, and stderr terminals before contacting the broker. The broker records
-the exact scope and revision. This is a same-user local trust-boundary
-assertion, not cryptographic proof of human presence. There is no headless
-approval bypass.
+A binding maps a local monitor account ID to a canonical local source ID. The
+canonical ID selects a Jackin credential source; it is not an authenticated
+Anthropic account identity. A callback's `session_id` is not an account ID, and
+statusline input cannot reveal which provider account Claude Code selected.
+Before changing the selected source or ingesting evidence from another Claude
+account, review or confirm the corresponding local binding. Binding confirmation
+and dispatch policy approval are separate commands. To allow collection, include
+`--approve-experimental-collector` on the attended binding confirmation and
+provide `--source-capability-id SOURCE_CAPABILITY_ID`. This records explicit collector
+approval on that audited binding revision; approval defaults to false.
+`monitor observe --experimental-collector` can use only an already-approved
+mapping and cannot grant approval or enable provider requests by itself. The
+collector approval is independent of dispatch policy and does not authorize
+dispatch. Binding confirmation and policy approval require `--confirm`, an
+operator label, and attached stdin, stdout, and stderr terminals before
+contacting the broker. The broker records the exact scope and revision. This is
+a same-user local trust-boundary assertion, not cryptographic proof of human
+presence. There is no headless approval bypass.
 
 A dispatch guard requires a confirmed binding, goal, and already approved
 policy revision. `monitor start` consumes those exact references and a required
@@ -179,17 +250,92 @@ usage permission never authorizes overage. These audit fields do not renew
 evidence, change freshness limits, clear reset barriers, relax guards, or
 override `runnable`.
 
-Passive `doctor` reports broker availability, statusline-ingress capability,
-and auth state without reading credentials or contacting Claude. A successful
-doctor proves only those passive capabilities; `auth_status_unknown` is
-informational and does not establish quota, spend, policy, or dispatch
-readiness.
+Passive commands—including bare `usage`, service status/start, `doctor`,
+`monitor observe` without `--experimental-collector`, monitor status/watch/refresh,
+and statusline ingest/compose—do not resolve credentials or make provider
+requests. `usage refresh --monitor ID` only reconciles local evidence. `doctor`
+reports broker and statusline-ingress capability; it does not establish quota,
+endpoint support, spend, policy, or dispatch readiness.
 
-Auth preparation is a separate explicit operator setup action. It requires an
-operator terminal and runs in the broker executable. Unattended credential reads
-prohibit Keychain UI and report `interaction_required` when consent cannot be
-obtained. Preparation does not promise credentials will stay readable forever.
-Do not use auth preparation from a monitoring hook or automated lane.
+### Foreground authentication bootstrap (implementation in progress)
+
+`usage auth prepare` is the explicit foreground bootstrap for the experimental
+collector. It requires stdin, stdout, and stderr to be terminals. It acquires
+the broker lease before the Keychain lookup, reads only the exact selected
+Claude Keychain service, retains that credential in zeroizing memory, then
+establishes the process-wide no-UI guard. It emits a secret-free
+`service_ready` result and remains in the foreground as the broker owner. Use a
+second terminal for subsequent binding and monitor commands. The ready result
+reports the derived broker `source.account_id` and
+`source.scope: "claude_keychain_service"`; this account ID is descriptive
+LocalSourceHandle metadata, not the binding source capability ID or an
+authenticated Anthropic identity. While the foreground service runs,
+`service status --format json` reports `experimental_collector_source`; use the
+same global `--data-dir PATH` and pass that exact opaque value as
+`--source-capability-id`. It does not establish credential or quota freshness.
+
+If a service already owns the lease, or ownership cannot be established,
+bootstrap returns `broker_conflict` before Keychain access. It does not attach,
+stop, replace, or unlink another service. Do not use `service stop` to clear a
+conflict. A passive broker started by `usage service start` or an ordinary
+`monitor observe` does not load a credential or contact Claude and cannot be
+reused for the experimental collector; choose one service path per data
+directory.
+
+The interactive Keychain read may require operator consent. While the
+foreground service retains its exact-source cache, collection does not reread
+Keychain and the no-UI guard prevents Jackin's unattended lookup from opening a
+dialog. If consent is still required, the read fails closed. This does not
+promise permanent credential availability or prevent prompts from other
+processes. Do not run authentication preparation from a statusline hook or an
+automated lane.
+
+### Experimental Claude collector (implementation in progress)
+
+Polling is off by default and requires two separate gates: the binding must
+first be confirmed by an operator with `--approve-experimental-collector`, then
+an account-bound `monitor observe` must be started with
+`--experimental-collector`.
+The binding flag records audited, durable approval for the mapped source;
+without it, the observe flag cannot authorize a provider request. Neither choice
+changes the monitor's observation-only purpose or dispatch policy. Statusline
+ingestion remains optional and is the primary supported quota source. Without
+both collector gates, observers do not poll Claude; passive commands remain
+credential- and network-free.
+
+Read `experimental_collector_source` from
+`jackin usage --data-dir PATH service status --format json` and use that exact
+opaque local ID as `SOURCE_CAPABILITY_ID` in the attended binding command. Do
+not substitute `source.account_id` from the foreground bootstrap's
+`service_ready` record; that is a derived broker identity for descriptive
+projection metadata. Keep the foreground `auth prepare` process running while
+the collector observes. The experimental observe command attaches only to an
+already-running foreground service. The broker schedules provider requests
+only when that foreground source matches the approved binding's canonical
+local source ID.
+
+If no broker is running, or service status reports
+`experimental_collector_source: null` for a passive broker, the command returns
+`collector_auth_required`; it does not start a broker, convert a passive service,
+or run `auth prepare` automatically. If no service owns the lease, start the
+foreground bootstrap explicitly before retrying. If a passive or unknown service
+already owns it, preserve the conflict and resolve it with the operator; do not
+stop or replace that service.
+
+Then start the collector against that binding revision:
+
+```bash
+jackin usage binding confirm --provider claude --account LOCAL_ID --source-capability-id SOURCE_CAPABILITY_ID --operator-label LABEL --confirm --approve-experimental-collector --format json
+jackin usage monitor observe --provider claude --binding BINDING_ID --binding-revision 1 --idempotency-key KEY --experimental-collector --format json
+```
+
+The experimental collector uses a Jackin user agent and Anthropic's
+undocumented OAuth usage endpoint. The endpoint has no documented public usage
+contract; it may change or reject requests. Label its results experimental and
+do not claim Anthropic support, guaranteed availability, or provider readiness.
+The existing broker attempt floor and rate-limit backoff apply; the experimental
+flag does not bypass them. This implementation is in progress and has not been
+verified against a live account or provider.
 
 ## Local Claude Code evidence
 
@@ -218,11 +364,30 @@ and age. Repeated identical callbacks preserve evidence age. A timer running
 the callback again does not observe the provider, and inactivity can leave data
 stale. The local evidence age limit remains 300 seconds, evaluated per field.
 
-`statusline compose` reads the supplied settings file and prints a proposed
-settings document. It preserves an existing command and its output, and proposes
-an ingress command when no statusline exists. It does not install settings or
-modify a running Claude session. Review and apply the proposal during an
-operator setup window. The wrapper requires a POSIX-compatible shell and Python 3 for ingestion.
+`statusline compose` reads the supplied settings file and prints a JSON Merge
+Patch containing only the top-level `statusLine` property. For an existing
+statusline, that object preserves its command metadata and other options while
+replacing only `command`; if none exists, it proposes a command statusline.
+For a new statusline, the patch has this shape:
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "<composed command>"
+  }
+}
+```
+
+When a statusline already exists, its additional `statusLine` properties are
+also preserved in the patch.
+
+The patch does not include unrelated settings keys or environment values. It
+does not write settings or modify a running Claude session. Review the patch,
+then manually merge only its `statusLine` property into the existing settings
+file, preserving every other setting. Never replace the whole settings file
+with the patch. The wrapper requires a
+POSIX-compatible shell and Python 3 for ingestion.
 If Python 3 is unavailable, it runs the existing command directly once and
 skips ingestion. It invokes `statusline ingest` with the selected
 `--session-only` or confirmed `--binding`/`--binding-revision` scope, plus the
@@ -231,6 +396,12 @@ stdout and exit status; failed or timed-out ingestion does not replace them. A
 payload over 16 KiB still reaches the existing command but skips ingestion.
 Composition performs no OAuth lookup, Keychain access, provider HTTP request,
 or policy approval.
+
+Without an installed statusline callback or the explicit experimental
+collector, Jackin has no source of new Claude quota evidence. An observation
+monitor may remain active, but quota readiness stays unknown as evidence ages.
+Claude Code's interactive `/usage` display is separate from this data path; it
+does not automatically send usage to Jackin.
 
 ## Decisions and resets
 
@@ -288,20 +459,13 @@ lifetime, including startup and sleep. A live hung broker requires operator
 lifecycle intervention; expiry alone cannot replace it while it still owns the
 lock. Process exit releases the lock.
 
-Independent Claude OAuth refresh is disabled in both local monitors and the
-normal broker executor, including desktop startup and whole-projection refresh.
-`usage refresh --monitor ID` reconciles local evidence and returns the current monitor status; it does not contact Claude.
-Other broker provider work uses the existing single-flight coordinator. Claude
-attempts have a persisted minimum interval of 300 seconds, respect numeric and
-HTTP-date `Retry-After`, and use positive exponential retry deadlines. Monitoring
-callers cannot force past them, including at reset. This local interval does not
-guarantee avoidance of Anthropic bans. There is no `claude -p /usage` fallback. A 401 fails closed without an automatic credential reread or retry; resolved credentials lack a safe same-source reread handle. Jackin does not independently rotate Claude Code refresh tokens.
-The HTTP adapter and coordinator retain offline failure/cooldown coverage, but
-there is no enabled production Claude OAuth opt-in command in this release.
-Other providers can still use the normal broker refresh path. Cached desktop
-Claude rows may be unavailable; the frozen v2 source contract uses durable
-statusline monitoring for Claude quota. The isolated installed-pair fixture
-smoke passed; no real-account callback or operator setup has been verified.
+The experimental collector uses the broker's persisted attempt floor,
+`Retry-After` handling, and backoff. `usage refresh --monitor ID` only reconciles
+local evidence; it cannot force a provider request or bypass cooldowns. A
+collector attempt can fail or return stale evidence, and no stability or
+readiness guarantee follows. Jackin does not invoke `claude -p /usage` or
+independently rotate Claude Code refresh tokens. This collection path remains in
+progress and has not been validated against a live endpoint or account.
 
 ## Spend guard
 

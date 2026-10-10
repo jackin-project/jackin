@@ -3,7 +3,7 @@
 # and shrink-only semantics: measured > bound fails (growth); measured < bound
 # fails telling you to tighten the bound; measured == bound is steady state.
 # `kind = "presence"` entries are allowlists: listed keys must still be violations,
-# unlisted violations fail. Regenerate any family: cargo xtask lint ratchet --print <family>.
+# unlisted violations fail. Regenerate any family: mbx +1.99.0 xtask lint ratchet --print <family>.
 # deny.toml exceptions and .codebook.toml are deliberately NOT folded here:
 # cargo-deny/codebook own their semantics.
 #
@@ -1115,8 +1115,8 @@ mode = "artifact-ceiling"
 # Cap 0 → every measured key > 0 must be listed (no unlisted firehose).
 # Bounds are measured default-mode counts from target/telemetry-volume.json
 # (written by conformance_export_volume); regenerate after intentional growth:
-#   cargo nextest run -p jackin-diagnostics --all-features -E 'test(conformance_export_volume)'
-#   cargo xtask lint ratchet --print export-volume
+#   mbx +1.99.0 nextest run -p jackin-diagnostics --all-features -E 'test(conformance_export_volume)'
+#   mbx +1.99.0 xtask lint ratchet --print export-volume
 cap = 0
 [[family.entry]]
 key = "default_mode_logs"
