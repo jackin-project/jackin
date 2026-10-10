@@ -107,6 +107,16 @@ provider/Keychain/interactive-auth verification was performed. Provider fake HTT
 request-count assertions include one shared flight, zero requests before persisted
 Retry-After, no reset-time bypass, and a next attempt only after the deadline.
 
+## Handoff reverification
+
+The installed smoke was rerun before handing instructions to Claude. Both binary
+hashes still match; no product source changed since build4492d3cb. Independent
+Luna max review found no blocking CLI/schema mismatch. Its one illustrative-path
+finding was fixed: printed settings examples use the absolute path rather than
+a quoted `~`. The corrected run passed with zero credential-command/proxy counts
+and orderly cleanup; manifest/log/schema examples record this latest run. No
+live account, native Keychain or provider readiness claim was added.
+
 ## Remaining operator steps and limits
 
 1. Verify the exact v2 paths and any broker override in the operator's environment.

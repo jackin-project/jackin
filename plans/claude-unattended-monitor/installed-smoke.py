@@ -457,7 +457,7 @@ def main() -> int:
                 "compose",
                 "--session-only",
                 "--settings",
-                "~/.claude/settings.json",
+                "/Users/donbeave/.claude/settings.json",
             ),
             usage(
                 "statusline",
@@ -475,7 +475,7 @@ def main() -> int:
                 "--binding-revision",
                 "1",
                 "--settings",
-                "~/.claude/settings.json",
+                "/Users/donbeave/.claude/settings.json",
             ),
         ]
         for example in examples:

@@ -522,3 +522,12 @@ as zero implicit rereads/retries with later caller-supplied changed credentials,
 not an automatic provider retry. Final old pair hashes match the starting
 inspection; original checkout is clean; real V2 state remains absent, so no
 synthetic approval/baseline was installed for the actual Claude goal.
+
+Handoff reverification: source remains unchanged since binary build4492d3cb;
+installed binary hashes and all installed docs matched. Independent Luna max
+review found no blocker but caught quoted-tilde illustrative settings paths.
+Those two printed examples now use the actual absolute path; no settings were
+read or changed. Corrected installed smoke passed again with zero credential
+tripwire/proxy counts and owned cleanup. Manifest/log/schema examples updated
+from this fresh run; real-account prerequisites and dispatch approval remain
+unverified. The correction and evidence are committed/pushed as one checkpoint.

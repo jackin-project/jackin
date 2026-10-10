@@ -40,7 +40,7 @@
   "fixture_verification": {
     "result": "passed",
     "transcript": "v2-installed-smoke.log",
-    "transcript_sha256": "0b9971b906da95084b1195defa863c886ba32c2474667148551e95fa86febb1e",
+    "transcript_sha256": "1aa254b3f04a7b0d02102caf5ef9b13649bb5c12b5ffb64b8512ced69da2c7b0",
     "broker_selection": "own lease PID plus exact installed sibling executable and private argv",
     "JACKIN_USAGE_BROKER_BIN": "unset in isolated fixture; actual Claude environment not inspected",
     "credential_command_trips": 0,
@@ -48,13 +48,13 @@
     "native_keychain_verification": "not performed; fake Keychain tests only",
     "real_account_callback": "not verified",
     "fixture_removed_after_orderly_stop": true,
-    "started_at_utc": "2026-10-10T01:12:16.483810+00:00",
-    "finished_at_utc": "2026-10-10T01:12:22.102903+00:00",
-    "script_sha256": "c597d6533f2e71bb8f3abcf78838a75b3392ebc1940c34a89fd37739cf40e09a",
+    "started_at_utc": "2026-10-10T01:44:26.921400+00:00",
+    "finished_at_utc": "2026-10-10T01:44:32.547248+00:00",
+    "script_sha256": "5d5f98033c95ac4b8d263ffa434e1b33538f577e7bf91802947e34cda2757c02",
     "exit_code": 0,
     "counter_scope": "PATH op/claude/security trips and proxy-routed HTTP; not OS-enforced native Keychain or egress tracing",
-    "script_sha256_before_run": "c597d6533f2e71bb8f3abcf78838a75b3392ebc1940c34a89fd37739cf40e09a",
-    "script_sha256_after_run": "c597d6533f2e71bb8f3abcf78838a75b3392ebc1940c34a89fd37739cf40e09a",
+    "script_sha256_before_run": "5d5f98033c95ac4b8d263ffa434e1b33538f577e7bf91802947e34cda2757c02",
+    "script_sha256_after_run": "5d5f98033c95ac4b8d263ffa434e1b33538f577e7bf91802947e34cda2757c02",
     "script_unchanged_during_run": true
   }
 }
