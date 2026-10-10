@@ -13,8 +13,8 @@ use jackin_protocol::usage_broker::{
 use super::entries::{monotonic_cooldown_deadline_epoch, recovered_attempt_deadline_epoch};
 use super::{
     AccountStateEnvelope, CatalogAccountPreimage, CatalogTransaction, CoordinatorState, Shared,
-    StateStoreError, UsageCoordinator, account_cooldown_deadline, catalog_entries_from_map,
-    catalog_purge_set, cooldown_tombstone, first_catalog_rollback_error, pending_attempt_envelope,
+    StateStoreError, UsageCoordinator, catalog_entries_from_map, catalog_purge_set,
+    cooldown_tombstone, first_catalog_rollback_error, pending_attempt_envelope,
     preserve_catalog_error, reconcile_executor_catalog, reset_entry, reset_envelope,
     restore_catalog_preimages, revoke_entry, revoke_envelope, state_error, unavailable_error,
     validate_catalog_entries,
