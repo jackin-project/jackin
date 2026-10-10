@@ -241,3 +241,36 @@ fn forwarded_scope_selects_only_accounts_backed_by_forwarded_sources() {
     );
     assert_eq!(publication[&profile_capability].provenance_count, 2);
 }
+
+#[test]
+fn local_source_capability_metadata_stays_distinct_from_provider_identity() {
+    use jackin_usage_host_accounts::CanonicalAccountIdentity;
+    use jackin_usage_host_presentation::HostSurfaceId;
+
+    let source_id = "a".repeat(64);
+    let discovery = ValidatedUsageDiscovery {
+        config_generation: Some("generation".to_owned()),
+        accounts: Vec::new(),
+        diagnostics: Vec::new(),
+        candidates: Vec::new(),
+        bindings: vec![ValidatedCredentialBinding {
+            surface: HostSurfaceId::Claude,
+            identity: Some(CanonicalAccountIdentity::source_capability(
+                HostSurfaceId::Claude,
+                &source_id,
+            )),
+            source_id: "selected-source".to_owned(),
+            capability_id: "broker-capability".to_owned(),
+            credential_revision: "revision".to_owned(),
+            provenance: BTreeSet::from(["workspace sample".to_owned()]),
+            source: ValidatedCredentialSource::Capability,
+        }],
+    };
+    let capability = capability_for_binding(&discovery.bindings[0], Some("generation"));
+
+    let metadata = publication_identity_metadata(&discovery);
+    let identity_kind = metadata[&capability].identity_kind;
+    assert_eq!(identity_kind, UsageIdentityKindV1::LocalSourceHandle);
+    assert_ne!(identity_kind, UsageIdentityKindV1::ProviderAccountId);
+    assert_ne!(identity_kind, UsageIdentityKindV1::ProviderStableHandle);
+}
