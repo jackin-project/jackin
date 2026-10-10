@@ -5639,6 +5639,122 @@ fn reset_and_model_descriptors_report_state_without_relaxing_dispatch_guard() {
     );
 }
 
+fn v1_durable_migration_fixture() -> serde_json::Value {
+    serde_json::json!({
+        "schema_version": 1,
+        "next_monitor_id": 1,
+        "next_input_sequence": 0,
+        "last_now_epoch": NOW,
+        "accounts": {},
+        "monitors": {},
+        "goals": {
+            "goal-v1-durable": {
+                "account_id": "acct-v1-durable",
+                "budget": {"amount_minor": 5_000, "currency": "SGD", "exponent": 2},
+                "spend_state": {
+                    "baseline": null,
+                    "period_anchor": {
+                        "account_id": "acct-v1-durable",
+                        "billing_period_start_epoch": 1_799_999_900_i64,
+                        "billing_period_end_epoch": 1_800_001_000_i64,
+                        "amount": {"amount_minor": 1_500, "currency": "SGD", "exponent": 2},
+                        "evidence_at_epoch": 1_799_999_990_i64,
+                        "evidence_received_at_epoch": NOW,
+                        "source": "operator_receipt",
+                        "verification": "verified"
+                    },
+                    "cumulative_goal_spend": {
+                        "amount_minor": 1_500,
+                        "currency": "SGD",
+                        "exponent": 2
+                    },
+                    "rollover_unknown": false,
+                    "cumulative_complete": true
+                }
+            }
+        }
+    })
+}
+
+#[test]
+fn v1_store_migrates_durably_and_keeps_dispatch_blocked_until_review() {
+    let (directory, initial_store) = open_store();
+    drop(initial_store);
+    let fixture = v1_durable_migration_fixture();
+    overwrite_persisted_state(&directory, &fixture);
+
+    let migrated = MonitorStore::open(directory.path()).expect("migrate persisted V1 store");
+    let persisted: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(persisted_state_path(&directory)).expect("read rewritten monitor store"),
+    )
+    .expect("parse rewritten monitor store");
+    assert_eq!(
+        persisted["schema_version"],
+        serde_json::json!(USAGE_MONITOR_SCHEMA_VERSION)
+    );
+    drop(migrated);
+
+    let reopened = MonitorStore::open(directory.path()).expect("reopen migrated monitor store");
+    assert_eq!(reopened.lock().schema_version, USAGE_MONITOR_SCHEMA_VERSION);
+    {
+        let state = reopened.lock();
+        let spend = state.goals["goal-v1-durable"]
+            .spend_state
+            .as_ref()
+            .expect("reopened migrated spend history");
+        assert!(spend.baseline.is_none(), "missing baseline remains unknown");
+        assert_eq!(
+            spend.cumulative_goal_spend,
+            Some(Money::new(1_500, "SGD", 2))
+        );
+        let policy = state.policy_records["goal-v1-durable"]
+            .last()
+            .expect("reopened migrated policy");
+        assert_eq!(policy.new_policy, MonitorPolicy::StrictSgd);
+        assert_eq!(policy.origin, MonitorPolicyOrigin::MigratedV1);
+        assert!(!policy.operator_confirmed);
+    }
+
+    let binding = v2_bind_account(&reopened, "acct-v1-durable", NOW);
+    let rejected = start_result(
+        &reopened,
+        dispatch_config(&binding, "goal-v1-durable", 1),
+        "v1-durable-requires-approval",
+        NOW + 1,
+    )
+    .expect_err("migrated strict policy cannot authorize dispatch");
+    assert_eq!(rejected.code, MonitorIssueCode::PolicyRequired);
+    assert!(reopened.lock().monitors.is_empty());
+    assert_eq!(reopened.lock().next_monitor_id, 1);
+
+    let approved = approve_policy(
+        &reopened,
+        &binding,
+        "goal-v1-durable",
+        MonitorPolicy::StrictSgd,
+        Some(Money::new(5_000, "SGD", 2)),
+        ApprovalOptions {
+            acknowledge_no_sgd_cap: false,
+            expected_revision: Some(1),
+            now_epoch: NOW + 2,
+        },
+    )
+    .expect("explicit approval creates a new policy revision");
+    let started = start_result(
+        &reopened,
+        dispatch_config(&binding, "goal-v1-durable", approved.revision),
+        "v1-durable-after-approval",
+        NOW + 3,
+    )
+    .expect("start monitoring after explicit approval");
+    assert_eq!(started.readiness.budget, MonitorBudgetReadiness::Unknown);
+    assert_eq!(
+        started.readiness.dispatch,
+        MonitorDispatchReadiness::Blocked
+    );
+    assert!(!started.runnable);
+}
+
 #[test]
 fn v1_migration_preserves_missing_baseline_and_existing_spend_history() {
     let fixture = br#"

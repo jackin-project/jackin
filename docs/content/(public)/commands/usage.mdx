@@ -13,21 +13,21 @@ jackin usage service stop --format json
 jackin usage doctor --provider claude --unattended --format json
 jackin usage binding confirm --provider claude --account LOCAL_ID [--provider-account CANONICAL_LOCAL_ID] --operator-label LABEL --confirm --format json
 jackin usage binding confirm --provider claude --account LOCAL_ID --provider-account CANONICAL_LOCAL_ID --operator-label LABEL --confirm --approve-experimental-collector --format json
-jackin usage policy approve --binding ID --binding-revision N --goal GOAL --policy strict-sgd --budget-sgd 50 --operator-label LABEL --confirm --format json
-jackin usage policy approve --binding ID --binding-revision N --goal GOAL --policy quota-only --operator-label LABEL --confirm --acknowledge-no-sgd-cap --format json
+jackin usage policy approve --binding ID --binding-revision 1 --goal GOAL --policy strict-sgd --budget-sgd 50 --operator-label LABEL --confirm --format json
+jackin usage policy approve --binding ID --binding-revision 1 --goal GOAL --policy quota-only --operator-label LABEL --confirm --acknowledge-no-sgd-cap --format json
 jackin usage monitor observe --provider claude --session SESSION --idempotency-key KEY --format json
-jackin usage monitor observe --provider claude --binding ID --binding-revision N --idempotency-key KEY --format json
-jackin usage monitor observe --provider claude --binding ID --binding-revision N --idempotency-key KEY --experimental-collector --format json
-jackin usage monitor start --provider claude --binding ID --binding-revision N --goal GOAL --policy-revision N --idempotency-key KEY --format json
+jackin usage monitor observe --provider claude --binding ID --binding-revision 1 --idempotency-key KEY --format json
+jackin usage monitor observe --provider claude --binding ID --binding-revision 1 --idempotency-key KEY --experimental-collector --format json
+jackin usage monitor start --provider claude --binding ID --binding-revision 1 --goal GOAL --policy-revision 1 --idempotency-key KEY --format json
 jackin usage monitor stop --monitor ID --format json
 jackin usage status --monitor ID --format json
 jackin usage refresh --monitor ID --format json
 jackin usage watch --monitor ID --timeout-secs 300 --format jsonl
 jackin usage wait --monitor ID --until runnable --timeout-secs 300 --format json
 jackin usage statusline ingest --session-only --format json < statusline.json
-jackin usage statusline ingest --binding ID --binding-revision N --format json < statusline.json
+jackin usage statusline ingest --binding ID --binding-revision 1 --format json < statusline.json
 jackin usage statusline compose --session-only --settings settings.json --format json
-jackin usage statusline compose --binding ID --binding-revision N --settings settings.json --format json
+jackin usage statusline compose --binding ID --binding-revision 1 --settings settings.json --format json
 jackin usage spend record --account ACCOUNT --file account-spend.json --verified --format json
 jackin usage --data-dir PATH auth prepare --provider claude [--keychain-service SERVICE]
 ```
@@ -310,7 +310,7 @@ Then start the collector against that binding revision:
 
 ```bash
 jackin usage binding confirm --provider claude --account LOCAL_ID --provider-account CANONICAL_LOCAL_ID --operator-label LABEL --confirm --approve-experimental-collector --format json
-jackin usage monitor observe --provider claude --binding BINDING_ID --binding-revision REVISION --idempotency-key KEY --experimental-collector --format json
+jackin usage monitor observe --provider claude --binding BINDING_ID --binding-revision 1 --idempotency-key KEY --experimental-collector --format json
 ```
 
 The experimental collector uses a Jackin user agent and Anthropic's

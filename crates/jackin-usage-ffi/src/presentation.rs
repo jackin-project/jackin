@@ -287,13 +287,30 @@ pub(crate) fn desktop_projection(
             selected_usage,
         });
     }
-    let glance_rows = provider_glance_rows(runtime, enabled, format_prefs)?;
-    let mut status_rows = glance_rows
+    let ranked_glance_rows = provider_glance_rows_with_reset_rank(runtime, enabled, format_prefs)?;
+    let glance_rows = ranked_glance_rows
         .iter()
-        .filter(|row| row.glance_remaining_percent.is_some_and(|value| value > 0))
-        .cloned()
+        .map(|(row, _)| row.clone())
         .collect::<Vec<_>>();
+    let mut status_rows = ranked_glance_rows
+        .into_iter()
+        .filter(|(row, _)| row.glance_remaining_percent.is_some_and(|value| value > 0))
+        .collect::<Vec<_>>();
+    // The full glance list keeps canonical provider order; the capped status
+    // list prioritizes the soonest raw reset, then the lowest remaining quota.
+    // This stable sort keeps canonical provider order for exact ties.
+    status_rows.sort_by_key(|(row, reset_at_epoch)| {
+        (
+            reset_at_epoch.is_none(),
+            reset_at_epoch.unwrap_or(i64::MAX),
+            row.glance_remaining_percent.unwrap_or(u8::MAX),
+        )
+    });
     status_rows.truncate(status_bar_max.clamp(1, 3) as usize);
+    let status_rows = status_rows
+        .into_iter()
+        .map(|(row, _)| row)
+        .collect::<Vec<_>>();
     let projection = runtime.projection();
     let error_message = projection.issues.first().map(|issue| issue.message.clone());
     Ok(DesktopProjectionDto {
@@ -314,6 +331,19 @@ pub(crate) fn provider_glance_rows(
     enabled: &[String],
     format_prefs: UsageFormatPrefs,
 ) -> Result<Vec<ProviderGlanceRowDto>, String> {
+    Ok(
+        provider_glance_rows_with_reset_rank(runtime, enabled, format_prefs)?
+            .into_iter()
+            .map(|(row, _)| row)
+            .collect(),
+    )
+}
+
+fn provider_glance_rows_with_reset_rank(
+    runtime: &HostUsageProjectionRuntime,
+    enabled: &[String],
+    format_prefs: UsageFormatPrefs,
+) -> Result<Vec<(ProviderGlanceRowDto, Option<i64>)>, String> {
     let mut rows = Vec::new();
     for surface in HostSurfaceId::DESKTOP_PROVIDER_ORDER.iter().copied() {
         if !is_surface_enabled(enabled, surface) {
@@ -323,16 +353,35 @@ pub(crate) fn provider_glance_rows(
         if let HostUsageProjectionSelectedAccount::Available { account, .. } =
             presentation.selected_account
         {
-            rows.push(glance_row(
-                surface,
-                presentation.provider,
-                account,
-                presentation.glance_metric_group,
-                format_prefs,
+            let metric_group = presentation.glance_metric_group;
+            let reset_at_epoch = glance_reset_epoch(account, metric_group);
+            rows.push((
+                glance_row(
+                    surface,
+                    presentation.provider,
+                    account,
+                    metric_group,
+                    format_prefs,
+                ),
+                reset_at_epoch,
             ));
         }
     }
     Ok(rows)
+}
+
+fn glance_reset_epoch(
+    account: &UsageAccountV1,
+    metric_window: Option<&UsageMetricGroupV1>,
+) -> Option<i64> {
+    metric_window
+        .and_then(|group| group.reset_at_epoch)
+        .or_else(|| {
+            account
+                .windows
+                .first()
+                .and_then(|window| window.reset_at_epoch)
+        })
 }
 
 fn glance_row(
@@ -417,9 +466,7 @@ fn glance_row(
         headline,
         reset_label: reset.clone(),
         compact_reset_label: reset.clone(),
-        exact_reset: metric_window
-            .and_then(|group| group.reset_at_epoch)
-            .or_else(|| window.and_then(|window| window.reset_at_epoch))
+        exact_reset: glance_reset_epoch(account, metric_window)
             .map(jackin_usage::usage::local_timestamp_label),
         status_word: status.to_owned(),
         is_refreshing: metric_window

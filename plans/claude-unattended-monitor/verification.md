@@ -3,37 +3,44 @@
 ## Current main-port verification snapshot
 
 The canonical branch is `feat/claude-usage-monitor-main`, based on main
-`868ce535`. Pushed checkpoint `471efcb2` is earlier source evidence. The latest
-signed, committed, and pushed source checkpoint is
-`45a33093df524c03440ed524e71375953ee6834b`. It uses broker wire v8, projection
-schema v3, durable monitor schema v4
-(unchanged), and statusline input v2; `LocalSourceHandle` is distinct from
-provider identity. Checkpoint 8288 and checkpoint 22ac3581 are historical; the
-22ac installed pair passed its fixture smoke for that source only. The current
-45a33093 cfg-fix source passes local macOS seven-package format, source-check,
-and strict-Clippy scopes, plus affected Claude (28), broker (183), and
-discovery (41) tests. Its MBX build passed (exit 0) in 15.93 seconds; see
-`/private/tmp/jackin-mbx-build-45a33093.log`. The installed fixture smoke
-passed. An intermediate poll of Linux Required CI for source head 45a33093
-recorded 22 passed, 6 pending, and 0 failed; that run continued after the
-snapshot, and final-head checks remain required before landing. The prior
-Linux CI run had five failed Rust jobs, all reporting the same three E0004
-match-site diagnostics; one Required aggregate check failed from those jobs.
+`868ce535`. The latest committed/pushed PR head is
+`14c09cd5f0978925310fd3e15b53ce2aa1309f13`, containing source checkpoint
+`45a33093df524c03440ed524e71375953ee6834b` plus docs. The 45a build and
+installed smoke passed but are historical for the current uncommitted changes.
+CI run `38042237548` failed three Rust jobs: `jackin` docs parsing, runtime S6
+generation (2 cases), and capsule (180-second timeout). The frozen fixes cover
+the numeric/stdin parser, generic Claude rate-floor/fixture barrier, and
+capsule fake-socket mode 0600/bounded accept. The final seven-gate MBX rerun
+has now passed; final formatting, source-check, strict Clippy, and capsule
+logs are listed below. The fixes remain uncommitted. A fresh source SHA, CI
+rerun, and build/install/smoke are required before landing.
 
-The earlier five-package MBX consumer compile check predates the current
-wire-v8, projection-v3, and clock-fix changes and is historical. At checkpoint
-8288, the production five-package compile, final seven-package scoped check,
-seven-package formatting, and selected offline gates below passed. Required
-Linux CI failed at that checkpoint on the `--modes` enum-import and
-Clippy-nesting issues. Earlier local seven-package check, formatting, and
-Clippy runs passed for checkpoint 22ac3581. The cfg fix is now checkpointed as
-45a33093; its local macOS seven-package MBX format/check/Clippy scopes and
-affected tests passed. The installed fixture smoke passed. An intermediate
-poll of Linux Required CI for source head 45a33093 recorded 22 passed, 6
-pending, and 0 failed; the final documentation head still requires its own
-green checks. The prior Linux CI run
-had five failed Rust jobs, all reporting the same three E0004 match-site
-diagnostics; one Required aggregate check failed from those jobs.
+P1's private one-way-migration rejection has fresh proof; the reply is posted
+and the thread resolved. P2 was accepted: the FFI rank fix resets raw fields
+before capping, and its focused suite passed 11 tests. Its review thread remains
+unresolved pending the fixing commit, commit-linked reply URL, and resolution.
+A V1 end-to-end migration regression passed 1 test. The final seven-gate MBX
+rerun and its focused regression checks passed:
+
+| Current frozen-patch focused scope | Result | Evidence |
+| --- | --- | --- |
+| Seven-package scoped formatting | Passed | `/private/tmp/jackin-mbx-v4-final-freeze11-fmt.log` |
+| Seven-package source check | Passed | `/private/tmp/jackin-mbx-v4-final-freeze11-check.log` |
+| Seven-package strict Clippy, all targets | Passed | `/private/tmp/jackin-mbx-v4-final-freeze10-clippy.log` |
+| S6 rotation | 1 passed | `/private/tmp/jackin-mbx-v4-final-freeze4-s6-rotation.log` |
+| S6/full-scope verification | 7 passed | `/private/tmp/jackin-mbx-v4-final-freeze4-scope-verification.log` |
+| FFI rank fix | 11 passed | `/private/tmp/jackin-mbx-v4-final-freeze5-ffi.log` |
+| Docs Commands | 5 passed | `/private/tmp/jackin-mbx-v4-final-freeze5-docs-commands.log` |
+| V1 storage/migration | 1 passed | `/private/tmp/jackin-mbx-v4-final-freeze5-v1-migration.log` |
+| Host broker | 184 passed | `/private/tmp/jackin-mbx-v4-final-freeze5-host-broker.log` |
+| Capsule diagnostic dedup | 1 passed | `/private/tmp/jackin-mbx-v4-final-freeze10-capsule-dedup1.log` |
+| Capsule proxy scope | 11 passed, 1 filtered | `/private/tmp/jackin-mbx-v4-final-freeze10-capsule-proxy.log` |
+
+The capsule fake socket test used a canonical parent directory with mode 0700,
+a socket with mode 0600, and a bounded accept deadline. These frozen patches
+remain uncommitted: a new source SHA, fresh build/install/smoke, and green
+required CI are pending. The 45a installed pair above is a historical
+checkpoint and does not validate the current production changes.
 
 Current Cargo verification must use MBX 1.22.0 with offline/locked flags.
 Earlier checks used the checked-in Mise-to-MBX Cargo wrapper. Current isolated
@@ -135,11 +142,12 @@ counts.
 | Claude provider and lease lifecycle | 28 passed | `/private/tmp/jackin-mbx-v4-final-claude-tests.log` |
 | Contract baseline | 10 passed | `/private/tmp/jackin-mbx-v4-final-contract-baseline2.log` |
 
-## Checkpoint 45a33093 cfg-fix verification
+## Historical source checks for checkpoint 45a33093
 
-These results cover the cfg fix committed in signed, pushed checkpoint
-`45a33093df524c03440ed524e71375953ee6834b`. Local macOS MBX results; each
-affected test suite is an independent scope.
+These results cover signed, pushed source checkpoint
+`45a33093df524c03440ed524e71375953ee6834b`. They are historical for the
+current post-14c worktree, which contains uncommitted production changes.
+Local macOS MBX results; each affected test suite is an independent scope.
 
 | Scope | Result | Evidence |
 | --- | --- | --- |
@@ -151,10 +159,10 @@ affected test suite is an independent scope.
 | Discovery | 41 passed | `/private/tmp/jackin-mbx-v4-linux-payload-discovery.log` |
 | MBX offline build | Passed, exit 0, 15.93 seconds | `/private/tmp/jackin-mbx-build-45a33093.log` |
 | Installed fixture smoke | Passed | [v3-installed-smoke.log](v3-installed-smoke.log) |
-| Linux Required CI rerun | Intermediate 45a33093 poll: 22 passed, 6 pending, 0 failed | Run continued after this snapshot; final documentation-head checks remain pending |
+| Intermediate Linux CI poll for 45a | 22 passed, 6 pending, 0 failed | Superseded by CI run `38042237548`, which failed three Rust jobs; see current snapshot above |
 
-The installed 22ac pair below is historical and does not cover checkpoint
-45a33093.
+The installed 22ac pair below is historical. The 45a installed pair is also
+historical for the current post-14c production changes.
 
 The retry/cooldown suites cover restart floor recovery, projection cadence,
 and active cooldown tombstones across loaded, lazy-loaded, and
@@ -172,24 +180,21 @@ pre-permit race concern was withdrawn after review of the current liveness
 mutex. Static review and fake fixtures do not prove native Keychain runtime
 behavior.
 
-The corrected contract baseline now passes 10/10 with the exact 33-row
+The corrected contract baseline passed 10/10 with the exact 33-row
 provider-call inventory. The earlier 9/10 run failed because its inventory
 expected the pre-rename wrapper route; it is superseded by the passing result
 in the table. Host inventory, runtime, CLI, app, FFI, console, capsule,
 bootstrap/monitor, broker-lifecycle, and broker-installation results complete
 the consumer/integration matrix for historical checkpoint 22ac3581. Scoped
 formatting and strict Clippy across all targets passed for that checkpoint,
-and its MBX installed pair passed the isolated fixture smoke. The cfg fix is
-included in current checkpoint 45a33093; its additional source checks and MBX
-build passed as listed above. The installed fixture smoke for 45a33093 passed;
-an intermediate poll of Linux Required CI for source head 45a33093 recorded 22
-passed, 6 pending, and 0 failed. The run continued after that snapshot; final
-documentation-head checks remain required. The prior Linux CI run had five
-failed Rust jobs, all reporting the same three
-E0004 match-site diagnostics, and one Required aggregate check failed from
-those jobs.
+and its MBX installed pair passed the isolated fixture smoke. The 45a source
+checks, build, and installed smoke are recorded as historical above. The
+current post-14c production changes passed the final seven-gate MBX
+verification listed above; a fresh build/install/smoke and required CI rerun
+for a new source checkpoint remain pending. CI run `38042237548` failed three
+Rust jobs on head 14c.
 
-## Installed fixture checkpoint 45a33093
+## Historical installed fixture checkpoint 45a33093
 
 The installed pair for signed, pushed checkpoint
 `45a33093df524c03440ed524e71375953ee6834b` was built through MBX 1.22.0 with
@@ -267,9 +272,10 @@ auth success and dispatch approval were not exercised. The smoke does not
 assert persistence of a projection envelope. This section is historical
 evidence for source checkpoint 8288. The separate installed pair for checkpoint
 22ac3581 is recorded above as historical evidence. The 45a33093 MBX build and
-installed fixture smoke have passed; an intermediate poll of Linux Required CI
-for source head 45a33093 recorded 22 passed, 6 pending, and 0 failed. Final
-documentation-head checks remain required.
+installed fixture smoke are also historical; the current post-14c production
+changes passed the final seven-gate MBX verification listed above, but need a
+fresh build/install/smoke and required CI on a new source checkpoint. CI run
+`38042237548` failed three Rust jobs on head 14c.
 
 Previously recorded pre-v8 scopes: protocol 133; broker 173; Claude
 fake-auth/provider 25; CLI usage 43; app 29; coordinator 54. These historical

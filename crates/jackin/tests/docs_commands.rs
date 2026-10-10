@@ -307,24 +307,35 @@ fn expand_synopsis_notation(cmd: &str) -> String {
 /// Normalize a raw `jackin …` line into clap argv tokens.
 fn normalize_to_tokens(cmd: &str) -> Vec<String> {
     let expanded = expand_synopsis_notation(cmd);
-    let tokens = shell_split(&expanded);
-    tokens
-        .into_iter()
-        .filter_map(|tok| {
-            if tok.is_empty() {
-                return None;
-            }
-            // Angle-bracket placeholders → x
-            if tok.starts_with('<') && tok.ends_with('>') && tok.len() >= 2 {
-                return Some("x".to_owned());
-            }
-            // Home / env expansions that clap only needs as structure.
-            if tok.starts_with('~') || tok.starts_with('$') || tok.contains('$') {
-                return Some("x".to_owned());
-            }
-            Some(tok)
-        })
-        .collect()
+    let mut tokens = shell_split(&expanded).into_iter().peekable();
+    let mut normalized = Vec::new();
+    while let Some(tok) = tokens.next() {
+        if tok == "<"
+            && tokens
+                .peek()
+                .is_some_and(|path| !matches!(path.as_str(), "<" | ">" | "|" | "&&"))
+        {
+            // Input redirection supplies stdin to the documented command; it
+            // is not an argv token. Remove only a well-formed `< path` pair.
+            tokens.next();
+            continue;
+        }
+        if tok.is_empty() {
+            continue;
+        }
+        // Angle-bracket placeholders → x
+        if tok.starts_with('<') && tok.ends_with('>') && tok.len() >= 2 {
+            normalized.push("x".to_owned());
+            continue;
+        }
+        // Home / env expansions that clap only needs as structure.
+        if tok.starts_with('~') || tok.starts_with('$') || tok.contains('$') {
+            normalized.push("x".to_owned());
+            continue;
+        }
+        normalized.push(tok);
+    }
+    normalized
 }
 
 /// Minimal shell-style splitter honoring single/double quotes. No escapes
@@ -458,6 +469,30 @@ fn extractor_shapes() {
     let mdx = "```sh\njackin doctor # full health check\n```\n";
     let v = extract_invocations(mdx);
     assert_eq!(v[0].1, "jackin doctor");
+
+    // Input redirection supplies stdin, not an extra argv pair.
+    let mdx = "```sh\njackin usage statusline ingest --session-only --format json < statusline.json\n```\n";
+    let v = extract_invocations(mdx);
+    assert_eq!(v.len(), 1);
+    let tokens = normalize_to_tokens(&v[0].1);
+    assert_eq!(
+        tokens,
+        [
+            "jackin",
+            "usage",
+            "statusline",
+            "ingest",
+            "--session-only",
+            "--format",
+            "json"
+        ]
+    );
+    Cli::try_parse_from(&tokens).unwrap();
+
+    // A malformed bare redirection remains visible to clap instead of being skipped.
+    let tokens = normalize_to_tokens("jackin usage statusline ingest --session-only <");
+    assert_eq!(tokens.last().map(String::as_str), Some("<"));
+    Cli::try_parse_from(&tokens).unwrap_err();
 }
 
 #[test]
