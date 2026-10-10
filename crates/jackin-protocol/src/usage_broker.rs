@@ -214,6 +214,8 @@ pub enum UsageCoordinationErrorKind {
     RateLimited,
     /// Broker protocol or build handshake failed.
     ProtocolMismatch,
+    /// A different or unrecognized service already owns the broker lease.
+    BrokerConflict,
 }
 
 /// Sanitized coordination error.
