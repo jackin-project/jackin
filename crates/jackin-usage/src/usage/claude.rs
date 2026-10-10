@@ -843,13 +843,10 @@ struct ClaudeCredentialPayload {
 struct ClaudeOAuthPayload {
     #[serde(rename = "accessToken", alias = "access_token")]
     access_token: Option<ClaudeSecretString>,
-    #[serde(
-        rename = "subscriptionType",
-        alias = "subscription_type",
-        alias = "rateLimitTier",
-        alias = "rate_limit_tier"
-    )]
+    #[serde(rename = "subscriptionType", alias = "subscription_type")]
     subscription_type: Option<String>,
+    #[serde(rename = "rateLimitTier", alias = "rate_limit_tier")]
+    rate_limit_tier: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -887,7 +884,11 @@ pub(crate) fn parse_claude_profile_payload(bytes: &[u8]) -> Option<ClaudeProfile
         if access_token.trim().is_empty() {
             return None;
         }
-        let subscription_type = oauth.subscription_type.as_deref().map(humanize_plan_label);
+        let subscription_type = oauth
+            .subscription_type
+            .or(oauth.rate_limit_tier)
+            .as_deref()
+            .map(humanize_plan_label);
         Some(ClaudeOAuthCredentials {
             access_token,
             subscription_type,
@@ -1127,7 +1128,9 @@ fn raw_subscription_kinds(oauth: &ClaudePayloadRawOAuth<'_>) -> ClaudePayloadSub
         subscription_type_snake_case: kinds[1],
         rate_limit_tier: kinds[2],
         rate_limit_tier_snake_case: kinds[3],
-        duplicate_alias: aliases.iter().filter(|field| field.0.is_some()).count() > 1,
+        duplicate_alias: (oauth.subscription_camel.0.is_some()
+            && oauth.subscription_snake.0.is_some())
+            || (oauth.rate_tier_camel.0.is_some() && oauth.rate_tier_snake.0.is_some()),
     }
 }
 

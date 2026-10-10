@@ -108,6 +108,78 @@ fn diagnostic_accepts_single_snake_case_spellings() {
 }
 
 #[test]
+fn parser_accepts_distinct_subscription_and_rate_limit_metadata() {
+    let mut payload = br#"{"claudeAiOauth":{"accessToken":"fixture-token","subscriptionType":"claude_team","rateLimitTier":"max"}}"#.to_vec();
+    payload.resize(524, b' ');
+
+    let parsed = super::parse_claude_profile_payload(&payload).expect("valid credential shape");
+    let credential = parsed.credential.expect("nonblank access token");
+    assert_eq!(credential.subscription_type.as_deref(), Some("Claude Team"));
+
+    let diagnostic = diagnose(&payload);
+    assert_eq!(diagnostic["payload_bytes"], 524);
+    assert_eq!(
+        diagnostic["subscription_type"]["subscription_type"],
+        "string"
+    );
+    assert_eq!(diagnostic["subscription_type"]["rate_limit_tier"], "string");
+    assert_eq!(diagnostic["subscription_type"]["duplicate_alias"], false);
+}
+
+#[test]
+fn parser_falls_back_to_rate_limit_tier_and_allows_missing_or_null_metadata() {
+    for (payload, expected) in [
+        (
+            br#"{"claudeAiOauth":{"accessToken":"fixture-token","subscription_type":"claude_team","rate_limit_tier":"max"}}"#.as_slice(),
+            Some("Claude Team"),
+        ),
+        (
+            br#"{"claudeAiOauth":{"accessToken":"fixture-token","rateLimitTier":"claude_max"}}"#.as_slice(),
+            Some("Claude Max"),
+        ),
+        (
+            br#"{"claudeAiOauth":{"accessToken":"fixture-token","subscriptionType":null,"rateLimitTier":"claude_pro"}}"#.as_slice(),
+            Some("Claude Pro"),
+        ),
+        (
+            br#"{"claudeAiOauth":{"accessToken":"fixture-token"}}"#.as_slice(),
+            None,
+        ),
+        (
+            br#"{"claudeAiOauth":{"accessToken":"fixture-token","subscriptionType":null,"rateLimitTier":null}}"#.as_slice(),
+            None,
+        ),
+    ] {
+        let parsed = super::parse_claude_profile_payload(payload).expect("valid credential shape");
+        assert_eq!(
+            parsed
+                .credential
+                .expect("nonblank access token")
+                .subscription_type
+                .as_deref(),
+            expected
+        );
+    }
+
+    let wrong_type = br#"{"claudeAiOauth":{"accessToken":"fixture-token","subscriptionType":17,"rateLimitTier":"max"}}"#;
+    assert!(super::parse_claude_profile_payload(wrong_type).is_none());
+}
+
+#[test]
+fn parser_rejects_duplicate_spellings_of_the_same_metadata_field() {
+    for payload in [
+        br#"{"claudeAiOauth":{"accessToken":"fixture-token","subscriptionType":"team","subscription_type":"max"}}"#.as_slice(),
+        br#"{"claudeAiOauth":{"accessToken":"fixture-token","rateLimitTier":"team","rate_limit_tier":"max"}}"#.as_slice(),
+    ] {
+        assert!(super::parse_claude_profile_payload(payload).is_none());
+        assert_eq!(
+            diagnose(payload)["subscription_type"]["duplicate_alias"],
+            true
+        );
+    }
+}
+
+#[test]
 fn diagnostic_reports_camel_snake_aliases_and_collisions() {
     let payload = br#"{
             "claudeAiOauth": {
@@ -134,7 +206,7 @@ fn diagnostic_reports_camel_snake_aliases_and_collisions() {
     assert_eq!(diagnostic["access_token"]["camel_case"], "string");
     assert_eq!(diagnostic["access_token"]["snake_case"], "string");
     assert_eq!(diagnostic["access_token"]["duplicate_alias"], true);
-    assert_eq!(diagnostic["subscription_type"]["duplicate_alias"], true);
+    assert_eq!(diagnostic["subscription_type"]["duplicate_alias"], false);
     assert_eq!(diagnostic["account_container"]["duplicate_alias"], true);
     assert_eq!(diagnostic["email_address"]["duplicate_alias"], true);
     assert_eq!(diagnostic["organization_type"]["duplicate_alias"], true);
