@@ -61,12 +61,13 @@ pub(crate) use errors::{
 };
 pub(crate) use finish::{finish_failure, finish_success, mark_updating};
 pub use jobs::UsageCoordinator;
-pub(crate) use jobs::{MonotonicClock, ProbeJob, SystemMonotonicClock, WorkerMessage};
+pub(crate) use jobs::{ClockSample, MonotonicClock, ProbeJob, SystemMonotonicClock, WorkerMessage};
 pub(crate) use outcome::TERMINAL_HISTORY_LIMIT;
 pub use outcome::{ProviderProbeOutcome, UsageProviderExecutor};
 pub(crate) use upkeep::{
     account_cooldown_deadline, cadence_deadline, cooldown_tombstone, data_bearing, generation_view,
-    record_blocked_terminal, reset_entry, reset_envelope, revoke_entry, revoke_envelope,
+    pending_attempt_envelope, record_blocked_terminal, reset_entry, reset_envelope, revoke_entry,
+    revoke_envelope,
 };
 pub(crate) use worker::coordinator_worker;
 

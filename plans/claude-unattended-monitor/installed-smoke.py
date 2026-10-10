@@ -51,7 +51,7 @@ EXPECTED_HELP = (
     "spend",
     "auth",
 )
-EXPECTED_PROTOCOL_VERSION = "v7"
+EXPECTED_PROTOCOL_VERSION = "v8"
 EXPECTED_MONITOR_SCHEMA_VERSION = 4
 EXPECTED_BINARY_NAMES = {"jackin", "jackin-usage-broker"}
 

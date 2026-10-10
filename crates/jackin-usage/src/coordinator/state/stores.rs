@@ -10,9 +10,9 @@ use std::sync::atomic::Ordering;
 
 use super::{
     ACCOUNT_STATE_SCHEMA_VERSION, AccountStateEnvelope, MAX_ACCOUNT_STATE_BYTES,
-    PREVIOUS_ACCOUNT_STATE_SCHEMA_VERSION, PROJECTION_STATE_SCHEMA_VERSION,
-    STATE_QUARANTINE_COUNTER, STATE_TMP_COUNTER, StateStoreError, sanitize_envelope,
-    state_filename, validate_capability, validate_envelope, validate_owned_mode,
+    PREVIOUS_ACCOUNT_STATE_SCHEMA_VERSION, PREVIOUS_PROJECTION_STATE_SCHEMA_VERSION,
+    PROJECTION_STATE_SCHEMA_VERSION, STATE_QUARANTINE_COUNTER, STATE_TMP_COUNTER, StateStoreError,
+    sanitize_envelope, state_filename, validate_capability, validate_envelope, validate_owned_mode,
 };
 use jackin_protocol::usage_broker::{UsageAccountCapability, UsageCatalogEntry, UsageProjectionV1};
 use nix::fcntl::{OFlag, open, openat, renameat};
@@ -69,6 +69,15 @@ pub struct ProjectionStateEnvelope {
     pub broker_instance_id: String,
 }
 
+impl ProjectionStateEnvelope {
+    /// Current durable projection envelope schema.
+    pub(crate) const SCHEMA_VERSION: u32 = PROJECTION_STATE_SCHEMA_VERSION;
+
+    /// Previous schema containing raw host surface IDs in serialized provider
+    /// rows. Only the broker startup migration path may read it.
+    pub(crate) const MIGRATABLE_SCHEMA_VERSION: u32 = PREVIOUS_PROJECTION_STATE_SCHEMA_VERSION;
+}
+
 /// One secret-free capability-to-canonical alias transaction entry.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProjectionAlias {
@@ -93,33 +102,90 @@ impl FileProjectionStateStore {
         }
     }
 
-    /// Read one exact v2 envelope. Corrupt, v1, and future bytes are
-    /// quarantined and treated as unavailable rather than being rendered or
-    /// used for provider work. The caller deliberately rebuilds from the
-    /// current host catalog after this fail-closed reset.
+    /// Read one exact v3 envelope. Corrupt bytes are quarantined; valid older
+    /// and future schema versions return a non-destructive migration error.
+    /// The broker uses a separate migration-only loader for v2 before any
+    /// projection is exposed.
     pub fn load(&self) -> Result<Option<ProjectionStateEnvelope>, StateStoreError> {
+        self.load_with_legacy_schema(false)
+    }
+
+    /// Read one exact current envelope or the immediately previous schema for
+    /// the broker's one-time projection migration. Callers must normalize and
+    /// persist v2 before exposing its projection. Valid future versions are
+    /// reported without being quarantined or overwritten.
+    pub(crate) fn load_for_broker_migration(
+        &self,
+    ) -> Result<Option<ProjectionStateEnvelope>, StateStoreError> {
+        self.load_with_legacy_schema(true)
+    }
+
+    fn load_with_legacy_schema(
+        &self,
+        allow_previous_schema: bool,
+    ) -> Result<Option<ProjectionStateEnvelope>, StateStoreError> {
         let bytes = match fs::read(&self.path) {
             Ok(bytes) => bytes,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
             Err(_) => return Err(StateStoreError::Unavailable),
         };
-        let envelope = match serde_json::from_slice::<ProjectionStateEnvelope>(&bytes) {
-            Ok(envelope) if envelope.schema_version == PROJECTION_STATE_SCHEMA_VERSION => envelope,
+        let value = match serde_json::from_slice::<serde_json::Value>(&bytes) {
+            Ok(value @ serde_json::Value::Object(_)) => value,
             Ok(_) | Err(_) => {
                 self.quarantine()?;
                 return Err(StateStoreError::Corrupt);
             }
         };
-        if envelope.projection.validate().is_err() {
+        let Some(schema_version) = value
+            .get("schema_version")
+            .and_then(serde_json::Value::as_u64)
+        else {
+            self.quarantine()?;
+            return Err(StateStoreError::Corrupt);
+        };
+        if schema_version > u64::from(PROJECTION_STATE_SCHEMA_VERSION) {
+            return Err(StateStoreError::SchemaMigrationRequired {
+                found: schema_version,
+                current: PROJECTION_STATE_SCHEMA_VERSION,
+            });
+        }
+        if schema_version == u64::from(PREVIOUS_PROJECTION_STATE_SCHEMA_VERSION)
+            && !allow_previous_schema
+        {
+            self.decode_validated_envelope(value)?;
+            return Err(StateStoreError::SchemaMigrationRequired {
+                found: schema_version,
+                current: PROJECTION_STATE_SCHEMA_VERSION,
+            });
+        }
+        if schema_version != u64::from(PROJECTION_STATE_SCHEMA_VERSION)
+            && !(allow_previous_schema
+                && schema_version == u64::from(PREVIOUS_PROJECTION_STATE_SCHEMA_VERSION))
+        {
             self.quarantine()?;
             return Err(StateStoreError::Corrupt);
         }
+        let envelope = self.decode_validated_envelope(value)?;
         Ok(Some(envelope))
+    }
+
+    fn decode_validated_envelope(
+        &self,
+        value: serde_json::Value,
+    ) -> Result<ProjectionStateEnvelope, StateStoreError> {
+        let envelope = match serde_json::from_value::<ProjectionStateEnvelope>(value) {
+            Ok(envelope) if envelope.projection.validate().is_ok() => envelope,
+            Ok(_) | Err(_) => {
+                self.quarantine()?;
+                return Err(StateStoreError::Corrupt);
+            }
+        };
+        Ok(envelope)
     }
 
     /// Atomically replace one publication envelope and sync its directory.
     pub fn store(&self, envelope: &ProjectionStateEnvelope) -> Result<(), StateStoreError> {
-        if envelope.schema_version != PROJECTION_STATE_SCHEMA_VERSION {
+        if envelope.schema_version != ProjectionStateEnvelope::SCHEMA_VERSION {
             return Err(StateStoreError::Corrupt);
         }
         let envelope = envelope.clone();

@@ -4,12 +4,17 @@
 
 The canonical branch is `feat/claude-usage-monitor-main`, based on main
 `868ce535`. Pushed checkpoint `471efcb2` is earlier source evidence. The
-current candidate uses broker wire v8, durable monitor schema v4 (unchanged),
-and statusline input v2; `LocalSourceHandle` is distinct from provider identity.
-A five-package MBX consumer compile check passed at an earlier checkpoint,
-before the current wire-v8, projection-v3, and clock-fix changes. It is
-historical evidence only; the current candidate has no recorded compile,
-behavior-test, installed-pair rebuild, or acceptance-gate result.
+current candidate uses broker wire v8, projection schema v3, durable monitor
+schema v4 (unchanged), and statusline input v2; `LocalSourceHandle` is distinct
+from provider identity.
+
+The earlier five-package MBX consumer compile check predates the current
+wire-v8, projection-v3, and clock-fix changes and is historical. The current
+production five-package compile passed, the final seven-package scoped check
+passed, and seven-package formatting passed. The selected current-source
+offline gates below passed. The v8 installed-pair rebuild remains pending;
+source checks do not establish installed wire-v8 behavior or real-account
+readiness.
 
 Current Cargo verification must use MBX 1.22.0 with offline/locked flags.
 Earlier checks used the checked-in Mise-to-MBX Cargo wrapper. Current isolated
@@ -20,14 +25,45 @@ below preserve old transcripts and are not current run instructions. The local
 wrapper and prior build output verify MBX 1.22.0; PR #1120 is not required to
 enable it and remains draft with failing required checks.
 
+| Current source scope | Result | Evidence |
+| --- | --- | --- |
+| Production five-package compile | Passed | `/private/tmp/jackin-mbx-v4-five-package-check-final.log` |
+| Final seven-package scoped check | Passed after test-scanner fix | `/private/tmp/jackin-mbx-v4-scoped-check-final-retry.log` |
+| Seven-package scoped formatting | Passed | `/private/tmp/jackin-mbx-v4-fmt-final4.log` |
+| Protocol | 135 passed | `/private/tmp/jackin-mbx-v4-protocol-full.log` |
+| Projection | 10 passed | `/private/tmp/jackin-mbx-v4-usage-projection-tests-retry.log` |
+| Discovery | 41 passed | `/private/tmp/jackin-mbx-v4-usage-discovery-tests.log` |
+| Claude provider | 25 passed | `/private/tmp/jackin-mbx-v4-usage-claude.log` |
+| Coordinator | 50 passed | `/private/tmp/jackin-mbx-v4-usage-coordinator-tests.log` |
+| Coordinator state | 11 passed | `/private/tmp/jackin-mbx-v4-usage-coordinator-state-tests.log` |
+| Host broker | 183 passed, 0 failed, 511 filtered | `/private/tmp/jackin-mbx-v4-usage-host-broker-retry2.log` |
+| Host inventory | 13 passed | `/private/tmp/jackin-mbx-v4-usage-host-tests-final.log` |
+| Runtime usage relay | 21 passed | `/private/tmp/jackin-mbx-v4-runtime-usage-relay-final.log` |
+| CLI usage | 43 passed | `/private/tmp/jackin-mbx-v4-jackin-cli-usage-lib.log` |
+| App | 29 passed | `/private/tmp/jackin-mbx-v4-jackin-app-tests.log` |
+| Console | 61 passed | `/private/tmp/jackin-mbx-v4-console-usage-tests.log` |
+| FFI bridge | 9 passed | `/private/tmp/jackin-mbx-v4-ffi-bridge.log` |
+| Capsule | 11 passed | `/private/tmp/jackin-mbx-v4-capsule-usage-relay-proxy.log` |
+| Offline bootstrap integration | 2 passed | `/private/tmp/jackin-mbx-v4-integration-usage-bootstrap-offline.log` |
+| Offline monitor integration | 5 passed | `/private/tmp/jackin-mbx-v4-integration-usage-monitor-offline.log` |
+| Broker installation integration tests | 5 passed | `/private/tmp/jackin-mbx-v4-integration-broker-installation.log` |
+| Broker service lifecycle integration tests | 2 passed | `/private/tmp/jackin-mbx-v4-integration-broker-service-lifecycle.log` |
+| Contract baseline | 10 passed | `/private/tmp/jackin-mbx-v4-usage-contract-baseline-final.log` |
+| Docs typecheck, tests, and static build | 18 tests, 30 assertions; 1,293 routes | `/private/tmp/jackin-docs-wire8-final-build-rerun.log` |
+| Docs repository links | Passed | `/private/tmp/jackin-mbx-v4-docs-repo-links-final.log` |
+| Roadmap metadata scan | 18 pages passed | `/private/tmp/jackin-mbx-v4-roadmap-audit.log` |
+| Research metadata scan | 63 pages passed | `/private/tmp/jackin-mbx-v4-research-check.log` |
+
+These are independent scopes and overlap; do not sum their counts. The
+installation integration tests do not rebuild or smoke the current installed
+v8 pair. Broader reconciliation, installation, and landing remain open.
+
 Previously recorded pre-v8 scopes: protocol 133; broker 173; Claude
-fake-auth/provider 25; CLI usage 43; app 29; coordinator 54. Docs typecheck,
-18 tests, 1,293-route build and rendered statusline patch passed. Counts
-overlap; do not sum them as unique tests. Installation 5, lifecycle 2,
-bootstrap 2, and monitor 5 subprocess tests passed; the Docker/e2e-feature
-executable ran zero tests and is not e2e proof. These counts and results do not
-validate the current wire-v8 candidate. Prior logs and source provenance are
-recorded in `v3-checks.json` and `v3-installation.json`.
+fake-auth/provider 25; CLI usage 43; app 29; coordinator 54. These historical
+counts and results do not validate the current wire-v8 candidate. The
+Docker/e2e-feature executable ran zero tests and is not e2e proof. Prior logs
+and source provenance are recorded in `v3-checks.json` and
+`v3-installation.json`.
 
 The prior pair, built through MBX from
 `1a45196dbe24d439e596c14e22fbda59799e7b0d`, is installed at

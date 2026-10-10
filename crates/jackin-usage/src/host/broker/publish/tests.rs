@@ -9,8 +9,9 @@ use std::time::Duration;
 
 use jackin_protocol::control::{Money, UsageConfidence, UsageSeverity, UsageSource};
 use jackin_protocol::usage_broker::{
-    UsageAccountCapability, UsageFreshnessPhaseV1, UsageIdentityKindV1, UsageLifecycleV1,
-    UsageMetricValueV1, UsageProjectionRefreshStateV1, UsageProjectionSchemaV1, UsageQuotaStateV1,
+    UsageAccountCapability, UsageFreshnessPhaseV1, UsageIdentityKindV1, UsageIssueRecoverabilityV1,
+    UsageIssueScopeV1, UsageIssueV1, UsageLifecycleV1, UsageMetricValueV1,
+    UsageProjectionRefreshStateV1, UsageProjectionSchemaV1, UsageQuotaStateV1,
 };
 
 use super::*;
@@ -58,6 +59,29 @@ impl UsageProviderExecutor for ImmediateExecutor {
     }
 }
 
+struct RankedAccountExecutor;
+
+impl UsageProviderExecutor for RankedAccountExecutor {
+    fn probe(&self, capability: &UsageAccountCapability, _generation: u64) -> ProviderProbeOutcome {
+        let mut snapshot = fresh_view();
+        snapshot.account.provider_label = HostSurfaceId::from_id(&capability.surface_id)
+            .map_or_else(
+                || capability.surface_id.clone(),
+                |surface| surface.label().to_owned(),
+            );
+        snapshot.account.account_label = match capability.account_id.as_str() {
+            "account-z" => "Zulu".to_owned(),
+            "account-umlaut" => "Änne".to_owned(),
+            "account-b" => "same".to_owned(),
+            "account-ana" => "Ana".to_owned(),
+            "account-ring" => "Åke".to_owned(),
+            "account-a" => "Same".to_owned(),
+            _ => format!("{} account", capability.surface_id),
+        };
+        ProviderProbeOutcome::success(snapshot)
+    }
+}
+
 struct FailingCatalogExecutor {
     reconciles: AtomicUsize,
 }
@@ -87,6 +111,19 @@ fn capability() -> UsageAccountCapability {
     UsageAccountCapability {
         account_id: "account-a".to_owned(),
         surface_id: "claude".to_owned(),
+    }
+}
+
+fn catalog_reconciliation(
+    catalog_revision: &str,
+    entries: Vec<UsageCatalogEntry>,
+    diagnostics: CatalogDiagnostics,
+) -> CatalogReconciliation {
+    CatalogReconciliation {
+        catalog_revision: catalog_revision.to_owned(),
+        entries,
+        diagnostics,
+        identity_metadata: None,
     }
 }
 
@@ -130,6 +167,207 @@ fn empty_projection() -> UsageProjectionV1 {
         unresolved: Vec::new(),
         issues: Vec::new(),
     }
+}
+
+struct CatalogDiagnosticFixture {
+    _temp: tempfile::TempDir,
+    coordinator: Arc<UsageCoordinator>,
+    projection: Arc<Mutex<UsageProjectionV1>>,
+    store: FileProjectionStateStore,
+    publisher: ProjectionPublisher,
+    revoked_capability: UsageAccountCapability,
+    current_capability: UsageAccountCapability,
+    current_entry: UsageCatalogEntry,
+}
+
+impl CatalogDiagnosticFixture {
+    fn reconcile_interaction(&self) -> UsageProjectionV1 {
+        let mut diagnostics = CatalogDiagnostics::default();
+        diagnostics.push_provider_issue(
+            "claude",
+            "Claude",
+            CatalogDiagnosticCode::InteractionRequired,
+        );
+        diagnostics.push_unresolved("claude", "Claude", "opaque-candidate".to_owned(), 1);
+
+        let before = self.publisher.current_projection().unwrap();
+        self.publisher
+            .reconcile_catalog_if_projection(
+                Some(&before.projection_id),
+                catalog_reconciliation(
+                    "catalog-current",
+                    vec![self.current_entry.clone()],
+                    diagnostics,
+                ),
+                1_002,
+            )
+            .unwrap()
+    }
+
+    fn refresh_and_publish(
+        &self,
+        capability: &UsageAccountCapability,
+        request_at: i64,
+        joined_at: i64,
+        published_at: i64,
+    ) {
+        let generation = self
+            .coordinator
+            .request_refresh(capability, 0, true, request_at)
+            .unwrap()
+            .generation;
+        self.coordinator
+            .join_generation(capability, generation, Duration::from_secs(1), joined_at)
+            .unwrap();
+        self.publisher.observe(capability);
+        assert!(self.publisher.publish_due(published_at));
+    }
+}
+
+fn seeded_catalog_diagnostic_fixture() -> CatalogDiagnosticFixture {
+    let temp = tempfile::tempdir().unwrap();
+    let revoked_capability = capability();
+    let current_capability = UsageAccountCapability {
+        account_id: "account-current".to_owned(),
+        surface_id: "claude".to_owned(),
+    };
+    let revoked_entry = UsageCatalogEntry {
+        capability: revoked_capability.clone(),
+        revision: "revision-old".to_owned(),
+    };
+    let current_entry = UsageCatalogEntry {
+        capability: current_capability.clone(),
+        revision: "revision-current".to_owned(),
+    };
+    let coordinator = Arc::new(UsageCoordinator::with_catalog(
+        Arc::new(ImmediateExecutor),
+        Arc::new(MemoryStore::default()),
+        UsageCoordinatorConfig::default(),
+        [revoked_entry.clone()],
+    ));
+    let projection = Arc::new(Mutex::new(empty_projection()));
+    let store = FileProjectionStateStore::under_data_dir(temp.path());
+    let publisher = ProjectionPublisher::new(
+        Arc::clone(&coordinator),
+        Arc::clone(&projection),
+        store.clone(),
+    )
+    .with_catalog([revoked_entry]);
+    let fixture = CatalogDiagnosticFixture {
+        _temp: temp,
+        coordinator,
+        projection,
+        store,
+        publisher,
+        revoked_capability,
+        current_capability,
+        current_entry,
+    };
+    fixture.refresh_and_publish(&fixture.revoked_capability, 1_000, 1_001, 1_001);
+    fixture
+}
+
+#[test]
+fn interaction_diagnostics_survive_new_catalog_incremental_publish_and_revocation() {
+    let fixture = seeded_catalog_diagnostic_fixture();
+    let reconciled = fixture.reconcile_interaction();
+    let revoked = reconciled
+        .providers
+        .iter()
+        .flat_map(|provider| provider.accounts.iter())
+        .find(|account| account.canonical_account_id == fixture.revoked_capability.account_id)
+        .expect("revoked account remains as a tombstone");
+    assert_eq!(revoked.lifecycle, UsageLifecycleV1::Unavailable);
+    assert_eq!(reconciled.unresolved.len(), 1);
+    assert_eq!(
+        reconciled.unresolved[0].state,
+        UsageLifecycleV1::NeedsSecret
+    );
+    assert_eq!(reconciled.unresolved[0].capability_id, "opaque-candidate");
+
+    fixture.refresh_and_publish(&fixture.current_capability, 1_003, 1_004, 1_005);
+    let published = fixture.publisher.current_projection().unwrap();
+    assert_interaction_issue(&published);
+    assert!(
+        published
+            .providers
+            .iter()
+            .flat_map(|provider| provider.accounts.iter())
+            .any(|account| account.canonical_account_id == fixture.revoked_capability.account_id)
+    );
+    assert_eq!(published.unresolved.len(), 1);
+    assert_eq!(published.unresolved[0].state, UsageLifecycleV1::NeedsSecret);
+    assert_eq!(fixture.store.load().unwrap().unwrap().projection, published);
+}
+
+#[test]
+fn clean_catalog_scan_clears_catalog_diagnostics_and_keeps_unrelated_provider_issues() {
+    let fixture = seeded_catalog_diagnostic_fixture();
+    fixture.reconcile_interaction();
+    fixture
+        .projection
+        .lock()
+        .unwrap()
+        .providers
+        .iter_mut()
+        .find(|provider| provider.provider_id == "anthropic")
+        .unwrap()
+        .issues
+        .push(UsageIssueV1 {
+            code: "provider_specific_issue".to_owned(),
+            scope: UsageIssueScopeV1::Provider,
+            recoverability: UsageIssueRecoverabilityV1::Retryable,
+            message: "Rust-owned provider issue".to_owned(),
+            retry_at_epoch: Some(1_006),
+        });
+
+    let before = fixture.publisher.current_projection().unwrap();
+    let clean = fixture
+        .publisher
+        .reconcile_catalog_if_projection(
+            Some(&before.projection_id),
+            catalog_reconciliation("catalog-clean", Vec::new(), CatalogDiagnostics::default()),
+            1_006,
+        )
+        .unwrap();
+    let provider = clean
+        .providers
+        .iter()
+        .find(|provider| provider.provider_id == "anthropic")
+        .unwrap();
+    assert!(
+        provider
+            .issues
+            .iter()
+            .any(|issue| issue.code == "provider_specific_issue")
+    );
+    assert!(
+        !provider
+            .issues
+            .iter()
+            .any(|issue| issue.code == "interaction_required")
+    );
+    assert!(clean.unresolved.is_empty());
+    assert!(fixture.publisher.catalog_capabilities().is_empty());
+}
+
+fn assert_interaction_issue(projection: &UsageProjectionV1) {
+    let provider = projection
+        .providers
+        .iter()
+        .find(|provider| provider.provider_id == "anthropic")
+        .unwrap();
+    let issue = provider
+        .issues
+        .iter()
+        .find(|issue| issue.code == "interaction_required")
+        .expect("provider diagnostic survives incremental publication");
+    assert_eq!(issue.scope, UsageIssueScopeV1::Provider);
+    assert_eq!(
+        issue.recoverability,
+        UsageIssueRecoverabilityV1::ActionRequired
+    );
+    assert_eq!(issue.message, "Credential access requires interaction");
 }
 
 #[test]
@@ -227,11 +465,9 @@ fn catalog_reconciliation_publishes_removed_tombstone_atomically() {
     assert!(publisher.publish_due(1_001));
 
     let removed = publisher
-        .reconcile_catalog_if_projection_with_diagnostics(
+        .reconcile_catalog_if_projection(
             None,
-            "catalog-2".to_owned(),
-            Vec::new(),
-            CatalogDiagnostics::default(),
+            catalog_reconciliation("catalog-2", Vec::new(), CatalogDiagnostics::default()),
             1_002,
         )
         .unwrap();
@@ -318,7 +554,7 @@ fn capsule_publication_preserves_identity_kind_and_provenance_per_account() {
     ]);
     let mut projection = empty_projection();
 
-    merge_views(&mut projection, &views, &metadata);
+    merge_views(&mut projection, &views, &metadata).unwrap();
 
     let accounts = &projection.providers[0].accounts;
     assert_eq!(accounts.len(), 2);
@@ -332,6 +568,184 @@ fn capsule_publication_preserves_identity_kind_and_provenance_per_account() {
         UsageIdentityKindV1::ProviderStableHandle
     );
     assert_eq!(accounts[1].provenance_count, 2);
+}
+
+#[test]
+fn active_publisher_uses_canonical_provider_and_icu_account_ranks() {
+    let temp = tempfile::tempdir().unwrap();
+    let mut capabilities = Vec::new();
+    for surface in HostSurfaceId::ALL.iter().rev().copied() {
+        let account_ids = match surface {
+            HostSurfaceId::Codex => [
+                "account-z",
+                "account-umlaut",
+                "account-b",
+                "account-ana",
+                "account-ring",
+                "account-a",
+            ]
+            .into_iter()
+            .map(str::to_owned)
+            .collect::<Vec<_>>(),
+            HostSurfaceId::Claude => vec!["claude-account".to_owned()],
+            _ => vec![format!("{}-account", surface.id())],
+        };
+        capabilities.extend(
+            account_ids
+                .into_iter()
+                .map(|account_id| UsageAccountCapability {
+                    account_id,
+                    surface_id: surface.id().to_owned(),
+                }),
+        );
+    }
+    let catalog = capabilities
+        .iter()
+        .enumerate()
+        .map(|(index, capability)| UsageCatalogEntry {
+            capability: capability.clone(),
+            revision: format!("revision-{index}"),
+        })
+        .collect::<Vec<_>>();
+    let coordinator = Arc::new(UsageCoordinator::with_catalog(
+        Arc::new(RankedAccountExecutor),
+        Arc::new(MemoryStore::default()),
+        UsageCoordinatorConfig::default(),
+        catalog.clone(),
+    ));
+    let projection = Arc::new(Mutex::new(empty_projection()));
+    let publisher = ProjectionPublisher::new(
+        Arc::clone(&coordinator),
+        Arc::clone(&projection),
+        FileProjectionStateStore::under_data_dir(temp.path()),
+    )
+    .with_catalog(catalog);
+    for (index, capability) in capabilities.iter().enumerate() {
+        let request_at = 1_000 + i64::try_from(index).unwrap() * 2;
+        let generation = coordinator
+            .request_refresh(capability, 0, true, request_at)
+            .unwrap()
+            .generation;
+        coordinator
+            .join_generation(
+                capability,
+                generation,
+                Duration::from_secs(1),
+                request_at + 1,
+            )
+            .unwrap();
+        publisher.observe(capability);
+    }
+    assert!(publisher.publish_due(2_000));
+    let projection = publisher.current_projection().unwrap();
+
+    assert_eq!(
+        projection
+            .providers
+            .iter()
+            .map(|provider| provider.provider_id.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "openai",
+            "anthropic",
+            "amp",
+            "xai",
+            "zai",
+            "kimi",
+            "minimax",
+            "opencode",
+            "google",
+            "cursor",
+            "meta",
+            "openrouter",
+        ]
+    );
+    assert_eq!(projection.providers[0].rank, 0);
+    assert!(
+        projection
+            .providers
+            .iter()
+            .enumerate()
+            .all(|(rank, provider)| provider.rank == u32::try_from(rank).unwrap())
+    );
+    assert_eq!(
+        projection.providers[0]
+            .accounts
+            .iter()
+            .map(|account| account.display_label.as_str())
+            .collect::<Vec<_>>(),
+        ["Åke", "Ana", "Änne", "Same", "same", "Zulu"]
+    );
+    assert_eq!(
+        projection.providers[0]
+            .accounts
+            .iter()
+            .map(|account| account.canonical_account_id.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "account-ring",
+            "account-ana",
+            "account-umlaut",
+            "account-a",
+            "account-b",
+            "account-z",
+        ]
+    );
+    assert!(
+        projection.providers[0]
+            .accounts
+            .iter()
+            .enumerate()
+            .all(|(rank, account)| account.rank == u32::try_from(rank).unwrap())
+    );
+    assert!(
+        projection.providers[0]
+            .accounts
+            .iter()
+            .all(|account| account.identity_kind == UsageIdentityKindV1::UnverifiedHandle)
+    );
+    projection.validate().unwrap();
+}
+
+#[test]
+fn no_snapshot_incremental_publish_preserves_provider_label_and_issue() {
+    let capability = capability();
+    let mut projection = empty_projection();
+    let mut diagnostics = CatalogDiagnostics::default();
+    diagnostics.push_provider_issue(
+        "claude",
+        "Anthropic",
+        CatalogDiagnosticCode::InteractionRequired,
+    );
+    apply_catalog_diagnostics(&mut projection, &diagnostics).unwrap();
+
+    merge_views(
+        &mut projection,
+        &[UsageGenerationView {
+            capability,
+            generation: 2,
+            phase: UsageRefreshPhase::Updating,
+            snapshot: None,
+            error: None,
+            retry_at_epoch: None,
+        }],
+        &BTreeMap::new(),
+    )
+    .unwrap();
+
+    let provider = projection
+        .providers
+        .iter()
+        .find(|provider| provider.provider_id == "anthropic")
+        .expect("canonical provider row remains during refresh");
+    assert_eq!(provider.display_name, "Anthropic");
+    assert_eq!(provider.freshness.phase, UsageFreshnessPhaseV1::Refreshing);
+    assert!(
+        provider
+            .issues
+            .iter()
+            .any(|issue| issue.code == "interaction_required")
+    );
 }
 
 #[test]
@@ -362,7 +776,7 @@ fn capsule_publication_preserves_openrouter_overage_raw_used_percent() {
     }];
     let mut projection = empty_projection();
 
-    merge_views(&mut projection, &views, &BTreeMap::new());
+    merge_views(&mut projection, &views, &BTreeMap::new()).unwrap();
 
     let window = &projection.providers[0].accounts[0].windows[0];
     assert_eq!(window.value_label, "120% used");
@@ -415,7 +829,7 @@ fn publication_marks_empty_and_stale_quota_states_without_fabrication() {
             retry_at_epoch: None,
         }];
         let mut projection = empty_projection();
-        merge_views(&mut projection, &views, &BTreeMap::new());
+        merge_views(&mut projection, &views, &BTreeMap::new()).unwrap();
         projection
     };
     assert_eq!(
@@ -435,7 +849,7 @@ fn publication_marks_empty_and_stale_quota_states_without_fabrication() {
         retry_at_epoch: None,
     }];
     let mut projection = empty_projection();
-    merge_views(&mut projection, &views, &BTreeMap::new());
+    merge_views(&mut projection, &views, &BTreeMap::new()).unwrap();
     let account = &projection.providers[0].accounts[0];
     assert_eq!(account.freshness.phase, UsageFreshnessPhaseV1::Stale);
     assert!(account.freshness.is_stale);
@@ -471,7 +885,7 @@ fn publication_refreshing_is_scoped_to_provider_surface() {
         },
     ];
     let mut projection = empty_projection();
-    merge_views(&mut projection, &views, &BTreeMap::new());
+    merge_views(&mut projection, &views, &BTreeMap::new()).unwrap();
 
     assert_eq!(
         projection.refresh_state,
@@ -481,7 +895,7 @@ fn publication_refreshing_is_scoped_to_provider_surface() {
         projection
             .providers
             .iter()
-            .find(|provider| provider.provider_id == "claude")
+            .find(|provider| provider.provider_id == "anthropic")
             .map(|provider| provider.freshness.phase),
         Some(UsageFreshnessPhaseV1::Refreshing)
     );
@@ -489,7 +903,7 @@ fn publication_refreshing_is_scoped_to_provider_surface() {
         projection
             .providers
             .iter()
-            .find(|provider| provider.provider_id == "codex")
+            .find(|provider| provider.provider_id == "openai")
             .map(|provider| provider.freshness.phase),
         Some(UsageFreshnessPhaseV1::Current)
     );
@@ -592,14 +1006,16 @@ fn catalog_publication_retains_removed_rows_without_expanding_to_new_members() {
     assert_eq!(projection.lock().unwrap().providers[0].accounts.len(), 1);
 
     let current = publisher
-        .reconcile_catalog_if_projection_with_diagnostics(
+        .reconcile_catalog_if_projection(
             None,
-            "catalog-2".to_owned(),
-            vec![UsageCatalogEntry {
-                capability: account_b.clone(),
-                revision: "revision-b".to_owned(),
-            }],
-            CatalogDiagnostics::default(),
+            catalog_reconciliation(
+                "catalog-2",
+                vec![UsageCatalogEntry {
+                    capability: account_b.clone(),
+                    revision: "revision-b".to_owned(),
+                }],
+                CatalogDiagnostics::default(),
+            ),
             1_003,
         )
         .unwrap();
@@ -620,14 +1036,16 @@ fn catalog_publication_retains_removed_rows_without_expanding_to_new_members() {
     assert_eq!(persisted.catalog[0].capability, account_b);
 
     let reintroduced = publisher
-        .reconcile_catalog_if_projection_with_diagnostics(
+        .reconcile_catalog_if_projection(
             None,
-            "catalog-3".to_owned(),
-            vec![UsageCatalogEntry {
-                capability: account_a,
-                revision: "revision-a".to_owned(),
-            }],
-            CatalogDiagnostics::default(),
+            catalog_reconciliation(
+                "catalog-3",
+                vec![UsageCatalogEntry {
+                    capability: account_a,
+                    revision: "revision-a".to_owned(),
+                }],
+                CatalogDiagnostics::default(),
+            ),
             1_004,
         )
         .unwrap();
@@ -667,14 +1085,16 @@ fn same_capability_revision_purges_stale_published_quota() {
     assert!(publisher.publish_due(1_001));
 
     let current = publisher
-        .reconcile_catalog_if_projection_with_diagnostics(
+        .reconcile_catalog_if_projection(
             None,
-            "catalog".to_owned(),
-            vec![UsageCatalogEntry {
-                capability: account.clone(),
-                revision: "credential-b".to_owned(),
-            }],
-            CatalogDiagnostics::default(),
+            catalog_reconciliation(
+                "catalog",
+                vec![UsageCatalogEntry {
+                    capability: account.clone(),
+                    revision: "credential-b".to_owned(),
+                }],
+                CatalogDiagnostics::default(),
+            ),
             1_002,
         )
         .unwrap();
@@ -685,6 +1105,184 @@ fn same_capability_revision_purges_stale_published_quota() {
     let reset = coordinator.current(&account, 1_002).unwrap();
     assert_eq!(reset.phase, UsageRefreshPhase::Idle);
     assert!(reset.snapshot.is_none());
+}
+
+#[test]
+fn accepted_discovery_metadata_updates_rows_and_bootstrap_none_preserves_it() {
+    let temp = tempfile::tempdir().unwrap();
+    let account = capability();
+    let entry = UsageCatalogEntry {
+        capability: account.clone(),
+        revision: "credential-a".to_owned(),
+    };
+    let coordinator = Arc::new(UsageCoordinator::with_catalog(
+        Arc::new(ImmediateExecutor),
+        Arc::new(MemoryStore::default()),
+        UsageCoordinatorConfig::default(),
+        [entry.clone()],
+    ));
+    let projection = Arc::new(Mutex::new(empty_projection()));
+    let publisher = ProjectionPublisher::new(
+        Arc::clone(&coordinator),
+        Arc::clone(&projection),
+        FileProjectionStateStore::under_data_dir(temp.path()),
+    )
+    .with_catalog([entry.clone()])
+    .with_identity_metadata(BTreeMap::from([(
+        account.clone(),
+        AccountIdentityMetadata {
+            identity_kind: UsageIdentityKindV1::LocalSourceHandle,
+            provenance_count: 1,
+        },
+    )]));
+
+    let generation = coordinator
+        .request_refresh(&account, 0, true, 1_000)
+        .unwrap()
+        .generation;
+    coordinator
+        .join_generation(&account, generation, Duration::from_secs(1), 1_001)
+        .unwrap();
+    publisher.observe(&account);
+    assert!(publisher.publish_due(1_001));
+
+    let discovered_identity = AccountIdentityMetadata {
+        identity_kind: UsageIdentityKindV1::ProviderStableHandle,
+        provenance_count: 2,
+    };
+    let updated = publisher
+        .reconcile_catalog_if_projection(
+            None,
+            CatalogReconciliation {
+                catalog_revision: "discovery-accepted".to_owned(),
+                entries: vec![entry.clone()],
+                diagnostics: CatalogDiagnostics::default(),
+                identity_metadata: Some(BTreeMap::from([(account.clone(), discovered_identity)])),
+            },
+            1_002,
+        )
+        .unwrap();
+    let account_row = &updated.providers[0].accounts[0];
+    assert_eq!(account_row.identity_kind, discovered_identity.identity_kind);
+    assert_eq!(
+        account_row.provenance_count,
+        discovered_identity.provenance_count
+    );
+
+    let preserved = publisher
+        .reconcile_catalog_if_projection(
+            Some(&updated.projection_id),
+            catalog_reconciliation(
+                "foreground-bootstrap",
+                vec![entry],
+                CatalogDiagnostics::default(),
+            ),
+            1_003,
+        )
+        .unwrap();
+    assert_eq!(
+        preserved.providers[0].accounts[0].identity_kind,
+        discovered_identity.identity_kind
+    );
+    assert_eq!(
+        preserved.providers[0].accounts[0].provenance_count,
+        discovered_identity.provenance_count
+    );
+}
+
+#[test]
+fn stale_projection_cas_preserves_identity_metadata_projection_and_durable_envelope() {
+    let temp = tempfile::tempdir().unwrap();
+    let account = capability();
+    let entry = UsageCatalogEntry {
+        capability: account.clone(),
+        revision: "credential-a".to_owned(),
+    };
+    let coordinator = Arc::new(UsageCoordinator::with_catalog(
+        Arc::new(ImmediateExecutor),
+        Arc::new(MemoryStore::default()),
+        UsageCoordinatorConfig::default(),
+        [entry.clone()],
+    ));
+    let projection = Arc::new(Mutex::new(empty_projection()));
+    let store = FileProjectionStateStore::under_data_dir(temp.path());
+    let publisher = ProjectionPublisher::new(
+        Arc::clone(&coordinator),
+        Arc::clone(&projection),
+        store.clone(),
+    )
+    .with_catalog([entry.clone()]);
+
+    let generation = coordinator
+        .request_refresh(&account, 0, true, 1_000)
+        .unwrap()
+        .generation;
+    coordinator
+        .join_generation(&account, generation, Duration::from_secs(1), 1_001)
+        .unwrap();
+    publisher.observe(&account);
+    assert!(publisher.publish_due(1_001));
+
+    let committed_metadata = AccountIdentityMetadata {
+        identity_kind: UsageIdentityKindV1::ProviderStableHandle,
+        provenance_count: 2,
+    };
+    let accepted = publisher
+        .reconcile_catalog_if_projection(
+            None,
+            CatalogReconciliation {
+                catalog_revision: "accepted-discovery".to_owned(),
+                entries: vec![entry.clone()],
+                diagnostics: CatalogDiagnostics::default(),
+                identity_metadata: Some(BTreeMap::from([(account.clone(), committed_metadata)])),
+            },
+            1_002,
+        )
+        .unwrap();
+    assert_eq!(
+        accepted.providers[0].accounts[0].identity_kind,
+        committed_metadata.identity_kind
+    );
+    let projection_before = publisher.current_projection().unwrap();
+    let metadata_before = publisher.identity_metadata.lock().unwrap().clone();
+    let envelope_before = store
+        .load()
+        .unwrap()
+        .expect("accepted projection is durable");
+
+    let error = publisher
+        .reconcile_catalog_if_projection(
+            Some("test:0"),
+            CatalogReconciliation {
+                catalog_revision: "stale-discovery-must-not-commit".to_owned(),
+                entries: vec![UsageCatalogEntry {
+                    capability: account.clone(),
+                    revision: "credential-b".to_owned(),
+                }],
+                diagnostics: CatalogDiagnostics::default(),
+                identity_metadata: Some(BTreeMap::from([(
+                    account,
+                    AccountIdentityMetadata {
+                        identity_kind: UsageIdentityKindV1::UnverifiedHandle,
+                        provenance_count: 9,
+                    },
+                )])),
+            },
+            1_003,
+        )
+        .unwrap_err();
+
+    assert_eq!(
+        error.kind,
+        UsageCoordinationErrorKind::CatalogRevisionConflict
+    );
+    assert_eq!(publisher.current_projection().unwrap(), projection_before);
+    assert_eq!(
+        publisher.identity_metadata.lock().unwrap().clone(),
+        metadata_before,
+        "stale discovery metadata must not replace the accepted map"
+    );
+    assert_eq!(store.load().unwrap(), Some(envelope_before));
 }
 
 #[test]
@@ -713,20 +1311,38 @@ fn failed_catalog_executor_rolls_back_projection_and_catalog() {
         Arc::clone(&projection),
         store.clone(),
     )
-    .with_catalog([old.clone()]);
+    .with_catalog([old.clone()])
+    .with_identity_metadata(BTreeMap::from([(
+        account.clone(),
+        AccountIdentityMetadata {
+            identity_kind: UsageIdentityKindV1::LocalSourceHandle,
+            provenance_count: 4,
+        },
+    )]));
 
     let error = publisher
-        .reconcile_catalog_if_projection_with_diagnostics(
+        .reconcile_catalog_if_projection(
             None,
-            "new-catalog".to_owned(),
-            Vec::new(),
-            CatalogDiagnostics::default(),
+            CatalogReconciliation {
+                catalog_revision: "new-catalog".to_owned(),
+                entries: Vec::new(),
+                diagnostics: CatalogDiagnostics::default(),
+                identity_metadata: Some(BTreeMap::new()),
+            },
             1_001,
         )
         .unwrap_err();
     assert_eq!(error.kind, UsageCoordinationErrorKind::ProviderUnavailable);
     assert_eq!(executor.reconciles.load(Ordering::SeqCst), 2);
     assert_eq!(projection.lock().unwrap().discovery_revision, "catalog");
+    assert_eq!(
+        publisher.identity_metadata.lock().unwrap().get(&account),
+        Some(&AccountIdentityMetadata {
+            identity_kind: UsageIdentityKindV1::LocalSourceHandle,
+            provenance_count: 4,
+        }),
+        "failed catalog reconciliation must preserve the committed metadata"
+    );
     assert_eq!(
         publisher.known_capabilities(),
         Vec::<UsageAccountCapability>::new()
@@ -769,11 +1385,9 @@ fn durable_projection_failure_does_not_activate_new_executor_catalog() {
     .with_catalog([old]);
 
     let error = publisher
-        .reconcile_catalog_if_projection_with_diagnostics(
+        .reconcile_catalog_if_projection(
             None,
-            "new-catalog".to_owned(),
-            Vec::new(),
-            CatalogDiagnostics::default(),
+            catalog_reconciliation("new-catalog", Vec::new(), CatalogDiagnostics::default()),
             1_001,
         )
         .unwrap_err();

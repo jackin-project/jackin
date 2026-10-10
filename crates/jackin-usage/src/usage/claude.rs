@@ -335,21 +335,18 @@ fn claude_missing_view(agent: &str, provider: Option<&str>, now: i64) -> Focused
 
 /// True when the OAuth usage fetch failed because the token lacks the quota
 /// scope (an inference-only grant): only a typed HTTP 403. A 401, another
-/// status, or any transport/decode/CLI failure is not scope restriction. Pure
+/// status, or any transport/decode failure is not scope restriction. Pure
 /// so the inference-only state is unit-testable without provider I/O.
 pub(crate) fn claude_error_is_scope_restriction(error: &ProviderError) -> bool {
     error.status() == Some(403)
 }
 
-/// Pick the provider error label for a resolved view: OAuth first, CLI second.
-/// A scope-restricted OAuth failure normalizes to the explicit inference-only
+/// Pick the provider error label for the OAuth provider response. A
+/// scope-restricted failure normalizes to the explicit inference-only
 /// message so the operator sees *why* quota is unavailable instead of a bare
 /// HTTP status; every other error passes through verbatim.
-pub(crate) fn claude_provider_error_label(
-    oauth_error: Option<&ProviderError>,
-    cli_error: Option<&ProviderError>,
-) -> Option<String> {
-    let error = oauth_error.or(cli_error)?;
+pub(crate) fn claude_provider_error_label(oauth_error: Option<&ProviderError>) -> Option<String> {
+    let error = oauth_error?;
     if oauth_error.is_some_and(claude_error_is_scope_restriction) {
         return Some(
             "Claude token lacks usage scope (inference-only); quota unavailable".to_owned(),
@@ -577,7 +574,7 @@ fn claude_result_view(
 ) {
     let (oauth_quota, oauth_error) =
         split_provider_fetch(Some(result.map_err(ProviderError::from)));
-    let provider_error = claude_provider_error_label(oauth_error.as_ref(), None);
+    let provider_error = claude_provider_error_label(oauth_error.as_ref());
     let status = if oauth_quota.is_some() {
         UsageSnapshotStatus::Fresh
     } else if oauth_error
@@ -1137,73 +1134,25 @@ pub(crate) struct ClaudeOAuthExtraUsage {
     pub(crate) disabled_reason: Option<String>,
 }
 
-#[derive(Debug, Clone, Default)]
-pub(crate) struct ClaudeCliUsage {
-    pub(crate) session_used: Option<f64>,
-    pub(crate) weekly_used: Option<f64>,
-    pub(crate) sonnet_used: Option<f64>,
-    /// Per-model weekly windows the CLI prints as `Current week (<model>): …`
-    /// (Fable today; future model codenames). Each entry is `(model label,
-    /// percent used)`. Distinct from `sonnet_used`, which preserves the legacy
-    /// `(Sonnet only)` line and its "Sonnet" bucket label.
-    pub(crate) scoped_weekly: Vec<(String, f64)>,
-}
-
-impl ClaudeCliUsage {
-    pub(crate) fn buckets(&self) -> Vec<QuotaBucketView> {
-        // The CLI fallback reuses the same unified window model + builder as
-        // the OAuth path, so a CLI "Weekly" line and an OAuth `weekly_all`
-        // limit render identically (headline slot, over-cap label). CLI windows
-        // carry no timestamps, so `now` is unused for pace/reset formatting.
-        let mut windows: Vec<ClaudeQuotaWindow> = Vec::new();
-        if let Some(used) = self.session_used {
-            windows.push(ClaudeQuotaWindow::headline(
-                "Session",
-                StatusSlot::Session,
-                used,
-                Some(CLAUDE_SESSION_WINDOW_SECONDS),
-            ));
-        }
-        if let Some(used) = self.weekly_used {
-            windows.push(ClaudeQuotaWindow::headline(
-                "Weekly",
-                StatusSlot::Weekly,
-                used,
-                Some(CLAUDE_WEEKLY_WINDOW_SECONDS),
-            ));
-        }
-        if let Some(used) = self.sonnet_used {
-            windows.push(ClaudeQuotaWindow::scoped("Sonnet", used));
-        }
-        for (label, used) in &self.scoped_weekly {
-            windows.push(ClaudeQuotaWindow::scoped(label, *used));
-        }
-        windows.into_iter().map(|w| w.into_bucket(0)).collect()
-    }
-}
-
 /// Session (5-hour) window duration, shared by every source that produces one.
 const CLAUDE_SESSION_WINDOW_SECONDS: i64 = 5 * 60 * 60;
 /// Weekly window duration, shared by every source (`weekly_all`,
 /// `weekly_scoped`, legacy `seven_day*`).
 const CLAUDE_WEEKLY_WINDOW_SECONDS: i64 = 7 * 24 * 60 * 60;
 
-/// One normalized Claude quota window — the single intermediate shape every
-/// utilization source feeds before it becomes a [`QuotaBucketView`]. The
-/// authoritative `limits` array, the legacy named windows (`seven_day*`), and
-/// the `claude -p /usage` CLI fallback all produce `ClaudeQuotaWindow`s, so a
-/// Session window, a Fable `weekly_scoped` limit, a legacy Sonnet window, and a
-/// CLI "Weekly" line share one builder instead of three near-identical ones.
-/// Fable is not a special case here — it is just another `weekly_scoped` entry.
+/// One normalized Claude API quota window — the single intermediate shape
+/// every supported API utilization source feeds before it becomes a
+/// [`QuotaBucketView`]. The authoritative `limits` array and legacy named
+/// windows (`seven_day*`) share one builder. Fable is not a special case here —
+/// it is just another `weekly_scoped` entry.
 #[derive(Debug, Clone)]
 pub(crate) struct ClaudeQuotaWindow {
     pub(crate) label: String,
     pub(crate) slot: Option<StatusSlot>,
     /// Used fraction on the scale the shared helpers expect: a raw
-    /// `utilization` (fraction-or-percent) for legacy/CLI sources, or
+    /// `utilization` (fraction-or-percent) for legacy fields, or
     /// `f64::from(percent)` for `limits`. `used_percent_label` and
-    /// `remaining_from_fraction` resolve the fraction-vs-percent ambiguity, so
-    /// both source shapes flow through unchanged.
+    /// `remaining_from_fraction` resolve the fraction-vs-percent ambiguity.
     pub(crate) used: Option<f64>,
     pub(crate) reset_at: Option<i64>,
     pub(crate) window_seconds: Option<i64>,
@@ -1211,31 +1160,6 @@ pub(crate) struct ClaudeQuotaWindow {
 }
 
 impl ClaudeQuotaWindow {
-    /// A non-headline window with no reset/pace data (the CLI fallback shape).
-    fn scoped(label: &str, used: f64) -> Self {
-        Self {
-            label: label.to_owned(),
-            slot: None,
-            used: Some(used),
-            reset_at: None,
-            window_seconds: None,
-            severity: UsageSeverity::Normal,
-        }
-    }
-
-    /// A headline window with a duration (so pace can be computed when the
-    /// source also carries a reset). Used by the CLI Session/Weekly lines.
-    fn headline(label: &str, slot: StatusSlot, used: f64, window_seconds: Option<i64>) -> Self {
-        Self {
-            label: label.to_owned(),
-            slot: Some(slot),
-            used: Some(used),
-            reset_at: None,
-            window_seconds,
-            severity: UsageSeverity::Normal,
-        }
-    }
-
     /// The one bucket builder for every Claude utilization source. The used
     /// label is uncapped (a window over its limit renders `150% used` while
     /// `remaining` clamps at 0); pace is computed only when both a reset and a
@@ -1584,29 +1508,6 @@ pub(crate) fn fetch_claude_oauth_usage(
             (reqwest::header::USER_AGENT, &user_agent),
         ],
     )
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ClaudeUsageDiagnostic {
-    pub command: String,
-    pub args: Vec<String>,
-    pub success: bool,
-    pub exit_code: Option<i32>,
-    pub stdout: String,
-    pub stderr: String,
-    pub fetched_at_epoch: i64,
-}
-
-pub(crate) fn fetch_claude_cli_usage() -> Result<ClaudeCliUsage, ProviderError> {
-    let diagnostic = run_claude_usage_diagnostic().map_err(ProviderError::from)?;
-    if !diagnostic.success {
-        return Err(ProviderError::from(format!(
-            "Claude CLI usage exited with status {:?}",
-            diagnostic.exit_code
-        )));
-    }
-    parse_claude_usage_output(&diagnostic.stdout)
-        .ok_or_else(|| ProviderError::from("Claude CLI usage output was not recognized".to_owned()))
 }
 
 #[cfg(test)]

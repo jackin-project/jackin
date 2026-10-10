@@ -40,15 +40,20 @@ credential in zeroizing process memory. Passive service/status, ordinary
 `monitor observe`, and statusline ingest/compose paths perform no credential
 lookup or provider request. Collection requires a separately approved account
 binding and `monitor observe --experimental-collector`; the observer remains
-observation-only and cannot authorize dispatch. Wire protocol is v7, durable
-monitor state is schema 4, and statusline input is schema 2. Strict dispatch
-remains fail-closed for unknown or incomplete evidence; quota-only requires its
-own explicit policy approval and acknowledgement that it has no SGD cap.
+observation-only and cannot authorize dispatch. The current source versions are
+broker wire protocol v8, durable monitor state schema 4, statusline input
+schema 2, and durable projection envelope schema 3. The broker migrates a v2
+projection envelope by canonicalizing serialized provider IDs and persisting
+v3 before exposing the projection; ordinary projection reads accept only v3.
+Strict dispatch remains fail-closed for unknown or incomplete evidence;
+quota-only requires its own explicit policy approval and acknowledgement that
+it has no SGD cap.
 Operator command details are in [jackin❯ usage](/commands/usage/).
 
-Source references: `crates/jackin-usage/src/usage/claude.rs`,
-`crates/jackin/src/cli/usage.rs`, `crates/jackin-protocol/src/usage_broker.rs`,
-and `crates/jackin-protocol/src/usage_monitor.rs`.
+Source references: <RepoFile path="crates/jackin-usage/src/usage/claude.rs" />,
+<RepoFile path="crates/jackin/src/cli/usage.rs" />,
+<RepoFile path="crates/jackin-protocol/src/usage_broker.rs" />, and
+<RepoFile path="crates/jackin-protocol/src/usage_monitor.rs" />.
 
 ## Findings
 

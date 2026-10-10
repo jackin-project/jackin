@@ -3,12 +3,36 @@
 Audited 2026-10-10. Read-only inventory; no source implementation, branch, or
 Git ref was changed for this record.
 
+## Current supplemental review
+
+The independent 28-commit source audit covered the groups below against `471efcb2` plus the canonical worktree. It found two concrete omissions: lifetime broker lease ownership across sleep (`f669ec77`) and the retired public `HostUsageRuntime` path (`29db1854`). Both are being repaired before consolidation or landing is declared complete. It also requested the catalog-diagnostic incremental-publication/clean-scan regression from `013e5e6`; two offline regressions have been added and await execution.
+
+| Source group | Current disposition |
+| --- | --- |
+| `e5ee84f`, `4492d3c` | Intentionally re-expressed as wire v7, store v4; observation never grants dispatch. |
+| `2031b55`, `427c104` | Invocation floor, catalog cooldowns, SGD45 readiness stop, closed-period corrections and historical uncertainty mapped to current coordinator/spend code and fixtures. |
+| `2e984db`, `887a1b4`, `e586381` | Exact-source attended bootstrap and guarded reads represented; dormant CLI fallback removal complete in source, with focused forbidden-route guards. No live Keychain proof. |
+| `4c6ba90`, `013e5e6`, `d06582d` | Opaque typed diagnostics and atomic catalog publication represented; restored publication lifecycle regressions pending execution. |
+| `29db185`, `f669ec7` | Concrete remaining legacy-runtime and lifetime-lease fixes in progress. |
+| `6c1709e`, `7bd6871` | CLI/wait/help/installation contracts represented; installed predecessor fixture passed, final pair rebuild pending. |
+| Remaining documentation/design commits | Preserve dated v2 evidence as historical; current v3 handoff and bootstrap contract supersede active commands. Do not import predecessor success claims. |
+
+The archive tag still peels to source tip `771bb088dd93451654f992aeef1b8976ad84ec85`. There is one delivery branch, `feat/claude-usage-monitor-main`; no raw merge of the 203 unrelated Rust-policy commits is authorized or needed. Source branch retirement waits for final consolidation/landing gates. Current source tests and installation provenance are tracked in [verification.md](verification.md). All Cargo verification uses the Mise-to-MBX wrapper.
+
+## Earlier inventory snapshot
+
+The remaining sections preserve the earlier inventory and its then-pending gates. They do not override the supplemental review or current verification record.
+
 ## Scope and branch facts
 
-The intended delivery branch is feat/claude-usage-monitor-main at
-52b8bf582a757888e8817e069350eb10f0699006, based on common point
-868ce53519234f879d26a8bd2dffaa30fae2d729. The isolated predecessor is
-claude-unattended-monitor at 771bb088dd93451654f992aeef1b8976ad84ec85.
+The intended delivery branch is feat/claude-usage-monitor-main, based on
+common point 868ce53519234f879d26a8bd2dffaa30fae2d729. At this audit snapshot
+its HEAD is 1a45196dbe24d439e596c14e22fbda59799e7b0d. The isolated
+predecessor source tip is 771bb088dd93451654f992aeef1b8976ad84ec85, preserved
+by archive/claude-unattended-monitor-2026-10-10. The local branch ref
+claude-unattended-monitor remains stale at
+abd2260e764595cc6fed32a89725439b6f3e7df1; the archive tag, not that branch
+pointer, identifies the audited source tip.
 
 The predecessor contains 203 commits from the common point through
 ff9eb01f0b3e0155a483d39e6802e4ed14d078f6 for the unrelated Rust-policy
@@ -18,12 +42,11 @@ ff9eb01f..771bb088. That range changes 232 files (+36,856/-11,218) in the
 predecessor layout. Older landing notes report 25 commits / 219 files; those
 figures predate commits a9001732, 427c104b, and 771bb088.
 
-The target branch has the v7 contract commit fa7f2f0e and its checkpoint
-52b8bf58. The code and document port is still a dirty worktree, including
-split modules and untracked files. A read-only inventory is not a committed
-port. In the target clone, the tracking ref for the predecessor was stale at
-abd2260e; the isolated predecessor clone showed 771bb088. Re-fetch refs before
-any branch cleanup.
+The target branch contains the v7 contract and later implementation commits,
+but source/test and plan work remains uncommitted, including untracked
+predecessor-workflow artifacts. A read-only inventory is not a committed
+port. Do not infer that those artifacts are current instructions or
+verification.
 
 Do not use ff9eb01f as a tree-diff base against the monolithic target. That
 cross-layout comparison reports 4,444 files and obscures the usage work. Use
@@ -76,10 +99,10 @@ row.
 
 | Predecessor area and source paths | Main-port target paths | Reconciliation notes |
 |---|---|---|
-| Monitor protocol and broker wire: crates/core/jackin-protocol/src/usage_monitor.rs, usage_broker.rs; crates/services/jackin-usage-broker-wire/** | crates/jackin-protocol/src/usage_monitor.rs, usage_broker.rs | The target freezes protocol v7 and monitor schema 3 in a candidate contract. Source monitor v2 / wire v6 behavior needs deliberate migration, not a file copy. Preserve explicit observation vs dispatch authority and fail-closed migration of policy, spend, evidence-age, and cooldown state. |
+| Monitor protocol and broker wire: crates/core/jackin-protocol/src/usage_monitor.rs, usage_broker.rs; crates/services/jackin-usage-broker-wire/** | crates/jackin-protocol/src/usage_monitor.rs, usage_broker.rs | The target freezes protocol v7 and candidate durable monitor schema 4. Source monitor v2 / wire v6 behavior needs deliberate migration, not a file copy. Preserve explicit observation vs dispatch authority and fail-closed migration of policy, spend, evidence-age, and cooldown state. |
 | Coordinator and durable policy state: crates/services/jackin-usage-coordinator/** | crates/jackin-usage/src/coordinator/** | Reconcile cadence, persisted attempt floors, policy decisions, restart behavior, catalog changes, state validation/sanitization, and migration. The source fix uses provider invocation time for the Claude floor. |
 | Broker monitor, spend, publication, and service lifecycle: crates/services/jackin-usage-broker/**, jackin-usage-broker-publish/** | crates/jackin-usage/src/host/broker/**, including monitor/** and publish/** | Reconcile durable monitor state, ordered decisions, idempotency, bounded waits, quota latches, strict-budget readiness, late closed-period corrections, broker ownership, and publication timestamps. Source tests do not prove the target port. |
-| Provider, credential resolution, discovery, and host runtime: crates/services/jackin-usage-provider-claude/**, jackin-usage-provider-core/**, jackin-usage-credential-resolver/**, jackin-usage-credential-snapshots/**, jackin-usage-discovery/**, jackin-usage-host-credentials/**, jackin-usage-host-runtime/**, jackin-usage/** | crates/jackin-usage/src/usage/claude/**, usage/refresh.rs, host/credential_resolver.rs, host/discovery.rs, host/projection*, host.rs | Preserve scoped account identity, typed opaque diagnostics, no unattended auth UI or Claude CLI fallback, cooldowns, and no broad credential source switching. The new attended bootstrap contract deliberately narrows credential access to one selected service; verify the target's exact-source behavior and cache boundary. |
+| Provider, credential resolution, discovery, and host runtime: crates/services/jackin-usage-provider-claude/**, jackin-usage-provider-core/**, jackin-usage-credential-resolver/**, jackin-usage-credential-snapshots/**, jackin-usage-discovery/**, jackin-usage-host-credentials/**, jackin-usage-host-runtime/**, jackin-usage/** | crates/jackin-usage/src/usage/claude/**, usage/refresh.rs, host/credential_resolver.rs, host/discovery.rs, host/projection*, host.rs | Preserve scoped account identity, typed opaque diagnostics, no unattended auth UI or active Claude CLI fallback, cooldowns, and no broad credential source switching. The new attended bootstrap contract deliberately narrows credential access to one selected service; verify the target's exact-source behavior and cache boundary. The dormant CLI helper was removed in the candidate; see the specific reconciliation record below. |
 | CLI, broker executable, consumers, and end-to-end tests: crates/apps/jackin/src/cli/usage/**, bin/usage-broker/**, tests/**, console adapter | crates/jackin/src/cli/usage/**, crates/jackin/src/bin/usage-broker/**, crates/jackin/src/console/adapter/**, crates/jackin/tests/** | Reconcile monitor/status/watch/wait semantics, TTY confirmation gates, statusline ingress, broker selection and installation, lifecycle, offline observation, and exit/JSON schemas. The target direct-CLI command shapes remain unverified against a fresh binary. |
 | Usage FFI and presentation: crates/adapters/jackin-usage-ffi/** | crates/jackin-usage-ffi/** | Reconcile DTO/version changes, typed presentation, bridge callers, and removal of predecessor-only discovery/route paths. |
 | Capsule relay authorization: crates/apps/jackin-capsule/src/usage_relay_proxy/** | crates/jackin-capsule/src/usage_relay_proxy.rs and tests | Preserve relay-side rejection of unsupported or unauthorized monitor operations. |
@@ -88,14 +111,54 @@ row.
 | Command, product, and project evidence: docs/content/**usage**, plans/claude-unattended-monitor/** | docs/content/(public)/commands/usage.mdx, plans/claude-unattended-monitor/** | Keep active command docs aligned to verified target help. Keep predecessor fixture records explicitly historical. Update manifests and Cargo.lock only as required by the reconciled target crate graph. |
 
 The late predecessor fix commit 427c104b contains three especially important
-semantics: one shared strict-spend predicate blocks runnable/readiness at the
-SGD45 checkpoint; a persisted closed-period anchor accounts for upward spend
+semantics: a shared strict-spend decision blocks readiness at the SGD45
+checkpoint; a persisted closed-period anchor accounts for upward spend
 corrections once and preserves uncertainty through migration; and provider
 invocation time, rather than queue admission, anchors the Claude attempt floor.
-Those semantics are visible in the target candidate modules, but they have not
-been independently checked there. The predecessor landing note reports 133
-broker tests, 47 coordinator tests, and scoped Clippy passing after those fixes;
-those are predecessor results only and must not be presented as target proof.
+Static inspection finds corresponding target candidate code: the monitor spend
+decision and correction horizon are in
+crates/jackin-usage/src/host/broker/monitor/spend.rs, and the persisted provider
+invocation floor is in crates/jackin-usage/src/coordinator/. The target has
+focused test cases for these paths, but this audit did not execute them and the
+current integration/migration gates remain pending. The predecessor landing
+note's test and Clippy results are predecessor evidence only.
+
+## Independent source-to-target audit
+
+The following is a static reconciliation of the 28-commit source range against
+the canonical candidate at HEAD 1a45196d, including its uncommitted worktree.
+It confirms candidate destinations and deliberate contract changes; it does
+not certify behavioral equivalence, buildability, or completion of every
+change among the 232 changed files.
+
+| Source behavior | Candidate coverage found | Status and remaining proof |
+|---|---|---|
+| Monitor protocol, observation, policy, binding and durable state | Target protocol is v7, statusline input remains independently versioned v2, and durable state is candidate schema v4. The candidate has explicit V1 migration plus V2/V3-to-V4 conversion code, separate observation/dispatch readiness, binding-level default-off collector approval, and explicit policy records. | Contract is intentionally re-expressed; source v6/schema-v2 records must not be copied or relabeled. Migration fixtures and negative cases exist in source, but latest target migration/runtime proof and final migration review are pending. |
+| Claude attempt floor and catalog/restart behavior | Target persists `provider_invoked_at_epoch`; coordinator deadline code reads it, and focused cases cover delayed queue admission and removal/re-add/restart behavior. | Static candidate coverage found. The current tree's coordinator test results are recorded at an older checkpoint and were not rerun by this audit. |
+| Broker monitor, quota latches, strict budget, and spend corrections | Candidate has broker-owned durable monitor operations, account spend state, `closed_period_anchor`, `historical_correction_horizon_epoch`, and spend evaluation feeding monitor readiness. Tests cover corrections and migration uncertainty. | Source semantics are represented in the new monitor modules. Current integration rerun and migration proof remain pending; do not promote test code or older isolated results to proof for HEAD or its dirty worktree. |
+| Keychain boundary, provider identity, and collection | Candidate has an exact-service `ClaudeCredentialLease`, bounded `Zeroizing<String>` cache, TTY-gated attended preparation, one bounded same-service 401 reread path, a Jackin user agent, explicit account mapping, and default-off collector approval. | The candidate deliberately moves from the predecessor's v2 unattended observer workflow to foreground attended bootstrap plus separately opted-in collection. Fresh-binary help/output, the current offline security/integration rerun, and installed-fixture proof remain pending; no real Keychain/provider check was part of this audit. |
+| Typed discovery diagnostics and broker publication | The target broker has dedicated catalog-diagnostic and publication modules corresponding to source typed diagnostics and atomic publication work. | Candidate code paths are present; cross-surface regression gates and current-head review remain pending. |
+| CLI, service lifecycle, relays, FFI, telemetry, and command docs | Target destinations exist in the consolidated `jackin-usage`, `jackin`, protocol, runtime, capsule, FFI, telemetry, and usage-doc surfaces listed in the mapping table above. | The layouts differ materially, so path presence is not semantic proof. Fresh CLI/install verification, current integration rerun, and telemetry finding disposition remain pending. |
+| Removal of the predecessor Claude CLI fallback | Source commit `2e984db9` deletes the provider `cli.rs` and diagnostic helper as part of prohibiting CLI fallback. The target's active `claude_snapshot` no longer called that fallback. | Closed in the candidate: removed the dormant `ClaudeCliUsage`, parser, fetch helper, diagnostic API/re-exports, CLI-only tests, and stale provider-call allowlist row. Post-edit workspace Rust search found no references to those symbols. The experimental HTTP collector is unchanged. Historical research Markdown still describes the old bypass; it is not an active code path. |
+
+No reviewed source behavior in this audit justifies a wholesale tree merge or
+raw cherry-pick: the candidate has corresponding implementation or a stated
+contract supersession for the core monitor, spend, coordinator, and provider
+work. The former Claude CLI helper gap is closed in the candidate tree. This
+is a bounded finding, not a complete no-loss certificate. A final
+consolidation claim still requires
+row-by-row review of the source commit changes and tests, plus the pending
+target gates above.
+
+The working tree contains fourteen untracked predecessor artifacts, including
+`claude-code-goal.md`, `claude-code-handoff.md`, `installed-smoke.py`,
+`statusline-contract.md`, `unblock-design.md`, `v2-contract.md`, the v2
+installation/schema/check files, and `verification.md` plus its JSON/log
+fixtures. Their names and contents are not proof of target behavior. Keep any
+retained v2 commands, fixture outputs, and handoff claims explicitly labeled
+as predecessor history; the active direct-CLI contract is
+bootstrap-contract.md. Final add/exclude disposition for these untracked files
+is still pending.
 
 ## Deliberate supersessions
 
@@ -114,7 +177,7 @@ those are predecessor results only and must not be presented as target proof.
   preparation, one exact credential service, a broker lifetime lease, and an
   explicit account mapping. It must not restore broad source fallback,
   unattended auth UI, Claude CLI fallback, or implicit provider collection.
-- The source v2 wire/schema cannot be silently relabeled v7/schema 3. The target
+- The source v2 wire/schema cannot be silently relabeled v7/schema 4. The target
   migration must preserve goals, policy origin/revisions, spend provenance,
   event/decision sequences, evidence ages, cooldowns, and existing guards;
   new account mappings and collector approvals start empty.
@@ -125,9 +188,10 @@ those are predecessor results only and must not be presented as target proof.
 |---|---|
 | plans/claude-unattended-monitor/operator-unblock.md | Preserve its predecessor instructions only in historical-installed-v2-workaround.md, with the archive warning. Do not make it a current direct-CLI runbook. |
 | plans/claude-unattended-monitor/landing-queue.md | Do not copy wholesale. Its PR #1121 authorization, old branch counts, and landing logistics are stale for this port. Extract only fix/test facts that are verified against the candidate; preserve their source attribution. |
-| claude-code-goal.md, claude-code-handoff.md, installed-smoke.py, v2-checks.json, v2-installation.json, v2-installed-schema-examples.json, v2-installed-smoke.log, v2-setup-inspection.json, verification-installed-hook.json, verification.md | Keep only as clearly labeled predecessor evidence/provenance. Their fixture and installed results apply to the predecessor source and synthetic fixtures, not the target port. |
+| claude-code-goal.md, claude-code-handoff.md, installed-smoke.py, v2-checks.json, v2-coverage.txt, v2-installation.json, v2-installed-schema-examples.json, v2-installed-smoke.log, v2-setup-inspection.json, verification-installed-hook.json, verification.md | Keep only as clearly labeled predecessor evidence/provenance. Their fixture and installed results apply to the predecessor source and synthetic fixtures, not the target port. |
 | statusline-contract.md and v2-contract.md | Retain as source-contract references for the optional passive statusline path and predecessor monitor behavior. Reconcile any active product claims with the v7 target contract. |
-| task-queue.md and unblock-design.md | Use the current main-port versions for the active direct-CLI work. Preserve predecessor progress as historical context; do not import old completion marks as current verification. |
+| task-queue.md | Use the tracked main-port queue for current work and gate status. Do not import predecessor completion marks as current verification. |
+| unblock-design.md | Untracked predecessor proposal; keep as historical context or exclude. The active direct-CLI contract is bootstrap-contract.md. |
 | bootstrap-contract.md and protocol-v7-verification.md | Current target planning/evidence. bootstrap-contract remains candidate-only until implementation, migration, fresh build, and installed-fixture gates pass. |
 
 The old landing queue's positive fix/test record is useful evidence to check,
@@ -137,17 +201,16 @@ new path. The target still lacks a verified direct-CLI operator handoff.
 
 ## Verification status and open work
 
-There is no equivalence claim in this inventory. The target worktree has not
-passed the full port/build/install gate. The v7 protocol checkpoint reports 129
-offline protocol tests passing; broker, CLI, migration, and installed-workflow
-proof remain pending. The current task queue also records unresolved security
-review findings: ordinary token copies are not zeroized; exact-source one-shot
-401 reread is incomplete; a selected-source cache miss may fall back to other
-credentials; service validation is incomplete; approved collector execution
-is not wired; and the request still uses a Claude Code user agent. The
-telemetry gate reports eight unchanged baseline literals. Reconcile and close
-these findings in target code and offline evidence before calling the port
-complete.
+There is no equivalence claim in this inventory. The current task queue records
+the latest scoped protocol and broker passes, plus pending integration, current
+CLI/auth, migration, branch-proof, and installed-artifact work. Those results
+do not establish full current-head behavior: no main-port binary or install,
+native Keychain access, or real provider/account check is verified. Earlier
+security findings have corrective commits and bounded source reviews, but this
+audit did not rerun their gates. The telemetry gate still reports eight
+unchanged baseline literals. The Claude CLI helper cleanup is complete by
+static reference search; the pending gates above still block a complete
+reconciliation claim.
 
 No tests were run for this read-only inventory. Do not transfer predecessor
 test counts, installed smoke results, or statusline observations into target
@@ -155,18 +218,10 @@ verification.
 
 ## Historical archive and branch retirement
 
-Do not create the archive tag or retire the predecessor branch during this
-inventory. After every source commit and required document has a reviewed
-disposition, the target worktree is committed, and target verification/review
-is complete, preserve the source tip with an annotated tag such as
-archive/claude-unattended-monitor-771bb088 pointing exactly to
-771bb088dd93451654f992aeef1b8976ad84ec85. Verify the peeled tag SHA and publish
-the tag before deleting the predecessor branch. The commit object was present
-in the target clone at audit time; no archive tag existed yet.
-
-Retire only claude-unattended-monitor, and only after re-fetching the remote
-source and canonical refs, confirming the source has not advanced, confirming
-no open PR/review/check state depends on the branch, and confirming the archive
-tag is reachable. Keep feat/claude-usage-monitor-main as the sole feature
-delivery branch. Do not remove the canonical branch or alter main as part of
-that cleanup.
+The annotated archive tag archive/claude-unattended-monitor-2026-10-10 exists
+and peels to 771bb088dd93451654f992aeef1b8976ad84ec85. No branch cleanup was
+performed. The local claude-unattended-monitor ref remains stale at
+abd2260e764595cc6fed32a89725439b6f3e7df1; do not treat it as the archived tip
+or delete it as part of this source audit. Branch retirement remains outside
+this reconciliation record and requires its own current review of remote refs
+and dependent PR/review/check state.

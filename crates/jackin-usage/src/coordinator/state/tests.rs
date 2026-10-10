@@ -213,7 +213,7 @@ fn projection_state_is_one_atomic_envelope_and_quarantines_corruption() {
     let temp = tempfile::tempdir().unwrap();
     let store = FileProjectionStateStore::under_data_dir(temp.path());
     let envelope = ProjectionStateEnvelope {
-        schema_version: 2,
+        schema_version: ProjectionStateEnvelope::SCHEMA_VERSION,
         projection: empty_projection(),
         aliases: vec![ProjectionAlias {
             capability_id: "capability-1".into(),
@@ -237,6 +237,100 @@ fn projection_state_is_one_atomic_envelope_and_quarantines_corruption() {
             .flatten()
             .any(|entry| entry.file_name().to_string_lossy().contains("corrupt"))
     );
+}
+
+#[test]
+fn projection_v2_is_visible_only_to_the_broker_migration_loader() {
+    let temp = tempfile::tempdir().unwrap();
+    let store = FileProjectionStateStore::under_data_dir(temp.path());
+    let path = temp.path().join("usage-broker/projection.json");
+    let legacy = ProjectionStateEnvelope {
+        schema_version: ProjectionStateEnvelope::MIGRATABLE_SCHEMA_VERSION,
+        projection: empty_projection(),
+        aliases: Vec::new(),
+        catalog_revision: "catalog-1".into(),
+        catalog: Vec::new(),
+        retry_deadline_epoch: Some(1_030),
+        success_deadline_epoch: Some(1_300),
+        broker_instance_id: "instance-1".into(),
+    };
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(&path, serde_json::to_vec(&legacy).unwrap()).unwrap();
+
+    assert_eq!(
+        store.load_for_broker_migration().unwrap(),
+        Some(legacy.clone())
+    );
+    assert_eq!(store.store(&legacy), Err(StateStoreError::Corrupt));
+    assert_eq!(
+        store.load(),
+        Err(StateStoreError::SchemaMigrationRequired {
+            found: u64::from(ProjectionStateEnvelope::MIGRATABLE_SCHEMA_VERSION),
+            current: ProjectionStateEnvelope::SCHEMA_VERSION,
+        })
+    );
+    assert!(
+        path.exists(),
+        "ordinary reads must leave migration input intact"
+    );
+
+    let mut migrated = legacy;
+    migrated.schema_version = ProjectionStateEnvelope::SCHEMA_VERSION;
+    store.store(&migrated).unwrap();
+    assert_eq!(store.load().unwrap(), Some(migrated));
+}
+
+#[test]
+fn projection_store_preserves_valid_future_schema_for_a_newer_broker() {
+    let temp = tempfile::tempdir().unwrap();
+    let store = FileProjectionStateStore::under_data_dir(temp.path());
+    let path = temp.path().join("usage-broker/projection.json");
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(
+        &path,
+        serde_json::to_vec(&serde_json::json!({
+            "schema_version": 4,
+            "future_projection_payload": { "opaque": true }
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        store.load(),
+        Err(StateStoreError::SchemaMigrationRequired {
+            found: 4,
+            current: ProjectionStateEnvelope::SCHEMA_VERSION,
+        })
+    );
+    assert!(
+        path.exists(),
+        "an older broker must not quarantine future state"
+    );
+}
+
+#[test]
+fn projection_store_still_quarantines_corrupt_v2_contents() {
+    let temp = tempfile::tempdir().unwrap();
+    let store = FileProjectionStateStore::under_data_dir(temp.path());
+    let path = temp.path().join("usage-broker/projection.json");
+    let mut legacy = serde_json::to_value(ProjectionStateEnvelope {
+        schema_version: ProjectionStateEnvelope::MIGRATABLE_SCHEMA_VERSION,
+        projection: empty_projection(),
+        aliases: Vec::new(),
+        catalog_revision: "catalog-1".into(),
+        catalog: Vec::new(),
+        retry_deadline_epoch: None,
+        success_deadline_epoch: None,
+        broker_instance_id: "instance-1".into(),
+    })
+    .unwrap();
+    legacy["projection"]["broker_generation"] = serde_json::json!(-1);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(&path, serde_json::to_vec(&legacy).unwrap()).unwrap();
+
+    assert_eq!(store.load(), Err(StateStoreError::Corrupt));
+    assert!(!path.exists());
 }
 
 #[test]

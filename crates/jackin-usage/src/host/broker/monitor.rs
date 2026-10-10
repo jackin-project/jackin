@@ -40,6 +40,8 @@ use jackin_protocol::usage_monitor::{
 };
 use serde::{Deserialize, Serialize};
 
+use super::super::HostSurfaceId;
+
 use self::spend::{
     SpendAccountState, SpendDecision, SpendState, advance_goal_spend, capture_goal_baseline,
     evaluate_spend_policy, record_account_spend,
@@ -375,7 +377,7 @@ impl MonitorStore {
         staged.last_now_epoch = now_epoch;
         let mut observations_changed = false;
         for provider in &projection.providers {
-            if provider.provider_id == "claude" {
+            if provider.provider_id == HostSurfaceId::Claude.provider_id() {
                 for account in &provider.accounts {
                     observations_changed |=
                         observe_projection_account(&mut staged, account, now_epoch)?;

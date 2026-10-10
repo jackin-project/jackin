@@ -33,7 +33,6 @@ fn populated_discovery(revision: &str) -> ValidatedUsageDiscovery {
                     "fixture-account".to_owned(),
                 ),
             }),
-            source_id: "fixture-source".to_owned(),
             capability_id: "fixture-capability".to_owned(),
             credential_revision: "fixture-credential".to_owned(),
             provenance: BTreeSet::default(),

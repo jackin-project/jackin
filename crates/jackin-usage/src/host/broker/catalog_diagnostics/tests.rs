@@ -39,7 +39,6 @@ fn interaction_diagnostics_are_typed_and_do_not_export_scope_text() {
                     "fixture-account".to_owned(),
                 ),
             }),
-            source_id: "fixture-source".to_owned(),
             capability_id: "opaque-candidate".to_owned(),
             credential_revision: "fixture-revision".to_owned(),
             provenance: BTreeSet::from(["fixture-scope".to_owned()]),

@@ -11,7 +11,7 @@ use crate::control::{FocusedUsageView, Money};
 use crate::usage_monitor::{MonitorIssue, MonitorOperation, MonitorReply};
 
 /// Usage-broker wire protocol version.
-pub const USAGE_BROKER_PROTOCOL_VERSION: &str = "v7";
+pub const USAGE_BROKER_PROTOCOL_VERSION: &str = "v8";
 
 /// Maximum newline-delimited request or response body.
 pub const USAGE_BROKER_MAX_FRAME_BYTES: usize = 1024 * 1024;
@@ -336,7 +336,7 @@ pub enum UsageMembershipStateV1 {
     Current,
 }
 
-/// Non-secret evidence kind backing canonical account identity.
+/// Non-secret identity provenance classification for canonical account IDs.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum UsageIdentityKindV1 {
@@ -344,6 +344,12 @@ pub enum UsageIdentityKindV1 {
     ProviderAccountId,
     /// Provider-issued stable non-secret handle.
     ProviderStableHandle,
+    /// Stable local configuration or credential-source handle. This does not
+    /// claim a provider-issued or authenticated account identity.
+    LocalSourceHandle,
+    /// Stable handle whose origin is unknown in persisted publication data.
+    /// It does not claim provider identity or local source scope.
+    UnverifiedHandle,
 }
 
 /// Account or agent lifecycle independent of quota freshness.

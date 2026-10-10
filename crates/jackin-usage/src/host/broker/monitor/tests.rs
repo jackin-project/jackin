@@ -6313,8 +6313,8 @@ fn provider_projection(observed_at_epoch: i64) -> UsageProjectionV1 {
         broker_generation: 1,
         refresh_state: UsageProjectionRefreshStateV1::Idle,
         providers: vec![UsageProviderV1 {
-            provider_id: "claude".to_owned(),
-            display_name: "Claude".to_owned(),
+            provider_id: "anthropic".to_owned(),
+            display_name: "Anthropic".to_owned(),
             rank: 0,
             membership_state: UsageMembershipStateV1::Current,
             freshness,

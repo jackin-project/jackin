@@ -24,14 +24,19 @@ fn cleared_diagnostic_removes_empty_provider_row() {
         "Anthropic",
         CatalogDiagnosticCode::InteractionRequired,
     );
+    diagnostics.push_unresolved("claude", "Anthropic", "opaque-candidate".to_owned(), 1);
 
-    apply_catalog_diagnostics(&mut projection, &diagnostics);
+    apply_catalog_diagnostics(&mut projection, &diagnostics).unwrap();
     assert_eq!(projection.providers.len(), 1);
+    assert_eq!(projection.providers[0].provider_id, "anthropic");
+    assert_eq!(projection.providers[0].display_name, "Anthropic");
     assert_eq!(
         projection.providers[0].issues[0].code,
         "interaction_required"
     );
+    assert_eq!(projection.unresolved.len(), 1);
+    assert_eq!(projection.unresolved[0].provider_id, "anthropic");
 
-    apply_catalog_diagnostics(&mut projection, &CatalogDiagnostics::default());
+    apply_catalog_diagnostics(&mut projection, &CatalogDiagnostics::default()).unwrap();
     assert!(projection.providers.is_empty());
 }

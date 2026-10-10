@@ -1,0 +1,37 @@
+{
+  "source_commit": "1a45196dbe24d439e596c14e22fbda59799e7b0d",
+  "build_command": [
+    "mise",
+    "exec",
+    "--",
+    "cargo",
+    "build",
+    "--offline",
+    "--locked",
+    "-p",
+    "jackin",
+    "--bin",
+    "jackin",
+    "--bin",
+    "jackin-usage-broker"
+  ],
+  "rust": "1.97.1",
+  "mbx": "1.22.0",
+  "broker_protocol": 7,
+  "monitor_schema": 4,
+  "binaries": [
+    {
+      "name": "jackin",
+      "path": "/Users/donbeave/.local/share/jackin-claude-monitor-v3/bin/jackin",
+      "built_path": "/Users/donbeave/Library/Caches/mbx/targets/v1/36fc15a60d93a06cc01fd219079b34bfc60b422fdb07037233807370e40b3159/debug/jackin",
+      "sha256": "243469d19697f339e982214e2b1b84dd44fc57f601910dec2a9983b0e397cbe0"
+    },
+    {
+      "name": "jackin-usage-broker",
+      "path": "/Users/donbeave/.local/share/jackin-claude-monitor-v3/bin/jackin-usage-broker",
+      "built_path": "/Users/donbeave/Library/Caches/mbx/targets/v1/36fc15a60d93a06cc01fd219079b34bfc60b422fdb07037233807370e40b3159/debug/jackin-usage-broker",
+      "sha256": "b96073209766236a7f30eee7c34725ff283dd47e6fe30c0df3cc24fcfbf2f5e4"
+    }
+  ],
+  "verification_scope": "isolated offline fixtures; no real account or native Keychain verification"
+}

@@ -121,6 +121,8 @@ impl UsageCoordinator {
             store,
             config,
             clock,
+            #[cfg(test)]
+            before_provider_call_hook: Mutex::new(None),
         });
         let (jobs, receiver) = mpsc::sync_channel(config.queue_capacity);
         let receiver = Arc::new(Mutex::new(receiver));

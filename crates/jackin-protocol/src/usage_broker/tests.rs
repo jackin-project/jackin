@@ -58,6 +58,31 @@ fn broker_conflict_has_a_stable_wire_name() {
 }
 
 #[test]
+fn local_source_identity_kind_has_an_explicit_v8_wire_name() {
+    let kind = UsageIdentityKindV1::LocalSourceHandle;
+    let value = serde_json::to_value(kind).unwrap();
+
+    assert_eq!(USAGE_BROKER_PROTOCOL_VERSION, "v8");
+    assert_eq!(value, serde_json::json!("local_source_handle"));
+    assert_eq!(
+        serde_json::from_value::<UsageIdentityKindV1>(value).unwrap(),
+        kind
+    );
+}
+
+#[test]
+fn unverified_identity_kind_has_an_explicit_v8_wire_name() {
+    let kind = UsageIdentityKindV1::UnverifiedHandle;
+    let value = serde_json::to_value(kind).unwrap();
+
+    assert_eq!(value, serde_json::json!("unverified_handle"));
+    assert_eq!(
+        serde_json::from_value::<UsageIdentityKindV1>(value).unwrap(),
+        kind
+    );
+}
+
+#[test]
 fn projection_operations_and_publication_response_round_trip() {
     let operations = [
         UsageBrokerOperation::CurrentProjection,
@@ -98,7 +123,7 @@ fn projection_operations_and_publication_response_round_trip() {
 }
 
 #[test]
-fn monitor_and_broker_owned_relay_operations_have_v7_wire_shapes() {
+fn monitor_and_broker_owned_relay_operations_have_v8_wire_shapes() {
     use crate::usage_monitor::MonitorOperation;
 
     let monitor = UsageBrokerOperation::Monitor {
@@ -176,7 +201,7 @@ fn monitor_and_broker_owned_relay_operations_have_v7_wire_shapes() {
         "entries": [],
     });
     serde_json::from_value::<UsageBrokerOperation>(removed_catalog_operation)
-        .expect_err("catalog reconciliation is broker-owned in protocol v7");
+        .expect_err("catalog reconciliation is broker-owned in protocol v8");
 }
 
 #[test]

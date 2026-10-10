@@ -9,13 +9,14 @@ use jackin_protocol::usage_broker::{
 };
 
 use super::{
-    AccountEntry, AccountStateEnvelope, CoordinatorState, TERMINAL_HISTORY_LIMIT,
+    AccountEntry, AccountStateEnvelope, ClockSample, CoordinatorState, TERMINAL_HISTORY_LIMIT,
     catalog_revoked_error, policy, unavailable_error,
 };
 
-pub(crate) fn revoke_entry(entry: &mut AccountEntry, now_epoch: i64) {
+pub(crate) fn revoke_entry(entry: &mut AccountEntry, now_epoch: i64, clock_sample: ClockSample) {
     entry.fenced_generations.insert(entry.envelope.generation);
-    revoke_envelope(&mut entry.envelope, now_epoch);
+    revoke_envelope(&mut entry.envelope, now_epoch, clock_sample);
+    entry.refresh_runtime_cooldown(clock_sample);
     entry.history.clear();
     entry.recovery_pending = false;
     entry.catalog_revision = None;
@@ -26,7 +27,22 @@ pub(crate) fn revoke_entry(entry: &mut AccountEntry, now_epoch: i64) {
 /// Fence a stored generation while retaining account-level cooldown inputs.
 /// Materialized provider results are cleared because a removed capability may
 /// later be re-added after its credentials or authorization changed.
-pub(crate) fn revoke_envelope(envelope: &mut AccountStateEnvelope, now_epoch: i64) {
+pub(crate) fn revoke_envelope(
+    envelope: &mut AccountStateEnvelope,
+    now_epoch: i64,
+    clock_sample: ClockSample,
+) {
+    if envelope.phase == UsageRefreshPhase::Updating {
+        if let Some(floor) =
+            policy::minimum_attempt_deadline(&envelope.capability, Some(clock_sample.ceil_epoch()))
+        {
+            envelope.retry_deadline_epoch = Some(
+                envelope
+                    .retry_deadline_epoch
+                    .map_or(floor, |deadline| deadline.max(floor)),
+            );
+        }
+    }
     envelope.generation = envelope.generation.saturating_add(1);
     envelope.phase = UsageRefreshPhase::Failed;
     envelope.terminal_result = None;
@@ -36,22 +52,48 @@ pub(crate) fn revoke_envelope(envelope: &mut AccountStateEnvelope, now_epoch: i6
     envelope.completed_at_epoch = Some(now_epoch);
 }
 
-/// Minimal durable projection for a removed account whose cooldown is still
-/// active. It keeps the existing per-account state model and contains no
-/// provider result, error, or in-flight generation data.
+/// Minimal durable projection for a removed account. A pending dispatch stays
+/// in the existing `Updating` phase until terminal completion, even after its
+/// current cooldown expires, so repeated catalog rotations cannot erase the
+/// restart recovery marker. Provider results and errors are always removed.
 pub(crate) fn cooldown_tombstone(
     envelope: &AccountStateEnvelope,
     now_epoch: i64,
+    pending_attempt: bool,
 ) -> Option<AccountStateEnvelope> {
-    account_cooldown_deadline(envelope).filter(|deadline| *deadline > now_epoch)?;
-    let mut tombstone = envelope.clone();
-    tombstone.phase = UsageRefreshPhase::Idle;
+    if !pending_attempt {
+        account_cooldown_deadline(envelope).filter(|deadline| *deadline > now_epoch)?;
+    }
+    let mut tombstone = if pending_attempt {
+        pending_attempt_envelope(envelope, now_epoch)
+    } else {
+        envelope.clone()
+    };
+    if !pending_attempt {
+        tombstone.phase = UsageRefreshPhase::Idle;
+        tombstone.started_at_epoch = None;
+    }
     tombstone.terminal_result = None;
     tombstone.last_good = None;
     tombstone.terminal_error = None;
-    tombstone.started_at_epoch = None;
     tombstone.completed_at_epoch = None;
     Some(tombstone)
+}
+
+/// Persist a result-free active marker until a dispatch fenced from the
+/// current catalog reaches its terminal boundary.
+pub(crate) fn pending_attempt_envelope(
+    envelope: &AccountStateEnvelope,
+    now_epoch: i64,
+) -> AccountStateEnvelope {
+    let mut pending = envelope.clone();
+    pending.phase = UsageRefreshPhase::Updating;
+    pending.terminal_result = None;
+    pending.last_good = None;
+    pending.terminal_error = None;
+    pending.started_at_epoch = pending.provider_invoked_at_epoch.or(Some(now_epoch));
+    pending.completed_at_epoch = None;
+    pending
 }
 
 pub(crate) fn reset_entry(entry: &mut AccountEntry, now_epoch: i64, revision: String) {

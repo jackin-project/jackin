@@ -125,9 +125,9 @@ pub struct UsageIdentityPresentationDto {
     pub accessibility_label: String,
 }
 
-/// One selected-account-aware provider glance row (1:1 mirror of the Rust
-/// `HostProviderGlanceRow`). The Desktop status bar, popover, and Usage window
-/// all consume this same Rust-owned row.
+/// One selected-account-aware provider glance row shaped from the current
+/// broker publication. The Desktop status bar, popover, and Usage window all
+/// consume the same Rust-owned presentation.
 #[derive(Debug, Clone)]
 #[boltffi::data]
 pub struct ProviderGlanceRowDto {

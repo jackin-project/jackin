@@ -712,7 +712,7 @@ impl UsageProviderExecutor for CountingExecutor {
 fn capability(account_id: &str) -> UsageAccountCapability {
     UsageAccountCapability {
         account_id: account_id.to_owned(),
-        surface_id: "claude".to_owned(),
+        surface_id: "codex".to_owned(),
     }
 }
 
@@ -721,11 +721,11 @@ fn quota_view() -> FocusedUsageView {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
-    let mut view = FocusedUsageView::unavailable("claude", i64::try_from(now).unwrap_or(i64::MAX));
+    let mut view = FocusedUsageView::unavailable("codex", i64::try_from(now).unwrap_or(i64::MAX));
     view.status = UsageSnapshotStatus::Fresh;
     view.source = UsageSource::ProviderApi;
     view.confidence = UsageConfidence::Authoritative;
-    view.account.provider_label = "Claude".to_owned();
+    view.account.provider_label = "Codex".to_owned();
     view.account.account_label = "allowed@example.test".to_owned();
     view.buckets = vec![QuotaBucketView {
         label: "Weekly".to_owned(),
@@ -824,6 +824,47 @@ async fn usage_relay_stdio_dispatch_scopes_exact_capability() {
     };
     assert_eq!(state.phase, UsageRefreshPhase::Completed);
     assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn claude_relay_refresh_without_active_monitor_is_denied_before_provider_work() {
+    let temp = tempfile::tempdir().unwrap();
+    let executor = Arc::new(CountingExecutor {
+        calls: AtomicUsize::new(0),
+    });
+    let concrete = Arc::clone(&executor);
+    let broker_executor: Arc<dyn UsageProviderExecutor> = concrete;
+    let broker = ensure_usage_broker_with_executor(
+        UsageBrokerConfig::for_data_dir(temp.path().join("data")),
+        broker_executor,
+    )
+    .unwrap();
+    let claude = UsageAccountCapability {
+        account_id: "claude-account".to_owned(),
+        surface_id: "claude".to_owned(),
+    };
+    let allowlist = UsageCapabilitySet::new([claude.clone()]);
+
+    let response = dispatch(
+        UsageBrokerOperation::RefreshForCapability {
+            capability: claude,
+            observed_generation: 0,
+            force: true,
+        },
+        broker,
+        allowlist,
+        UsageCredentialScope::default(),
+    )
+    .await;
+    let UsageBrokerResponse::Error { error } = response else {
+        panic!("Claude refresh without an active monitor returned state");
+    };
+    assert_eq!(error.kind, UsageCoordinationErrorKind::Unauthorized);
+    assert_eq!(
+        error.message,
+        "Claude collection requires an active opted-in mapped monitor"
+    );
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 0);
 }
 
 #[tokio::test]

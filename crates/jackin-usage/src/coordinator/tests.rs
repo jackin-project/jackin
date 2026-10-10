@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::os::unix::fs::PermissionsExt as _;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use jackin_protocol::control::{
     FocusedUsageView, QuotaBucketView, UsageConfidence, UsageSeverity, UsageSnapshotStatus,
@@ -15,19 +15,54 @@ use super::*;
 
 #[derive(Default)]
 struct FakeMonotonicClock {
-    elapsed_seconds: AtomicU64,
+    state: Mutex<FakeClockState>,
+}
+
+#[derive(Default)]
+struct FakeClockState {
+    monotonic: Duration,
+    wall_epoch: Option<Duration>,
 }
 
 impl FakeMonotonicClock {
+    fn with_wall_epoch(wall_epoch: Duration) -> Self {
+        Self {
+            state: Mutex::new(FakeClockState {
+                monotonic: Duration::ZERO,
+                wall_epoch: Some(wall_epoch),
+            }),
+        }
+    }
+
     fn advance(&self, duration: Duration) {
-        self.elapsed_seconds
-            .fetch_add(duration.as_secs(), Ordering::SeqCst);
+        let mut state = self.state.lock().unwrap();
+        state.monotonic = state.monotonic.saturating_add(duration);
+        if let Some(wall_epoch) = &mut state.wall_epoch {
+            *wall_epoch = wall_epoch.saturating_add(duration);
+        }
+    }
+
+    fn jump_wall_forward(&self, duration: Duration) {
+        let mut state = self.state.lock().unwrap();
+        if let Some(wall_epoch) = &mut state.wall_epoch {
+            *wall_epoch = wall_epoch.saturating_add(duration);
+        }
     }
 }
 
 impl MonotonicClock for FakeMonotonicClock {
     fn now(&self) -> Duration {
-        Duration::from_secs(self.elapsed_seconds.load(Ordering::SeqCst))
+        self.state.lock().unwrap().monotonic
+    }
+
+    fn sample(&self, fallback_epoch: i64) -> ClockSample {
+        let mut state = self.state.lock().unwrap();
+        let initial_wall_epoch = ClockSample::anchored(fallback_epoch, state.monotonic).wall_epoch;
+        let wall_epoch = *state.wall_epoch.get_or_insert(initial_wall_epoch);
+        ClockSample {
+            wall_epoch,
+            monotonic: state.monotonic,
+        }
     }
 }
 
@@ -74,6 +109,39 @@ impl AccountStateStore for MemoryStore {
         self.states.lock().unwrap().remove(capability);
         self.purges.lock().unwrap().push(capability.clone());
         Ok(())
+    }
+}
+
+struct AdvancingUpdatingStore {
+    inner: Arc<MemoryStore>,
+    clock: Arc<FakeMonotonicClock>,
+    delay_once: Mutex<Option<Duration>>,
+}
+
+impl AccountStateStore for AdvancingUpdatingStore {
+    fn load(
+        &self,
+        capability: &UsageAccountCapability,
+        now_epoch: i64,
+    ) -> Result<Option<AccountStateEnvelope>, StateStoreError> {
+        self.inner.load(capability, now_epoch)
+    }
+
+    fn store(
+        &self,
+        envelope: &AccountStateEnvelope,
+        now_epoch: i64,
+    ) -> Result<(), StateStoreError> {
+        if envelope.phase == UsageRefreshPhase::Updating {
+            if let Some(delay) = self.delay_once.lock().unwrap().take() {
+                self.clock.advance(delay);
+            }
+        }
+        self.inner.store(envelope, now_epoch)
+    }
+
+    fn purge(&self, capability: &UsageAccountCapability) -> Result<(), StateStoreError> {
+        self.inner.purge(capability)
     }
 }
 
@@ -207,6 +275,28 @@ fn join_ok(
     coordinator
         .join_generation(capability, generation, Duration::from_secs(2), now_epoch)
         .unwrap()
+}
+
+fn wait_for_idle_cooldown_tombstone(
+    store: &dyn AccountStateStore,
+    capability: &UsageAccountCapability,
+    retry_deadline_epoch: i64,
+    now_epoch: i64,
+) -> AccountStateEnvelope {
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        if let Some(envelope) = store.load(capability, now_epoch).unwrap()
+            && envelope.phase == UsageRefreshPhase::Idle
+            && envelope.retry_deadline_epoch == Some(retry_deadline_epoch)
+        {
+            return envelope;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "cooldown tombstone did not finish"
+        );
+        std::thread::yield_now();
+    }
 }
 
 struct UpdatingFailureStore {
@@ -403,6 +493,25 @@ impl UsageProviderExecutor for ImmediateExecutor {
     ) -> ProviderProbeOutcome {
         self.calls.fetch_add(1, Ordering::SeqCst);
         self.outcome.lock().unwrap().clone()
+    }
+}
+
+struct ClockRecordingExecutor {
+    clock: Arc<FakeMonotonicClock>,
+    calls: AtomicUsize,
+    starts: Mutex<Vec<ClockSample>>,
+    outcome: ProviderProbeOutcome,
+}
+
+impl UsageProviderExecutor for ClockRecordingExecutor {
+    fn probe(
+        &self,
+        _capability: &UsageAccountCapability,
+        _generation: u64,
+    ) -> ProviderProbeOutcome {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        self.starts.lock().unwrap().push(self.clock.sample(0));
+        self.outcome.clone()
     }
 }
 
@@ -1134,12 +1243,14 @@ fn claude_attempt_floor_starts_at_invocation_after_fake_clock_queue_delay() {
         UsageRefreshPhase::Completed
     );
 
+    clock.advance(Duration::from_secs(299));
     let forced_early = coordinator
         .request_refresh(&account, 1, true, first_invocation + 299)
         .unwrap();
     assert_eq!(forced_early.generation, 1);
     assert_eq!(executor.calls.load(Ordering::SeqCst), 2);
 
+    clock.advance(Duration::from_secs(1));
     let allowed = coordinator
         .request_refresh(&account, 1, true, first_invocation + 300)
         .unwrap();
@@ -1159,6 +1270,92 @@ fn claude_attempt_floor_starts_at_invocation_after_fake_clock_queue_delay() {
         join_ok(&coordinator, &account, 2, second_invocation + 1).phase,
         UsageRefreshPhase::Completed
     );
+}
+
+#[test]
+fn claude_attempt_spacing_uses_completion_pair_and_monotonic_gate() {
+    let clock = Arc::new(FakeMonotonicClock::with_wall_epoch(Duration::new(
+        1_000,
+        900_000_000,
+    )));
+    let executor = Arc::new(ClockRecordingExecutor {
+        clock: Arc::clone(&clock),
+        calls: AtomicUsize::new(0),
+        starts: Mutex::new(Vec::new()),
+        outcome: ProviderProbeOutcome::success(quota_view(1_000, 80)),
+    });
+    let memory = Arc::new(MemoryStore::default());
+    let store = Arc::new(AdvancingUpdatingStore {
+        inner: Arc::clone(&memory),
+        clock: Arc::clone(&clock),
+        delay_once: Mutex::new(Some(Duration::from_millis(1_200))),
+    });
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce the paired fake clock to the coordinator clock port"
+    )]
+    let clock_port: Arc<dyn MonotonicClock> = clock.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce fixture ports to coordinator trait objects"
+    )]
+    let provider: Arc<dyn UsageProviderExecutor> = executor.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce fixture ports to coordinator trait objects"
+    )]
+    let state_store: Arc<dyn AccountStateStore> = store.clone();
+    let coordinator = UsageCoordinator::start_with_clock(
+        provider,
+        state_store,
+        UsageCoordinatorConfig::default(),
+        None,
+        None,
+        clock_port,
+    );
+    let account = capability("fractional-completion");
+
+    let first = coordinator
+        .request_refresh(&account, 0, true, 1_000)
+        .unwrap();
+    let terminal = join_ok(&coordinator, &account, first.generation, 1_003);
+    assert_eq!(terminal.phase, UsageRefreshPhase::Completed);
+
+    let starts = executor.starts.lock().unwrap();
+    assert_eq!(starts.len(), 1);
+    let first_start = starts[0];
+    assert_eq!(first_start.wall_epoch, Duration::new(1_002, 100_000_000));
+    drop(starts);
+    let envelope = memory.states.lock().unwrap().get(&account).unwrap().clone();
+    assert_eq!(envelope.provider_invoked_at_epoch, Some(1_001));
+    assert_eq!(envelope.success_deadline_epoch, Some(1_303));
+
+    // A force call 299.9 seconds after the first executor start is still
+    // blocked. Jumping wall time forward cannot bypass the paired monotonic
+    // deadline either.
+    clock.advance(Duration::from_millis(299_900));
+    let early = coordinator
+        .request_refresh(&account, 1, true, 1_302)
+        .unwrap();
+    assert_eq!(early.generation, 1);
+    clock.jump_wall_forward(Duration::from_secs(3_600));
+    let wall_jump = coordinator
+        .request_refresh(&account, 1, true, 4_902)
+        .unwrap();
+    assert_eq!(wall_jump.generation, 1);
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
+
+    clock.advance(Duration::from_secs(1));
+    let second = coordinator
+        .request_refresh(&account, 1, true, 4_903)
+        .unwrap();
+    assert_eq!(second.generation, 2);
+    let terminal = join_ok(&coordinator, &account, second.generation, 4_904);
+    assert_eq!(terminal.phase, UsageRefreshPhase::Completed);
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 2);
+    let starts = executor.starts.lock().unwrap();
+    let elapsed = starts[1].monotonic.saturating_sub(first_start.monotonic);
+    assert!(elapsed >= Duration::from_secs(300));
 }
 
 #[test]
@@ -1397,35 +1594,401 @@ fn coordinator_recovers_persisted_owner_loss_once_without_a_herd() {
         .lock()
         .unwrap()
         .insert(account.clone(), abandoned);
-    let coordinator = coordinator(
-        Arc::<GateExecutor>::clone(&executor),
-        Arc::<MemoryStore>::clone(&store),
+    let clock = Arc::new(FakeMonotonicClock::with_wall_epoch(Duration::from_secs(
+        2_000,
+    )));
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce fixture ports to coordinator trait objects"
+    )]
+    let provider: Arc<dyn UsageProviderExecutor> = executor.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce fixture ports to coordinator trait objects"
+    )]
+    let state_store: Arc<dyn AccountStateStore> = store.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce paired fake clock to the coordinator clock port"
+    )]
+    let clock_port: Arc<dyn MonotonicClock> = clock.clone();
+    let coordinator = UsageCoordinator::start_with_clock(
+        provider,
+        state_store,
         UsageCoordinatorConfig::default(),
+        None,
+        None,
+        clock_port,
     );
 
     let recovered = coordinator
-        .request_refresh(&account, 0, true, 1_001)
+        .request_refresh(&account, 0, true, 2_000)
         .unwrap();
     assert_eq!(recovered.generation, 4);
     assert_eq!(recovered.phase, UsageRefreshPhase::Failed);
-    assert_eq!(recovered.retry_at_epoch, Some(1_300));
+    assert_eq!(recovered.retry_at_epoch, Some(2_300));
     assert_eq!(executor.calls.load(Ordering::SeqCst), 0);
 
+    clock.advance(Duration::from_secs(299));
+    let too_early = coordinator
+        .request_refresh(&account, 0, true, 2_299)
+        .unwrap();
+    assert_eq!(too_early.generation, 4);
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 0);
+
+    clock.advance(Duration::from_secs(1));
     let recovered = coordinator
-        .request_refresh(&account, 0, true, 1_300)
+        .request_refresh(&account, 0, true, 2_300)
         .unwrap();
     executor.wait_started(1);
     let joiner = coordinator
-        .request_refresh(&account, 0, true, 1_300)
+        .request_refresh(&account, 0, true, 2_300)
         .unwrap();
     assert_eq!(recovered.generation, 5);
     assert_eq!(joiner.generation, 5);
     assert!(joiner.phase.is_active());
 
     executor.release(1);
-    let terminal = join_ok(&coordinator, &account, 5, 1_301);
+    let terminal = join_ok(&coordinator, &account, 5, 2_301);
     assert_eq!(terminal.phase, UsageRefreshPhase::Completed);
     assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn coordinator_recovery_does_not_treat_queued_work_as_a_provider_attempt() {
+    let account = capability("queued-owner-loss");
+    let store = Arc::new(MemoryStore::default());
+    let mut queued = AccountStateEnvelope::idle(account.clone());
+    queued.generation = 4;
+    queued.phase = UsageRefreshPhase::Queued;
+    queued.started_at_epoch = Some(1_000);
+    store.states.lock().unwrap().insert(account.clone(), queued);
+    let executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
+        quota_view(2_000, 80),
+    )));
+    let clock = Arc::new(FakeMonotonicClock::with_wall_epoch(Duration::from_secs(
+        2_000,
+    )));
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce fixture ports to coordinator trait objects"
+    )]
+    let provider: Arc<dyn UsageProviderExecutor> = executor.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce fixture ports to coordinator trait objects"
+    )]
+    let state_store: Arc<dyn AccountStateStore> = store.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce paired fake clock to the coordinator clock port"
+    )]
+    let clock_port: Arc<dyn MonotonicClock> = clock.clone();
+    let coordinator = UsageCoordinator::start_with_clock(
+        provider,
+        state_store,
+        UsageCoordinatorConfig::default(),
+        None,
+        None,
+        clock_port,
+    );
+
+    let recovered = coordinator.current(&account, 2_000).unwrap();
+    assert_eq!(recovered.phase, UsageRefreshPhase::Failed);
+    assert_eq!(
+        recovered.error.as_ref().unwrap().kind,
+        UsageCoordinationErrorKind::OwnerLost
+    );
+    assert!(
+        recovered
+            .retry_at_epoch
+            .is_some_and(|deadline| { deadline > 2_000 && deadline < 2_300 })
+    );
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn revoked_updating_attempt_cooldown_survives_remove_readd_and_restart() {
+    let temp = tempfile::tempdir().unwrap();
+    let store = Arc::new(FileAccountStateStore::at(temp.path().join("accounts")));
+    let account = capability("revoked-in-flight");
+    let first_clock = Arc::new(FakeMonotonicClock::with_wall_epoch(Duration::new(
+        1_000,
+        900_000_000,
+    )));
+    let first_executor = Arc::new(GateExecutor::new(ProviderProbeOutcome::success(
+        quota_view(1_000, 80),
+    )));
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce fixture ports to coordinator trait objects"
+    )]
+    let first_provider: Arc<dyn UsageProviderExecutor> = first_executor.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce fixture ports to coordinator trait objects"
+    )]
+    let first_store: Arc<dyn AccountStateStore> = store.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce paired fake clock to the coordinator clock port"
+    )]
+    let first_clock_port: Arc<dyn MonotonicClock> = first_clock.clone();
+    let first = UsageCoordinator::start_with_clock(
+        first_provider,
+        first_store,
+        UsageCoordinatorConfig::default(),
+        Some(BTreeMap::from([(account.clone(), "revision-a".into())])),
+        None,
+        first_clock_port,
+    );
+    first.request_refresh(&account, 0, true, 1_000).unwrap();
+    first_executor.wait_started(1);
+
+    first.reconcile_catalog([], 1_000).unwrap();
+    let tombstone = store.load(&account, 1_001).unwrap().unwrap();
+    assert_eq!(tombstone.phase, UsageRefreshPhase::Updating);
+    assert!(tombstone.terminal_result.is_none());
+    assert!(tombstone.last_good.is_none());
+    assert_eq!(tombstone.retry_deadline_epoch, Some(1_301));
+    first_executor.release(1);
+    first_executor.wait_idle();
+    let tombstone = wait_for_idle_cooldown_tombstone(&*store, &account, 1_301, 1_001);
+    assert!(tombstone.terminal_result.is_none());
+    assert!(tombstone.last_good.is_none());
+    drop(first);
+
+    let restarted_clock = Arc::new(FakeMonotonicClock::with_wall_epoch(Duration::new(
+        1_000,
+        900_000_000,
+    )));
+    let restarted_executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
+        quota_view(1_301, 79),
+    )));
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce fixture ports to coordinator trait objects"
+    )]
+    let restarted_provider: Arc<dyn UsageProviderExecutor> = restarted_executor.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce fixture ports to coordinator trait objects"
+    )]
+    let restarted_store: Arc<dyn AccountStateStore> = store.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce paired fake clock to the coordinator clock port"
+    )]
+    let restarted_clock_port: Arc<dyn MonotonicClock> = restarted_clock.clone();
+    let restarted = UsageCoordinator::start_with_clock(
+        restarted_provider,
+        restarted_store,
+        UsageCoordinatorConfig::default(),
+        Some(BTreeMap::from([(account.clone(), "revision-b".into())])),
+        None,
+        restarted_clock_port,
+    );
+    let current = restarted.current(&account, 1_001).unwrap();
+    assert_eq!(current.phase, UsageRefreshPhase::Idle);
+    let too_early = restarted
+        .request_refresh(&account, current.generation, true, 1_300)
+        .unwrap();
+    assert_eq!(too_early.generation, current.generation);
+    assert_eq!(restarted_executor.calls.load(Ordering::SeqCst), 0);
+
+    restarted_clock.advance(Duration::from_millis(299_900));
+    let too_early = restarted
+        .request_refresh(&account, current.generation, true, 1_300)
+        .unwrap();
+    assert_eq!(too_early.generation, current.generation);
+    restarted_clock.advance(Duration::from_millis(200));
+    let allowed = restarted
+        .request_refresh(&account, current.generation, true, 1_301)
+        .unwrap();
+    assert_eq!(allowed.generation, current.generation + 1);
+    assert_eq!(
+        join_ok(&restarted, &account, allowed.generation, 1_302).phase,
+        UsageRefreshPhase::Completed
+    );
+    assert_eq!(restarted_executor.calls.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn revoked_attempt_waits_for_delayed_probe_and_completion_cooldown_before_readd() {
+    let temp = tempfile::tempdir().unwrap();
+    let store = Arc::new(FileAccountStateStore::at(temp.path().join("accounts")));
+    let account = capability("revoked-before-probe");
+    let clock = Arc::new(FakeMonotonicClock::with_wall_epoch(Duration::new(
+        1_000,
+        900_000_000,
+    )));
+    let executor = Arc::new(GateExecutor::new(ProviderProbeOutcome::success(
+        quota_view(1_000, 80),
+    )));
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce fixture ports to coordinator trait objects"
+    )]
+    let provider: Arc<dyn UsageProviderExecutor> = executor.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce fixture ports to coordinator trait objects"
+    )]
+    let state_store: Arc<dyn AccountStateStore> = store.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce paired fake clock to the coordinator clock port"
+    )]
+    let clock_port: Arc<dyn MonotonicClock> = clock.clone();
+    let coordinator = UsageCoordinator::start_with_clock(
+        provider,
+        state_store,
+        UsageCoordinatorConfig::default(),
+        Some(BTreeMap::from([(account.clone(), "revision-a".into())])),
+        None,
+        clock_port,
+    );
+
+    let (before_probe, probe_waiting) = mpsc::channel();
+    let (resume_probe, probe_resume) = mpsc::channel();
+    let probe_resume = Arc::new(Mutex::new(probe_resume));
+    let hook_waiting = before_probe.clone();
+    let hook_resume = Arc::clone(&probe_resume);
+    let hook_calls = Arc::new(AtomicUsize::new(0));
+    let hook_run_count = Arc::clone(&hook_calls);
+    *coordinator.shared.before_provider_call_hook.lock().unwrap() = Some(Arc::new(move || {
+        if hook_run_count.fetch_add(1, Ordering::SeqCst) == 0 {
+            hook_waiting.send(()).unwrap();
+            hook_resume.lock().unwrap().recv().unwrap();
+        }
+    }));
+
+    coordinator
+        .request_refresh(&account, 0, true, 1_000)
+        .unwrap();
+    probe_waiting
+        .recv_timeout(Duration::from_secs(2))
+        .expect("worker did not reach the pre-probe boundary");
+    coordinator.reconcile_catalog([], 1_000).unwrap();
+    let pending_tombstone = store.load(&account, 1_001).unwrap().unwrap();
+    assert_eq!(pending_tombstone.phase, UsageRefreshPhase::Updating);
+    assert!(pending_tombstone.terminal_result.is_none());
+    assert!(pending_tombstone.last_good.is_none());
+
+    // This second removal happens after the original retry floor expires but
+    // before the delayed worker reaches the provider. The pending marker must
+    // survive even though the account is already revoked.
+    clock.advance(Duration::from_secs(301));
+    coordinator.reconcile_catalog([], 1_301).unwrap();
+    let repeated_tombstone = store.load(&account, 1_301).unwrap().unwrap();
+    assert_eq!(repeated_tombstone.phase, UsageRefreshPhase::Updating);
+    assert!(repeated_tombstone.terminal_result.is_none());
+    assert!(repeated_tombstone.last_good.is_none());
+    assert!(repeated_tombstone.terminal_error.is_none());
+    assert!(
+        account_cooldown_deadline(&repeated_tombstone)
+            .is_some_and(|deadline| { deadline <= clock.sample(1_301).ceil_epoch() })
+    );
+
+    coordinator
+        .reconcile_catalog([catalog_entry(&account, "revision-b")], 1_301)
+        .unwrap();
+    let readded_pending = store.load(&account, 1_301).unwrap().unwrap();
+    assert_eq!(readded_pending.phase, UsageRefreshPhase::Updating);
+    assert!(readded_pending.terminal_result.is_none());
+    assert!(readded_pending.last_good.is_none());
+    assert!(readded_pending.terminal_error.is_none());
+    let restart_store = Arc::new(MemoryStore::default());
+    restart_store.store(&readded_pending, 1_301).unwrap();
+    let restart_executor = Arc::new(GateExecutor::new(ProviderProbeOutcome::success(
+        quota_view(1_301, 80),
+    )));
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce restart fixture ports to coordinator trait objects"
+    )]
+    let restart_provider: Arc<dyn UsageProviderExecutor> = restart_executor.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce restart fixture ports to coordinator trait objects"
+    )]
+    let restart_state_store: Arc<dyn AccountStateStore> = restart_store.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "share fake clock with the restart fixture"
+    )]
+    let restart_clock: Arc<dyn MonotonicClock> = clock.clone();
+    let restarted = UsageCoordinator::start_with_clock(
+        restart_provider,
+        restart_state_store,
+        UsageCoordinatorConfig::default(),
+        Some(BTreeMap::from([(account.clone(), "revision-b".into())])),
+        None,
+        restart_clock,
+    );
+    let recovered = restarted.current(&account, 1_301).unwrap();
+    assert_eq!(recovered.phase, UsageRefreshPhase::Failed);
+    assert_eq!(recovered.retry_at_epoch, Some(1_602));
+    let restarted_early = restarted
+        .request_refresh(&account, recovered.generation, true, 1_301)
+        .unwrap();
+    assert_eq!(restarted_early.generation, recovered.generation);
+    assert_eq!(restart_executor.calls.load(Ordering::SeqCst), 0);
+
+    let current = coordinator.current(&account, 1_301).unwrap();
+    let blocked = coordinator
+        .request_refresh(&account, current.generation, true, 1_301)
+        .unwrap();
+    assert_eq!(blocked.generation, current.generation);
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 0);
+
+    // The executor begins 400 seconds after the Updating reservation. A
+    // tombstone based only on removal time would already have expired.
+    clock.advance(Duration::from_secs(99));
+    resume_probe.send(()).unwrap();
+    executor.wait_started(1);
+    let first_start = clock.sample(1_400);
+    assert_eq!(first_start.wall_epoch, Duration::new(1_400, 900_000_000));
+    let still_blocked = coordinator
+        .request_refresh(&account, current.generation, true, 1_400)
+        .unwrap();
+    assert_eq!(still_blocked.generation, current.generation);
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
+
+    executor.release(1);
+    executor.wait_idle();
+    let finished = wait_for_idle_cooldown_tombstone(&*store, &account, 1_701, 1_401);
+    assert!(finished.terminal_result.is_none());
+    assert!(finished.last_good.is_none());
+
+    clock.advance(Duration::from_secs(300));
+    let early = coordinator
+        .request_refresh(&account, current.generation, true, 1_700)
+        .unwrap();
+    assert_eq!(early.generation, current.generation);
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
+
+    executor.set_outcome(ProviderProbeOutcome::Failure {
+        kind: UsageCoordinationErrorKind::RateLimited,
+        message: "provider requested a later retry".into(),
+        retry_at_epoch: Some(2_400),
+    });
+    clock.advance(Duration::from_millis(100));
+    let allowed = coordinator
+        .request_refresh(&account, current.generation, true, 1_701)
+        .unwrap();
+    assert_eq!(allowed.generation, current.generation + 1);
+    executor.wait_started(2);
+    let second_start = clock.sample(1_701);
+    assert!(
+        second_start.monotonic.saturating_sub(first_start.monotonic) >= Duration::from_secs(300)
+    );
+    coordinator.reconcile_catalog([], 1_701).unwrap();
+    executor.release(1);
+    executor.wait_idle();
+    let finished = wait_for_idle_cooldown_tombstone(&*store, &account, 2_400, 2_400);
+    assert_eq!(finished.rate_limit_deadline_epoch, Some(2_400));
+    assert!(finished.terminal_error.is_none());
 }
 
 #[test]
@@ -1491,15 +2054,18 @@ fn catalog_revocation_clears_materialized_results_but_preserves_cooldown_and_fen
             .kind,
         UsageCoordinationErrorKind::CatalogRevoked
     );
-    assert!(store.purges.lock().unwrap().contains(&account));
+    assert!(
+        !store.purges.lock().unwrap().contains(&account),
+        "pending attempt tombstone replaces the Updating record before purge"
+    );
     let tombstone = store.states.lock().unwrap().get(&account).cloned().unwrap();
-    assert_eq!(tombstone.phase, UsageRefreshPhase::Idle);
+    assert_eq!(tombstone.phase, UsageRefreshPhase::Updating);
     assert!(tombstone.terminal_result.is_none());
     assert!(tombstone.last_good.is_none());
     assert!(tombstone.terminal_error.is_none());
     assert_eq!(tombstone.provider_invoked_at_epoch, Some(1_400));
     assert_eq!(tombstone.success_deadline_epoch, Some(1_300));
-    assert_eq!(tombstone.retry_deadline_epoch, None);
+    assert_eq!(tombstone.retry_deadline_epoch, Some(1_701));
 
     executor.release(1);
     executor.wait_idle();
@@ -1510,6 +2076,9 @@ fn catalog_revocation_clears_materialized_results_but_preserves_cooldown_and_fen
     );
     assert_eq!(after_late_result.generation, revoked.generation);
     assert!(after_late_result.snapshot.is_none());
+    let finished_tombstone = wait_for_idle_cooldown_tombstone(&*store, &account, 1_701, 1_402);
+    assert!(finished_tombstone.terminal_error.is_none());
+    assert!(finished_tombstone.terminal_result.is_none());
     assert_eq!(
         coordinator
             .request_refresh(&account, revoked.generation, true, 1_402)
@@ -1936,10 +2505,22 @@ fn cadence_two_clients_single_flight_exactly_one_provider_call() {
     assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum TombstoneStoreEvent {
+    Store {
+        capability: UsageAccountCapability,
+        phase: UsageRefreshPhase,
+        generation: u64,
+        result_free: bool,
+    },
+    Purge(UsageAccountCapability),
+}
+
 struct TombstoneWriteFailureStore {
     inner: MemoryStore,
     fail_tombstone: AtomicUsize,
     fail_purge_after_removal: AtomicUsize,
+    events: Mutex<Vec<TombstoneStoreEvent>>,
 }
 
 impl AccountStateStore for TombstoneWriteFailureStore {
@@ -1956,6 +2537,17 @@ impl AccountStateStore for TombstoneWriteFailureStore {
         envelope: &AccountStateEnvelope,
         now_epoch: i64,
     ) -> Result<(), StateStoreError> {
+        self.events
+            .lock()
+            .unwrap()
+            .push(TombstoneStoreEvent::Store {
+                capability: envelope.capability.clone(),
+                phase: envelope.phase,
+                generation: envelope.generation,
+                result_free: envelope.terminal_result.is_none()
+                    && envelope.last_good.is_none()
+                    && envelope.terminal_error.is_none(),
+            });
         let is_tombstone = envelope.phase == UsageRefreshPhase::Idle
             && envelope.terminal_result.is_none()
             && envelope.last_good.is_none()
@@ -1968,6 +2560,10 @@ impl AccountStateStore for TombstoneWriteFailureStore {
     }
 
     fn purge(&self, capability: &UsageAccountCapability) -> Result<(), StateStoreError> {
+        self.events
+            .lock()
+            .unwrap()
+            .push(TombstoneStoreEvent::Purge(capability.clone()));
         self.inner.purge(capability)?;
         if self.fail_purge_after_removal.swap(0, Ordering::SeqCst) > 0 {
             return Err(StateStoreError::Unavailable);
@@ -2174,6 +2770,7 @@ fn failed_tombstone_write_restores_catalog_and_preimage() {
         inner: MemoryStore::default(),
         fail_tombstone: AtomicUsize::new(0),
         fail_purge_after_removal: AtomicUsize::new(0),
+        events: Mutex::new(Vec::new()),
     });
     let account = capability("rollback-account");
     let coordinator = UsageCoordinator::with_catalog(
@@ -2213,6 +2810,7 @@ fn failed_purge_after_removal_restores_catalog_and_preimage() {
         inner: MemoryStore::default(),
         fail_tombstone: AtomicUsize::new(0),
         fail_purge_after_removal: AtomicUsize::new(0),
+        events: Mutex::new(Vec::new()),
     });
     let account = capability("purge-rollback-account");
     let coordinator = UsageCoordinator::with_catalog(
@@ -2241,6 +2839,219 @@ fn failed_purge_after_removal_restores_catalog_and_preimage() {
         Some(80)
     );
     assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
+}
+
+fn failed_later_purge_case(revision_reset: bool, pending_preimage_missing: bool) {
+    let executor = Arc::new(GateExecutor::new(ProviderProbeOutcome::success(
+        quota_view(1_000, 80),
+    )));
+    let store = Arc::new(TombstoneWriteFailureStore {
+        inner: MemoryStore::default(),
+        fail_tombstone: AtomicUsize::new(0),
+        fail_purge_after_removal: AtomicUsize::new(0),
+        events: Mutex::new(Vec::new()),
+    });
+    let pending = capability("a-pending-account");
+    let later_purge = capability("z-later-purge-account");
+    let clock = Arc::new(FakeMonotonicClock::with_wall_epoch(Duration::from_secs(
+        1_000,
+    )));
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce fixture ports to coordinator trait objects"
+    )]
+    let provider: Arc<dyn UsageProviderExecutor> = executor.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce fixture ports to coordinator trait objects"
+    )]
+    let state_store: Arc<dyn AccountStateStore> = store.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce paired fake clock to the coordinator clock port"
+    )]
+    let clock_port: Arc<dyn MonotonicClock> = clock.clone();
+    let coordinator = UsageCoordinator::start_with_clock(
+        provider,
+        state_store,
+        UsageCoordinatorConfig::default(),
+        Some(BTreeMap::from([
+            (pending.clone(), "revision-a".into()),
+            (later_purge.clone(), "revision-a".into()),
+        ])),
+        None,
+        clock_port,
+    );
+
+    let completed = coordinator
+        .request_refresh(&later_purge, 0, true, 1_000)
+        .unwrap();
+    executor.wait_started(1);
+    executor.release(1);
+    executor.wait_idle();
+    assert_eq!(
+        join_ok(&coordinator, &later_purge, completed.generation, 1_001).phase,
+        UsageRefreshPhase::Completed
+    );
+
+    let active = coordinator
+        .request_refresh(&pending, 0, true, 1_001)
+        .unwrap();
+    executor.wait_started(2);
+    let pending_preimage = store.inner.load(&pending, 1_001).unwrap().unwrap();
+    let completed_preimage = store.inner.load(&later_purge, 1_001).unwrap().unwrap();
+    assert_eq!(pending_preimage.phase, UsageRefreshPhase::Updating);
+    assert_eq!(completed_preimage.phase, UsageRefreshPhase::Completed);
+    if pending_preimage_missing {
+        assert!(
+            store
+                .inner
+                .states
+                .lock()
+                .unwrap()
+                .remove(&pending)
+                .is_some()
+        );
+    }
+
+    store.events.lock().unwrap().clear();
+    store.fail_purge_after_removal.store(1, Ordering::SeqCst);
+    let next_catalog = if revision_reset {
+        vec![catalog_entry(&pending, "revision-b")]
+    } else {
+        Vec::new()
+    };
+    let error = coordinator
+        .reconcile_catalog(next_catalog, 1_001)
+        .unwrap_err();
+    assert_eq!(error.kind, UsageCoordinationErrorKind::Unavailable);
+    let restored_pending = store
+        .inner
+        .load(&pending, 1_001)
+        .unwrap()
+        .expect("pending attempt marker must survive rollback");
+    assert_eq!(restored_pending.phase, UsageRefreshPhase::Updating);
+    assert!(restored_pending.terminal_result.is_none());
+    assert!(restored_pending.last_good.is_none());
+    assert!(restored_pending.terminal_error.is_none());
+    if pending_preimage_missing {
+        assert!(restored_pending.generation > pending_preimage.generation);
+    } else {
+        assert_eq!(restored_pending, pending_preimage.clone());
+    }
+    assert_eq!(
+        store.inner.load(&later_purge, 1_001).unwrap(),
+        Some(completed_preimage.clone())
+    );
+
+    let events = store.events.lock().unwrap().clone();
+    assert_eq!(events.len(), 4);
+    assert!(matches!(
+        &events[0],
+        TombstoneStoreEvent::Store {
+            capability,
+            phase: UsageRefreshPhase::Updating,
+            generation,
+            result_free: true,
+        } if capability == &pending && *generation > pending_preimage.generation
+    ));
+    let marker_generation = match &events[0] {
+        TombstoneStoreEvent::Store { generation, .. } => *generation,
+        event => panic!("expected pending marker write first, got {event:?}"),
+    };
+    assert_eq!(events[1], TombstoneStoreEvent::Purge(later_purge.clone()));
+    assert_eq!(
+        events[2],
+        TombstoneStoreEvent::Store {
+            capability: pending.clone(),
+            phase: UsageRefreshPhase::Updating,
+            generation: if pending_preimage_missing {
+                marker_generation
+            } else {
+                pending_preimage.generation
+            },
+            result_free: true,
+        }
+    );
+
+    if pending_preimage_missing {
+        let restart_store = Arc::new(MemoryStore::default());
+        restart_store.store(&restored_pending, 1_001).unwrap();
+        let restart_executor = Arc::new(GateExecutor::new(ProviderProbeOutcome::success(
+            quota_view(1_001, 80),
+        )));
+        #[expect(
+            clippy::clone_on_ref_ptr,
+            reason = "coerce restart fixture ports to coordinator trait objects"
+        )]
+        let restart_provider: Arc<dyn UsageProviderExecutor> = restart_executor.clone();
+        #[expect(
+            clippy::clone_on_ref_ptr,
+            reason = "coerce restart fixture ports to coordinator trait objects"
+        )]
+        let restart_state_store: Arc<dyn AccountStateStore> = restart_store.clone();
+        #[expect(
+            clippy::clone_on_ref_ptr,
+            reason = "share fake clock with the restart fixture"
+        )]
+        let restart_clock: Arc<dyn MonotonicClock> = clock.clone();
+        let restarted = UsageCoordinator::start_with_clock(
+            restart_provider,
+            restart_state_store,
+            UsageCoordinatorConfig::default(),
+            Some(BTreeMap::from([(pending.clone(), "revision-a".into())])),
+            None,
+            restart_clock,
+        );
+        let recovered = restarted.current(&pending, 1_001).unwrap();
+        assert_eq!(recovered.phase, UsageRefreshPhase::Failed);
+        assert_eq!(recovered.retry_at_epoch, Some(1_300));
+        let early = restarted
+            .request_refresh(&pending, recovered.generation, true, 1_001)
+            .unwrap();
+        assert_eq!(early.generation, recovered.generation);
+        assert_eq!(restart_executor.calls.load(Ordering::SeqCst), 0);
+    }
+    assert_eq!(
+        events[3],
+        TombstoneStoreEvent::Store {
+            capability: later_purge.clone(),
+            phase: completed_preimage.phase,
+            generation: completed_preimage.generation,
+            result_free: false,
+        }
+    );
+
+    let current = coordinator.current(&pending, 1_001).unwrap();
+    assert_eq!(current.phase, UsageRefreshPhase::Updating);
+    let joiner = coordinator
+        .request_refresh(&pending, current.generation, true, 1_001)
+        .unwrap();
+    assert_eq!(joiner.generation, active.generation);
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 2);
+
+    executor.release(1);
+    executor.wait_idle();
+    assert_eq!(
+        join_ok(&coordinator, &pending, active.generation, 1_002).phase,
+        UsageRefreshPhase::Completed
+    );
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 2);
+}
+
+#[test]
+fn failed_later_purge_restores_pending_marker_before_retry() {
+    failed_later_purge_case(false, false);
+}
+
+#[test]
+fn failed_later_purge_during_revision_reset_restores_pending_marker() {
+    failed_later_purge_case(true, false);
+}
+
+#[test]
+fn failed_later_purge_with_missing_pending_preimage_preserves_restart_fence() {
+    failed_later_purge_case(false, true);
 }
 
 struct CapabilityRecordingExecutor {

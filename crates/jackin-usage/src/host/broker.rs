@@ -16,15 +16,13 @@ use jackin_protocol::control::UsageSnapshotStatus;
 use jackin_protocol::usage_broker::{
     USAGE_BROKER_MAX_FRAME_BYTES, USAGE_BROKER_PROTOCOL_VERSION, UsageAccountCapability,
     UsageCatalogEntry, UsageCoordinationError, UsageCoordinationErrorKind, UsageCredentialScope,
-    UsageGenerationView, UsageProjectionRefreshStateV1, UsageProjectionSchemaV1, UsageProjectionV1,
-    UsageRefreshPhase,
+    UsageProjectionRefreshStateV1, UsageProjectionSchemaV1, UsageProjectionV1,
 };
 use nix::fcntl::{OFlag, open, openat};
 use nix::sys::stat::{Mode, fchmod, mkdirat};
 use nix::unistd::{UnlinkatFlags, fsync, geteuid, unlinkat};
 use sha2::{Digest as _, Sha256};
 
-#[cfg(test)]
 use jackin_protocol::usage_broker::UsageIdentityKindV1;
 
 use crate::coordinator::{
@@ -37,211 +35,7 @@ use super::discovery::{
     ProviderCredentialEnvResolver, ProviderCredentialRefreshOutcome, ValidatedCredentialBinding,
     discover_usage_sources, refresh_credential_binding, validate_usage_sources,
 };
-use super::{HostSurfaceId, HostUsageRuntime, UsageDiscoveryScope, ValidatedUsageDiscovery};
-
-impl HostUsageRuntime {
-    /// Whether this runtime permits host broker provider work.
-    #[must_use]
-    pub fn live_probes_enabled(&self) -> bool {
-        self.probe_policy == super::HostProbePolicy::Live
-    }
-
-    /// Whether any host broker generation remains active.
-    #[must_use]
-    pub fn broker_refresh_in_progress(&self) -> bool {
-        self.broker_phases.values().any(|phase| phase.is_active())
-    }
-
-    /// Whether any active broker generation belongs to `surface_id`.
-    #[must_use]
-    pub fn surface_refresh_in_progress(&self, surface_id: &str) -> bool {
-        self.broker_phases
-            .iter()
-            .any(|(capability, phase)| capability.surface_id == surface_id && phase.is_active())
-    }
-
-    /// Adopt one host-broker projection and never execute provider work here.
-    pub fn apply_broker_generation(&mut self, state: UsageGenerationView) -> Result<(), String> {
-        self.require_open()?;
-        let capability = state.capability.clone();
-        self.broker_phases.insert(capability.clone(), state.phase);
-        let binding = self.discovery.as_ref().and_then(|discovery| {
-            discovery
-                .bindings
-                .iter()
-                .find(|binding| {
-                    capability_for_binding(binding, discovery.config_generation.as_deref())
-                        == capability
-                })
-                .cloned()
-        });
-        if binding.is_some() {
-            self.broker_generations
-                .insert(capability.clone(), state.clone());
-        }
-        if let Some(mut view) = state.snapshot {
-            if let Some(error) = &state.error {
-                view.last_error = Some(error.message.clone());
-                view.status = if view.buckets.is_empty() {
-                    UsageSnapshotStatus::Error
-                } else {
-                    UsageSnapshotStatus::Stale
-                };
-            }
-            if let Some(binding) = &binding {
-                self.record_discovered_snapshot(binding, view);
-            }
-        } else if let Some(error) = &state.error {
-            // A failure without a snapshot means the broker holds no
-            // last-good quota for this capability, so recording an honest
-            // error view cannot clobber good data. Without it the snapshot
-            // surface would keep showing a stale placeholder forever.
-            if let Some(binding) = &binding {
-                self.record_broker_error_view(binding, error);
-            }
-            self.push_event(
-                "probe_failed",
-                Some(&capability.surface_id),
-                Some(error.message.clone()),
-            );
-        }
-        if state.phase.is_terminal() {
-            self.broker_phases.remove(&capability);
-            self.last_refresh = Some(Instant::now());
-        }
-        self.push_event(
-            "broker_phase_changed",
-            Some(&capability.surface_id),
-            Some(
-                match state.phase {
-                    UsageRefreshPhase::Idle => "idle",
-                    UsageRefreshPhase::Queued => "queued",
-                    UsageRefreshPhase::Updating => "updating",
-                    UsageRefreshPhase::Completed => "completed",
-                    UsageRefreshPhase::Failed => "failed",
-                }
-                .to_owned(),
-            ),
-        );
-        Ok(())
-    }
-
-    /// Record one broker failure as an honest snapshot-surface view.
-    ///
-    /// Identity bindings resolve to their canonical account row;
-    /// identity-less bindings stay surface-scoped so anonymous sources never
-    /// mint rows. The broker error message carries the collector's specific
-    /// gap reason.
-    fn record_broker_error_view(
-        &mut self,
-        binding: &ValidatedCredentialBinding,
-        error: &UsageCoordinationError,
-    ) {
-        let status = match error.kind {
-            UsageCoordinationErrorKind::NeedsSecret => UsageSnapshotStatus::NeedsSecret,
-            _ => UsageSnapshotStatus::Unavailable,
-        };
-        let (updated_label, status_bar_label) = match status {
-            UsageSnapshotStatus::NeedsSecret => ("Needs secret", "secret"),
-            _ => ("Unavailable", "usage unavailable"),
-        };
-        let mut view = jackin_protocol::control::FocusedUsageView::refreshing(
-            binding.surface.provider_label(),
-            chrono::Utc::now().timestamp(),
-        );
-        view.focused_agent = Some(binding.surface.agent_slug().to_owned());
-        view.status = status;
-        view.updated_label = updated_label.to_owned();
-        view.status_bar_label = status_bar_label.to_owned();
-        view.last_error = Some(error.message.clone());
-        if let Some(identity) = binding.identity.clone() {
-            let account_key = identity.account_key();
-            view.account.account_label = self
-                .discovered_views
-                .get(&(binding.surface, account_key.clone()))
-                .map(|view| view.account.account_label.clone())
-                .filter(|label| !label.trim().is_empty())
-                .or_else(|| {
-                    self.discovery.as_ref().and_then(|discovery| {
-                        discovery
-                            .accounts
-                            .iter()
-                            .find(|account| account.identity == identity)
-                            .map(|account| account.account_label.clone())
-                    })
-                })
-                .unwrap_or_default();
-            self.discovered_views
-                .insert((binding.surface, account_key), view);
-        } else {
-            // Surface-scoped honest error: never overwrite a recorded view
-            // from a sibling binding, and never mint an account row.
-            self.discovered_provider_views
-                .entry(binding.surface)
-                .or_insert(view);
-        }
-        self.push_event("snapshot_updated", Some(binding.surface.id()), None);
-    }
-
-    /// Surface one coordination failure without discarding last-good quota.
-    pub fn record_broker_error(
-        &mut self,
-        capability: &UsageAccountCapability,
-        error: &UsageCoordinationError,
-    ) -> Result<(), String> {
-        self.require_open()?;
-        if error.kind == UsageCoordinationErrorKind::CatalogRevoked
-            && self.broker_phases.remove(capability).is_some()
-        {
-            self.push_event(
-                "broker_phase_changed",
-                Some(&capability.surface_id),
-                Some("failed".to_owned()),
-            );
-        }
-        // A failed client request still affects the rendered account. Keep
-        // the last broker snapshot and reported retry deadline; a transport
-        // failure supplies neither a new quota observation nor retry policy.
-        let binding = self.discovery.as_ref().and_then(|discovery| {
-            discovery.bindings.iter().find(|binding| {
-                capability_for_binding(binding, discovery.config_generation.as_deref())
-                    == *capability
-            })
-        });
-        if let Some(binding) = binding {
-            let mut state = self
-                .broker_generations
-                .get(capability)
-                .cloned()
-                .unwrap_or_else(|| UsageGenerationView {
-                    capability: capability.clone(),
-                    generation: 0,
-                    phase: UsageRefreshPhase::Failed,
-                    snapshot: binding.identity.as_ref().and_then(|identity| {
-                        self.discovered_views
-                            .get(&(binding.surface, identity.account_key()))
-                            .cloned()
-                    }),
-                    error: None,
-                    retry_at_epoch: None,
-                });
-            // Request failure does not cancel work already running at the
-            // broker. Keep its active phase until the next received state.
-            if !state.phase.is_active() || error.kind == UsageCoordinationErrorKind::CatalogRevoked
-            {
-                state.phase = UsageRefreshPhase::Failed;
-            }
-            state.error = Some(error.clone());
-            self.apply_broker_generation(state)?;
-        }
-        self.push_event(
-            "probe_failed",
-            Some(&capability.surface_id),
-            Some(error.message.clone()),
-        );
-        Ok(())
-    }
-}
+use super::{HostSurfaceId, UsageDiscoveryScope, ValidatedUsageDiscovery};
 
 const BROKER_DIR: &str = "usage-broker";
 const BROKER_RUN_DIR: &str = "run";
@@ -288,7 +82,12 @@ struct ServePolicy {
 }
 
 impl BrokerLease {
+    #[cfg(test)]
     fn new(build_id: &str) -> Self {
+        Self::new_at(build_id, chrono::Utc::now().timestamp())
+    }
+
+    fn new_at(build_id: &str, now_epoch: i64) -> Self {
         let now_nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_or(0, |duration| duration.as_nanos());
@@ -301,17 +100,19 @@ impl BrokerLease {
             process_id: std::process::id(),
             protocol_version: USAGE_BROKER_PROTOCOL_VERSION.to_owned(),
             build_id: build_id.to_owned(),
-            renewed_at_epoch: chrono::Utc::now().timestamp(),
+            renewed_at_epoch: now_epoch,
         }
     }
 }
 
-/// Descriptor-bound broker authority.
+/// Descriptor-bound broker authority. Its exclusive file lock remains held
+/// for the complete owner lifetime, so elapsed wall time cannot authorize a
+/// contender to replace a live owner's lease.
 ///
-/// The lease file is never replaced while an owner is alive. Each lifecycle
-/// operation locks this descriptor, verifies the instance, and updates or
-/// removes only the inode it opened. A stale process holding an old descriptor
-/// therefore cannot renew or unlink a replacement lease at the same path.
+/// Lifecycle operations verify that the path still names this descriptor's
+/// inode and that the payload still names this instance before updating or
+/// removing it. A stale process holding an old descriptor therefore cannot
+/// renew or unlink a replacement lease at the same path.
 struct BrokerLeaseOwner {
     lease: BrokerLease,
     file: File,
@@ -362,10 +163,10 @@ impl BrokerStartupCleanup {
         Ok(())
     }
 
-    fn renew(&mut self, lease_duration: Duration) -> bool {
+    fn renew(&mut self, _lease_duration: Duration) -> bool {
         self.lease
             .as_mut()
-            .is_some_and(|lease| renew_lease(lease, lease_duration))
+            .is_some_and(|lease| renew_lease(&self.lease_path, lease))
     }
 }
 
@@ -551,36 +352,45 @@ struct LoadedProjection {
 
 fn load_projection(config: &UsageBrokerConfig) -> Result<LoadedProjection, UsageCoordinationError> {
     let store = FileProjectionStateStore::under_data_dir(&config.data_dir);
-    let loaded = match store.load() {
+    let loaded = match store.load_for_broker_migration() {
         Ok(loaded) => loaded,
-        // v1 and invalid v2 envelopes are quarantined by the store. The
-        // broker deliberately rebuilds an empty projection from current
-        // discovery; unavailable state is not safe to overwrite.
+        // v1, invalid envelopes, and unsupported schemas are quarantined by
+        // the store. The broker deliberately rebuilds an empty projection
+        // from current discovery; unavailable state is not safe to overwrite.
         Err(crate::coordinator::StateStoreError::Corrupt) => None,
-        Err(crate::coordinator::StateStoreError::Unavailable) => return Err(unavailable()),
+        Err(
+            crate::coordinator::StateStoreError::Unavailable
+            | crate::coordinator::StateStoreError::SchemaMigrationRequired { .. },
+        ) => return Err(unavailable()),
     };
-    let projection = loaded.as_ref().map_or_else(
-        || empty_projection(&config.build_id),
-        |envelope| envelope.projection.clone(),
-    );
-    let catalog = loaded.as_ref().map(|envelope| envelope.catalog.clone());
-    let catalog_revision = loaded
-        .as_ref()
-        .map(|envelope| envelope.catalog_revision.clone());
-    let envelope_catalog_revision = catalog_revision
-        .clone()
-        .unwrap_or_else(|| projection.discovery_revision.clone());
-    let envelope = ProjectionStateEnvelope {
-        schema_version: 2,
-        catalog_revision: envelope_catalog_revision,
-        catalog: catalog.clone().unwrap_or_default(),
-        broker_instance_id: projection.broker_instance_id.clone(),
-        projection: projection.clone(),
-        aliases: Vec::new(),
-        retry_deadline_epoch: None,
-        success_deadline_epoch: None,
+    let has_loaded_envelope = loaded.is_some();
+    let (projection, envelope) = match loaded {
+        Some(mut envelope) => {
+            if envelope.schema_version == ProjectionStateEnvelope::MIGRATABLE_SCHEMA_VERSION {
+                publish::migrate_legacy_projection(&mut envelope.projection)
+                    .map_err(|_| unavailable())?;
+                envelope.schema_version = ProjectionStateEnvelope::SCHEMA_VERSION;
+            }
+            (envelope.projection.clone(), envelope)
+        }
+        None => {
+            let projection = empty_projection(&config.build_id);
+            let envelope = ProjectionStateEnvelope {
+                schema_version: ProjectionStateEnvelope::SCHEMA_VERSION,
+                catalog_revision: projection.discovery_revision.clone(),
+                catalog: Vec::new(),
+                broker_instance_id: projection.broker_instance_id.clone(),
+                projection: projection.clone(),
+                aliases: Vec::new(),
+                retry_deadline_epoch: None,
+                success_deadline_epoch: None,
+            };
+            (projection, envelope)
+        }
     };
     store.store(&envelope).map_err(|_| unavailable())?;
+    let catalog = has_loaded_envelope.then(|| envelope.catalog.clone());
+    let catalog_revision = has_loaded_envelope.then(|| envelope.catalog_revision.clone());
     Ok(LoadedProjection {
         projection: Arc::new(Mutex::new(projection)),
         catalog,
@@ -1314,40 +1124,69 @@ fn claim_leader(
     build_id: &str,
     lease_duration: Duration,
 ) -> Result<Option<BrokerLeaseOwner>, UsageCoordinationError> {
-    let lease = BrokerLease::new(build_id);
+    claim_leader_at(
+        path,
+        build_id,
+        lease_duration,
+        chrono::Utc::now().timestamp(),
+    )
+}
+
+fn claim_leader_at(
+    path: &Path,
+    build_id: &str,
+    lease_duration: Duration,
+    now_epoch: i64,
+) -> Result<Option<BrokerLeaseOwner>, UsageCoordinationError> {
+    let lease = BrokerLease::new_at(build_id, now_epoch);
     loop {
-        match open(path, OFlag::O_RDWR | OFlag::O_NOFOLLOW, Mode::empty()) {
+        match open(
+            path,
+            OFlag::O_RDWR | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+            Mode::empty(),
+        ) {
             Ok(fd) => {
                 let mut file = File::from(fd);
                 validate_owned_file(&file, 0o600)?;
-                // A live broker does not hold the lease lock continuously. A
-                // contender therefore either observes the current owner or
-                // takes the same descriptor lock before replacing an expired
-                // payload.
+                // The owner retains this lock until its descriptor is dropped.
+                // A contender cannot infer that an owner is dead from a stale
+                // timestamp while the kernel still reports the lock held.
                 if file.try_lock().is_err() {
                     return Ok(None);
                 }
-                if file.metadata().map_err(|_| unavailable())?.nlink() == 0 {
-                    let _ignored = file.unlock();
+                if !lease_path_matches_open_file(path, &file) {
+                    drop(file);
                     continue;
                 }
-                let result = claim_existing_lease(&mut file, &lease, build_id, lease_duration);
-                let unlock = file.unlock();
-                return match (result, unlock) {
-                    (Ok(Some(stale_lease_reclaimed)), Ok(())) => Ok(Some(BrokerLeaseOwner {
-                        lease,
-                        file,
-                        stale_lease_reclaimed,
-                    })),
-                    (Ok(Some(_) | None), Err(_)) => Err(unavailable()),
-                    (Ok(None), Ok(())) => Ok(None),
-                    (Err(error), _) => Err(error),
+                let result =
+                    claim_existing_lease(&mut file, &lease, build_id, lease_duration, now_epoch);
+                return match result {
+                    // Keep the descriptor lock in the returned owner.
+                    Ok(Some(stale_lease_reclaimed)) => {
+                        if !lease_path_matches_open_file(path, &file) {
+                            return Err(unavailable());
+                        }
+                        Ok(Some(BrokerLeaseOwner {
+                            lease,
+                            file,
+                            stale_lease_reclaimed,
+                        }))
+                    }
+                    Ok(None) => {
+                        file.unlock().map_err(|_| unavailable())?;
+                        Ok(None)
+                    }
+                    Err(error) => Err(error),
                 };
             }
             Err(nix::errno::Errno::ENOENT) => {
                 let fd = open(
                     path,
-                    OFlag::O_RDWR | OFlag::O_CREAT | OFlag::O_EXCL | OFlag::O_NOFOLLOW,
+                    OFlag::O_RDWR
+                        | OFlag::O_CREAT
+                        | OFlag::O_EXCL
+                        | OFlag::O_NOFOLLOW
+                        | OFlag::O_CLOEXEC,
                     Mode::from_bits_truncate(0o600),
                 )
                 .map_err(|_| unavailable())?;
@@ -1357,8 +1196,13 @@ fn claim_leader(
                         let lease_file = file.as_mut().ok_or_else(unavailable)?;
                         validate_owned_file(lease_file, 0o600)?;
                         lease_file.try_lock().map_err(|_| unavailable())?;
+                        if !lease_path_matches_open_file(path, lease_file) {
+                            return Err(unavailable());
+                        }
                         write_lease(lease_file, &lease).map_err(|_| unavailable())?;
-                        lease_file.unlock().map_err(|_| unavailable())?;
+                        if !lease_path_matches_open_file(path, lease_file) {
+                            return Err(unavailable());
+                        }
                     }
                     let file = file.take().ok_or_else(unavailable)?;
                     Ok(BrokerLeaseOwner {
@@ -1387,6 +1231,7 @@ fn claim_existing_lease(
     replacement: &BrokerLease,
     build_id: &str,
     lease_duration: Duration,
+    now_epoch: i64,
 ) -> Result<Option<bool>, UsageCoordinationError> {
     if file.metadata().map_err(|_| unavailable())?.nlink() == 0 {
         return Ok(None);
@@ -1401,9 +1246,7 @@ fn claim_existing_lease(
             // activator; the client will receive protocol_mismatch.
             return Ok(None);
         }
-        chrono::Utc::now()
-            .timestamp()
-            .saturating_sub(existing.renewed_at_epoch)
+        now_epoch.saturating_sub(existing.renewed_at_epoch)
             >= i64::try_from(lease_duration.as_secs()).unwrap_or(i64::MAX)
     } else {
         // Unknown or legacy formats do not carry enough ownership data to
@@ -1417,32 +1260,54 @@ fn claim_existing_lease(
     Ok(Some(true))
 }
 
-fn renew_lease(owner: &mut BrokerLeaseOwner, lease_duration: Duration) -> bool {
-    if owner.file.lock().is_err() {
+fn renew_lease(path: &Path, owner: &mut BrokerLeaseOwner) -> bool {
+    renew_lease_at(path, owner, chrono::Utc::now().timestamp())
+}
+
+fn renew_lease_at(path: &Path, owner: &mut BrokerLeaseOwner, now_epoch: i64) -> bool {
+    if !lease_path_matches_open_file(path, &owner.file) {
         return false;
     }
     let result = (|| {
-        if owner.file.metadata().ok()?.nlink() == 0 {
-            return Some(false);
-        }
         let mut current = read_lease(&mut owner.file).ok()?;
-        if current.instance_id != owner.lease.instance_id {
-            return Some(false);
-        }
-        let now = chrono::Utc::now().timestamp();
-        if now.saturating_sub(current.renewed_at_epoch)
-            >= i64::try_from(lease_duration.as_secs()).unwrap_or(i64::MAX)
+        if current.instance_id != owner.lease.instance_id
+            || current.process_id != owner.lease.process_id
+            || owner.lease.process_id != std::process::id()
+            || current.protocol_version != owner.lease.protocol_version
+            || current.build_id != owner.lease.build_id
+            || current.renewed_at_epoch != owner.lease.renewed_at_epoch
+            || !lease_path_matches_open_file(path, &owner.file)
         {
             return Some(false);
         }
-        current.renewed_at_epoch = now;
+        // The lifetime lock proves that this process still owns the lease.
+        // A long sleep may make the timestamp old, but must not fence a live
+        // owner from renewing after it wakes.
+        current.renewed_at_epoch = now_epoch.max(current.renewed_at_epoch);
         write_lease(&mut owner.file, &current).ok()?;
-        owner.lease.renewed_at_epoch = now;
+        if !lease_path_matches_open_file(path, &owner.file) {
+            return Some(false);
+        }
+        owner.lease.renewed_at_epoch = current.renewed_at_epoch;
         Some(true)
     })()
     .unwrap_or(false);
-    let unlock = owner.file.unlock();
-    result && unlock.is_ok()
+    result
+}
+
+fn lease_path_matches_open_file(path: &Path, file: &File) -> bool {
+    let Ok(descriptor_metadata) = file.metadata() else {
+        return false;
+    };
+    let Ok(path_metadata) = fs::symlink_metadata(path) else {
+        return false;
+    };
+    descriptor_metadata.nlink() != 0
+        && descriptor_metadata.is_file()
+        && path_metadata.is_file()
+        && !path_metadata.file_type().is_symlink()
+        && path_metadata.dev() == descriptor_metadata.dev()
+        && path_metadata.ino() == descriptor_metadata.ino()
 }
 
 fn cleanup_owned_files(
@@ -1451,35 +1316,34 @@ fn cleanup_owned_files(
     socket_identity: Option<BrokerSocketIdentity>,
     owner: &mut BrokerLeaseOwner,
 ) -> bool {
-    if owner.file.lock().is_err() {
-        return false;
-    }
     let result = (|| -> Result<(), ()> {
-        let descriptor_metadata = owner.file.metadata().map_err(|_| ())?;
-        let path_metadata = fs::symlink_metadata(lease_path).map_err(|_| ())?;
-        if descriptor_metadata.nlink() == 0
-            || path_metadata.file_type().is_symlink()
-            || path_metadata.dev() != descriptor_metadata.dev()
-            || path_metadata.ino() != descriptor_metadata.ino()
-        {
+        if !lease_path_matches_open_file(lease_path, &owner.file) {
             return Err(());
         }
         let current = read_lease(&mut owner.file).map_err(|_| ())?;
-        if current.instance_id != owner.lease.instance_id {
+        if current.instance_id != owner.lease.instance_id
+            || current.protocol_version != owner.lease.protocol_version
+            || current.build_id != owner.lease.build_id
+        {
             return Err(());
         }
         // The lease descriptor remains locked while the owned startup socket
         // and lease are removed. Never remove a socket path that this startup
         // did not bind, or whose inode has since been replaced.
         if let Some(identity) = socket_identity {
+            if !lease_path_matches_open_file(lease_path, &owner.file) {
+                return Err(());
+            }
             unlink_owned_socket_path(socket_path, identity)?;
+        }
+        if !lease_path_matches_open_file(lease_path, &owner.file) {
+            return Err(());
         }
         unlink_owned_path(lease_path)?;
         Ok(())
     })()
     .is_ok();
-    let unlock = owner.file.unlock().is_ok();
-    result && unlock
+    result
 }
 
 fn unlink_owned_socket_path(path: &Path, expected: BrokerSocketIdentity) -> Result<(), ()> {
@@ -1610,7 +1474,6 @@ pub(super) fn capability_for_binding(
 /// Preserve the canonical identity evidence that host discovery already
 /// merged before the broker publisher turns generation views into the
 /// Capsule-facing projection. Labels are deliberately not consulted.
-#[cfg(test)]
 fn publication_identity_metadata(
     discovery: &ValidatedUsageDiscovery,
 ) -> BTreeMap<UsageAccountCapability, publish::AccountIdentityMetadata> {
@@ -1620,23 +1483,22 @@ fn publication_identity_metadata(
         let capability = capability_for_binding(binding, discovery.config_generation.as_deref());
         let identity_kind = match binding.identity.as_ref().map(|identity| &identity.subject) {
             Some(CanonicalAccountSubject::ProviderId(_)) => UsageIdentityKindV1::ProviderAccountId,
-            Some(
-                CanonicalAccountSubject::ProviderStableHandle(_)
-                | CanonicalAccountSubject::SourceCapability(_),
-            ) => {
-                // Wire V1 has no separate source-scoped kind; both are stable
-                // non-secret handles and never carry the capability itself.
+            Some(CanonicalAccountSubject::ProviderStableHandle(_)) => {
                 UsageIdentityKindV1::ProviderStableHandle
             }
-            None => UsageIdentityKindV1::ProviderAccountId,
+            Some(CanonicalAccountSubject::SourceCapability(_)) => {
+                UsageIdentityKindV1::LocalSourceHandle
+            }
+            None => UsageIdentityKindV1::UnverifiedHandle,
         };
         let entry = evidence
             .entry(capability)
             .or_insert_with(|| (identity_kind, BTreeSet::new()));
-        // A provider-issued id is stronger evidence than a stable display
-        // handle if malformed input ever aliases them to one capability.
-        if identity_kind == UsageIdentityKindV1::ProviderAccountId {
-            entry.0 = UsageIdentityKindV1::ProviderAccountId;
+        // Keep the strongest exact identity evidence when several sources
+        // coalesce onto one capability. Missing evidence never upgrades to a
+        // provider or local-source claim.
+        if identity_kind_strength(identity_kind) > identity_kind_strength(entry.0) {
+            entry.0 = identity_kind;
         }
         entry.1.extend(binding.provenance.iter().cloned());
     }
@@ -1654,6 +1516,15 @@ fn publication_identity_metadata(
         .collect()
 }
 
+fn identity_kind_strength(identity_kind: UsageIdentityKindV1) -> u8 {
+    match identity_kind {
+        UsageIdentityKindV1::UnverifiedHandle => 0,
+        UsageIdentityKindV1::LocalSourceHandle => 1,
+        UsageIdentityKindV1::ProviderStableHandle => 2,
+        UsageIdentityKindV1::ProviderAccountId => 3,
+    }
+}
+
 fn projection_identity_metadata(
     projection: &UsageProjectionV1,
 ) -> BTreeMap<UsageAccountCapability, publish::AccountIdentityMetadata> {
@@ -1664,7 +1535,7 @@ fn projection_identity_metadata(
             provider.accounts.iter().map(|account| {
                 (
                     UsageAccountCapability {
-                        surface_id: provider.provider_id.clone(),
+                        surface_id: publish::surface_id_for_provider(&provider.provider_id),
                         account_id: account.canonical_account_id.clone(),
                     },
                     publish::AccountIdentityMetadata {

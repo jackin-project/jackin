@@ -39,8 +39,7 @@ fn resolved_last_error_is_only_reported_for_stale_provider_views() {
         retry_after_seconds: None,
         response_received_at_epoch: None,
     });
-    let normalized =
-        claude_provider_error_label(Some(&oauth_error), None).expect("normalized label");
+    let normalized = claude_provider_error_label(Some(&oauth_error)).expect("normalized label");
     assert_eq!(
         claude_resolved_last_error(UsageSnapshotStatus::Stale, Some(normalized)).as_deref(),
         Some("Claude token lacks usage scope (inference-only); quota unavailable")
@@ -70,7 +69,7 @@ fn scope_restriction_requires_typed_http_403() {
         ProviderError::from(ProviderHttpError::Decode(
             "Claude OAuth usage decode failed: payload mentions 401".to_owned(),
         )),
-        ProviderError::from("Claude CLI usage failed with HTTP 429".to_owned()),
+        ProviderError::from("Claude provider usage failed with HTTP 429".to_owned()),
     ];
     for error in &misleading {
         assert!(!claude_error_is_scope_restriction(error));

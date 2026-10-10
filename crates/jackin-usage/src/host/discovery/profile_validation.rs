@@ -368,7 +368,6 @@ fn accumulate_validated_source(
         bindings.push(ValidatedCredentialBinding {
             surface,
             identity: Some(identity),
-            source_id,
             capability_id,
             credential_revision,
             provenance,
@@ -402,7 +401,6 @@ fn accumulate_validated_source(
                 bindings.push(ValidatedCredentialBinding {
                     surface,
                     identity: None,
-                    source_id,
                     capability_id,
                     credential_revision,
                     provenance,
@@ -430,7 +428,6 @@ fn accumulate_validated_source(
             bindings.push(ValidatedCredentialBinding {
                 surface,
                 identity: Some(identity),
-                source_id,
                 capability_id,
                 credential_revision,
                 provenance,
@@ -440,7 +437,6 @@ fn accumulate_validated_source(
         ProfileValidation::Anonymous(_) => bindings.push(ValidatedCredentialBinding {
             surface,
             identity: None,
-            source_id,
             capability_id,
             credential_revision,
             provenance,

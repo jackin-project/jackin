@@ -101,29 +101,35 @@ impl UsageCoordinator {
         if entry.revoked {
             return Err(catalog_revoked_error());
         }
-        if entry.envelope.phase.is_active()
+        let admitted_sample = self.shared.clock.sample(now_epoch);
+        let admission_epoch = admitted_sample.floor_epoch();
+        if entry.pending_provider_generation.is_some()
+            || entry.envelope.phase.is_active()
             || (!entry.recovery_pending && observed_generation < entry.envelope.generation)
         {
             return Ok(generation_view(&entry.envelope));
         }
         if entry
-            .envelope
-            .rate_limit_deadline_epoch
-            .is_some_and(|deadline| deadline > now_epoch)
+            .cooldown_not_before_monotonic
+            .is_some_and(|deadline| admitted_sample.monotonic < deadline)
+            || entry
+                .envelope
+                .rate_limit_deadline_epoch
+                .is_some_and(|deadline| deadline > admission_epoch)
             || entry
                 .envelope
                 .retry_deadline_epoch
-                .is_some_and(|deadline| deadline > now_epoch)
+                .is_some_and(|deadline| deadline > admission_epoch)
             || policy::minimum_attempt_deadline(
                 capability,
                 entry.envelope.provider_invoked_at_epoch,
             )
-            .is_some_and(|deadline| deadline > now_epoch)
-            || (!force
+            .is_some_and(|deadline| deadline > admission_epoch)
+            || ((!force || capability.surface_id == "claude")
                 && entry
                     .envelope
                     .success_deadline_epoch
-                    .is_some_and(|deadline| deadline > now_epoch))
+                    .is_some_and(|deadline| deadline > admission_epoch))
         {
             return Ok(generation_view(&entry.envelope));
         }
@@ -133,13 +139,18 @@ impl UsageCoordinator {
         entry.recovery_pending = false;
         entry.envelope.generation = entry.envelope.generation.saturating_add(1);
         entry.envelope.phase = UsageRefreshPhase::Queued;
-        entry.envelope.started_at_epoch = Some(now_epoch);
+        entry.envelope.started_at_epoch = Some(admission_epoch);
         entry.envelope.completed_at_epoch = None;
         entry.envelope.terminal_result = None;
         entry.envelope.terminal_error = None;
         entry.envelope.retry_deadline_epoch = None;
         let generation = entry.envelope.generation;
-        if self.shared.store.store(&entry.envelope, now_epoch).is_err() {
+        if self
+            .shared
+            .store
+            .store(&entry.envelope, admission_epoch)
+            .is_err()
+        {
             entry.envelope = previous;
             entry.recovery_pending = recovery_pending;
             let error = unavailable_error();
@@ -153,8 +164,7 @@ impl UsageCoordinator {
         let job = ProbeJob {
             capability: capability.clone(),
             generation,
-            admitted_at_epoch: now_epoch,
-            admitted_at_monotonic: self.shared.clock.now(),
+            admitted_at_epoch: admission_epoch,
             catalog_revision,
             credential_scope,
         };
@@ -167,7 +177,7 @@ impl UsageCoordinator {
                     &job,
                     UsageCoordinationErrorKind::Unavailable,
                     "usage coordinator queue is unavailable",
-                    now_epoch,
+                    admission_epoch,
                 ),
                 WorkerMessage::Shutdown => Err(unavailable_error()),
             },

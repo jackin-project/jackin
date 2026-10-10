@@ -18,6 +18,8 @@ pub(super) struct BrokerCatalogRefresh {
     scope: UsageDiscoveryScope,
     resolver: Arc<dyn ProviderCredentialEnvResolver>,
     serial: Mutex<()>,
+    #[cfg(test)]
+    test_discovery: Option<ValidatedUsageDiscovery>,
 }
 
 impl BrokerCatalogRefresh {
@@ -29,7 +31,15 @@ impl BrokerCatalogRefresh {
             scope,
             resolver,
             serial: Mutex::new(()),
+            #[cfg(test)]
+            test_discovery: None,
         }
+    }
+
+    #[cfg(test)]
+    pub(super) fn with_test_discovery(mut self, discovery: ValidatedUsageDiscovery) -> Self {
+        self.test_discovery = Some(discovery);
+        self
     }
 
     /// Serialize catalog scans with their broker-owned catalog mutation.
@@ -38,6 +48,10 @@ impl BrokerCatalogRefresh {
         action: impl FnOnce(ValidatedUsageDiscovery) -> Result<T, UsageCoordinationError>,
     ) -> Result<T, UsageCoordinationError> {
         let _serial = self.serial.lock().map_err(|_| discovery_unavailable())?;
+        #[cfg(test)]
+        if let Some(discovery) = &self.test_discovery {
+            return action(discovery.clone());
+        }
         let discovery = with_unattended_guard(crate::usage::unattended_keychain_guard, || {
             self.resolver.begin_manual_retry();
             discover_confirming_empty(|| self.discover_once())

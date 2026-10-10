@@ -873,6 +873,8 @@ fn identity_kind_label(kind: UsageIdentityKindV1) -> &'static str {
     match kind {
         UsageIdentityKindV1::ProviderAccountId => "provider account id",
         UsageIdentityKindV1::ProviderStableHandle => "provider handle",
+        UsageIdentityKindV1::LocalSourceHandle => "local source handle",
+        UsageIdentityKindV1::UnverifiedHandle => "unverified handle",
     }
 }
 

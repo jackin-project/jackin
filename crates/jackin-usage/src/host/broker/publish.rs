@@ -23,6 +23,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
 
+use icu_collator::{Collator, CollatorBorrowed, options::CollatorOptions, options::Strength};
+use icu_locale::Locale;
 use jackin_protocol::control::{
     FocusedUsageView, QuotaBucketView, StatusSlot, UsageSeverity, UsageSnapshotStatus,
 };
@@ -35,6 +37,7 @@ use jackin_protocol::usage_broker::{
     UsageRefreshPhase, UsageWindowCategoryV1,
 };
 
+use super::super::HostSurfaceId;
 use crate::coordinator::{
     FileProjectionStateStore, ProjectionStateEnvelope, StateStoreError, UsageCoordinator,
 };
@@ -58,7 +61,7 @@ pub(crate) struct ProjectionPublisher {
     /// Serializes catalog replacement with incremental publication and
     /// observed-capability admission.
     catalog_lifecycle: Arc<Mutex<()>>,
-    identity_metadata: BTreeMap<UsageAccountCapability, AccountIdentityMetadata>,
+    identity_metadata: Arc<Mutex<BTreeMap<UsageAccountCapability, AccountIdentityMetadata>>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -76,6 +79,17 @@ pub(crate) struct AccountIdentityMetadata {
     pub provenance_count: u32,
 }
 
+/// One accepted discovery generation and every catalog-derived value that
+/// must become visible with it. `None` preserves bootstrap identity metadata;
+/// `Some` replaces metadata for the newly accepted catalog.
+#[derive(Debug, Clone)]
+pub(crate) struct CatalogReconciliation {
+    pub catalog_revision: String,
+    pub entries: Vec<UsageCatalogEntry>,
+    pub diagnostics: CatalogDiagnostics,
+    pub identity_metadata: Option<BTreeMap<UsageAccountCapability, AccountIdentityMetadata>>,
+}
+
 impl ProjectionPublisher {
     /// Attach a publisher to one broker-owned coordinator and projection.
     pub(crate) fn new(
@@ -91,7 +105,7 @@ impl ProjectionPublisher {
             published: Arc::new(Mutex::new(BTreeMap::new())),
             catalog: Arc::new(Mutex::new(None)),
             catalog_lifecycle: Arc::new(Mutex::new(())),
-            identity_metadata: BTreeMap::new(),
+            identity_metadata: Arc::new(Mutex::new(BTreeMap::new())),
         }
     }
 
@@ -114,7 +128,7 @@ impl ProjectionPublisher {
                             .iter()
                             .map(|account| UsageAccountCapability {
                                 account_id: account.canonical_account_id.clone(),
-                                surface_id: provider.provider_id.clone(),
+                                surface_id: surface_id_for_provider(&provider.provider_id),
                             })
                     })
                     .filter(|capability| catalog.contains_key(capability)),
@@ -130,10 +144,12 @@ impl ProjectionPublisher {
     /// Capsule/FFI publication. Missing entries remain conservative fallback
     /// rows for synthetic broker seams only.
     pub(crate) fn with_identity_metadata(
-        mut self,
+        self,
         identity_metadata: BTreeMap<UsageAccountCapability, AccountIdentityMetadata>,
     ) -> Self {
-        self.identity_metadata = identity_metadata;
+        if let Ok(mut current) = self.identity_metadata.lock() {
+            *current = identity_metadata;
+        }
         self
     }
 
@@ -209,29 +225,19 @@ impl ProjectionPublisher {
     }
 
     /// Replace catalog membership and its sanitized diagnostics atomically.
-    pub(crate) fn reconcile_catalog_if_projection_with_diagnostics(
+    pub(crate) fn reconcile_catalog_if_projection(
         &self,
         expected_projection_id: Option<&str>,
-        catalog_revision: String,
-        entries: Vec<UsageCatalogEntry>,
-        diagnostics: CatalogDiagnostics,
+        reconciliation: CatalogReconciliation,
         now_epoch: i64,
     ) -> Result<UsageProjectionV1, UsageCoordinationError> {
-        self.reconcile_catalog_inner(
-            expected_projection_id,
-            catalog_revision,
-            entries,
-            diagnostics,
-            now_epoch,
-        )
+        self.reconcile_catalog_inner(expected_projection_id, reconciliation, now_epoch)
     }
 
     fn reconcile_catalog_inner(
         &self,
         expected_projection_id: Option<&str>,
-        catalog_revision: String,
-        entries: Vec<UsageCatalogEntry>,
-        diagnostics: CatalogDiagnostics,
+        reconciliation: CatalogReconciliation,
         now_epoch: i64,
     ) -> Result<UsageProjectionV1, UsageCoordinationError> {
         let _catalog_lifecycle = self
@@ -241,6 +247,10 @@ impl ProjectionPublisher {
         let mut current_catalog = self.catalog.lock().map_err(|_| publisher_unavailable())?;
         let mut known = self.known.lock().map_err(|_| publisher_unavailable())?;
         let mut published = self.published.lock().map_err(|_| publisher_unavailable())?;
+        let mut identity_metadata = self
+            .identity_metadata
+            .lock()
+            .map_err(|_| publisher_unavailable())?;
         let mut projection = self
             .projection
             .lock()
@@ -248,6 +258,12 @@ impl ProjectionPublisher {
         if expected_projection_id.is_some_and(|expected| expected != projection.projection_id) {
             return Err(catalog_revision_conflict());
         }
+        let CatalogReconciliation {
+            catalog_revision,
+            entries,
+            diagnostics,
+            identity_metadata: discovered_identity_metadata,
+        } = reconciliation;
         let mut catalog = BTreeMap::new();
         for entry in &entries {
             if entry.revision.is_empty()
@@ -260,8 +276,16 @@ impl ProjectionPublisher {
         }
         let previous = projection.clone();
         let mut next = projection.clone();
-        retain_revoked_accounts(&mut next, &previous, &catalog, current_catalog.as_ref());
-        apply_catalog_diagnostics(&mut next, &diagnostics);
+        retain_revoked_accounts(&mut next, &previous, &catalog, current_catalog.as_ref())
+            .map_err(|_| publisher_unavailable())?;
+        let next_identity_metadata = reconciled_identity_metadata(
+            &identity_metadata,
+            &catalog,
+            &next,
+            discovered_identity_metadata,
+        )?;
+        apply_identity_metadata(&mut next, &next_identity_metadata);
+        apply_catalog_diagnostics(&mut next, &diagnostics).map_err(|_| publisher_unavailable())?;
         next.discovery_revision = catalog_revision.clone();
         next.broker_generation = next.broker_generation.saturating_add(1);
         next.projection_id = format!("{}:{}", next.broker_instance_id, next.broker_generation);
@@ -272,7 +296,7 @@ impl ProjectionPublisher {
         }
         let previous_envelope = self.store.load().map_err(projection_store_error)?;
         let envelope = ProjectionStateEnvelope {
-            schema_version: 2,
+            schema_version: ProjectionStateEnvelope::SCHEMA_VERSION,
             catalog_revision: next.discovery_revision.clone(),
             catalog: catalog_entries(&catalog),
             broker_instance_id: next.broker_instance_id.clone(),
@@ -306,6 +330,7 @@ impl ProjectionPublisher {
         *current_catalog = Some(catalog.clone());
         known.retain(|capability| catalog.contains_key(capability));
         published.retain(|capability, _| catalog.contains_key(capability));
+        *identity_metadata = next_identity_metadata;
         *projection = next.clone();
         drop(transaction);
         Ok(next)
@@ -332,6 +357,10 @@ impl ProjectionPublisher {
     pub(crate) fn publish_due(&self, now_epoch: i64) -> bool {
         let Ok(_catalog_lifecycle) = self.catalog_lifecycle.lock() else {
             return false;
+        };
+        let identity_metadata = match self.identity_metadata.lock() {
+            Ok(identity_metadata) => identity_metadata.clone(),
+            Err(_) => return false,
         };
         let capabilities = self.known_capabilities_locked();
         if capabilities.is_empty() {
@@ -379,11 +408,15 @@ impl ProjectionPublisher {
         };
         let previous = projection.clone();
         let mut next = projection.clone();
-        merge_views(&mut next, &views, &self.identity_metadata);
+        if merge_views(&mut next, &views, &identity_metadata).is_err() {
+            return false;
+        }
         if let Ok(catalog) = self.catalog.lock()
             && let Some(catalog) = catalog.as_ref()
         {
-            retain_revoked_accounts(&mut next, &previous, catalog, None);
+            if retain_revoked_accounts(&mut next, &previous, catalog, None).is_err() {
+                return false;
+            }
         }
         next.broker_generation = next.broker_generation.saturating_add(1);
         next.projection_id = format!("{}:{}", next.broker_instance_id, next.broker_generation);
@@ -392,7 +425,7 @@ impl ProjectionPublisher {
             return false;
         }
         let envelope = ProjectionStateEnvelope {
-            schema_version: 2,
+            schema_version: ProjectionStateEnvelope::SCHEMA_VERSION,
             catalog_revision: next.discovery_revision.clone(),
             catalog: self
                 .catalog
@@ -417,17 +450,78 @@ impl ProjectionPublisher {
     }
 }
 
+fn reconciled_identity_metadata(
+    current: &BTreeMap<UsageAccountCapability, AccountIdentityMetadata>,
+    catalog: &BTreeMap<UsageAccountCapability, String>,
+    projection: &UsageProjectionV1,
+    discovered: Option<BTreeMap<UsageAccountCapability, AccountIdentityMetadata>>,
+) -> Result<BTreeMap<UsageAccountCapability, AccountIdentityMetadata>, UsageCoordinationError> {
+    let Some(discovered) = discovered else {
+        return Ok(current.clone());
+    };
+    if discovered
+        .keys()
+        .any(|capability| !catalog.contains_key(capability))
+    {
+        return Err(publisher_corrupt_state());
+    }
+
+    // Removed rows stay as tombstones in the projection. Preserve their prior
+    // identity evidence, but only accept fresh evidence for current members.
+    let mut next = BTreeMap::new();
+    for provider in &projection.providers {
+        for account in &provider.accounts {
+            let capability = UsageAccountCapability {
+                surface_id: surface_id_for_provider(&provider.provider_id),
+                account_id: account.canonical_account_id.clone(),
+            };
+            if !catalog.contains_key(&capability)
+                && let Some(metadata) = current.get(&capability)
+            {
+                next.insert(capability, *metadata);
+            }
+        }
+    }
+    next.extend(discovered);
+    for capability in catalog.keys() {
+        next.entry(capability.clone())
+            .or_insert(AccountIdentityMetadata {
+                identity_kind: UsageIdentityKindV1::UnverifiedHandle,
+                provenance_count: 1,
+            });
+    }
+    Ok(next)
+}
+
+fn apply_identity_metadata(
+    projection: &mut UsageProjectionV1,
+    identity_metadata: &BTreeMap<UsageAccountCapability, AccountIdentityMetadata>,
+) {
+    for provider in &mut projection.providers {
+        for account in &mut provider.accounts {
+            let capability = UsageAccountCapability {
+                surface_id: surface_id_for_provider(&provider.provider_id),
+                account_id: account.canonical_account_id.clone(),
+            };
+            if let Some(metadata) = identity_metadata.get(&capability) {
+                account.identity_kind = metadata.identity_kind;
+                account.provenance_count = metadata.provenance_count;
+            }
+        }
+    }
+}
+
 fn retain_revoked_accounts(
     projection: &mut UsageProjectionV1,
     previous: &UsageProjectionV1,
     catalog: &BTreeMap<UsageAccountCapability, String>,
     previous_catalog: Option<&BTreeMap<UsageAccountCapability, String>>,
-) {
+) -> Result<(), String> {
     for provider in &mut projection.providers {
         provider.accounts.retain(|account| {
             let capability = UsageAccountCapability {
                 account_id: account.canonical_account_id.clone(),
-                surface_id: provider.provider_id.clone(),
+                surface_id: surface_id_for_provider(&provider.provider_id),
             };
             let revision_changed = previous_catalog.is_some_and(|previous_catalog| {
                 previous_catalog
@@ -442,7 +536,7 @@ fn retain_revoked_accounts(
         for account in &mut provider.accounts {
             let capability = UsageAccountCapability {
                 account_id: account.canonical_account_id.clone(),
-                surface_id: provider.provider_id.clone(),
+                surface_id: surface_id_for_provider(&provider.provider_id),
             };
             let revision_changed = previous_catalog.is_some_and(|previous_catalog| {
                 previous_catalog
@@ -457,17 +551,17 @@ fn retain_revoked_accounts(
     }
     projection
         .providers
-        .retain(|provider| !provider.accounts.is_empty());
+        .retain(|provider| !provider.accounts.is_empty() || !provider.issues.is_empty());
 
     for previous_provider in &previous.providers {
         for previous_account in &previous_provider.accounts {
             let capability = UsageAccountCapability {
                 account_id: previous_account.canonical_account_id.clone(),
-                surface_id: previous_provider.provider_id.clone(),
+                surface_id: surface_id_for_provider(&previous_provider.provider_id),
             };
             if catalog.contains_key(&capability)
                 || projection.providers.iter().any(|provider| {
-                    provider.provider_id == capability.surface_id
+                    provider.provider_id == canonical_provider_id(&capability.surface_id)
                         && provider
                             .accounts
                             .iter()
@@ -478,11 +572,9 @@ fn retain_revoked_accounts(
             }
             let mut account = previous_account.clone();
             mark_revoked(&mut account);
-            if let Some(provider) = projection
-                .providers
-                .iter_mut()
-                .find(|provider| provider.provider_id == capability.surface_id)
-            {
+            if let Some(provider) = projection.providers.iter_mut().find(|provider| {
+                provider.provider_id == canonical_provider_id(&capability.surface_id)
+            }) {
                 provider.accounts.push(account);
             } else {
                 let mut provider = previous_provider.clone();
@@ -492,18 +584,7 @@ fn retain_revoked_accounts(
         }
     }
 
-    projection
-        .providers
-        .sort_by(|left, right| left.provider_id.cmp(&right.provider_id));
-    for (provider_rank, provider) in projection.providers.iter_mut().enumerate() {
-        provider.rank = u32::try_from(provider_rank).unwrap_or(u32::MAX);
-        provider
-            .accounts
-            .sort_by(|left, right| left.canonical_account_id.cmp(&right.canonical_account_id));
-        for (account_rank, account) in provider.accounts.iter_mut().enumerate() {
-            account.rank = u32::try_from(account_rank).unwrap_or(u32::MAX);
-        }
-    }
+    sort_projection_rows(projection)
 }
 
 fn mark_revoked(account: &mut UsageAccountV1) {
@@ -535,18 +616,21 @@ fn catalog_entries(catalog: &BTreeMap<UsageAccountCapability, String>) -> Vec<Us
 
 /// Rebuild provider/account rows from per-account generation views.
 ///
-/// Providers and accounts are rebuilt in settled `(surface_id, account_id)`
-/// order with canonical ranks. Projection-level `unresolved`, `issues`, and
-/// the catalog revision are preserved untouched.
+/// Account rows are rebuilt from internal surface capabilities and emitted
+/// with canonical provider IDs and stable ICU-ranked rows. Provider issues and
+/// projection-level discovery state are retained until an authoritative
+/// catalog reconciliation replaces them.
 fn merge_views(
     projection: &mut UsageProjectionV1,
     views: &[UsageGenerationView],
     identity_metadata: &BTreeMap<UsageAccountCapability, AccountIdentityMetadata>,
-) {
+) -> Result<(), String> {
+    let previous_providers = std::mem::take(&mut projection.providers);
     let mut ordered = views.to_vec();
     ordered.sort_by(|left, right| {
-        (&left.capability.surface_id, &left.capability.account_id)
-            .cmp(&(&right.capability.surface_id, &right.capability.account_id))
+        canonical_provider_id(&left.capability.surface_id)
+            .cmp(&canonical_provider_id(&right.capability.surface_id))
+            .then_with(|| left.capability.account_id.cmp(&right.capability.account_id))
     });
     let any_active = ordered.iter().any(|view| view.phase.is_active());
     projection.refresh_state = if any_active {
@@ -556,14 +640,26 @@ fn merge_views(
     };
     let mut providers: Vec<UsageProviderV1> = Vec::new();
     for view in &ordered {
-        let surface_id = view.capability.surface_id.clone();
+        let provider_id = canonical_provider_id(&view.capability.surface_id);
         if providers
             .last()
-            .is_none_or(|provider: &UsageProviderV1| provider.provider_id != surface_id)
+            .is_none_or(|provider: &UsageProviderV1| provider.provider_id != provider_id)
         {
+            let previous = previous_providers
+                .iter()
+                .find(|previous| previous.provider_id == provider_id);
+            let display_name = previous
+                .map(|previous| previous.display_name.as_str())
+                .filter(|name| !name.trim().is_empty())
+                .map(ToOwned::to_owned)
+                .or_else(|| {
+                    host_surface_for_provider(&provider_id)
+                        .map(|surface| surface.label().to_owned())
+                })
+                .unwrap_or_else(|| view.capability.surface_id.clone());
             providers.push(UsageProviderV1 {
-                provider_id: surface_id.clone(),
-                display_name: surface_id.clone(),
+                provider_id: provider_id.clone(),
+                display_name,
                 rank: u32::try_from(providers.len()).unwrap_or(u32::MAX),
                 membership_state: UsageMembershipStateV1::Current,
                 freshness: UsageFreshnessV1 {
@@ -595,11 +691,152 @@ fn merge_views(
     for provider in &mut providers {
         let provider_active = ordered
             .iter()
-            .filter(|view| view.capability.surface_id == provider.provider_id)
+            .filter(|view| {
+                canonical_provider_id(&view.capability.surface_id) == provider.provider_id
+            })
             .any(|view| view.phase.is_active());
         provider.freshness = aggregate_freshness(provider_active, &provider.accounts);
+        if let Some(previous) = previous_providers
+            .iter()
+            .find(|previous| previous.provider_id == provider.provider_id)
+        {
+            provider.issues.clone_from(&previous.issues);
+        }
+    }
+    for previous in previous_providers {
+        if previous.issues.is_empty()
+            || providers
+                .iter()
+                .any(|provider| provider.provider_id == previous.provider_id)
+        {
+            continue;
+        }
+        let mut provider = previous;
+        provider.accounts.clear();
+        provider.freshness = UsageFreshnessV1 {
+            generation: 0,
+            phase: UsageFreshnessPhaseV1::Failed,
+            last_good_at_epoch: None,
+            retry_at_epoch: None,
+            is_stale: false,
+        };
+        providers.push(provider);
     }
     projection.providers = providers;
+    sort_projection_rows(projection)
+}
+
+/// Map an internal host surface identifier to the canonical projection ID.
+/// Unknown IDs pass through unchanged so validation can report them at the
+/// protocol boundary without inventing a mapping.
+pub(super) fn canonical_provider_id(surface_id: &str) -> String {
+    HostSurfaceId::from_id(surface_id)
+        .map(|surface| surface.provider_id().to_owned())
+        .unwrap_or_else(|| surface_id.to_owned())
+}
+
+/// Normalize the projection rows persisted by schema v2 before the broker
+/// publishes or stores them under the canonical provider-ID contract.
+/// Capability catalog entries and coordinator account keys are intentionally
+/// outside this migration and retain their internal host surface IDs.
+pub(super) fn migrate_legacy_projection(projection: &mut UsageProjectionV1) -> Result<(), String> {
+    let mut provider_ids = BTreeSet::new();
+    for provider in &mut projection.providers {
+        let previous_id = provider.provider_id.clone();
+        let surface = host_surface_for_stored_id(&previous_id).ok_or_else(|| {
+            format!("unknown provider ID in legacy usage projection: {previous_id}")
+        })?;
+        provider.provider_id = surface.provider_id().to_owned();
+        if provider.display_name == previous_id {
+            provider.display_name = surface.label().to_owned();
+        }
+        for account in &mut provider.accounts {
+            // Schema v2 serialized both validated provider metadata and a
+            // display-label-based fallback under the same identity variants.
+            // There is no persisted evidence to distinguish them, so retain
+            // the identifier and provenance while withdrawing that claim.
+            account.identity_kind = UsageIdentityKindV1::UnverifiedHandle;
+        }
+        if !provider_ids.insert(provider.provider_id.clone()) {
+            return Err(format!(
+                "duplicate canonical provider in legacy usage projection: {}",
+                provider.provider_id
+            ));
+        }
+    }
+    for unresolved in &mut projection.unresolved {
+        let previous_id = unresolved.provider_id.clone();
+        let surface = host_surface_for_stored_id(&previous_id).ok_or_else(|| {
+            format!("unknown provider ID in legacy unresolved row: {previous_id}")
+        })?;
+        unresolved.provider_id = surface.provider_id().to_owned();
+    }
+    projection.unresolved.sort_by(|left, right| {
+        provider_order_rank(&left.provider_id)
+            .cmp(&provider_order_rank(&right.provider_id))
+            .then_with(|| left.provider_id.cmp(&right.provider_id))
+            .then_with(|| left.capability_id.cmp(&right.capability_id))
+    });
+    sort_projection_rows(projection)?;
+    projection.validate()
+}
+
+/// Recover the broker's internal surface key from one canonical provider ID.
+/// The exact provider ID mapping is one-to-one in `HostSurfaceId::ALL`.
+pub(super) fn surface_id_for_provider(provider_id: &str) -> String {
+    host_surface_for_provider(provider_id)
+        .map(|surface| surface.id().to_owned())
+        .unwrap_or_else(|| provider_id.to_owned())
+}
+
+fn host_surface_for_provider(provider_id: &str) -> Option<HostSurfaceId> {
+    HostSurfaceId::ALL
+        .iter()
+        .copied()
+        .find(|surface| surface.provider_id() == provider_id)
+}
+
+fn host_surface_for_stored_id(provider_id: &str) -> Option<HostSurfaceId> {
+    HostSurfaceId::from_id(provider_id).or_else(|| host_surface_for_provider(provider_id))
+}
+
+/// Apply the serialized provider and account rank contract in one place.
+pub(super) fn sort_projection_rows(projection: &mut UsageProjectionV1) -> Result<(), String> {
+    let collator = usage_account_collator()?;
+    projection.providers.sort_by(|left, right| {
+        provider_order_rank(&left.provider_id)
+            .cmp(&provider_order_rank(&right.provider_id))
+            .then_with(|| left.provider_id.cmp(&right.provider_id))
+    });
+    for (provider_rank, provider) in projection.providers.iter_mut().enumerate() {
+        provider.rank = u32::try_from(provider_rank).unwrap_or(u32::MAX);
+        provider.accounts.sort_by(|left, right| {
+            collator
+                .compare(&left.display_label, &right.display_label)
+                .then_with(|| left.canonical_account_id.cmp(&right.canonical_account_id))
+        });
+        for (account_rank, account) in provider.accounts.iter_mut().enumerate() {
+            account.rank = u32::try_from(account_rank).unwrap_or(u32::MAX);
+        }
+    }
+    Ok(())
+}
+
+fn provider_order_rank(provider_id: &str) -> usize {
+    HostSurfaceId::ALL
+        .iter()
+        .position(|surface| surface.provider_id() == provider_id)
+        .unwrap_or(usize::MAX)
+}
+
+fn usage_account_collator() -> Result<CollatorBorrowed<'static>, String> {
+    let locale = "und"
+        .parse::<Locale>()
+        .map_err(|error| format!("usage account locale unavailable: {error}"))?;
+    let mut options = CollatorOptions::default();
+    options.strength = Some(Strength::Secondary);
+    Collator::try_new(locale.into(), options)
+        .map_err(|error| format!("usage account collation unavailable: {error}"))
 }
 
 fn aggregate_freshness(any_active: bool, accounts: &[UsageAccountV1]) -> UsageFreshnessV1 {
@@ -713,11 +950,9 @@ fn account_for_view(
             }]
         })
         .unwrap_or_default();
-    let fallback_identity_kind = if header_label.trim().is_empty() {
-        UsageIdentityKindV1::ProviderAccountId
-    } else {
-        UsageIdentityKindV1::ProviderStableHandle
-    };
+    // Missing discovery evidence cannot claim either local-source or
+    // provider-issued origin. A display label is never identity evidence.
+    let fallback_identity_kind = UsageIdentityKindV1::UnverifiedHandle;
     UsageAccountV1 {
         canonical_account_id: view.capability.account_id.clone(),
         identity_kind: identity_metadata
@@ -909,6 +1144,7 @@ fn projection_store_error(error: StateStoreError) -> UsageCoordinationError {
             kind: UsageCoordinationErrorKind::CorruptState,
             message: "usage broker projection state is corrupt".to_owned(),
         },
+        StateStoreError::SchemaMigrationRequired { .. } => publisher_unavailable(),
     }
 }
 

@@ -1,8 +1,8 @@
 # jackin-usage-ffi
 
-Synchronous boltffi facade over `jackin-usage` host runtime for the native macOS
-agent-usage menu bar. Mirrors TableRock’s `tablerock-ffi` split: Rust owns all
-truth; Swift is display-only.
+Synchronous boltffi facade over broker-owned usage publications for the native
+macOS agent-usage menu bar. Mirrors TableRock’s `tablerock-ffi` split: Rust owns
+all truth; Swift is display-only.
 
 **Limits only** for Desktop DTOs — no token unit prices or historical usage
 trends.
@@ -45,7 +45,8 @@ the main actor. Broker failure preserves last-good quota and never probes direct
 Swift renders the segments verbatim. `provider_glance_rows()` (Swift
 `providerGlanceRows()`) returns `ProviderGlanceRowDto` — the selected-account-aware
 seven-provider Desktop glance rows in canonical order. `OpenConfig.allow_live_probes`
-maps to the Rust `HostProbePolicy` (false = smoke/defense mode, no live probes).
+controls whether the bridge activates the host broker; false uses a fail-closed
+broker client and never starts provider work.
 
 `DesktopInventoryDto` carries the seven-provider Rust order, provider chrome, and
 self-contained account identity/lifecycle/limits/status fields. OpenCode is absent;

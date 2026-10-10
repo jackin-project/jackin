@@ -75,7 +75,6 @@ pub(crate) use self::antigravity::{
     antigravity_snapshot, fetch_antigravity_cli_credits, fetch_antigravity_cli_usage,
     parse_agy_version, parse_antigravity_credits_output, parse_antigravity_usage_output,
 };
-pub use self::claude::ClaudeUsageDiagnostic;
 #[cfg(any(target_os = "macos", test))]
 pub use self::claude::classify_claude_keychain_status;
 #[expect(
@@ -83,18 +82,17 @@ pub use self::claude::classify_claude_keychain_status;
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
 pub(crate) use self::claude::{
-    ClaudeCliUsage, ClaudeCollectionError, ClaudeOAuthCredentials, ClaudeOAuthEnvToken,
-    ClaudeOAuthExtraUsage, ClaudeOAuthLimit, ClaudeOAuthLimitModel, ClaudeOAuthLimitScope,
-    ClaudeOAuthMoney, ClaudeOAuthSpend, ClaudeOAuthUsageResponse, ClaudeOAuthUsageWindow,
-    ClaudeProfilePayload, ClaudeQuotaWindow, ClaudeResolved, ClaudeSpend, ClaudeWavePolicy,
-    ClaudeWaveResolution, bootstrapped_claude_service, claude_account_identity,
-    claude_api_key_snapshot, claude_error_is_scope_restriction, claude_oauth_candidates,
-    claude_provider_error_label, claude_snapshot, claude_source_capability_id_for_service,
-    claude_spend_bucket, claude_view_from_wave_with_metadata,
-    claude_view_from_wave_with_rate_limit, claude_wave_policy,
-    experimental_claude_usage_snapshot_for_service, fetch_claude_cli_usage,
-    fetch_claude_oauth_usage, load_claude_account_email, normalize_claude_spend,
-    parse_claude_profile_payload, push_claude_dollar_windows, resolve_claude_wave,
+    ClaudeCollectionError, ClaudeOAuthCredentials, ClaudeOAuthEnvToken, ClaudeOAuthExtraUsage,
+    ClaudeOAuthLimit, ClaudeOAuthLimitModel, ClaudeOAuthLimitScope, ClaudeOAuthMoney,
+    ClaudeOAuthSpend, ClaudeOAuthUsageResponse, ClaudeOAuthUsageWindow, ClaudeProfilePayload,
+    ClaudeQuotaWindow, ClaudeResolved, ClaudeSpend, ClaudeWavePolicy, ClaudeWaveResolution,
+    bootstrapped_claude_service, claude_account_identity, claude_api_key_snapshot,
+    claude_error_is_scope_restriction, claude_oauth_candidates, claude_provider_error_label,
+    claude_snapshot, claude_source_capability_id_for_service, claude_spend_bucket,
+    claude_view_from_wave_with_metadata, claude_view_from_wave_with_rate_limit, claude_wave_policy,
+    experimental_claude_usage_snapshot_for_service, fetch_claude_oauth_usage,
+    load_claude_account_email, normalize_claude_spend, parse_claude_profile_payload,
+    push_claude_dollar_windows, resolve_claude_wave,
 };
 pub use self::claude::{
     ClaudeCredentialBootstrapOutcome, ClaudeCredentialLease, ClaudeKeychainPolicyError,
@@ -244,15 +242,13 @@ pub(crate) use self::zai::{
 };
 
 use format::{
-    CliOutput, codex_account_from_value, codex_limit_label, compact_count, dollar_amounts,
-    env_value, expiry_label, first_string_key, format_amount_with_unit, format_cents,
-    format_currency, home_path, humanize_plan_label, humanize_words_with, json_number,
-    oauth_origin, parse_iso_epoch, percent_before_used, quota_pace_label, remaining_from_fraction,
-    reset_label, run_cli_with_timeout, run_cli_with_timeout_full, titlecase_ascii,
-    used_percent_from_fraction, used_percent_label, window_minutes_label,
+    codex_account_from_value, codex_limit_label, compact_count, dollar_amounts, env_value,
+    expiry_label, first_string_key, format_amount_with_unit, format_cents, format_currency,
+    home_path, humanize_plan_label, humanize_words_with, json_number, oauth_origin,
+    parse_iso_epoch, quota_pace_label, remaining_from_fraction, reset_label, run_cli_with_timeout,
+    titlecase_ascii, used_percent_from_fraction, used_percent_label, window_minutes_label,
 };
 // Crate-visible re-exports for host overview/compact presentation (plan 008).
-pub(crate) use format::{compact_duration_label, exact_reset_parenthetical};
 
 pub(crate) const PROVIDER_HTTP_TIMEOUT: Duration = Duration::from_secs(10);
 pub(crate) const PROVIDER_CLI_TIMEOUT: Duration = Duration::from_secs(10);
@@ -1640,64 +1636,6 @@ pub(crate) fn normalize_url_or_host(value: &str, suffix: &str) -> String {
     } else {
         format!("{trimmed}/{suffix}")
     }
-}
-
-pub fn run_claude_usage_diagnostic() -> Result<ClaudeUsageDiagnostic, String> {
-    run_claude_usage_diagnostic_with(|command, args, timeout| {
-        run_cli_with_timeout_full(command, args, timeout)
-    })
-}
-
-pub(crate) fn run_claude_usage_diagnostic_with<F>(
-    mut runner: F,
-) -> Result<ClaudeUsageDiagnostic, String>
-where
-    F: FnMut(&str, &[&str], Duration) -> Result<CliOutput, String>,
-{
-    let args = ["-p", "/usage"];
-    let output = runner("claude", &args, PROVIDER_CLI_TIMEOUT)?;
-    Ok(ClaudeUsageDiagnostic {
-        command: "claude".to_owned(),
-        args: args.iter().map(|arg| (*arg).to_owned()).collect(),
-        success: output.success,
-        exit_code: output.exit_code,
-        stdout: output.stdout,
-        stderr: output.stderr,
-        fetched_at_epoch: now_epoch(),
-    })
-}
-
-pub(crate) fn parse_claude_usage_output(text: &str) -> Option<ClaudeCliUsage> {
-    let mut usage = ClaudeCliUsage::default();
-    for line in text.lines().map(str::trim).filter(|line| !line.is_empty()) {
-        if line.starts_with("Current session:") {
-            usage.session_used = percent_before_used(line);
-        } else if line.starts_with("Current week (all models):") {
-            usage.weekly_used = percent_before_used(line);
-        } else if line.starts_with("Current week (Sonnet only):") {
-            usage.sonnet_used = percent_before_used(line);
-        } else if let Some(rest) = line.strip_prefix("Current week (") {
-            // Per-model weekly line, e.g. "Current week (Fable): 35% used · …".
-            // The model name is the text between the parens; "all models" and
-            // "Sonnet only" are handled by the explicit branches above, so
-            // anything reaching here is a model-scoped window (Fable today,
-            // future codenames tomorrow). Surfaced generically so a new model
-            // prints without a per-model parser edit.
-            if let Some(close) = rest.find(')') {
-                let label = rest[..close].trim();
-                if !label.is_empty()
-                    && let Some(percent) = percent_before_used(line)
-                {
-                    usage.scoped_weekly.push((label.to_owned(), percent));
-                }
-            }
-        }
-    }
-    (usage.session_used.is_some()
-        || usage.weekly_used.is_some()
-        || usage.sonnet_used.is_some()
-        || !usage.scoped_weekly.is_empty())
-    .then_some(usage)
 }
 
 /// `Auth:` origin label for an OAuth credential resolved from `path`, with the

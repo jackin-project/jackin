@@ -245,7 +245,7 @@ fn run_usage_broker_foreground_bootstrap_core<L, G>(
     let identity_metadata = BTreeMap::from([(
         capability.clone(),
         publish::AccountIdentityMetadata {
-            identity_kind: UsageIdentityKindV1::ProviderStableHandle,
+            identity_kind: UsageIdentityKindV1::LocalSourceHandle,
             provenance_count: 1,
         },
     )]);
@@ -489,11 +489,14 @@ fn run_usage_broker_service_with_cleanup(
             .unwrap_or(seed.entry);
         let catalog = vec![entry];
         let catalog_revision = super::foreground_catalog_revision(&seed.service, &catalog);
-        publisher.reconcile_catalog_if_projection_with_diagnostics(
+        publisher.reconcile_catalog_if_projection(
             None,
-            catalog_revision,
-            catalog,
-            seed.diagnostics,
+            publish::CatalogReconciliation {
+                catalog_revision,
+                entries: catalog,
+                diagnostics: seed.diagnostics,
+                identity_metadata: None,
+            },
             chrono::Utc::now().timestamp(),
         )?;
     }

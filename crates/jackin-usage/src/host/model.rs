@@ -1,13 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Public host surface and runtime configuration types.
-
-use std::path::{Path, PathBuf};
+//! Stable host surface identifiers shared by discovery, broker clients, and native presentation.
 
 use jackin_core::Agent;
-
-use super::{HOST_USAGE_STATE_REL, UsageDiscoveryScope};
 
 /// Surfaces the host menu bar may show (excludes `Unsupported`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -264,98 +260,4 @@ impl HostSurfaceId {
             Agent::Omp | Agent::Hermes => Self::OpenCode,
         }
     }
-}
-
-/// Descriptor returned to `boltffi` / CLI (no secrets).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct HostSurfaceDescriptor {
-    /// Stable id (`claude`).
-    pub id: String,
-    /// Display label (for example `Claude`).
-    pub label: String,
-    /// Agent slug used for probes.
-    pub agent: String,
-    /// Provider label when set.
-    pub provider: Option<String>,
-    /// Whether the surface is currently enabled for refresh/bar.
-    pub enabled: bool,
-}
-
-/// Coarse host event for the presentation poll loop.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct HostUsageEvent {
-    /// Monotonic sequence.
-    pub sequence: u64,
-    /// `snapshot_updated` | `probe_failed` | `enabled_changed` | `runtime_ready`.
-    pub kind: String,
-    /// Surface id when relevant.
-    pub surface_id: Option<String>,
-    /// Optional detail (error message, never credentials).
-    pub detail: Option<String>,
-}
-
-/// Bounded event batch.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct HostEventBatch {
-    /// Next cursor for the client.
-    pub next_cursor: u64,
-    /// Events in `(cursor, cursor+max]`.
-    pub events: Vec<HostUsageEvent>,
-    /// Client must resync when true.
-    pub resync_required: bool,
-}
-
-/// Open configuration for the host runtime.
-#[derive(Debug, Clone)]
-pub struct HostRuntimeConfig {
-    /// jackin data dir (`~/.jackin/data` or test root).
-    pub data_dir: PathBuf,
-    /// Minimum refresh interval floor (seconds). Clamped to ≥ 60.
-    pub refresh_floor_secs: u64,
-    /// Initially enabled surface ids; empty → all host surfaces.
-    pub enabled_surface_ids: Vec<String>,
-    /// Whether this runtime may dispatch live provider probes. `Disabled` is
-    /// used by the isolated launch smoke test so an accidental refresh cannot
-    /// reach any credential/file/env/CLI/network/Keychain resolution.
-    pub probe_policy: HostProbePolicy,
-    /// Account-discovery authority for this runtime.
-    pub discovery_scope: UsageDiscoveryScope,
-}
-
-/// Whether a host runtime may dispatch live provider probes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum HostProbePolicy {
-    /// Normal operation: refreshes dispatch provider probes.
-    #[default]
-    Live,
-    /// Smoke/defense-in-depth: refresh is a no-probe no-op and never due.
-    Disabled,
-}
-
-impl HostRuntimeConfig {
-    /// Default host layout under `data_dir` (live probes).
-    #[must_use]
-    pub fn under_data_dir(data_dir: impl Into<PathBuf>) -> Self {
-        Self {
-            data_dir: data_dir.into(),
-            refresh_floor_secs: 300,
-            enabled_surface_ids: Vec::new(),
-            probe_policy: HostProbePolicy::Live,
-            discovery_scope: UsageDiscoveryScope::Capsule {
-                forwarded_accounts: Vec::new(),
-            },
-        }
-    }
-}
-
-/// Snapshot store path under the host data dir.
-#[must_use]
-pub fn host_snapshot_store_path(data_dir: &Path) -> PathBuf {
-    data_dir.join(HOST_USAGE_STATE_REL).join("snapshots.db")
-}
-
-/// Materialized accounts JSON path under the host data dir.
-#[must_use]
-pub fn host_accounts_path(data_dir: &Path) -> PathBuf {
-    data_dir.join(HOST_USAGE_STATE_REL).join("accounts.json")
 }

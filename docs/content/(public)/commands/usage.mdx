@@ -77,8 +77,12 @@ Migration does not invent a baseline, zero spend, approval, or quota evidence.
 Invalid and unsupported future schemas fail closed before stored state is
 replaced.
 
-Schema 4 changes only the durable local monitor store. Broker wire protocol v7
-and statusline input schema v2 remain unchanged.
+The current source versions are independent: broker wire protocol v8, durable
+monitor-store schema 4, normalized statusline input schema v2, and durable
+projection-envelope schema 3. The broker migrates a v2 projection envelope by
+canonicalizing its serialized provider IDs and persisting v3 before exposing
+the projection; ordinary projection reads accept only v3. This migration is
+separate from the monitor-store schema migration.
 
 Use one installed `jackin` binary and its matching sibling broker throughout,
 with the same explicit `--data-dir PATH`. Do not switch to a repository

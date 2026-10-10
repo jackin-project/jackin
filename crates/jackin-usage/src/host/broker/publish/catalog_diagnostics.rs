@@ -178,7 +178,7 @@ impl CatalogDiagnostics {
 pub(crate) fn apply_catalog_diagnostics(
     projection: &mut UsageProjectionV1,
     diagnostics: &CatalogDiagnostics,
-) {
+) -> Result<(), String> {
     projection
         .issues
         .retain(|issue| CatalogDiagnosticCode::from_id(&issue.code).is_none());
@@ -205,6 +205,7 @@ pub(crate) fn apply_catalog_diagnostics(
     current_providers.extend(diagnostics.unresolved.keys().map(|source| source.provider));
 
     for provider in current_providers {
+        let provider_id = super::canonical_provider_id(provider.id);
         let issues = diagnostics
             .provider_issues
             .get(&provider)
@@ -215,12 +216,12 @@ pub(crate) fn apply_catalog_diagnostics(
         if let Some(row) = projection
             .providers
             .iter_mut()
-            .find(|row| row.provider_id == provider.id)
+            .find(|row| row.provider_id == provider_id)
         {
             row.issues.extend(issues.clone());
         } else {
             projection.providers.push(UsageProviderV1 {
-                provider_id: provider.id.to_owned(),
+                provider_id,
                 display_name: provider.display_name.to_owned(),
                 rank: 0,
                 membership_state: UsageMembershipStateV1::Current,
@@ -237,20 +238,13 @@ pub(crate) fn apply_catalog_diagnostics(
         }
     }
 
-    projection.providers.sort_by(|left, right| {
-        left.provider_id
-            .cmp(&right.provider_id)
-            .then_with(|| left.display_name.cmp(&right.display_name))
-    });
-    for (rank, provider) in projection.providers.iter_mut().enumerate() {
-        provider.rank = u32::try_from(rank).unwrap_or(u32::MAX);
-    }
+    super::sort_projection_rows(projection)?;
 
     projection.unresolved = diagnostics
         .unresolved
         .iter()
         .map(|(source, configuration_count)| UsageUnresolvedV1 {
-            provider_id: source.provider.id.to_owned(),
+            provider_id: super::canonical_provider_id(source.provider.id),
             capability_id: source.capability_id.clone(),
             configuration_count: *configuration_count,
             state: unresolved_state(
@@ -269,6 +263,7 @@ pub(crate) fn apply_catalog_diagnostics(
                 .collect(),
         })
         .collect();
+    Ok(())
 }
 
 fn issue(code: CatalogDiagnosticCode, scope: UsageIssueScopeV1) -> UsageIssueV1 {

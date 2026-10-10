@@ -3,6 +3,7 @@
 //! Account entries and catalog transactions.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::time::Duration;
 
 use std::sync::{Arc, Condvar, Mutex};
 
@@ -12,9 +13,9 @@ use jackin_protocol::usage_broker::{
 };
 
 use super::{
-    AccountStateEnvelope, AccountStateStore, TERMINAL_HISTORY_LIMIT, UsageCoordinatorConfig,
-    UsageProviderExecutor, account_cooldown_deadline, generation_view, reconcile_executor_catalog,
-    restore_catalog_preimages, state_error, unavailable_error,
+    AccountStateEnvelope, AccountStateStore, ClockSample, TERMINAL_HISTORY_LIMIT,
+    UsageCoordinatorConfig, UsageProviderExecutor, account_cooldown_deadline, generation_view,
+    reconcile_executor_catalog, restore_catalog_preimages, state_error, unavailable_error,
 };
 
 /// In-memory periodic cadence for one account. Due times are scheduling
@@ -34,6 +35,13 @@ pub(crate) struct AccountEntry {
     pub(crate) cadence: AccountCadence,
     pub(crate) catalog_revision: Option<String>,
     pub(crate) revoked: bool,
+    /// In-process mirror of Claude's durable wall-clock cooldown. This keeps
+    /// clock adjustments from shortening the minimum interval before restart.
+    pub(crate) cooldown_not_before_monotonic: Option<Duration>,
+    /// A provider dispatch reserved by a generation that outlived its catalog
+    /// revision. Re-added capabilities stay blocked until the work completes
+    /// and its completion-anchored cooldown is persisted.
+    pub(crate) pending_provider_generation: Option<u64>,
     /// Generations fenced by a catalog revision change. Keeping this separate
     /// from terminal history makes an in-flight join wake and fail
     /// immediately even when the capability id itself is unchanged.
@@ -45,6 +53,7 @@ impl AccountEntry {
         envelope: AccountStateEnvelope,
         recovery_pending: bool,
         now_epoch: i64,
+        clock_sample: ClockSample,
         catalog_revision: Option<String>,
     ) -> Self {
         let mut history = VecDeque::new();
@@ -54,6 +63,7 @@ impl AccountEntry {
         let next_due_epoch = account_cooldown_deadline(&envelope)
             .filter(|deadline| *deadline > now_epoch)
             .unwrap_or(now_epoch);
+        let cooldown_not_before_monotonic = runtime_cooldown_deadline(&envelope, clock_sample);
         Self {
             envelope,
             history,
@@ -65,6 +75,8 @@ impl AccountEntry {
             },
             catalog_revision,
             revoked: false,
+            cooldown_not_before_monotonic,
+            pending_provider_generation: None,
             fenced_generations: BTreeSet::new(),
         }
     }
@@ -75,6 +87,27 @@ impl AccountEntry {
             drop(self.history.pop_front());
         }
     }
+
+    pub(crate) fn refresh_runtime_cooldown(&mut self, clock_sample: ClockSample) {
+        self.cooldown_not_before_monotonic =
+            runtime_cooldown_deadline(&self.envelope, clock_sample);
+    }
+}
+
+fn runtime_cooldown_deadline(
+    envelope: &AccountStateEnvelope,
+    clock_sample: ClockSample,
+) -> Option<Duration> {
+    if envelope.capability.surface_id != "claude" {
+        return None;
+    }
+    let deadline = account_cooldown_deadline(envelope)?;
+    let deadline_wall = Duration::from_secs(u64::try_from(deadline.max(0)).unwrap_or(u64::MAX));
+    let remaining = deadline_wall.saturating_sub(clock_sample.wall_epoch);
+    if remaining.is_zero() {
+        return None;
+    }
+    Some(clock_sample.monotonic.saturating_add(remaining))
 }
 
 #[derive(Clone, Default)]
@@ -95,6 +128,8 @@ pub(crate) struct Shared {
     pub(crate) store: Arc<dyn AccountStateStore>,
     pub(crate) config: UsageCoordinatorConfig,
     pub(crate) clock: Arc<dyn super::MonotonicClock>,
+    #[cfg(test)]
+    pub(crate) before_provider_call_hook: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
 }
 
 #[derive(Clone)]

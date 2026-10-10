@@ -21,9 +21,12 @@ pub(crate) const MAX_DISPLAY_CHARS: usize = 256;
 /// Schema v1 is deliberately not migrated: it did not carry the admitted
 /// catalog required to fence removed credentials. Loading v1 quarantines the
 /// file and lets the broker rebuild an empty projection from the current host
-/// catalog. This is the migration contract; no serde default may hide a
-/// missing or unknown catalog.
-pub(crate) const PROJECTION_STATE_SCHEMA_VERSION: u32 = 2;
+/// catalog. Schema v2 is accepted only by the broker's migration loader, which
+/// canonicalizes serialized projection provider IDs before writing v3. Its
+/// capability catalog and coordinator account state keep their internal host
+/// surface IDs unchanged. Ordinary projection reads accept only v3.
+pub(crate) const PROJECTION_STATE_SCHEMA_VERSION: u32 = 3;
+pub(crate) const PREVIOUS_PROJECTION_STATE_SCHEMA_VERSION: u32 = 2;
 pub(crate) static STATE_TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 pub(crate) static STATE_QUARANTINE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -93,4 +96,7 @@ pub enum StateStoreError {
     /// Envelope bytes or schema failed validation.
     #[error("usage coordinator state is corrupt")]
     Corrupt,
+    /// A valid projection-state schema is not readable by this binary yet.
+    #[error("projection state schema {found} requires migration to schema {current}")]
+    SchemaMigrationRequired { found: u64, current: u32 },
 }

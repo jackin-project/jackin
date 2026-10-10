@@ -10,8 +10,9 @@ use std::sync::{Arc, Barrier, Mutex, mpsc};
 use std::thread;
 
 use crate::coordinator::{
-    AccountStateStore, FileAccountStateStore, FileProjectionStateStore, ProviderProbeOutcome,
-    UsageCoordinator, UsageCoordinatorConfig, UsageProviderExecutor,
+    AccountStateEnvelope, AccountStateStore, FileAccountStateStore, FileProjectionStateStore,
+    ProjectionAlias, ProjectionStateEnvelope, ProviderProbeOutcome, UsageCoordinator,
+    UsageCoordinatorConfig, UsageProviderExecutor,
 };
 use crate::host::discovery::{ProviderCredentialSourceMaterial, ValidatedCredentialSource};
 use crate::host::{HostSurfaceId, OpaqueCredentialHandle};
@@ -22,10 +23,13 @@ use jackin_protocol::control::{
     UsageSource,
 };
 use jackin_protocol::usage_broker::{
-    UsageBrokerOperation, UsageBrokerRequest, UsageBrokerResponse, UsageCatalogEntry,
-    UsageCredentialScope, UsageCredentialSourceIdentity, UsageCredentialSourceProof,
-    UsageFreshnessPhaseV1, UsageIdentityKindV1, UsageProjectionRefreshStateV1, UsageRefreshPhase,
-    usage_credential_material_fingerprint,
+    USAGE_BROKER_PROTOCOL_VERSION, UsageAccountV1, UsageBrokerOperation, UsageBrokerRequest,
+    UsageBrokerResponse, UsageCatalogEntry, UsageCredentialScope, UsageCredentialSourceIdentity,
+    UsageCredentialSourceProof, UsageFreshnessPhaseV1, UsageFreshnessV1, UsageIdentityKindV1,
+    UsageLifecycleV1, UsageLimitWindowV1, UsageMembershipStateV1, UsagePercent,
+    UsageProjectionRefreshStateV1, UsageProjectionSchemaV1, UsageProjectionV1, UsageProviderV1,
+    UsageQuotaStateV1, UsageRefreshPhase, UsageRelayForwardedSourcesV1, UsageUnresolvedV1,
+    UsageWindowCategoryV1, usage_credential_material_fingerprint,
 };
 use jackin_protocol::usage_monitor::{
     MonitorAccountBinding, MonitorAccountBindingInput, MonitorConfig, MonitorOperation,
@@ -194,7 +198,6 @@ fn launch_scope_fails_closed_on_rotation_repoint_and_mixed_agent_source() {
     let binding = ValidatedCredentialBinding {
         surface: HostSurfaceId::Amp,
         identity: None,
-        source_id: "source-a".to_owned(),
         capability_id: "capability-a".to_owned(),
         credential_revision: "credential-revision-a".to_owned(),
         provenance: BTreeSet::from(["account shared-account".to_owned()]),
@@ -293,7 +296,6 @@ fn launch_scope_accepts_provider_native_zhipu_alias_for_canonical_zai_binding() 
             vec![ValidatedCredentialBinding {
                 surface: HostSurfaceId::Zai,
                 identity: None,
-                source_id: "source-zai".to_owned(),
                 capability_id: "capability-zai".to_owned(),
                 credential_revision: "credential-revision-zai".to_owned(),
                 provenance: BTreeSet::from(["account zhipu-account".to_owned()]),
@@ -467,7 +469,6 @@ fn refresh_binding_outcome_carries_typed_rate_limit_into_broker() {
     let binding = ValidatedCredentialBinding {
         surface: HostSurfaceId::Claude,
         identity: None,
-        source_id: "source-typed-rate-limit".to_owned(),
         capability_id: "capability-typed-rate-limit".to_owned(),
         credential_revision: "credential-revision-typed-rate-limit".to_owned(),
         provenance: BTreeSet::new(),
@@ -766,172 +767,6 @@ fn discovery_provider_failures_without_reason_keep_generic_fallback() {
     }
 }
 
-struct FixedHandleResolver;
-
-impl ProviderCredentialEnvResolver for FixedHandleResolver {
-    fn resolve_provider_credentials(
-        &self,
-        config: &AppConfig,
-        _workspace: Option<&WorkspaceName>,
-        _role: Option<&str>,
-        keys: &[UsageCredentialEnvName],
-    ) -> Vec<ProviderCredentialEnvResolution> {
-        keys.iter()
-            .filter(|entry| config.env.contains_key(entry.name))
-            .map(|entry| ProviderCredentialEnvResolution {
-                key: entry.name.to_owned(),
-                outcome: crate::host::ProviderCredentialEnvOutcome::Resolved(
-                    OpaqueCredentialHandle::new("fixture-credential-1"),
-                ),
-            })
-            .collect()
-    }
-}
-
-fn failed_generation(
-    capability: &UsageAccountCapability,
-    kind: UsageCoordinationErrorKind,
-    message: &str,
-) -> UsageGenerationView {
-    UsageGenerationView {
-        capability: capability.clone(),
-        generation: 1,
-        phase: UsageRefreshPhase::Failed,
-        snapshot: None,
-        error: Some(UsageCoordinationError {
-            kind,
-            message: message.to_owned(),
-        }),
-        retry_at_epoch: None,
-    }
-}
-
-#[test]
-fn broker_failure_without_snapshot_surfaces_honest_gap_in_snapshot() {
-    let temp = tempfile::tempdir().unwrap();
-    let config_root = temp.path().join("config");
-    let mut config = AppConfig::default();
-    config.accounts.insert(
-        "codex-key".to_owned(),
-        jackin_config::AccountConfig {
-            enabled: true,
-            name: "codex-key".to_owned(),
-            provider: jackin_config::AiProvider::OpenAi,
-            credential: jackin_config::AccountCredential::ApiKey {
-                value: jackin_config::EnvValue::Plain("fixture-openai-key".to_owned()),
-                base_url: None,
-                model: None,
-            },
-        },
-    );
-    fs::create_dir_all(&config_root).unwrap();
-    fs::write(
-        config_root.join("config.toml"),
-        toml::to_string(&config).unwrap(),
-    )
-    .unwrap();
-    let validated = validate_usage_sources(
-        discover_usage_sources(
-            &UsageDiscoveryScope::HostDesktop {
-                config_root,
-                operator_home: temp.path().join("home"),
-            },
-            &FixedHandleResolver,
-        )
-        .unwrap(),
-        &FixedHandleResolver,
-    );
-    assert_eq!(validated.accounts.len(), 1);
-    let capabilities = usage_broker_capabilities(&validated);
-    assert_eq!(capabilities.len(), 1);
-
-    let mut runtime = HostUsageRuntime::new();
-    runtime
-        .open(crate::host::HostRuntimeConfig::under_data_dir(
-            temp.path().join("data"),
-        ))
-        .unwrap();
-    runtime.discovery = Some(validated);
-    runtime
-        .apply_broker_generation(failed_generation(
-            &capabilities[0],
-            UsageCoordinationErrorKind::ProviderUnavailable,
-            "Grok billing requires an authenticated profile",
-        ))
-        .unwrap();
-
-    let view = runtime.snapshot("codex").unwrap();
-    assert!(!view.is_refreshing_placeholder());
-    assert_eq!(view.status, UsageSnapshotStatus::Unavailable);
-    assert_eq!(view.account.account_label, "codex-key");
-    assert_eq!(
-        view.last_error.as_deref(),
-        Some("Grok billing requires an authenticated profile")
-    );
-
-    // A later success still replaces the recorded error view.
-    let mut fresh = quota_view();
-    fresh.account.provider_label = "OpenAI / Codex".to_owned();
-    runtime
-        .apply_broker_generation(UsageGenerationView {
-            capability: capabilities[0].clone(),
-            generation: 2,
-            phase: UsageRefreshPhase::Completed,
-            snapshot: Some(fresh),
-            error: None,
-            retry_at_epoch: None,
-        })
-        .unwrap();
-    let view = runtime.snapshot("codex").unwrap();
-    assert_eq!(view.status, UsageSnapshotStatus::Fresh);
-}
-
-#[test]
-fn broker_failure_for_anonymous_source_stays_surface_scoped() {
-    let validated = validate_usage_sources(
-        discover_usage_sources(
-            &UsageDiscoveryScope::Capsule {
-                forwarded_accounts: vec![ForwardedUsageAccount {
-                    surface_id: "codex".to_owned(),
-                    capability_id: "capability-a".to_owned(),
-                    account_label: None,
-                }],
-            },
-            &FixedHandleResolver,
-        )
-        .unwrap(),
-        &FixedHandleResolver,
-    );
-    assert!(validated.accounts.is_empty());
-    assert!(validated.bindings[0].identity.is_none());
-    let capabilities = usage_broker_capabilities(&validated);
-    assert_eq!(capabilities.len(), 1);
-
-    let temp = tempfile::tempdir().unwrap();
-    let mut runtime = HostUsageRuntime::new();
-    runtime
-        .open(crate::host::HostRuntimeConfig::under_data_dir(
-            temp.path().join("data"),
-        ))
-        .unwrap();
-    runtime.discovery = Some(validated);
-    runtime
-        .apply_broker_generation(failed_generation(
-            &capabilities[0],
-            UsageCoordinationErrorKind::NeedsSecret,
-            "Gemini auth not available to Capsule",
-        ))
-        .unwrap();
-
-    let view = runtime.snapshot("codex").unwrap();
-    assert_eq!(view.status, UsageSnapshotStatus::NeedsSecret);
-    assert_eq!(
-        view.last_error.as_deref(),
-        Some("Gemini auth not available to Capsule")
-    );
-    assert!(runtime.list_accounts(None).unwrap().is_empty());
-}
-
 #[test]
 #[expect(
     clippy::too_many_lines,
@@ -964,7 +799,6 @@ fn forwarded_scope_selects_only_accounts_backed_by_forwarded_sources() {
             ValidatedCredentialBinding {
                 surface: HostSurfaceId::Amp,
                 identity: Some(profile_identity),
-                source_id: "profile-source".to_owned(),
                 capability_id: "profile-capability".to_owned(),
                 credential_revision: "profile-revision".to_owned(),
                 provenance: BTreeSet::from([
@@ -980,7 +814,6 @@ fn forwarded_scope_selects_only_accounts_backed_by_forwarded_sources() {
             ValidatedCredentialBinding {
                 surface: HostSurfaceId::Amp,
                 identity: Some(env_identity),
-                source_id: "env-source".to_owned(),
                 capability_id: "env-capability".to_owned(),
                 credential_revision: "env-revision".to_owned(),
                 provenance: BTreeSet::from([scope.to_owned(), "account account-env".to_owned()]),
@@ -1148,7 +981,6 @@ fn selected_routes_require_exact_source_proofs_and_same_identity() {
     let binding = |key: &str, handle: &str| ValidatedCredentialBinding {
         surface: HostSurfaceId::Zai,
         identity: Some(identity.clone()),
-        source_id: format!("source-{handle}"),
         capability_id: format!("capability-{handle}"),
         credential_revision: format!("revision-{handle}"),
         provenance: BTreeSet::from(["account zai".to_owned()]),
@@ -1281,6 +1113,467 @@ fn selected_routes_require_exact_source_proofs_and_same_identity() {
 }
 
 #[test]
+fn broker_migrates_v2_projection_before_exposure_and_preserves_durable_history() {
+    let temp = tempfile::tempdir().expect("isolated broker state directory");
+    let config = UsageBrokerConfig::for_data_dir(temp.path().to_owned());
+    let now_epoch = 1_000;
+
+    let claude_capability = UsageAccountCapability {
+        account_id: "claude-account".to_owned(),
+        surface_id: "claude".to_owned(),
+    };
+    let codex_capability = UsageAccountCapability {
+        account_id: "codex-account".to_owned(),
+        surface_id: "codex".to_owned(),
+    };
+    let account_store = FileAccountStateStore::under_data_dir(&config.data_dir);
+    let mut account_history = AccountStateEnvelope::idle(claude_capability.clone());
+    account_history.generation = 7;
+    account_history.phase = UsageRefreshPhase::Failed;
+    let mut historical_result = quota_view();
+    historical_result.fetched_at_epoch = 970;
+    historical_result.account.account_label = "historical account".to_owned();
+    for bucket in &mut historical_result.buckets {
+        bucket.remaining_percent = Some(97);
+    }
+    historical_result.status_bar_label = "Claude Weekly: 97% left".to_owned();
+    account_history.terminal_result = Some(historical_result);
+    account_history.last_good = account_history.terminal_result.clone();
+    account_history.started_at_epoch = Some(960);
+    account_history.provider_invoked_at_epoch = Some(961);
+    account_history.completed_at_epoch = Some(970);
+    account_history.rate_limit_deadline_epoch = Some(1_100);
+    account_history.retry_deadline_epoch = Some(1_120);
+    account_history.success_deadline_epoch = Some(1_300);
+    account_history.consecutive_failures = 2;
+    account_store
+        .store(&account_history, now_epoch)
+        .expect("persist existing coordinator history");
+    let history_before = account_store
+        .load(&claude_capability, now_epoch)
+        .expect("read coordinator history before migration")
+        .expect("coordinator history exists");
+    assert_eq!(
+        history_before
+            .terminal_result
+            .as_ref()
+            .and_then(|view| view.buckets.first())
+            .and_then(|bucket| bucket.remaining_percent),
+        Some(97),
+        "the durable history fixture retains its original 97% remaining value"
+    );
+
+    let freshness = UsageFreshnessV1 {
+        generation: 7,
+        phase: UsageFreshnessPhaseV1::Stale,
+        last_good_at_epoch: Some(970),
+        retry_at_epoch: Some(1_120),
+        is_stale: true,
+    };
+    let codex_account = UsageAccountV1 {
+        canonical_account_id: "codex-account".to_owned(),
+        identity_kind: UsageIdentityKindV1::ProviderStableHandle,
+        rank: 0,
+        display_label: "codex".to_owned(),
+        plan_label: None,
+        status_label: None,
+        lifecycle: UsageLifecycleV1::Available,
+        freshness: freshness.clone(),
+        provenance_count: 3,
+        windows: vec![UsageLimitWindowV1 {
+            window_id: "codex-account:0".to_owned(),
+            rank: 0,
+            category: UsageWindowCategoryV1::Session,
+            label: "Session".to_owned(),
+            value_label: "72% left".to_owned(),
+            reset_label: "in 20 minutes".to_owned(),
+            remaining_percent: Some(UsagePercent::clamp_raw(72)),
+            remaining_raw_percent: Some(72),
+            used_percent: None,
+            used_raw_percent: None,
+            reset_at_epoch: Some(2_200),
+            quota_state: UsageQuotaStateV1::Available,
+            pace_label: None,
+            runs_out_label: None,
+        }],
+        metric_groups: Vec::new(),
+        credential_expires_at_epoch: None,
+        issues: Vec::new(),
+    };
+    let claude_account = UsageAccountV1 {
+        canonical_account_id: "claude-account".to_owned(),
+        identity_kind: UsageIdentityKindV1::ProviderAccountId,
+        rank: 0,
+        display_label: "historic Claude identity".to_owned(),
+        plan_label: None,
+        status_label: None,
+        lifecycle: UsageLifecycleV1::Available,
+        freshness: freshness.clone(),
+        provenance_count: 2,
+        windows: Vec::new(),
+        metric_groups: Vec::new(),
+        credential_expires_at_epoch: None,
+        issues: Vec::new(),
+    };
+    let legacy_projection = UsageProjectionV1 {
+        schema_version: UsageProjectionSchemaV1,
+        projection_id: "legacy-instance:7".to_owned(),
+        generated_at_epoch: 980,
+        discovery_revision: "legacy-catalog-revision".to_owned(),
+        broker_instance_id: "legacy-instance".to_owned(),
+        broker_generation: 7,
+        refresh_state: UsageProjectionRefreshStateV1::Idle,
+        // Schema v2 used raw surface IDs and sorted them lexically, so Claude
+        // preceded Codex here. The canonical host order is Codex then Claude.
+        providers: vec![
+            UsageProviderV1 {
+                provider_id: "claude".to_owned(),
+                display_name: "claude".to_owned(),
+                rank: 0,
+                membership_state: UsageMembershipStateV1::Current,
+                freshness: freshness.clone(),
+                accounts: vec![claude_account],
+                issues: Vec::new(),
+            },
+            UsageProviderV1 {
+                provider_id: "codex".to_owned(),
+                display_name: "codex".to_owned(),
+                rank: 1,
+                membership_state: UsageMembershipStateV1::Current,
+                freshness,
+                accounts: vec![codex_account],
+                issues: Vec::new(),
+            },
+        ],
+        unresolved: vec![
+            UsageUnresolvedV1 {
+                provider_id: "claude".to_owned(),
+                capability_id: "claude-candidate".to_owned(),
+                configuration_count: 1,
+                state: UsageLifecycleV1::NeedsSecret,
+                issues: Vec::new(),
+            },
+            UsageUnresolvedV1 {
+                provider_id: "codex".to_owned(),
+                capability_id: "codex-candidate".to_owned(),
+                configuration_count: 2,
+                state: UsageLifecycleV1::NeedsSecret,
+                issues: Vec::new(),
+            },
+        ],
+        issues: Vec::new(),
+    };
+    legacy_projection
+        .validate()
+        .expect("fixture matches schema-v2 row ranks");
+
+    let legacy_envelope = ProjectionStateEnvelope {
+        schema_version: ProjectionStateEnvelope::MIGRATABLE_SCHEMA_VERSION,
+        projection: legacy_projection,
+        aliases: vec![ProjectionAlias {
+            capability_id: "legacy-capability".to_owned(),
+            canonical_account_id: "claude-account".to_owned(),
+        }],
+        catalog_revision: "legacy-catalog-revision".to_owned(),
+        catalog: vec![
+            UsageCatalogEntry {
+                capability: claude_capability.clone(),
+                revision: "claude-revision".to_owned(),
+            },
+            UsageCatalogEntry {
+                capability: codex_capability,
+                revision: "codex-revision".to_owned(),
+            },
+        ],
+        retry_deadline_epoch: Some(1_150),
+        success_deadline_epoch: Some(1_300),
+        broker_instance_id: "legacy-instance".to_owned(),
+    };
+    let projection_path = config.data_dir.join(BROKER_DIR).join("projection.json");
+    fs::create_dir_all(projection_path.parent().unwrap()).unwrap();
+    fs::write(
+        &projection_path,
+        serde_json::to_vec(&legacy_envelope).expect("serialize schema-v2 fixture"),
+    )
+    .expect("write schema-v2 fixture");
+
+    let projection_store = FileProjectionStateStore::under_data_dir(&config.data_dir);
+    assert_eq!(
+        projection_store.load(),
+        Err(
+            crate::coordinator::StateStoreError::SchemaMigrationRequired {
+                found: u64::from(ProjectionStateEnvelope::MIGRATABLE_SCHEMA_VERSION),
+                current: ProjectionStateEnvelope::SCHEMA_VERSION,
+            }
+        )
+    );
+    assert!(
+        projection_path.exists(),
+        "a passive read must leave the broker migration input intact"
+    );
+
+    let loaded = load_projection(&config).expect("migrate durable projection before startup");
+    let visible = loaded
+        .projection
+        .lock()
+        .expect("lock migrated projection")
+        .clone();
+    assert_eq!(
+        visible
+            .providers
+            .iter()
+            .map(|provider| provider.provider_id.as_str())
+            .collect::<Vec<_>>(),
+        ["openai", "anthropic"]
+    );
+    assert_eq!(
+        visible
+            .providers
+            .iter()
+            .map(|provider| provider.rank)
+            .collect::<Vec<_>>(),
+        [0, 1]
+    );
+    assert_eq!(visible.projection_id, "legacy-instance:7");
+    assert_eq!(visible.generated_at_epoch, 980);
+    assert_eq!(visible.broker_generation, 7);
+    assert_eq!(visible.discovery_revision, "legacy-catalog-revision");
+    assert_eq!(visible.providers[0].display_name, "OpenAI");
+    assert_eq!(visible.providers[1].display_name, "Anthropic");
+    assert_eq!(
+        visible.providers[0].accounts[0].canonical_account_id,
+        "codex-account"
+    );
+    assert_eq!(visible.providers[0].accounts[0].display_label, "codex");
+    assert_eq!(
+        visible.providers[1].accounts[0].display_label,
+        "historic Claude identity"
+    );
+    assert_eq!(
+        visible.providers[0].accounts[0].identity_kind,
+        UsageIdentityKindV1::UnverifiedHandle
+    );
+    assert_eq!(visible.providers[0].accounts[0].provenance_count, 3);
+    assert_eq!(
+        visible.providers[0].accounts[0].freshness,
+        freshness_for_legacy_projection()
+    );
+    assert_eq!(
+        visible.providers[0].accounts[0].windows[0].remaining_raw_percent,
+        Some(72)
+    );
+    assert_eq!(
+        visible.providers[0].accounts[0].windows[0].reset_at_epoch,
+        Some(2_200)
+    );
+    assert_eq!(visible.unresolved[0].provider_id, "openai");
+    assert_eq!(visible.unresolved[1].provider_id, "anthropic");
+
+    let migrated_envelope = FileProjectionStateStore::under_data_dir(&config.data_dir)
+        .load()
+        .expect("read only the new schema after startup migration")
+        .expect("migration writes a current envelope before returning");
+    assert_eq!(
+        migrated_envelope.schema_version,
+        ProjectionStateEnvelope::SCHEMA_VERSION
+    );
+    assert_eq!(migrated_envelope.catalog, legacy_envelope.catalog);
+    assert_eq!(migrated_envelope.aliases, legacy_envelope.aliases);
+    assert_eq!(migrated_envelope.retry_deadline_epoch, Some(1_150));
+    assert_eq!(migrated_envelope.success_deadline_epoch, Some(1_300));
+    assert_eq!(migrated_envelope.broker_instance_id, "legacy-instance");
+    assert_eq!(
+        account_store
+            .load(&claude_capability, now_epoch)
+            .expect("coordinator history remains readable"),
+        Some(history_before)
+    );
+}
+
+fn freshness_for_legacy_projection() -> UsageFreshnessV1 {
+    UsageFreshnessV1 {
+        generation: 7,
+        phase: UsageFreshnessPhaseV1::Stale,
+        last_good_at_epoch: Some(970),
+        retry_at_epoch: Some(1_120),
+        is_stale: true,
+    }
+}
+
+#[test]
+fn canonical_provider_projection_restores_internal_capability_identity_metadata() {
+    let freshness = UsageFreshnessV1 {
+        generation: 4,
+        phase: UsageFreshnessPhaseV1::Current,
+        last_good_at_epoch: Some(1_800_000_000),
+        retry_at_epoch: None,
+        is_stale: false,
+    };
+    let projection = UsageProjectionV1 {
+        schema_version: UsageProjectionSchemaV1,
+        projection_id: "fixture:4".to_owned(),
+        generated_at_epoch: 1_800_000_000,
+        discovery_revision: "fixture-catalog".to_owned(),
+        broker_instance_id: "fixture".to_owned(),
+        broker_generation: 4,
+        refresh_state: UsageProjectionRefreshStateV1::Idle,
+        providers: vec![UsageProviderV1 {
+            provider_id: "openai".to_owned(),
+            display_name: "OpenAI".to_owned(),
+            rank: 0,
+            membership_state: UsageMembershipStateV1::Current,
+            freshness: freshness.clone(),
+            accounts: vec![UsageAccountV1 {
+                canonical_account_id: "stable-handle".to_owned(),
+                identity_kind: UsageIdentityKindV1::ProviderStableHandle,
+                rank: 0,
+                display_label: "work@example.test".to_owned(),
+                plan_label: None,
+                status_label: None,
+                lifecycle: UsageLifecycleV1::Available,
+                freshness,
+                provenance_count: 3,
+                windows: Vec::new(),
+                metric_groups: Vec::new(),
+                credential_expires_at_epoch: None,
+                issues: Vec::new(),
+            }],
+            issues: Vec::new(),
+        }],
+        unresolved: Vec::new(),
+        issues: Vec::new(),
+    };
+
+    let metadata = projection_identity_metadata(&projection);
+    let capability = UsageAccountCapability {
+        account_id: "stable-handle".to_owned(),
+        surface_id: "codex".to_owned(),
+    };
+
+    assert_eq!(
+        metadata.get(&capability),
+        Some(&publish::AccountIdentityMetadata {
+            identity_kind: UsageIdentityKindV1::ProviderStableHandle,
+            provenance_count: 3,
+        })
+    );
+    assert!(!metadata.contains_key(&UsageAccountCapability {
+        surface_id: "openai".to_owned(),
+        ..capability
+    }));
+}
+
+#[test]
+fn broker_dispatch_publishes_identity_from_the_accepted_discovery_generation() {
+    use crate::host::{CanonicalAccountIdentity, CanonicalAccountSubject};
+
+    let temp = tempfile::tempdir().expect("isolated broker state directory");
+    let binding = ValidatedCredentialBinding {
+        surface: HostSurfaceId::Amp,
+        identity: Some(CanonicalAccountIdentity {
+            surface: HostSurfaceId::Amp,
+            subject: CanonicalAccountSubject::ProviderStableHandle("amp-team".to_owned()),
+        }),
+        capability_id: "amp-capability".to_owned(),
+        credential_revision: "amp-revision".to_owned(),
+        provenance: BTreeSet::from(["account work".to_owned(), "workspace example".to_owned()]),
+        source: ValidatedCredentialSource::Profile(
+            super::super::discovery::ProfileCredentialMaterial::Amp {
+                key: "fixture-credential".to_owned(),
+            },
+        ),
+    };
+    let discovery = ValidatedUsageDiscovery {
+        config_generation: Some("accepted-generation".to_owned()),
+        accounts: Vec::new(),
+        diagnostics: Vec::new(),
+        candidates: Vec::new(),
+        bindings: vec![binding],
+    };
+    let capability = usage_catalog_entries(&discovery)[0].capability.clone();
+    let executor = Arc::new(CountingExecutor {
+        calls: AtomicUsize::new(0),
+    });
+    let coordinator = Arc::new(UsageCoordinator::with_catalog(
+        executor,
+        Arc::new(FileAccountStateStore::under_data_dir(temp.path())),
+        UsageCoordinatorConfig::default(),
+        Vec::<UsageCatalogEntry>::new(),
+    ));
+    let projection = Arc::new(Mutex::new(empty_projection("dispatch-metadata")));
+    let publisher = publish::ProjectionPublisher::new(
+        Arc::clone(&coordinator),
+        Arc::clone(&projection),
+        FileProjectionStateStore::under_data_dir(temp.path()),
+    );
+    let catalog_refresh = catalog::BrokerCatalogRefresh::new(
+        UsageDiscoveryScope::Capsule {
+            forwarded_accounts: Vec::new(),
+        },
+        Arc::new(NoopCredentialResolver),
+    )
+    .with_test_discovery(discovery);
+    let monitor_store = monitor::MonitorStore::open(temp.path()).unwrap();
+    let forwarded_sources = UsageRelayForwardedSourcesV1 {
+        selected_account_ids: BTreeSet::new(),
+        selected_account_surfaces: BTreeMap::new(),
+        profile_surface_ids: BTreeSet::from(["amp".to_owned()]),
+        env_keys: BTreeSet::new(),
+        credential_scope: UsageCredentialScope::default(),
+    };
+    let request = UsageBrokerRequest {
+        protocol_version: USAGE_BROKER_PROTOCOL_VERSION.to_owned(),
+        build_id: "dispatch-metadata-test".to_owned(),
+        operation: UsageBrokerOperation::ResolveRelayCapabilities {
+            scope_label: "account work".to_owned(),
+            forwarded_sources,
+        },
+        launch_credential_scope: None,
+    };
+    let response = dispatch_ops::dispatch(
+        &coordinator,
+        request,
+        "dispatch-metadata-test",
+        &publisher,
+        &monitor_store,
+        &AtomicBool::new(false),
+        Some(&catalog_refresh),
+    );
+    let UsageBrokerResponse::RelayCapabilities { resolution } = response else {
+        panic!("relay resolution should accept the fake discovery generation");
+    };
+    assert_eq!(resolution.capabilities, vec![capability.clone()]);
+
+    publisher.observe(&capability);
+    let now = chrono::Utc::now().timestamp();
+    let generation = coordinator
+        .request_refresh(&capability, 0, true, now)
+        .expect("accepted catalog member is refreshable")
+        .generation;
+    coordinator
+        .join_generation(&capability, generation, Duration::from_secs(2), now + 1)
+        .expect("fake provider generation completes");
+    assert!(publisher.publish_due(now + 2));
+    let published = publisher.current_projection().unwrap();
+    let account = published
+        .providers
+        .iter()
+        .find(|provider| provider.provider_id == "amp")
+        .and_then(|provider| {
+            provider
+                .accounts
+                .iter()
+                .find(|account| account.canonical_account_id == capability.account_id)
+        })
+        .expect("dispatched discovery account reaches projection");
+    assert_eq!(
+        account.identity_kind,
+        UsageIdentityKindV1::ProviderStableHandle
+    );
+    assert_eq!(account.provenance_count, 2);
+}
+
+#[test]
 fn grouped_broker_authorization_accepts_sibling_proofs_and_rejects_conflicts() {
     use crate::host::{CanonicalAccountIdentity, CanonicalAccountSubject, HostSurfaceId};
 
@@ -1295,7 +1588,6 @@ fn grouped_broker_authorization_accepts_sibling_proofs_and_rejects_conflicts() {
         ValidatedCredentialBinding {
             surface: HostSurfaceId::Zai,
             identity,
-            source_id: format!("source-{handle}"),
             capability_id: format!("capability-{handle}"),
             credential_revision: format!("revision-{handle}"),
             provenance: BTreeSet::from(["account zai".to_owned()]),
@@ -1417,7 +1709,6 @@ fn scoped_probe_refreshes_exact_binding_selected_by_later_sibling_proof() {
         ValidatedCredentialBinding {
             surface: HostSurfaceId::Zai,
             identity: None,
-            source_id: format!("source-{handle}"),
             capability_id: "capability-zai".to_owned(),
             credential_revision: format!("revision-{handle}"),
             provenance: BTreeSet::from(["account zai".to_owned()]),
@@ -1471,7 +1762,6 @@ fn mixed_profile_and_env_group_fails_closed_without_changing_pure_profile() {
     let profile = ValidatedCredentialBinding {
         surface: HostSurfaceId::Amp,
         identity: None,
-        source_id: "profile".to_owned(),
         capability_id: "capability".to_owned(),
         credential_revision: "profile-revision".to_owned(),
         provenance: BTreeSet::from(["account shared".to_owned()]),
@@ -1484,7 +1774,6 @@ fn mixed_profile_and_env_group_fails_closed_without_changing_pure_profile() {
     let env = ValidatedCredentialBinding {
         surface: HostSurfaceId::Amp,
         identity: None,
-        source_id: "env".to_owned(),
         capability_id: "capability".to_owned(),
         credential_revision: "env-revision".to_owned(),
         provenance: BTreeSet::from(["account shared".to_owned()]),
@@ -1513,7 +1802,6 @@ fn capability_identity_keeps_distinct_and_anonymous_sources_separate() {
         ValidatedCredentialBinding {
             surface: HostSurfaceId::Zai,
             identity,
-            source_id: capability_id.to_owned(),
             capability_id: capability_id.to_owned(),
             credential_revision: "revision".to_owned(),
             provenance: BTreeSet::from(["account zai".to_owned()]),
@@ -1554,54 +1842,52 @@ fn capability_identity_keeps_distinct_and_anonymous_sources_separate() {
         capability_for_binding(&anonymous_second, None),
         "anonymous bindings remain source-specific"
     );
-}
 
-#[test]
-fn rotated_catalog_revision_rejects_in_flight_broker_result() {
-    use crate::host::{CanonicalAccountIdentity, CanonicalAccountSubject, HostSurfaceId};
-
-    let binding = ValidatedCredentialBinding {
-        surface: HostSurfaceId::Claude,
-        identity: Some(CanonicalAccountIdentity {
-            surface: HostSurfaceId::Claude,
+    let source_capability = make(
+        Some(CanonicalAccountIdentity {
+            surface: HostSurfaceId::Zai,
+            subject: CanonicalAccountSubject::SourceCapability("local-source".to_owned()),
+        }),
+        "local-source",
+        "handle-local-source",
+    );
+    let provider_id = make(
+        Some(CanonicalAccountIdentity {
+            surface: HostSurfaceId::Zai,
             subject: CanonicalAccountSubject::ProviderId("provider-account".to_owned()),
         }),
-        source_id: "source-0001".to_owned(),
-        capability_id: "capability-0001".to_owned(),
-        credential_revision: "credential-revision".to_owned(),
-        provenance: BTreeSet::from(["account work".to_owned()]),
-        source: ValidatedCredentialSource::Capability,
-    };
-    let old_capability = capability_for_binding(&binding, Some("generation-old"));
-    let current_capability = capability_for_binding(&binding, Some("generation-current"));
-    assert_ne!(old_capability, current_capability);
-
-    let temp = tempfile::tempdir().unwrap();
-    let mut runtime = HostUsageRuntime::new();
-    runtime
-        .open(crate::host::HostRuntimeConfig::under_data_dir(temp.path()))
-        .unwrap();
-    runtime.discovery = Some(ValidatedUsageDiscovery {
-        config_generation: Some("generation-current".to_owned()),
+        "provider-account",
+        "handle-provider-account",
+    );
+    let discovery = ValidatedUsageDiscovery {
+        config_generation: None,
         accounts: Vec::new(),
         diagnostics: Vec::new(),
         candidates: Vec::new(),
-        bindings: vec![binding],
-    });
-
-    runtime
-        .apply_broker_generation(UsageGenerationView {
-            capability: old_capability,
-            generation: 1,
-            phase: UsageRefreshPhase::Completed,
-            snapshot: Some(quota_view()),
-            error: None,
-            retry_at_epoch: None,
-        })
-        .unwrap();
-
-    assert!(runtime.discovered_views.is_empty());
-    assert!(runtime.discovered_provider_views.is_empty());
+        bindings: vec![
+            first.clone(),
+            source_capability.clone(),
+            anonymous_first.clone(),
+            provider_id.clone(),
+        ],
+    };
+    let metadata = publication_identity_metadata(&discovery);
+    assert_eq!(
+        metadata[&capability_for_binding(&first, None)].identity_kind,
+        UsageIdentityKindV1::ProviderStableHandle
+    );
+    assert_eq!(
+        metadata[&capability_for_binding(&source_capability, None)].identity_kind,
+        UsageIdentityKindV1::LocalSourceHandle
+    );
+    assert_eq!(
+        metadata[&capability_for_binding(&anonymous_first, None)].identity_kind,
+        UsageIdentityKindV1::UnverifiedHandle
+    );
+    assert_eq!(
+        metadata[&capability_for_binding(&provider_id, None)].identity_kind,
+        UsageIdentityKindV1::ProviderAccountId
+    );
 }
 
 #[test]
@@ -1619,7 +1905,6 @@ fn broker_catalog_match_requires_full_revision_and_entry_revisions() {
                 surface: HostSurfaceId::Claude,
                 subject: CanonicalAccountSubject::ProviderId("provider-account".to_owned()),
             }),
-            source_id: "source-0001".to_owned(),
             capability_id: "capability-0001".to_owned(),
             credential_revision: "credential-revision-a".to_owned(),
             provenance: BTreeSet::from(["account work".to_owned()]),
@@ -1727,8 +2012,7 @@ fn usage_broker_recovers_stale_guard_with_private_permissions() {
     let run_dir = secure_run_directory(&config.data_dir).unwrap();
     let leader = run_dir.join(BROKER_LEADER);
     let mut stale_lease = BrokerLease::new(&config.build_id);
-    stale_lease.renewed_at_epoch -=
-        i64::try_from(config.lease_duration.as_secs()).unwrap() + 1;
+    stale_lease.renewed_at_epoch -= i64::try_from(config.lease_duration.as_secs()).unwrap() + 1;
     fs::write(&leader, serde_json::to_vec(&stale_lease).unwrap()).unwrap();
     fs::set_permissions(&leader, fs::Permissions::from_mode(0o600)).unwrap();
     let executor = Arc::new(CountingExecutor {
@@ -1768,31 +2052,119 @@ fn broker_startup_failure_cleans_lease_and_socket_before_returning() {
 }
 
 #[test]
-fn broker_lease_uses_expiry_and_build_identity_not_pid_reuse() {
+fn live_lease_owner_blocks_expired_takeover_and_can_renew_after_waking() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("lease");
-    let mut live = BrokerLease::new("build");
-    fs::write(&path, serde_json::to_vec(&live).unwrap()).unwrap();
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
-    assert!(
-        claim_leader(&path, "build", Duration::from_secs(30))
-            .unwrap()
-            .is_none()
-    );
-
-    live.renewed_at_epoch -= 31;
-    fs::write(&path, serde_json::to_vec(&live).unwrap()).unwrap();
-    let replacement = claim_leader(&path, "build", Duration::from_secs(30))
+    let duration = Duration::from_secs(30);
+    let started_at = 1_700_000_000;
+    let woke_at = started_at + i64::try_from(duration.as_secs()).unwrap() + 1;
+    let mut owner = claim_leader_at(&path, "build", duration, started_at)
         .unwrap()
-        .expect("expired lease is reclaimable");
-    assert_ne!(replacement.lease.instance_id, live.instance_id);
+        .expect("first claimant owns the lifetime lock");
 
-    fs::write(&path, serde_json::to_vec(&replacement.lease).unwrap()).unwrap();
     assert!(
-        claim_leader(&path, "other-build", Duration::from_secs(30))
+        claim_leader_at(&path, "build", duration, woke_at)
             .unwrap()
-            .is_none()
+            .is_none(),
+        "expired wall time cannot replace a live owner's locked lease"
     );
+    assert!(renew_lease_at(&path, &mut owner, woke_at));
+    let renewed: BrokerLease = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    assert_eq!(renewed.instance_id, owner.lease.instance_id);
+    assert_eq!(renewed.renewed_at_epoch, woke_at);
+    assert!(
+        claim_leader_at(
+            &path,
+            "build",
+            duration,
+            woke_at + i64::try_from(duration.as_secs()).unwrap() + 1,
+        )
+        .unwrap()
+        .is_none(),
+        "the lifetime lock continues to protect an owner past the next expiry"
+    );
+}
+
+#[test]
+fn lease_renewal_does_not_regress_timestamp_when_clock_moves_backward() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("lease");
+    let duration = Duration::from_secs(30);
+    let started_at = 1_700_000_000;
+    let earlier_time = started_at - 10;
+    let mut owner = claim_leader_at(&path, "build", duration, started_at)
+        .unwrap()
+        .expect("first claimant owns the lifetime lock");
+
+    assert!(renew_lease_at(&path, &mut owner, earlier_time));
+    let renewed: BrokerLease = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    assert_eq!(renewed.renewed_at_epoch, started_at);
+    assert_eq!(owner.lease.renewed_at_epoch, started_at);
+}
+
+#[test]
+fn lease_renewal_rejects_tampered_owner_pid() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("lease");
+    let mut owner = claim_leader_at(&path, "build", Duration::from_secs(30), 1_700_000_000)
+        .unwrap()
+        .expect("first claimant owns the lifetime lock");
+    let mut tampered = owner.lease.clone();
+    tampered.process_id ^= 1;
+    write_lease(&mut owner.file, &tampered).unwrap();
+
+    assert!(!renew_lease_at(&path, &mut owner, 1_700_000_010));
+    let persisted: BrokerLease = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    assert_eq!(persisted.process_id, tampered.process_id);
+}
+
+#[test]
+fn lease_renewal_rejects_tampered_owner_timestamp() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("lease");
+    let mut owner = claim_leader_at(&path, "build", Duration::from_secs(30), 1_700_000_000)
+        .unwrap()
+        .expect("first claimant owns the lifetime lock");
+    let mut tampered = owner.lease.clone();
+    tampered.renewed_at_epoch += 1;
+    write_lease(&mut owner.file, &tampered).unwrap();
+
+    assert!(!renew_lease_at(&path, &mut owner, 1_700_000_010));
+    let persisted: BrokerLease = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    assert_eq!(persisted.renewed_at_epoch, tampered.renewed_at_epoch);
+}
+
+#[test]
+fn expired_lease_is_reclaimed_after_dead_owner_releases_lifetime_lock() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("lease");
+    let duration = Duration::from_secs(30);
+    let started_at = 1_700_000_000;
+    let expired_at = started_at + i64::try_from(duration.as_secs()).unwrap() + 1;
+    let owner = claim_leader_at(&path, "build", duration, started_at)
+        .unwrap()
+        .expect("first claimant owns the lifetime lock");
+    let original_instance = owner.lease.instance_id.clone();
+
+    assert!(
+        claim_leader_at(&path, "build", duration, expired_at)
+            .unwrap()
+            .is_none(),
+        "a live owner's lock wins over its expired payload"
+    );
+    drop(owner);
+
+    assert!(
+        claim_leader_at(&path, "other-build", duration, expired_at)
+            .unwrap()
+            .is_none(),
+        "an incompatible build cannot reclaim the expired payload"
+    );
+    let replacement = claim_leader_at(&path, "build", duration, expired_at)
+        .unwrap()
+        .expect("dead owner's expired lease can be reclaimed");
+    assert_ne!(replacement.lease.instance_id, original_instance);
+    assert!(replacement.stale_lease_reclaimed);
 }
 
 #[test]
@@ -1828,8 +2200,13 @@ fn stale_lease_descriptor_cannot_renew_or_clean_successor_files() {
         .expect("successor owns the replacement lease");
     let successor_id = successor.lease.instance_id.clone();
 
-    assert!(!renew_lease(&mut stale, Duration::from_secs(30)));
-    assert!(!cleanup_owned_files(&lease_path, &socket_path, None, &mut stale));
+    assert!(!renew_lease(&lease_path, &mut stale));
+    assert!(!cleanup_owned_files(
+        &lease_path,
+        &socket_path,
+        None,
+        &mut stale
+    ));
     let current: BrokerLease = serde_json::from_slice(&fs::read(&lease_path).unwrap()).unwrap();
     assert_eq!(current.instance_id, successor_id);
     assert!(socket_path.exists());
@@ -1857,6 +2234,7 @@ fn renamed_stale_lease_descriptor_cannot_unlink_successor_lease_or_socket() {
         inode: socket_metadata.ino(),
     };
 
+    assert!(!renew_lease_at(&lease_path, &mut stale, 1_700_000_100));
     assert!(!cleanup_owned_files(
         &lease_path,
         &socket_path,
@@ -2196,17 +2574,19 @@ fn healthy_accounts_publish_while_one_account_stalls() {
         .iter()
         .map(|provider| provider.provider_id.as_str())
         .collect::<Vec<_>>();
-    assert_eq!(providers, vec!["amp", "codex"]);
-    let fast_account = partial.providers[0]
-        .accounts
+    assert_eq!(providers, vec!["openai", "amp"]);
+    let fast_account = partial
+        .providers
         .iter()
+        .flat_map(|provider| provider.accounts.iter())
         .find(|account| account.canonical_account_id == "abc123")
         .unwrap();
     assert_eq!(fast_account.freshness.phase, UsageFreshnessPhaseV1::Current);
     assert!(!fast_account.windows.is_empty());
-    let slow_account = partial.providers[1]
-        .accounts
+    let slow_account = partial
+        .providers
         .iter()
+        .flat_map(|provider| provider.accounts.iter())
         .find(|account| account.canonical_account_id == "def456")
         .unwrap();
     assert_eq!(
@@ -2648,7 +3028,9 @@ fn foreground_fake_bootstrap_holds_the_same_zeroizing_lease_through_catalog_read
         .projection
         .providers
         .iter()
-        .find(|provider| provider.provider_id == removed_sibling.surface_id)
+        .find(|provider| {
+            provider.provider_id == publish::canonical_provider_id(&removed_sibling.surface_id)
+        })
         .and_then(|provider| {
             provider
                 .accounts
@@ -2662,7 +3044,7 @@ fn foreground_fake_bootstrap_holds_the_same_zeroizing_lease_through_catalog_read
     );
     assert_eq!(
         revoked_projection_sibling.lifecycle,
-        jackin_protocol::usage_broker::UsageLifecycleV1::Unavailable
+        UsageLifecycleV1::Unavailable
     );
     assert!(revoked_projection_sibling.windows.is_empty());
     let revoked_account_state = FileAccountStateStore::under_data_dir(&config.data_dir)
@@ -2923,7 +3305,12 @@ fn startup_cleanup_never_unlinks_an_unowned_or_replaced_socket() {
         .unwrap()
         .expect("claim test broker lease");
     fs::write(&socket_path, b"unowned socket path").unwrap();
-    assert!(cleanup_owned_files(&lease_path, &socket_path, None, &mut owner));
+    assert!(cleanup_owned_files(
+        &lease_path,
+        &socket_path,
+        None,
+        &mut owner
+    ));
     assert_eq!(fs::read(&socket_path).unwrap(), b"unowned socket path");
     assert!(!lease_path.exists());
 

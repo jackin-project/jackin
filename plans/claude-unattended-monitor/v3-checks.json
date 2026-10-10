@@ -1,0 +1,36 @@
+{
+  "scope": "offline isolated fixtures only",
+  "protocol": {
+    "passed": 133,
+    "log": "/private/tmp/jackin-mbx-protocol-final.log"
+  },
+  "broker": {
+    "passed": 173,
+    "log": "/private/tmp/jackin-mbx-broker-tests-final-7.log"
+  },
+  "claude_auth": {
+    "passed": 25,
+    "log": "/private/tmp/jackin-mbx-claude-tests-final-3.log"
+  },
+  "cli": {
+    "passed": 43
+  },
+  "app": {
+    "passed": 29
+  },
+  "installed_smoke": {
+    "result": "PASS",
+    "http_proxy_requests": 0,
+    "credential_command_executions": 0,
+    "native_security_framework": "not instrumented",
+    "foreground_auth_success": "not exercised",
+    "dispatch_policy_approvals": "none"
+  },
+  "pending": [
+    "dormant CLI helper removal and final rebuild",
+    "consumer regression runs",
+    "branch consolidation proof",
+    "GitHub required checks and landing"
+  ],
+  "real_account_readiness": "unverified"
+}

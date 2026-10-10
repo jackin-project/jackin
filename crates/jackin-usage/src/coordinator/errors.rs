@@ -13,6 +13,10 @@ pub(crate) fn state_error(error: StateStoreError) -> UsageCoordinationError {
             UsageCoordinationErrorKind::CorruptState,
             "usage coordinator state is corrupt",
         ),
+        StateStoreError::SchemaMigrationRequired { .. } => coordination_error(
+            UsageCoordinationErrorKind::Unavailable,
+            "usage coordinator state schema requires migration",
+        ),
     }
 }
 

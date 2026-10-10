@@ -94,7 +94,7 @@ pub struct HostUsageProjectionProviderPresentation<'a> {
 /// This runtime owns no discovery, credentials, cache, or provider client. Its
 /// only usage input is a complete `UsageProjectionV1` publication. Selected
 /// account values are canonical broker account ids, persisted independently
-/// of the discovery-backed host runtime's account-key store.
+/// of discovery or credential-source state.
 #[derive(Debug, Clone)]
 pub struct HostUsageProjectionRuntime {
     projection: UsageProjectionV1,

@@ -454,10 +454,7 @@ pub(super) fn validate_policy_records(state: &StoreState) -> Result<(), MonitorI
     Ok(())
 }
 
-fn policy_transition_is_valid(
-    previous: &MonitorPolicyRecord,
-    next: &MonitorPolicyRecord,
-) -> bool {
+fn policy_transition_is_valid(previous: &MonitorPolicyRecord, next: &MonitorPolicyRecord) -> bool {
     if previous.provider != next.provider || previous.account_id != next.account_id {
         return false;
     }

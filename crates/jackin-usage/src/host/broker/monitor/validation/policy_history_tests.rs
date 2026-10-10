@@ -85,7 +85,12 @@ fn persisted_strict_policy_cannot_be_downgraded_to_quota_only() {
     state.policy_records.insert(
         GOAL_ID.to_owned(),
         vec![
-            policy_record(1, None, MonitorPolicy::StrictSgd, Some(strict_budget(5_000))),
+            policy_record(
+                1,
+                None,
+                MonitorPolicy::StrictSgd,
+                Some(strict_budget(5_000)),
+            ),
             policy_record(
                 2,
                 Some(MonitorPolicy::StrictSgd),
@@ -104,7 +109,12 @@ fn persisted_strict_budget_cannot_increase() {
     state.policy_records.insert(
         GOAL_ID.to_owned(),
         vec![
-            policy_record(1, None, MonitorPolicy::StrictSgd, Some(strict_budget(5_000))),
+            policy_record(
+                1,
+                None,
+                MonitorPolicy::StrictSgd,
+                Some(strict_budget(5_000)),
+            ),
             policy_record(
                 2,
                 Some(MonitorPolicy::StrictSgd),
@@ -124,7 +134,12 @@ fn persisted_strict_budget_can_stay_equal_or_tighten() {
         state.policy_records.insert(
             GOAL_ID.to_owned(),
             vec![
-                policy_record(1, None, MonitorPolicy::StrictSgd, Some(strict_budget(5_000))),
+                policy_record(
+                    1,
+                    None,
+                    MonitorPolicy::StrictSgd,
+                    Some(strict_budget(5_000)),
+                ),
                 policy_record(
                     2,
                     Some(MonitorPolicy::StrictSgd),
@@ -214,7 +229,12 @@ fn persisted_policy_history_cannot_move_between_accounts() {
     state.policy_records.insert(
         GOAL_ID.to_owned(),
         vec![
-            policy_record(1, None, MonitorPolicy::StrictSgd, Some(strict_budget(5_000))),
+            policy_record(
+                1,
+                None,
+                MonitorPolicy::StrictSgd,
+                Some(strict_budget(5_000)),
+            ),
             second,
         ],
     );

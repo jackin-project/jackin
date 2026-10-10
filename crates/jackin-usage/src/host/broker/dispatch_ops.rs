@@ -289,11 +289,14 @@ fn resolve_relay_capabilities(
             let diagnostics = super::catalog_diagnostics::from_discovery(&discovery);
             let now = chrono::Utc::now().timestamp();
             let current_projection = publisher.current_projection()?;
-            publisher.reconcile_catalog_if_projection_with_diagnostics(
+            publisher.reconcile_catalog_if_projection(
                 Some(&current_projection.projection_id),
-                catalog_revision,
-                entries,
-                diagnostics,
+                publish::CatalogReconciliation {
+                    catalog_revision,
+                    entries,
+                    diagnostics,
+                    identity_metadata: Some(super::publication_identity_metadata(&discovery)),
+                },
                 now,
             )?;
             {

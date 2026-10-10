@@ -136,10 +136,13 @@ impl UsageCoordinator {
             .and_then(|catalog| catalog.get(capability).cloned());
         match loaded {
             Ok(envelope) => {
+                let recovery_sample = self.shared.clock.sample(now_epoch);
                 let mut envelope =
                     envelope.unwrap_or_else(|| AccountStateEnvelope::idle(capability.clone()));
                 let recovery_pending = envelope.phase.is_active();
                 if recovery_pending {
+                    let recovering_invoked_attempt = envelope.phase == UsageRefreshPhase::Updating;
+                    let recovery_epoch = recovery_sample.ceil_epoch();
                     let consecutive_failures = envelope.consecutive_failures.saturating_add(1);
                     envelope.phase = UsageRefreshPhase::Failed;
                     envelope.terminal_result = None;
@@ -147,16 +150,16 @@ impl UsageCoordinator {
                         UsageCoordinationErrorKind::OwnerLost,
                         "usage refresh owner exited before completion",
                     ));
-                    envelope.completed_at_epoch = Some(now_epoch);
+                    envelope.completed_at_epoch = Some(recovery_epoch);
                     let retry_deadline = policy::retry_deadline(
                         self.shared.config.retry_policy,
                         &envelope.capability,
                         envelope.generation,
                         consecutive_failures,
                         envelope.retry_deadline_epoch,
-                        now_epoch,
+                        recovery_epoch,
                     );
-                    envelope.retry_deadline_epoch = match policy::minimum_attempt_deadline(
+                    let retry_deadline = match policy::minimum_attempt_deadline(
                         &envelope.capability,
                         envelope.provider_invoked_at_epoch,
                     ) {
@@ -165,9 +168,21 @@ impl UsageCoordinator {
                         }
                         None => retry_deadline,
                     };
+                    let recovery_floor = recovering_invoked_attempt
+                        .then(|| {
+                            policy::minimum_attempt_deadline(
+                                &envelope.capability,
+                                Some(recovery_epoch),
+                            )
+                        })
+                        .flatten();
+                    envelope.retry_deadline_epoch = match recovery_floor {
+                        Some(floor) => Some(retry_deadline.map_or(floor, |d| d.max(floor))),
+                        None => retry_deadline,
+                    };
                     envelope.success_deadline_epoch = None;
                     envelope.consecutive_failures = consecutive_failures;
-                    if self.shared.store.store(&envelope, now_epoch).is_err() {
+                    if self.shared.store.store(&envelope, recovery_epoch).is_err() {
                         let error = unavailable_error();
                         state.blocked.insert(capability.clone(), error.clone());
                         return Err(error);
@@ -175,7 +190,13 @@ impl UsageCoordinator {
                 }
                 state.accounts.insert(
                     capability.clone(),
-                    AccountEntry::new(envelope, recovery_pending, now_epoch, catalog_revision),
+                    AccountEntry::new(
+                        envelope,
+                        recovery_pending,
+                        now_epoch,
+                        recovery_sample,
+                        catalog_revision,
+                    ),
                 );
                 Ok(())
             }
@@ -194,7 +215,8 @@ impl UsageCoordinator {
         message: &str,
         now_epoch: i64,
     ) -> Result<UsageGenerationView, UsageCoordinationError> {
-        finish_failure(&self.shared, job, kind, message, None, now_epoch);
+        let finished_at = self.shared.clock.sample(now_epoch);
+        finish_failure(&self.shared, job, kind, message, None, finished_at, false);
         self.current(&job.capability, now_epoch)
     }
 }

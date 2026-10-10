@@ -7,15 +7,15 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use jackin_protocol::usage_broker::{
-    UsageAccountCapability, UsageCatalogEntry, UsageCoordinationError,
+    UsageAccountCapability, UsageCatalogEntry, UsageCoordinationError, UsageRefreshPhase,
 };
 
 use super::{
     CatalogAccountPreimage, CatalogTransaction, CoordinatorState, Shared, StateStoreError,
     UsageCoordinator, catalog_entries_from_map, catalog_purge_set, cooldown_tombstone,
-    first_catalog_rollback_error, preserve_catalog_error, reconcile_executor_catalog, reset_entry,
-    reset_envelope, restore_catalog_preimages, revoke_entry, revoke_envelope, state_error,
-    unavailable_error, validate_catalog_entries,
+    first_catalog_rollback_error, pending_attempt_envelope, preserve_catalog_error,
+    reconcile_executor_catalog, reset_entry, reset_envelope, restore_catalog_preimages,
+    revoke_entry, revoke_envelope, state_error, unavailable_error, validate_catalog_entries,
 };
 
 fn persist_reset_envelopes(
@@ -23,9 +23,10 @@ fn persist_reset_envelopes(
     state: &CoordinatorState,
     reset_capabilities: &BTreeSet<UsageAccountCapability>,
     preimages: &BTreeMap<UsageAccountCapability, CatalogAccountPreimage>,
-    now_epoch: i64,
+    clock_sample: super::ClockSample,
 ) -> Result<(), StateStoreError> {
     for capability in reset_capabilities {
+        let pending_attempt = has_pending_provider_attempt(state, preimages, capability);
         let envelope = state
             .accounts
             .get(capability)
@@ -41,10 +42,33 @@ fn persist_reset_envelopes(
                 }
             });
         if let Some(envelope) = envelope {
-            shared.store.store(&envelope, now_epoch)?;
+            let envelope = if pending_attempt {
+                pending_attempt_envelope(&envelope, clock_sample.ceil_epoch())
+            } else {
+                envelope
+            };
+            let persist_epoch = clock_sample
+                .ceil_epoch()
+                .max(envelope.provider_invoked_at_epoch.unwrap_or(0));
+            shared.store.store(&envelope, persist_epoch)?;
         }
     }
     Ok(())
+}
+
+fn has_pending_provider_attempt(
+    state: &CoordinatorState,
+    preimages: &BTreeMap<UsageAccountCapability, CatalogAccountPreimage>,
+    capability: &UsageAccountCapability,
+) -> bool {
+    state
+        .accounts
+        .get(capability)
+        .is_some_and(|entry| entry.pending_provider_generation.is_some())
+        || preimages.get(capability).is_some_and(|preimage| {
+            matches!(preimage, CatalogAccountPreimage::Present(envelope)
+                if envelope.phase == UsageRefreshPhase::Updating)
+        })
 }
 
 fn persist_cooldown_tombstones(
@@ -53,12 +77,14 @@ fn persist_cooldown_tombstones(
     removed_capabilities: &BTreeSet<UsageAccountCapability>,
     preimages: &BTreeMap<UsageAccountCapability, CatalogAccountPreimage>,
     now_epoch: i64,
+    clock_sample: super::ClockSample,
 ) -> Result<(), StateStoreError> {
     for capability in removed_capabilities {
         let already_revoked = state
             .accounts
             .get(capability)
             .is_some_and(|entry| entry.revoked);
+        let pending_attempt = has_pending_provider_attempt(state, preimages, capability);
         let Some(mut envelope) = state
             .accounts
             .get(capability)
@@ -73,10 +99,13 @@ fn persist_cooldown_tombstones(
             continue;
         };
         if !already_revoked {
-            revoke_envelope(&mut envelope, now_epoch);
+            revoke_envelope(&mut envelope, now_epoch, clock_sample);
         }
-        if let Some(tombstone) = cooldown_tombstone(&envelope, now_epoch) {
-            shared.store.store(&tombstone, now_epoch)?;
+        let persist_epoch = clock_sample
+            .ceil_epoch()
+            .max(envelope.provider_invoked_at_epoch.unwrap_or(0));
+        if let Some(tombstone) = cooldown_tombstone(&envelope, persist_epoch, pending_attempt) {
+            shared.store.store(&tombstone, persist_epoch)?;
         }
     }
     Ok(())
@@ -171,7 +200,7 @@ impl UsageCoordinator {
             .filter(|capability| next.contains_key(*capability))
             .cloned()
             .collect::<BTreeSet<_>>();
-        let preimages = purge
+        let mut preimages = purge
             .iter()
             .map(|capability| {
                 self.shared
@@ -189,7 +218,10 @@ impl UsageCoordinator {
                         StateStoreError::Corrupt => {
                             Ok((capability.clone(), CatalogAccountPreimage::Corrupt))
                         }
-                        StateStoreError::Unavailable => Err(state_error(error)),
+                        StateStoreError::Unavailable
+                        | StateStoreError::SchemaMigrationRequired { .. } => {
+                            Err(state_error(error))
+                        }
                     })
             })
             .collect::<Result<BTreeMap<_, _>, _>>()?;
@@ -203,8 +235,85 @@ impl UsageCoordinator {
             return Err(preserve_catalog_error(error, rollback));
         }
 
+        let revocation_sample = self.shared.clock.sample(now_epoch);
         let mut completed_purges = BTreeSet::new();
+        let mut preserved_pending_markers = BTreeSet::new();
         for capability in &purge {
+            if !has_pending_provider_attempt(&state, &preimages, capability) {
+                continue;
+            }
+            let Some(mut envelope) = state
+                .accounts
+                .get(capability)
+                .map(|entry| entry.envelope.clone())
+                .or_else(|| match preimages.get(capability) {
+                    Some(CatalogAccountPreimage::Present(envelope)) => Some((**envelope).clone()),
+                    Some(CatalogAccountPreimage::Missing | CatalogAccountPreimage::Corrupt)
+                    | None => None,
+                })
+            else {
+                continue;
+            };
+            let persist_epoch = revocation_sample
+                .ceil_epoch()
+                .max(envelope.provider_invoked_at_epoch.unwrap_or(0));
+            let is_removed = removed_capabilities.contains(capability);
+            let marker = if is_removed {
+                let already_revoked = state
+                    .accounts
+                    .get(capability)
+                    .is_some_and(|entry| entry.revoked);
+                if !already_revoked {
+                    revoke_envelope(&mut envelope, now_epoch, revocation_sample);
+                }
+                cooldown_tombstone(&envelope, persist_epoch, true)
+            } else {
+                // Revision changes also purge the old durable record. Install
+                // the post-reset active marker first so a crash in that gap
+                // recovers the in-flight attempt instead of permitting a
+                // second provider call.
+                reset_envelope(&mut envelope);
+                Some(pending_attempt_envelope(&envelope, persist_epoch))
+            };
+            let Some(marker) = marker else {
+                continue;
+            };
+
+            // Replace the durable record with a result-free active marker
+            // before deleting anything. A process crash during catalog
+            // rotation then recovers the attempt instead of losing its floor.
+            // If no durable preimage existed, keep this sanitized marker as
+            // the rollback image too. A later failure must not purge the
+            // only recovery fence that was successfully written.
+            if matches!(
+                preimages.get(capability),
+                Some(CatalogAccountPreimage::Missing)
+            ) {
+                preimages.insert(
+                    capability.clone(),
+                    CatalogAccountPreimage::Present(Box::new(marker.clone())),
+                );
+            }
+            completed_purges.insert(capability.clone());
+            if let Err(error) = self.shared.store.store(&marker, persist_epoch) {
+                let primary = state_error(error);
+                let rollback = rollback_catalog_reconciliation(
+                    &self.shared,
+                    &mut state,
+                    &previous_state,
+                    &previous,
+                    &preimages,
+                    completed_purges.clone(),
+                    now_epoch,
+                );
+                return Err(preserve_catalog_error(primary, rollback));
+            }
+            preserved_pending_markers.insert(capability.clone());
+        }
+        for capability in &purge {
+            if preserved_pending_markers.contains(capability) {
+                continue;
+            }
             // A store can report failure after the unlink/quarantine reached
             // disk. Restore this preimage on every failure path, not only
             // after a fully successful purge return.
@@ -238,7 +347,7 @@ impl UsageCoordinator {
             match next.get(&capability) {
                 None => {
                     if !entry.revoked {
-                        revoke_entry(entry, now_epoch);
+                        revoke_entry(entry, now_epoch, revocation_sample);
                     }
                     state.blocked.remove(&capability);
                 }
@@ -257,6 +366,7 @@ impl UsageCoordinator {
             &removed_capabilities,
             &preimages,
             now_epoch,
+            revocation_sample,
         ) {
             let primary = state_error(error);
             let rollback = rollback_catalog_reconciliation(
@@ -275,7 +385,7 @@ impl UsageCoordinator {
             &state,
             &reset_capabilities,
             &preimages,
-            now_epoch,
+            revocation_sample,
         ) {
             let primary = state_error(error);
             let rollback = rollback_catalog_reconciliation(
