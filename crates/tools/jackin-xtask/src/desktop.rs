@@ -5,8 +5,8 @@
 //! in `native/Scripts/run-ui-tests.sh`.
 //!
 //! ```sh
-//! cargo xtask desktop build --version 0.6.0 --build 1
-//! cargo xtask desktop verify native/dist/JackinDesktop.app
+//! mise exec -- mbx +1.97.1 xtask desktop build --version 0.6.0 --build 1
+//! mise exec -- mbx +1.97.1 xtask desktop verify native/dist/JackinDesktop.app
 //! # or use the local native cadence: mise -C native run ci
 //! ```
 
@@ -172,7 +172,7 @@ pub(super) fn resolve_app_path(app: &Path) -> Result<PathBuf> {
     };
     if !path.exists() {
         bail!(
-            "app not found at {}\n  build first: cargo xtask desktop build --version 0.6.0 --build 1",
+            "app not found at {}\n  build first: mise exec -- mbx +1.97.1 xtask desktop build --version 0.6.0 --build 1",
             path.display()
         );
     }
@@ -224,7 +224,7 @@ fn run_desktop_tests(root: &Path) -> Result<()> {
     progress("┌─────────────────────────────────────────────────────────────");
     progress("│ jackin❯ desktop — tests OK");
     progress("│   host nextest + all five pure Swift harnesses");
-    progress("│   (counted SwiftPM unit tests: cargo xtask desktop test-swift)");
+    progress("│   (counted SwiftPM unit tests: mise exec -- mbx +1.97.1 xtask desktop test-swift)");
     progress("└─────────────────────────────────────────────────────────────");
     Ok(())
 }
@@ -792,8 +792,8 @@ fn print_app_ready_banner(app: &Path, version: &str, build: &str) {
     progress(format!("│   app:     {}", abs.display()));
     progress(format!("│   rel:     {}", rel.display()));
     progress("│");
-    progress("│   verify:  cargo xtask desktop verify");
-    progress("│   run:     cargo xtask desktop run");
+    progress("│   verify:  mise exec -- mbx +1.97.1 xtask desktop verify");
+    progress("│   run:     mise exec -- mbx +1.97.1 xtask desktop run");
     progress(format!("│   open:    open {}", abs.display()));
     progress("│");
     progress("│   (menu bar only — no Dock icon; LSUIElement)");
@@ -819,7 +819,7 @@ pub(super) fn resolve_version_build(
 }
 
 /// Prefer flags/env; otherwise read identity from the app plist so
-/// `cargo xtask desktop verify` reads version metadata from the app bundle.
+/// `mise exec -- mbx +1.97.1 xtask desktop verify` reads version metadata from the app bundle.
 fn resolve_version_build_for_verify(
     app: &Path,
     version: Option<String>,
@@ -915,7 +915,7 @@ fn bindings_check(root: &Path, profile: &str) -> Result<()> {
         return Ok(());
     }
     let mut report = String::from(
-        "committed boltffi bindings are stale; run `cargo xtask desktop bindings` and commit:",
+        "committed boltffi bindings are stale; run `mise exec -- mbx +1.97.1 xtask desktop bindings` and commit:",
     );
     for difference in &differences {
         report.push_str("\n  ");
@@ -1308,7 +1308,9 @@ pub(super) fn verify_app(
     require_macos("desktop verify")?;
 
     if !app.is_dir() {
-        bail!("usage: cargo xtask desktop verify <JackinDesktop.app> [archive.zip]");
+        bail!(
+            "usage: mise exec -- mbx +1.97.1 xtask desktop verify <JackinDesktop.app> [archive.zip]"
+        );
     }
 
     let bin = app.join(format!("Contents/MacOS/{APP_EXECUTABLE}"));
@@ -1421,7 +1423,7 @@ pub(super) fn verify_app(
             "ad-hoc / PR"
         }
     ));
-    progress("│   run:     cargo xtask desktop run");
+    progress("│   run:     mise exec -- mbx +1.97.1 xtask desktop run");
     progress("└─────────────────────────────────────────────────────────────");
     progress("");
     progress(format!("DESKTOP_APP={}", abs.display()));

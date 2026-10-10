@@ -81,4 +81,4 @@ mise exec -- mbx +1.97.1 xtask ci --fast
 
 `mise exec -- mbx +1.97.1 xtask ci --e2e` includes the Docker-backed lane. It checks Docker availability, builds and exports the local capsule binary, then runs the Docker-backed nextest profile.
 
-If formatting fails, run `cargo fmt`, then re-run the check. See [TESTING.md](TESTING.md) for test runner setup, commands, and additional details.
+If formatting fails, run `mise exec -- mbx +1.97.1 fmt`, then re-run `mise exec -- mbx +1.97.1 fmt --check`. See [TESTING.md](TESTING.md) for test runner setup, commands, and additional details.

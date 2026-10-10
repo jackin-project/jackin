@@ -42,7 +42,7 @@ boundary.
 What runs on every commit (see `hk.pkl` for the exact commands — each
 mirrors the CI definition it cites):
 
-- `fmt`: `mise exec -- mbx +1.97.1 fmt --check` (workspace; fix: `cargo fmt`)
+- `fmt`: `mise exec -- mbx +1.97.1 fmt --check` (workspace; fix: `mise exec -- mbx +1.97.1 fmt`)
 - `clippy`: `mise exec -- mbx +1.97.1 xtask clippy-affected` — Clippy with the exact CI flags
   over the affected closure (changed crates + reverse dependents +
   detached fuzz/arrayref packages + cross-crate file inputs; widens to
@@ -168,4 +168,4 @@ mise exec -- mbx +1.97.1 xtask ci --fast
 
 Local builds outside CI default to the package version for `JACKIN_VERSION` / `JACKIN_CAPSULE_VERSION` so each commit does not invalidate every build-meta consumer and capsule cache entry. GitHub Actions sets `CI`, so release, preview, construct, and CI builds still stamp the real `<version>+<sha>`. Set `JACKIN_VERSION_OVERRIDE=<value>` only when you need an explicit local version.
 
-Fmt fail → `cargo fmt`, re-check. See [TESTING.md](TESTING.md).
+Fmt fail → `mise exec -- mbx +1.97.1 fmt`, then re-check with `mise exec -- mbx +1.97.1 fmt --check`. See [TESTING.md](TESTING.md).
