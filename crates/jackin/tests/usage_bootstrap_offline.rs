@@ -503,7 +503,11 @@ fn passive_readiness_and_account_observers_stay_local_and_policy_free() -> Resul
     ensure!(monitor["config"]["goal_id"].is_null());
     ensure!(monitor["config"]["policy_revision"].is_null());
 
-    let unmapped_opt_in_args = [
+    // The attach-only foreground-service preflight runs before the broker
+    // validates the binding. This passive broker therefore rejects the
+    // collector opt-in as unavailable without attempting to authorize the
+    // unmapped binding or starting another monitor.
+    let passive_opt_in_args = [
         "monitor",
         "observe",
         "--provider",
@@ -519,12 +523,12 @@ fn passive_readiness_and_account_observers_stay_local_and_policy_free() -> Resul
     .into_iter()
     .map(std::ffi::OsString::from)
     .collect::<Vec<_>>();
-    let rejected_opt_in = fixture.run_owned(&unmapped_opt_in_args)?;
+    let rejected_opt_in = fixture.run_owned(&passive_opt_in_args)?;
     expect_exit(&rejected_opt_in, 3)?;
     let rejected_opt_in = json_output(&rejected_opt_in)?;
     ensure!(
-        rejected_opt_in["error"]["code"] == "binding_required",
-        "unmapped collector opt-in failed with the wrong issue: {rejected_opt_in}"
+        rejected_opt_in["error"]["code"] == "collector_auth_required",
+        "passive collector opt-in failed with the wrong issue: {rejected_opt_in}"
     );
     let persisted = fixture.monitor_state()?;
     ensure!(
