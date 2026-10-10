@@ -24,16 +24,24 @@ pub(crate) struct ProbeJob {
     pub(crate) credential_scope: Option<UsageCredentialScope>,
 }
 
+/// A paired wall-clock and monotonic-clock observation.
+///
+/// The coordinator uses wall time for persisted deadlines and monotonic time
+/// for in-process minimum-attempt floors. Implementations must keep
+/// `monotonic` nondecreasing and ensure the two values describe the same
+/// instant.
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct ClockSample {
+pub struct ClockSample {
     /// Wall time since the Unix epoch, including its fractional second.
-    pub(crate) wall_epoch: Duration,
+    pub wall_epoch: Duration,
     /// Monotonic time from the coordinator clock origin.
-    pub(crate) monotonic: Duration,
+    pub monotonic: Duration,
 }
 
 impl ClockSample {
-    pub(crate) fn anchored(epoch_seconds: i64, monotonic: Duration) -> Self {
+    /// Create a sample from an epoch timestamp and its paired monotonic value.
+    #[must_use]
+    pub fn anchored(epoch_seconds: i64, monotonic: Duration) -> Self {
         let wall_epoch =
             Duration::from_secs(u64::try_from(epoch_seconds.max(0)).unwrap_or(u64::MAX));
         Self {
@@ -57,7 +65,14 @@ impl ClockSample {
     }
 }
 
-pub(crate) trait MonotonicClock: Send + Sync {
+/// Supplies paired time samples to a usage coordinator.
+///
+/// Each coordinator owns a fresh clock origin. A clock passed to
+/// [`UsageCoordinator::new_with_clock`] should therefore start its monotonic
+/// counter at zero or another stable origin and advance it monotonically for
+/// the lifetime of that coordinator.
+pub trait MonotonicClock: Send + Sync {
+    /// Return monotonic elapsed time from this clock instance's origin.
     fn now(&self) -> Duration;
 
     /// Pair the caller's deterministic epoch with this monotonic sample.

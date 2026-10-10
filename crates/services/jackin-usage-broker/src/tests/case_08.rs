@@ -82,28 +82,37 @@ fn verify_retry_after_survives_restart(retry_after_header: &str, minimum_retry_a
         account_id: "retry-after-account".to_owned(),
         surface_id: "claude".to_owned(),
     };
+    let started_at_epoch = chrono::Utc::now().timestamp();
+    let clock = Arc::new(PairedTestClock::at(started_at_epoch));
     let executor = Arc::new(RetryAfterHttpExecutor {
         url: url.clone(),
         calls: AtomicUsize::new(0),
     });
     let executor_clone = Arc::<RetryAfterHttpExecutor>::clone(&executor);
     let executor_trait: Arc<dyn UsageProviderExecutor> = executor_clone;
-    let coordinator = UsageCoordinator::new(
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce the paired test clock into the coordinator clock port"
+    )]
+    let clock_trait: Arc<dyn MonotonicClock> = clock.clone();
+    let coordinator = UsageCoordinator::new_with_clock(
         executor_trait,
         Arc::<FileAccountStateStore>::clone(&store),
         UsageCoordinatorConfig::default(),
+        clock_trait,
     );
 
-    let started_at_epoch = chrono::Utc::now().timestamp();
     let first = coordinator
         .request_refresh(&account, 0, true, started_at_epoch)
         .unwrap();
+    let first_completion_epoch = started_at_epoch.saturating_add(1);
+    clock.advance_to_epoch(first_completion_epoch);
     let failed = coordinator
         .join_generation(
             &account,
             first.generation,
             Duration::from_secs(5),
-            started_at_epoch.saturating_add(1),
+            first_completion_epoch,
         )
         .unwrap();
     assert_eq!(failed.phase, UsageRefreshPhase::Failed);
@@ -125,16 +134,29 @@ fn verify_retry_after_survives_restart(retry_after_header: &str, minimum_retry_a
     });
     let restarted_executor_clone = Arc::<RetryAfterHttpExecutor>::clone(&restarted_executor);
     let restarted_executor_trait: Arc<dyn UsageProviderExecutor> = restarted_executor_clone;
-    let restarted = UsageCoordinator::new(
+    let restarted_at_epoch = clock.wall_epoch();
+    let restarted_clock = Arc::new(PairedTestClock::at(restarted_at_epoch));
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce the paired test clock into the coordinator clock port"
+    )]
+    let restarted_clock_trait: Arc<dyn MonotonicClock> = restarted_clock.clone();
+    let restarted = UsageCoordinator::new_with_clock(
         restarted_executor_trait,
         store,
         UsageCoordinatorConfig::default(),
+        restarted_clock_trait,
     );
-    let restored = restarted
-        .current(&account, retry_at.saturating_sub(1))
-        .unwrap();
+    let restored = restarted.current(&account, restarted_at_epoch).unwrap();
     assert_eq!(restored.generation, first.generation);
     assert_eq!(restored.retry_at_epoch, Some(retry_at));
+    let before_reload_floor = restarted
+        .request_refresh(&account, restored.generation, true, restarted_at_epoch)
+        .unwrap();
+    assert_eq!(before_reload_floor.generation, first.generation);
+    assert_eq!(restarted_executor.calls.load(Ordering::SeqCst), 0);
+
+    restarted_clock.advance_to_epoch(retry_at.saturating_sub(1));
     let forced_early = restarted
         .request_refresh(
             &account,
@@ -147,10 +169,12 @@ fn verify_retry_after_survives_restart(retry_after_header: &str, minimum_retry_a
     assert_eq!(restarted_executor.calls.load(Ordering::SeqCst), 0);
     assert_eq!(server_requests.load(Ordering::SeqCst), 1);
 
+    restarted_clock.advance_to_epoch(retry_at);
     let allowed = restarted
         .request_refresh(&account, restored.generation, true, retry_at)
         .unwrap();
     assert_eq!(allowed.generation, first.generation + 1);
+    restarted_clock.advance_to_epoch(retry_at.saturating_add(1));
     let completed = restarted
         .join_generation(
             &account,

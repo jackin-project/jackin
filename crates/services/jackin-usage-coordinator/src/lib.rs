@@ -61,7 +61,8 @@ pub(crate) use errors::{
 };
 pub(crate) use finish::{finish_failure, finish_success, mark_updating};
 pub use jobs::UsageCoordinator;
-pub(crate) use jobs::{ClockSample, MonotonicClock, ProbeJob, SystemMonotonicClock, WorkerMessage};
+pub use jobs::{ClockSample, MonotonicClock};
+pub(crate) use jobs::{ProbeJob, SystemMonotonicClock, WorkerMessage};
 pub(crate) use outcome::TERMINAL_HISTORY_LIMIT;
 pub use outcome::{ProviderProbeOutcome, UsageProviderExecutor};
 pub(crate) use upkeep::{

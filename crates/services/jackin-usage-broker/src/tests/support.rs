@@ -2,6 +2,55 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+
+pub(super) struct PairedTestClock {
+    state: Mutex<PairedTestClockState>,
+}
+
+struct PairedTestClockState {
+    wall_epoch: i64,
+    monotonic: Duration,
+}
+
+impl PairedTestClock {
+    pub(super) fn at(wall_epoch: i64) -> Self {
+        Self {
+            state: Mutex::new(PairedTestClockState {
+                wall_epoch,
+                monotonic: Duration::ZERO,
+            }),
+        }
+    }
+
+    pub(super) fn wall_epoch(&self) -> i64 {
+        self.state.lock().unwrap().wall_epoch
+    }
+
+    /// Advance wall and monotonic time by the same whole-second interval.
+    pub(super) fn advance_to_epoch(&self, wall_epoch: i64) {
+        let mut state = self.state.lock().unwrap();
+        assert!(
+            wall_epoch >= state.wall_epoch,
+            "test clock cannot move backward"
+        );
+        let elapsed = u64::try_from(wall_epoch.saturating_sub(state.wall_epoch))
+            .expect("nonnegative test-clock interval");
+        state.wall_epoch = wall_epoch;
+        state.monotonic = state.monotonic.saturating_add(Duration::from_secs(elapsed));
+    }
+}
+
+impl MonotonicClock for PairedTestClock {
+    fn now(&self) -> Duration {
+        self.state.lock().unwrap().monotonic
+    }
+
+    fn sample(&self, _fallback_epoch: i64) -> ClockSample {
+        let state = self.state.lock().unwrap();
+        ClockSample::anchored(state.wall_epoch, state.monotonic)
+    }
+}
+
 pub(super) struct CountingExecutor {
     pub(super) calls: AtomicUsize,
 }

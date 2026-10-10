@@ -34,7 +34,9 @@ use jackin_protocol::usage_broker::{
     USAGE_BROKER_PROTOCOL_VERSION, UsageBrokerOperation, UsageBrokerRequest, UsageBrokerResponse,
     UsageCoordinationError, UsageCoordinationErrorKind,
 };
-use jackin_usage_coordinator::{ProviderProbeOutcome, UsageProviderExecutor};
+use jackin_usage_coordinator::{
+    ClockSample, MonotonicClock, ProviderProbeOutcome, UsageProviderExecutor,
+};
 use jackin_usage_discovery::{
     UsageDiscoveryScope, ValidatedCredentialBinding, ValidatedCredentialSource,
     ValidatedUsageDiscovery,

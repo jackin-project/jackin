@@ -419,15 +419,23 @@ fn reset_barrier_does_not_bypass_shared_provider_retry_after() {
     let executor_clone = Arc::<RetryAfterHttpExecutor>::clone(&executor);
     let executor_trait: Arc<dyn UsageProviderExecutor> = executor_clone;
     let account_store = Arc::new(FileAccountStateStore::at(data_dir.join("accounts")));
-    let coordinator = UsageCoordinator::new(
+    let clock = Arc::new(PairedTestClock::at(now));
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce the paired test clock into the coordinator clock port"
+    )]
+    let clock_trait: Arc<dyn MonotonicClock> = clock.clone();
+    let coordinator = UsageCoordinator::new_with_clock(
         executor_trait,
         Arc::<FileAccountStateStore>::clone(&account_store),
         UsageCoordinatorConfig::default(),
+        clock_trait,
     );
 
     let first = coordinator
         .request_refresh(&account, 0, true, now)
         .expect("start provider refresh");
+    clock.advance_to_epoch(now + 1);
     let failed = coordinator
         .join_generation(&account, first.generation, Duration::from_secs(5), now + 1)
         .expect("join rate-limited provider refresh");
@@ -457,6 +465,7 @@ fn reset_barrier_does_not_bypass_shared_provider_retry_after() {
             .iter()
             .any(|issue| { issue.code == MonitorIssueCode::ResetDueUnverified })
     );
+    clock.advance_to_epoch(reset_deadline);
     assert_blocked_by_shared_retry_after(
         &coordinator,
         &account,
@@ -470,6 +479,7 @@ fn reset_barrier_does_not_bypass_shared_provider_retry_after() {
     // The attempt floor has elapsed by Retry-After minus one second, so this
     // assertion specifically proves the shared provider deadline still blocks
     // a forced refresh after the monitor's reset deadline.
+    clock.advance_to_epoch(retry_at - 1);
     assert_blocked_by_shared_retry_after(
         &coordinator,
         &account,
@@ -480,10 +490,12 @@ fn reset_barrier_does_not_bypass_shared_provider_retry_after() {
         &fixture.requests,
     );
 
+    clock.advance_to_epoch(retry_at);
     let allowed = coordinator
         .request_refresh(&account, first.generation, true, retry_at)
         .expect("admit forced refresh at provider deadline");
     assert_eq!(allowed.generation, first.generation + 1);
+    clock.advance_to_epoch(retry_at + 1);
     let completed = coordinator
         .join_generation(
             &account,

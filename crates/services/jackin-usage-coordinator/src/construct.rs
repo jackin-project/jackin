@@ -26,6 +26,18 @@ impl UsageCoordinator {
         Self::start(executor, store, config, None, None)
     }
 
+    /// Start a coordinator with a caller-supplied paired wall and monotonic
+    /// clock. The default [`Self::new`] constructor uses the system clock.
+    #[must_use]
+    pub fn new_with_clock(
+        executor: Arc<dyn UsageProviderExecutor>,
+        store: Arc<dyn AccountStateStore>,
+        config: UsageCoordinatorConfig,
+        clock: Arc<dyn MonotonicClock>,
+    ) -> Self {
+        Self::start_with_clock(executor, store, config, None, None, clock)
+    }
+
     /// Verify a launch-scoped credential proof against the executor's current
     /// source binding before admitting a provider operation.
     pub fn authorize_credential_scope(
