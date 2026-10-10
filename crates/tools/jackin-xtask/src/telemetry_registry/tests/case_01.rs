@@ -65,6 +65,29 @@ fn source_policy_resolves_raw_tracing_import_aliases() {
 }
 
 #[test]
+fn source_policy_fails_closed_on_growing_cyclic_macro_aliases() {
+    let violations = source_policy_violations(
+        "crates/group/example/src/lib.rs",
+        "use b as a; use a::nested as b; fn raw() { a::info!(\"event\"); }",
+    );
+
+    assert_eq!(violations, ["cyclic telemetry import path"]);
+}
+
+#[test]
+fn source_policy_keeps_known_tracing_sibling_of_cyclic_alias_branch() {
+    let violations = source_policy_violations(
+        "crates/group/example/src/lib.rs",
+        "mod cycle { use b as a; use a::nested as b; } mod tracing_alias { use tracing as a; } fn raw() { a::info!(\"event\"); }",
+    );
+
+    assert!(
+        violations.contains(&"raw tracing call outside governed facade"),
+        "{violations:?}"
+    );
+}
+
+#[test]
 fn source_policy_resolves_raw_meter_import_and_binding_aliases() {
     let path = "crates/group/example/src/lib.rs";
     for source in [

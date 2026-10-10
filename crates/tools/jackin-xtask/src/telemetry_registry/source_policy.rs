@@ -35,6 +35,18 @@ struct TelemetryImports {
     globs: BTreeSet<String>,
 }
 
+struct TelemetryImportPaths {
+    candidates: BTreeSet<String>,
+    unresolved_cycle: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TelemetryImportMatch {
+    Matched,
+    Unmatched,
+    Unresolved,
+}
+
 impl TelemetryImports {
     fn collect(syntax: &syn::File) -> Self {
         let mut imports = Self::default();
@@ -108,61 +120,132 @@ impl TelemetryImports {
         }
     }
 
-    fn paths(&self, path: &str) -> BTreeSet<String> {
-        let mut pending = vec![path.to_owned()];
+    fn paths(&self, path: &str) -> TelemetryImportPaths {
+        let mut pending = vec![(path.to_owned(), BTreeSet::<String>::new())];
         let mut visited = BTreeSet::new();
-        while let Some(candidate) = pending.pop() {
-            if !visited.insert(candidate.clone()) {
+        let mut candidates = BTreeSet::new();
+        let mut unresolved_cycle = false;
+        while let Some((candidate, mut alias_path)) = pending.pop() {
+            if !visited.insert((candidate.clone(), alias_path.clone())) {
                 continue;
             }
+            candidates.insert(candidate.clone());
             let (head, tail) = candidate
                 .split_once("::")
                 .map_or((candidate.as_str(), None), |(head, tail)| {
                     (head, Some(tail))
                 });
             if let Some(targets) = self.aliases.get(head) {
+                if !alias_path.insert(head.to_owned()) {
+                    // Prefix substitutions preserve the suffix. Tracking the
+                    // path-local alias graph node, rather than the expanding
+                    // candidate string, detects cycles such as
+                    // `a -> b` and `b -> a::nested`.
+                    unresolved_cycle = true;
+                    continue;
+                }
                 for target in targets {
                     pending.push(match tail {
-                        Some(tail) => format!("{target}::{tail}"),
-                        None => target.clone(),
+                        Some(tail) => (format!("{target}::{tail}"), alias_path.clone()),
+                        None => (target.clone(), alias_path.clone()),
                     });
                 }
             }
         }
-        visited
+        TelemetryImportPaths {
+            candidates,
+            unresolved_cycle,
+        }
     }
 
-    fn glob_imports(&self, module: &str) -> bool {
-        self.globs
-            .iter()
-            .any(|glob| self.paths(glob).contains(module))
-    }
-
-    fn is_tracing_macro(&self, path: &str) -> bool {
-        self.paths(path).iter().any(|candidate| {
-            match candidate.split("::").collect::<Vec<_>>().as_slice() {
-                ["tracing", macro_name] => RAW_TRACING_MACROS.contains(macro_name),
-                [macro_name] => {
-                    RAW_TRACING_MACROS.contains(macro_name) && self.glob_imports("tracing")
-                }
-                _ => false,
+    fn glob_imports(&self, module: &str) -> TelemetryImportMatch {
+        let mut unresolved_cycle = false;
+        for glob in &self.globs {
+            let paths = self.paths(glob);
+            if paths.candidates.contains(module) {
+                return TelemetryImportMatch::Matched;
             }
-        })
+            unresolved_cycle |= paths.unresolved_cycle;
+        }
+        if unresolved_cycle {
+            TelemetryImportMatch::Unresolved
+        } else {
+            TelemetryImportMatch::Unmatched
+        }
     }
 
-    fn is_tracing_instrument(&self, path: &str) -> bool {
-        self.paths(path).iter().any(|candidate| {
-            candidate == "tracing::instrument"
-                || candidate == "instrument" && self.glob_imports("tracing")
-        })
+    fn is_tracing_macro(&self, path: &str) -> TelemetryImportMatch {
+        let paths = self.paths(path);
+        let mut unresolved_cycle = paths.unresolved_cycle;
+        for candidate in &paths.candidates {
+            match candidate.split("::").collect::<Vec<_>>().as_slice() {
+                ["tracing", macro_name] if RAW_TRACING_MACROS.contains(macro_name) => {
+                    return TelemetryImportMatch::Matched;
+                }
+                [macro_name] if RAW_TRACING_MACROS.contains(macro_name) => {
+                    match self.glob_imports("tracing") {
+                        TelemetryImportMatch::Matched => return TelemetryImportMatch::Matched,
+                        TelemetryImportMatch::Unresolved => unresolved_cycle = true,
+                        TelemetryImportMatch::Unmatched => {}
+                    }
+                }
+                _ => {}
+            }
+        }
+        if unresolved_cycle {
+            TelemetryImportMatch::Unresolved
+        } else {
+            TelemetryImportMatch::Unmatched
+        }
     }
 
-    fn is_raw_meter(&self, path: &str) -> bool {
-        self.paths(path).iter().any(|candidate| {
-            candidate == "opentelemetry::global::meter"
-                || candidate == "global::meter" && self.glob_imports("opentelemetry")
-                || candidate == "meter" && self.glob_imports("opentelemetry::global")
-        })
+    fn is_tracing_instrument(&self, path: &str) -> TelemetryImportMatch {
+        let paths = self.paths(path);
+        let mut unresolved_cycle = paths.unresolved_cycle;
+        for candidate in &paths.candidates {
+            if candidate == "tracing::instrument" {
+                return TelemetryImportMatch::Matched;
+            }
+            if candidate == "instrument" {
+                match self.glob_imports("tracing") {
+                    TelemetryImportMatch::Matched => return TelemetryImportMatch::Matched,
+                    TelemetryImportMatch::Unresolved => unresolved_cycle = true,
+                    TelemetryImportMatch::Unmatched => {}
+                }
+            }
+        }
+        if unresolved_cycle {
+            TelemetryImportMatch::Unresolved
+        } else {
+            TelemetryImportMatch::Unmatched
+        }
+    }
+
+    fn is_raw_meter(&self, path: &str) -> TelemetryImportMatch {
+        let paths = self.paths(path);
+        let mut unresolved_cycle = paths.unresolved_cycle;
+        for candidate in &paths.candidates {
+            if candidate == "opentelemetry::global::meter" {
+                return TelemetryImportMatch::Matched;
+            }
+            let glob = match candidate.as_str() {
+                "global::meter" => Some("opentelemetry"),
+                "meter" => Some("opentelemetry::global"),
+                _ => None,
+            };
+            if let Some(glob) = glob {
+                match self.glob_imports(glob) {
+                    TelemetryImportMatch::Matched => return TelemetryImportMatch::Matched,
+                    TelemetryImportMatch::Unresolved => unresolved_cycle = true,
+                    TelemetryImportMatch::Unmatched => {}
+                }
+            }
+        }
+        if unresolved_cycle {
+            TelemetryImportMatch::Unresolved
+        } else {
+            TelemetryImportMatch::Unmatched
+        }
     }
 }
 
@@ -735,27 +818,55 @@ impl<'a> SourcePolicyScanner<'a> {
     }
 
     fn reject_macro_path(&mut self, path: &str, span: proc_macro2::Span) {
-        if self.telemetry_imports.paths(path).iter().any(|candidate| {
+        let paths = self.telemetry_imports.paths(path);
+        let prohibited = paths.candidates.iter().any(|candidate| {
             PROHIBITED_TELEMETRY_MACROS.contains(&candidate.rsplit("::").next().unwrap_or_default())
-        }) {
+        });
+        if prohibited {
             self.reject(span, "prohibited legacy/generic telemetry macro");
         }
-        if !self.allows_raw_tracing() && self.telemetry_imports.is_tracing_macro(path) {
-            self.reject(span, "raw tracing call outside governed facade");
+        if !self.allows_raw_tracing() {
+            match self.telemetry_imports.is_tracing_macro(path) {
+                TelemetryImportMatch::Matched => {
+                    self.reject(span, "raw tracing call outside governed facade");
+                }
+                TelemetryImportMatch::Unresolved if !prohibited => {
+                    self.reject(span, "cyclic telemetry import path");
+                }
+                TelemetryImportMatch::Unmatched | TelemetryImportMatch::Unresolved => {}
+            }
         }
     }
 
     fn reject_attribute_path(&mut self, path: &str, span: proc_macro2::Span) {
-        if !self.allows_raw_tracing()
-            && (path == "instrument" || self.telemetry_imports.is_tracing_instrument(path))
-        {
-            self.reject(span, "tracing instrument outside governed facade");
+        if !self.allows_raw_tracing() {
+            if path == "instrument" {
+                self.reject(span, "tracing instrument outside governed facade");
+                return;
+            }
+            match self.telemetry_imports.is_tracing_instrument(path) {
+                TelemetryImportMatch::Matched => {
+                    self.reject(span, "tracing instrument outside governed facade");
+                }
+                TelemetryImportMatch::Unresolved => {
+                    self.reject(span, "cyclic telemetry import path");
+                }
+                TelemetryImportMatch::Unmatched => {}
+            }
         }
     }
 
     fn reject_meter_path(&mut self, path: &str, span: proc_macro2::Span) {
-        if !self.allows_telemetry_apis() && self.telemetry_imports.is_raw_meter(path) {
-            self.reject(span, "raw OpenTelemetry meter construction");
+        if !self.allows_telemetry_apis() {
+            match self.telemetry_imports.is_raw_meter(path) {
+                TelemetryImportMatch::Matched => {
+                    self.reject(span, "raw OpenTelemetry meter construction");
+                }
+                TelemetryImportMatch::Unresolved => {
+                    self.reject(span, "cyclic telemetry import path");
+                }
+                TelemetryImportMatch::Unmatched => {}
+            }
         }
     }
 
@@ -1117,6 +1228,66 @@ impl<'ast> syn::visit::Visit<'ast> for SourcePolicyScanner<'_> {
             self.reject(span, violation);
         }
         syn::visit::visit_expr_async(self, node);
+    }
+}
+
+#[cfg(test)]
+mod telemetry_import_path_tests {
+    use super::*;
+
+    #[test]
+    fn cyclic_prefix_aliases_stop_and_retain_finite_sibling_branches() {
+        let imports = TelemetryImports {
+            aliases: BTreeMap::from([
+                (
+                    String::from("a"),
+                    BTreeSet::from([String::from("b"), String::from("tracing")]),
+                ),
+                (
+                    String::from("b"),
+                    BTreeSet::from([String::from("a::nested")]),
+                ),
+            ]),
+            globs: BTreeSet::new(),
+        };
+
+        let paths = imports.paths("a::info");
+
+        assert!(paths.unresolved_cycle);
+        assert!(paths.candidates.contains("tracing::info"));
+        assert!(paths.candidates.contains("a::nested::info"));
+        assert!(paths.candidates.len() <= 4, "{:#?}", paths.candidates);
+        assert_eq!(
+            imports.is_tracing_macro("a::info"),
+            TelemetryImportMatch::Unresolved
+        );
+    }
+
+    #[test]
+    fn finite_transitive_and_ambiguous_aliases_keep_all_resolutions() {
+        let imports = TelemetryImports {
+            aliases: BTreeMap::from([
+                (
+                    String::from("emit"),
+                    BTreeSet::from([String::from("local"), String::from("tracing")]),
+                ),
+                (
+                    String::from("local"),
+                    BTreeSet::from([String::from("tracing::event")]),
+                ),
+            ]),
+            globs: BTreeSet::new(),
+        };
+
+        let paths = imports.paths("emit");
+
+        assert!(!paths.unresolved_cycle);
+        assert!(paths.candidates.contains("tracing"));
+        assert!(paths.candidates.contains("tracing::event"));
+        assert_eq!(
+            imports.is_tracing_macro("emit"),
+            TelemetryImportMatch::Matched
+        );
     }
 }
 
