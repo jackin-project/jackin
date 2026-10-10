@@ -1,5 +1,41 @@
 # Verification evidence
 
+## Bounded auth diagnostic follow-up on main
+
+Branch `fix/auth-malformed-diagnostic-dco` is based on remote main
+`3f3ddd7c48284b648b083305f969ee3e709b74b7`. DCO-signed source checkpoints
+`eb8f6b58c5fda32f437f7e9434edabaa1d47f0f8` and
+`31dc0574a8d0a052e115fa4031740eef31664af5` are on the delivery branch. The
+latest branch has source tree `ea7246252602ed897f0027ff448050219f191533`,
+identical to the tree used for the installed v4 pair. The bounded diagnostic
+is attached to `auth_malformed` only after the existing all-stream TTY gate;
+it uses the payload from the existing single bootstrap read and stops JSON
+classification above 65,536 bytes. It reports fixed JSON kinds, recognized
+alias presence/duplicates, access-token string/nonempty facts, and total
+payload/limit bytes. It includes no values, snippets, token length, identifiers,
+or unknown keys. Existing typed parsing remains the acceptance authority.
+
+MBX source check and scoped formatting passed. Focused offline tests passed:
+
+| Check | Result |
+| --- | --- |
+| Diagnostic fixtures | 9 passed, 0 failed |
+| Oversize bootstrap validation | 1 passed, 0 failed |
+| Malformed foreground bootstrap | 1 passed; one read, zero guard/ready calls |
+| Broker malformed JSON | 1 passed, 0 failed |
+| Broker foreground TTY/error mapping | 3 passed, 0 failed |
+| Claude credential lease regressions | 15 passed, 0 failed |
+
+The installed v4 debug pair was built with MBX 1.22.0/Rust 1.97.1 and reports
+version 0.6.4. The installed non-TTY command exited 2 with
+`interaction_required`, without a diagnostic and without calling the broker.
+Independent read-only review confirmed the parser and install checks; installed
+v2/v3 hashes were unchanged. Exact command, artifact hashes, and command output
+are in [v4-installation.json](v4-installation.json). This verifies only
+synthetic fixture behavior and the non-TTY interaction gate. No Keychain item,
+credential, account identity/status, live bootstrap, or provider endpoint was
+inspected; actual account status remains unknown.
+
 ## Current main-port verification snapshot
 
 The canonical branch is `feat/claude-usage-monitor-main`, based on main

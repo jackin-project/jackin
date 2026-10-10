@@ -3,7 +3,7 @@
 ## Bounded auth diagnostic follow-up on main
 
 This narrow follow-up is being developed on isolated branch
-`fix/auth-malformed-diagnostic`, based on remote main
+`fix/auth-malformed-diagnostic-dco`, based on remote main
 `3f3ddd7c48284b648b083305f969ee3e709b74b7`. It adds a
 redacted structural diagnostic to `auth_malformed` only when all operator TTY
 streams are attached. The operator command is
@@ -15,13 +15,19 @@ identifiers, snippets, or unknown keys. Payloads above 65,536 bytes skip JSON
 classification. Expiry and account/provider readiness are not established by
 this check.
 
-At this checkpoint, MBX source check and independent read-only review pass.
-Focused fixture tests are compiling but have not passed yet; installed v4
-pair build and fixture verification are pending. No Keychain item, live
-credential, account identity/status, or provider endpoint has been inspected;
-the real account remains unknown. The v3 installation record below is
-historical and untouched. Add the exact source commit, test result, v4 hashes,
-and fixture scope here only after those steps complete.
+The DCO-signed source commits `eb8f6b58c5fda32f437f7e9434edabaa1d47f0f8` and
+`31dc0574a8d0a052e115fa4031740eef31664af5` are on the delivery branch.
+Focused MBX check, scoped format check, fixture/parser/service/CLI/lease tests, and
+independent parser and installed-pair review passed. MBX installed the debug
+pair from source tree `ea7246252602ed897f0027ff448050219f191533` under the new
+v4 prefix; the DCO-signed branch has the identical source tree. v2 and v3
+prefixes remain unchanged. Exact commands, hashes, and fixture limits are in
+[v4-installation.json](v4-installation.json) and
+[verification.md](verification.md). The installed non-TTY gate returns
+`interaction_required` without a diagnostic and does not call the broker.
+No Keychain item, live credential, account identity/status, or provider
+endpoint has been inspected; the real account remains unknown. No live
+bootstrap or provider request was made.
 
 ## Current delivery checkpoint
 
