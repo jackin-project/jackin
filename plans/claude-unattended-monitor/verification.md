@@ -1107,3 +1107,44 @@ billing. Current production source and installed binaries are unchanged; the
 original checkout remains untouched. Real operator binding, reviewed adapter
 installation and genuine spend evidence are still needed before live readiness
 can be claimed.
+
+## Live usage publication repair — source checkpoint `dba3a181`
+
+The approved provider collection completed and its generation 1 result was
+durable in broker account state, with no terminal error or consecutive
+failures. The snapshot was about 9.5 minutes old when read and showed 36% used
+in the five-hour window and 28% in the seven-day window. The published
+`projection.json` still showed generation 1 as `refreshing`, and the monitor
+had only its initial event with no evidence. Those real values were available
+in broker durable state but not through CLI monitor status. This snapshot is
+diagnostic evidence, not an installed-CLI acceptance run or a claim that the
+values remain fresh.
+
+The earlier `broker_unavailable` response was transient. Subsequent calls to
+the currently installed v7 broker returned typed service and monitor status;
+the monitor remained empty with `quota_unknown` and `missing_reset`. Its exit 2
+means `needs_evidence`/not runnable, not an RPC outage.
+
+Signed source checkpoint `dba3a1811a06436a5e087f127b19d7828fa343a5` fixes the
+publication path. The publisher now attempts due projection publication when
+the coordinator is idle and retries publication and failed monitor persistence
+on a one-second monotonic cadence. Active approved observers set the existing
+`DirectInteraction` scheduling hint; coordinator admission still enforces the
+300-second attempt floor and persisted `RetryAfter`. No provider collection is
+forced and no freshness timestamp is synthesized. The default idle interval
+remains 15 minutes plus up to 25% jitter for unselected entries. Provider
+cooldowns, `RetryAfter`, and older provider timestamps can still extend stale
+periods, so this cadence does not guarantee continuously fresh evidence.
+
+Local MBX 1.22.0 / Rust 1.97.1 gates passed: the `jackin-usage` suite passed
+720 tests, both focused publication/cadence regressions passed, workspace
+formatting passed, and strict all-target Clippy passed. Independent source
+review was Ready. The v8 debug CLI/broker pair was installed from source
+checkpoint `dba3a1811a06436a5e087f127b19d7828fa343a5` with MBX 1.22.0 / Rust
+1.97.1; both binaries report version 0.6.4. The prefix contains only `bin/`,
+with no state directory. Verification ran only `--version`; no auth, broker
+start, or provider command was run. Binary hashes and install provenance are
+recorded in the builder-owned `v8-installation.json`. Real installed-CLI
+`usage status`/`usage watch` checks across the five-hour and seven-day windows
+remain pending. The install and source tests do not establish live readiness
+or authorize dispatch.

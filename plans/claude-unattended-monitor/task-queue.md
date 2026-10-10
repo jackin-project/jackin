@@ -852,13 +852,27 @@ unverified. The correction and evidence are committed/pushed as one checkpoint.
   the final usage projection is not published.
 - [x] Second root cause confirmed: the default 15-minute idle lifetime plus
   jitter exceeds the 300-second usage TTL.
-- [ ] Switch active approved observers to the existing `DirectInteraction`
-  lifetime while preserving persisted 300-second `RetryAfter`. Never
-  synthesize freshness; retry publication on a monotonic one-second interval.
+- [x] Repair committed as signed source checkpoint `dba3a181`: active approved
+  observers use the existing `DirectInteraction` scheduling hint while
+  preserving the 300-second attempt floor and persisted `RetryAfter`.
+  Publication and failed observation persistence retry on a monotonic
+  one-second interval. No freshness is synthesized and no collection is
+  forced.
 - [x] Earlier RPC unavailability was transient: current typed service and
   status calls respond but return empty evidence. Keep any remaining RPC stall
   investigation separate from this publication repair.
+- [x] Real diagnosis found 36% five-hour and 28% seven-day usage in the
+  completed provider result in broker durable state; the stale projection and
+  monitor status still exposed no evidence. This is not yet installed-CLI
+  acceptance.
+- [x] Source gates: `jackin-usage` 720 passed, two focused regressions passed,
+  workspace format and strict Clippy passed; independent source review Ready.
+- [x] Install the v8 debug pair from signed source checkpoint `dba3a181` with
+  MBX 1.22.0 / Rust 1.97.1. Both binaries report 0.6.4; the prefix is bin-only
+  with no state directory. Only `--version` was run, with no auth, broker
+  start, or provider call. Builder-owned `v8-installation.json` records hashes
+  and provenance.
 - [ ] Acceptance requires real installed-CLI `usage status` and `usage watch`
   verification across 5-hour and 7-day observation windows. Fixture-only
-  evidence is insufficient; live installed-CLI gates remain pending, so do not
-  claim full readiness.
+  evidence is insufficient. The pair is installed, but live installed-CLI
+  gates remain pending; do not claim full readiness.
