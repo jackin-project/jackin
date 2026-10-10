@@ -1,11 +1,12 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use super::namespace::NamespaceScanner;
 use super::ownership_census;
 use super::source_policy::WorkspaceSpawnTypes;
 use super::{
-    NamespaceScanner, SourcePolicyScanner, event_runtime_severity, generate_rust_sources,
-    repo_root, rust_pascal, validate_registry_matches_rust,
+    SourcePolicyScanner, event_runtime_severity, generate_rust_sources, repo_root, rust_pascal,
+    validate_registry_matches_rust,
 };
 use syn::visit::Visit as _;
 
