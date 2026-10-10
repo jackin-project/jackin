@@ -737,6 +737,10 @@ pub enum MonitorIssueCode {
     LimitGuardReached,
     /// The monitored operation requires interactive operator input.
     InteractionRequired,
+    /// Experimental collection requires a foreground service with an acquired
+    /// exact-source credential lease. This does not indicate fresh provider
+    /// authentication, credential validity, or endpoint readiness.
+    CollectorAuthRequired,
     /// Quota evidence is older than the accepted freshness interval.
     QuotaStale,
     /// Quota evidence has no reset time, so runnable-after-reset cannot be proved.
@@ -866,6 +870,10 @@ pub struct MonitorDoctorReport {
 pub struct MonitorServiceStatus {
     /// Whether the host broker service is running.
     pub running: bool,
+    /// Canonical local source account ID for a foreground experimental
+    /// collector, or `None` for a passive service. This reports only service
+    /// mode and does not prove fresh authentication or provider readiness.
+    pub experimental_collector_source: Option<String>,
     /// Number of active durable monitors.
     pub active_monitors: u32,
     /// Earliest persisted monitor wake time.

@@ -8,6 +8,41 @@ use super::{
 use crate::control::Money;
 
 #[test]
+fn service_status_exposes_secret_free_foreground_collector_mode() {
+    let foreground = super::MonitorServiceStatus {
+        running: true,
+        experimental_collector_source: Some("claude-source-account".to_owned()),
+        active_monitors: 1,
+        next_wake_epoch: Some(1_800_000_000),
+    };
+    let value = serde_json::to_value(&foreground).expect("service status should serialize");
+    assert_eq!(
+        value["experimental_collector_source"],
+        "claude-source-account"
+    );
+
+    let passive = super::MonitorServiceStatus {
+        running: true,
+        experimental_collector_source: None,
+        active_monitors: 0,
+        next_wake_epoch: None,
+    };
+    let value = serde_json::to_value(&passive).expect("passive service status should serialize");
+    assert!(value["experimental_collector_source"].is_null());
+}
+
+#[test]
+fn collector_auth_required_has_stable_wire_code() {
+    let issue = super::MonitorIssue {
+        code: super::MonitorIssueCode::CollectorAuthRequired,
+        message: "experimental collection requires foreground setup".to_owned(),
+        retry_at_epoch: None,
+    };
+    let value = serde_json::to_value(issue).expect("collector issue should serialize");
+    assert_eq!(value["code"], "collector_auth_required");
+}
+
+#[test]
 fn binding_input_defaults_experimental_collector_approval_to_false() {
     let input = serde_json::json!({
         "provider": "claude",
