@@ -44,7 +44,7 @@ pub fn experimental_claude_usage_snapshot_for_lease<C>(
     ClaudeCollectionError,
 >
 where
-    C: Fn() -> bool,
+    C: FnMut() -> bool,
 {
     experimental_claude_usage_snapshot_for_lease_with(
         agent,
@@ -64,7 +64,7 @@ fn experimental_claude_usage_snapshot_for_lease_with<F, R, C>(
     lease: &ClaudeCredentialLease,
     fetch: F,
     reread: R,
-    consent_is_current: C,
+    mut consent_is_current: C,
 ) -> Result<
     Option<(
         FocusedUsageView,
@@ -76,7 +76,7 @@ fn experimental_claude_usage_snapshot_for_lease_with<F, R, C>(
 where
     F: FnMut(&str) -> Result<ClaudeOAuthUsageResponse, ProviderHttpError>,
     R: FnOnce(&str) -> ClaudeKeychainRead,
-    C: Fn() -> bool,
+    C: FnMut() -> bool,
 {
     if !consent_is_current() {
         return Err(ClaudeCollectionError::ConsentRevoked {
@@ -108,7 +108,7 @@ where
         payload,
         fetch,
         reread,
-        consent_is_current,
+        &mut consent_is_current,
     );
     let result = match result {
         Ok(response) => Ok(response),
@@ -146,12 +146,12 @@ fn fetch_claude_with_one_401_reread<F, R, C>(
     original_payload: Zeroizing<String>,
     mut fetch: F,
     reread: R,
-    consent_is_current: C,
+    consent_is_current: &mut C,
 ) -> Result<ClaudeOAuthUsageResponse, ClaudeFetchError>
 where
     F: FnMut(&str) -> Result<ClaudeOAuthUsageResponse, ProviderHttpError>,
     R: FnOnce(&str) -> ClaudeKeychainRead,
-    C: Fn() -> bool,
+    C: FnMut() -> bool,
 {
     if !consent_is_current() {
         return Err(ClaudeFetchError::ConsentRevoked {
@@ -179,7 +179,7 @@ where
         });
     }
     if !begin_unauthorized_reread(lease) {
-        return first_401_if_consent_current(first, &consent_is_current);
+        return first_401_if_consent_current(first, consent_is_current);
     }
     let keychain_read = reread(lease.service());
     if !consent_is_current() {
@@ -189,23 +189,23 @@ where
     }
     #[cfg(any(target_os = "macos", test))]
     let Some(json) = payload_from_keychain_read(keychain_read) else {
-        return first_401_if_consent_current(first, &consent_is_current);
+        return first_401_if_consent_current(first, consent_is_current);
     };
     #[cfg(not(any(target_os = "macos", test)))]
     {
         let _ = keychain_read;
-        return first_401_if_consent_current(first, &consent_is_current);
+        return first_401_if_consent_current(first, consent_is_current);
     }
     #[cfg(any(target_os = "macos", test))]
     {
         if json.len() > MAX_CLAUDE_KEYCHAIN_PAYLOAD_BYTES {
-            return first_401_if_consent_current(first, &consent_is_current);
+            return first_401_if_consent_current(first, consent_is_current);
         }
         let Some(profile) = parse_claude_keychain_profile(json.as_bytes()) else {
-            return first_401_if_consent_current(first, &consent_is_current);
+            return first_401_if_consent_current(first, consent_is_current);
         };
         let Some(credential) = profile.credential else {
-            return first_401_if_consent_current(first, &consent_is_current);
+            return first_401_if_consent_current(first, consent_is_current);
         };
         if resolved
             .account_email
@@ -214,7 +214,7 @@ where
             .is_some_and(|(old, new)| old != new)
             || credential.access_token.as_str() == resolved.access_token()
         {
-            return first_401_if_consent_current(first, &consent_is_current);
+            return first_401_if_consent_current(first, consent_is_current);
         }
         if !consent_is_current() {
             return Err(ClaudeFetchError::ConsentRevoked {
@@ -260,10 +260,10 @@ fn provider_http_status(
 
 fn first_401_if_consent_current<C>(
     first: Result<ClaudeOAuthUsageResponse, ClaudeFetchError>,
-    consent_is_current: &C,
+    consent_is_current: &mut C,
 ) -> Result<ClaudeOAuthUsageResponse, ClaudeFetchError>
 where
-    C: Fn() -> bool,
+    C: FnMut() -> bool,
 {
     if consent_is_current() {
         first
