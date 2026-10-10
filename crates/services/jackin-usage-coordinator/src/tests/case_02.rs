@@ -874,9 +874,21 @@ fn crash_after_durable_cooldown_marker_precedes_purge_and_survives_restart() {
     let executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
         quota_view(1_000, 80),
     )));
-    let provider: Arc<dyn UsageProviderExecutor> = Arc::clone(&executor);
-    let state_store: Arc<dyn AccountStateStore> = Arc::clone(&store);
-    let clock_port: Arc<dyn MonotonicClock> = Arc::clone(&clock);
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce concrete ports to coordinator trait objects"
+    )]
+    let provider: Arc<dyn UsageProviderExecutor> = executor.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce concrete ports to coordinator trait objects"
+    )]
+    let state_store: Arc<dyn AccountStateStore> = store.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "share the controllable clock with the coordinator"
+    )]
+    let clock_port: Arc<dyn MonotonicClock> = clock.clone();
     let coordinator = UsageCoordinator::start_with_clock(
         provider,
         state_store,
@@ -922,9 +934,21 @@ fn crash_after_durable_cooldown_marker_precedes_purge_and_survives_restart() {
     let restarted_executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
         quota_view(100_301, 80),
     )));
-    let provider: Arc<dyn UsageProviderExecutor> = Arc::clone(&restarted_executor);
-    let state_store: Arc<dyn AccountStateStore> = Arc::clone(&store);
-    let clock_port: Arc<dyn MonotonicClock> = Arc::clone(&restarted_clock);
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce concrete executor to coordinator trait object"
+    )]
+    let provider: Arc<dyn UsageProviderExecutor> = restarted_executor.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce concrete store to coordinator trait object"
+    )]
+    let state_store: Arc<dyn AccountStateStore> = store.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "share the controllable clock with the coordinator"
+    )]
+    let clock_port: Arc<dyn MonotonicClock> = restarted_clock.clone();
     let restarted = UsageCoordinator::start_with_clock(
         provider,
         state_store,
