@@ -76,6 +76,14 @@ sequences, barriers and cumulative spend exactly. Old effective policies stay
 strict with migration provenance, without inventing operator approval or
 confirmed bindings. Old absent baseline remains absent; later receipts do not
 retroactively make its history known. Unsupported/corrupt state fails closed.
+Allocator counters must exceed all persisted identifiers; exhausted counters
+fail before insertion. Migration never guesses an unrecorded callback time.
+Policy `recorded_at_epoch` is optional: an operator revision records its time,
+while a migrated V1 policy reports null because V1 recorded no such time.
+Unconfirmed migrated bindings likewise have a null confirmation time. Migrated
+policies retain strict history but require a new explicit operator approval
+before dispatch. `v1-migrated-` is an internal reserved idempotency-key prefix;
+caller starts reject it instead of claiming an old record as a new request.
 
 ## Source and decision rules
 
@@ -90,6 +98,11 @@ sibling changes and future reset epochs never renew provider evidence. Reset
 and model validity audit must preserve that fact and disclose any conservative
 limits. Reset grace and fresh-confirmation guards, weekly/model/spend constraints,
 threshold sequences and persisted retry deadlines remain enforced.
+Window `reset_validity` reports `unknown`, `future`, or `due` independently of
+the reset evidence's age. Status includes `expected_model` and
+`model_guard_validity` (`not_configured`, `unknown`, `match`, `mismatch`);
+match/mismatch use fresh scoped model evidence. These audit fields never
+renew evidence or override `runnable`.
 
 Observation is possible without billing evidence; dispatch under quota-only
 requires explicit operator acceptance of narrower protection. Neither mode

@@ -387,3 +387,52 @@ installed pair remains unchanged and lacks the new observer/policy commands.
 No real binding, receipt, adapter installation or callback has been verified.
 The intended installation uses a separate v2 prefix so an unknown running
 service continues using its existing binaries and state.
+
+Independent V2 review found and implementation is addressing: allocator
+counter collisions, invented migration timestamps, incompatible synthetic
+binding IDs, malformed persisted spend anchors/currency, stale policy snapshot
+handling on budget tightening, and dispatch without explicit approval of a
+migrated policy. No final Ready verdict yet. Report-only reset/model validity
+fields now separate descriptor audit from evidence age; unchanged values still
+retain their evidence age. Latest protocol gate passed 134 tests, one ignored.
+The provider-core/discovery/resolver gate passed 139 tests with 83 filtered cases;
+fake Keychain evidence remains distinct from live macOS verification.
+
+V2 integrated gate update: direct offline Cargo all-target CLI check passed.
+Protocol now passes 135 cases (one existing ignored), relay 20. Broker passes
+119/120; the outstanding test expects PolicyConflict for an unapproved
+revision but the broker returns PolicyRequired. Fixture semantics are under
+independent review. No final installed proof or completion claim yet.
+
+Final core rerun passed 356 tests: protocol 135 (+1 ignored), broker 120,
+relay 20, coordinator 44, Claude provider 37. Final independent integrity
+review found four accepted gaps under repair: bound-session spend Watch
+publication, unbounded evidence fingerprint retention, nested event evidence
+sequence validation, and zero strict budgets accepted at approval. Installation
+and lifecycle subprocess gates passed 5 and 2 tests; the main observation
+subprocess workflow is investigating monitor_store_unavailable.
+
+CLI unit gate found 212 passing cases and two telemetry migration regressions:
+the command vocabulary and exhaustive fixture still reference removed usage
+host snapshot syntax. A bounded agent is migrating these consumers to the
+actual V2 command tree; no compatibility aliases will be restored.
+
+Direct offline telemetry generation completed and Weaver local/vendored
+registry validation passed. The full xtask returned failure after generation
+on pre-existing legacy-namespace literals (e.g. jackin.role.toml in unrelated
+image/manifest fixtures). Generated command enums and allowed-value tables
+were updated from the authoritative registry. This gate is not claimed passing;
+CLI command-tree regression tests remain the relevant migration proof.
+
+Diagnostic rerun localized the workflow failure to strict activation at
+usage_monitor_offline.rs:1080. Engine review confirms an implementation bug:
+session-filtered bound guards reject sessionless account spend evidence in
+state validation. The accepted relevance fix addresses this root condition;
+the fixture expectation remains success and was not weakened.
+
+Additional direct offline gates passed: credential resolver/discovery/provider
+core 139 tests (83 inner filtered), usage facade/host runtime/output 75. Final
+CLI/protocol/statusline/telemetry security review found no issues in its scope;
+this was static review, not live credential verification. Read-only original
+checkout status is still clean; old installed pair hashes match recorded V1
+inspection. The new V2 prefix still does not exist before installation.

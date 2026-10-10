@@ -1,4 +1,12 @@
-# Offline verification evidence
+# Verification evidence
+
+## V2 status — verification in progress
+
+The historical V1 results below do not establish V2 completion or real-account readiness. V2 uses schema 2 / broker protocol 6, separate observers and explicit operator-approved policies. Final direct offline Cargo and installed-pair results will be recorded here after passing. The old pair and Claude settings remain untouched.
+
+A tooling incident activated a global `codebook-lsp` installation with crates.io traffic; that installer was stopped. Exact tooling request count is unknown. The overall session is not wholly offline. Provider/credential fixture counters are reported separately; no live provider or Keychain verification is authorized.
+
+## Historical V1 evidence
 
 ## Isolation and safety
 
