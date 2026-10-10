@@ -45,6 +45,10 @@ fn namespace_scan_handles_rust_literal_forms_and_macro_construction() {
     ));
     assert!(contains_legacy_telemetry_name(
         path,
+        "use jackin_telemetry::Attr; custom_macro!(ordinary_filename!(\"readme.md\"), Attr { key: \"jackin.trailing.comma\", value: () },);"
+    ));
+    assert!(contains_legacy_telemetry_name(
+        path,
         "use jackin_telemetry::Attr; macro_rules! attrs { () => { Attr { key: \"jackin.macro.definition\", value: () } }; }"
     ));
 }

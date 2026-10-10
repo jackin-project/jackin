@@ -1441,6 +1441,14 @@ impl<'a> NamespaceScanner<'a> {
             self.visit_expr(&expression);
             return;
         }
+        let expressions =
+            syn::punctuated::Punctuated::<syn::Expr, syn::Token![,]>::parse_terminated;
+        if let Ok(expressions) = expressions.parse2(tokens.clone()) {
+            for expression in expressions {
+                self.visit_expr(&expression);
+            }
+            return;
+        }
         if let Ok(block) = syn::parse2::<syn::Block>(tokens.clone()) {
             self.visit_block(&block);
             return;
