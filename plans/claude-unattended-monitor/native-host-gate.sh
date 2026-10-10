@@ -99,6 +99,19 @@ if [[ -n "$(git -C "$repo_root" status --porcelain=v1 --untracked-files=all)" ]]
   exit 2
 fi
 
+# Enforce the operator packet's concurrency cap even when --run is invoked
+# directly, without the documented shell setup. These exports are local to this
+# script process and do not modify the caller's environment or persistent config.
+export CARGO_BUILD_JOBS=2
+export NEXTEST_TEST_THREADS=2
+export RUST_TEST_THREADS=2
+
+{
+  printf 'cargo_build_jobs=%s\n' "$CARGO_BUILD_JOBS"
+  printf 'nextest_test_threads=%s\n' "$NEXTEST_TEST_THREADS"
+  printf 'rust_test_threads=%s\n' "$RUST_TEST_THREADS"
+} >>"$provenance"
+
 run_gate() {
   name=$1
   shift

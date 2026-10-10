@@ -29,11 +29,11 @@ The host capture must show all of the following before `--run`:
 | Container engine | OrbStack running; selected Docker context and server facts identify that OrbStack engine, Linux arm64 |
 | Rust execution | Absolute MBX 1.23.0; `+1.99.0` selected by the commands below |
 | Mise | Absolute Mise 2026.10.7 |
-| Concurrency | `CARGO_BUILD_JOBS=2`, `NEXTEST_TEST_THREADS=2`; native Swift tasks use `--jobs 2` |
+| Concurrency | `CARGO_BUILD_JOBS=2`, `NEXTEST_TEST_THREADS=2`, `RUST_TEST_THREADS=2`; native Swift tasks use `--jobs 2` |
 
 The checked-in host script is
 [`native-host-gate.sh`](native-host-gate.sh), SHA-256
-`2041fcc8372583f55bd463c198055770b2a2b3a66514dc8eee51b315fb4b0cf2`. It is a
+`4b3cd67e4768ddce04450948d717fadd5f4603ee29a42fece6e629a756f5441b`. It is a
 byte-for-byte copy of the reviewed operator script. Verify that hash before
 using it. It records the source SHA, worktree status, tool versions and hashes,
 macOS/Xcode/SDK/Swift facts, OrbStack version, Docker context, and Docker server
@@ -61,10 +61,10 @@ SCRIPT="$PWD/plans/claude-unattended-monitor/native-host-gate.sh"
 test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
 test -z "$(git status --porcelain=v1 --untracked-files=all)"
 test "$(shasum -a 256 "$SCRIPT" | awk '{print $1}')" = \
-  '2041fcc8372583f55bd463c198055770b2a2b3a66514dc8eee51b315fb4b0cf2'
+  '4b3cd67e4768ddce04450948d717fadd5f4603ee29a42fece6e629a756f5441b'
 
 export MBX_BIN MISE_BIN DEVELOPER_DIR
-export CARGO_BUILD_JOBS=2 NEXTEST_TEST_THREADS=2
+export CARGO_BUILD_JOBS=2 NEXTEST_TEST_THREADS=2 RUST_TEST_THREADS=2
 
 "$SCRIPT" --capture-only "$EVIDENCE_DIR"
 
@@ -72,6 +72,7 @@ export CARGO_BUILD_JOBS=2 NEXTEST_TEST_THREADS=2
   printf 'source_sha=%s\n' "$SOURCE_SHA"
   printf 'cargo_build_jobs=%s\n' "$CARGO_BUILD_JOBS"
   printf 'nextest_test_threads=%s\n' "$NEXTEST_TEST_THREADS"
+  printf 'rust_test_threads=%s\n' "$RUST_TEST_THREADS"
   printf 'developer_dir=%s\n' "$DEVELOPER_DIR"
   printf 'mbx_path=%s\nmise_path=%s\n' "$MBX_BIN" "$MISE_BIN"
 } > "$EVIDENCE_DIR/operator-context.txt"
@@ -122,10 +123,14 @@ test "$gate_status" -eq 0
 ```
 
 The script records separate checksummed logs for the OrbStack E2E and native
-desktop gates. `--run` fails if either gate fails. The surrounding commands
-still copy Swift reports and capture the resulting checkout status before
-returning that failure. The script does not clean or reset generated files;
-preserve and report any post-run worktree changes.
+desktop gates. Before either gate starts, `--run` sets
+`CARGO_BUILD_JOBS=2`, `NEXTEST_TEST_THREADS=2`, and `RUST_TEST_THREADS=2` inside
+its process, even if the caller omits or overrides those variables; it records
+the applied values in `host-provenance.txt`. `--capture-only` does not set
+these limits or run a gate. `--run` fails if either gate fails. The surrounding
+commands still copy Swift reports and capture the resulting checkout status
+before returning that failure. The script does not clean or reset generated
+files; preserve and report any post-run worktree changes.
 
 ## Rust and OrbStack acceptance
 
@@ -151,8 +156,9 @@ report that the usage broker cases ran, including:
 
 These E2E tests exercise process and container coordination with fixture
 providers and quota data. They are not live Claude quota or authentication
-proof. The host gate is bounded to two Cargo build jobs and two nextest test
-threads ([nextest concurrency environment](https://nexte.st/docs/configuration/env-vars/));
+proof. The host gate is bounded to two Cargo build jobs, two nextest test
+threads, and two Rust test threads
+([nextest concurrency environment](https://nexte.st/docs/configuration/env-vars/));
 the repository serializes Docker E2E tests to one thread.
 
 ## Native desktop acceptance
