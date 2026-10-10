@@ -61,6 +61,42 @@ fn account_state_v1_migration_retains_account_and_starts_conservative_attempt_fl
 }
 
 #[test]
+fn account_state_v1_fresh_queued_migration_does_not_invent_invocation_fence() {
+    let temp = tempfile::tempdir().unwrap();
+    let store = FileAccountStateStore::at(temp.path().join("accounts"));
+    let account = capability();
+    let path = temp.path().join("accounts/claude-account-123.json");
+    let mut queued = AccountStateEnvelope::idle(account.clone());
+    queued.schema_version = LEGACY_ACCOUNT_STATE_SCHEMA_VERSION;
+    queued.generation = 1;
+    queued.phase = UsageRefreshPhase::Queued;
+    queued.started_at_epoch = Some(1_000);
+    let mut legacy = serde_json::to_value(&queued).unwrap();
+    legacy["schema_version"] = serde_json::json!(LEGACY_ACCOUNT_STATE_SCHEMA_VERSION);
+    legacy
+        .as_object_mut()
+        .unwrap()
+        .remove("provider_invoked_at_epoch");
+    legacy
+        .as_object_mut()
+        .unwrap()
+        .remove("reload_fence_required");
+    fs::write(&path, serde_json::to_vec(&legacy).unwrap()).unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+
+    let migrated = store.load(&account, 1_000).unwrap().unwrap();
+    assert_eq!(migrated.schema_version, ACCOUNT_STATE_SCHEMA_VERSION);
+    assert_eq!(migrated.phase, UsageRefreshPhase::Queued);
+    assert_eq!(migrated.provider_invoked_at_epoch, None);
+    assert!(!migrated.reload_fence_required);
+
+    let durable: AccountStateEnvelope = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+    assert_eq!(durable.schema_version, ACCOUNT_STATE_SCHEMA_VERSION);
+    assert_eq!(durable.provider_invoked_at_epoch, None);
+    assert!(!durable.reload_fence_required);
+}
+
+#[test]
 fn account_state_v2_migration_persists_unresolved_attempt_provenance_atomically() {
     let temp = tempfile::tempdir().unwrap();
     let store = FileAccountStateStore::at(temp.path().join("accounts"));

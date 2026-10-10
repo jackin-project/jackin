@@ -50,8 +50,8 @@ pub struct AccountStateEnvelope {
     /// Provider invocation start timestamp, persisted separately from queue
     /// admission so Claude's minimum interval begins when work actually runs.
     pub provider_invoked_at_epoch: Option<i64>,
-    /// An unresolved durable `Updating` attempt had no actual invocation
-    /// timestamp. Keep its conservative restart fence across further restarts
+    /// Durable state lacks trustworthy evidence of its actual provider
+    /// invocation time. Keep the conservative reload fence across restarts
     /// without treating recovery or queue time as provider work.
     pub reload_fence_required: bool,
     /// Generation completion timestamp.

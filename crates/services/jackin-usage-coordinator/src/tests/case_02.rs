@@ -1014,6 +1014,15 @@ fn unresolved_updating_marker_gets_reload_fence_without_fabricated_invocation() 
             .reload_fence_required
     );
 
+    coordinator
+        .reconcile_catalog([catalog_entry(&account, "revision-b")], 2_001)
+        .unwrap();
+    let reset_marker = store.load(&account, 2_001).unwrap().unwrap();
+    assert_eq!(reset_marker.phase, UsageRefreshPhase::Idle);
+    assert_eq!(reset_marker.provider_invoked_at_epoch, None);
+    assert!(reset_marker.reload_fence_required);
+    drop(coordinator);
+
     // The reload fence is itself durable safety state. It must survive even
     // when no wall-clock retry/cooldown deadline remains to justify a tombstone.
     {
@@ -1023,22 +1032,44 @@ fn unresolved_updating_marker_gets_reload_fence_without_fabricated_invocation() 
         uncertain.retry_deadline_epoch = None;
         uncertain.success_deadline_epoch = None;
     }
-
-    coordinator
-        .reconcile_catalog([catalog_entry(&account, "revision-b")], 2_001)
-        .unwrap();
-    let reset_marker = store.load(&account, 2_001).unwrap().unwrap();
-    assert_eq!(reset_marker.phase, UsageRefreshPhase::Idle);
-    assert_eq!(reset_marker.provider_invoked_at_epoch, None);
-    assert!(reset_marker.reload_fence_required);
-    coordinator.reconcile_catalog([], 2_002).unwrap();
+    let removal_executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
+        quota_view(3_300, 78),
+    )));
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce concrete executor to coordinator trait object"
+    )]
+    let removal_provider: Arc<dyn UsageProviderExecutor> = removal_executor.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce concrete store to coordinator trait object"
+    )]
+    let removal_store: Arc<dyn AccountStateStore> = store.clone();
+    let removal_clock = Arc::new(ManualClock::at(2_002));
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "share the controllable clock with the coordinator"
+    )]
+    let removal_clock_port: Arc<dyn MonotonicClock> = removal_clock.clone();
+    let removal_coordinator = UsageCoordinator::start_with_clock(
+        removal_provider,
+        removal_store,
+        UsageCoordinatorConfig::default(),
+        Some(BTreeMap::from([(account.clone(), "revision-b".into())])),
+        None,
+        removal_clock_port,
+    );
+    removal_coordinator.reconcile_catalog([], 2_002).unwrap();
     let purged_marker = store.load(&account, 2_002).unwrap().unwrap();
     assert_eq!(purged_marker.phase, UsageRefreshPhase::Idle);
     assert!(purged_marker.terminal_result.is_none());
     assert!(purged_marker.last_good.is_none());
     assert_eq!(purged_marker.provider_invoked_at_epoch, None);
     assert!(purged_marker.reload_fence_required);
-    drop(coordinator);
+    assert_eq!(purged_marker.rate_limit_deadline_epoch, None);
+    assert_eq!(purged_marker.retry_deadline_epoch, None);
+    assert_eq!(purged_marker.success_deadline_epoch, None);
+    drop(removal_coordinator);
 
     // Restart again while uncertainty remains. A fresh monotonic origin models
     // unavailable boot-clock provenance; moving wall time forward cannot
@@ -1070,23 +1101,31 @@ fn unresolved_updating_marker_gets_reload_fence_without_fabricated_invocation() 
         None,
         restarted_clock_port,
     );
-    let after_reload = restarted.request_refresh(&account, 7, true, 2_500).unwrap();
-    assert_eq!(after_reload.generation, 8);
+    let after_reload = restarted
+        .request_refresh(&account, purged_marker.generation, true, 2_500)
+        .unwrap();
+    assert_eq!(after_reload.generation, purged_marker.generation);
     assert_eq!(after_reload.phase, UsageRefreshPhase::Idle);
     assert_eq!(restarted_executor.calls.load(Ordering::SeqCst), 0);
 
     restarted_clock.set_wall_epoch(3_000);
-    let after_forward_jump = restarted.request_refresh(&account, 8, true, 3_000).unwrap();
-    assert_eq!(after_forward_jump.generation, 8);
+    let after_forward_jump = restarted
+        .request_refresh(&account, after_reload.generation, true, 3_000)
+        .unwrap();
+    assert_eq!(after_forward_jump.generation, after_reload.generation);
     assert_eq!(restarted_executor.calls.load(Ordering::SeqCst), 0);
     restarted_clock.advance(Duration::from_secs(299));
-    let before_reload_fence = restarted.request_refresh(&account, 8, true, 3_299).unwrap();
-    assert_eq!(before_reload_fence.generation, 8);
+    let before_reload_fence = restarted
+        .request_refresh(&account, after_reload.generation, true, 3_299)
+        .unwrap();
+    assert_eq!(before_reload_fence.generation, after_reload.generation);
     assert_eq!(restarted_executor.calls.load(Ordering::SeqCst), 0);
 
     restarted_clock.advance(Duration::from_secs(1));
-    let allowed = restarted.request_refresh(&account, 8, true, 3_300).unwrap();
-    assert_eq!(allowed.generation, 9);
+    let allowed = restarted
+        .request_refresh(&account, after_reload.generation, true, 3_300)
+        .unwrap();
+    assert_eq!(allowed.generation, after_reload.generation + 1);
     assert_eq!(
         join_ok(&restarted, &account, allowed.generation, 3_300).phase,
         UsageRefreshPhase::Completed

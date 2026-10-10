@@ -311,8 +311,10 @@ impl AccountStateStore for FileAccountStateStore {
         let (envelope, migrated) = match schema_version {
             LEGACY_ACCOUNT_STATE_SCHEMA_VERSION => {
                 // v1 recorded queue admission as the attempt start. The actual
-                // provider start cannot be reconstructed, so retain the account
-                // and persist uncertainty without inventing an invocation.
+                // provider start cannot be reconstructed for ambiguous attempts,
+                // so retain uncertainty without inventing an invocation. A
+                // fresh generation-1 Queued record with no prior result is the
+                // one provable pre-dispatch state and remains unfenced.
                 let object = value.as_object_mut().ok_or(StateStoreError::Corrupt)?;
                 object.insert("provider_invoked_at_epoch".into(), serde_json::Value::Null);
                 object.insert(
@@ -321,7 +323,16 @@ impl AccountStateStore for FileAccountStateStore {
                 );
                 let mut envelope: AccountStateEnvelope =
                     serde_json::from_value(value).map_err(|_| StateStoreError::Corrupt)?;
-                envelope.reload_fence_required = envelope.started_at_epoch.is_some();
+                let fresh_queued_generation = envelope.phase
+                    == jackin_protocol::usage_broker::UsageRefreshPhase::Queued
+                    && envelope.generation == 1
+                    && envelope.terminal_result.is_none()
+                    && envelope.last_good.is_none();
+                envelope.reload_fence_required = !fresh_queued_generation
+                    && (envelope.started_at_epoch.is_some()
+                        || envelope.generation > 1
+                        || envelope.terminal_result.is_some()
+                        || envelope.last_good.is_some());
                 envelope.schema_version = ACCOUNT_STATE_SCHEMA_VERSION;
                 (envelope, true)
             }
