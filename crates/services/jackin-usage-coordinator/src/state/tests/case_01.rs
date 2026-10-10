@@ -71,6 +71,7 @@ fn account_state_v1_fresh_queued_migration_does_not_invent_invocation_fence() {
     queued.generation = 1;
     queued.phase = UsageRefreshPhase::Queued;
     queued.started_at_epoch = Some(1_000);
+    store.store(&queued, 1_000).unwrap();
     let mut legacy = serde_json::to_value(&queued).unwrap();
     legacy["schema_version"] = serde_json::json!(LEGACY_ACCOUNT_STATE_SCHEMA_VERSION);
     legacy
@@ -94,6 +95,31 @@ fn account_state_v1_fresh_queued_migration_does_not_invent_invocation_fence() {
     assert_eq!(durable.schema_version, ACCOUNT_STATE_SCHEMA_VERSION);
     assert_eq!(durable.provider_invoked_at_epoch, None);
     assert!(!durable.reload_fence_required);
+
+    let mut contradictory_queued = AccountStateEnvelope::idle(account.clone());
+    contradictory_queued.generation = 1;
+    contradictory_queued.phase = UsageRefreshPhase::Queued;
+    contradictory_queued.started_at_epoch = Some(1_000);
+    contradictory_queued.retry_deadline_epoch = Some(1_300);
+    let mut legacy = serde_json::to_value(&contradictory_queued).unwrap();
+    legacy["schema_version"] = serde_json::json!(LEGACY_ACCOUNT_STATE_SCHEMA_VERSION);
+    legacy
+        .as_object_mut()
+        .unwrap()
+        .remove("provider_invoked_at_epoch");
+    legacy
+        .as_object_mut()
+        .unwrap()
+        .remove("reload_fence_required");
+    fs::write(&path, serde_json::to_vec(&legacy).unwrap()).unwrap();
+
+    let migrated = store.load(&account, 1_000).unwrap().unwrap();
+    assert_eq!(migrated.phase, UsageRefreshPhase::Queued);
+    assert_eq!(migrated.provider_invoked_at_epoch, None);
+    assert!(
+        migrated.reload_fence_required,
+        "contradictory queued state with a retry deadline is ambiguous"
+    );
 }
 
 #[test]

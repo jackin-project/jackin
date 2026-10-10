@@ -326,13 +326,24 @@ impl AccountStateStore for FileAccountStateStore {
                 let fresh_queued_generation = envelope.phase
                     == jackin_protocol::usage_broker::UsageRefreshPhase::Queued
                     && envelope.generation == 1
+                    && envelope.started_at_epoch.is_some()
                     && envelope.terminal_result.is_none()
-                    && envelope.last_good.is_none();
+                    && envelope.last_good.is_none()
+                    && envelope.terminal_error.is_none()
+                    && envelope.completed_at_epoch.is_none()
+                    && envelope.rate_limit_deadline_epoch.is_none()
+                    && envelope.retry_deadline_epoch.is_none()
+                    && envelope.success_deadline_epoch.is_none();
                 envelope.reload_fence_required = !fresh_queued_generation
                     && (envelope.started_at_epoch.is_some()
-                        || envelope.generation > 1
+                        || envelope.generation > 0
                         || envelope.terminal_result.is_some()
-                        || envelope.last_good.is_some());
+                        || envelope.last_good.is_some()
+                        || envelope.terminal_error.is_some()
+                        || envelope.completed_at_epoch.is_some()
+                        || envelope.rate_limit_deadline_epoch.is_some()
+                        || envelope.retry_deadline_epoch.is_some()
+                        || envelope.success_deadline_epoch.is_some());
                 envelope.schema_version = ACCOUNT_STATE_SCHEMA_VERSION;
                 (envelope, true)
             }
