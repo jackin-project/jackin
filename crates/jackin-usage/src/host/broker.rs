@@ -7,37 +7,35 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
-use std::os::unix::net::{UnixListener, UnixStream};
+use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{self, TrySendError};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use jackin_protocol::control::UsageSnapshotStatus;
 use jackin_protocol::usage_broker::{
     USAGE_BROKER_MAX_FRAME_BYTES, USAGE_BROKER_PROTOCOL_VERSION, UsageAccountCapability,
-    UsageBrokerOperation, UsageBrokerRequest, UsageBrokerResponse, UsageCatalogEntry,
-    UsageCoordinationError, UsageCoordinationErrorKind, UsageCredentialScope,
-    UsageCredentialSourceIdentity, UsageGenerationView, UsageIdentityKindV1,
-    UsageProjectionRefreshStateV1, UsageProjectionSchemaV1, UsageProjectionV1, UsageRefreshPhase,
+    UsageCatalogEntry, UsageCoordinationError, UsageCoordinationErrorKind, UsageCredentialScope,
+    UsageGenerationView, UsageProjectionRefreshStateV1, UsageProjectionSchemaV1, UsageProjectionV1,
+    UsageRefreshPhase,
 };
-use nix::fcntl::{Flock, FlockArg, OFlag, open, openat};
+use nix::fcntl::{OFlag, open, openat};
 use nix::sys::signal::kill;
 use nix::sys::stat::{Mode, fchmod, mkdirat};
 use nix::unistd::{Pid, UnlinkatFlags, fsync, geteuid, unlinkat};
 use sha2::{Digest as _, Sha256};
 
+#[cfg(test)]
+use jackin_protocol::usage_broker::UsageIdentityKindV1;
+
 use crate::coordinator::{
-    FileAccountStateStore, FileProjectionStateStore, ProjectionStateEnvelope, ProviderProbeOutcome,
-    UsageCoordinator, UsageCoordinatorConfig, UsageProviderExecutor,
+    FileProjectionStateStore, ProjectionStateEnvelope, ProviderProbeOutcome,
+    UsageCoordinatorConfig, UsageProviderExecutor,
 };
 
 use super::accounts::CanonicalAccountSubject;
 use super::discovery::{
-    ProviderCredentialEnvResolver, ProviderCredentialRefreshOutcome,
-    ProviderCredentialSourceMaterial, ValidatedCredentialBinding, ValidatedCredentialSource,
+    ProviderCredentialEnvResolver, ProviderCredentialRefreshOutcome, ValidatedCredentialBinding,
     discover_usage_sources, refresh_credential_binding, validate_usage_sources,
 };
 use super::{HostSurfaceId, HostUsageRuntime, UsageDiscoveryScope, ValidatedUsageDiscovery};
@@ -250,12 +248,8 @@ const BROKER_DIR: &str = "usage-broker";
 const BROKER_RUN_DIR: &str = "run";
 const BROKER_SOCKET: &str = "usage-broker.sock";
 const BROKER_LEADER: &str = "leader.pid";
-const BROKER_ACTIVATE_LOCK: &str = "activate.lock";
-/// Activation attempts per `ensure_usage_broker` call: one initial reconcile
-/// plus bounded CAS-conflict retries with re-discovery. A conflicting
-/// activation fails closed with `CatalogRevisionConflict` once the bound is
-/// exhausted.
-const BROKER_ACTIVATION_ATTEMPTS: u32 = 3;
+/// Bounded CAS-conflict retries for broker-owned catalog refresh.
+const BROKER_CATALOG_ATTEMPTS: u32 = 3;
 const BROKER_LEASE_DURATION: Duration = Duration::from_secs(30);
 const BROKER_LEASE_RENEWAL: Duration = Duration::from_secs(10);
 const BROKER_IDLE_EXIT: Duration = Duration::from_mins(10);
@@ -405,7 +399,11 @@ impl UsageBrokerConfig {
     /// Construct a fail-closed client even when broker startup is unavailable.
     #[must_use]
     pub fn client(&self) -> UsageBrokerClient {
-        UsageBrokerClient::at(self.socket_path(), self.build_id.clone())
+        UsageBrokerClient::at_host(
+            self.socket_path(),
+            self.data_dir.clone(),
+            self.build_id.clone(),
+        )
     }
 }
 
@@ -463,530 +461,7 @@ fn default_service_executable() -> Option<PathBuf> {
         })
 }
 
-/// Attached broker plus every host-discovered canonical capability.
-#[derive(Debug, Clone)]
-pub struct UsageBrokerHandle {
-    /// Host-only transport client.
-    pub client: UsageBrokerClient,
-    /// Canonical accounts known to this discovery generation.
-    pub capabilities: Vec<UsageAccountCapability>,
-    /// Publication lease fencing this activation's capability set.
-    pub catalog_lease: String,
-    scoped_capabilities: BTreeMap<String, Vec<ScopedCapability>>,
-}
-
-impl UsageBrokerHandle {
-    /// Exact canonical accounts whose credential source was forwarded at launch.
-    #[must_use]
-    pub fn capabilities_for_forwarded_scope(
-        &self,
-        scope_label: &str,
-        sources: &ForwardedUsageSources,
-    ) -> Vec<UsageAccountCapability> {
-        self.scoped_capabilities
-            .get(scope_label)
-            .into_iter()
-            .flatten()
-            .filter(|entry| entry.requirement.is_forwarded(sources))
-            .map(|entry| entry.capability.clone())
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            .collect()
-    }
-}
-
 /// Secret-free launch facts proving which credential sources reached a Capsule.
-#[derive(Debug, Clone, Default)]
-pub struct ForwardedUsageSources {
-    /// Exact configured account ids admitted to this Capsule. A provider
-    /// surface alone is never sufficient when several accounts share it.
-    pub selected_account_ids: BTreeSet<String>,
-    /// Provider surface paired with each selected configured account id. This
-    /// lets the runtime replace the config alias with the canonical authority
-    /// discovered for that exact account.
-    pub selected_account_surfaces: BTreeMap<String, String>,
-    /// Surface ids with a successfully forwarded profile directory.
-    pub profile_surface_ids: BTreeSet<String>,
-    /// Governed provider env names present in the Capsule's resolved environment.
-    pub env_keys: BTreeSet<String>,
-    /// Exact source/material proofs staged for this launch.
-    pub credential_scope: UsageCredentialScope,
-}
-
-#[derive(Debug, Clone)]
-struct ScopedCapability {
-    capability: UsageAccountCapability,
-    requirement: ForwardingRequirement,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum ForwardingRequirement {
-    Profile(String),
-    Env {
-        surface: String,
-        /// Canonical provider usage key used for cache/refresh routing.
-        key: String,
-        /// Exact launch keys synthesized for this binding's provider source.
-        launch_keys: BTreeSet<String>,
-        account_ids: BTreeSet<String>,
-        material: Option<ProviderCredentialSourceMaterial>,
-    },
-    Capability,
-}
-
-/// Match the staged consumer key to the broker's canonical discovery key.
-///
-/// The key is an agent/provider contract alias, not the protected source
-/// identity. The source declaration, account, surface, and material
-/// fingerprint remain exact; only the closed provider alias sets below may
-/// bridge a launch-native key to the canonical discovery label.
-fn credential_keys_match(surface: &str, canonical: &str, staged: &str) -> bool {
-    if canonical == staged {
-        return true;
-    }
-    let Some(surface) = HostSurfaceId::from_id(surface) else {
-        return false;
-    };
-    match surface {
-        HostSurfaceId::Kimi => matches!(
-            (canonical, staged),
-            (
-                jackin_core::KIMI_CODE_API_KEY_ENV_NAME
-                    | jackin_core::KIMI_API_KEY_ENV_NAME
-                    | jackin_core::MOONSHOT_API_KEY_ENV_NAME
-                    | jackin_core::ANTHROPIC_AUTH_TOKEN_ENV_NAME,
-                jackin_core::KIMI_CODE_API_KEY_ENV_NAME
-                    | jackin_core::KIMI_API_KEY_ENV_NAME
-                    | jackin_core::MOONSHOT_API_KEY_ENV_NAME
-                    | jackin_core::ANTHROPIC_AUTH_TOKEN_ENV_NAME
-            )
-        ),
-        HostSurfaceId::Zai => matches!(
-            (canonical, staged),
-            (
-                jackin_core::ZAI_API_KEY_ENV_NAME
-                    | jackin_core::ZHIPU_API_KEY_ENV_NAME
-                    | "Z_AI_API_KEY"
-                    | jackin_core::OPENAI_API_KEY_ENV_NAME
-                    | jackin_core::ANTHROPIC_AUTH_TOKEN_ENV_NAME,
-                jackin_core::ZAI_API_KEY_ENV_NAME
-                    | jackin_core::ZHIPU_API_KEY_ENV_NAME
-                    | "Z_AI_API_KEY"
-                    | jackin_core::OPENAI_API_KEY_ENV_NAME
-                    | jackin_core::ANTHROPIC_AUTH_TOKEN_ENV_NAME
-            )
-        ),
-        HostSurfaceId::Minimax => matches!(
-            (canonical, staged),
-            (
-                jackin_core::MINIMAX_API_KEY_ENV_NAME
-                    | "MINIMAX_CODING_API_KEY"
-                    | "MINIMAX_API_TOKEN"
-                    | jackin_core::ANTHROPIC_AUTH_TOKEN_ENV_NAME,
-                jackin_core::MINIMAX_API_KEY_ENV_NAME
-                    | "MINIMAX_CODING_API_KEY"
-                    | "MINIMAX_API_TOKEN"
-                    | jackin_core::ANTHROPIC_AUTH_TOKEN_ENV_NAME
-            )
-        ),
-        HostSurfaceId::Google => matches!(
-            (canonical, staged),
-            (
-                jackin_core::GEMINI_API_KEY_ENV_NAME | jackin_core::GOOGLE_API_KEY_ENV_NAME,
-                jackin_core::GEMINI_API_KEY_ENV_NAME | jackin_core::GOOGLE_API_KEY_ENV_NAME
-            )
-        ),
-        _ => false,
-    }
-}
-
-fn credential_scope_has_matching_proof(
-    scope: &UsageCredentialScope,
-    account_ids: &BTreeSet<String>,
-    surface: &str,
-    _canonical_key: &str,
-    launch_keys: &BTreeSet<String>,
-    material: &ProviderCredentialSourceMaterial,
-) -> bool {
-    scope
-        .sources
-        .iter()
-        .filter(|proof| account_ids.contains(&proof.account_id) && proof.surface_id == surface)
-        .any(|proof| {
-            launch_keys
-                .iter()
-                .any(|launch_key| credential_keys_match(surface, launch_key, &proof.key))
-                && proof.source == material.source
-                && proof.material_fingerprint == material.material_fingerprint
-        })
-}
-
-fn binding_account_ids(binding: &ValidatedCredentialBinding) -> BTreeSet<String> {
-    binding
-        .provenance
-        .iter()
-        .filter_map(|provenance| provenance.strip_prefix("account "))
-        .map(str::to_owned)
-        .collect()
-}
-
-fn binding_matches_proof(
-    binding: &ValidatedCredentialBinding,
-    proof: &jackin_protocol::usage_broker::UsageCredentialSourceProof,
-) -> bool {
-    if binding.surface.id() != proof.surface_id
-        || !binding_account_ids(binding).contains(&proof.account_id)
-    {
-        return false;
-    }
-    let ValidatedCredentialSource::Env {
-        launch_keys,
-        material: Some(material),
-        ..
-    } = &binding.source
-    else {
-        return false;
-    };
-    launch_keys
-        .iter()
-        .any(|launch_key| credential_keys_match(binding.surface.id(), launch_key, &proof.key))
-        && proof.source == material.source
-        && proof.material_fingerprint == material.material_fingerprint
-}
-
-fn record_key_binding(
-    key_bindings: &mut Vec<(String, String, UsageCredentialSourceIdentity, String)>,
-    account_id: &str,
-    launch_key: &str,
-    material: &ProviderCredentialSourceMaterial,
-) -> bool {
-    let Some((_, _, source, fingerprint)) =
-        key_bindings
-            .iter()
-            .find(|(existing_account, existing_key, _, _)| {
-                existing_account == account_id && existing_key == launch_key
-            })
-    else {
-        key_bindings.push((
-            account_id.to_owned(),
-            launch_key.to_owned(),
-            material.source.clone(),
-            material.material_fingerprint.clone(),
-        ));
-        return true;
-    };
-    source == &material.source && fingerprint == &material.material_fingerprint
-}
-
-/// Authorize a capability against every relevant launch proof and return the
-/// exact binding whose source may be refreshed. Multiple route bindings may
-/// share one canonical capability, but each proof must resolve to exactly one
-/// compatible binding. Unrelated account/surface proofs are ignored;
-/// conflicts and unexpected keys fail closed.
-fn authorize_credential_binding_group(
-    bindings: &[ValidatedCredentialBinding],
-    surface: &str,
-    scope: &UsageCredentialScope,
-) -> Option<ValidatedCredentialBinding> {
-    let has_profile = bindings
-        .iter()
-        .any(|binding| matches!(&binding.source, ValidatedCredentialSource::Profile(_)));
-    let env_bindings = bindings
-        .iter()
-        .filter(|binding| {
-            binding.surface.id() == surface
-                && matches!(&binding.source, ValidatedCredentialSource::Env { .. })
-        })
-        .collect::<Vec<_>>();
-
-    // A capability group must never let env proof select a profile or let a
-    // profile's mere presence authorize an env route. Pure-profile behavior
-    // remains the baseline path.
-    if has_profile && !env_bindings.is_empty() {
-        return None;
-    }
-    if has_profile {
-        return bindings
-            .iter()
-            .find(|binding| matches!(&binding.source, ValidatedCredentialSource::Profile(_)))
-            .cloned();
-    }
-    if env_bindings.is_empty() {
-        return None;
-    }
-    // A duplicated account/surface/launch-key binding is ambiguous when its
-    // source or material differs. Reject that conflict before proof matching;
-    // a valid proof for one side must never authorize the other side.
-    let mut key_bindings = Vec::<(String, String, UsageCredentialSourceIdentity, String)>::new();
-    for binding in &env_bindings {
-        let ValidatedCredentialSource::Env {
-            launch_keys,
-            material: Some(material),
-            ..
-        } = &binding.source
-        else {
-            return None;
-        };
-        for account_id in binding_account_ids(binding) {
-            for launch_key in launch_keys {
-                if !record_key_binding(&mut key_bindings, &account_id, launch_key, material) {
-                    return None;
-                }
-            }
-        }
-    }
-    let account_ids = env_bindings
-        .iter()
-        .flat_map(|binding| binding_account_ids(binding))
-        .collect::<BTreeSet<_>>();
-    let relevant = scope
-        .sources
-        .iter()
-        .filter(|proof| account_ids.contains(&proof.account_id) && proof.surface_id == surface)
-        .collect::<Vec<_>>();
-    if relevant.is_empty() {
-        return None;
-    }
-    let mut matched = Vec::with_capacity(relevant.len());
-    for proof in relevant {
-        let candidates = env_bindings
-            .iter()
-            .filter(|binding| binding_matches_proof(binding, proof))
-            .collect::<Vec<_>>();
-        if candidates.len() != 1 {
-            return None;
-        }
-        matched.push(candidates[0]);
-    }
-    let first = (**matched.first()?).clone();
-    if matched
-        .iter()
-        .all(|binding| refresh_authority_equivalent(&first, binding))
-    {
-        Some(first)
-    } else {
-        None
-    }
-}
-
-/// Compare the authority that a refresh would actually use. Launch aliases
-/// may differ, but canonical identity, semantic dispatch, opaque handle, and
-/// source material must agree before proofs can combine.
-fn refresh_authority_equivalent(
-    left: &ValidatedCredentialBinding,
-    right: &ValidatedCredentialBinding,
-) -> bool {
-    match (&left.source, &right.source) {
-        (
-            ValidatedCredentialSource::Env {
-                handle: left_handle,
-                key: left_key,
-                dispatch_key: left_dispatch,
-                material: Some(left_material),
-                ..
-            },
-            ValidatedCredentialSource::Env {
-                handle: right_handle,
-                key: right_key,
-                dispatch_key: right_dispatch,
-                material: Some(right_material),
-                ..
-            },
-        ) => {
-            left.surface == right.surface
-                && left.identity == right.identity
-                && left_handle == right_handle
-                && left_key == right_key
-                && left_dispatch == right_dispatch
-                && left_material == right_material
-        }
-        (ValidatedCredentialSource::Profile(_), ValidatedCredentialSource::Profile(_)) => {
-            left.surface == right.surface && left.identity == right.identity
-        }
-        _ => false,
-    }
-}
-
-/// Select an unscoped refresh only when the whole group has one refresh
-/// authority. This prevents background work from depending on vector order.
-fn unscoped_refresh_binding(
-    bindings: &[ValidatedCredentialBinding],
-) -> Option<ValidatedCredentialBinding> {
-    let first = bindings.first()?.clone();
-    if matches!(&first.source, ValidatedCredentialSource::Profile(_)) {
-        return bindings
-            .iter()
-            .all(|binding| matches!(&binding.source, ValidatedCredentialSource::Profile(_)))
-            .then_some(first);
-    }
-    bindings
-        .iter()
-        .all(|binding| refresh_authority_equivalent(&first, binding))
-        .then_some(first)
-}
-
-impl ForwardingRequirement {
-    fn is_forwarded(&self, sources: &ForwardedUsageSources) -> bool {
-        match self {
-            Self::Profile(surface) => sources.profile_surface_ids.contains(surface),
-            Self::Env {
-                surface,
-                key,
-                launch_keys,
-                account_ids,
-                material,
-            } => {
-                if sources.selected_account_ids.is_empty() {
-                    return launch_keys
-                        .iter()
-                        .any(|launch_key| sources.env_keys.contains(launch_key));
-                }
-                let Some(material) = material else {
-                    return false;
-                };
-                let account_ids = account_ids
-                    .iter()
-                    .filter(|account_id| sources.selected_account_ids.contains(*account_id))
-                    .cloned()
-                    .collect::<BTreeSet<_>>();
-                credential_scope_has_matching_proof(
-                    &sources.credential_scope,
-                    &account_ids,
-                    surface,
-                    key,
-                    launch_keys,
-                    material,
-                )
-            }
-            Self::Capability => false,
-        }
-    }
-}
-
-fn forwarding_requirement(binding: &ValidatedCredentialBinding) -> ForwardingRequirement {
-    match &binding.source {
-        ValidatedCredentialSource::Profile(_) => {
-            ForwardingRequirement::Profile(binding.surface.id().to_owned())
-        }
-        ValidatedCredentialSource::Env {
-            key,
-            launch_keys,
-            material,
-            ..
-        } => ForwardingRequirement::Env {
-            surface: binding.surface.id().to_owned(),
-            key: key.clone(),
-            launch_keys: launch_keys.clone(),
-            account_ids: binding
-                .provenance
-                .iter()
-                .filter_map(|provenance| provenance.strip_prefix("account "))
-                .map(str::to_owned)
-                .collect(),
-            material: material.clone(),
-        },
-        ValidatedCredentialSource::Capability => ForwardingRequirement::Capability,
-        // Unpollable bindings carry no host source to forward; like
-        // capability-only bindings, they stay host-local.
-        ValidatedCredentialSource::Unpollable => ForwardingRequirement::Capability,
-    }
-}
-
-/// Derive an exact per-container capability allowlist before broker startup.
-#[must_use]
-pub fn forwarded_usage_capabilities(
-    discovery: &ValidatedUsageDiscovery,
-    scope_label: &str,
-    sources: &ForwardedUsageSources,
-) -> Vec<UsageAccountCapability> {
-    discovery
-        .bindings
-        .iter()
-        .filter(|binding| {
-            if sources.selected_account_ids.is_empty() {
-                binding.provenance.contains(scope_label)
-            } else {
-                binding.provenance.iter().any(|provenance| {
-                    sources.selected_account_ids.iter().any(|account_id| {
-                        provenance == &format!("account {account_id}")
-                            && sources
-                                .selected_account_surfaces
-                                .get(account_id)
-                                .is_some_and(|surface| surface == binding.surface.id())
-                    })
-                })
-            }
-        })
-        .filter(|binding| forwarding_requirement(binding).is_forwarded(sources))
-        .map(|binding| capability_for_binding(binding, discovery.config_generation.as_deref()))
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect()
-}
-
-/// Resolve one exact configured account to the canonical broker capability
-/// used by Capsule sessions. Multiple source bindings for the same canonical
-/// account collapse to one capability; distinct identities are rejected rather
-/// than guessed.
-#[must_use]
-pub fn usage_capability_for_selected_account(
-    discovery: &ValidatedUsageDiscovery,
-    account_id: &str,
-    surface_id: &str,
-) -> Option<UsageAccountCapability> {
-    usage_capability_for_selected_account_with_sources(discovery, account_id, surface_id, None)
-}
-
-/// Resolve one exact configured account after intersecting it with the
-/// credential sources forwarded into the current Capsule. The source proof is
-/// part of launch authority: a provider surface or account id alone cannot
-/// select a credential when several routes share that identity.
-#[must_use]
-pub fn usage_capability_for_selected_account_with_sources(
-    discovery: &ValidatedUsageDiscovery,
-    account_id: &str,
-    surface_id: &str,
-    sources: Option<&ForwardedUsageSources>,
-) -> Option<UsageAccountCapability> {
-    let provenance = format!("account {account_id}");
-    let capabilities = discovery
-        .bindings
-        .iter()
-        .filter(|binding| binding.surface.id() == surface_id)
-        .filter(|binding| binding.provenance.contains(&provenance))
-        .filter(|binding| {
-            sources.is_none_or(|sources| match &binding.source {
-                // API-key/OAuth routes need exact staged source proof. Profile
-                // and forwarded capability behavior stays on the baseline path.
-                ValidatedCredentialSource::Env { .. } => {
-                    forwarding_requirement(binding).is_forwarded(sources)
-                }
-                ValidatedCredentialSource::Profile(_)
-                | ValidatedCredentialSource::Capability
-                | ValidatedCredentialSource::Unpollable => true,
-            })
-        })
-        .map(|binding| capability_for_binding(binding, discovery.config_generation.as_deref()))
-        .collect::<BTreeSet<_>>();
-    (capabilities.len() == 1)
-        .then(|| capabilities.into_iter().next())
-        .flatten()
-}
-
-/// Every canonical capability in one validated host discovery generation.
-#[must_use]
-pub fn usage_broker_capabilities(
-    discovery: &ValidatedUsageDiscovery,
-) -> Vec<UsageAccountCapability> {
-    discovery
-        .bindings
-        .iter()
-        .map(|binding| capability_for_binding(binding, discovery.config_generation.as_deref()))
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect()
-}
-
 pub(super) fn usage_catalog_entries(discovery: &ValidatedUsageDiscovery) -> Vec<UsageCatalogEntry> {
     let mut source_revisions = BTreeMap::<UsageAccountCapability, BTreeSet<String>>::new();
     for binding in &discovery.bindings {
@@ -1019,269 +494,6 @@ pub(super) fn usage_catalog_entries(discovery: &ValidatedUsageDiscovery) -> Vec<
             }
         })
         .collect()
-}
-
-/// Small synchronous client. Each operation uses one bounded frame/connection.
-///
-/// A client also carries one monitoring screen's subscription set (see
-/// `view`). Cloning forks that set: the clone starts with the same observed
-/// generations but later (un)subscribes diverge.
-#[derive(Debug)]
-pub struct UsageBrokerClient {
-    socket_path: PathBuf,
-    build_id: String,
-    subscriptions: Arc<Mutex<BTreeMap<UsageAccountCapability, u64>>>,
-}
-
-impl Clone for UsageBrokerClient {
-    fn clone(&self) -> Self {
-        let subscriptions = self
-            .subscriptions
-            .lock()
-            .map(|subscriptions| subscriptions.clone())
-            .unwrap_or_default();
-        Self {
-            socket_path: self.socket_path.clone(),
-            build_id: self.build_id.clone(),
-            subscriptions: Arc::new(Mutex::new(subscriptions)),
-        }
-    }
-}
-
-impl UsageBrokerClient {
-    /// Attach to an already-running broker socket.
-    #[must_use]
-    pub fn at(socket_path: PathBuf, build_id: String) -> Self {
-        Self {
-            socket_path,
-            build_id,
-            subscriptions: Arc::new(Mutex::new(BTreeMap::new())),
-        }
-    }
-
-    /// Attach to the current Capsule's per-container relay.
-    #[must_use]
-    pub fn scoped_relay() -> Self {
-        Self::at(
-            PathBuf::from(jackin_core::container_paths::USAGE_SOCK),
-            env!("CARGO_PKG_VERSION").to_owned(),
-        )
-    }
-
-    /// Read one account generation without provider work.
-    pub fn current(
-        &self,
-        capability: UsageAccountCapability,
-    ) -> Result<UsageGenerationView, UsageCoordinationError> {
-        self.execute(UsageBrokerOperation::Current { capability })
-    }
-
-    /// Read one exact account capability through a scoped relay.
-    pub fn current_for_capability(
-        &self,
-        capability: UsageAccountCapability,
-    ) -> Result<UsageGenerationView, UsageCoordinationError> {
-        self.execute(UsageBrokerOperation::CurrentForCapability { capability })
-    }
-
-    /// Request or join one account generation.
-    pub fn refresh(
-        &self,
-        capability: UsageAccountCapability,
-        observed_generation: u64,
-        force: bool,
-    ) -> Result<UsageGenerationView, UsageCoordinationError> {
-        self.execute(UsageBrokerOperation::Refresh {
-            capability,
-            observed_generation,
-            force,
-        })
-    }
-
-    /// Request or join one exact account capability through a scoped relay.
-    pub fn refresh_for_capability(
-        &self,
-        capability: UsageAccountCapability,
-        observed_generation: u64,
-        force: bool,
-    ) -> Result<UsageGenerationView, UsageCoordinationError> {
-        self.execute(UsageBrokerOperation::RefreshForCapability {
-            capability,
-            observed_generation,
-            force,
-        })
-    }
-
-    /// Wait for one named generation. This does not release broker ownership on timeout.
-    pub fn join(
-        &self,
-        capability: UsageAccountCapability,
-        generation: u64,
-        timeout: Duration,
-    ) -> Result<UsageGenerationView, UsageCoordinationError> {
-        let timeout_ms = u64::try_from(timeout.as_millis()).unwrap_or(u64::MAX);
-        self.execute(UsageBrokerOperation::Join {
-            capability,
-            generation,
-            timeout_ms,
-        })
-    }
-
-    /// Wait for one exact capability generation through a scoped relay.
-    pub fn join_for_capability(
-        &self,
-        capability: UsageAccountCapability,
-        generation: u64,
-        timeout: Duration,
-    ) -> Result<UsageGenerationView, UsageCoordinationError> {
-        let timeout_ms = u64::try_from(timeout.as_millis()).unwrap_or(u64::MAX);
-        self.execute(UsageBrokerOperation::JoinForCapability {
-            capability,
-            generation,
-            timeout_ms,
-        })
-    }
-
-    /// Execute one already-authorized broker operation.
-    pub fn execute(
-        &self,
-        operation: UsageBrokerOperation,
-    ) -> Result<UsageGenerationView, UsageCoordinationError> {
-        self.execute_with_scope(operation, None)
-    }
-
-    /// Execute one operation with the immutable launch proof supplied by the
-    /// host relay. The caller cannot replace this with Capsule input because
-    /// the relay owns the client invocation.
-    pub fn execute_scoped(
-        &self,
-        operation: UsageBrokerOperation,
-        scope: UsageCredentialScope,
-    ) -> Result<UsageGenerationView, UsageCoordinationError> {
-        self.execute_with_scope(operation, Some(scope))
-    }
-
-    fn execute_with_scope(
-        &self,
-        operation: UsageBrokerOperation,
-        launch_credential_scope: Option<UsageCredentialScope>,
-    ) -> Result<UsageGenerationView, UsageCoordinationError> {
-        let request = UsageBrokerRequest {
-            protocol_version: USAGE_BROKER_PROTOCOL_VERSION.to_owned(),
-            build_id: self.build_id.clone(),
-            operation,
-            launch_credential_scope,
-        };
-        let mut bytes = serde_json::to_vec(&request).map_err(|_| unavailable())?;
-        if bytes.len() >= USAGE_BROKER_MAX_FRAME_BYTES {
-            return Err(protocol_error());
-        }
-        bytes.push(b'\n');
-        let mut stream = UnixStream::connect(&self.socket_path).map_err(|_| unavailable())?;
-        stream
-            .set_read_timeout(Some(Duration::from_secs(30)))
-            .map_err(|_| unavailable())?;
-        stream.write_all(&bytes).map_err(|_| unavailable())?;
-        stream
-            .shutdown(std::net::Shutdown::Write)
-            .map_err(|_| unavailable())?;
-        let response = read_frame::<UsageBrokerResponse>(&mut stream)?;
-        match response {
-            UsageBrokerResponse::State { state } => Ok(*state),
-            UsageBrokerResponse::Projection { .. } => Err(protocol_error()),
-            UsageBrokerResponse::Error { error } => Err(error),
-        }
-    }
-
-    /// Read the latest canonical publication without dispatching provider work.
-    pub fn current_projection(&self) -> Result<UsageProjectionV1, UsageCoordinationError> {
-        self.execute_projection(UsageBrokerOperation::CurrentProjection)
-    }
-
-    /// Request or join one broker-owned canonical projection refresh.
-    pub fn request_refresh(
-        &self,
-        observed_projection_id: Option<String>,
-        force: bool,
-    ) -> Result<UsageProjectionV1, UsageCoordinationError> {
-        self.execute_projection(UsageBrokerOperation::RequestRefresh {
-            force,
-            observed_projection_id,
-        })
-    }
-
-    /// Join one immutable canonical publication without cancelling shared work.
-    pub fn join_publication(
-        &self,
-        projection_id: String,
-        timeout: Duration,
-    ) -> Result<UsageProjectionV1, UsageCoordinationError> {
-        let timeout_ms = u64::try_from(timeout.as_millis()).unwrap_or(u64::MAX);
-        self.execute_projection(UsageBrokerOperation::JoinPublication {
-            projection_id,
-            timeout_ms,
-        })
-    }
-
-    /// Replace the host broker's current catalog and publish revocations.
-    pub fn reconcile_catalog(
-        &self,
-        catalog_revision: String,
-        entries: Vec<UsageCatalogEntry>,
-    ) -> Result<UsageProjectionV1, UsageCoordinationError> {
-        let expected_projection_id = self.current_projection()?.projection_id;
-        self.reconcile_catalog_if_projection(
-            Some(expected_projection_id),
-            catalog_revision,
-            entries,
-        )
-    }
-
-    /// Replace the catalog against an explicitly observed publication lease.
-    /// A stale caller is rejected by the broker rather than becoming the last
-    /// writer.
-    pub fn reconcile_catalog_if_projection(
-        &self,
-        expected_projection_id: Option<String>,
-        catalog_revision: String,
-        entries: Vec<UsageCatalogEntry>,
-    ) -> Result<UsageProjectionV1, UsageCoordinationError> {
-        self.execute_projection(UsageBrokerOperation::ReconcileCatalog {
-            expected_projection_id,
-            catalog_revision,
-            entries,
-        })
-    }
-
-    fn execute_projection(
-        &self,
-        operation: UsageBrokerOperation,
-    ) -> Result<UsageProjectionV1, UsageCoordinationError> {
-        let request = UsageBrokerRequest {
-            protocol_version: USAGE_BROKER_PROTOCOL_VERSION.to_owned(),
-            build_id: self.build_id.clone(),
-            operation,
-            launch_credential_scope: None,
-        };
-        let mut bytes = serde_json::to_vec(&request).map_err(|_| unavailable())?;
-        if bytes.len() >= USAGE_BROKER_MAX_FRAME_BYTES {
-            return Err(protocol_error());
-        }
-        bytes.push(b'\n');
-        let mut stream = UnixStream::connect(&self.socket_path).map_err(|_| unavailable())?;
-        stream
-            .set_read_timeout(Some(Duration::from_secs(30)))
-            .map_err(|_| unavailable())?;
-        stream.write_all(&bytes).map_err(|_| unavailable())?;
-        stream
-            .shutdown(std::net::Shutdown::Write)
-            .map_err(|_| unavailable())?;
-        match read_frame::<UsageBrokerResponse>(&mut stream)? {
-            UsageBrokerResponse::Projection { projection } => Ok(*projection),
-            UsageBrokerResponse::Error { error } => Err(error),
-            UsageBrokerResponse::State { .. } => Err(protocol_error()),
-        }
-    }
 }
 
 fn empty_projection(build_id: &str) -> UsageProjectionV1 {
@@ -1352,7 +564,26 @@ struct DiscoveryProviderExecutor {
     validated_catalog: Mutex<Option<StagedDiscoveryCatalog>>,
     scope: UsageDiscoveryScope,
     resolver: Arc<dyn ProviderCredentialEnvResolver>,
+    monitor_store: Option<Arc<monitor::MonitorStore>>,
+    collector_service: Option<String>,
+    #[cfg(test)]
+    claude_collector:
+        Option<Arc<dyn Fn(&UsageAccountCapability, &str) -> ProviderProbeOutcome + Send + Sync>>,
     probe_budget: Duration,
+}
+
+struct EmptyProviderCredentialResolver;
+
+impl ProviderCredentialEnvResolver for EmptyProviderCredentialResolver {
+    fn resolve_provider_credentials(
+        &self,
+        _config: &jackin_config::AppConfig,
+        _workspace: Option<&jackin_core::WorkspaceName>,
+        _role: Option<&str>,
+        _keys: &[jackin_core::UsageCredentialEnvName],
+    ) -> Vec<super::discovery::ProviderCredentialEnvResolution> {
+        Vec::new()
+    }
 }
 
 struct StagedDiscoveryCatalog {
@@ -1366,6 +597,12 @@ fn probe_with_scope(
     capability: &UsageAccountCapability,
     launch_scope: Option<&UsageCredentialScope>,
 ) -> ProviderProbeOutcome {
+    if executor.collector_service.is_some() && capability.surface_id != "claude" {
+        return collector_not_authorized();
+    }
+    if capability.surface_id == "claude" {
+        return probe_claude_with_scope(executor, capability);
+    }
     // The coordinator only classifies elapsed time after a probe returns, so
     // the blocking provider call (child CLI/RPC, secret resolution) runs under
     // an explicit broker-side budget. Expiry completes the generation through
@@ -1416,6 +653,164 @@ fn probe_with_scope(
     }
 }
 
+fn probe_claude_with_scope(
+    executor: &DiscoveryProviderExecutor,
+    capability: &UsageAccountCapability,
+) -> ProviderProbeOutcome {
+    let Some(service) = executor.collector_service.as_deref() else {
+        return collector_auth_required();
+    };
+    let Some(monitor_store) = executor.monitor_store.as_ref() else {
+        return collector_not_authorized();
+    };
+    if !monitor_store
+        .collection_accounts()
+        .iter()
+        .any(|account_id| account_id == &capability.account_id)
+        || claude_usage_capability_for_service(service) != *capability
+    {
+        return collector_not_authorized();
+    }
+
+    let service = service.to_owned();
+    let consent_monitor_store = Arc::clone(monitor_store);
+    let consent_service = service.clone();
+    let consent_capability = capability.clone();
+    let consent_is_current = move || {
+        claude_usage_capability_for_service(&consent_service) == consent_capability
+            && consent_monitor_store
+                .collection_accounts()
+                .iter()
+                .any(|account_id| account_id == &consent_capability.account_id)
+    };
+
+    #[cfg(test)]
+    if let Some(collector) = executor.claude_collector.as_ref() {
+        return if consent_is_current() {
+            collector(capability, &service)
+        } else {
+            collector_not_authorized()
+        };
+    }
+
+    match probe::run_probe_with_budget(executor.probe_budget, move || {
+        let result = crate::usage::experimental_claude_usage_snapshot_for_service(
+            "claude",
+            Some("Claude"),
+            chrono::Utc::now().timestamp(),
+            &service,
+            consent_is_current,
+        );
+        match result {
+            Ok(Some((view, rate_limit, failure_metadata))) => {
+                provider_probe_outcome_with_metadata(view, rate_limit, failure_metadata)
+            }
+            Ok(None) => collector_auth_required(),
+            Err(crate::usage::ClaudeCollectionError::ConsentRevoked {
+                provider_http_status: None,
+            }) => collector_not_authorized(),
+            Err(crate::usage::ClaudeCollectionError::ConsentRevoked {
+                provider_http_status: Some(http_status),
+            }) => {
+                let mut view = jackin_protocol::control::FocusedUsageView::unavailable(
+                    "claude",
+                    chrono::Utc::now().timestamp(),
+                );
+                view.status = if http_status == 401 {
+                    UsageSnapshotStatus::NeedsSecret
+                } else {
+                    UsageSnapshotStatus::Error
+                };
+                view.last_error = Some(format!(
+                    "Claude authorization changed after HTTP {http_status}; prepare the selected source again"
+                ));
+                provider_probe_outcome_with_metadata(
+                    view,
+                    None,
+                    Some(crate::usage::ProviderFailureMetadata {
+                        kind: crate::usage::ProviderErrorKind::HttpStatus,
+                        http_status: Some(http_status),
+                    }),
+                )
+            }
+        }
+    }) {
+        Ok(outcome) => outcome,
+        Err(_) => probe::probe_timeout_outcome(),
+    }
+}
+
+fn collector_auth_required() -> ProviderProbeOutcome {
+    ProviderProbeOutcome::Failure {
+        kind: UsageCoordinationErrorKind::NeedsSecret,
+        message: "Claude collection requires foreground authentication preparation".to_owned(),
+        retry_at_epoch: None,
+    }
+}
+
+fn collector_not_authorized() -> ProviderProbeOutcome {
+    ProviderProbeOutcome::Failure {
+        kind: UsageCoordinationErrorKind::Unauthorized,
+        message: "Claude collection is not authorized for this source".to_owned(),
+        retry_at_epoch: None,
+    }
+}
+
+fn claude_usage_capability_for_service(service: &str) -> UsageAccountCapability {
+    let source_capability_id = crate::usage::claude_source_capability_id_for_service(service);
+    let identity = super::accounts::CanonicalAccountIdentity::source_capability(
+        HostSurfaceId::Claude,
+        &source_capability_id,
+    );
+    let subject = identity.account_key();
+    let hashed = jackin_core::account_key_hash("claude", &subject);
+    UsageAccountCapability {
+        surface_id: "claude".to_owned(),
+        account_id: hashed.strip_prefix("sha256:").unwrap_or(&hashed).to_owned(),
+    }
+}
+
+fn foreground_catalog_revision(service: &str, entries: &[UsageCatalogEntry]) -> String {
+    let source_capability_id = crate::usage::claude_source_capability_id_for_service(service);
+    let mut material = String::new();
+    push_catalog_revision_component(&mut material, &source_capability_id);
+    material.push_str(&entries.len().to_string());
+    material.push(':');
+    let mut ordered_entries = entries.iter().collect::<Vec<_>>();
+    ordered_entries.sort_by(|left, right| left.capability.cmp(&right.capability));
+    for entry in ordered_entries {
+        push_catalog_revision_component(&mut material, &entry.capability.surface_id);
+        push_catalog_revision_component(&mut material, &entry.capability.account_id);
+        push_catalog_revision_component(&mut material, &entry.revision);
+    }
+    jackin_core::account_key_hash("usage-foreground-claude-catalog-v2", &material)
+}
+
+fn push_catalog_revision_component(material: &mut String, value: &str) {
+    material.push_str(&value.len().to_string());
+    material.push(':');
+    material.push_str(value);
+}
+
+fn validate_foreground_catalog_revision(
+    service: &str,
+    catalog_revision: &str,
+    entries: &[UsageCatalogEntry],
+) -> Result<(), UsageCoordinationError> {
+    // Foreground auth intentionally installs one source-scoped Claude row.
+    // Its revision is derived from this exact row and service; it must never
+    // trigger full host discovery or admit unrelated persisted capabilities.
+    let expected = claude_usage_capability_for_service(service);
+    if entries.len() != 1
+        || entries[0].capability != expected
+        || entries[0].revision.is_empty()
+        || foreground_catalog_revision(service, entries) != catalog_revision
+    {
+        return Err(catalog_discovery_mismatch());
+    }
+    Ok(())
+}
+
 impl UsageProviderExecutor for DiscoveryProviderExecutor {
     fn authorize_credential_scope(
         &self,
@@ -1451,6 +846,10 @@ impl UsageProviderExecutor for DiscoveryProviderExecutor {
         &self,
         entries: &[UsageCatalogEntry],
     ) -> Result<(), UsageCoordinationError> {
+        if self.collector_service.is_some() {
+            self.bindings.lock().map_err(|_| unavailable())?.clear();
+            return Ok(());
+        }
         let admitted = entries
             .iter()
             .map(|entry| entry.capability.clone())
@@ -1472,6 +871,9 @@ impl UsageProviderExecutor for DiscoveryProviderExecutor {
         &self,
         entries: &[UsageCatalogEntry],
     ) -> Result<(), UsageCoordinationError> {
+        if self.collector_service.is_some() {
+            return Err(catalog_discovery_mismatch());
+        }
         let Some(discovery) = rediscover_discovery(&self.scope, self.resolver.as_ref()) else {
             return Err(unavailable());
         };
@@ -1495,6 +897,9 @@ impl UsageProviderExecutor for DiscoveryProviderExecutor {
         catalog_revision: &str,
         entries: &[UsageCatalogEntry],
     ) -> Result<(), UsageCoordinationError> {
+        if let Some(service) = self.collector_service.as_deref() {
+            return validate_foreground_catalog_revision(service, catalog_revision, entries);
+        }
         let Some(discovery) = rediscover_discovery(&self.scope, self.resolver.as_ref()) else {
             return Err(unavailable());
         };
@@ -1515,6 +920,13 @@ impl UsageProviderExecutor for DiscoveryProviderExecutor {
         catalog_revision: &str,
         entries: &[UsageCatalogEntry],
     ) -> Result<(), UsageCoordinationError> {
+        if self.collector_service.is_some() {
+            // Claude probes use the retained exact-service credential lease,
+            // not a discovered credential binding. Any removed catalog rows
+            // are fenced by the coordinator's persisted cooldown tombstones.
+            self.bindings.lock().map_err(|_| unavailable())?.clear();
+            return Ok(());
+        }
         let requested_entries = catalog_entry_map(entries);
         let staged = self
             .validated_catalog
@@ -1632,9 +1044,11 @@ fn refresh_binding_outcome(
     resolver: &dyn ProviderCredentialEnvResolver,
 ) -> ProviderProbeOutcome {
     match refresh_credential_binding(binding, resolver) {
-        ProviderCredentialRefreshOutcome::Snapshot { view, rate_limit } => {
-            provider_probe_outcome_with_rate_limit(*view, rate_limit)
-        }
+        ProviderCredentialRefreshOutcome::Snapshot {
+            view,
+            rate_limit,
+            failure_metadata,
+        } => provider_probe_outcome_with_metadata(*view, rate_limit, failure_metadata),
         ProviderCredentialRefreshOutcome::Missing
         | ProviderCredentialRefreshOutcome::Denied
         | ProviderCredentialRefreshOutcome::InteractionRequired => ProviderProbeOutcome::Failure {
@@ -1657,15 +1071,56 @@ fn provider_probe_outcome(
     provider_probe_outcome_with_rate_limit(view, None)
 }
 
+#[cfg(test)]
 fn provider_probe_outcome_with_rate_limit(
     view: jackin_protocol::control::FocusedUsageView,
     rate_limit: Option<crate::usage::ProviderRateLimit>,
+) -> ProviderProbeOutcome {
+    provider_probe_outcome_with_metadata(view, rate_limit, None)
+}
+
+fn provider_probe_outcome_with_metadata(
+    view: jackin_protocol::control::FocusedUsageView,
+    rate_limit: Option<crate::usage::ProviderRateLimit>,
+    failure_metadata: Option<crate::usage::ProviderFailureMetadata>,
 ) -> ProviderProbeOutcome {
     if let Some(rate_limit) = rate_limit {
         return ProviderProbeOutcome::Failure {
             kind: UsageCoordinationErrorKind::RateLimited,
             message: "usage provider rate limit is active".to_owned(),
             retry_at_epoch: rate_limit.retry_at_epoch,
+        };
+    }
+    if let Some(failure_metadata) = failure_metadata {
+        use crate::usage::ProviderErrorKind;
+
+        let kind = match failure_metadata.kind {
+            ProviderErrorKind::Timeout => UsageCoordinationErrorKind::ProviderTimeout,
+            ProviderErrorKind::HttpStatus => match failure_metadata.http_status {
+                Some(401) => UsageCoordinationErrorKind::NeedsSecret,
+                Some(403) => UsageCoordinationErrorKind::Unauthorized,
+                Some(429) => UsageCoordinationErrorKind::RateLimited,
+                _ => UsageCoordinationErrorKind::ProviderUnavailable,
+            },
+            ProviderErrorKind::Transport | ProviderErrorKind::Decode | ProviderErrorKind::Other => {
+                UsageCoordinationErrorKind::ProviderUnavailable
+            }
+        };
+        let fallback = match kind {
+            UsageCoordinationErrorKind::NeedsSecret => {
+                "usage provider credentials require operator action"
+            }
+            UsageCoordinationErrorKind::Unauthorized => {
+                "usage provider denied the configured credential"
+            }
+            UsageCoordinationErrorKind::RateLimited => "usage provider rate limit is active",
+            UsageCoordinationErrorKind::ProviderTimeout => "usage provider request timed out",
+            _ => "usage provider quota is unavailable",
+        };
+        return ProviderProbeOutcome::Failure {
+            kind,
+            message: honest_probe_message(&view, fallback),
+            retry_at_epoch: None,
         };
     }
     match view.status {
@@ -1707,850 +1162,41 @@ fn honest_probe_message(
         .to_owned()
 }
 
-/// Hold the inter-process activation lock across one
-/// discover→read-lease→reconcile sequence.
-///
-/// The lock serializes concurrent activators, so every activation observes a
-/// post-lease discovery generation: a slow activator can no longer pair its
-/// stale caller-side catalog with a freshly read publication lease and win
-/// over a newer winner. The lock releases on drop (and on process death via
-/// the kernel), so a crashed activator never wedges later activations.
-fn lock_activation(data_dir: &Path) -> Result<Flock<File>, UsageCoordinationError> {
-    secure_run_directory(data_dir)?;
-    let path = data_dir.join(BROKER_DIR).join(BROKER_ACTIVATE_LOCK);
-    let fd = open(
-        &path,
-        OFlag::O_RDWR | OFlag::O_CREAT | OFlag::O_NOFOLLOW,
-        Mode::from_bits_truncate(0o600),
-    )
-    .map_err(|_| unavailable())?;
-    let file = File::from(fd);
-    fchmod(&file, Mode::from_bits_truncate(0o600)).map_err(|_| unavailable())?;
-    let metadata = file.metadata().map_err(|_| unavailable())?;
-    if metadata.uid() != geteuid().as_raw() {
-        return Err(unavailable());
-    }
-    Flock::lock(file, FlockArg::LockExclusive).map_err(|_| unavailable())
-}
-
-/// Ensure one host broker backed by a post-lease discovery generation.
-///
-/// The caller-supplied `discovery` is a fallback only. Every activation
-/// re-discovers under the inter-process activation lock and publishes the
-/// fresh generation, so a slow activator's stale caller-side catalog can
-/// never win over a newer winner: the CAS lease alone cannot reject it,
-/// because the stale caller would otherwise read the lease fresh. A failed
-/// fresh scan falls back to the caller generation (documented degradation);
-/// a CAS conflict retries with re-discovery up to
-/// `BROKER_ACTIVATION_ATTEMPTS`, then fails closed.
-pub fn ensure_usage_broker(
-    config: UsageBrokerConfig,
-    scope: UsageDiscoveryScope,
-    discovery: ValidatedUsageDiscovery,
-    resolver: Arc<dyn ProviderCredentialEnvResolver>,
-) -> Result<UsageBrokerHandle, UsageCoordinationError> {
-    let mut discover = || {
-        resolver.begin_manual_retry();
-        discover_usage_sources(&scope, resolver.as_ref())
-            .map(|catalog| validate_usage_sources(catalog, resolver.as_ref()))
-            .map_err(|_| unavailable())
-    };
-    let mut reconcile = |client: &UsageBrokerClient,
-                         expected_projection_id: Option<String>,
-                         catalog_revision: String,
-                         entries: Vec<UsageCatalogEntry>| {
-        client.reconcile_catalog_if_projection(expected_projection_id, catalog_revision, entries)
-    };
-    ensure_usage_broker_with_hooks(&config, &scope, discovery, &mut discover, &mut reconcile)
-}
-
-/// Activation core with injectable discovery/reconcile seams.
-///
-/// Production passes live discovery and the broker CAS reconcile; tests drive
-/// scripted generations and interleavings through the same path. The
-/// activation lock is held across every attempt's discover→read-lease→
-/// reconcile sequence.
-fn ensure_usage_broker_with_hooks(
-    config: &UsageBrokerConfig,
-    scope: &UsageDiscoveryScope,
-    fallback: ValidatedUsageDiscovery,
-    discover: &mut impl FnMut() -> Result<ValidatedUsageDiscovery, UsageCoordinationError>,
-    reconcile: &mut impl FnMut(
-        &UsageBrokerClient,
-        Option<String>,
-        String,
-        Vec<UsageCatalogEntry>,
-    ) -> Result<UsageProjectionV1, UsageCoordinationError>,
-) -> Result<UsageBrokerHandle, UsageCoordinationError> {
-    let _activation = lock_activation(&config.data_dir)?;
-    let mut scan = || discover().unwrap_or_else(|_| fallback.clone());
-    let mut attempts: u32 = 0;
-    loop {
-        attempts = attempts.saturating_add(1);
-        // Post-lease discovery: resolve the current generation only after
-        // holding the activation lock, so a slow activator can never pair a
-        // stale caller-side catalog with a fresh publication lease.
-        let mut discovery = scan();
-        if usage_catalog_entries(&discovery).is_empty() {
-            // Empty scans are confirmed by a second post-lease scan before
-            // acting: a transient empty scan can neither wipe a live catalog
-            // nor suppress broker activation for present accounts, while a
-            // confirmed empty scan still revokes.
-            discovery = scan();
-        }
-        let catalog = usage_catalog_entries(&discovery);
-        let catalog_revision = discovery
-            .config_generation
-            .clone()
-            .unwrap_or_else(|| "empty".to_owned());
-        let client = if catalog.is_empty() {
-            let probe_client = config.client();
-            if !connect_probe(&probe_client) {
-                return Ok(usage_broker_handle_for(
-                    &discovery,
-                    probe_client,
-                    "no-catalog".to_owned(),
-                ));
-            }
-            probe_client
-        } else {
-            ensure_usage_broker_process(config.clone(), scope)?
-        };
-        let expected_projection_id = client.current_projection()?.projection_id;
-        match reconcile(
-            &client,
-            Some(expected_projection_id),
-            catalog_revision,
-            catalog,
-        ) {
-            Ok(projection) => {
-                return Ok(usage_broker_handle_for(
-                    &discovery,
-                    client,
-                    projection.projection_id,
-                ));
-            }
-            Err(error)
-                if error.kind == UsageCoordinationErrorKind::CatalogRevisionConflict
-                    && attempts < BROKER_ACTIVATION_ATTEMPTS =>
-            {
-                // Retry with re-discovery; the loop re-scans above.
-            }
-            Err(error) => return Err(error),
-        }
-    }
-}
-
-/// Build the activation handle from the generation actually published.
-fn usage_broker_handle_for(
-    discovery: &ValidatedUsageDiscovery,
-    client: UsageBrokerClient,
-    catalog_lease: String,
-) -> UsageBrokerHandle {
-    let mut scoped_capabilities = BTreeMap::<String, Vec<ScopedCapability>>::new();
-    for binding in &discovery.bindings {
-        let capability = capability_for_binding(binding, discovery.config_generation.as_deref());
-        let requirement = forwarding_requirement(binding);
-        for provenance in &binding.provenance {
-            let scoped = scoped_capabilities.entry(provenance.clone()).or_default();
-            scoped.push(ScopedCapability {
-                capability: capability.clone(),
-                requirement: requirement.clone(),
-            });
-        }
-    }
-    let capabilities = usage_broker_capabilities(discovery);
-    UsageBrokerHandle {
-        client,
-        capabilities,
-        catalog_lease,
-        scoped_capabilities,
-    }
-}
-
-/// Activate the independent broker executable and attach a client.
-///
-/// The caller never supplies an executor to this path. The sibling service
-/// performs discovery and provider work in its own process, then survives the
-/// activating client. The installed `jackin` package owns this sibling binary.
-pub fn ensure_usage_broker_process(
-    config: UsageBrokerConfig,
-    scope: &UsageDiscoveryScope,
-) -> Result<UsageBrokerClient, UsageCoordinationError> {
-    let client = config.client();
-    if connect_probe(&client) {
-        return Ok(client);
-    }
-    let executable = config
-        .service_executable
-        .as_ref()
-        .ok_or_else(|| UsageCoordinationError {
-            kind: UsageCoordinationErrorKind::Unavailable,
-            message:
-                "usage broker executable cannot be located; reinstall the complete jackin package"
-                    .to_owned(),
-        })?;
-    let mut command = Command::new(executable);
-    command
-        .arg("--data-dir")
-        .arg(&config.data_dir)
-        .arg("--build-id")
-        .arg(&config.build_id)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-    match scope {
-        UsageDiscoveryScope::HostDesktop {
-            config_root,
-            operator_home,
-        } => {
-            command
-                .arg("--config-root")
-                .arg(config_root)
-                .arg("--operator-home")
-                .arg(operator_home);
-        }
-        UsageDiscoveryScope::Capsule { .. } => return Err(unavailable()),
-    }
-    command.spawn().map_err(|error| UsageCoordinationError {
-        kind: UsageCoordinationErrorKind::Unavailable,
-        message: format!(
-            "cannot start usage broker executable {}: {error}; reinstall the complete jackin package",
-            executable.display(),
-        ),
-    })?;
-    wait_for_leader(&client)?;
-    Ok(client)
-}
-
-/// Run the process-owned service until its idle lease expires.
-pub fn run_usage_broker_service(
-    config: UsageBrokerConfig,
-    scope: UsageDiscoveryScope,
-    discovery: ValidatedUsageDiscovery,
-    resolver: Arc<dyn ProviderCredentialEnvResolver>,
-) -> Result<(), UsageCoordinationError> {
-    let identity_metadata = publication_identity_metadata(&discovery);
-    let catalog_revision = discovery
-        .config_generation
-        .clone()
-        .unwrap_or_else(|| "empty".to_owned());
-    let catalog = usage_catalog_entries(&discovery);
-    let bindings = grouped_bindings(&discovery);
-    let executor = Arc::new(DiscoveryProviderExecutor {
-        bindings: Mutex::new(bindings),
-        validated_catalog: Mutex::new(None),
-        scope,
-        resolver,
-        probe_budget: config.coordinator.provider_timeout,
-    });
-    run_usage_broker_service_with_executor_and_metadata(
-        config,
-        executor,
-        identity_metadata,
-        Some((catalog_revision, catalog)),
-    )
-}
-
-/// Process service seam used by the shipped broker binary and process tests.
-pub fn run_usage_broker_service_with_executor(
-    config: UsageBrokerConfig,
-    executor: Arc<dyn UsageProviderExecutor>,
-) -> Result<(), UsageCoordinationError> {
-    run_usage_broker_service_with_executor_and_metadata(config, executor, BTreeMap::new(), None)
-}
-
-fn run_usage_broker_service_with_executor_and_metadata(
-    config: UsageBrokerConfig,
-    executor: Arc<dyn UsageProviderExecutor>,
-    identity_metadata: BTreeMap<UsageAccountCapability, publish::AccountIdentityMetadata>,
-    initial_catalog: Option<(String, Vec<UsageCatalogEntry>)>,
-) -> Result<(), UsageCoordinationError> {
-    let run_dir = secure_run_directory(&config.data_dir)?;
-    let leader_path = run_dir.join(BROKER_LEADER);
-    let Some(lease) = claim_leader(&leader_path, &config.build_id, config.lease_duration)? else {
-        return Ok(());
-    };
-    let socket_path = config.socket_path();
-    let cleanup = BrokerStartupCleanup::new(leader_path.clone(), socket_path.clone(), lease);
-    if socket_path.exists() {
-        fs::remove_file(&socket_path).map_err(|_| unavailable())?;
-    }
-    let listener = UnixListener::bind(&socket_path).map_err(|_| unavailable())?;
-    fs::set_permissions(&socket_path, fs::Permissions::from_mode(0o600))
-        .map_err(|_| unavailable())?;
-    validate_owned_mode(&socket_path, 0o600)?;
-    let store = Arc::new(FileAccountStateStore::under_data_dir(&config.data_dir));
-    let LoadedProjection {
-        projection,
-        catalog: persisted_catalog,
-        catalog_revision,
-    } = load_projection(&config)?;
-    let previous_catalog = persisted_catalog.clone().unwrap_or_default();
-    let coordinator = match (persisted_catalog.is_some(), catalog_revision) {
-        (true, Some(catalog_revision)) => Arc::new(UsageCoordinator::with_catalog_revision(
-            executor,
-            store,
-            config.coordinator,
-            previous_catalog.clone(),
-            catalog_revision,
-        )),
-        _ => Arc::new(UsageCoordinator::with_catalog(
-            executor,
-            store,
-            config.coordinator,
-            previous_catalog.clone(),
-        )),
-    };
-    let publisher = publish::ProjectionPublisher::new(
-        Arc::clone(&coordinator),
-        Arc::clone(&projection),
-        FileProjectionStateStore::under_data_dir(&config.data_dir),
-    )
-    .with_identity_metadata(identity_metadata);
-    let publisher = publisher.with_catalog(previous_catalog);
-    if let Some((catalog_revision, catalog)) = initial_catalog {
-        publisher.reconcile_catalog(catalog_revision, catalog, chrono::Utc::now().timestamp())?;
-    }
-    serve(ServeConfig {
-        listener,
-        coordinator,
-        build_id: config.build_id.clone(),
-        cleanup,
-        policy: ServePolicy {
-            idle_exit: config.idle_exit,
-            lease_duration: config.lease_duration,
-            lease_renewal: config.lease_renewal,
-        },
-        publisher,
-    });
-    Ok(())
-}
-
-/// Test/runtime seam that preserves the same process election and transport.
-#[doc(hidden)]
-pub fn ensure_usage_broker_with_executor(
-    config: UsageBrokerConfig,
-    executor: Arc<dyn UsageProviderExecutor>,
-) -> Result<UsageBrokerClient, UsageCoordinationError> {
-    let socket_path = config.socket_path();
-    let client = UsageBrokerClient::at(socket_path.clone(), config.build_id.clone());
-    if connect_probe(&client) {
-        return Ok(client);
-    }
-
-    let run_dir = secure_run_directory(&config.data_dir)?;
-    let leader_path = run_dir.join(BROKER_LEADER);
-    let Some(lease) = claim_leader(&leader_path, &config.build_id, config.lease_duration)? else {
-        wait_for_leader(&client)?;
-        return Ok(client);
-    };
-
-    let cleanup = BrokerStartupCleanup::new(leader_path, socket_path.clone(), lease);
-    if socket_path.exists() {
-        fs::remove_file(&socket_path).map_err(|_| unavailable())?;
-    }
-    let listener = UnixListener::bind(&socket_path).map_err(|_| unavailable())?;
-    fs::set_permissions(&socket_path, fs::Permissions::from_mode(0o600))
-        .map_err(|_| unavailable())?;
-    validate_owned_mode(&socket_path, 0o600)?;
-    let store = Arc::new(FileAccountStateStore::under_data_dir(&config.data_dir));
-    let LoadedProjection {
-        projection,
-        catalog: persisted_catalog,
-        catalog_revision,
-    } = load_projection(&config)?;
-    let coordinator = match (persisted_catalog.clone(), catalog_revision) {
-        (Some(catalog), Some(catalog_revision)) => {
-            Arc::new(UsageCoordinator::with_catalog_revision(
-                executor,
-                store,
-                config.coordinator,
-                catalog,
-                catalog_revision,
-            ))
-        }
-        (Some(catalog), None) => Arc::new(UsageCoordinator::with_catalog(
-            executor,
-            store,
-            config.coordinator,
-            catalog,
-        )),
-        (None, _) => Arc::new(UsageCoordinator::new(executor, store, config.coordinator)),
-    };
-    let build_id = config.build_id.clone();
-    let idle_exit = config.idle_exit;
-    let lease_duration = config.lease_duration;
-    let lease_renewal = config.lease_renewal;
-    let publisher = publish::ProjectionPublisher::new(
-        Arc::clone(&coordinator),
-        Arc::clone(&projection),
-        FileProjectionStateStore::under_data_dir(&config.data_dir),
-    );
-    let publisher = match persisted_catalog {
-        Some(catalog) => publisher.with_catalog(catalog),
-        None => publisher,
-    };
-    jackin_telemetry::spawn::thread_joined_named("usage-broker".to_owned(), move || {
-        serve(ServeConfig {
-            listener,
-            coordinator,
-            build_id,
-            cleanup,
-            policy: ServePolicy {
-                idle_exit,
-                lease_duration,
-                lease_renewal,
-            },
-            publisher,
-        });
-    })
-    .map_err(|_| unavailable())?;
-    wait_for_leader(&client)?;
-    Ok(client)
-}
-
+mod catalog;
+mod catalog_diagnostics;
+mod client;
+mod client_security;
+mod credential_scope;
+mod dispatch_ops;
+mod monitor;
+mod monitor_api;
 mod probe;
 pub(super) mod publish;
+mod serve_loop;
+mod service;
 mod view;
 mod waits;
 
-struct ServeConfig {
-    listener: UnixListener,
-    coordinator: Arc<UsageCoordinator>,
-    build_id: String,
-    cleanup: BrokerStartupCleanup,
-    policy: ServePolicy,
-    publisher: publish::ProjectionPublisher,
-}
+pub use client::UsageBrokerClient;
+pub use credential_scope::ForwardedUsageSources;
+use credential_scope::{authorize_credential_binding_group, unscoped_refresh_binding};
+pub(super) use credential_scope::{
+    forwarded_usage_capabilities, usage_capability_for_selected_account_with_sources,
+};
+#[cfg(test)]
+pub(super) use credential_scope::{
+    usage_broker_capabilities, usage_capability_for_selected_account,
+};
+pub use monitor::parse_statusline;
+pub use service::{
+    UsageBrokerForegroundReady, ensure_usage_broker_process, ensure_usage_broker_with_executor,
+    run_usage_broker_foreground_bootstrap, run_usage_broker_service,
+    run_usage_broker_service_with_executor,
+};
 
-fn serve(config: ServeConfig) {
-    let ServeConfig {
-        listener,
-        coordinator,
-        build_id,
-        mut cleanup,
-        policy,
-        publisher,
-    } = config;
-    let (connections, receiver) = mpsc::sync_channel(BROKER_CONNECTION_QUEUE);
-    let receiver = Arc::new(Mutex::new(receiver));
-    let build_id = Arc::<str>::from(build_id.as_str());
-    let wait_pool = waits::WaitPool::new(
-        Arc::clone(&coordinator),
-        Arc::clone(&build_id),
-        publisher.clone(),
-    );
-    let wait_pool = Arc::new(wait_pool);
-    let mut workers = Vec::with_capacity(BROKER_CONNECTION_WORKERS);
-    for index in 0..BROKER_CONNECTION_WORKERS {
-        let receiver = Arc::clone(&receiver);
-        let coordinator = Arc::clone(&coordinator);
-        let build_id = Arc::clone(&build_id);
-        let publisher = publisher.clone();
-        let wait_pool = Arc::clone(&wait_pool);
-        let worker = jackin_telemetry::spawn::thread_joined_named(
-            format!("usage-broker-connection-{index}"),
-            move || loop {
-                let stream = {
-                    let Ok(receiver) = receiver.lock() else {
-                        return;
-                    };
-                    receiver.recv()
-                };
-                let Ok(stream) = stream else {
-                    return;
-                };
-                handle_stream(stream, &coordinator, &build_id, &publisher, &wait_pool);
-            },
-        );
-        match worker {
-            Ok(worker) => workers.push(worker),
-            Err(_) => break,
-        }
-    }
-    if workers.is_empty() {
-        drop(listener);
-        drop(cleanup);
-        return;
-    }
-    if listener.set_nonblocking(true).is_err() {
-        drop(connections);
-        for worker in workers {
-            drop(worker.join());
-        }
-        drop(listener);
-        drop(cleanup);
-        return;
-    }
-    // Incremental publisher: while any generation is active, merge completed
-    // accounts into the canonical projection as they finish. One stalled
-    // account never blocks healthy accounts; dispatch-path publishing covers
-    // promptness when this ticker cannot spawn.
-    let publisher_shutdown = Arc::new(AtomicBool::new(false));
-    let ticker = {
-        let publisher = publisher.clone();
-        let ticker_coordinator = Arc::clone(&coordinator);
-        let shutdown = Arc::clone(&publisher_shutdown);
-        jackin_telemetry::spawn::thread_joined_named(
-            "usage-broker-publisher".to_owned(),
-            move || {
-                while !shutdown.load(Ordering::Relaxed) {
-                    std::thread::park_timeout(PUBLISH_TICK);
-                    if shutdown.load(Ordering::Relaxed) {
-                        break;
-                    }
-                    if !ticker_coordinator.is_idle() {
-                        publisher.publish_due(chrono::Utc::now().timestamp());
-                    }
-                }
-            },
-        )
-        .ok()
-    };
-    let started = Instant::now();
-    let mut last_activity = started;
-    let mut last_renewal = started;
-    loop {
-        match listener.accept() {
-            Ok((stream, _)) => {
-                last_activity = Instant::now();
-                match connections.try_send(stream) {
-                    Ok(()) => {}
-                    Err(
-                        TrySendError::Full(mut stream) | TrySendError::Disconnected(mut stream),
-                    ) => {
-                        write_response(
-                            &mut stream,
-                            UsageBrokerResponse::Error {
-                                error: unavailable(),
-                            },
-                        );
-                    }
-                }
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                let now = Instant::now();
-                if now.duration_since(last_renewal) >= policy.lease_renewal {
-                    if !cleanup.renew(policy.lease_duration) {
-                        break;
-                    }
-                    last_renewal = now;
-                }
-                if now.duration_since(last_activity) >= policy.idle_exit && coordinator.is_idle() {
-                    break;
-                }
-                std::thread::park_timeout(Duration::from_millis(50));
-            }
-            Err(_) => break,
-        }
-    }
-    drop(connections);
-    for worker in workers {
-        drop(worker.join());
-    }
-    publisher_shutdown.store(true, Ordering::Relaxed);
-    if let Some(ticker) = ticker {
-        drop(ticker.join());
-    }
-    drop(listener);
-    drop(cleanup);
-}
-
-fn handle_stream(
-    mut stream: UnixStream,
-    coordinator: &UsageCoordinator,
-    build_id: &str,
-    publisher: &publish::ProjectionPublisher,
-    waits: &waits::WaitPool,
-) {
-    let response = match read_request(&mut stream) {
-        Ok(request) if waits::is_wait(&request.operation) => {
-            waits.enqueue(stream, request);
-            return;
-        }
-        Ok(request) => dispatch(coordinator, request, build_id, publisher),
-        Err(error) => UsageBrokerResponse::Error { error },
-    };
-    write_response(&mut stream, response);
-}
-
-fn write_response(stream: &mut UnixStream, response: UsageBrokerResponse) {
-    if let Ok(mut bytes) = serde_json::to_vec(&response)
-        && bytes.len() < USAGE_BROKER_MAX_FRAME_BYTES
-    {
-        bytes.push(b'\n');
-        write_with_deadline(stream, &bytes, Duration::from_secs(1));
-    }
-}
-
-fn write_with_deadline(stream: &mut UnixStream, mut bytes: &[u8], timeout: Duration) {
-    if stream.set_nonblocking(true).is_err() {
-        return;
-    }
-    let deadline = Instant::now() + timeout;
-    while !bytes.is_empty() && Instant::now() < deadline {
-        match stream.write(bytes) {
-            Ok(0) => return,
-            Ok(written) => bytes = &bytes[written..],
-            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                std::thread::park_timeout(Duration::from_millis(1));
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
-            Err(_) => return,
-        }
-    }
-}
-
-fn read_request(stream: &mut UnixStream) -> Result<UsageBrokerRequest, UsageCoordinationError> {
-    stream.set_nonblocking(true).map_err(|_| unavailable())?;
-    let deadline = Instant::now() + Duration::from_secs(2);
-    let mut bytes = Vec::new();
-    let mut chunk = [0_u8; 1024];
-    while Instant::now() < deadline {
-        match stream.read(&mut chunk) {
-            Ok(0) => return Err(protocol_error()),
-            Ok(read) => {
-                bytes.extend_from_slice(&chunk[..read]);
-                if bytes.len() > USAGE_BROKER_MAX_FRAME_BYTES {
-                    return Err(protocol_error());
-                }
-                if bytes.last() == Some(&b'\n') {
-                    return serde_json::from_slice(&bytes).map_err(|_| protocol_error());
-                }
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                std::thread::park_timeout(Duration::from_millis(1));
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
-            Err(_) => return Err(unavailable()),
-        }
-    }
-    Err(unavailable())
-}
-
-fn dispatch(
-    coordinator: &UsageCoordinator,
-    request: UsageBrokerRequest,
-    build_id: &str,
-    publisher: &publish::ProjectionPublisher,
-) -> UsageBrokerResponse {
-    let UsageBrokerRequest {
-        protocol_version,
-        build_id: request_build_id,
-        operation,
-        launch_credential_scope,
-    } = request;
-    if protocol_version != USAGE_BROKER_PROTOCOL_VERSION || request_build_id != build_id {
-        return UsageBrokerResponse::Error {
-            error: protocol_error(),
-        };
-    }
-    if launch_credential_scope.is_some()
-        && !matches!(
-            &operation,
-            UsageBrokerOperation::Current { .. }
-                | UsageBrokerOperation::Refresh { .. }
-                | UsageBrokerOperation::Join { .. }
-        )
-    {
-        return UsageBrokerResponse::Error {
-            error: UsageCoordinationError {
-                kind: UsageCoordinationErrorKind::Unauthorized,
-                message: "launch credential scope requires an account operation".to_owned(),
-            },
-        };
-    }
-    match &operation {
-        UsageBrokerOperation::ReconcileCatalog {
-            expected_projection_id,
-            catalog_revision,
-            entries,
-        } => {
-            return match publisher.reconcile_catalog_if_projection(
-                expected_projection_id.as_deref(),
-                catalog_revision.clone(),
-                entries.clone(),
-                chrono::Utc::now().timestamp(),
-            ) {
-                Ok(projection) => UsageBrokerResponse::Projection {
-                    projection: Box::new(projection),
-                },
-                Err(error) => UsageBrokerResponse::Error { error },
-            };
-        }
-        UsageBrokerOperation::CurrentProjection => return read_projection(publisher),
-        UsageBrokerOperation::RequestRefresh {
-            force,
-            observed_projection_id: _,
-        } => return refresh_projection(coordinator, publisher, *force),
-        UsageBrokerOperation::JoinPublication {
-            projection_id,
-            timeout_ms,
-        } => return join_publication(publisher, projection_id, *timeout_ms),
-        UsageBrokerOperation::CurrentProjectionForSurface
-        | UsageBrokerOperation::RequestRefreshForSurface { .. }
-        | UsageBrokerOperation::JoinPublicationForSurface { .. } => {
-            return UsageBrokerResponse::Error {
-                error: UsageCoordinationError {
-                    kind: UsageCoordinationErrorKind::Unauthorized,
-                    message: "scoped projection operation requires a container relay".to_owned(),
-                },
-            };
-        }
-        _ => {}
-    }
-    let now = chrono::Utc::now().timestamp();
-    let result = match operation {
-        UsageBrokerOperation::ReconcileCatalog { .. } => Err(protocol_error()),
-        UsageBrokerOperation::CurrentProjection
-        | UsageBrokerOperation::RequestRefresh { .. }
-        | UsageBrokerOperation::JoinPublication { .. }
-        | UsageBrokerOperation::CurrentProjectionForSurface
-        | UsageBrokerOperation::RequestRefreshForSurface { .. }
-        | UsageBrokerOperation::JoinPublicationForSurface { .. } => Err(protocol_error()),
-        UsageBrokerOperation::CurrentForCapability { .. }
-        | UsageBrokerOperation::RefreshForCapability { .. }
-        | UsageBrokerOperation::JoinForCapability { .. } => Err(UsageCoordinationError {
-            kind: UsageCoordinationErrorKind::Unauthorized,
-            message: "scoped usage operation requires a container relay".to_owned(),
-        }),
-        UsageBrokerOperation::Current { capability } => {
-            if let Some(scope) = launch_credential_scope.as_ref()
-                && let Err(error) = coordinator.authorize_credential_scope(&capability, scope)
-            {
-                return UsageBrokerResponse::Error { error };
-            }
-            publisher.observe(&capability);
-            let result = coordinator.current(&capability, now);
-            publisher.publish_due(now);
-            result
-        }
-        UsageBrokerOperation::Refresh {
-            capability,
-            observed_generation,
-            force,
-        } => {
-            if let Some(scope) = launch_credential_scope.as_ref()
-                && let Err(error) = coordinator.authorize_credential_scope(&capability, scope)
-            {
-                return UsageBrokerResponse::Error { error };
-            }
-            publisher.observe(&capability);
-            let result = match launch_credential_scope {
-                Some(scope) => coordinator.request_refresh_scoped(
-                    &capability,
-                    observed_generation,
-                    force,
-                    now,
-                    scope,
-                ),
-                None => coordinator.request_refresh(&capability, observed_generation, force, now),
-            };
-            publisher.publish_due(now);
-            result
-        }
-        UsageBrokerOperation::Join {
-            capability,
-            generation,
-            timeout_ms,
-        } => {
-            if let Some(scope) = launch_credential_scope.as_ref()
-                && let Err(error) = coordinator.authorize_credential_scope(&capability, scope)
-            {
-                return UsageBrokerResponse::Error { error };
-            }
-            publisher.observe(&capability);
-            let result = coordinator.join_generation(
-                &capability,
-                generation,
-                Duration::from_millis(timeout_ms.min(30_000)),
-                now,
-            );
-            publisher.publish_due(now);
-            result
-        }
-    };
-    match result {
-        Ok(state) => UsageBrokerResponse::State {
-            state: Box::new(state),
-        },
-        Err(error) => UsageBrokerResponse::Error { error },
-    }
-}
-
-fn read_projection(publisher: &publish::ProjectionPublisher) -> UsageBrokerResponse {
-    match publisher.current_projection() {
-        Ok(projection) => UsageBrokerResponse::Projection {
-            projection: Box::new(projection),
-        },
-        Err(error) => UsageBrokerResponse::Error { error },
-    }
-}
-
-/// Request due observations for every observed account and return the latest
-/// publication. Each account runs its normal due check: still-fresh data is
-/// reused, active work is joined, and retry deadlines always win. `force` is
-/// honored only as the coordinator honors it — an explicit operator refresh
-/// bypasses the success cooldown but never retry or rate-limit deadlines.
-fn refresh_projection(
-    coordinator: &UsageCoordinator,
-    publisher: &publish::ProjectionPublisher,
-    force: bool,
-) -> UsageBrokerResponse {
-    let now = chrono::Utc::now().timestamp();
-    let known = publisher.known_capabilities();
-    if !known.is_empty() {
-        let mut requests = Vec::with_capacity(known.len());
-        for capability in &known {
-            // A read failure resolves to generation 0, which can only adopt
-            // the current winner — never force a duplicate generation.
-            let observed = coordinator
-                .current(capability, now)
-                .map_or(0, |view| view.generation);
-            requests.push((capability.clone(), observed));
-        }
-        let _ignored = coordinator.request_refresh_all(requests, force, now);
-        publisher.publish_due(now);
-    }
-    read_projection(publisher)
-}
-
-/// Wait until one named publication settles or is superseded.
-///
-/// A newer publication means the requested one is terminal history and is
-/// returned immediately. Waiting only happens while the requested publication
-/// is current and still refreshing. Expiry reports `WaitTimeout` without
-/// touching broker ownership: generations always run to terminal.
-fn join_publication(
-    publisher: &publish::ProjectionPublisher,
-    projection_id: &str,
-    timeout_ms: u64,
-) -> UsageBrokerResponse {
-    let deadline = Instant::now() + Duration::from_millis(timeout_ms.min(30_000));
-    loop {
-        let current = match publisher.current_projection() {
-            Ok(current) => current,
-            Err(error) => return UsageBrokerResponse::Error { error },
-        };
-        if current.projection_id != projection_id
-            || current.refresh_state != UsageProjectionRefreshStateV1::Refreshing
-        {
-            return UsageBrokerResponse::Projection {
-                projection: Box::new(current),
-            };
-        }
-        publisher.publish_due(chrono::Utc::now().timestamp());
-        if Instant::now() >= deadline {
-            return UsageBrokerResponse::Error {
-                error: UsageCoordinationError {
-                    kind: UsageCoordinationErrorKind::WaitTimeout,
-                    message: "usage projection publication is still refreshing".to_owned(),
-                },
-            };
-        }
-        std::thread::park_timeout(Duration::from_millis(50));
-    }
+#[cfg(test)]
+fn write_with_deadline(stream: &mut UnixStream, bytes: &[u8], timeout: Duration) {
+    serve_loop::write_with_deadline(stream, bytes, timeout);
 }
 
 fn read_frame<T: serde::de::DeserializeOwned>(
@@ -2867,7 +1513,7 @@ fn wait_for_leader(client: &UsageBrokerClient) -> Result<(), UsageCoordinationEr
 }
 
 fn connect_probe(client: &UsageBrokerClient) -> bool {
-    UnixStream::connect(&client.socket_path).is_ok()
+    client.probe_current_projection()
 }
 
 pub(super) fn capability_for_binding(
@@ -2879,13 +1525,19 @@ pub(super) fn capability_for_binding(
     } else {
         format!("provisional-capability-v1:{}", binding.capability_id)
     };
-    let subject = match catalog_revision {
-        Some(revision) => format!(
+    let stable_claude_source = binding.surface == HostSurfaceId::Claude
+        && matches!(
+            binding.identity.as_ref().map(|identity| &identity.subject),
+            Some(CanonicalAccountSubject::SourceCapability(_))
+        );
+    let subject = match (catalog_revision, stable_claude_source) {
+        (Some(_), true) => subject,
+        (Some(revision), false) => format!(
             "usage-capability-v2:catalog-revision:{}:{revision}:subject:{}:{subject}",
             revision.len(),
             subject.len()
         ),
-        None => subject,
+        (None, _) => subject,
     };
     let hashed = jackin_core::account_key_hash(binding.surface.id(), &subject);
     let account_id = hashed.strip_prefix("sha256:").unwrap_or(&hashed).to_owned();
@@ -2898,6 +1550,7 @@ pub(super) fn capability_for_binding(
 /// Preserve the canonical identity evidence that host discovery already
 /// merged before the broker publisher turns generation views into the
 /// Capsule-facing projection. Labels are deliberately not consulted.
+#[cfg(test)]
 fn publication_identity_metadata(
     discovery: &ValidatedUsageDiscovery,
 ) -> BTreeMap<UsageAccountCapability, publish::AccountIdentityMetadata> {
@@ -2941,10 +1594,40 @@ fn publication_identity_metadata(
         .collect()
 }
 
+fn projection_identity_metadata(
+    projection: &UsageProjectionV1,
+) -> BTreeMap<UsageAccountCapability, publish::AccountIdentityMetadata> {
+    projection
+        .providers
+        .iter()
+        .flat_map(|provider| {
+            provider.accounts.iter().map(|account| {
+                (
+                    UsageAccountCapability {
+                        surface_id: provider.provider_id.clone(),
+                        account_id: account.canonical_account_id.clone(),
+                    },
+                    publish::AccountIdentityMetadata {
+                        identity_kind: account.identity_kind,
+                        provenance_count: account.provenance_count,
+                    },
+                )
+            })
+        })
+        .collect()
+}
+
 fn unavailable() -> UsageCoordinationError {
     UsageCoordinationError {
         kind: UsageCoordinationErrorKind::Unavailable,
         message: "usage broker is unavailable".to_owned(),
+    }
+}
+
+fn broker_conflict() -> UsageCoordinationError {
+    UsageCoordinationError {
+        kind: UsageCoordinationErrorKind::BrokerConflict,
+        message: "usage broker lease is already owned or cannot be safely identified".to_owned(),
     }
 }
 

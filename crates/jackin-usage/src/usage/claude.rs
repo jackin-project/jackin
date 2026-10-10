@@ -6,13 +6,31 @@
 //! Carved out of `usage.rs` for the file-size ratchet. Items in this module
 //! are `pub(crate)` so the coordinator (`usage.rs`) can re-export them.
 
-use super::refresh::{ProviderError, ProviderRateLimit, split_provider_fetch};
+use super::refresh::{
+    ProviderError, ProviderFailureMetadata, ProviderRateLimit, split_provider_fetch,
+};
 #[cfg_attr(
     not(test),
     expect(clippy::wildcard_imports, reason = "target-dependent")
 )]
 use super::*;
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
+use zeroize::Zeroizing;
+
+const CLAUDE_KEYCHAIN_CREDENTIAL_ORIGIN: &str = "OAuth · macOS Keychain";
+
+mod keychain;
+mod lease;
+#[cfg(any(target_os = "macos", test))]
+pub use keychain::classify_claude_keychain_status;
+pub use keychain::{
+    ClaudeKeychainPolicyError, ClaudeKeychainRead, ClaudeUnattendedKeychainGuard,
+    prepare_claude_keychain_auth, read_claude_keychain_item, unattended_keychain_guard,
+};
+pub(crate) use lease::bootstrapped_claude_service;
+pub use lease::{
+    ClaudeCredentialBootstrapOutcome, ClaudeCredentialLease, bootstrap_claude_credential,
+};
 
 /// Claude OAuth credential candidates, home-first — the single source of truth
 /// for the path precedence, shared by `claude_snapshot` (token + identity) and
@@ -26,13 +44,21 @@ pub(crate) fn claude_oauth_candidates(config: &Path) -> [PathBuf; 4] {
     ]
 }
 
+/// Stable local source partition for one exact Claude Keychain service.
+/// This value is independent of token and account metadata, so a credential
+/// reread cannot move an opted-in broker row to a different account.
+pub(crate) fn claude_source_capability_id_for_service(service: &str) -> String {
+    let hashed = account_key_hash("claude-keychain-service-v1", service);
+    hashed.strip_prefix("sha256:").unwrap_or(&hashed).to_owned()
+}
+
 /// Claude account identity (the `oauthAccount` email) from the same credential
 /// candidates `claude_snapshot` uses, without fetching usage.
 pub(crate) fn claude_account_identity() -> Option<String> {
     let config = env_dir_or_home("CLAUDE_CONFIG_DIR", ".claude");
-    claude_oauth_candidates(&config)
-        .iter()
-        .find_map(|path| load_claude_account_email(path))
+    claude_oauth_candidates(&config).iter().find_map(|path| {
+        load_claude_profile_payload(path).and_then(|profile| profile.account_email)
+    })
 }
 
 pub(crate) fn claude_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsageView {
@@ -96,6 +122,16 @@ pub(crate) fn resolve_claude_wave() -> ClaudeWaveResolution {
         // Non-UTF-8 config path: the service is unknowable, so treat as absence.
         return ClaudeWaveResolution::Missing;
     };
+    if let Some(selected_service) = bootstrapped_claude_service() {
+        // A bootstrap pins every passive read in this process to one exact
+        // source. Do not read files, environment, or another Keychain item on
+        // a missing/mismatched lease; the normal resolver's fallback policy
+        // is intentionally unavailable inside this scope.
+        if selected_service != scope.service {
+            return ClaudeWaveResolution::Missing;
+        }
+        return resolve_bootstrapped_claude_payload(&selected_service);
+    }
     resolve_claude_refresh_wave_with(
         &scope,
         claude_keychain_state(),
@@ -134,19 +170,55 @@ fn claude_scope_file_probe(
             scope.normalized_config_dir.join(".claude.json"),
         ]
     };
-    let (resolved, account_email, organization_type) = resolve_identity_with_extra(
-        &candidates,
-        claude_oauth_from_value,
-        claude_email_from_value,
-        claude_organization_type_from_value,
-    );
-    let (path, credential) = resolved.unzip();
+    let mut credential = None;
+    let mut origin = None;
+    let mut account_email = None;
+    let mut organization_type = None;
+    for path in candidates {
+        let Some(profile) = load_claude_profile_payload(&path) else {
+            continue;
+        };
+        if credential.is_none()
+            && let Some(found) = profile.credential
+        {
+            credential = Some(found);
+            origin = Some(oauth_origin(&path));
+        }
+        if account_email.is_none() {
+            account_email = profile.account_email;
+        }
+        if organization_type.is_none() {
+            organization_type = profile.organization_type;
+        }
+        if credential.is_some() && account_email.is_some() && organization_type.is_some() {
+            break;
+        }
+    }
     ClaudeFileProbe {
         credential,
-        origin: path.as_deref().map(oauth_origin),
+        origin,
         account_email,
         organization_type,
     }
+}
+
+fn resolve_bootstrapped_claude_payload(service: &str) -> ClaudeWaveResolution {
+    let Some(json) = lease::cached_claude_keychain_payload(service) else {
+        return ClaudeWaveResolution::Missing;
+    };
+    let Some(profile) = parse_claude_profile_payload(json.as_bytes()) else {
+        return ClaudeWaveResolution::Missing;
+    };
+    let Some(credential) = profile.credential else {
+        return ClaudeWaveResolution::Missing;
+    };
+    ClaudeWaveResolution::Resolved(Box::new(claude_resolved(
+        credential,
+        CLAUDE_KEYCHAIN_CREDENTIAL_ORIGIN.to_owned(),
+        profile.account_email,
+        profile.organization_type,
+        Some(service.to_owned()),
+    )))
 }
 
 /// Classify the typed cache/coordination policy for a resolved wave. Denied,
@@ -178,9 +250,24 @@ pub(crate) fn claude_view_from_wave_with_rate_limit(
     now: i64,
     resolution: ClaudeWaveResolution,
 ) -> (FocusedUsageView, Option<ProviderRateLimit>) {
+    let (view, rate_limit, _) =
+        claude_view_from_wave_with_metadata(agent, provider, now, resolution);
+    (view, rate_limit)
+}
+
+pub(crate) fn claude_view_from_wave_with_metadata(
+    agent: &str,
+    provider: Option<&str>,
+    now: i64,
+    resolution: ClaudeWaveResolution,
+) -> (
+    FocusedUsageView,
+    Option<ProviderRateLimit>,
+    Option<ProviderFailureMetadata>,
+) {
     match resolution {
-        ClaudeWaveResolution::Denied => (claude_denied_view(agent, provider, now), None),
-        ClaudeWaveResolution::Missing => (claude_missing_view(agent, provider, now), None),
+        ClaudeWaveResolution::Denied => (claude_denied_view(agent, provider, now), None, None),
+        ClaudeWaveResolution::Missing => (claude_missing_view(agent, provider, now), None, None),
         ClaudeWaveResolution::Resolved(resolved) => {
             claude_resolved_view(agent, provider, now, *resolved)
         }
@@ -276,25 +363,230 @@ fn claude_resolved_view(
     provider: Option<&str>,
     now: i64,
     resolved: ClaudeResolved,
-) -> (FocusedUsageView, Option<ProviderRateLimit>) {
-    let (oauth_quota, oauth_error) = split_provider_fetch(Some(
-        fetch_claude_oauth_usage(&resolved.access_token).map_err(ProviderError::from),
-    ));
-    let (cli_usage, cli_error) =
-        split_provider_fetch(oauth_quota.is_none().then(fetch_claude_cli_usage));
-    let provider_error = claude_provider_error_label(oauth_error.as_ref(), cli_error.as_ref());
-    let status = if oauth_quota.is_some() || cli_usage.is_some() {
+) -> (
+    FocusedUsageView,
+    Option<ProviderRateLimit>,
+    Option<ProviderFailureMetadata>,
+) {
+    let view = usage_view(UsageViewInput {
+        agent,
+        provider,
+        surface: UsageSurface::Claude,
+        account_label: resolved.account_email.unwrap_or_default(),
+        username: None,
+        plan_label: resolved.organization_type.or(resolved.subscription_type),
+        credential_origin: Some(resolved.credential_origin),
+        buckets: Vec::new(),
+        status: UsageSnapshotStatus::Unsupported,
+        source: UsageSource::None,
+        confidence: UsageConfidence::None,
+        now,
+        last_error: Some(
+            "Claude OAuth collection requires an active experimental broker monitor".to_owned(),
+        ),
+    });
+    (view, None, None)
+}
+
+/// Explicit broker-only Claude collector. The callback rechecks persisted
+/// opt-in and exact current account mapping at each request and reread boundary.
+/// This function can only use the one exact foreground-bootstrap cache entry;
+/// it never resolves files, environment values, or another Keychain service.
+pub(crate) fn experimental_claude_usage_snapshot_for_service<C>(
+    agent: &str,
+    provider: Option<&str>,
+    now: i64,
+    service: &str,
+    consent_is_current: C,
+) -> Result<
+    Option<(
+        FocusedUsageView,
+        Option<ProviderRateLimit>,
+        Option<ProviderFailureMetadata>,
+    )>,
+    ClaudeCollectionError,
+>
+where
+    C: Fn() -> bool,
+{
+    if !consent_is_current() {
+        return Err(ClaudeCollectionError::ConsentRevoked {
+            provider_http_status: None,
+        });
+    }
+    if !lease::valid_claude_keychain_service(service)
+        || !lease::claude_service_is_bootstrapped(service)
+    {
+        return Ok(None);
+    }
+    let Some(payload) = lease::cached_claude_keychain_payload(service) else {
+        return Ok(None);
+    };
+    let Some(profile) = parse_claude_profile_payload(payload.as_bytes()) else {
+        return Ok(None);
+    };
+    let Some(credential) = profile.credential else {
+        return Ok(None);
+    };
+    let mut resolved = claude_resolved(
+        credential,
+        CLAUDE_KEYCHAIN_CREDENTIAL_ORIGIN.to_owned(),
+        profile.account_email,
+        profile.organization_type,
+        Some(service.to_owned()),
+    );
+    let result = fetch_claude_with_one_401_reread(
+        service,
+        &mut resolved,
+        fetch_claude_oauth_usage,
+        keychain::read_claude_keychain_item_uncached,
+        consent_is_current,
+    );
+    let result = match result {
+        Ok(response) => Ok(response),
+        Err(ClaudeFetchError::Provider(error)) => Err(error),
+        Err(ClaudeFetchError::ConsentRevoked {
+            provider_http_status,
+        }) => {
+            return Err(ClaudeCollectionError::ConsentRevoked {
+                provider_http_status,
+            });
+        }
+    };
+    let observed_at = if result.is_ok() {
+        chrono::Utc::now().timestamp()
+    } else {
+        now
+    };
+    Ok(Some(claude_result_view(
+        agent,
+        provider,
+        observed_at,
+        resolved,
+        result,
+    )))
+}
+
+/// Secret-free collector gate outcome. Retain an HTTP status when revocation
+/// races with recovery from an already observed unauthorized response.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ClaudeCollectionError {
+    ConsentRevoked { provider_http_status: Option<u16> },
+}
+
+#[derive(Debug)]
+enum ClaudeFetchError {
+    Provider(ProviderHttpError),
+    ConsentRevoked { provider_http_status: Option<u16> },
+}
+
+fn fetch_claude_with_one_401_reread<F, R>(
+    service: &str,
+    resolved: &mut ClaudeResolved,
+    mut fetch: F,
+    reread: R,
+    consent_is_current: impl Fn() -> bool,
+) -> Result<ClaudeOAuthUsageResponse, ClaudeFetchError>
+where
+    F: FnMut(&str) -> Result<ClaudeOAuthUsageResponse, ProviderHttpError>,
+    R: FnOnce(&str) -> ClaudeKeychainRead,
+{
+    if !consent_is_current() {
+        return Err(ClaudeFetchError::ConsentRevoked {
+            provider_http_status: None,
+        });
+    }
+    let first = fetch(resolved.access_token.as_str()).map_err(ClaudeFetchError::Provider);
+    if !matches!(
+        &first,
+        Err(ClaudeFetchError::Provider(ProviderHttpError::HttpStatus {
+            status: 401,
+            ..
+        }))
+    ) {
+        return first;
+    }
+    if !consent_is_current() {
+        return Err(ClaudeFetchError::ConsentRevoked {
+            provider_http_status: Some(401),
+        });
+    }
+    let Some(generation) = lease::begin_bootstrapped_claude_401_reread(service) else {
+        return first;
+    };
+    let ClaudeKeychainRead::Payload { json } = reread(service) else {
+        return first;
+    };
+    if json.len() > lease::MAX_CLAUDE_KEYCHAIN_PAYLOAD_BYTES {
+        return first;
+    }
+    let Some(profile) = parse_claude_profile_payload(json.as_bytes()) else {
+        return first;
+    };
+    let Some(credential) = profile.credential else {
+        return first;
+    };
+    // The service is the canonical local source scope. Preserve all account
+    // metadata selected by discovery; reject a reread that supplies conflicting
+    // explicit account evidence, and never remap from newly read email/tier.
+    if resolved
+        .account_email
+        .as_deref()
+        .zip(profile.account_email.as_deref())
+        .is_some_and(|(old, new)| old != new)
+        || credential.access_token.as_str() == resolved.access_token.as_str()
+    {
+        return first;
+    }
+    if !consent_is_current() {
+        return Err(ClaudeFetchError::ConsentRevoked {
+            provider_http_status: Some(401),
+        });
+    }
+    resolved.access_token = credential.access_token;
+    let retried = fetch(resolved.access_token.as_str()).map_err(ClaudeFetchError::Provider);
+    if !consent_is_current() {
+        return match retried {
+            Err(provider_error) => Err(provider_error),
+            Ok(_) => Err(ClaudeFetchError::ConsentRevoked {
+                provider_http_status: None,
+            }),
+        };
+    }
+    if !lease::replace_bootstrapped_claude_payload(service, generation, json) {
+        return retried;
+    }
+    retried
+}
+
+fn claude_result_view(
+    agent: &str,
+    provider: Option<&str>,
+    now: i64,
+    resolved: ClaudeResolved,
+    result: Result<ClaudeOAuthUsageResponse, ProviderHttpError>,
+) -> (
+    FocusedUsageView,
+    Option<ProviderRateLimit>,
+    Option<ProviderFailureMetadata>,
+) {
+    let (oauth_quota, oauth_error) =
+        split_provider_fetch(Some(result.map_err(ProviderError::from)));
+    let provider_error = claude_provider_error_label(oauth_error.as_ref(), None);
+    let status = if oauth_quota.is_some() {
         UsageSnapshotStatus::Fresh
+    } else if oauth_error
+        .as_ref()
+        .is_some_and(|error| error.status() == Some(401))
+    {
+        UsageSnapshotStatus::NeedsLogin
     } else {
         UsageSnapshotStatus::Stale
     };
-    let rate_limit = (status != UsageSnapshotStatus::Fresh)
-        .then_some(oauth_error.as_ref().or(cli_error.as_ref()))
-        .flatten()
-        .and_then(ProviderError::rate_limit);
+    let rate_limit = oauth_error.as_ref().and_then(ProviderError::rate_limit);
+    let failure_metadata = oauth_error.as_ref().map(ProviderError::metadata);
     let buckets = oauth_quota
         .map(|usage| usage.into_buckets(now))
-        .or_else(|| cli_usage.as_ref().map(ClaudeCliUsage::buckets))
         .filter(|buckets| !buckets.is_empty())
         .unwrap_or_else(|| claude_pending_buckets(status, provider_error.as_deref()));
     let view = usage_view(UsageViewInput {
@@ -308,100 +600,139 @@ fn claude_resolved_view(
         buckets,
         status,
         source: if status == UsageSnapshotStatus::Fresh {
-            if cli_usage.is_some() {
-                UsageSource::Cli
-            } else {
-                UsageSource::ProviderApi
-            }
+            UsageSource::ProviderApi
         } else {
             UsageSource::None
         },
         confidence: if status == UsageSnapshotStatus::Fresh {
-            if cli_usage.is_some() {
-                UsageConfidence::Estimated
-            } else {
-                UsageConfidence::Authoritative
-            }
+            UsageConfidence::Authoritative
         } else {
             UsageConfidence::None
         },
         now,
-        last_error: claude_resolved_last_error(status, provider_error, cli_usage.is_some()),
+        last_error: claude_resolved_last_error(status, provider_error),
     });
-    (view, rate_limit)
+    (view, rate_limit, failure_metadata)
 }
 
 /// `last_error` for a resolved view: the normalized provider error when stale,
-/// the (already normalized) provider error on CLI fallback so the explicit
-/// scope text surfaces there too, else none. Pure so the routing is
-/// unit-testable without provider I/O.
+/// else none. Pure so the routing is unit-testable without provider I/O.
 pub(crate) fn claude_resolved_last_error(
     status: UsageSnapshotStatus,
     provider_error: Option<String>,
-    cli_fallback: bool,
 ) -> Option<String> {
     match status {
-        UsageSnapshotStatus::Stale => Some(provider_error.unwrap_or_else(|| {
-            "Claude provider usage unavailable; cached quota is stale".to_owned()
-        })),
-        _ if cli_fallback => Some(provider_error.unwrap_or_else(|| {
-            "Claude OAuth usage unavailable; showing reduced CLI snapshot".to_owned()
-        })),
+        UsageSnapshotStatus::Stale | UsageSnapshotStatus::NeedsLogin => {
+            Some(provider_error.unwrap_or_else(|| {
+                "Claude provider usage unavailable; cached quota is stale".to_owned()
+            }))
+        }
         _ => None,
     }
 }
 
 // No `Debug`/`Display`: this carries a live access token and (optionally) the
 // stable refresh token, so it must never be formatted into a log or error.
-#[derive(Clone)]
 pub(crate) struct ClaudeOAuthCredentials {
-    pub(crate) access_token: String,
+    pub(crate) access_token: Zeroizing<String>,
     pub(crate) subscription_type: Option<String>,
-    /// Stable rotation-independent identity input. Consumed only inside wave
-    /// resolution to derive the opaque account discriminator, then dropped —
-    /// never carried into a view, log, snapshot, or coordination key raw.
-    pub(crate) refresh_token: Option<String>,
 }
 
-/// Claude account email (F12): `~/.claude.json` carries `oauthAccount` metadata
-/// (never the token), and `CodexBar` reads the address from there. Returns the
-/// trimmed `oauthAccount.emailAddress`, or `None` when absent.
-pub(crate) fn claude_email_from_value(value: &serde_json::Value) -> Option<String> {
-    let oauth = value.get("oauthAccount")?;
-    oauth
-        .get("emailAddress")
-        .or_else(|| oauth.get("email_address"))
-        .and_then(serde_json::Value::as_str)
+struct ClaudeSecretString(Zeroizing<String>);
+
+impl<'de> Deserialize<'de> for ClaudeSecretString {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        String::deserialize(deserializer).map(|value| Self(Zeroizing::new(value)))
+    }
+}
+
+#[derive(Deserialize)]
+struct ClaudeCredentialPayload {
+    #[serde(rename = "claudeAiOauth", alias = "claude_ai_oauth")]
+    claude_ai_oauth: Option<ClaudeOAuthPayload>,
+    #[serde(rename = "oauthAccount", alias = "oauth_account")]
+    oauth_account: Option<ClaudeAccountPayload>,
+}
+
+#[derive(Deserialize)]
+struct ClaudeOAuthPayload {
+    #[serde(rename = "accessToken", alias = "access_token")]
+    access_token: Option<ClaudeSecretString>,
+    #[serde(
+        rename = "subscriptionType",
+        alias = "subscription_type",
+        alias = "rateLimitTier",
+        alias = "rate_limit_tier"
+    )]
+    subscription_type: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct ClaudeAccountPayload {
+    #[serde(rename = "emailAddress", alias = "email_address")]
+    email_address: Option<String>,
+    #[serde(rename = "organizationType", alias = "organization_type")]
+    organization_type: Option<String>,
+}
+
+pub(crate) struct ClaudeProfilePayload {
+    pub(crate) credential: Option<ClaudeOAuthCredentials>,
+    pub(crate) account_email: Option<String>,
+    pub(crate) organization_type: Option<String>,
+}
+
+pub(crate) fn parse_claude_profile_payload(bytes: &[u8]) -> Option<ClaudeProfilePayload> {
+    let payload = serde_json::from_slice::<ClaudeCredentialPayload>(bytes).ok()?;
+    let account_email = payload
+        .oauth_account
+        .as_ref()
+        .and_then(|account| account.email_address.as_deref())
         .map(str::trim)
         .filter(|email| !email.is_empty())
-        .map(str::to_owned)
+        .map(str::to_owned);
+    let organization_type = payload
+        .oauth_account
+        .as_ref()
+        .and_then(|account| account.organization_type.as_deref())
+        .map(str::trim)
+        .filter(|label| !label.is_empty())
+        .map(humanize_plan_label);
+    let credential = payload.claude_ai_oauth.and_then(|oauth| {
+        let access_token = oauth.access_token?.0;
+        if access_token.trim().is_empty() {
+            return None;
+        }
+        let subscription_type = oauth.subscription_type.as_deref().map(humanize_plan_label);
+        Some(ClaudeOAuthCredentials {
+            access_token,
+            subscription_type,
+        })
+    });
+    Some(ClaudeProfilePayload {
+        credential,
+        account_email,
+        organization_type,
+    })
 }
 
-/// Claude account tier from `oauthAccount.organizationType` in `~/.claude.json`.
-///
-/// Enterprise/Team accounts store their billing model in `subscriptionType`
-/// ("API Usage Billing"), not the account tier. `organizationType` carries the
-/// tier directly (e.g. `"claude_enterprise"`, `"claude_max"`, `"claude_team"`) and is
-/// the authoritative source for the plan label shown in the TUI header.
-pub(crate) fn claude_organization_type_from_value(value: &serde_json::Value) -> Option<String> {
-    value
-        .get("oauthAccount")?
-        .get("organizationType")
-        .and_then(serde_json::Value::as_str)
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(humanize_plan_label)
+fn load_claude_profile_payload(path: &Path) -> Option<ClaudeProfilePayload> {
+    let bytes = Zeroizing::new(fs::read(path).ok()?);
+    parse_claude_profile_payload(bytes.as_slice())
 }
 
 pub(crate) fn load_claude_account_email(path: &Path) -> Option<String> {
-    claude_email_from_value(&read_json_file(path)?)
+    load_claude_profile_payload(path).and_then(|profile| profile.account_email)
 }
 
 #[cfg(test)]
 pub(crate) fn load_claude_organization_type(path: &Path) -> Option<String> {
-    claude_organization_type_from_value(&read_json_file(path)?)
+    load_claude_profile_payload(path).and_then(|profile| profile.organization_type)
 }
 
+#[cfg(test)]
 pub(crate) fn claude_oauth_from_value(value: &serde_json::Value) -> Option<ClaudeOAuthCredentials> {
     let oauth = value.get("claudeAiOauth")?;
     let access_token = oauth
@@ -420,19 +751,9 @@ pub(crate) fn claude_oauth_from_value(value: &serde_json::Value) -> Option<Claud
         .or_else(|| oauth.get("rate_limit_tier"))
         .and_then(serde_json::Value::as_str)
         .map(humanize_plan_label);
-    // Optional stable refresh token — used only to derive the coordination
-    // discriminator when no `oauthAccount` metadata exists. Never surfaced.
-    let refresh_token = oauth
-        .get("refreshToken")
-        .or_else(|| oauth.get("refresh_token"))
-        .and_then(serde_json::Value::as_str)
-        .map(str::trim)
-        .filter(|token| !token.is_empty())
-        .map(str::to_owned);
     Some(ClaudeOAuthCredentials {
-        access_token,
+        access_token: Zeroizing::new(access_token),
         subscription_type,
-        refresh_token,
     })
 }
 
@@ -450,71 +771,6 @@ pub(crate) fn load_claude_oauth_credentials(path: &Path) -> Option<ClaudeOAuthCr
 // `jackin_core::claude_keychain_scope` helper, so instance provisioning and
 // this probe never disagree. Rust owns all resolution; Swift is display-only.
 // ===================================================================
-
-/// Raw Keychain lookup outcome for one service. Secret-free in its own labels
-/// (`json` carries the payload but the type is never formatted/logged).
-pub(crate) enum ClaudeKeychainRead {
-    #[cfg(any(target_os = "macos", test))]
-    Payload {
-        json: String,
-    },
-    Denied,
-    Missing,
-    /// A matching item requires operator consent before its payload can be read.
-    ConsentRequired,
-}
-
-/// Classify a macOS `OSStatus` from a Keychain lookup. Only an explicit user
-/// cancel (`errSecUserCanceled` = -128) or auth failure (`errSecAuthFailed` =
-/// -25293) is a terminal `Denied`; headless interaction-not-allowed (-25308)
-/// is `ConsentRequired`; item-not-found (-25300) and any other failure are
-/// `Missing` (absence). Pure and cross-platform so tests never touch the real
-/// Keychain.
-#[cfg(any(target_os = "macos", test))]
-pub(crate) fn classify_claude_keychain_status(code: i32) -> ClaudeKeychainRead {
-    match code {
-        -128 | -25293 => ClaudeKeychainRead::Denied,
-        -25308 => ClaudeKeychainRead::ConsentRequired,
-        _ => ClaudeKeychainRead::Missing,
-    }
-}
-
-#[cfg(target_os = "macos")]
-pub(crate) fn read_claude_keychain_item(service: &str) -> ClaudeKeychainRead {
-    use security_framework::item::{ItemClass, ItemSearchOptions, SearchResult};
-
-    let mut options = ItemSearchOptions::new();
-    options
-        .class(ItemClass::generic_password())
-        .service(service)
-        .load_data(true)
-        .limit(1);
-    // Keep authentication UI enabled: `errSecInteractionNotAllowed` tells us
-    // that the matching item exists but needs consent, while
-    // `errSecItemNotFound` means it is absent. A skip-auth query would erase
-    // that distinction by hiding consent-gated items.
-    match options.search() {
-        Ok(results) => {
-            for result in results {
-                if let SearchResult::Data(bytes) = result {
-                    return match String::from_utf8(bytes) {
-                        Ok(text) if !text.trim().is_empty() => ClaudeKeychainRead::Payload {
-                            json: text.trim().to_owned(),
-                        },
-                        _ => ClaudeKeychainRead::Missing,
-                    };
-                }
-            }
-            ClaudeKeychainRead::Missing
-        }
-        Err(error) => classify_claude_keychain_status(error.code()),
-    }
-}
-
-#[cfg(not(target_os = "macos"))]
-pub(crate) fn read_claude_keychain_item(_service: &str) -> ClaudeKeychainRead {
-    ClaudeKeychainRead::Missing
-}
 
 /// Process-lifetime Keychain coordination: serializes reader I/O so a consent
 /// sheet is prompted at most once per wave, and remembers services the operator
@@ -596,13 +852,14 @@ pub(crate) enum ClaudeWaveResolution {
 
 #[derive(Clone)]
 pub(crate) struct ClaudeResolved {
-    pub(crate) access_token: String,
+    pub(crate) access_token: Zeroizing<String>,
     pub(crate) subscription_type: Option<String>,
     pub(crate) account_email: Option<String>,
     pub(crate) organization_type: Option<String>,
     pub(crate) credential_origin: String,
-    /// `true` when the credential carries no proven cross-account identity (no
-    /// account metadata and no refresh token) — a local-only credential.
+    /// Stable exact Keychain source service, when this is a profile credential.
+    pub(crate) keychain_service: Option<String>,
+    /// `true` when no local source identity can be attached.
     pub(crate) is_anonymous: bool,
 }
 
@@ -636,25 +893,22 @@ where
         ClaudeKeychainRead::Denied => ClaudeWaveResolution::Denied,
         #[cfg(any(target_os = "macos", test))]
         ClaudeKeychainRead::Payload { json } => {
-            match serde_json::from_str::<serde_json::Value>(&json)
-                .ok()
-                .as_ref()
-                .and_then(claude_oauth_from_value)
-            {
-                Some(credential) => {
+            match parse_claude_profile_payload(json.as_bytes()) {
+                Some(profile) if profile.credential.is_some() => {
                     // Valid Keychain payload: may still collect account/tier
                     // metadata from the same-scope file probe, but the file
                     // credential can never replace the Keychain one.
                     let probe = file_probe();
                     let origin = format!("OAuth · macOS Keychain ({})", scope.service);
                     ClaudeWaveResolution::Resolved(Box::new(claude_resolved(
-                        credential,
+                        profile.credential.expect("checked above"),
                         origin,
-                        probe.account_email,
-                        probe.organization_type,
+                        profile.account_email.or(probe.account_email),
+                        profile.organization_type.or(probe.organization_type),
+                        Some(scope.service.clone()),
                     )))
                 }
-                None => resolve_claude_fallback(scope, file_probe(), env_reader()),
+                _ => resolve_claude_fallback(scope, file_probe(), env_reader()),
             }
         }
         ClaudeKeychainRead::Missing | ClaudeKeychainRead::ConsentRequired => {
@@ -677,9 +931,9 @@ fn resolve_claude_fallback(
             origin,
             probe.account_email,
             probe.organization_type,
+            Some(scope.service.clone()),
         )));
     }
-    let _ = scope;
     if let Some(token) = env_token {
         return ClaudeWaveResolution::Resolved(Box::new(ClaudeResolved {
             access_token: token.0,
@@ -690,18 +944,32 @@ fn resolve_claude_fallback(
                 "OAuth · env {}",
                 jackin_core::CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME
             ),
+            keychain_service: None,
             is_anonymous: true,
         }));
     }
     ClaudeWaveResolution::Missing
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ClaudeOAuthEnvToken(String);
+pub(crate) struct ClaudeOAuthEnvToken(Zeroizing<String>);
+
+impl PartialEq for ClaudeOAuthEnvToken {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.as_str() == other.0.as_str()
+    }
+}
+
+impl Eq for ClaudeOAuthEnvToken {}
+
+impl std::fmt::Debug for ClaudeOAuthEnvToken {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("ClaudeOAuthEnvToken(REDACTED)")
+    }
+}
 
 impl ClaudeOAuthEnvToken {
     pub(crate) fn new(value: String) -> Self {
-        Self(value)
+        Self(Zeroizing::new(value))
     }
 }
 
@@ -710,25 +978,19 @@ fn claude_resolved(
     origin: String,
     account_email: Option<String>,
     organization_type: Option<String>,
+    keychain_service: Option<String>,
 ) -> ClaudeResolved {
-    // Identity is proven by same-scope account metadata or the stable refresh
-    // token; a rotating access token is never identity. Without either, the
-    // credential is anonymous (local-only, no cross-account coordination).
-    let is_anonymous = !(account_email
-        .as_deref()
-        .map(str::trim)
-        .is_some_and(|value| !value.is_empty())
-        || credential
-            .refresh_token
-            .as_deref()
-            .map(str::trim)
-            .is_some_and(|value| !value.is_empty()));
+    // Canonical identity is the local exact source scope, never an email or a
+    // rotating token. The caller that owns a profile binding supplies that
+    // scope independently when it materializes the account row.
+    let is_anonymous = account_email.is_none() && keychain_service.is_none();
     ClaudeResolved {
         access_token: credential.access_token,
         subscription_type: credential.subscription_type,
         account_email,
         organization_type,
         credential_origin: origin,
+        keychain_service,
         is_anonymous,
     }
 }
@@ -1299,7 +1561,7 @@ pub(crate) fn normalize_claude_spend(
 pub(crate) fn fetch_claude_oauth_usage(
     access_token: &str,
 ) -> Result<ClaudeOAuthUsageResponse, ProviderHttpError> {
-    let user_agent = claude_code_user_agent();
+    let user_agent = format!("jackin/{}", env!("CARGO_PKG_VERSION"));
     get_json_bearer(
         jackin_telemetry::schema::enums::ProviderName::Anthropic,
         "/api/oauth/usage",
@@ -1312,53 +1574,11 @@ pub(crate) fn fetch_claude_oauth_usage(
                 reqwest::header::HeaderName::from_static("anthropic-beta"),
                 "oauth-2025-04-20",
             ),
-            // The OAuth usage endpoint is gated to the Claude Code client UA;
-            // a generic UA is rejected.
+            // Report the real collecting client. This experimental endpoint
+            // must not impersonate Claude Code or launch it for an identity.
             (reqwest::header::USER_AGENT, &user_agent),
         ],
     )
-}
-
-pub(crate) fn claude_code_user_agent() -> String {
-    // The Claude Code version is stable for the process lifetime, so resolve the
-    // UA once instead of spawning `claude --version` on every usage fetch — that
-    // per-probe subprocess was a measurable slice of the load latency (Bug 3).
-    static CACHED: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-    CACHED
-        .get_or_init(|| {
-            claude_code_user_agent_with(|command, args, timeout| {
-                run_cli_with_timeout_full(command, args, timeout)
-            })
-            .unwrap_or_else(|| CLAUDE_CODE_USER_AGENT_FALLBACK.to_owned())
-        })
-        .clone()
-}
-
-pub(crate) fn claude_code_user_agent_with<F>(mut runner: F) -> Option<String>
-where
-    F: FnMut(&str, &[&str], Duration) -> Result<CliOutput, String>,
-{
-    let output = runner("claude", &["--version"], CLAUDE_VERSION_TIMEOUT).ok()?;
-    if !output.success {
-        return None;
-    }
-    let text = format!("{}\n{}", output.stdout, output.stderr);
-    claude_code_version_from_text(&text).map(|version| format!("claude-code/{version}"))
-}
-
-pub(crate) fn claude_code_version_from_text(text: &str) -> Option<String> {
-    text.split(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '.' || ch == '-'))
-        .find(|part| {
-            let mut segments = part.split('.');
-            matches!(
-                (segments.next(), segments.next(), segments.next()),
-                (Some(major), Some(minor), Some(patch))
-                    if major.chars().all(|ch| ch.is_ascii_digit())
-                        && minor.chars().all(|ch| ch.is_ascii_digit())
-                        && patch.chars().all(|ch| ch.is_ascii_digit())
-            )
-        })
-        .map(str::to_owned)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

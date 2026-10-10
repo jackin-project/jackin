@@ -476,7 +476,10 @@ fn disc_synthesized_routes_keep_launch_keys_separate() {
     );
     let validated = validate_usage_sources(catalog, &resolver);
     assert_eq!(validated.bindings.len(), 1);
-    assert_eq!(crate::host::usage_broker_capabilities(&validated).len(), 1);
+    assert_eq!(
+        crate::host::broker::usage_broker_capabilities(&validated).len(),
+        1
+    );
 }
 
 #[test]
@@ -530,7 +533,7 @@ fn disc_registry_openrouter_api_key_maps_to_usage_surface_and_governed_env() {
     assert!(!format!("{catalog:?}").contains("fixture-openrouter-key"));
 
     let validated = validate_usage_sources(catalog, &resolver);
-    let capabilities = crate::host::usage_broker_capabilities(&validated);
+    let capabilities = crate::host::broker::usage_broker_capabilities(&validated);
     assert_eq!(capabilities.len(), 1);
     assert_eq!(capabilities[0].surface_id, "openrouter");
 }
@@ -873,7 +876,7 @@ fn disc_config_generation_rotates_capability_for_same_credential_identity() {
         &NoEnvResolver,
         &reader,
     );
-    let first_capability = crate::host::usage_broker_capabilities(&first)
+    let first_capability = crate::host::broker::usage_broker_capabilities(&first)
         .into_iter()
         .next()
         .unwrap();
@@ -884,7 +887,7 @@ fn disc_config_generation_rotates_capability_for_same_credential_identity() {
         &NoEnvResolver,
         &reader,
     );
-    let second_capability = crate::host::usage_broker_capabilities(&second)
+    let second_capability = crate::host::broker::usage_broker_capabilities(&second)
         .into_iter()
         .next()
         .unwrap();
@@ -1740,7 +1743,10 @@ fn disc_env_key_account_resolves_through_isolated_alias() {
             ..
         } if key == "OPENAI_API_KEY" && dispatch_key == "OPENAI_API_KEY"
     ));
-    assert_eq!(crate::host::usage_broker_capabilities(&validated).len(), 1);
+    assert_eq!(
+        crate::host::broker::usage_broker_capabilities(&validated).len(),
+        1
+    );
     assert_eq!(validated.unresolved_capabilities().count(), 0);
 }
 
@@ -1838,7 +1844,10 @@ fn disc_mixed_profile_and_env_same_provider_merge_to_one_identity() {
         validated.bindings[0].identity,
         validated.bindings[1].identity
     );
-    assert_eq!(crate::host::usage_broker_capabilities(&validated).len(), 1);
+    assert_eq!(
+        crate::host::broker::usage_broker_capabilities(&validated).len(),
+        1
+    );
     assert_eq!(validated.unresolved_capabilities().count(), 0);
 }
 
@@ -1860,7 +1869,10 @@ fn disc_distinct_env_keys_same_provider_keep_distinct_identities() {
 
     let validated = validate_usage_sources(catalog, &resolver);
     assert_eq!(validated.accounts.len(), 2);
-    assert_eq!(crate::host::usage_broker_capabilities(&validated).len(), 2);
+    assert_eq!(
+        crate::host::broker::usage_broker_capabilities(&validated).len(),
+        2
+    );
 }
 
 #[test]
@@ -1883,7 +1895,10 @@ fn disc_same_env_key_through_two_accounts_dedupes_to_one_source() {
     let validated = validate_usage_sources(catalog, &resolver);
     assert_eq!(validated.accounts.len(), 1);
     assert_eq!(validated.accounts[0].provenance.len(), 2);
-    assert_eq!(crate::host::usage_broker_capabilities(&validated).len(), 1);
+    assert_eq!(
+        crate::host::broker::usage_broker_capabilities(&validated).len(),
+        1
+    );
 }
 
 #[test]
@@ -1904,7 +1919,10 @@ fn disc_env_key_without_profile_keeps_own_source_scoped_row() {
         validated.accounts[0].identity.subject,
         CanonicalAccountSubject::SourceCapability(_)
     ));
-    assert_eq!(crate::host::usage_broker_capabilities(&validated).len(), 1);
+    assert_eq!(
+        crate::host::broker::usage_broker_capabilities(&validated).len(),
+        1
+    );
     assert_eq!(validated.unresolved_capabilities().count(), 0);
 }
 
@@ -1942,7 +1960,10 @@ fn disc_env_key_with_two_provider_identities_stays_separate() {
 
     // Ambiguous targets are never guessed: the key keeps its own row.
     assert_eq!(validated.accounts.len(), 3);
-    assert_eq!(crate::host::usage_broker_capabilities(&validated).len(), 3);
+    assert_eq!(
+        crate::host::broker::usage_broker_capabilities(&validated).len(),
+        3
+    );
 }
 
 #[test]
@@ -1974,7 +1995,10 @@ fn disc_env_key_does_not_attach_to_label_only_profile() {
         account.identity.subject,
         CanonicalAccountSubject::SourceCapability(_)
     )));
-    assert_eq!(crate::host::usage_broker_capabilities(&validated).len(), 2);
+    assert_eq!(
+        crate::host::broker::usage_broker_capabilities(&validated).len(),
+        2
+    );
 }
 
 #[test]

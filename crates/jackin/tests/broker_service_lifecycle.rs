@@ -6,66 +6,28 @@ use std::path::PathBuf;
 use std::sync::{Arc, Barrier};
 use std::thread;
 
-use jackin_protocol::usage_broker::{UsageAccountCapability, UsageCoordinationErrorKind};
-use jackin_usage::host::{
-    CachedProviderCredentialResolver, ProviderCredentialSecretResolution,
-    ProviderCredentialSecretSource, UsageBrokerConfig, UsageDiscoveryScope, discover_usage_sources,
-    ensure_usage_broker, ensure_usage_broker_process, validate_usage_sources,
+use jackin_protocol::usage_broker::USAGE_BROKER_PROTOCOL_VERSION;
+use jackin_protocol::usage_monitor::{
+    MonitorConfig, MonitorDispatchReadiness, MonitorOperation, MonitorProvider, MonitorPurpose,
+    MonitorReply, MonitorScope, USAGE_MONITOR_SCHEMA_VERSION,
 };
-
-#[derive(Default)]
-struct EmptySecretSource;
-
-impl ProviderCredentialSecretSource for EmptySecretSource {
-    fn lookup_declaration(
-        &self,
-        _config: &jackin_config::AppConfig,
-        _workspace: Option<&jackin_core::WorkspaceName>,
-        _role: Option<&str>,
-        _entry: jackin_core::UsageCredentialEnvName,
-    ) -> Option<jackin_config::EnvValue> {
-        None
-    }
-
-    fn resolve_secret(
-        &self,
-        _config: &jackin_config::AppConfig,
-        _workspace: Option<&jackin_core::WorkspaceName>,
-        _role: Option<&str>,
-        _entry: jackin_core::UsageCredentialEnvName,
-    ) -> Option<ProviderCredentialSecretResolution> {
-        None
-    }
-}
+use jackin_usage::host::{UsageBrokerConfig, UsageDiscoveryScope, ensure_usage_broker_process};
 
 #[test]
 fn broker_service_lifecycle() {
+    assert_eq!(USAGE_BROKER_PROTOCOL_VERSION, "v7");
+    assert_eq!(USAGE_MONITOR_SCHEMA_VERSION, 4);
+
     let root = workspace_state_dir();
     let _ignored = fs::remove_dir_all(&root);
     fs::create_dir_all(&root).expect("workspace test state");
     let data_dir = root.join("data");
     let cleanup = FixtureBrokerCleanup(data_dir.clone());
-    let config_root = root.join("config");
-    let operator_home = root.join("home");
-    fs::create_dir_all(&config_root).expect("config root");
-    fs::create_dir_all(&operator_home).expect("operator home");
-    fs::write(
-        config_root.join("config.toml"),
-        format!("version = \"{}\"\n", jackin_config::CURRENT_CONFIG_VERSION),
-    )
-    .expect("config");
-
-    let executable = PathBuf::from(env!("CARGO_BIN_EXE_jackin-usage-broker"));
-    assert!(
-        executable.exists(),
-        "service executable: {}",
-        executable.display()
-    );
     let mut config = UsageBrokerConfig::for_data_dir(data_dir);
-    config.service_executable = Some(executable);
+    config.service_executable = Some(PathBuf::from(env!("CARGO_BIN_EXE_jackin-usage-broker")));
     let scope = UsageDiscoveryScope::HostDesktop {
-        config_root,
-        operator_home,
+        config_root: root.join("config"),
+        operator_home: root.join("home"),
     };
     let barrier = Arc::new(Barrier::new(4));
     let mut activators = Vec::new();
@@ -75,7 +37,7 @@ fn broker_service_lifecycle() {
         let scope = scope.clone();
         activators.push(thread::spawn(move || {
             barrier.wait();
-            ensure_usage_broker_process(config, &scope).expect("broker starts")
+            ensure_usage_broker_process(config, &scope).expect("passive broker starts")
         }));
     }
     let activator_results = activators
@@ -87,6 +49,48 @@ fn broker_service_lifecycle() {
         .map(|result| result.expect("activator thread"))
         .collect::<Vec<_>>();
     let client = clients[0].clone();
+
+    let observer_request = MonitorOperation::Start {
+        config: MonitorConfig {
+            provider: MonitorProvider::Claude,
+            purpose: MonitorPurpose::ObserveOnly,
+            scope: MonitorScope::Session {
+                session_id: "broker-lifecycle-session".to_owned(),
+            },
+            goal_id: None,
+            expected_model: None,
+            policy_revision: None,
+            experimental_collector: false,
+        },
+        idempotency_key: "broker-lifecycle-observer-1".to_owned(),
+    };
+    let MonitorReply::Started {
+        status: observer_status,
+    } = client
+        .monitor(observer_request.clone())
+        .expect("unbound observation start")
+    else {
+        panic!("observer start returned an unexpected monitor reply");
+    };
+    assert!(!observer_status.runnable);
+    assert!(observer_status.goal_id.is_none());
+    assert!(observer_status.account_id.is_none());
+    assert!(observer_status.budget.is_none());
+    assert_eq!(
+        observer_status.readiness.dispatch,
+        MonitorDispatchReadiness::NotAuthorized
+    );
+
+    let MonitorReply::Started {
+        status: retried_status,
+    } = client
+        .monitor(observer_request)
+        .expect("idempotent observer start")
+    else {
+        panic!("observer retry returned an unexpected monitor reply");
+    };
+    assert_eq!(retried_status.monitor_id, observer_status.monitor_id);
+
     let projection_ids = clients
         .iter()
         .map(|client| {
@@ -98,28 +102,21 @@ fn broker_service_lifecycle() {
         .collect::<Vec<_>>();
     assert!(projection_ids.windows(2).all(|pair| pair[0] == pair[1]));
 
-    let resolver = Arc::new(CachedProviderCredentialResolver::<EmptySecretSource>::default());
-    let discovery_catalog =
-        discover_usage_sources(&scope, resolver.as_ref()).expect("caller discovery");
-    let discovery = validate_usage_sources(discovery_catalog, resolver.as_ref());
-    let handle = ensure_usage_broker(config, scope, discovery, resolver).expect("publish catalog");
-    assert!(handle.capabilities.is_empty());
-
-    let synthetic_capability = UsageAccountCapability {
-        account_id: "synthetic-test-account".to_owned(),
-        surface_id: "openai".to_owned(),
-    };
-    let stale_error = handle
-        .client
-        .current(synthetic_capability)
-        .expect_err("stale capability must remain fenced");
-    assert_eq!(stale_error.kind, UsageCoordinationErrorKind::CatalogRevoked);
-    let projection = handle.client.current_projection().expect("projection");
-    assert!(!projection.discovery_revision.is_empty());
-    assert!(client_socket(&client).exists());
+    let service_status = client
+        .monitor(MonitorOperation::ServiceStatus)
+        .expect("passive service status");
+    assert!(matches!(
+        service_status,
+        MonitorReply::ServiceStatus { status } if status.running
+    ));
+    let projection = client.current_projection().expect("projection");
+    assert!(
+        !projection.projection_id.is_empty(),
+        "the passive service publishes an empty canonical projection"
+    );
     assert!(
         client_socket(&client).exists(),
-        "service outlives activator"
+        "service remains available after activators return"
     );
     drop(client);
     drop(cleanup);
@@ -146,25 +143,15 @@ fn broker_detaches_from_activating_session() {
     let _ignored = fs::remove_dir_all(&root);
     fs::create_dir_all(&root).expect("workspace test state");
     let data_dir = root.join("data");
-    let config_root = root.join("config");
-    let operator_home = root.join("home");
-    fs::create_dir_all(&config_root).expect("config root");
-    fs::create_dir_all(&operator_home).expect("operator home");
-    fs::write(
-        config_root.join("config.toml"),
-        format!("version = \"{}\"\n", jackin_config::CURRENT_CONFIG_VERSION),
-    )
-    .expect("config");
-
-    let executable = PathBuf::from(env!("CARGO_BIN_EXE_jackin-usage-broker"));
     let mut config = UsageBrokerConfig::for_data_dir(data_dir.clone());
-    config.service_executable = Some(executable);
+    config.service_executable = Some(PathBuf::from(env!("CARGO_BIN_EXE_jackin-usage-broker")));
     let scope = UsageDiscoveryScope::HostDesktop {
-        config_root,
-        operator_home,
+        config_root: root.join("config"),
+        operator_home: root.join("home"),
     };
     let cleanup = FixtureBrokerCleanup(data_dir.clone());
-    let client = ensure_usage_broker_process(config.clone(), &scope).expect("broker starts");
+    let client =
+        ensure_usage_broker_process(config.clone(), &scope).expect("passive broker starts");
     let socket = data_dir.join("usage-broker/run/usage-broker.sock");
     assert!(socket.exists(), "broker serves its socket");
 

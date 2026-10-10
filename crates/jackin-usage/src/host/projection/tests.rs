@@ -3217,11 +3217,13 @@ fn canonical_runtime_projects_discovery_diagnostics_without_account_rows() {
         UsageDiscoveryDiagnostic {
             surface_id: Some("codex".to_owned()),
             scope_label: "account work".to_owned(),
+            unresolved_source: None,
             issue: UsageDiscoveryIssue::KeychainConsentRequired,
         },
         UsageDiscoveryDiagnostic {
             surface_id: None,
             scope_label: "workspace work".to_owned(),
+            unresolved_source: None,
             issue: UsageDiscoveryIssue::ConfigInvalid,
         },
     ];

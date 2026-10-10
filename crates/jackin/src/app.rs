@@ -110,21 +110,13 @@ pub async fn run(cli: Cli, lifecycle: crate::lifecycle::ProductLifecycle) -> Res
 
     // The startup bootstrap report threads first-run discovery into
     // `account scan` so a fresh-config scan prints the true imported count.
-    let (mut config, startup_bootstrap) = match &command {
-        // Role authoring is repository-local and must not create or read the
-        // operator's product configuration as a side effect.
-        Command::Role(_) => (
-            AppConfig::default(),
-            jackin_config::BootstrapReport::default(),
-        ),
-        _ => match AppConfig::load_or_init_detailed(&paths) {
-            Ok(loaded) => loaded,
-            Err(error) => {
-                let result: Result<()> = Err(error.into());
-                finish_invocation(&diagnostics, invocation, &result);
-                return result;
-            }
-        },
+    let (mut config, startup_bootstrap) = match load_startup_config(&command, &paths) {
+        Ok(loaded) => loaded,
+        Err(error) => {
+            let result: Result<()> = Err(error.into());
+            finish_invocation(&diagnostics, invocation, &result);
+            return result;
+        }
     };
     apply_telemetry_config(&config);
     let interactive = app_mode == jackin_telemetry::schema::enums::AppMode::Interactive;
@@ -223,6 +215,25 @@ fn finish_invocation(
     diagnostics.emit_run_summary();
     announce_run_teardown(diagnostics);
     let _classification = invocation.finish(result);
+}
+
+fn load_startup_config(
+    command: &Command,
+    paths: &JackinPaths,
+) -> jackin_config::ConfigResult<(AppConfig, jackin_config::BootstrapReport)> {
+    match command {
+        // Role authoring and Usage are local interfaces which must not read
+        // the operator's account configuration. In particular, Usage's
+        // headless and passive paths are required to perform zero credential
+        // inspection; even a read-only config snapshot parses inline account
+        // credential values. Usage receives its local broker/data scope from
+        // paths separately.
+        Command::Role(_) | Command::Usage(_) => Ok((
+            AppConfig::default(),
+            jackin_config::BootstrapReport::default(),
+        )),
+        _ => AppConfig::load_or_init_detailed(paths),
+    }
 }
 
 fn apply_telemetry_config(config: &AppConfig) {

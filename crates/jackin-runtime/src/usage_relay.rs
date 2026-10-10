@@ -5,25 +5,22 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use anyhow::{Context as _, Result};
 use jackin_config::AppConfig;
-use jackin_core::{ContainerHandle, JackinPaths, UsageCredentialEnvName, WorkspaceName};
+use jackin_core::{ContainerHandle, JackinPaths};
 use jackin_protocol::CapsuleConfig;
 use jackin_protocol::usage_broker::{
     USAGE_BROKER_MAX_FRAME_BYTES, USAGE_BROKER_PROTOCOL_VERSION, UsageAccountCapability,
     UsageBrokerOperation, UsageBrokerResponse, UsageCoordinationError, UsageCoordinationErrorKind,
     UsageCredentialScope, UsageCredentialSourceIdentity, UsageCredentialSourceProof,
-    UsageRelayTunnelRequest, UsageRelayTunnelResponse, usage_credential_material_fingerprint,
+    UsageRelayCapabilityResolutionV1, UsageRelayTunnelRequest, UsageRelayTunnelResponse,
+    usage_credential_material_fingerprint,
 };
 use jackin_usage::coordinator::UsageCapabilitySet;
 use jackin_usage::host::{
-    CachedProviderCredentialResolver, ForwardedUsageSources, HostSurfaceId,
-    ProviderCredentialSecretOutcome, ProviderCredentialSecretResolution,
-    ProviderCredentialSecretSource, UsageBrokerClient, UsageBrokerConfig, discover_usage_sources,
-    forwarded_usage_capabilities, usage_capability_for_selected_account_with_sources,
-    validate_usage_sources,
+    ForwardedUsageSources, HostSurfaceId, UsageBrokerClient, UsageBrokerConfig,
+    UsageDiscoveryScope, ensure_usage_broker_process,
 };
 use tokio::io::{
     AsyncBufRead, AsyncBufReadExt as _, AsyncRead, AsyncReadExt as _, AsyncWrite,
@@ -54,70 +51,6 @@ pub(crate) fn apple_runtime_mount(
         jackin_protocol::CAPSULE_CONFIG_PATH,
         true,
     )
-}
-
-#[derive(Default)]
-struct RuntimeSecretSource;
-
-impl ProviderCredentialSecretSource for RuntimeSecretSource {
-    fn lookup_declaration(
-        &self,
-        config: &AppConfig,
-        workspace: Option<&WorkspaceName>,
-        role: Option<&str>,
-        entry: UsageCredentialEnvName,
-    ) -> Option<jackin_config::EnvValue> {
-        jackin_env::lookup_operator_env_declaration(config, role, workspace, entry.name)
-    }
-
-    fn resolve_secret(
-        &self,
-        config: &AppConfig,
-        workspace: Option<&WorkspaceName>,
-        role: Option<&str>,
-        entry: UsageCredentialEnvName,
-    ) -> Option<ProviderCredentialSecretResolution> {
-        let declaration =
-            jackin_env::lookup_operator_env_declaration(config, role, workspace, entry.name)?;
-        let resolved =
-            jackin_env::resolve_operator_env_per_key_matching(config, role, workspace, |key| {
-                key == entry.name
-            })
-            .into_iter()
-            .next();
-        let outcome = match resolved {
-            Some(result)
-                if result.status() == jackin_env::OperatorEnvKeyStatus::Resolved
-                    && result.resolved_value().is_some() =>
-            {
-                ProviderCredentialSecretOutcome::Resolved(
-                    result.resolved_value().unwrap_or_default().to_owned(),
-                )
-            }
-            Some(result) => match result.status() {
-                jackin_env::OperatorEnvKeyStatus::Resolved => {
-                    ProviderCredentialSecretOutcome::Malformed
-                }
-                jackin_env::OperatorEnvKeyStatus::Missing => {
-                    ProviderCredentialSecretOutcome::Missing
-                }
-                jackin_env::OperatorEnvKeyStatus::DeniedOrUnavailable => {
-                    ProviderCredentialSecretOutcome::Denied
-                }
-                jackin_env::OperatorEnvKeyStatus::Malformed => {
-                    ProviderCredentialSecretOutcome::Malformed
-                }
-                jackin_env::OperatorEnvKeyStatus::InteractionRequired => {
-                    ProviderCredentialSecretOutcome::InteractionRequired
-                }
-            },
-            None => return None,
-        };
-        Some(ProviderCredentialSecretResolution {
-            declaration,
-            outcome,
-        })
-    }
 }
 
 /// Host launch facts needed to construct one scoped usage relay.
@@ -406,7 +339,7 @@ pub fn populate_launch_usage_capabilities(config: &AppConfig, launch_config: &mu
     }
 }
 
-/// Resolve global discovery and ensure the host broker for one stdio relay.
+/// Ask the host broker to resolve one launch's forwarded source proofs.
 /// Broker activation failure is returned; a dead fallback client is not a
 /// valid production relay authority.
 pub async fn prepare_for_stdio_tunnel(launch: UsageRelayLaunch<'_>) -> Result<PreparedUsageRelay> {
@@ -593,25 +526,30 @@ fn prepare_broker_client(
             CanonicalLaunchUsageCapabilities::default(),
         ));
     }
-    let resolver = Arc::new(CachedProviderCredentialResolver::new(RuntimeSecretSource));
-    let scope = jackin_usage::host::UsageDiscoveryScope::HostDesktop {
+    let scope = UsageDiscoveryScope::HostDesktop {
         config_root: paths.config_dir.clone(),
         operator_home: paths.home_dir.clone(),
     };
-    let catalog = discover_usage_sources(&scope, resolver.as_ref())
-        .map_err(|error| anyhow::anyhow!("usage account discovery failed: {error}"))?;
-    let discovery = validate_usage_sources(catalog, resolver.as_ref());
     let scope_label = workspace_name.map_or_else(
         || format!("role {role_key}"),
         |workspace| format!("workspace {workspace} role {role_key}"),
     );
-    let capabilities = forwarded_usage_capabilities(&discovery, &scope_label, forwarded_sources);
-    let allowed = capabilities.iter().cloned().collect::<BTreeSet<_>>();
-    let canonical_launch_usage_capabilities =
-        canonical_capabilities_for_launch(&discovery, forwarded_sources, &allowed);
-    let client = jackin_usage::host::ensure_usage_broker(broker_config, scope, discovery, resolver)
-        .map(|handle| handle.client)
+    let client = ensure_usage_broker_process(broker_config, &scope)
         .map_err(|error| anyhow::anyhow!("usage broker activation failed: {}", error.message))?;
+    let resolution = client
+        .resolve_relay_capabilities(&scope_label, forwarded_sources)
+        .map_err(|error| {
+            anyhow::anyhow!(
+                "usage relay capability resolution failed: {}",
+                error.message
+            )
+        })?;
+    let UsageRelayCapabilityResolutionV1 {
+        capabilities,
+        selected_accounts,
+    } = resolution;
+    let canonical_launch_usage_capabilities =
+        canonical_capabilities_from_resolution(selected_accounts);
     if capabilities.is_empty() {
         return Ok((
             client,
@@ -622,25 +560,17 @@ fn prepare_broker_client(
     Ok((client, capabilities, canonical_launch_usage_capabilities))
 }
 
-fn canonical_capabilities_for_launch(
-    discovery: &jackin_usage::host::ValidatedUsageDiscovery,
-    forwarded_sources: &ForwardedUsageSources,
-    allowed: &BTreeSet<UsageAccountCapability>,
+fn canonical_capabilities_from_resolution(
+    selected_accounts: Vec<jackin_protocol::usage_broker::UsageRelayCapabilityMappingV1>,
 ) -> CanonicalLaunchUsageCapabilities {
     CanonicalLaunchUsageCapabilities {
-        by_account_surface: forwarded_sources
-            .selected_account_surfaces
-            .iter()
-            .filter_map(|(account_id, surface_id)| {
-                let capability = usage_capability_for_selected_account_with_sources(
-                    discovery,
-                    account_id,
-                    surface_id,
-                    Some(forwarded_sources),
-                )?;
-                allowed
-                    .contains(&capability)
-                    .then_some(((account_id.clone(), surface_id.clone()), capability))
+        by_account_surface: selected_accounts
+            .into_iter()
+            .map(|selection| {
+                (
+                    (selection.account_id, selection.surface_id),
+                    selection.capability,
+                )
             })
             .collect(),
     }
@@ -681,12 +611,13 @@ async fn dispatch(
         UsageBrokerOperation::CurrentProjection
         | UsageBrokerOperation::RequestRefresh { .. }
         | UsageBrokerOperation::JoinPublication { .. }
-        | UsageBrokerOperation::ReconcileCatalog { .. }
         | UsageBrokerOperation::CurrentProjectionForSurface
         | UsageBrokerOperation::RequestRefreshForSurface { .. }
-        | UsageBrokerOperation::JoinPublicationForSurface { .. } => Err(UsageCoordinationError {
+        | UsageBrokerOperation::JoinPublicationForSurface { .. }
+        | UsageBrokerOperation::Monitor { .. }
+        | UsageBrokerOperation::ResolveRelayCapabilities { .. } => Err(UsageCoordinationError {
             kind: UsageCoordinationErrorKind::Unauthorized,
-            message: "canonical projection requires a scoped relay operation".to_owned(),
+            message: "host-only usage operation cannot be forwarded by a Capsule relay".to_owned(),
         }),
         operation @ (UsageBrokerOperation::Current { .. }
         | UsageBrokerOperation::Refresh { .. }
@@ -817,6 +748,7 @@ fn error_response(kind: UsageCoordinationErrorKind) -> UsageBrokerResponse {
     let message = match kind {
         UsageCoordinationErrorKind::Unauthorized => "usage account capability is not authorized",
         UsageCoordinationErrorKind::ProtocolMismatch => "usage relay protocol mismatch",
+        UsageCoordinationErrorKind::BrokerConflict => "another service owns the usage broker lease",
         _ => "usage broker is unavailable",
     };
     UsageBrokerResponse::Error {

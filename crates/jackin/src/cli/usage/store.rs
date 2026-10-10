@@ -247,24 +247,6 @@ async fn read_account_rows(conn: &Connection) -> Result<Vec<AccountUsageSnapshot
     .await
 }
 
-#[cfg(test)]
-pub(super) async fn count_account_rows(path: PathBuf) -> Result<i64> {
-    let conn = open_store(&path).await?;
-    operation(DbOperation::Select, async {
-        let mut rows = conn
-            .query("SELECT COUNT(*) FROM account_usage_snapshots", ())
-            .await
-            .context("count host usage account rows")?;
-        let row = rows
-            .next()
-            .await
-            .context("read host usage account count")?
-            .ok_or_else(|| anyhow::anyhow!("missing host usage account count row"))?;
-        row_i64(&row, 0)
-    })
-    .await
-}
-
 fn row_i64(row: &Row, index: usize) -> Result<i64> {
     row.get(index)
         .with_context(|| format!("read integer column {index}"))

@@ -460,6 +460,7 @@ pub(in crate::host) fn failure_lifecycle(
         UsageCoordinationErrorKind::NeedsSecret => UsageLifecycleV1::NeedsSecret,
         UsageCoordinationErrorKind::Unauthorized => UsageLifecycleV1::NeedsLogin,
         UsageCoordinationErrorKind::ProtocolMismatch => UsageLifecycleV1::Unsupported,
+        UsageCoordinationErrorKind::BrokerConflict => UsageLifecycleV1::Unavailable,
         UsageCoordinationErrorKind::Unavailable
         | UsageCoordinationErrorKind::ProviderUnavailable => UsageLifecycleV1::Unavailable,
         _ => UsageLifecycleV1::Error,

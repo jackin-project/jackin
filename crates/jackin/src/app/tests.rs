@@ -6,6 +6,67 @@ use super::*;
 use clap::Parser as _;
 
 #[test]
+fn usage_auth_and_passive_startup_skip_fresh_account_config_bootstrap() {
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let commands = [
+        ["jackin", "usage"].as_slice(),
+        ["jackin", "usage", "auth", "prepare", "--provider", "claude"].as_slice(),
+    ];
+
+    for argv in commands {
+        let cli = Cli::try_parse_from(argv).expect("usage argv should parse");
+        let command = cli
+            .command
+            .expect("explicit usage command should be present");
+        assert!(matches!(command, Command::Usage(_)));
+        let (config, bootstrap) = load_startup_config(&command, &paths)
+            .expect("usage startup should skip config loading on a fresh home");
+
+        assert!(config.accounts.is_empty());
+        assert!(config.bootstrap.is_none());
+        assert!(!bootstrap.fresh_install);
+        assert!(bootstrap.added_accounts.is_empty());
+        assert!(bootstrap.issues.is_empty());
+    }
+
+    assert!(!paths.config_dir.exists());
+    assert!(!paths.jackin_home.exists());
+    assert!(!paths.data_dir.exists());
+}
+
+#[test]
+fn usage_startup_ignores_inline_account_credentials_without_reading_or_rewriting_config() {
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    std::fs::create_dir_all(&paths.config_dir).unwrap();
+    let config_contents = format!(
+        "version = \"{}\"\n\n[accounts.claude]\nname = \"Claude\"\nprovider = \"anthropic\"\n[accounts.claude.credential]\ntype = \"api_key\"\nvalue = \"inline-account-credential-must-not-be-read\"\n\n[telemetry]\nlevel = \"debug\"\ncategories = [\"usage\"]\n",
+        jackin_config::CURRENT_CONFIG_VERSION,
+    );
+    std::fs::write(&paths.config_file, &config_contents).unwrap();
+    let cli = Cli::try_parse_from(["jackin", "usage", "auth", "prepare", "--provider", "claude"])
+        .expect("auth command should parse");
+    let command = cli
+        .command
+        .expect("explicit usage command should be present");
+
+    let (config, bootstrap) = load_startup_config(&command, &paths)
+        .expect("usage startup must not inspect selected account config");
+
+    assert!(config.accounts.is_empty());
+    assert_eq!(config.telemetry, jackin_config::TelemetryConfig::default());
+    assert!(!bootstrap.fresh_install);
+    assert!(bootstrap.added_accounts.is_empty());
+    assert_eq!(
+        std::fs::read_to_string(&paths.config_file).unwrap(),
+        config_contents
+    );
+    assert!(!paths.jackin_home.exists());
+    assert!(!paths.data_dir.exists());
+}
+
+#[test]
 fn retired_launch_command_is_rejected() {
     let error = Cli::try_parse_from(["jackin", "launch", "agent-smith", "workspace"])
         .expect_err("retired launch syntax must not parse");

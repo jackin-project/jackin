@@ -9,13 +9,38 @@ use serde::Deserialize;
 
 pub(crate) static MATERIALIZED_TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+/// Typed provider failure category retained after HTTP errors enter snapshots.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProviderErrorKind {
+    /// Failure was created outside the typed HTTP boundary.
+    Other,
+    /// Request exceeded the configured provider HTTP timeout.
+    Timeout,
+    /// HTTP request failed before a response arrived.
+    Transport,
+    /// Provider returned an HTTP response with a non-success status.
+    HttpStatus,
+    /// Provider returned a success response that could not be decoded.
+    Decode,
+}
+
+/// Secret-free provider failure classification carried across broker seams.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProviderFailureMetadata {
+    /// Typed provider failure category, independent of display text.
+    pub kind: ProviderErrorKind,
+    /// HTTP status when the provider returned a typed HTTP response.
+    pub http_status: Option<u16>,
+}
+
 /// Error carrier used after provider fetches leave the shared HTTP boundary.
 ///
-/// Only `ProviderHttpError::HttpStatus` contributes a status. Transport,
-/// decode, CLI, and RPC messages remain statusless even when their rendered
-/// text contains status-looking digits.
+/// Only `ProviderHttpError::HttpStatus` contributes a status. Timeout,
+/// transport, decode, CLI, and RPC messages remain statusless even when their
+/// rendered text contains status-looking digits.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ProviderError {
+    kind: ProviderErrorKind,
     message: String,
     http_status: Option<u16>,
     retry_after_seconds: Option<u64>,
@@ -24,7 +49,7 @@ pub(crate) struct ProviderError {
 
 /// Typed rate-limit metadata carried from a provider snapshot to the host
 /// broker. The deadline is absent when the provider returned HTTP 429 without
-/// a valid numeric `Retry-After` header.
+/// a valid delay-seconds or HTTP-date `Retry-After` value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProviderRateLimit {
     /// Absolute epoch deadline derived from the provider's `Retry-After` header.
@@ -34,6 +59,7 @@ pub struct ProviderRateLimit {
 impl ProviderError {
     fn new(message: String) -> Self {
         Self {
+            kind: ProviderErrorKind::Other,
             message,
             http_status: None,
             retry_after_seconds: None,
@@ -48,6 +74,7 @@ impl ProviderError {
         response_received_at_epoch: Option<i64>,
     ) -> Self {
         Self {
+            kind: ProviderErrorKind::HttpStatus,
             message,
             http_status: Some(status),
             retry_after_seconds,
@@ -59,8 +86,16 @@ impl ProviderError {
         &self.message
     }
 
+    pub(crate) fn metadata(&self) -> ProviderFailureMetadata {
+        ProviderFailureMetadata {
+            kind: self.kind,
+            http_status: self.http_status,
+        }
+    }
+
     pub(crate) fn with_message(&self, message: String) -> Self {
         Self {
+            kind: self.kind,
             message,
             http_status: self.http_status,
             retry_after_seconds: self.retry_after_seconds,
@@ -97,9 +132,27 @@ impl std::fmt::Display for ProviderError {
 impl From<ProviderHttpError> for ProviderError {
     fn from(error: ProviderHttpError) -> Self {
         match error {
-            ProviderHttpError::Transport(message) | ProviderHttpError::Decode(message) => {
-                Self::new(message)
-            }
+            ProviderHttpError::Timeout(message) => Self {
+                kind: ProviderErrorKind::Timeout,
+                message,
+                http_status: None,
+                retry_after_seconds: None,
+                response_received_at_epoch: None,
+            },
+            ProviderHttpError::Transport(message) => Self {
+                kind: ProviderErrorKind::Transport,
+                message,
+                http_status: None,
+                retry_after_seconds: None,
+                response_received_at_epoch: None,
+            },
+            ProviderHttpError::Decode(message) => Self {
+                kind: ProviderErrorKind::Decode,
+                message,
+                http_status: None,
+                retry_after_seconds: None,
+                response_received_at_epoch: None,
+            },
             ProviderHttpError::HttpStatus {
                 status,
                 message,

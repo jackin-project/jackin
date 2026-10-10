@@ -138,15 +138,151 @@ fn telemetry_command_mapper_covers_every_nested_leaf() {
         #[cfg(unix)]
         (&["daemon", "status"], Name::DaemonStatus),
         (&["diagnostics", "validate"], Name::DiagnosticsValidate),
-        (&["usage", "target", "accounts"], Name::UsageAccounts),
-        (&["usage", "target", "verify"], Name::UsageVerify),
+        (&["usage"], Name::Usage),
         (
-            &["usage", "host", "snapshot", "--agent", "claude"],
-            Name::UsageSnapshot,
+            &["usage", "cache", "accounts", "--format", "json"],
+            Name::UsageAccounts,
         ),
+        (&["usage", "jk-demo-role", "verify"], Name::UsageVerify),
     ];
 
     assert_command_names(cases);
+    let usage_cases: &[(&[&str], Name)] = &[
+        (
+            &["usage", "doctor", "--provider", "claude", "--unattended"],
+            Name::UsageDoctor,
+        ),
+        (&["usage", "service", "start"], Name::UsageServiceStart),
+        (&["usage", "service", "stop"], Name::UsageServiceStop),
+        (&["usage", "service", "status"], Name::UsageServiceStatus),
+        (
+            &[
+                "usage",
+                "monitor",
+                "observe",
+                "--provider",
+                "claude",
+                "--session",
+                "session-1",
+                "--idempotency-key",
+                "observe-1",
+            ],
+            Name::UsageMonitorObserve,
+        ),
+        (
+            &[
+                "usage",
+                "monitor",
+                "start",
+                "--provider",
+                "claude",
+                "--binding",
+                "binding-1",
+                "--binding-revision",
+                "1",
+                "--goal",
+                "goal-1",
+                "--policy-revision",
+                "1",
+                "--idempotency-key",
+                "start-1",
+            ],
+            Name::UsageMonitorStart,
+        ),
+        (
+            &["usage", "monitor", "stop", "--monitor", "monitor-1"],
+            Name::UsageMonitorStop,
+        ),
+        (
+            &[
+                "usage",
+                "binding",
+                "confirm",
+                "--provider",
+                "claude",
+                "--account",
+                "account-1",
+                "--operator-label",
+                "Operator",
+                "--confirm",
+            ],
+            Name::UsageBindingConfirm,
+        ),
+        (
+            &[
+                "usage",
+                "policy",
+                "approve",
+                "--binding",
+                "binding-1",
+                "--binding-revision",
+                "1",
+                "--goal",
+                "goal-1",
+                "--policy",
+                "strict-sgd",
+                "--operator-label",
+                "Operator",
+                "--confirm",
+            ],
+            Name::UsagePolicyApprove,
+        ),
+        (
+            &["usage", "status", "--monitor", "monitor-1"],
+            Name::UsageStatus,
+        ),
+        (
+            &["usage", "refresh", "--monitor", "monitor-1"],
+            Name::UsageRefresh,
+        ),
+        (
+            &["usage", "watch", "--monitor", "monitor-1"],
+            Name::UsageWatch,
+        ),
+        (
+            &[
+                "usage",
+                "wait",
+                "--monitor",
+                "monitor-1",
+                "--until",
+                "runnable",
+            ],
+            Name::UsageWait,
+        ),
+        (
+            &["usage", "statusline", "ingest", "--session-only"],
+            Name::UsageStatuslineIngest,
+        ),
+        (
+            &[
+                "usage",
+                "statusline",
+                "compose",
+                "--settings",
+                "/tmp/settings.json",
+                "--session-only",
+            ],
+            Name::UsageStatuslineCompose,
+        ),
+        (
+            &[
+                "usage",
+                "spend",
+                "record",
+                "--account",
+                "account-1",
+                "--file",
+                "/tmp/spend.json",
+            ],
+            Name::UsageSpendRecord,
+        ),
+        (
+            &["usage", "auth", "prepare", "--provider", "claude"],
+            Name::UsageAuthPrepare,
+        ),
+    ];
+    assert_command_names(usage_cases);
 }
 
 #[test]

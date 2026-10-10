@@ -4,7 +4,35 @@
 use super::*;
 
 #[test]
-fn cli_fallback_last_error_uses_normalized_scope_message() {
+fn collector_origin_never_serializes_a_custom_keychain_service() {
+    let service = "custom-selected-service-private-name";
+    let resolved = ClaudeResolved {
+        access_token: Zeroizing::new("unused-token".to_owned()),
+        subscription_type: None,
+        account_email: None,
+        organization_type: None,
+        credential_origin: CLAUDE_KEYCHAIN_CREDENTIAL_ORIGIN.to_owned(),
+        keychain_service: Some(service.to_owned()),
+        is_anonymous: false,
+    };
+    let (view, _, _) = claude_result_view(
+        "claude",
+        Some("Claude"),
+        1_800_000_000,
+        resolved,
+        Err(ProviderHttpError::Transport("offline test".to_owned())),
+    );
+
+    assert_eq!(
+        view.account.credential_origin.as_deref(),
+        Some(CLAUDE_KEYCHAIN_CREDENTIAL_ORIGIN)
+    );
+    let encoded = serde_json::to_string(&view).expect("focused view serializes");
+    assert!(!encoded.contains(service));
+}
+
+#[test]
+fn resolved_last_error_is_only_reported_for_stale_provider_views() {
     let oauth_error = ProviderError::from(ProviderHttpError::HttpStatus {
         status: 403,
         message: "Claude OAuth usage HTTP 403 Forbidden".to_owned(),
@@ -14,29 +42,21 @@ fn cli_fallback_last_error_uses_normalized_scope_message() {
     let normalized =
         claude_provider_error_label(Some(&oauth_error), None).expect("normalized label");
     assert_eq!(
-        claude_resolved_last_error(UsageSnapshotStatus::Fresh, Some(normalized), true).as_deref(),
+        claude_resolved_last_error(UsageSnapshotStatus::Stale, Some(normalized)).as_deref(),
         Some("Claude token lacks usage scope (inference-only); quota unavailable")
     );
-    // Non-scope errors pass through verbatim; OAuth success has no error.
+    // Non-scope errors pass through verbatim; an OAuth success has no error.
     assert_eq!(
-        claude_resolved_last_error(
-            UsageSnapshotStatus::Fresh,
-            Some("oauth boom".to_owned()),
-            true
-        )
-        .as_deref(),
+        claude_resolved_last_error(UsageSnapshotStatus::Stale, Some("oauth boom".to_owned()))
+            .as_deref(),
         Some("oauth boom")
     );
     assert_eq!(
-        claude_resolved_last_error(
-            UsageSnapshotStatus::Fresh,
-            Some("oauth boom".to_owned()),
-            false
-        ),
+        claude_resolved_last_error(UsageSnapshotStatus::Fresh, Some("oauth boom".to_owned())),
         None
     );
     assert_eq!(
-        claude_resolved_last_error(UsageSnapshotStatus::Stale, None, false).as_deref(),
+        claude_resolved_last_error(UsageSnapshotStatus::Stale, None).as_deref(),
         Some("Claude provider usage unavailable; cached quota is stale")
     );
 }

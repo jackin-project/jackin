@@ -2,14 +2,34 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::os::unix::fs::PermissionsExt as _;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
 use jackin_protocol::control::{
     FocusedUsageView, QuotaBucketView, UsageConfidence, UsageSeverity, UsageSnapshotStatus,
     UsageSource,
 };
 
+use super::policy::UsagePolicy;
+use super::state::PREVIOUS_ACCOUNT_STATE_SCHEMA_VERSION;
 use super::*;
+
+#[derive(Default)]
+struct FakeMonotonicClock {
+    elapsed_seconds: AtomicU64,
+}
+
+impl FakeMonotonicClock {
+    fn advance(&self, duration: Duration) {
+        self.elapsed_seconds
+            .fetch_add(duration.as_secs(), Ordering::SeqCst);
+    }
+}
+
+impl MonotonicClock for FakeMonotonicClock {
+    fn now(&self) -> Duration {
+        Duration::from_secs(self.elapsed_seconds.load(Ordering::SeqCst))
+    }
+}
 
 #[derive(Default)]
 struct MemoryStore {
@@ -189,6 +209,296 @@ fn join_ok(
         .unwrap()
 }
 
+struct UpdatingFailureStore {
+    inner: FileAccountStateStore,
+    accounts: std::path::PathBuf,
+    saved_accounts: std::path::PathBuf,
+    failed_updates: AtomicUsize,
+    persistent: bool,
+}
+
+impl UpdatingFailureStore {
+    fn restore(&self) {
+        std::fs::remove_file(&self.accounts).unwrap();
+        std::fs::rename(&self.saved_accounts, &self.accounts).unwrap();
+    }
+}
+
+impl AccountStateStore for UpdatingFailureStore {
+    fn load(
+        &self,
+        capability: &UsageAccountCapability,
+        now_epoch: i64,
+    ) -> Result<Option<AccountStateEnvelope>, StateStoreError> {
+        self.inner.load(capability, now_epoch)
+    }
+
+    fn store(
+        &self,
+        envelope: &AccountStateEnvelope,
+        now_epoch: i64,
+    ) -> Result<(), StateStoreError> {
+        if envelope.phase == UsageRefreshPhase::Updating
+            && self.failed_updates.fetch_add(1, Ordering::SeqCst) == 0
+        {
+            std::fs::rename(&self.accounts, &self.saved_accounts).unwrap();
+            std::fs::write(&self.accounts, b"fixture blocks account directory").unwrap();
+            let result = self.inner.store(envelope, now_epoch);
+            assert_eq!(result, Err(StateStoreError::Unavailable));
+            if !self.persistent {
+                self.restore();
+            }
+            return result;
+        }
+        self.inner.store(envelope, now_epoch)
+    }
+
+    fn purge(&self, capability: &UsageAccountCapability) -> Result<(), StateStoreError> {
+        self.inner.purge(capability)
+    }
+}
+
+fn assert_updating_store_failure_terminates(persistent: bool) {
+    let (completed, completion) = mpsc::channel();
+    // Own the coordinator inside this thread: a broken worker's Drop must not
+    // keep the test harness waiting beyond the regression's bounded deadline.
+    let fixture = std::thread::spawn(move || {
+        let temp = tempfile::tempdir().unwrap();
+        let accounts = temp.path().join("accounts");
+        let store = Arc::new(UpdatingFailureStore {
+            inner: FileAccountStateStore::at(accounts.clone()),
+            accounts,
+            saved_accounts: temp.path().join("saved-accounts"),
+            failed_updates: AtomicUsize::new(0),
+            persistent,
+        });
+        let executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
+            quota_view(1_000, 80),
+        )));
+        let account = capability("account-a");
+        let coordinator = UsageCoordinator::with_catalog(
+            Arc::<ImmediateExecutor>::clone(&executor),
+            Arc::<UpdatingFailureStore>::clone(&store),
+            UsageCoordinatorConfig::default(),
+            [catalog_entry(&account, "revision-a")],
+        );
+        let queued = coordinator
+            .request_refresh(&account, 0, true, 1_000)
+            .unwrap();
+        let terminal =
+            coordinator.join_generation(&account, queued.generation, Duration::from_secs(2), 1_001);
+        if persistent {
+            assert_eq!(
+                terminal.unwrap_err().kind,
+                UsageCoordinationErrorKind::Unavailable
+            );
+            assert!(
+                coordinator.is_idle(),
+                "failed persistence must release ownership"
+            );
+            assert_eq!(
+                coordinator.current(&account, 1_001).unwrap_err().kind,
+                UsageCoordinationErrorKind::Unavailable
+            );
+            store.restore();
+        } else {
+            let terminal = terminal.unwrap();
+            assert_eq!(terminal.generation, queued.generation);
+            assert_eq!(terminal.phase, UsageRefreshPhase::Failed);
+            assert_eq!(
+                terminal.error.unwrap().kind,
+                UsageCoordinationErrorKind::Unavailable
+            );
+        }
+        let recovered = coordinator.current(&account, 1_002).unwrap();
+        assert_eq!(recovered.phase, UsageRefreshPhase::Failed);
+        assert_eq!(
+            recovered.error.unwrap().kind,
+            UsageCoordinationErrorKind::Unavailable
+        );
+        let durable = store.load(&account, 1_002).unwrap().unwrap();
+        assert_eq!(durable.phase, UsageRefreshPhase::Failed);
+        assert_eq!(durable.generation, queued.generation);
+        assert_eq!(durable.consecutive_failures, 1);
+        let joined = join_ok(&coordinator, &account, queued.generation, 1_002);
+        assert_eq!(joined.phase, UsageRefreshPhase::Failed);
+        assert_eq!(
+            joined.error.unwrap().kind,
+            UsageCoordinationErrorKind::Unavailable
+        );
+        assert_eq!(executor.calls.load(Ordering::SeqCst), 0);
+        assert_eq!(store.failed_updates.load(Ordering::SeqCst), 1);
+        assert!(coordinator.is_idle());
+        coordinator.reconcile_catalog([], 1_003).unwrap();
+        let tombstone = store.load(&account, 1_003).unwrap().unwrap();
+        assert_eq!(tombstone.phase, UsageRefreshPhase::Idle);
+        assert!(tombstone.terminal_result.is_none());
+        assert!(tombstone.last_good.is_none());
+        assert!(tombstone.retry_deadline_epoch.is_some());
+        drop(coordinator);
+        completed.send(()).unwrap();
+    });
+    completion
+        .recv_timeout(Duration::from_secs(5))
+        .expect("Updating store failure deadlocked terminal transition or worker shutdown");
+    fixture.join().unwrap();
+}
+
+fn catalog_entry(account: &UsageAccountCapability, revision: &str) -> UsageCatalogEntry {
+    UsageCatalogEntry {
+        capability: account.clone(),
+        revision: revision.to_owned(),
+    }
+}
+
+struct CadenceMemoryStore {
+    states: Mutex<BTreeMap<UsageAccountCapability, AccountStateEnvelope>>,
+}
+
+impl AccountStateStore for CadenceMemoryStore {
+    fn load(
+        &self,
+        capability: &UsageAccountCapability,
+        _now_epoch: i64,
+    ) -> Result<Option<AccountStateEnvelope>, StateStoreError> {
+        Ok(self.states.lock().unwrap().get(capability).cloned())
+    }
+
+    fn store(
+        &self,
+        envelope: &AccountStateEnvelope,
+        _now_epoch: i64,
+    ) -> Result<(), StateStoreError> {
+        self.states
+            .lock()
+            .unwrap()
+            .insert(envelope.capability.clone(), envelope.clone());
+        Ok(())
+    }
+}
+
+struct ImmediateExecutor {
+    calls: AtomicUsize,
+    outcome: Mutex<ProviderProbeOutcome>,
+}
+
+impl ImmediateExecutor {
+    fn new(outcome: ProviderProbeOutcome) -> Self {
+        Self {
+            calls: AtomicUsize::new(0),
+            outcome: Mutex::new(outcome),
+        }
+    }
+
+    fn set_outcome(&self, outcome: ProviderProbeOutcome) {
+        *self.outcome.lock().unwrap() = outcome;
+    }
+}
+
+impl UsageProviderExecutor for ImmediateExecutor {
+    fn probe(
+        &self,
+        _capability: &UsageAccountCapability,
+        _generation: u64,
+    ) -> ProviderProbeOutcome {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        self.outcome.lock().unwrap().clone()
+    }
+}
+
+struct CadenceGateExecutor {
+    calls: AtomicUsize,
+    started: (Mutex<usize>, Condvar),
+    permits: (Mutex<usize>, Condvar),
+    outcome: Mutex<ProviderProbeOutcome>,
+}
+
+impl CadenceGateExecutor {
+    fn new(outcome: ProviderProbeOutcome) -> Self {
+        Self {
+            calls: AtomicUsize::new(0),
+            started: (Mutex::new(0), Condvar::new()),
+            permits: (Mutex::new(0), Condvar::new()),
+            outcome: Mutex::new(outcome),
+        }
+    }
+
+    fn wait_started(&self) {
+        let deadline = Instant::now() + Duration::from_secs(2);
+        let (lock, changed) = &self.started;
+        let mut started = lock.lock().unwrap();
+        while *started < 1 {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            assert!(!remaining.is_zero(), "provider probe did not start");
+            let (next, wait) = changed.wait_timeout(started, remaining).unwrap();
+            started = next;
+            assert!(!wait.timed_out(), "provider probe did not start");
+        }
+    }
+
+    fn release(&self) {
+        let (lock, changed) = &self.permits;
+        *lock.lock().unwrap() += 1;
+        changed.notify_all();
+    }
+}
+
+impl UsageProviderExecutor for CadenceGateExecutor {
+    fn probe(
+        &self,
+        _capability: &UsageAccountCapability,
+        _generation: u64,
+    ) -> ProviderProbeOutcome {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        let (started_lock, started_changed) = &self.started;
+        *started_lock.lock().unwrap() += 1;
+        started_changed.notify_all();
+        let (permit_lock, permit_changed) = &self.permits;
+        let mut permits = permit_lock.lock().unwrap();
+        while *permits == 0 {
+            permits = permit_changed.wait(permits).unwrap();
+        }
+        *permits -= 1;
+        self.outcome.lock().unwrap().clone()
+    }
+}
+
+fn cadence_quota_view(epoch: i64) -> FocusedUsageView {
+    let mut view = FocusedUsageView::unavailable("fixture", epoch);
+    view.status = UsageSnapshotStatus::Fresh;
+    view.source = UsageSource::ProviderApi;
+    view.confidence = UsageConfidence::Authoritative;
+    view.buckets = vec![QuotaBucketView {
+        label: "Session".into(),
+        used_label: None,
+        limit_label: None,
+        remaining_percent: Some(80),
+        reset_label: None,
+        resets_at: None,
+        status_slot: None,
+        pace_label: None,
+        status: UsageSnapshotStatus::Fresh,
+        used_money: None,
+        limit_money: None,
+        severity: UsageSeverity::Normal,
+    }];
+    view.last_error = None;
+    view
+}
+
+fn cadence_coordinator<E>(executor: Arc<E>, config: UsageCoordinatorConfig) -> UsageCoordinator
+where
+    E: UsageProviderExecutor + 'static,
+{
+    UsageCoordinator::new(
+        executor,
+        Arc::new(CadenceMemoryStore {
+            states: Mutex::new(BTreeMap::new()),
+        }),
+        config,
+    )
+}
+
 #[test]
 fn coordinator_winner_joiner_and_force_join_share_one_generation() {
     let executor = Arc::new(GateExecutor::new(ProviderProbeOutcome::success(
@@ -256,7 +566,7 @@ fn coordinator_revisioned_capabilities_do_not_join_in_flight_probe() {
 }
 
 #[test]
-fn coordinator_post_terminal_manual_refresh_starts_later_generation() {
+fn coordinator_post_terminal_manual_refresh_obeys_claude_minimum_interval() {
     let executor = Arc::new(GateExecutor::new(ProviderProbeOutcome::success(
         quota_view(1_000, 80),
     )));
@@ -277,14 +587,15 @@ fn coordinator_post_terminal_manual_refresh_starts_later_generation() {
         .request_refresh(&account, 0, true, 1_002)
         .unwrap();
     assert_eq!(stale_click.generation, first.generation);
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
     let later_click = coordinator
-        .request_refresh(&account, first.generation, true, 1_002)
+        .request_refresh(&account, first.generation, true, 1_400)
         .unwrap();
     assert_eq!(later_click.generation, 2);
     executor.wait_started(2);
     executor.release(1);
     assert_eq!(
-        join_ok(&coordinator, &account, 2, 1_003).phase,
+        join_ok(&coordinator, &account, 2, 1_401).phase,
         UsageRefreshPhase::Completed
     );
     assert_eq!(executor.calls.load(Ordering::SeqCst), 2);
@@ -362,14 +673,14 @@ fn coordinator_empty_result_is_failure_and_preserves_last_good() {
     drop(join_ok(&coordinator, &account, 1, 1_001));
 
     executor.set_outcome(ProviderProbeOutcome::success(
-        FocusedUsageView::unavailable("empty", 1_002),
+        FocusedUsageView::unavailable("empty", 1_400),
     ));
     coordinator
-        .request_refresh(&account, 1, true, 1_002)
+        .request_refresh(&account, 1, true, 1_400)
         .unwrap();
     executor.wait_started(2);
     executor.release(1);
-    let terminal = join_ok(&coordinator, &account, 2, 1_003);
+    let terminal = join_ok(&coordinator, &account, 2, 1_401);
     assert_eq!(terminal.phase, UsageRefreshPhase::Failed);
     assert_eq!(
         terminal.snapshot.unwrap().buckets[0].remaining_percent,
@@ -404,9 +715,9 @@ fn coordinator_stale_and_error_success_results_schedule_retry() {
         failed_view.last_error = Some("provider result is not current".to_owned());
         executor.set_outcome(ProviderProbeOutcome::success(failed_view));
         let second = coordinator
-            .request_refresh(&account, first.generation, true, 1_002)
+            .request_refresh(&account, first.generation, true, 1_400)
             .unwrap();
-        let failed = join_ok(&coordinator, &account, second.generation, 1_003);
+        let failed = join_ok(&coordinator, &account, second.generation, 1_401);
 
         assert_eq!(failed.phase, UsageRefreshPhase::Failed);
         assert_eq!(
@@ -531,18 +842,51 @@ fn coordinator_failure_shares_retry_deadline_and_last_good() {
         retry_at_epoch: Some(2_000),
     });
     coordinator
-        .request_refresh(&account, 1, true, 1_002)
+        .request_refresh(&account, 1, true, 1_400)
         .unwrap();
     executor.wait_started(2);
     executor.release(1);
-    let failed = join_ok(&coordinator, &account, 2, 1_003);
+    let failed = join_ok(&coordinator, &account, 2, 1_401);
     assert_eq!(failed.retry_at_epoch, Some(2_000));
     assert!(failed.snapshot.is_some());
     let suppressed = coordinator
-        .request_refresh(&account, 2, true, 1_004)
+        .request_refresh(&account, 2, true, 1_404)
         .unwrap();
     assert_eq!(suppressed.generation, 2);
     assert_eq!(executor.calls.load(Ordering::SeqCst), 2);
+}
+
+struct ResetWriteFailureStore {
+    inner: MemoryStore,
+    fail_reset_write: AtomicUsize,
+}
+
+impl AccountStateStore for ResetWriteFailureStore {
+    fn load(
+        &self,
+        capability: &UsageAccountCapability,
+        now_epoch: i64,
+    ) -> Result<Option<AccountStateEnvelope>, StateStoreError> {
+        self.inner.load(capability, now_epoch)
+    }
+
+    fn store(
+        &self,
+        envelope: &AccountStateEnvelope,
+        now_epoch: i64,
+    ) -> Result<(), StateStoreError> {
+        if envelope.phase == UsageRefreshPhase::Idle
+            && envelope.retry_deadline_epoch == Some(5_000)
+            && self.fail_reset_write.swap(0, Ordering::SeqCst) > 0
+        {
+            return Err(StateStoreError::Unavailable);
+        }
+        self.inner.store(envelope, now_epoch)
+    }
+
+    fn purge(&self, capability: &UsageAccountCapability) -> Result<(), StateStoreError> {
+        self.inner.purge(capability)
+    }
 }
 
 #[test]
@@ -558,7 +902,10 @@ fn coordinator_rate_limit_without_provider_deadline_uses_shared_backoff() {
         Arc::<MemoryStore>::clone(&store),
         UsageCoordinatorConfig::default(),
     );
-    let account = capability("account-a");
+    let account = UsageAccountCapability {
+        account_id: "account-a".into(),
+        surface_id: "openai".into(),
+    };
 
     coordinator
         .request_refresh(&account, 0, true, 1_000)
@@ -569,7 +916,7 @@ fn coordinator_rate_limit_without_provider_deadline_uses_shared_backoff() {
     assert!(
         first
             .retry_at_epoch
-            .is_some_and(|deadline| (1_001..=1_031).contains(&deadline))
+            .is_some_and(|deadline| (1_030..=1_045).contains(&deadline))
     );
     let first_deadline = first.retry_at_epoch.expect("first retry deadline");
     let suppressed = coordinator
@@ -587,7 +934,7 @@ fn coordinator_rate_limit_without_provider_deadline_uses_shared_backoff() {
     assert!(
         second
             .retry_at_epoch
-            .is_some_and(|deadline| (second_start..=second_start + 61).contains(&deadline))
+            .is_some_and(|deadline| (second_start + 60..=second_start + 90).contains(&deadline))
     );
     assert_eq!(
         store
@@ -599,6 +946,401 @@ fn coordinator_rate_limit_without_provider_deadline_uses_shared_backoff() {
             .consecutive_failures,
         2
     );
+}
+
+#[test]
+fn claude_attempt_floor_persists_across_restart_and_force_cannot_bypass() {
+    let temp = tempfile::tempdir().unwrap();
+    let store = Arc::new(FileAccountStateStore::at(temp.path().join("accounts")));
+    let scenarios = [
+        (
+            "needs-secret",
+            ProviderProbeOutcome::Failure {
+                kind: UsageCoordinationErrorKind::NeedsSecret,
+                message: "host credential required".into(),
+                retry_at_epoch: None,
+            },
+            true,
+        ),
+        (
+            "unauthorized",
+            ProviderProbeOutcome::Failure {
+                kind: UsageCoordinationErrorKind::Unauthorized,
+                message: "provider rejected credentials".into(),
+                retry_at_epoch: None,
+            },
+            true,
+        ),
+        (
+            "rate-limited-short",
+            ProviderProbeOutcome::Failure {
+                kind: UsageCoordinationErrorKind::RateLimited,
+                message: "provider asked for an early retry".into(),
+                retry_at_epoch: Some(1_100),
+            },
+            true,
+        ),
+        (
+            "success",
+            ProviderProbeOutcome::success(quota_view(1_000, 80)),
+            false,
+        ),
+    ];
+
+    for (id, initial_outcome, failed) in scenarios {
+        let account = capability(id);
+        let executor = Arc::new(ImmediateExecutor::new(initial_outcome));
+        #[expect(
+            clippy::clone_on_ref_ptr,
+            reason = "coerce concrete executor to shared trait object"
+        )]
+        let provider_executor: Arc<dyn UsageProviderExecutor> = executor.clone();
+        let coordinator = UsageCoordinator::new(
+            provider_executor,
+            Arc::<FileAccountStateStore>::clone(&store),
+            UsageCoordinatorConfig {
+                success_cooldown: Duration::from_secs(1),
+                ..UsageCoordinatorConfig::default()
+            },
+        );
+        let first = coordinator
+            .request_refresh(&account, 0, true, 1_000)
+            .unwrap();
+        let terminal = join_ok(&coordinator, &account, first.generation, 1_001);
+        if failed {
+            assert_eq!(terminal.phase, UsageRefreshPhase::Failed);
+        } else {
+            assert_eq!(terminal.phase, UsageRefreshPhase::Completed);
+        }
+        let invocation = store
+            .load(&account, 1_001)
+            .unwrap()
+            .unwrap()
+            .provider_invoked_at_epoch
+            .expect("provider invocation was persisted");
+        let attempt_floor = invocation.saturating_add(300);
+        if failed {
+            assert_eq!(terminal.retry_at_epoch, Some(attempt_floor));
+        }
+        drop(coordinator);
+
+        let restarted_executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
+            quota_view(attempt_floor, 79),
+        )));
+        #[expect(
+            clippy::clone_on_ref_ptr,
+            reason = "coerce concrete executor to shared trait object"
+        )]
+        let provider_executor: Arc<dyn UsageProviderExecutor> = restarted_executor.clone();
+        let restarted = UsageCoordinator::new(
+            provider_executor,
+            Arc::<FileAccountStateStore>::clone(&store),
+            UsageCoordinatorConfig {
+                success_cooldown: Duration::from_secs(1),
+                ..UsageCoordinatorConfig::default()
+            },
+        );
+        assert_eq!(
+            restarted
+                .current(&account, attempt_floor - 1)
+                .unwrap()
+                .generation,
+            1
+        );
+        assert_eq!(restarted.next_due_epoch(), Some(attempt_floor));
+        assert!(restarted.poll_due(attempt_floor - 1).is_empty());
+        let forced_early = restarted
+            .request_refresh(&account, 1, true, attempt_floor - 1)
+            .unwrap();
+        assert_eq!(forced_early.generation, 1);
+        assert_eq!(restarted_executor.calls.load(Ordering::SeqCst), 0);
+        let allowed = restarted
+            .request_refresh(&account, 1, true, attempt_floor)
+            .unwrap();
+        assert_eq!(allowed.generation, 2);
+        assert_eq!(
+            join_ok(&restarted, &account, 2, attempt_floor + 1).phase,
+            UsageRefreshPhase::Completed
+        );
+        assert_eq!(restarted_executor.calls.load(Ordering::SeqCst), 1);
+    }
+}
+
+#[test]
+fn claude_attempt_floor_starts_at_invocation_after_fake_clock_queue_delay() {
+    let executor = Arc::new(GateExecutor::new(ProviderProbeOutcome::success(
+        quota_view(1_000, 80),
+    )));
+    let store = Arc::new(MemoryStore::default());
+    let clock = Arc::new(FakeMonotonicClock::default());
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce concrete ports to coordinator trait objects"
+    )]
+    let provider: Arc<dyn UsageProviderExecutor> = executor.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce concrete ports to coordinator trait objects"
+    )]
+    let state_store: Arc<dyn AccountStateStore> = store.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "share fake clock with the delayed-queue fixture"
+    )]
+    let clock_port: Arc<dyn MonotonicClock> = clock.clone();
+    let coordinator = UsageCoordinator::start_with_clock(
+        provider,
+        state_store,
+        UsageCoordinatorConfig {
+            max_concurrency: 1,
+            queue_capacity: 4,
+            ..UsageCoordinatorConfig::default()
+        },
+        None,
+        None,
+        clock_port,
+    );
+    let blocker = UsageAccountCapability {
+        account_id: "queue-blocker".into(),
+        surface_id: "openai".into(),
+    };
+    let account = capability("delayed-attempt");
+
+    coordinator
+        .request_refresh(&blocker, 0, true, 1_000)
+        .unwrap();
+    executor.wait_started(1);
+    let queued = coordinator
+        .request_refresh(&account, 0, true, 1_000)
+        .unwrap();
+    assert_eq!(queued.phase, UsageRefreshPhase::Queued);
+    clock.advance(Duration::from_secs(400));
+    executor.release(1);
+    executor.wait_started(2);
+    join_ok(&coordinator, &blocker, 1, 1_401);
+
+    let first_invocation = store
+        .states
+        .lock()
+        .unwrap()
+        .get(&account)
+        .unwrap()
+        .provider_invoked_at_epoch
+        .unwrap();
+    assert_eq!(first_invocation, 1_400);
+    executor.release(1);
+    assert_eq!(
+        join_ok(&coordinator, &account, 1, 1_401).phase,
+        UsageRefreshPhase::Completed
+    );
+
+    let forced_early = coordinator
+        .request_refresh(&account, 1, true, first_invocation + 299)
+        .unwrap();
+    assert_eq!(forced_early.generation, 1);
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 2);
+
+    let allowed = coordinator
+        .request_refresh(&account, 1, true, first_invocation + 300)
+        .unwrap();
+    assert_eq!(allowed.generation, 2);
+    executor.wait_started(3);
+    let second_invocation = store
+        .states
+        .lock()
+        .unwrap()
+        .get(&account)
+        .unwrap()
+        .provider_invoked_at_epoch
+        .unwrap();
+    assert!(second_invocation.saturating_sub(first_invocation) >= 300);
+    executor.release(1);
+    assert_eq!(
+        join_ok(&coordinator, &account, 2, second_invocation + 1).phase,
+        UsageRefreshPhase::Completed
+    );
+}
+
+#[test]
+fn account_state_v1_migration_preserves_results_and_enforces_fresh_attempt_floor() {
+    let temp = tempfile::tempdir().unwrap();
+    let store = Arc::new(FileAccountStateStore::at(temp.path().join("accounts")));
+    let account = capability("legacy-attempt");
+    let mut legacy = AccountStateEnvelope::idle(account.clone());
+    legacy.schema_version = PREVIOUS_ACCOUNT_STATE_SCHEMA_VERSION;
+    legacy.generation = 1;
+    legacy.phase = UsageRefreshPhase::Completed;
+    let last_good = quota_view(1_000, 80);
+    legacy.terminal_result = Some(last_good.clone());
+    legacy.last_good = Some(last_good);
+    legacy.started_at_epoch = Some(1_000);
+    legacy.completed_at_epoch = Some(1_001);
+    legacy.success_deadline_epoch = Some(1_002);
+    store.store(&legacy, 1_001).unwrap();
+    let path = temp.path().join("accounts/claude-legacy-attempt.json");
+    let mut bytes = serde_json::to_value(&legacy).unwrap();
+    bytes["schema_version"] = serde_json::json!(PREVIOUS_ACCOUNT_STATE_SCHEMA_VERSION);
+    bytes
+        .as_object_mut()
+        .unwrap()
+        .remove("provider_invoked_at_epoch");
+    std::fs::write(&path, serde_json::to_vec(&bytes).unwrap()).unwrap();
+
+    let executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
+        quota_view(2_300, 79),
+    )));
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce concrete executor to the coordinator port"
+    )]
+    let provider: Arc<dyn UsageProviderExecutor> = executor.clone();
+    let coordinator = UsageCoordinator::new(
+        provider,
+        Arc::<FileAccountStateStore>::clone(&store),
+        UsageCoordinatorConfig::default(),
+    );
+    let restored = coordinator.current(&account, 2_000).unwrap();
+    assert_eq!(restored.generation, 1);
+    assert!(restored.snapshot.is_some());
+    assert_eq!(
+        store
+            .load(&account, 2_000)
+            .unwrap()
+            .unwrap()
+            .provider_invoked_at_epoch,
+        Some(2_000)
+    );
+
+    let forced_early = coordinator
+        .request_refresh(&account, 1, true, 2_299)
+        .unwrap();
+    assert_eq!(forced_early.generation, 1);
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 0);
+    let allowed = coordinator
+        .request_refresh(&account, 1, true, 2_300)
+        .unwrap();
+    assert_eq!(allowed.generation, 2);
+    assert_eq!(
+        join_ok(&coordinator, &account, 2, 2_301).phase,
+        UsageRefreshPhase::Completed
+    );
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn catalog_revision_retains_retry_after_across_restart() {
+    let temp = tempfile::tempdir().unwrap();
+    let store = Arc::new(FileAccountStateStore::at(temp.path().join("accounts")));
+    let account = capability("account-a");
+    let executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::Failure {
+        kind: UsageCoordinationErrorKind::RateLimited,
+        message: "provider rate limited".into(),
+        retry_at_epoch: Some(5_000),
+    }));
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce concrete executor to shared trait object"
+    )]
+    let provider_executor: Arc<dyn UsageProviderExecutor> = executor.clone();
+    let coordinator = UsageCoordinator::with_catalog(
+        provider_executor,
+        Arc::<FileAccountStateStore>::clone(&store),
+        UsageCoordinatorConfig::default(),
+        [catalog_entry(&account, "credential-revision-a")],
+    );
+    let first = coordinator
+        .request_refresh(&account, 0, true, 1_000)
+        .unwrap();
+    let failed = join_ok(&coordinator, &account, first.generation, 1_001);
+    assert_eq!(failed.retry_at_epoch, Some(5_000));
+
+    coordinator
+        .reconcile_catalog([catalog_entry(&account, "credential-revision-b")], 2_000)
+        .unwrap();
+    let reset = coordinator.current(&account, 2_000).unwrap();
+    assert_eq!(reset.phase, UsageRefreshPhase::Idle);
+    assert_eq!(reset.generation, 2);
+    let durable = store.load(&account, 2_000).unwrap().unwrap();
+    assert_eq!(durable.started_at_epoch, Some(1_000));
+    assert_eq!(durable.rate_limit_deadline_epoch, Some(5_000));
+    assert_eq!(durable.retry_deadline_epoch, Some(5_000));
+    drop(coordinator);
+
+    let restarted_executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
+        quota_view(5_000, 75),
+    )));
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce concrete executor to shared trait object"
+    )]
+    let provider_executor: Arc<dyn UsageProviderExecutor> = restarted_executor.clone();
+    let restarted = UsageCoordinator::with_catalog(
+        provider_executor,
+        store,
+        UsageCoordinatorConfig::default(),
+        [catalog_entry(&account, "credential-revision-b")],
+    );
+    let restored = restarted.current(&account, 4_999).unwrap();
+    assert_eq!(restored.generation, 2);
+    assert_eq!(restored.retry_at_epoch, Some(5_000));
+    let forced_early = restarted.request_refresh(&account, 2, true, 4_999).unwrap();
+    assert_eq!(forced_early.generation, 2);
+    assert_eq!(restarted_executor.calls.load(Ordering::SeqCst), 0);
+    let allowed = restarted.request_refresh(&account, 2, true, 5_000).unwrap();
+    assert_eq!(allowed.generation, 3);
+    assert_eq!(
+        join_ok(&restarted, &account, 3, 5_001).phase,
+        UsageRefreshPhase::Completed
+    );
+    assert_eq!(restarted_executor.calls.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn failed_catalog_reset_write_restores_retry_state_and_catalog() {
+    let store = Arc::new(ResetWriteFailureStore {
+        inner: MemoryStore::default(),
+        fail_reset_write: AtomicUsize::new(1),
+    });
+    let account = capability("account-a");
+    let executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::Failure {
+        kind: UsageCoordinationErrorKind::RateLimited,
+        message: "provider rate limited".into(),
+        retry_at_epoch: Some(5_000),
+    }));
+    let coordinator = UsageCoordinator::with_catalog(
+        Arc::<ImmediateExecutor>::clone(&executor),
+        Arc::<ResetWriteFailureStore>::clone(&store),
+        UsageCoordinatorConfig::default(),
+        [catalog_entry(&account, "credential-revision-a")],
+    );
+    let first = coordinator
+        .request_refresh(&account, 0, true, 1_000)
+        .unwrap();
+    assert_eq!(
+        join_ok(&coordinator, &account, first.generation, 1_001).retry_at_epoch,
+        Some(5_000)
+    );
+
+    let error = coordinator
+        .reconcile_catalog([catalog_entry(&account, "credential-revision-b")], 2_000)
+        .unwrap_err();
+    assert_eq!(error.kind, UsageCoordinationErrorKind::Unavailable);
+    coordinator
+        .reconcile_catalog([catalog_entry(&account, "credential-revision-a")], 2_001)
+        .unwrap();
+    let current = coordinator.current(&account, 2_001).unwrap();
+    assert_eq!(current.phase, UsageRefreshPhase::Failed);
+    assert_eq!(current.generation, 1);
+    assert_eq!(current.retry_at_epoch, Some(5_000));
+    let durable = store.load(&account, 2_001).unwrap().unwrap();
+    assert_eq!(durable.phase, UsageRefreshPhase::Failed);
+    assert_eq!(durable.retry_deadline_epoch, Some(5_000));
+    assert_eq!(durable.rate_limit_deadline_epoch, Some(5_000));
+    let forced_early = coordinator
+        .request_refresh(&account, 1, true, 4_999)
+        .unwrap();
+    assert_eq!(forced_early.generation, 1);
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
 }
 
 #[test]
@@ -649,6 +1391,7 @@ fn coordinator_recovers_persisted_owner_loss_once_without_a_herd() {
     abandoned.generation = 4;
     abandoned.phase = UsageRefreshPhase::Updating;
     abandoned.started_at_epoch = Some(1_000);
+    abandoned.provider_invoked_at_epoch = Some(1_000);
     store
         .states
         .lock()
@@ -663,150 +1406,26 @@ fn coordinator_recovers_persisted_owner_loss_once_without_a_herd() {
     let recovered = coordinator
         .request_refresh(&account, 0, true, 1_001)
         .unwrap();
+    assert_eq!(recovered.generation, 4);
+    assert_eq!(recovered.phase, UsageRefreshPhase::Failed);
+    assert_eq!(recovered.retry_at_epoch, Some(1_300));
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 0);
+
+    let recovered = coordinator
+        .request_refresh(&account, 0, true, 1_300)
+        .unwrap();
     executor.wait_started(1);
     let joiner = coordinator
-        .request_refresh(&account, 0, true, 1_001)
+        .request_refresh(&account, 0, true, 1_300)
         .unwrap();
     assert_eq!(recovered.generation, 5);
     assert_eq!(joiner.generation, 5);
     assert!(joiner.phase.is_active());
 
     executor.release(1);
-    let terminal = join_ok(&coordinator, &account, 5, 1_002);
+    let terminal = join_ok(&coordinator, &account, 5, 1_301);
     assert_eq!(terminal.phase, UsageRefreshPhase::Completed);
     assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
-}
-
-/// Fail a real filesystem write after Queued has been durably stored.
-struct UpdatingFailureStore {
-    inner: FileAccountStateStore,
-    accounts: std::path::PathBuf,
-    saved_accounts: std::path::PathBuf,
-    failed_updates: AtomicUsize,
-    persistent: bool,
-}
-
-impl UpdatingFailureStore {
-    fn restore(&self) {
-        std::fs::remove_file(&self.accounts).unwrap();
-        std::fs::rename(&self.saved_accounts, &self.accounts).unwrap();
-    }
-}
-
-impl AccountStateStore for UpdatingFailureStore {
-    fn load(
-        &self,
-        capability: &UsageAccountCapability,
-        now_epoch: i64,
-    ) -> Result<Option<AccountStateEnvelope>, StateStoreError> {
-        self.inner.load(capability, now_epoch)
-    }
-
-    fn store(
-        &self,
-        envelope: &AccountStateEnvelope,
-        now_epoch: i64,
-    ) -> Result<(), StateStoreError> {
-        if envelope.phase == UsageRefreshPhase::Updating
-            && self.failed_updates.fetch_add(1, Ordering::SeqCst) == 0
-        {
-            std::fs::rename(&self.accounts, &self.saved_accounts).unwrap();
-            std::fs::write(&self.accounts, b"fixture blocks account directory").unwrap();
-            let result = self.inner.store(envelope, now_epoch);
-            assert_eq!(result, Err(StateStoreError::Unavailable));
-            if !self.persistent {
-                self.restore();
-            }
-            return result;
-        }
-        self.inner.store(envelope, now_epoch)
-    }
-
-    fn purge(&self, capability: &UsageAccountCapability) -> Result<(), StateStoreError> {
-        self.inner.purge(capability)
-    }
-}
-
-fn assert_updating_store_failure_terminates(persistent: bool) {
-    let (completed, completion) = mpsc::channel();
-    // Own the coordinator inside this thread: a broken worker's Drop must not
-    // keep the test harness waiting beyond the regression's bounded deadline.
-    let fixture = std::thread::spawn(move || {
-        let temp = tempfile::tempdir().unwrap();
-        let accounts = temp.path().join("accounts");
-        let store = Arc::new(UpdatingFailureStore {
-            inner: FileAccountStateStore::at(accounts.clone()),
-            accounts,
-            saved_accounts: temp.path().join("saved-accounts"),
-            failed_updates: AtomicUsize::new(0),
-            persistent,
-        });
-        let executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
-            quota_view(1_000, 80),
-        )));
-        let account = capability("account-a");
-        let coordinator = UsageCoordinator::with_catalog(
-            Arc::<ImmediateExecutor>::clone(&executor),
-            Arc::<UpdatingFailureStore>::clone(&store),
-            UsageCoordinatorConfig::default(),
-            [catalog_entry(&account, "revision-a")],
-        );
-        let queued = coordinator
-            .request_refresh(&account, 0, true, 1_000)
-            .unwrap();
-        let terminal =
-            coordinator.join_generation(&account, queued.generation, Duration::from_secs(2), 1_001);
-        if persistent {
-            assert_eq!(
-                terminal.unwrap_err().kind,
-                UsageCoordinationErrorKind::Unavailable
-            );
-            assert!(
-                coordinator.is_idle(),
-                "failed persistence must release ownership"
-            );
-            assert_eq!(
-                coordinator.current(&account, 1_001).unwrap_err().kind,
-                UsageCoordinationErrorKind::Unavailable
-            );
-            store.restore();
-        } else {
-            let terminal = terminal.unwrap();
-            assert_eq!(terminal.generation, queued.generation);
-            assert_eq!(terminal.phase, UsageRefreshPhase::Failed);
-            assert_eq!(
-                terminal.error.unwrap().kind,
-                UsageCoordinationErrorKind::Unavailable
-            );
-        }
-        let recovered = coordinator.current(&account, 1_002).unwrap();
-        assert_eq!(recovered.phase, UsageRefreshPhase::Failed);
-        assert_eq!(
-            recovered.error.unwrap().kind,
-            UsageCoordinationErrorKind::Unavailable
-        );
-        let durable = store.load(&account, 1_002).unwrap().unwrap();
-        assert_eq!(durable.phase, UsageRefreshPhase::Failed);
-        assert_eq!(durable.generation, queued.generation);
-        assert_eq!(durable.consecutive_failures, 1);
-        let joined = join_ok(&coordinator, &account, queued.generation, 1_002);
-        assert_eq!(joined.phase, UsageRefreshPhase::Failed);
-        assert_eq!(
-            joined.error.unwrap().kind,
-            UsageCoordinationErrorKind::Unavailable
-        );
-        assert_eq!(executor.calls.load(Ordering::SeqCst), 0);
-        assert_eq!(store.failed_updates.load(Ordering::SeqCst), 1);
-        assert!(coordinator.is_idle());
-        coordinator.reconcile_catalog([], 1_003).unwrap();
-        assert_eq!(store.load(&account, 1_003).unwrap(), None);
-        drop(coordinator);
-        completed.send(()).unwrap();
-    });
-    completion
-        .recv_timeout(Duration::from_secs(5))
-        .expect("Updating store failure deadlocked terminal transition or worker shutdown");
-    fixture.join().unwrap();
 }
 
 #[test]
@@ -819,15 +1438,8 @@ fn coordinator_updating_store_failure_recovers_after_terminal_store_failure() {
     assert_updating_store_failure_terminates(true);
 }
 
-fn catalog_entry(account: &UsageAccountCapability, revision: &str) -> UsageCatalogEntry {
-    UsageCatalogEntry {
-        capability: account.clone(),
-        revision: revision.to_owned(),
-    }
-}
-
 #[test]
-fn catalog_revocation_retains_materialized_last_good_but_fences_late_result() {
+fn catalog_revocation_clears_materialized_results_but_preserves_cooldown_and_fences_late_result() {
     let executor = Arc::new(GateExecutor::new(ProviderProbeOutcome::success(
         quota_view(1_000, 80),
     )));
@@ -849,23 +1461,20 @@ fn catalog_revocation_retains_materialized_last_good_but_fences_late_result() {
     assert_eq!(first.phase, UsageRefreshPhase::Completed);
 
     let second = coordinator
-        .request_refresh(&account, first.generation, true, 1_002)
+        .request_refresh(&account, first.generation, true, 1_400)
         .unwrap();
     executor.wait_started(2);
     coordinator
-        .reconcile_catalog([], 1_003)
+        .reconcile_catalog([], 1_401)
         .expect("catalog removal is durable");
-    let revoked = coordinator.current(&account, 1_003).unwrap();
+    let revoked = coordinator.current(&account, 1_401).unwrap();
     assert_eq!(revoked.phase, UsageRefreshPhase::Failed);
     assert_eq!(revoked.generation, second.generation + 1);
     assert_eq!(
         revoked.error.as_ref().unwrap().kind,
         UsageCoordinationErrorKind::CatalogRevoked
     );
-    assert_eq!(
-        revoked.snapshot.as_ref().unwrap().buckets[0].remaining_percent,
-        Some(80)
-    );
+    assert!(revoked.snapshot.is_none());
     assert!(
         coordinator.is_idle(),
         "revocation must clear active ownership"
@@ -876,29 +1485,34 @@ fn catalog_revocation_retains_materialized_last_good_but_fences_late_result() {
                 &account,
                 second.generation,
                 Duration::from_millis(20),
-                1_003,
+                1_401,
             )
             .unwrap_err()
             .kind,
         UsageCoordinationErrorKind::CatalogRevoked
     );
     assert!(store.purges.lock().unwrap().contains(&account));
+    let tombstone = store.states.lock().unwrap().get(&account).cloned().unwrap();
+    assert_eq!(tombstone.phase, UsageRefreshPhase::Idle);
+    assert!(tombstone.terminal_result.is_none());
+    assert!(tombstone.last_good.is_none());
+    assert!(tombstone.terminal_error.is_none());
+    assert_eq!(tombstone.provider_invoked_at_epoch, Some(1_400));
+    assert_eq!(tombstone.success_deadline_epoch, Some(1_300));
+    assert_eq!(tombstone.retry_deadline_epoch, None);
 
     executor.release(1);
     executor.wait_idle();
-    let after_late_result = coordinator.current(&account, 1_004).unwrap();
+    let after_late_result = coordinator.current(&account, 1_402).unwrap();
     assert_eq!(
         after_late_result.error.as_ref().unwrap().kind,
         UsageCoordinationErrorKind::CatalogRevoked
     );
     assert_eq!(after_late_result.generation, revoked.generation);
-    assert_eq!(
-        after_late_result.snapshot.as_ref().unwrap().buckets[0].remaining_percent,
-        Some(80)
-    );
+    assert!(after_late_result.snapshot.is_none());
     assert_eq!(
         coordinator
-            .request_refresh(&account, revoked.generation, true, 1_004)
+            .request_refresh(&account, revoked.generation, true, 1_402)
             .unwrap_err()
             .kind,
         UsageCoordinationErrorKind::CatalogRevoked
@@ -939,10 +1553,10 @@ fn catalog_revision_change_purges_old_state_and_allows_only_new_revision() {
     );
 
     let next = coordinator
-        .request_refresh(&account, reset.generation, true, 1_003)
+        .request_refresh(&account, reset.generation, true, 1_400)
         .unwrap();
     assert_eq!(
-        join_ok(&coordinator, &account, next.generation, 1_004).phase,
+        join_ok(&coordinator, &account, next.generation, 1_401).phase,
         UsageRefreshPhase::Completed
     );
     assert_eq!(executor.calls.load(Ordering::SeqCst), 2);
@@ -1028,7 +1642,7 @@ fn same_capability_revision_change_fences_in_flight_join_immediately() {
 }
 
 #[test]
-fn catalog_purge_prevents_restart_resurrection() {
+fn catalog_cooldown_tombstone_prevents_restart_resurrection() {
     let temp = tempfile::tempdir().unwrap();
     let store = Arc::new(FileAccountStateStore::at(temp.path().join("accounts")));
     let account = capability("account-a");
@@ -1057,7 +1671,12 @@ fn catalog_purge_prevents_restart_resurrection() {
         [catalog_entry(&account, "revision-a")],
     );
     second.reconcile_catalog([], 1_002).unwrap();
-    assert_eq!(store.load(&account, 1_002).unwrap(), None);
+    let tombstone = store.load(&account, 1_002).unwrap().unwrap();
+    assert_eq!(tombstone.phase, UsageRefreshPhase::Idle);
+    assert!(tombstone.terminal_result.is_none());
+    assert!(tombstone.last_good.is_none());
+    assert!(tombstone.terminal_error.is_none());
+    assert!(account_cooldown_deadline(&tombstone).is_some_and(|deadline| deadline > 1_002));
     drop(second);
 
     let restarted = UsageCoordinator::with_catalog(
@@ -1161,152 +1780,6 @@ fn coordinator_distinct_accounts_refresh_within_concurrency_bound() {
     drop(join_ok(&coordinator, &account_b, 1, 1_001));
 }
 
-struct CadenceMemoryStore {
-    states: Mutex<BTreeMap<UsageAccountCapability, AccountStateEnvelope>>,
-}
-
-impl AccountStateStore for CadenceMemoryStore {
-    fn load(
-        &self,
-        capability: &UsageAccountCapability,
-        _now_epoch: i64,
-    ) -> Result<Option<AccountStateEnvelope>, StateStoreError> {
-        Ok(self.states.lock().unwrap().get(capability).cloned())
-    }
-
-    fn store(
-        &self,
-        envelope: &AccountStateEnvelope,
-        _now_epoch: i64,
-    ) -> Result<(), StateStoreError> {
-        self.states
-            .lock()
-            .unwrap()
-            .insert(envelope.capability.clone(), envelope.clone());
-        Ok(())
-    }
-}
-
-struct ImmediateExecutor {
-    calls: AtomicUsize,
-    outcome: Mutex<ProviderProbeOutcome>,
-}
-
-impl ImmediateExecutor {
-    fn new(outcome: ProviderProbeOutcome) -> Self {
-        Self {
-            calls: AtomicUsize::new(0),
-            outcome: Mutex::new(outcome),
-        }
-    }
-
-    fn set_outcome(&self, outcome: ProviderProbeOutcome) {
-        *self.outcome.lock().unwrap() = outcome;
-    }
-}
-
-impl UsageProviderExecutor for ImmediateExecutor {
-    fn probe(
-        &self,
-        _capability: &UsageAccountCapability,
-        _generation: u64,
-    ) -> ProviderProbeOutcome {
-        self.calls.fetch_add(1, Ordering::SeqCst);
-        self.outcome.lock().unwrap().clone()
-    }
-}
-
-struct CadenceGateExecutor {
-    calls: AtomicUsize,
-    started: (Mutex<usize>, Condvar),
-    permits: (Mutex<usize>, Condvar),
-    outcome: Mutex<ProviderProbeOutcome>,
-}
-
-impl CadenceGateExecutor {
-    fn new(outcome: ProviderProbeOutcome) -> Self {
-        Self {
-            calls: AtomicUsize::new(0),
-            started: (Mutex::new(0), Condvar::new()),
-            permits: (Mutex::new(0), Condvar::new()),
-            outcome: Mutex::new(outcome),
-        }
-    }
-
-    fn wait_started(&self) {
-        let deadline = Instant::now() + Duration::from_secs(2);
-        let (lock, changed) = &self.started;
-        let mut started = lock.lock().unwrap();
-        while *started < 1 {
-            let remaining = deadline.saturating_duration_since(Instant::now());
-            assert!(!remaining.is_zero(), "provider probe did not start");
-            let (next, wait) = changed.wait_timeout(started, remaining).unwrap();
-            started = next;
-            assert!(!wait.timed_out(), "provider probe did not start");
-        }
-    }
-
-    fn release(&self) {
-        let (lock, changed) = &self.permits;
-        *lock.lock().unwrap() += 1;
-        changed.notify_all();
-    }
-}
-
-impl UsageProviderExecutor for CadenceGateExecutor {
-    fn probe(
-        &self,
-        _capability: &UsageAccountCapability,
-        _generation: u64,
-    ) -> ProviderProbeOutcome {
-        self.calls.fetch_add(1, Ordering::SeqCst);
-        let (started_lock, started_changed) = &self.started;
-        *started_lock.lock().unwrap() += 1;
-        started_changed.notify_all();
-        let (permit_lock, permit_changed) = &self.permits;
-        let mut permits = permit_lock.lock().unwrap();
-        while *permits == 0 {
-            permits = permit_changed.wait(permits).unwrap();
-        }
-        *permits -= 1;
-        self.outcome.lock().unwrap().clone()
-    }
-}
-fn cadence_quota_view(epoch: i64) -> FocusedUsageView {
-    let mut view = FocusedUsageView::unavailable("fixture", epoch);
-    view.status = UsageSnapshotStatus::Fresh;
-    view.source = UsageSource::ProviderApi;
-    view.confidence = UsageConfidence::Authoritative;
-    view.buckets = vec![QuotaBucketView {
-        label: "Session".into(),
-        used_label: None,
-        limit_label: None,
-        remaining_percent: Some(80),
-        reset_label: None,
-        resets_at: None,
-        status_slot: None,
-        pace_label: None,
-        status: UsageSnapshotStatus::Fresh,
-        used_money: None,
-        limit_money: None,
-        severity: UsageSeverity::Normal,
-    }];
-    view.last_error = None;
-    view
-}
-
-fn cadence_coordinator<E>(executor: Arc<E>, config: UsageCoordinatorConfig) -> UsageCoordinator
-where
-    E: UsageProviderExecutor + 'static,
-{
-    UsageCoordinator::new(
-        executor,
-        Arc::new(CadenceMemoryStore {
-            states: Mutex::new(BTreeMap::new()),
-        }),
-        config,
-    )
-}
 #[test]
 fn cadence_tiers_select_spec_intervals_with_bounded_jitter() {
     let account = capability("account-a");
@@ -1352,25 +1825,15 @@ fn cadence_poll_due_fires_once_per_interval_and_honors_success_cooldown() {
     assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
 
     let due = coordinator.next_due_epoch().unwrap();
-    assert!((1_120..=1_150).contains(&due), "due={due}");
+    assert!((1_300..=1_310).contains(&due), "hard minimum due={due}");
     assert!(coordinator.poll_due(due - 1).is_empty());
     assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
 
-    let suppressed = coordinator.poll_due(due);
-    assert_eq!(suppressed.len(), 1);
-    assert_eq!(suppressed[0].generation, 1);
-    assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
-    let cooldown_due = coordinator.next_due_epoch().unwrap();
-    assert!(
-        (1_300..=1_310).contains(&cooldown_due),
-        "shared success cooldown must win: {cooldown_due}"
-    );
-
-    let second = coordinator.poll_due(cooldown_due);
+    let second = coordinator.poll_due(due);
     assert_eq!(second.len(), 1);
     assert_eq!(second[0].generation, 2);
     assert_eq!(
-        join_ok(&coordinator, &account, 2, cooldown_due + 1).phase,
+        join_ok(&coordinator, &account, 2, due + 1).phase,
         UsageRefreshPhase::Completed
     );
     assert_eq!(executor.calls.load(Ordering::SeqCst), 2);
@@ -1423,12 +1886,7 @@ fn cadence_shared_retry_after_wins_over_periodic_due() {
     assert_eq!(failed.retry_at_epoch, Some(5_000));
 
     let due = coordinator.next_due_epoch().unwrap();
-    assert!((1_120..=1_150).contains(&due), "due={due}");
-    let suppressed = coordinator.poll_due(due);
-    assert_eq!(suppressed.len(), 1);
-    assert_eq!(suppressed[0].generation, 1);
-    assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
-    assert_eq!(coordinator.next_due_epoch(), Some(5_000));
+    assert_eq!(due, 5_000, "provider deadline must win over cadence");
     assert!(coordinator.poll_due(4_999).is_empty());
 
     executor.set_outcome(ProviderProbeOutcome::success(cadence_quota_view(5_000)));
@@ -1476,4 +1934,372 @@ fn cadence_two_clients_single_flight_exactly_one_provider_call() {
     let terminal = join_ok(&coordinator, &account, 1, 1_001);
     assert_eq!(terminal.phase, UsageRefreshPhase::Completed);
     assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
+}
+
+struct TombstoneWriteFailureStore {
+    inner: MemoryStore,
+    fail_tombstone: AtomicUsize,
+    fail_purge_after_removal: AtomicUsize,
+}
+
+impl AccountStateStore for TombstoneWriteFailureStore {
+    fn load(
+        &self,
+        capability: &UsageAccountCapability,
+        now_epoch: i64,
+    ) -> Result<Option<AccountStateEnvelope>, StateStoreError> {
+        self.inner.load(capability, now_epoch)
+    }
+
+    fn store(
+        &self,
+        envelope: &AccountStateEnvelope,
+        now_epoch: i64,
+    ) -> Result<(), StateStoreError> {
+        let is_tombstone = envelope.phase == UsageRefreshPhase::Idle
+            && envelope.terminal_result.is_none()
+            && envelope.last_good.is_none()
+            && envelope.terminal_error.is_none()
+            && account_cooldown_deadline(envelope).is_some_and(|deadline| deadline > now_epoch);
+        if is_tombstone && self.fail_tombstone.swap(0, Ordering::SeqCst) > 0 {
+            return Err(StateStoreError::Unavailable);
+        }
+        self.inner.store(envelope, now_epoch)
+    }
+
+    fn purge(&self, capability: &UsageAccountCapability) -> Result<(), StateStoreError> {
+        self.inner.purge(capability)?;
+        if self.fail_purge_after_removal.swap(0, Ordering::SeqCst) > 0 {
+            return Err(StateStoreError::Unavailable);
+        }
+        Ok(())
+    }
+}
+
+fn removed_account_cooldown_survives_restart(
+    account_id: &str,
+    outcome: ProviderProbeOutcome,
+    config: UsageCoordinatorConfig,
+) {
+    let temp = tempfile::tempdir().unwrap();
+    let store = Arc::new(FileAccountStateStore::at(temp.path().join("accounts")));
+    let account = capability(account_id);
+    let first_executor = Arc::new(ImmediateExecutor::new(outcome.clone()));
+    let first = UsageCoordinator::with_catalog(
+        Arc::<ImmediateExecutor>::clone(&first_executor),
+        Arc::<FileAccountStateStore>::clone(&store),
+        config,
+        [catalog_entry(&account, "revision-a")],
+    );
+
+    let queued = first.request_refresh(&account, 0, true, 1_000).unwrap();
+    let terminal = join_ok(&first, &account, queued.generation, 1_001);
+    assert!(terminal.phase.is_terminal());
+    assert_eq!(first_executor.calls.load(Ordering::SeqCst), 1);
+    let before_removal = store.load(&account, 1_001).unwrap().unwrap();
+    let deadline = account_cooldown_deadline(&before_removal).expect("account cooldown");
+    assert!(deadline > 1_100);
+    match &outcome {
+        ProviderProbeOutcome::Success(_) => {
+            assert!(before_removal.provider_invoked_at_epoch.is_some());
+            assert_eq!(before_removal.success_deadline_epoch, Some(deadline));
+        }
+        ProviderProbeOutcome::Failure {
+            kind: UsageCoordinationErrorKind::RateLimited,
+            retry_at_epoch: Some(provider_deadline),
+            ..
+        } => {
+            assert_eq!(
+                before_removal.rate_limit_deadline_epoch,
+                Some(*provider_deadline)
+            );
+            assert_eq!(
+                before_removal.retry_deadline_epoch,
+                Some(*provider_deadline)
+            );
+        }
+        ProviderProbeOutcome::Failure {
+            kind: UsageCoordinationErrorKind::ProviderUnavailable,
+            retry_at_epoch: Some(provider_deadline),
+            ..
+        } => {
+            assert_eq!(before_removal.rate_limit_deadline_epoch, None);
+            assert_eq!(
+                before_removal.retry_deadline_epoch,
+                Some(*provider_deadline)
+            );
+        }
+        ProviderProbeOutcome::Failure {
+            kind: UsageCoordinationErrorKind::ProviderUnavailable,
+            retry_at_epoch: None,
+            ..
+        } => {
+            assert!(
+                before_removal
+                    .retry_deadline_epoch
+                    .is_some_and(|retry| retry > 1_300)
+            );
+            assert!(before_removal.rate_limit_deadline_epoch.is_none());
+        }
+        ProviderProbeOutcome::Failure { .. } => panic!("unexpected test outcome"),
+    }
+
+    first.reconcile_catalog([], 1_100).unwrap();
+    let tombstone = store.load(&account, 1_100).unwrap().unwrap();
+    assert_eq!(tombstone.generation, queued.generation.saturating_add(1));
+    assert_eq!(tombstone.phase, UsageRefreshPhase::Idle);
+    assert!(tombstone.terminal_result.is_none());
+    assert!(tombstone.last_good.is_none());
+    assert!(tombstone.terminal_error.is_none());
+    assert_eq!(account_cooldown_deadline(&tombstone), Some(deadline));
+    assert_eq!(
+        tombstone.provider_invoked_at_epoch,
+        before_removal.provider_invoked_at_epoch
+    );
+    assert_eq!(
+        tombstone.rate_limit_deadline_epoch,
+        before_removal.rate_limit_deadline_epoch
+    );
+    assert_eq!(
+        tombstone.retry_deadline_epoch,
+        before_removal.retry_deadline_epoch
+    );
+    assert_eq!(
+        tombstone.success_deadline_epoch,
+        before_removal.success_deadline_epoch
+    );
+    assert_eq!(
+        tombstone.consecutive_failures,
+        before_removal.consecutive_failures
+    );
+    drop(first);
+
+    let second_executor = Arc::new(ImmediateExecutor::new(outcome));
+    let second = UsageCoordinator::with_catalog(
+        Arc::<ImmediateExecutor>::clone(&second_executor),
+        Arc::<FileAccountStateStore>::clone(&store),
+        config,
+        [catalog_entry(&account, "revision-b")],
+    );
+    let readded = second.current(&account, 1_101).unwrap();
+    assert_eq!(readded.phase, UsageRefreshPhase::Idle);
+    assert!(readded.snapshot.is_none());
+    assert!(readded.error.is_none());
+    assert_eq!(readded.generation, tombstone.generation);
+    assert_eq!(
+        second.next_due_epoch_for_capabilities([account.clone()], 1_101),
+        Some(deadline)
+    );
+
+    let suppressed = second
+        .request_refresh(&account, readded.generation, true, deadline - 1)
+        .unwrap();
+    assert_eq!(suppressed.generation, readded.generation);
+    assert_eq!(second_executor.calls.load(Ordering::SeqCst), 0);
+
+    let at_deadline = second
+        .request_refresh(&account, readded.generation, true, deadline)
+        .unwrap();
+    assert_eq!(at_deadline.generation, readded.generation.saturating_add(1));
+    let after_deadline = join_ok(&second, &account, at_deadline.generation, deadline + 1);
+    assert!(after_deadline.phase.is_terminal());
+    assert_eq!(second_executor.calls.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn claude_invocation_floor_survives_remove_readd_and_restart() {
+    removed_account_cooldown_survives_restart(
+        "floor-account",
+        ProviderProbeOutcome::success(quota_view(1_000, 80)),
+        UsageCoordinatorConfig {
+            success_cooldown: Duration::from_secs(1),
+            ..UsageCoordinatorConfig::default()
+        },
+    );
+}
+
+#[test]
+fn rate_limit_retry_after_survives_remove_readd_and_restart() {
+    removed_account_cooldown_survives_restart(
+        "rate-limit-account",
+        ProviderProbeOutcome::Failure {
+            kind: UsageCoordinationErrorKind::RateLimited,
+            message: "provider rate limited".into(),
+            retry_at_epoch: Some(5_000),
+        },
+        UsageCoordinatorConfig::default(),
+    );
+}
+
+#[test]
+fn general_provider_retry_after_survives_remove_readd_and_restart() {
+    removed_account_cooldown_survives_restart(
+        "provider-retry-account",
+        ProviderProbeOutcome::Failure {
+            kind: UsageCoordinationErrorKind::ProviderUnavailable,
+            message: "provider asked for a later retry".into(),
+            retry_at_epoch: Some(4_000),
+        },
+        UsageCoordinatorConfig::default(),
+    );
+}
+
+#[test]
+fn local_exponential_backoff_survives_remove_readd_and_restart() {
+    let config = UsageCoordinatorConfig {
+        retry_policy: UsagePolicy {
+            retry_base: Duration::from_secs(600),
+            retry_cap: Duration::from_secs(600),
+            ..UsagePolicy::default()
+        },
+        ..UsageCoordinatorConfig::default()
+    };
+    removed_account_cooldown_survives_restart(
+        "backoff-account",
+        ProviderProbeOutcome::Failure {
+            kind: UsageCoordinationErrorKind::ProviderUnavailable,
+            message: "provider unavailable".into(),
+            retry_at_epoch: None,
+        },
+        config,
+    );
+}
+
+#[test]
+fn failed_tombstone_write_restores_catalog_and_preimage() {
+    let executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
+        quota_view(1_000, 80),
+    )));
+    let store = Arc::new(TombstoneWriteFailureStore {
+        inner: MemoryStore::default(),
+        fail_tombstone: AtomicUsize::new(0),
+        fail_purge_after_removal: AtomicUsize::new(0),
+    });
+    let account = capability("rollback-account");
+    let coordinator = UsageCoordinator::with_catalog(
+        Arc::<ImmediateExecutor>::clone(&executor),
+        Arc::<TombstoneWriteFailureStore>::clone(&store),
+        UsageCoordinatorConfig::default(),
+        [catalog_entry(&account, "revision-a")],
+    );
+    let queued = coordinator
+        .request_refresh(&account, 0, true, 1_000)
+        .unwrap();
+    assert_eq!(
+        join_ok(&coordinator, &account, queued.generation, 1_001).phase,
+        UsageRefreshPhase::Completed
+    );
+    let preimage = store.inner.load(&account, 1_001).unwrap().unwrap();
+    store.fail_tombstone.store(1, Ordering::SeqCst);
+
+    let error = coordinator.reconcile_catalog([], 1_002).unwrap_err();
+    assert_eq!(error.kind, UsageCoordinationErrorKind::Unavailable);
+    assert_eq!(store.inner.load(&account, 1_002).unwrap(), Some(preimage));
+    let restored = coordinator.current(&account, 1_002).unwrap();
+    assert_eq!(restored.phase, UsageRefreshPhase::Completed);
+    assert_eq!(
+        restored.snapshot.unwrap().buckets[0].remaining_percent,
+        Some(80)
+    );
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn failed_purge_after_removal_restores_catalog_and_preimage() {
+    let executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
+        quota_view(1_000, 80),
+    )));
+    let store = Arc::new(TombstoneWriteFailureStore {
+        inner: MemoryStore::default(),
+        fail_tombstone: AtomicUsize::new(0),
+        fail_purge_after_removal: AtomicUsize::new(0),
+    });
+    let account = capability("purge-rollback-account");
+    let coordinator = UsageCoordinator::with_catalog(
+        Arc::<ImmediateExecutor>::clone(&executor),
+        Arc::<TombstoneWriteFailureStore>::clone(&store),
+        UsageCoordinatorConfig::default(),
+        [catalog_entry(&account, "revision-a")],
+    );
+    let queued = coordinator
+        .request_refresh(&account, 0, true, 1_000)
+        .unwrap();
+    assert_eq!(
+        join_ok(&coordinator, &account, queued.generation, 1_001).phase,
+        UsageRefreshPhase::Completed
+    );
+    let preimage = store.inner.load(&account, 1_001).unwrap().unwrap();
+    store.fail_purge_after_removal.store(1, Ordering::SeqCst);
+
+    let error = coordinator.reconcile_catalog([], 1_002).unwrap_err();
+    assert_eq!(error.kind, UsageCoordinationErrorKind::Unavailable);
+    assert_eq!(store.inner.load(&account, 1_002).unwrap(), Some(preimage));
+    let restored = coordinator.current(&account, 1_002).unwrap();
+    assert_eq!(restored.phase, UsageRefreshPhase::Completed);
+    assert_eq!(
+        restored.snapshot.unwrap().buckets[0].remaining_percent,
+        Some(80)
+    );
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
+}
+
+struct CapabilityRecordingExecutor {
+    calls: Mutex<Vec<UsageAccountCapability>>,
+}
+
+impl UsageProviderExecutor for CapabilityRecordingExecutor {
+    fn probe(&self, capability: &UsageAccountCapability, _generation: u64) -> ProviderProbeOutcome {
+        self.calls.lock().unwrap().push(capability.clone());
+        ProviderProbeOutcome::success(quota_view(1_000, 80))
+    }
+}
+
+#[test]
+fn selected_cadence_polls_only_the_opted_in_capability() {
+    let executor = Arc::new(CapabilityRecordingExecutor {
+        calls: Mutex::new(Vec::new()),
+    });
+    let store = Arc::new(MemoryStore::default());
+    let opted_in = capability("opted-in-account");
+    let stopped = capability("stopped-account");
+    let coordinator = UsageCoordinator::with_catalog(
+        Arc::<CapabilityRecordingExecutor>::clone(&executor),
+        Arc::<MemoryStore>::clone(&store),
+        UsageCoordinatorConfig::default(),
+        [
+            catalog_entry(&opted_in, "revision-a"),
+            catalog_entry(&stopped, "revision-a"),
+        ],
+    );
+    assert_eq!(coordinator.current(&opted_in, 1_000).unwrap().generation, 0);
+    assert_eq!(coordinator.current(&stopped, 1_000).unwrap().generation, 0);
+
+    let first = coordinator.poll_due_for_capabilities([opted_in.clone()], 1_000);
+    assert_eq!(first.len(), 1);
+    assert_eq!(first[0].capability, opted_in);
+    drop(join_ok(&coordinator, &opted_in, first[0].generation, 1_001));
+
+    let selected_due = coordinator
+        .next_due_epoch_for_capabilities([opted_in.clone()], 1_001)
+        .unwrap();
+    assert!(selected_due > 1_000);
+    assert_eq!(
+        coordinator.next_due_epoch(),
+        Some(1_000),
+        "the global due time still belongs to the omitted account"
+    );
+    let second = coordinator.poll_due_for_capabilities([opted_in.clone()], selected_due);
+    assert_eq!(second.len(), 1);
+    assert_eq!(second[0].capability, opted_in);
+    drop(join_ok(
+        &coordinator,
+        &opted_in,
+        second[0].generation,
+        selected_due + 1,
+    ));
+    assert_eq!(
+        *executor.calls.lock().unwrap(),
+        vec![opted_in.clone(), opted_in.clone()]
+    );
+    assert_eq!(coordinator.current(&stopped, 1_001).unwrap().generation, 0);
 }

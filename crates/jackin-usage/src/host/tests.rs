@@ -9,6 +9,7 @@ use jackin_protocol::control::{
     FocusedAccountHeader, FocusedUsageView, Money, QuotaBucketView, StatusSlot, UsageConfidence,
     UsageSeverity, UsageSnapshotStatus, UsageSource,
 };
+use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 
@@ -344,11 +345,13 @@ fn snapshot_surfaces_discovery_diagnostic_instead_of_refreshing() {
             UsageDiscoveryDiagnostic {
                 surface_id: Some("claude".to_owned()),
                 scope_label: "account claude".to_owned(),
+                unresolved_source: None,
                 issue: UsageDiscoveryIssue::CredentialMalformed,
             },
             UsageDiscoveryDiagnostic {
                 surface_id: Some("kimi".to_owned()),
                 scope_label: "account kimi".to_owned(),
+                unresolved_source: None,
                 issue: UsageDiscoveryIssue::CredentialMissing,
             },
         ],

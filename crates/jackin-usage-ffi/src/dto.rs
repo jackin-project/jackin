@@ -3,15 +3,7 @@
 
 //! boltffi-safe mirrors of protocol usage views (string enums, no secrets).
 
-use jackin_protocol::control::{
-    FocusedUsageView, Money, QuotaBucketView, UsageConfidence, UsageSnapshotStatus, UsageSource,
-};
-use jackin_usage::host::{
-    HostAccountDescriptor, HostDesktopInventory, HostDesktopProjection, HostDesktopProviderGroup,
-    HostDesktopProviderProjection, HostDesktopProviderState, HostEventBatch, HostOverviewRow,
-    HostSelectedAccountRoute, HostSurfaceDescriptor, HostUsageEvent, UsageDiscoveryDiagnostic,
-};
-use jackin_usage::usage::{PercentStyle, ResetStyle, UsageFormatPrefs, estimate_caption};
+use jackin_usage::usage::{PercentStyle, ResetStyle, UsageFormatPrefs};
 
 /// Open configuration from Swift (paths only — no credentials).
 #[derive(Debug, Clone)]
@@ -25,8 +17,9 @@ pub struct OpenConfig {
     pub refresh_floor_secs: u64,
     /// Enabled surface ids; empty = all.
     pub enabled_surface_ids: Vec<String>,
-    /// Whether live provider probes may dispatch. `false` = smoke/defense mode
-    /// (no credential/file/env/CLI/network/Keychain resolution). Not persisted.
+    /// Whether the standard broker may dispatch live provider probes. `false`
+    /// reads an existing broker publication without credential lookup or
+    /// provider work. Not persisted.
     pub allow_live_probes: bool,
 }
 
@@ -41,7 +34,7 @@ pub struct SurfaceDescriptorDto {
     pub enabled: bool,
 }
 
-/// Sanitized config/credential discovery failure. Contains no source path or secret.
+/// Sanitized issue from the broker-owned usage publication.
 #[derive(Debug, Clone)]
 #[boltffi::data]
 pub struct DiscoveryDiagnosticDto {
@@ -50,20 +43,6 @@ pub struct DiscoveryDiagnosticDto {
     pub issue: String,
     pub message: String,
     pub display_label: String,
-}
-
-pub(crate) fn discovery_diagnostic_dto(
-    diagnostic: UsageDiscoveryDiagnostic,
-) -> DiscoveryDiagnosticDto {
-    let message = diagnostic.issue.display_message().to_owned();
-    let display_label = format!("{}: {message}", diagnostic.scope_label);
-    DiscoveryDiagnosticDto {
-        surface_id: diagnostic.surface_id,
-        scope_label: diagnostic.scope_label,
-        issue: diagnostic.issue.id().to_owned(),
-        message,
-        display_label,
-    }
 }
 
 /// Monetary amount (minor units).
@@ -127,8 +106,7 @@ pub struct UsageDetailRowDto {
     pub severity: String,
 }
 
-/// The complete Rust-owned provider-detail card (mirror of
-/// `UsageDetailPresentation`). Rows are already in canonical order.
+/// Rust-owned provider details assembled from broker-typed metric groups.
 #[derive(Debug, Clone)]
 #[boltffi::data]
 pub struct UsageDetailPresentationDto {
@@ -178,36 +156,6 @@ pub struct ProviderGlanceRowDto {
     pub dimmed: bool,
 }
 
-pub(crate) fn provider_glance_row_dto(
-    row: jackin_usage::host::HostProviderGlanceRow,
-) -> ProviderGlanceRowDto {
-    ProviderGlanceRowDto {
-        surface_id: row.surface_id,
-        icon_key: row.icon_key,
-        fallback_glyph: row.fallback_glyph,
-        usage_url: row.usage_url,
-        display_label: row.display_label,
-        account_label: row.account_label,
-        plan_label: row.plan_label,
-        glance_remaining_percent: row.glance_remaining_percent,
-        bar_label: row.bar_label,
-        headline: row.headline,
-        reset_label: row.reset_label,
-        compact_reset_label: row.compact_reset_label,
-        exact_reset: row.exact_reset,
-        status_word: row.status_word,
-        is_refreshing: row.is_refreshing,
-        status_label: row.status_label,
-        severity: row.severity,
-        updated_label: row.updated_label,
-        activity_label: row.activity_label,
-        activity_kind: row.activity_kind,
-        accessibility_label: row.accessibility_label,
-        last_error: row.last_error,
-        dimmed: row.dimmed,
-    }
-}
-
 /// Full focused usage view for one surface.
 #[derive(Debug, Clone)]
 #[boltffi::data]
@@ -219,10 +167,13 @@ pub struct UsageViewDto {
     pub account_label: String,
     pub username: Option<String>,
     pub plan_label: Option<String>,
+    /// `None`: broker publications do not expose credential-origin paths.
     pub credential_origin: Option<String>,
     pub buckets: Vec<QuotaBucketDto>,
     pub status: String,
+    /// Broker projection has no source-class field; this remains `none`.
     pub source: String,
+    /// Broker projection has no confidence field; this remains `none`.
     pub confidence: String,
     pub fetched_at_epoch: i64,
     pub updated_label: String,
@@ -230,8 +181,7 @@ pub struct UsageViewDto {
     pub last_error: Option<String>,
     /// Honesty caption when estimated / local-log derived; `None` for authoritative.
     pub estimate_caption: Option<String>,
-    /// Rust-owned Capsule-parity provider-detail card (same rows/strings/order
-    /// as the Capsule usage dialog). The Usage window renders this verbatim.
+    /// Typed broker metric groups rendered as Rust-owned detail rows.
     pub detail_presentation: UsageDetailPresentationDto,
 }
 
@@ -286,35 +236,6 @@ pub struct AccountDescriptorDto {
     pub last_error: Option<String>,
     pub dimmed: bool,
     pub accessibility_label: String,
-}
-
-pub(crate) fn account_dto(row: HostAccountDescriptor) -> AccountDescriptorDto {
-    AccountDescriptorDto {
-        surface_id: row.surface_id,
-        provider_column_label: row.provider_column_label,
-        account_key: row.account_key,
-        account_label: row.account_label,
-        plan_label: row.plan_label,
-        selected: row.selected,
-        lifecycle: row.lifecycle,
-        lifecycle_label: row.lifecycle_label,
-        provenance: row.provenance,
-        provenance_label: row.provenance_label,
-        plan_or_status_label: row.plan_or_status_label,
-        remaining_percent: row.remaining_percent,
-        remaining_label: row.remaining_label,
-        headline: row.headline,
-        reset_label: row.reset_label,
-        reset_display_label: row.reset_display_label,
-        exact_reset: row.exact_reset,
-        status_word: row.status_word,
-        status_label: row.status_label,
-        severity: row.severity,
-        updated_label: row.updated_label,
-        last_error: row.last_error,
-        dimmed: row.dimmed,
-        accessibility_label: row.accessibility_label,
-    }
 }
 
 /// Provider state when no stable account identity exists yet.
@@ -388,128 +309,6 @@ pub struct DesktopProjectionDto {
     pub diagnostics: Vec<DiscoveryDiagnosticDto>,
 }
 
-pub(crate) fn desktop_inventory_dto(inventory: HostDesktopInventory) -> DesktopInventoryDto {
-    DesktopInventoryDto {
-        groups: inventory
-            .groups
-            .into_iter()
-            .map(desktop_provider_group_dto)
-            .collect(),
-    }
-}
-
-pub(crate) fn desktop_projection_dto(projection: HostDesktopProjection) -> DesktopProjectionDto {
-    DesktopProjectionDto {
-        generation: projection.generation,
-        refresh_in_progress: projection.refresh_in_progress,
-        error_message: projection.error_message,
-        next_refresh_label: projection.next_refresh_label,
-        surfaces: projection.surfaces.into_iter().map(surface_dto).collect(),
-        providers: projection
-            .providers
-            .into_iter()
-            .map(desktop_provider_projection_dto)
-            .collect(),
-        glance_rows: projection
-            .glance_rows
-            .into_iter()
-            .map(provider_glance_row_dto)
-            .collect(),
-        status_bar_glance_rows: projection
-            .status_bar_glance_rows
-            .into_iter()
-            .map(provider_glance_row_dto)
-            .collect(),
-        diagnostics: projection
-            .diagnostics
-            .into_iter()
-            .map(discovery_diagnostic_dto)
-            .collect(),
-    }
-}
-
-fn desktop_provider_projection_dto(
-    projection: HostDesktopProviderProjection,
-) -> DesktopProviderProjectionDto {
-    let account_key = match &projection.selected_account_route {
-        HostSelectedAccountRoute::Unselected => None,
-        HostSelectedAccountRoute::Resolving { account_key }
-        | HostSelectedAccountRoute::Available { account_key }
-        | HostSelectedAccountRoute::Unavailable { account_key, .. } => Some(account_key.as_str()),
-    };
-    let account = account_key.and_then(|key| {
-        projection
-            .group
-            .accounts
-            .iter()
-            .find(|row| row.account_key == key)
-    });
-    DesktopProviderProjectionDto {
-        group: desktop_provider_group_dto(projection.group.clone()),
-        selected_account_route: selected_account_route_dto(projection.selected_account_route),
-        selected_usage: view_dto_with_context(
-            projection.selected_usage,
-            projection.identity,
-            account,
-        ),
-    }
-}
-
-fn selected_account_route_dto(route: HostSelectedAccountRoute) -> SelectedAccountRouteDto {
-    match route {
-        HostSelectedAccountRoute::Unselected => SelectedAccountRouteDto {
-            status: "unselected".to_owned(),
-            account_key: None,
-            notice: None,
-        },
-        HostSelectedAccountRoute::Resolving { account_key } => SelectedAccountRouteDto {
-            status: "resolving".to_owned(),
-            account_key: Some(account_key),
-            notice: None,
-        },
-        HostSelectedAccountRoute::Available { account_key } => SelectedAccountRouteDto {
-            status: "available".to_owned(),
-            account_key: Some(account_key),
-            notice: None,
-        },
-        HostSelectedAccountRoute::Unavailable {
-            account_key,
-            notice,
-        } => SelectedAccountRouteDto {
-            status: "unavailable".to_owned(),
-            account_key: Some(account_key),
-            notice: Some(notice.to_owned()),
-        },
-    }
-}
-
-fn desktop_provider_group_dto(group: HostDesktopProviderGroup) -> DesktopProviderGroupDto {
-    DesktopProviderGroupDto {
-        surface_id: group.surface_id,
-        display_label: group.display_label,
-        icon_key: group.icon_key,
-        fallback_glyph: group.fallback_glyph,
-        usage_url: group.usage_url,
-        account_column_label: group.account_column_label,
-        plan_or_status_label: group.plan_or_status_label,
-        remaining_label: group.remaining_label,
-        reset_display_label: group.reset_display_label,
-        accessibility_label: group.accessibility_label,
-        accounts: group.accounts.into_iter().map(account_dto).collect(),
-        empty_state: group.empty_state.map(desktop_provider_state_dto),
-    }
-}
-
-fn desktop_provider_state_dto(state: HostDesktopProviderState) -> DesktopProviderStateDto {
-    DesktopProviderStateDto {
-        status_word: state.status_word,
-        status_label: state.status_label,
-        updated_label: state.updated_label,
-        last_error: state.last_error,
-        is_refreshing: state.is_refreshing,
-    }
-}
-
 /// One host event.
 #[derive(Debug, Clone)]
 #[boltffi::data]
@@ -541,179 +340,6 @@ pub(crate) fn map_runtime_err(err: String) -> crate::error::UsageBridgeError {
     }
 }
 
-pub(crate) fn surface_dto(row: HostSurfaceDescriptor) -> SurfaceDescriptorDto {
-    SurfaceDescriptorDto {
-        id: row.id,
-        label: row.label,
-        agent: row.agent,
-        provider: row.provider,
-        enabled: row.enabled,
-    }
-}
-
-pub(crate) fn event_batch_dto(batch: HostEventBatch) -> UsageEventBatchDto {
-    UsageEventBatchDto {
-        next_cursor: batch.next_cursor,
-        events: batch.events.into_iter().map(event_dto).collect(),
-        resync_required: batch.resync_required,
-    }
-}
-
-fn event_dto(event: HostUsageEvent) -> UsageEventDto {
-    UsageEventDto {
-        sequence: event.sequence,
-        kind: event.kind,
-        surface_id: event.surface_id,
-        detail: event.detail,
-    }
-}
-
-fn detail_presentation_dto(
-    view: &FocusedUsageView,
-    account: Option<&HostAccountDescriptor>,
-) -> UsageDetailPresentationDto {
-    // Same Rust builder Capsule uses — one parity handoff, no second assembler.
-    let presentation = jackin_usage::usage::usage_detail_presentation(view);
-    let mut rows = presentation
-        .rows
-        .into_iter()
-        .map(detail_row_dto)
-        .collect::<Vec<_>>();
-    if let Some(account) = account {
-        let insert_at = rows
-            .iter()
-            .position(|row| row.kind == "bucket" || row.kind == "detail")
-            .unwrap_or(rows.len());
-        let mut context_rows = Vec::new();
-        if !account.provenance_label.is_empty() {
-            context_rows.push(metadata_detail_row_dto(
-                "provenance",
-                "Source",
-                account.provenance_label.clone(),
-            ));
-        }
-        context_rows.push(metadata_detail_row_dto(
-            "lifecycle",
-            "Availability",
-            account.lifecycle_label.clone(),
-        ));
-        rows.splice(insert_at..insert_at, context_rows);
-    }
-    UsageDetailPresentationDto { rows }
-}
-
-pub(crate) fn view_dto(view: FocusedUsageView) -> UsageViewDto {
-    let provider_title = jackin_usage::usage::provider_display_label(&view.account.provider_label);
-    let identity = jackin_usage::usage::usage_identity_presentation(
-        provider_title,
-        &view,
-        view.is_refreshing_placeholder(),
-    );
-    view_dto_with_context(view, identity, None)
-}
-
-fn view_dto_with_context(
-    view: FocusedUsageView,
-    identity: jackin_protocol::control::UsageIdentityPresentation,
-    account: Option<&HostAccountDescriptor>,
-) -> UsageViewDto {
-    let caption = estimate_caption(&view);
-    let detail_presentation = detail_presentation_dto(&view, account);
-    UsageViewDto {
-        identity: identity_dto(identity),
-        focused_agent: view.focused_agent,
-        focused_provider: view.focused_provider,
-        provider_label: view.account.provider_label,
-        account_label: view.account.account_label,
-        username: view.account.username,
-        plan_label: view.account.plan_label,
-        credential_origin: view.account.credential_origin,
-        buckets: view.buckets.into_iter().map(bucket_dto).collect(),
-        status: status_label(view.status).to_owned(),
-        source: source_label(view.source).to_owned(),
-        confidence: confidence_label(view.confidence).to_owned(),
-        fetched_at_epoch: view.fetched_at_epoch,
-        updated_label: view.updated_label,
-        status_bar_label: view.status_bar_label,
-        last_error: view.last_error,
-        estimate_caption: caption,
-        detail_presentation,
-    }
-}
-
-fn identity_dto(
-    identity: jackin_protocol::control::UsageIdentityPresentation,
-) -> UsageIdentityPresentationDto {
-    UsageIdentityPresentationDto {
-        provider_title: identity.provider_title,
-        account_label: identity.account_label,
-        activity_label: identity.activity_label,
-        activity_kind: match identity.activity_kind {
-            jackin_protocol::control::UsageActivityKind::Idle => "idle",
-            jackin_protocol::control::UsageActivityKind::Updating => "updating",
-            jackin_protocol::control::UsageActivityKind::Exceptional => "exceptional",
-        }
-        .to_owned(),
-        accessibility_label: identity.accessibility_label,
-    }
-}
-
-fn detail_row_dto(row: jackin_protocol::control::UsageDetailRow) -> UsageDetailRowDto {
-    UsageDetailRowDto {
-        row_id: row.row_id,
-        kind: match row.kind {
-            jackin_protocol::control::UsageDetailRowKind::Metadata => "metadata",
-            jackin_protocol::control::UsageDetailRowKind::Bucket => "bucket",
-            jackin_protocol::control::UsageDetailRowKind::Detail => "detail",
-        }
-        .to_owned(),
-        label: row.label,
-        layout_lines: row
-            .layout_lines
-            .into_iter()
-            .map(|line| UsagePresentationLineDto {
-                leading: line.leading,
-                trailing: line.trailing,
-            })
-            .collect(),
-        display_label: row.display_label,
-        meter_percent: row.meter_percent,
-        severity: match row.severity {
-            jackin_protocol::control::UsageSeverity::Normal => "normal",
-            jackin_protocol::control::UsageSeverity::Warn => "warn",
-            jackin_protocol::control::UsageSeverity::Danger => "danger",
-        }
-        .to_owned(),
-    }
-}
-
-fn metadata_detail_row_dto(row_id: &str, label: &str, value: String) -> UsageDetailRowDto {
-    UsageDetailRowDto {
-        row_id: row_id.to_owned(),
-        kind: "metadata".to_owned(),
-        label: label.to_owned(),
-        layout_lines: vec![UsagePresentationLineDto {
-            leading: Some(value.clone()),
-            trailing: None,
-        }],
-        display_label: value,
-        meter_percent: None,
-        severity: "normal".to_owned(),
-    }
-}
-
-pub(crate) fn overview_row_dto(row: HostOverviewRow) -> OverviewRowDto {
-    OverviewRowDto {
-        surface_id: row.surface_id,
-        display_label: row.display_label,
-        headline: row.headline,
-        reset_label: row.reset_label,
-        exact_reset: row.exact_reset,
-        status_word: row.status_word,
-        severity: row.severity,
-    }
-}
-
 pub(crate) fn parse_format_prefs(dto: UsageFormatPrefsDto) -> Result<UsageFormatPrefs, String> {
     let percent_style = match dto.percent_style.as_str() {
         "left" => PercentStyle::Left,
@@ -731,66 +357,19 @@ pub(crate) fn parse_format_prefs(dto: UsageFormatPrefsDto) -> Result<UsageFormat
     })
 }
 
-fn bucket_dto(bucket: QuotaBucketView) -> QuotaBucketDto {
-    // Rust owns the limits-only segment choice/order; Swift renders it verbatim.
-    let presentation = jackin_usage::usage::usage_bucket_presentation(&bucket);
-    QuotaBucketDto {
-        label: bucket.label,
-        used_label: bucket.used_label,
-        limit_label: bucket.limit_label,
-        remaining_percent: bucket.remaining_percent,
-        reset_label: bucket.reset_label,
-        resets_at: bucket.resets_at,
-        status_slot: bucket.status_slot.map(|slot| {
-            match slot {
-                jackin_protocol::control::StatusSlot::Session => "session",
-                jackin_protocol::control::StatusSlot::Daily => "daily",
-                jackin_protocol::control::StatusSlot::Weekly => "weekly",
-                jackin_protocol::control::StatusSlot::Spend => "spend",
-            }
-            .to_owned()
-        }),
-        pace_label: bucket.pace_label,
-        status: status_label(bucket.status).to_owned(),
-        used_money: bucket.used_money.map(money_dto),
-        limit_money: bucket.limit_money.map(money_dto),
-        severity: match bucket.severity {
-            jackin_protocol::control::UsageSeverity::Normal => "normal",
-            jackin_protocol::control::UsageSeverity::Warn => "warn",
-            jackin_protocol::control::UsageSeverity::Danger => "danger",
-        }
-        .to_owned(),
-        remaining_label: presentation.remaining_label,
-        display_segments: presentation.display_segments,
-        display_label: presentation.display_label,
-        meter_percent: presentation.meter_percent,
-    }
+/// Local projection-open settings and path-only broker activation scope.
+#[derive(Debug, Clone)]
+pub(crate) struct ProjectionOpenConfig {
+    pub data_dir: std::path::PathBuf,
+    pub config_root: std::path::PathBuf,
+    pub operator_home: std::path::PathBuf,
+    pub refresh_floor_secs: u64,
+    pub enabled_surface_ids: Vec<String>,
+    pub allow_live_probes: bool,
 }
 
-fn money_dto(money: Money) -> MoneyDto {
-    MoneyDto {
-        amount_minor: money.amount_minor,
-        currency: money.currency,
-        exponent: money.exponent,
-    }
-}
-
-fn status_label(status: UsageSnapshotStatus) -> &'static str {
-    jackin_usage::usage::usage_status_storage_label(status)
-}
-
-fn source_label(source: UsageSource) -> &'static str {
-    jackin_usage::usage::usage_source_storage_label(source)
-}
-
-fn confidence_label(confidence: UsageConfidence) -> &'static str {
-    jackin_usage::usage::usage_confidence_storage_label(confidence)
-}
-
-/// Build open config for the host runtime.
-pub(crate) fn to_host_config(
-    config: OpenConfig,
-) -> Result<jackin_usage::host::HostRuntimeConfig, String> {
+/// Build local presentation settings and broker path metadata from the FFI config.
+pub(crate) fn to_projection_config(config: OpenConfig) -> Result<ProjectionOpenConfig, String> {
     let paths = jackin_core::JackinPaths::detect()
         .map_err(|_| "host path discovery unavailable".to_owned())?;
     let data_dir_override = config.data_dir_override.map(std::path::PathBuf::from);
@@ -802,88 +381,12 @@ pub(crate) fn to_host_config(
         .config_root_override
         .map(std::path::PathBuf::from)
         .unwrap_or(paths.config_dir);
-    Ok(jackin_usage::host::HostRuntimeConfig {
+    Ok(ProjectionOpenConfig {
         data_dir,
+        config_root,
+        operator_home,
         refresh_floor_secs: config.refresh_floor_secs,
         enabled_surface_ids: config.enabled_surface_ids,
-        probe_policy: if config.allow_live_probes {
-            jackin_usage::host::HostProbePolicy::Live
-        } else {
-            jackin_usage::host::HostProbePolicy::Disabled
-        },
-        discovery_scope: jackin_usage::host::UsageDiscoveryScope::HostDesktop {
-            config_root,
-            operator_home,
-        },
+        allow_live_probes: config.allow_live_probes,
     })
-}
-
-#[cfg(test)]
-mod selected_account_route_tests {
-    use super::*;
-
-    #[test]
-    fn selected_account_route_dto_preserves_each_typed_state() {
-        let cases = [
-            (
-                HostSelectedAccountRoute::Unselected,
-                "unselected",
-                None,
-                None,
-            ),
-            (
-                HostSelectedAccountRoute::Resolving {
-                    account_key: "persisted-key".to_owned(),
-                },
-                "resolving",
-                Some("persisted-key"),
-                None,
-            ),
-            (
-                HostSelectedAccountRoute::Available {
-                    account_key: "persisted-key".to_owned(),
-                },
-                "available",
-                Some("persisted-key"),
-                None,
-            ),
-            (
-                HostSelectedAccountRoute::Unavailable {
-                    account_key: "persisted-key".to_owned(),
-                    notice: jackin_usage::host::SELECTED_ACCOUNT_UNAVAILABLE_NOTICE,
-                },
-                "unavailable",
-                Some("persisted-key"),
-                Some(jackin_usage::host::SELECTED_ACCOUNT_UNAVAILABLE_NOTICE),
-            ),
-        ];
-
-        for (route, expected_status, expected_key, expected_notice) in cases {
-            let dto = selected_account_route_dto(route);
-            assert_eq!(dto.status, expected_status);
-            assert_eq!(dto.account_key.as_deref(), expected_key);
-            assert_eq!(dto.notice.as_deref(), expected_notice);
-        }
-    }
-}
-
-#[cfg(test)]
-mod money_dto_tests {
-    use super::*;
-
-    #[test]
-    fn money_dto_preserves_full_signed_domain_currency_and_exponent() {
-        for amount_minor in [i64::MIN, -250, 0, 9_007_199_254_740_993, i64::MAX] {
-            for exponent in [0, 2, 3, u8::MAX] {
-                let dto = money_dto(Money {
-                    amount_minor,
-                    currency: "SGD".to_owned(),
-                    exponent,
-                });
-                assert_eq!(dto.amount_minor, amount_minor);
-                assert_eq!(dto.currency, "SGD");
-                assert_eq!(dto.exponent, exponent);
-            }
-        }
-    }
 }

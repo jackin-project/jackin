@@ -332,11 +332,12 @@ impl<S: ProviderCredentialSecretSource> ProviderCredentialEnvResolver
         let Some(secret) = secret else {
             return ProviderCredentialRefreshOutcome::Missing;
         };
-        let (view, rate_limit) =
-            crate::usage::provider_credential_snapshot_with_rate_limit(surface.id(), key, &secret);
+        let (view, rate_limit, failure_metadata) =
+            crate::usage::provider_credential_snapshot_with_metadata(surface.id(), key, &secret);
         ProviderCredentialRefreshOutcome::Snapshot {
             view: Box::new(view),
             rate_limit,
+            failure_metadata,
         }
     }
 

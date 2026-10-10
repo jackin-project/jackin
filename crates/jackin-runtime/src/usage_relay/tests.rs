@@ -9,6 +9,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::*;
+use jackin_config::AppConfig;
 use jackin_protocol::control::{
     FocusedUsageView, QuotaBucketView, UsageConfidence, UsageSeverity, UsageSnapshotStatus,
     UsageSource,
@@ -18,10 +19,19 @@ use jackin_protocol::usage_broker::{
     UsageRefreshPhase, usage_credential_material_fingerprint,
 };
 use jackin_usage::coordinator::{ProviderProbeOutcome, UsageCapabilitySet, UsageProviderExecutor};
-use jackin_usage::host::{
-    CachedProviderCredentialResolver, UsageDiscoveryScope, discover_usage_sources,
-    ensure_usage_broker_with_executor, validate_usage_sources,
-};
+use jackin_usage::host::ensure_usage_broker_with_executor;
+
+#[test]
+fn relay_preserves_broker_conflict_as_a_typed_coordination_error() {
+    let UsageBrokerResponse::Error { error } =
+        error_response(UsageCoordinationErrorKind::BrokerConflict)
+    else {
+        panic!("broker conflict returned a non-error response");
+    };
+
+    assert_eq!(error.kind, UsageCoordinationErrorKind::BrokerConflict);
+    assert_eq!(error.message, "another service owns the usage broker lease");
+}
 
 #[test]
 fn resolved_launch_inventory_is_closed_to_manifest_not_catalog() {
@@ -295,79 +305,29 @@ fn staged_scope_audits_one_account_across_mixed_agent_consumers() -> Result<()> 
 }
 
 #[test]
-fn launch_discovery_relay_uses_distinct_canonical_ids_for_same_surface() -> Result<()> {
-    use jackin_config::{AccountConfig, AccountCredential, AiProvider};
+fn broker_resolution_maps_selected_account_aliases_to_canonical_capabilities() {
+    use jackin_protocol::usage_broker::UsageRelayCapabilityMappingV1;
 
-    let temp = tempfile::tempdir()?;
-    let config_root = temp.path().join("config");
-    let home = temp.path().join("home");
-    fs::create_dir_all(&config_root)?;
-    let mut config = AppConfig::default();
-    for (id, name, account_id, token) in [
-        (
-            "personal-openai",
-            "Personal",
-            "provider-personal",
-            "fixture-personal-token",
-        ),
-        ("work-openai", "Work", "provider-work", "fixture-work-token"),
-    ] {
-        let profile = temp.path().join(id);
-        fs::create_dir_all(&profile)?;
-        fs::write(
-            profile.join("auth.json"),
-            format!(r#"{{"tokens":{{"access_token":"{token}","account_id":"{account_id}"}}}}"#),
-        )?;
-        config.accounts.insert(
-            id.to_owned(),
-            AccountConfig {
-                enabled: true,
-                name: name.to_owned(),
-                provider: AiProvider::OpenAi,
-                credential: AccountCredential::Profile {
-                    agent: jackin_core::Agent::Codex,
-                    directory: profile,
-                    xdg_roots: None,
-                    source_selector: None,
-                },
-            },
-        );
-    }
-    fs::write(config_root.join("config.toml"), toml::to_string(&config)?)?;
-
-    let resolver = CachedProviderCredentialResolver::new(RuntimeSecretSource);
-    let catalog = discover_usage_sources(
-        &UsageDiscoveryScope::HostDesktop {
-            config_root,
-            operator_home: home,
-        },
-        &resolver,
-    )
-    .map_err(anyhow::Error::msg)?;
-    let discovery = validate_usage_sources(catalog, &resolver);
-    let sources = ForwardedUsageSources {
-        selected_account_ids: BTreeSet::from([
-            "personal-openai".to_owned(),
-            "work-openai".to_owned(),
-        ]),
-        selected_account_surfaces: BTreeMap::from([
-            ("personal-openai".to_owned(), "codex".to_owned()),
-            ("work-openai".to_owned(), "codex".to_owned()),
-        ]),
-        profile_surface_ids: BTreeSet::from(["codex".to_owned()]),
-        env_keys: BTreeSet::new(),
-        credential_scope: UsageCredentialScope::default(),
+    let personal = UsageAccountCapability {
+        account_id: "provider-personal".to_owned(),
+        surface_id: "codex".to_owned(),
     };
-    let forwarded = forwarded_usage_capabilities(&discovery, "unrelated scope", &sources);
-    assert_eq!(forwarded.len(), 2);
-    assert!(
-        forwarded
-            .iter()
-            .all(|capability| capability.surface_id == "codex")
-    );
-
-    let allowed = forwarded.iter().cloned().collect::<BTreeSet<_>>();
-    let canonical = canonical_capabilities_for_launch(&discovery, &sources, &allowed);
+    let work = UsageAccountCapability {
+        account_id: "provider-work".to_owned(),
+        surface_id: "codex".to_owned(),
+    };
+    let canonical = canonical_capabilities_from_resolution(vec![
+        UsageRelayCapabilityMappingV1 {
+            account_id: "personal-openai".to_owned(),
+            surface_id: "codex".to_owned(),
+            capability: personal.clone(),
+        },
+        UsageRelayCapabilityMappingV1 {
+            account_id: "work-openai".to_owned(),
+            surface_id: "codex".to_owned(),
+            capability: work.clone(),
+        },
+    ]);
     let mut launch_config = CapsuleConfig {
         instances: vec!["personal@codex".to_owned(), "work@codex".to_owned()],
         accounts: BTreeMap::from([
@@ -400,21 +360,9 @@ fn launch_discovery_relay_uses_distinct_canonical_ids_for_same_surface() -> Resu
     let work = &launch_config.usage_capabilities["work@codex"];
     assert_eq!(personal.surface_id, "codex");
     assert_eq!(work.surface_id, "codex");
-    assert_ne!(personal.account_id, "personal-openai");
-    assert_ne!(work.account_id, "work-openai");
+    assert_eq!(personal.account_id, "provider-personal");
+    assert_eq!(work.account_id, "provider-work");
     assert_ne!(personal.account_id, work.account_id);
-    assert!(matches!(
-        UsageCapabilitySet::new(forwarded).authorize(personal),
-        Ok(())
-    ));
-    assert!(matches!(
-        UsageCapabilitySet::new(allowed).authorize(&UsageAccountCapability {
-            account_id: "personal-openai".to_owned(),
-            surface_id: "codex".to_owned(),
-        }),
-        Err(error) if error.kind == UsageCoordinationErrorKind::Unauthorized
-    ));
-    Ok(())
 }
 
 #[test]
@@ -713,7 +661,7 @@ fn forwarded_sources_include_only_provisioned_profiles_and_governed_env() {
 }
 
 #[test]
-fn hermetic_layout_never_starts_host_usage_discovery() {
+fn hermetic_layout_returns_passive_client_without_starting_broker() {
     let temp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     fs::create_dir_all(&paths.config_dir).unwrap();
@@ -879,7 +827,7 @@ async fn usage_relay_stdio_dispatch_scopes_exact_capability() {
 }
 
 #[tokio::test]
-async fn usage_relay_dispatch_denies_projection_for_surface() {
+async fn usage_relay_dispatch_denies_host_only_operations() {
     let temp = tempfile::tempdir().unwrap();
     let executor = Arc::new(CountingExecutor {
         calls: AtomicUsize::new(0),
@@ -893,17 +841,30 @@ async fn usage_relay_dispatch_denies_projection_for_surface() {
     .unwrap();
     let allowlist = UsageCapabilitySet::new([capability("allowed")]);
 
-    let denied = dispatch(
+    let operations = [
         UsageBrokerOperation::CurrentProjectionForSurface,
-        broker,
-        allowlist,
-        UsageCredentialScope::default(),
-    )
-    .await;
-    let UsageBrokerResponse::Error { error } = denied else {
-        panic!("for-surface projection returned state");
-    };
-    assert_eq!(error.kind, UsageCoordinationErrorKind::Unauthorized);
+        UsageBrokerOperation::Monitor {
+            request: jackin_protocol::usage_monitor::MonitorOperation::ServiceStatus,
+        },
+        UsageBrokerOperation::ResolveRelayCapabilities {
+            scope_label: "workspace fixture role reviewer".to_owned(),
+            forwarded_sources: jackin_protocol::usage_broker::UsageRelayForwardedSourcesV1::default(
+            ),
+        },
+    ];
+    for operation in operations {
+        let denied = dispatch(
+            operation,
+            broker.clone(),
+            allowlist.clone(),
+            UsageCredentialScope::default(),
+        )
+        .await;
+        let UsageBrokerResponse::Error { error } = denied else {
+            panic!("host-only operation returned state");
+        };
+        assert_eq!(error.kind, UsageCoordinationErrorKind::Unauthorized);
+    }
     assert_eq!(executor.calls.load(Ordering::SeqCst), 0);
 }
 
