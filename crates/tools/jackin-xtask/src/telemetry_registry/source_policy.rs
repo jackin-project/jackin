@@ -3,8 +3,173 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use proc_macro2::{Delimiter, TokenStream, TokenTree};
 use syn::spanned::Spanned as _;
 use syn::visit::Visit as _;
+
+const RAW_TRACING_MACROS: &[&str] = &[
+    "event",
+    "info",
+    "warn",
+    "error",
+    "debug",
+    "trace",
+    "span",
+    "trace_span",
+    "debug_span",
+    "info_span",
+    "warn_span",
+    "error_span",
+];
+
+#[derive(Default)]
+struct TelemetryImports {
+    aliases: BTreeMap<String, BTreeSet<String>>,
+    globs: BTreeSet<String>,
+}
+
+impl TelemetryImports {
+    fn collect(syntax: &syn::File) -> Self {
+        let mut imports = Self::default();
+        imports.visit_file(syntax);
+        imports
+    }
+
+    fn collect_tree(&mut self, tree: &syn::UseTree, prefix: &mut Vec<String>) {
+        match tree {
+            syn::UseTree::Path(path) => {
+                prefix.push(path.ident.to_string());
+                self.collect_tree(&path.tree, prefix);
+                prefix.pop();
+            }
+            syn::UseTree::Name(name) => {
+                if name.ident == "self" {
+                    if let Some(local) = prefix.last() {
+                        self.record_alias_segments(local.clone(), prefix);
+                    }
+                } else {
+                    prefix.push(name.ident.to_string());
+                    self.record_alias_segments(name.ident.to_string(), prefix);
+                    prefix.pop();
+                }
+            }
+            syn::UseTree::Rename(rename) => {
+                prefix.push(rename.ident.to_string());
+                let source = prefix.join("::").trim_end_matches("::self").to_owned();
+                self.record_alias_path(&rename.rename.to_string(), &source);
+                prefix.pop();
+            }
+            syn::UseTree::Group(group) => {
+                for item in &group.items {
+                    self.collect_tree(item, prefix);
+                }
+            }
+            syn::UseTree::Glob(_) => {
+                self.globs.insert(prefix.join("::"));
+            }
+        }
+    }
+
+    fn record_alias_segments(&mut self, local: String, source: &[String]) {
+        self.record_alias_path(&local, &source.join("::"));
+    }
+
+    fn record_alias_path(&mut self, local: &str, source: &str) {
+        self.aliases
+            .entry(local.to_owned())
+            .or_default()
+            .insert(source.to_owned());
+    }
+
+    fn collect_macro_imports(&mut self, tokens: TokenStream) {
+        let trees = tokens.into_iter().collect::<Vec<_>>();
+        for (index, token) in trees.iter().enumerate() {
+            if matches!(token, TokenTree::Ident(name) if name == "use") {
+                for (end, token) in trees.iter().enumerate().skip(index + 1) {
+                    if matches!(token, TokenTree::Punct(punct) if punct.as_char() == ';') {
+                        let statement = trees[index..=end].iter().cloned().collect();
+                        if let Ok(item) = syn::parse2::<syn::ItemUse>(statement) {
+                            self.collect_tree(&item.tree, &mut Vec::new());
+                        }
+                        break;
+                    }
+                }
+            }
+            if let TokenTree::Group(group) = token {
+                self.collect_macro_imports(group.stream());
+            }
+        }
+    }
+
+    fn paths(&self, path: &str) -> BTreeSet<String> {
+        let mut pending = vec![path.to_owned()];
+        let mut visited = BTreeSet::new();
+        while let Some(candidate) = pending.pop() {
+            if !visited.insert(candidate.clone()) {
+                continue;
+            }
+            let (head, tail) = candidate
+                .split_once("::")
+                .map_or((candidate.as_str(), None), |(head, tail)| {
+                    (head, Some(tail))
+                });
+            if let Some(targets) = self.aliases.get(head) {
+                for target in targets {
+                    pending.push(match tail {
+                        Some(tail) => format!("{target}::{tail}"),
+                        None => target.clone(),
+                    });
+                }
+            }
+        }
+        visited
+    }
+
+    fn glob_imports(&self, module: &str) -> bool {
+        self.globs
+            .iter()
+            .any(|glob| self.paths(glob).contains(module))
+    }
+
+    fn is_tracing_macro(&self, path: &str) -> bool {
+        self.paths(path).iter().any(|candidate| {
+            match candidate.split("::").collect::<Vec<_>>().as_slice() {
+                ["tracing", macro_name] => RAW_TRACING_MACROS.contains(macro_name),
+                [macro_name] => {
+                    RAW_TRACING_MACROS.contains(macro_name) && self.glob_imports("tracing")
+                }
+                _ => false,
+            }
+        })
+    }
+
+    fn is_tracing_instrument(&self, path: &str) -> bool {
+        self.paths(path).iter().any(|candidate| {
+            candidate == "tracing::instrument"
+                || candidate == "instrument" && self.glob_imports("tracing")
+        })
+    }
+
+    fn is_raw_meter(&self, path: &str) -> bool {
+        self.paths(path).iter().any(|candidate| {
+            candidate == "opentelemetry::global::meter"
+                || candidate == "global::meter" && self.glob_imports("opentelemetry")
+                || candidate == "meter" && self.glob_imports("opentelemetry::global")
+        })
+    }
+}
+
+impl<'ast> syn::visit::Visit<'ast> for TelemetryImports {
+    fn visit_item_use(&mut self, node: &'ast syn::ItemUse) {
+        self.collect_tree(&node.tree, &mut Vec::new());
+        syn::visit::visit_item_use(self, node);
+    }
+
+    fn visit_macro(&mut self, node: &'ast syn::Macro) {
+        self.collect_macro_imports(node.tokens.clone());
+        syn::visit::visit_macro(self, node);
+    }
+}
 
 #[derive(Clone, Default)]
 pub(super) struct SpawnTypeResolver {
@@ -390,6 +555,7 @@ impl<'ast> syn::visit::Visit<'ast> for AsyncScopeGuardScanner {
 pub(super) struct SourcePolicyScanner<'a> {
     path: &'a str,
     pub(super) violations: BTreeSet<(usize, &'static str)>,
+    telemetry_imports: TelemetryImports,
     spawn_aliases: BTreeSet<String>,
     spawn_module_aliases: BTreeMap<String, String>,
     spawn_receivers: BTreeSet<String>,
@@ -404,6 +570,7 @@ impl<'a> SourcePolicyScanner<'a> {
         Self {
             path,
             violations: BTreeSet::new(),
+            telemetry_imports: TelemetryImports::collect(syntax),
             spawn_aliases: BTreeSet::new(),
             spawn_module_aliases: BTreeMap::new(),
             spawn_receivers: BTreeSet::new(),
@@ -433,6 +600,124 @@ impl<'a> SourcePolicyScanner<'a> {
 
     fn reject(&mut self, span: proc_macro2::Span, message: &'static str) {
         self.violations.insert((span.start().line, message));
+    }
+
+    fn allows_raw_tracing(&self) -> bool {
+        self.allows_telemetry_apis() || RAW_TRACING_ALLOWLIST.contains(&self.path)
+    }
+
+    fn reject_macro_path(&mut self, path: &str, span: proc_macro2::Span) {
+        if self.telemetry_imports.paths(path).iter().any(|candidate| {
+            PROHIBITED_TELEMETRY_MACROS.contains(&candidate.rsplit("::").next().unwrap_or_default())
+        }) {
+            self.reject(span, "prohibited legacy/generic telemetry macro");
+        }
+        if !self.allows_raw_tracing() && self.telemetry_imports.is_tracing_macro(path) {
+            self.reject(span, "raw tracing call outside governed facade");
+        }
+    }
+
+    fn reject_attribute_path(&mut self, path: &str, span: proc_macro2::Span) {
+        if !self.allows_raw_tracing()
+            && (path == "instrument" || self.telemetry_imports.is_tracing_instrument(path))
+        {
+            self.reject(span, "tracing instrument outside governed facade");
+        }
+    }
+
+    fn reject_meter_path(&mut self, path: &str, span: proc_macro2::Span) {
+        if !self.allows_telemetry_apis() && self.telemetry_imports.is_raw_meter(path) {
+            self.reject(span, "raw OpenTelemetry meter construction");
+        }
+    }
+
+    fn token_path(tokens: &[TokenTree], start: usize) -> Option<(String, usize)> {
+        let first_index = if matches!(tokens.get(start), Some(TokenTree::Punct(punct)) if punct.as_char() == ':')
+            && matches!(tokens.get(start + 1), Some(TokenTree::Punct(punct)) if punct.as_char() == ':')
+        {
+            start + 2
+        } else {
+            start
+        };
+        let TokenTree::Ident(first) = tokens.get(first_index)? else {
+            return None;
+        };
+        let mut segments = vec![first.to_string()];
+        let mut cursor = first_index + 1;
+        while matches!(tokens.get(cursor), Some(TokenTree::Punct(punct)) if punct.as_char() == ':')
+            && matches!(tokens.get(cursor + 1), Some(TokenTree::Punct(punct)) if punct.as_char() == ':')
+            && matches!(tokens.get(cursor + 2), Some(TokenTree::Ident(_)))
+        {
+            let TokenTree::Ident(segment) = &tokens[cursor + 2] else {
+                unreachable!();
+            };
+            segments.push(segment.to_string());
+            cursor += 3;
+        }
+        Some((segments.join("::"), cursor))
+    }
+
+    fn scan_macro_tokens(&mut self, tokens: TokenStream) {
+        let trees = tokens.into_iter().collect::<Vec<_>>();
+        for (index, token) in trees.iter().enumerate() {
+            let TokenTree::Group(group) = token else {
+                continue;
+            };
+            let attribute_prefix = matches!(trees.get(index.wrapping_sub(1)), Some(TokenTree::Punct(punct)) if punct.as_char() == '#')
+                || index >= 2
+                    && matches!(trees.get(index - 2), Some(TokenTree::Punct(punct)) if punct.as_char() == '#')
+                    && matches!(trees.get(index - 1), Some(TokenTree::Punct(punct)) if punct.as_char() == '!');
+            if group.delimiter() == Delimiter::Bracket && attribute_prefix {
+                self.scan_attribute_tokens(group.stream(), group.span());
+            }
+            self.scan_macro_tokens(group.stream());
+        }
+
+        for (index, token) in trees.iter().enumerate() {
+            if let TokenTree::Punct(punct) = token
+                && punct.as_char() == '.'
+                && matches!(trees.get(index + 1), Some(TokenTree::Ident(name)) if name == "meter")
+                && matches!(trees.get(index + 2), Some(TokenTree::Group(group)) if group.delimiter() == Delimiter::Parenthesis)
+                && !self.allows_telemetry_apis()
+            {
+                self.reject(token.span(), "raw OpenTelemetry meter construction");
+            }
+
+            let Some((path, end)) = Self::token_path(&trees, index) else {
+                continue;
+            };
+            let span = token.span();
+            self.reject_meter_path(&path, span);
+            if matches!(trees.get(end), Some(TokenTree::Punct(punct)) if punct.as_char() == '!') {
+                self.reject_macro_path(&path, span);
+            }
+        }
+    }
+
+    fn scan_attribute_tokens(&mut self, tokens: TokenStream, span: proc_macro2::Span) {
+        let Ok(meta) = syn::parse2::<syn::Meta>(tokens) else {
+            return;
+        };
+        self.scan_attribute_meta(&meta, span);
+    }
+
+    fn scan_attribute_meta(&mut self, meta: &syn::Meta, span: proc_macro2::Span) {
+        let path = Self::path_name(meta.path());
+        self.reject_attribute_path(&path, span);
+        if path != "cfg_attr" {
+            return;
+        }
+        let syn::Meta::List(list) = meta else {
+            return;
+        };
+        use syn::parse::Parser as _;
+        let parser = syn::punctuated::Punctuated::<syn::Meta, syn::Token![,]>::parse_terminated;
+        let Ok(attributes) = parser.parse2(list.tokens.clone()) else {
+            return;
+        };
+        for attribute in attributes.iter().skip(1) {
+            self.scan_attribute_meta(attribute, span);
+        }
     }
 
     fn raw_spawn_path(name: &str) -> bool {
@@ -563,16 +848,14 @@ impl<'ast> syn::visit::Visit<'ast> for SourcePolicyScanner<'_> {
             {
                 self.reject(node.span(), "unmanaged async/thread spawn");
             }
-            if !self.allows_telemetry_apis()
-                && matches!(
-                    name.as_str(),
-                    "opentelemetry::global::meter" | "global::meter"
-                )
-            {
-                self.reject(node.span(), "raw OpenTelemetry meter construction");
-            }
+            self.reject_meter_path(&name, node.span());
         }
         syn::visit::visit_expr_call(self, node);
+    }
+
+    fn visit_expr_path(&mut self, node: &'ast syn::ExprPath) {
+        self.reject_meter_path(&Self::path_name(&node.path), node.span());
+        syn::visit::visit_expr_path(self, node);
     }
 
     fn visit_expr_method_call(&mut self, node: &'ast syn::ExprMethodCall) {
@@ -624,6 +907,10 @@ impl<'ast> syn::visit::Visit<'ast> for SourcePolicyScanner<'_> {
         {
             if let syn::Expr::Path(path) = initializer.expr.as_ref() {
                 let source = Self::path_name(&path.path);
+                if self.telemetry_imports.is_raw_meter(&source) {
+                    self.telemetry_imports
+                        .record_alias_path(&binding.ident.to_string(), &source);
+                }
                 if Self::raw_spawn_path(&self.resolved_spawn_path(&source)) {
                     self.spawn_aliases.insert(binding.ident.to_string());
                 }
@@ -636,6 +923,28 @@ impl<'ast> syn::visit::Visit<'ast> for SourcePolicyScanner<'_> {
             }
         }
         syn::visit::visit_local(self, node);
+    }
+
+    fn visit_item_const(&mut self, node: &'ast syn::ItemConst) {
+        if let syn::Expr::Path(path) = node.expr.as_ref() {
+            let source = Self::path_name(&path.path);
+            if self.telemetry_imports.is_raw_meter(&source) {
+                self.telemetry_imports
+                    .record_alias_path(&node.ident.to_string(), &source);
+            }
+        }
+        syn::visit::visit_item_const(self, node);
+    }
+
+    fn visit_item_static(&mut self, node: &'ast syn::ItemStatic) {
+        if let syn::Expr::Path(path) = node.expr.as_ref() {
+            let source = Self::path_name(&path.path);
+            if self.telemetry_imports.is_raw_meter(&source) {
+                self.telemetry_imports
+                    .record_alias_path(&node.ident.to_string(), &source);
+            }
+        }
+        syn::visit::visit_item_static(self, node);
     }
 
     fn visit_signature(&mut self, node: &'ast syn::Signature) {
@@ -651,37 +960,14 @@ impl<'ast> syn::visit::Visit<'ast> for SourcePolicyScanner<'_> {
 
     fn visit_macro(&mut self, node: &'ast syn::Macro) {
         let name = Self::path_name(&node.path);
-        if node.path.segments.last().is_some_and(|segment| {
-            PROHIBITED_TELEMETRY_MACROS.contains(&segment.ident.to_string().as_str())
-        }) {
-            self.reject(node.span(), "prohibited legacy/generic telemetry macro");
-        }
-        if !self.allows_telemetry_apis()
-            && !RAW_TRACING_ALLOWLIST.contains(&self.path)
-            && matches!(
-                name.as_str(),
-                "tracing::event"
-                    | "tracing::info"
-                    | "tracing::warn"
-                    | "tracing::error"
-                    | "tracing::debug"
-                    | "tracing::trace"
-                    | "tracing::span"
-                    | "tracing::info_span"
-            )
-        {
-            self.reject(node.span(), "raw tracing call outside governed facade");
-        }
+        self.reject_macro_path(&name, node.span());
+        self.scan_macro_tokens(node.tokens.clone());
         syn::visit::visit_macro(self, node);
     }
 
     fn visit_attribute(&mut self, node: &'ast syn::Attribute) {
         let name = Self::path_name(node.path());
-        if !self.allows_telemetry_apis()
-            && matches!(name.as_str(), "tracing::instrument" | "instrument")
-        {
-            self.reject(node.span(), "tracing instrument outside governed facade");
-        }
+        self.reject_attribute_path(&name, node.span());
         syn::visit::visit_attribute(self, node);
     }
 

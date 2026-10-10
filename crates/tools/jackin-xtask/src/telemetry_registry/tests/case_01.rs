@@ -36,6 +36,100 @@ fn source_policy_is_syntax_aware_and_blocks_raw_meters() {
 }
 
 #[test]
+fn source_policy_resolves_raw_tracing_import_aliases() {
+    let path = "crates/group/example/src/lib.rs";
+    for source in [
+        "use tracing as t; fn raw() { t::info!(\"event\"); }",
+        "use tracing::info as emit; fn raw() { emit!(\"event\"); }",
+        "use tracing::{info as emit}; fn raw() { emit!(\"event\"); }",
+        "use tracing::*; fn raw() { info!(\"event\"); }",
+        "use tracing as t; use t::info as emit; fn raw() { emit!(\"event\"); }",
+        "use tracing::instrument as observe; #[observe] fn raw() {}",
+        "use tracing as t; #[t::instrument] fn raw() {}",
+        "use tracing::trace_span as scoped; fn raw() { let _span = scoped!(\"event\"); }",
+    ] {
+        assert_eq!(
+            source_policy_violations(path, source),
+            ["raw tracing call outside governed facade"],
+            "{source}"
+        );
+    }
+}
+
+#[test]
+fn source_policy_resolves_raw_meter_import_and_binding_aliases() {
+    let path = "crates/group/example/src/lib.rs";
+    for source in [
+        "use opentelemetry::global as otel; fn raw() { let _ = otel::meter(\"raw\"); }",
+        "use opentelemetry::global::meter as new_meter; fn raw() { let _ = new_meter(\"raw\"); }",
+        "use opentelemetry::global::*; fn raw() { let _ = meter(\"raw\"); }",
+        "use opentelemetry::*; fn raw() { let _ = global::meter; }",
+        "use opentelemetry::global as otel; fn raw() { let new_meter = otel::meter; let _ = new_meter(\"raw\"); }",
+        "use opentelemetry::global::meter as new_meter; const METER: fn(&str) = new_meter; fn raw() { let _ = METER(\"raw\"); }",
+    ] {
+        assert_eq!(
+            source_policy_violations(path, source),
+            ["raw OpenTelemetry meter construction"],
+            "{source}"
+        );
+    }
+    assert!(source_policy_violations(
+        path,
+        "mod global { pub fn meter() {} } fn safe() { let _ = global::meter; }"
+    )
+    .is_empty());
+}
+
+#[test]
+fn source_policy_inspects_opaque_macro_tokens_and_keeps_governed_paths() {
+    let path = "crates/group/example/src/lib.rs";
+    for source in [
+        "macro_rules! hidden { () => { tracing::info!(\"raw\"); } }",
+        "use tracing::info as emit; macro_rules! hidden { () => { emit!(\"raw\"); } }",
+        "unknown!({ tracing::debug_span!(\"raw\"); });",
+        "macro_rules! hidden { () => { ::tracing::info!(\"raw\"); } }",
+        "macro_rules! hidden { () => { use tracing::info as emit; emit!(\"raw\"); } }",
+        "macro_rules! hidden { () => { #[tracing::instrument] fn raw() {} } }",
+        "macro_rules! hidden { () => { #[cfg_attr(feature = \"raw\", tracing::instrument)] fn raw() {} } }",
+        "use tracing::instrument as observe; macro_rules! hidden { () => { #[cfg_attr(feature = \"raw\", observe)] fn raw() {} } }",
+        "macro_rules! hidden { () => { ::diagnostics::telemetry_info!(\"raw\"); } }",
+        "macro_rules! hidden { () => { let _ = ::opentelemetry::global::meter(\"raw\"); } }",
+        "macro_rules! hidden { () => { diagnostics::telemetry_info!(\"raw\"); } }",
+    ] {
+        assert!(
+            !source_policy_violations(path, source).is_empty(),
+            "{source}"
+        );
+    }
+
+    for source in [
+        "unknown!(\"tracing::info!(not code)\");",
+        "const TEXT: &str = \"tracing::info!(not code)\";",
+        "use tracing::instrument as observe; unknown!([observe]);",
+    ] {
+        assert!(
+            source_policy_violations(path, source).is_empty(),
+            "{source}"
+        );
+    }
+
+    assert!(
+        source_policy_violations(
+            "crates/services/jackin-telemetry/src/example.rs",
+            "use tracing as t; macro_rules! facade { () => { t::info!(\"governed\"); } }"
+        )
+        .is_empty()
+    );
+    assert!(
+        source_policy_violations(
+            "crates/services/jackin-diagnostics/src/example.rs",
+            "use opentelemetry::global as otel; fn facade() { let _ = otel::meter(\"governed\"); }"
+        )
+        .is_empty()
+    );
+}
+
+#[test]
 fn source_policy_blocks_legacy_and_generic_telemetry_macros_syntax_aware() {
     let path = "crates/group/example/src/lib.rs";
     for name in [
