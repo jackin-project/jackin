@@ -43,6 +43,10 @@ fn namespace_scan_handles_rust_literal_forms_and_macro_construction() {
         path,
         "use jackin_telemetry::Attr; custom_macro!(Attr { key: \"jackin.macro.field\", value: () });"
     ));
+    assert!(contains_legacy_telemetry_name(
+        path,
+        "use jackin_telemetry::Attr; macro_rules! attrs { () => { Attr { key: \"jackin.macro.definition\", value: () } }; }"
+    ));
 }
 
 #[test]

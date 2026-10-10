@@ -1435,6 +1435,22 @@ impl<'a> NamespaceScanner<'a> {
             AttrKeySource::Unknown => self.reject_attr_key(expression),
         }
     }
+
+    fn inspect_macro_tokens(&mut self, tokens: proc_macro2::TokenStream) {
+        if let Ok(expression) = syn::parse2::<syn::Expr>(tokens.clone()) {
+            self.visit_expr(&expression);
+            return;
+        }
+        if let Ok(block) = syn::parse2::<syn::Block>(tokens.clone()) {
+            self.visit_block(&block);
+            return;
+        }
+        for token in tokens {
+            if let proc_macro2::TokenTree::Group(group) = token {
+                self.inspect_macro_tokens(group.stream());
+            }
+        }
+    }
 }
 
 impl NamespaceBindings {
@@ -1678,12 +1694,7 @@ impl<'ast> syn::visit::Visit<'ast> for NamespaceScanner<'_> {
     }
 
     fn visit_macro(&mut self, invocation: &'ast syn::Macro) {
-        let tokens = invocation.tokens.clone();
-        if let Ok(expression) = syn::parse2::<syn::Expr>(tokens.clone()) {
-            self.visit_expr(&expression);
-        } else if let Ok(block) = syn::parse2::<syn::Block>(tokens) {
-            self.visit_block(&block);
-        }
+        self.inspect_macro_tokens(invocation.tokens.clone());
     }
 
     fn visit_expr_struct(&mut self, expression: &'ast syn::ExprStruct) {
