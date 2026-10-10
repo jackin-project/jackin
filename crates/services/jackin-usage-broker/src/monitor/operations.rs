@@ -192,7 +192,7 @@ impl MonitorStore {
 
     /// Configure the source capability selected by this foreground service.
     /// The value is ephemeral and does not prove credential or provider health.
-    pub(super) fn set_experimental_collector_source(&self, source: Option<String>) {
+    pub(crate) fn set_experimental_collector_source(&self, source: Option<String>) {
         *self
             .inner
             .experimental_collector_source

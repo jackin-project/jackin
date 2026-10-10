@@ -235,6 +235,17 @@ struct DurableGoalSpend {
     spend_state: Option<SpendState>,
 }
 
+struct EvidenceInput<'a> {
+    account_id: Option<&'a str>,
+    session_id: Option<&'a str>,
+    source: MonitorEvidenceSource,
+    evidence_at_epoch: Option<i64>,
+    received_at_epoch: i64,
+    claude_code_version: Option<&'a str>,
+    value: MonitorEvidenceValue,
+    fingerprint_key: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ResetBarrier {

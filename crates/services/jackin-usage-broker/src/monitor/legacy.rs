@@ -20,11 +20,13 @@ use jackin_protocol::usage_monitor::{
 };
 use serde::Deserialize;
 
+use validation::valid_timestamp;
+
 use super::spend::{SpendAccountState, SpendState};
 use super::{
-    AccountObservations, AccountResetBarrier, DurableGoalSpend, DurableMonitor, Observed,
-    ObservedPercentage, ObservedQuotaPair, ObservedWindow, ResetBarrier, SessionObservation,
-    StoreState,
+    AccountObservations, AccountResetBarrier, DurableGoalSpend, DurableMonitor, MAX_BINDINGS,
+    Observed, ObservedPercentage, ObservedQuotaPair, ObservedWindow, ResetBarrier,
+    SessionObservation, StoreState,
 };
 
 const V1_SCHEMA_VERSION: u16 = 1;
@@ -1613,7 +1615,7 @@ fn binding_ids(state: &V1StoreState) -> Result<BTreeMap<String, String>, Monitor
             .values()
             .map(|monitor| monitor.config.account_id.clone()),
     );
-    if account_ids.len() > super::MAX_BINDINGS {
+    if account_ids.len() > MAX_BINDINGS {
         return Err(unavailable());
     }
     account_ids

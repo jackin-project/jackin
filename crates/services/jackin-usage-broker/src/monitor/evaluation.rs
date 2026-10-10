@@ -123,17 +123,6 @@ pub(super) fn reconcile_all_monitors(state: &mut StoreState, now_epoch: i64) -> 
     changed
 }
 
-struct EvidenceInput<'a> {
-    account_id: Option<&'a str>,
-    session_id: Option<&'a str>,
-    source: MonitorEvidenceSource,
-    evidence_at_epoch: Option<i64>,
-    received_at_epoch: i64,
-    claude_code_version: Option<&'a str>,
-    value: MonitorEvidenceValue,
-    fingerprint_key: String,
-}
-
 pub(super) fn upsert_evidence(monitor: &mut DurableMonitor, input: EvidenceInput<'_>) {
     let EvidenceInput {
         account_id,
