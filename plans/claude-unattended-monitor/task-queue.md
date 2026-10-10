@@ -844,3 +844,21 @@ read or changed. Corrected installed smoke passed again with zero credential
 tripwire/proxy counts and owned cleanup. Manifest/log/schema examples updated
 from this fresh run; real-account prerequisites and dispatch approval remain
 unverified. The correction and evidence are committed/pushed as one checkpoint.
+
+## Live usage publication repair
+
+- [x] Root cause established: real provider collection completes, but
+  `publisher_tick_step` skips `publish_due` when the coordinator is idle, so
+  the final usage projection is not published.
+- [x] Second root cause confirmed: the default 15-minute idle lifetime plus
+  jitter exceeds the 300-second usage TTL.
+- [ ] Switch active approved observers to the existing `DirectInteraction`
+  lifetime while preserving persisted 300-second `RetryAfter`. Never
+  synthesize freshness; retry publication on a monotonic one-second interval.
+- [x] Earlier RPC unavailability was transient: current typed service and
+  status calls respond but return empty evidence. Keep any remaining RPC stall
+  investigation separate from this publication repair.
+- [ ] Acceptance requires real installed-CLI `usage status` and `usage watch`
+  verification across 5-hour and 7-day observation windows. Fixture-only
+  evidence is insufficient; live installed-CLI gates remain pending, so do not
+  claim full readiness.
