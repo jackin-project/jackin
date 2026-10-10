@@ -1,7 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 
 use super::{
     PROHIBITED_TELEMETRY_MACROS, RAW_SCOPED_THREAD_ALLOWLIST, RAW_SPAWN_ALLOWLIST,
@@ -177,8 +180,8 @@ impl<'ast> syn::visit::Visit<'ast> for TelemetryImports {
 
 #[derive(Clone, Default)]
 pub(super) struct SpawnTypeResolver {
-    aliases: BTreeMap<String, String>,
-    crate_names: BTreeSet<String>,
+    aliases: Arc<BTreeMap<String, String>>,
+    crate_names: Arc<BTreeSet<String>>,
     module: Vec<String>,
 }
 
@@ -214,8 +217,8 @@ pub(super) fn spawn_receiver_type(ty: &syn::Type, resolver: &SpawnTypeResolver) 
 
 #[derive(Default)]
 pub(super) struct WorkspaceSpawnTypes {
-    aliases: BTreeMap<String, String>,
-    crate_names: BTreeSet<String>,
+    aliases: Arc<BTreeMap<String, String>>,
+    crate_names: Arc<BTreeSet<String>>,
 }
 
 impl WorkspaceSpawnTypes {
@@ -237,8 +240,8 @@ impl WorkspaceSpawnTypes {
             collector.visit_file(syntax);
         }
         Self {
-            aliases,
-            crate_names,
+            aliases: Arc::new(aliases),
+            crate_names: Arc::new(crate_names),
         }
     }
 
@@ -248,6 +251,52 @@ impl WorkspaceSpawnTypes {
             crate_names: self.crate_names.clone(),
             module: source_module(path).unwrap_or_default(),
         }
+    }
+}
+
+#[cfg(test)]
+mod workspace_index_tests {
+    use super::{WorkspaceSpawnTypes, spawn_receiver_type};
+    use std::sync::Arc;
+
+    #[test]
+    fn per_file_resolvers_share_the_workspace_alias_index() {
+        let aliases_source =
+            std::iter::once("pub type BaseExecutor = tokio::runtime::Handle;\n".to_owned())
+                .chain((0..128).map(|index| format!("pub type Executor{index} = BaseExecutor;")))
+                .chain([
+                    "pub type CycleA = CycleB;".to_owned(),
+                    "pub type CycleB = CycleA;".to_owned(),
+                ])
+                .collect::<Vec<_>>()
+                .join("\n");
+        let aliases = syn::parse_file(&aliases_source).expect("alias fixture parses");
+        let consumer = syn::parse_file(
+            "type LocalExecutor = String; fn run(_: foo::Executor0, _: LocalExecutor) {}",
+        )
+        .expect("consumer fixture parses");
+        let files = [
+            ("crates/services/foo/src/lib.rs", &aliases),
+            ("crates/services/bar/src/lib.rs", &consumer),
+        ];
+        let workspace = WorkspaceSpawnTypes::collect(&files);
+        let resolvers = (0..128)
+            .map(|index| workspace.resolver(&format!("crates/services/bar/src/file{index}.rs")))
+            .collect::<Vec<_>>();
+
+        assert_eq!(workspace.aliases.len(), 132);
+        assert_eq!(Arc::strong_count(&workspace.aliases), 129);
+        assert_eq!(Arc::strong_count(&workspace.crate_names), 129);
+        assert!(resolvers.iter().all(|resolver| {
+            Arc::ptr_eq(&workspace.aliases, &resolver.aliases)
+                && Arc::ptr_eq(&workspace.crate_names, &resolver.crate_names)
+        }));
+        let transitive = syn::parse_str("foo::Executor0").expect("type fixture parses");
+        assert!(spawn_receiver_type(&transitive, &resolvers[0]));
+        let cycle = syn::parse_str("foo::CycleA").expect("cycle fixture parses");
+        assert!(!spawn_receiver_type(&cycle, &resolvers[0]));
+        let local_shadow = syn::parse_str("LocalExecutor").expect("local type fixture parses");
+        assert!(!spawn_receiver_type(&local_shadow, &resolvers[0]));
     }
 }
 
