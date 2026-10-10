@@ -561,6 +561,48 @@ where the parser uses it; no unused edge is added back to `jackin-usage`. This
 reconciliation is a source-content port and ancestry merge, not new test or
 installation evidence. No post-merge test run is claimed here.
 
+## PR #1121 current gate checkpoint — 2026-10-11
+
+The live PR remains open and draft at remote head
+`0a181fd517f7863319c0fbf5c16d1f581922c99b`. The latest observed CI run is
+`38090648346` on that exact head. Actionlint, Plan, and Required failed; all 27
+Rust package jobs and baseline publication were skipped. The setup/Plan failure
+is the stale generated Velnor workflow/tool-pin state recorded above, not a
+successful validation of the newly imported task contract. DCO also remains
+failed. Do not describe the PR as green or merge-ready.
+
+The private candidate now contains two additional test-only commits on top of
+that remote head: `070034b6436f4e5fc1b9b7c2516eaadcc89eea8a` binds the native
+task to the root and native Mise lock inputs, and
+`7f21345fccf5485f0f9ec2838fe58238c3809a3f` binds the native lock path to its
+digest. The exact `ci_contract` selectors are
+`required_fan_in_covers_every_workspace_crate_and_configured_task`,
+`configured_verification_jobs_are_isolated_and_run_only_the_declared_mise_task`,
+`configured_native_build_is_mac26_bounded_locked_and_mbx_routed`, and
+`architect_manifest_snapshot_is_bound_to_an_immutable_source_commit`. They
+remain pending until owner-v1 regeneration is integrated; the current generated
+tree lacks the execution manifest and omits the four configured task IDs.
+
+The imported Usage port is mapped by
+`/private/tmp/jackin-usage-commit-manifest-468-to-2edeeaa.json` (SHA-256
+`a790bb36aa6a349212f2c791f9ab26832c47e7f48e1db4944c8f1e8ab5f1d58f`). It maps
+the ordered 17-commit source chain from target base
+`468c6a4e2f321e134992452e1191ddd49955e946` through source head
+`2edeeaa826dc4d7081c94c766fad7d3a6ed786e8`, preserving grouped paths and
+source provenance. The source gate passed 9/9 in Nextest run
+`7583e0a4-70b1-4068-8b51-c6525311a165`; this is source-chain evidence, not a
+test run on the current Jackin PR head. The native operator guard has static
+and mocked checks only; the required macOS 26/Xcode/OrbStack acceptance remains
+pending.
+
+At 2026-10-11, Velnor PR #144 is still a separate open draft. Its last observed
+remote head is `3f92d889c95e99d93d188d8240e942bc6ea34f85`; CI run
+`38091798665` failed on that head. The local, unpushed continuation is at
+`11418b9f12914a875e9fc7712b87a96c29dc3bd0` and has not yet completed the
+combined Clippy/test gate. No stable Velnor 0.1.7 release is available; the
+latest published 0.1.7 item observed was a prerelease. These pending Velnor
+checks do not change the recorded source-only 9/9 Usage result.
+
 Final handoff review requested two documentation repairs: scope unknown-spend
 pause explicitly to strict-SGD, and record both pre/post smoke script hashes.
 Both are fixed and installed copies synchronized. Source401 evidence is described
