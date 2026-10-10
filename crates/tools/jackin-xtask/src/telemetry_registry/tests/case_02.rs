@@ -137,4 +137,12 @@ fn namespace_scan_resolves_telemetry_attr_bindings_and_rejects_unknown_keys() {
         "fixture.rs",
         "use jackin_telemetry::Attr; struct FakeAttribute { name: &'static str } fn project(metadata: &jackin_telemetry::schema::EventMetadata, fake: &FakeAttribute) { let _ = metadata.attributes.iter().map(|attribute| { let _ = Attr { key: attribute.name, value: () }; let shadowed = |attribute: &FakeAttribute| Attr { key: attribute.name, value: () }; shadowed(fake) }); }"
     ));
+    assert!(contains_legacy_telemetry_name(
+        "fixture.rs",
+        "use jackin_telemetry::Attr; use jackin_telemetry::schema::EventMetadata as RegistryMetadata; struct FakeAttribute { name: &'static str } struct FakeMetadata { attributes: Vec<FakeAttribute> } fn project(metadata: &RegistryMetadata, fake: FakeMetadata) { { let (metadata, _) = (fake, ()); let _ = metadata.attributes.iter().map(|attribute| Attr { key: attribute.name, value: () }); } let _ = metadata.attributes.iter().map(|attribute| Attr { key: attribute.name, value: () }); }"
+    ));
+    assert!(!contains_legacy_telemetry_name(
+        "fixture.rs",
+        "use jackin_telemetry::Attr; use jackin_telemetry::schema::EventMetadata as RegistryMetadata; struct FakeMetadata { attributes: Vec<()> } fn project(metadata: &RegistryMetadata, fake: FakeMetadata) { { let metadata = fake; let _ = metadata.attributes.len(); } let _ = metadata.attributes.iter().map(|attribute| Attr { key: attribute.name, value: () }); }"
+    ));
 }

@@ -1272,6 +1272,22 @@ fn is_event_metadata_type(ty: &syn::Type, bindings: &NamespaceBindings) -> bool 
     }
 }
 
+fn pattern_binding_names(pattern: &syn::Pat) -> BTreeSet<String> {
+    #[derive(Default)]
+    struct Bindings(BTreeSet<String>);
+
+    impl<'ast> syn::visit::Visit<'ast> for Bindings {
+        fn visit_pat_ident(&mut self, pattern: &'ast syn::PatIdent) {
+            self.0.insert(pattern.ident.to_string());
+            syn::visit::visit_pat_ident(self, pattern);
+        }
+    }
+
+    let mut bindings = Bindings::default();
+    syn::visit::Visit::visit_pat(&mut bindings, pattern);
+    bindings.0
+}
+
 struct NamespaceScanner<'a> {
     path: &'a str,
     context: String,
@@ -1823,8 +1839,10 @@ impl<'ast> syn::visit::Visit<'ast> for NamespaceScanner<'_> {
     }
 
     fn visit_block(&mut self, block: &'ast syn::Block) {
+        let event_metadata_bindings = self.event_metadata_bindings.clone();
         let event_attribute_bindings = self.event_attribute_bindings.clone();
         syn::visit::visit_block(self, block);
+        self.event_metadata_bindings = event_metadata_bindings;
         self.event_attribute_bindings = event_attribute_bindings;
     }
 
@@ -1841,6 +1859,7 @@ impl<'ast> syn::visit::Visit<'ast> for NamespaceScanner<'_> {
     }
 
     fn visit_item_fn(&mut self, item: &'ast syn::ItemFn) {
+        let event_metadata_bindings = self.event_metadata_bindings.clone();
         let previous = std::mem::replace(&mut self.context, format!("fn:{}", item.sig.ident));
         for input in &item.sig.inputs {
             let syn::FnArg::Typed(argument) = input else {
@@ -1856,38 +1875,46 @@ impl<'ast> syn::visit::Visit<'ast> for NamespaceScanner<'_> {
         }
         syn::visit::visit_item_fn(self, item);
         self.context = previous;
+        self.event_metadata_bindings = event_metadata_bindings;
     }
 
     fn visit_local(&mut self, local: &'ast syn::Local) {
-        if let (syn::Pat::Ident(pattern), Some(initializer)) = (&local.pat, local.init.as_ref()) {
-            let name = pattern.ident.to_string();
-            self.event_attribute_bindings.remove(&name);
-            if self.is_event_metadata_definition(&initializer.expr) {
-                self.event_metadata_bindings
-                    .insert((self.context.clone(), name));
-            }
-        }
+        let bound_names = pattern_binding_names(&local.pat);
+        let direct_binding = match &local.pat {
+            syn::Pat::Ident(pattern) => Some((&pattern.ident, None)),
+            syn::Pat::Type(pattern) => match pattern.pat.as_ref() {
+                syn::Pat::Ident(binding) => Some((&binding.ident, Some(pattern.ty.as_ref()))),
+                _ => None,
+            },
+            _ => None,
+        };
+        let metadata_binding = direct_binding.and_then(|(ident, declared_type)| {
+            let is_metadata = match declared_type {
+                Some(ty) => is_event_metadata_type(ty, &self.bindings),
+                None => local.init.as_ref().is_some_and(|initializer| {
+                    self.is_event_metadata_definition(&initializer.expr)
+                }),
+            };
+            is_metadata.then(|| ident.to_string())
+        });
         syn::visit::visit_local(self, local);
+        for name in bound_names {
+            self.event_attribute_bindings.remove(&name);
+            self.event_metadata_bindings
+                .remove(&(self.context.clone(), name));
+        }
+        if let Some(name) = metadata_binding {
+            self.event_metadata_bindings
+                .insert((self.context.clone(), name));
+        }
     }
 
     fn visit_expr_method_call(&mut self, call: &'ast syn::ExprMethodCall) {
         let is_event_attribute_iter = self.is_event_metadata_attributes_iter(&call.receiver);
         self.visit_expr(&call.receiver);
         for argument in &call.args {
-            if is_event_attribute_iter && let syn::Expr::Closure(closure) = argument {
-                let mut inserted = Vec::new();
-                for input in &closure.inputs {
-                    if let syn::Pat::Ident(pattern) = input {
-                        let name = pattern.ident.to_string();
-                        if self.event_attribute_bindings.insert(name.clone()) {
-                            inserted.push(name);
-                        }
-                    }
-                }
-                self.visit_expr(&closure.body);
-                for name in inserted {
-                    self.event_attribute_bindings.remove(&name);
-                }
+            if let syn::Expr::Closure(closure) = argument {
+                self.visit_scoped_closure(closure, is_event_attribute_iter);
             } else {
                 self.visit_expr(argument);
             }
@@ -1895,17 +1922,39 @@ impl<'ast> syn::visit::Visit<'ast> for NamespaceScanner<'_> {
     }
 
     fn visit_expr_closure(&mut self, closure: &'ast syn::ExprClosure) {
-        let mut shadowed = Vec::new();
+        self.visit_scoped_closure(closure, false);
+    }
+
+    fn visit_scoped_closure(
+        &mut self,
+        closure: &'ast syn::ExprClosure,
+        event_attribute_iter: bool,
+    ) {
+        let previous_metadata_bindings = self.event_metadata_bindings.clone();
+        let previous_attribute_bindings = self.event_attribute_bindings.clone();
         for input in &closure.inputs {
-            if let syn::Pat::Ident(pattern) = input {
+            let (pattern, metadata_type) = match input {
+                syn::Pat::Ident(_) => (Some(input), None),
+                syn::Pat::Type(pattern) => (Some(pattern.pat.as_ref()), Some(pattern.ty.as_ref())),
+                _ => (None, None),
+            };
+            if let Some(syn::Pat::Ident(pattern)) = pattern {
                 let name = pattern.ident.to_string();
-                if self.event_attribute_bindings.remove(&name) {
-                    shadowed.push(name);
+                self.event_attribute_bindings.remove(&name);
+                self.event_metadata_bindings
+                    .remove(&(self.context.clone(), name.clone()));
+                if event_attribute_iter {
+                    self.event_attribute_bindings.insert(name.clone());
+                }
+                if metadata_type.is_some_and(|ty| is_event_metadata_type(ty, &self.bindings)) {
+                    self.event_metadata_bindings
+                        .insert((self.context.clone(), name));
                 }
             }
         }
         syn::visit::visit_expr_closure(self, closure);
-        self.event_attribute_bindings.extend(shadowed);
+        self.event_metadata_bindings = previous_metadata_bindings;
+        self.event_attribute_bindings = previous_attribute_bindings;
     }
 
     fn visit_macro(&mut self, invocation: &'ast syn::Macro) {
