@@ -223,26 +223,11 @@ pub(super) struct WorkspaceSpawnTypes {
 
 impl WorkspaceSpawnTypes {
     pub(super) fn collect(files: &[(&str, &syn::File)]) -> Self {
-        let crate_names = files
-            .iter()
-            .filter_map(|(path, _)| source_module(path).and_then(|module| module.first().cloned()))
-            .collect::<BTreeSet<_>>();
-        let mut aliases = BTreeMap::new();
+        let mut builder = WorkspaceSpawnTypesBuilder::new(files.iter().map(|(path, _)| *path));
         for (path, syntax) in files {
-            let Some(module) = source_module(path) else {
-                continue;
-            };
-            let mut collector = SpawnTypeAliases {
-                aliases: &mut aliases,
-                crate_names: &crate_names,
-                module,
-            };
-            collector.visit_file(syntax);
+            builder.add_file(path, syntax);
         }
-        Self {
-            aliases: Arc::new(aliases),
-            crate_names: Arc::new(crate_names),
-        }
+        builder.finish()
     }
 
     pub(super) fn resolver(&self, path: &str) -> SpawnTypeResolver {
@@ -250,6 +235,43 @@ impl WorkspaceSpawnTypes {
             aliases: self.aliases.clone(),
             crate_names: self.crate_names.clone(),
             module: source_module(path).unwrap_or_default(),
+        }
+    }
+}
+
+pub(super) struct WorkspaceSpawnTypesBuilder {
+    aliases: BTreeMap<String, String>,
+    crate_names: BTreeSet<String>,
+}
+
+impl WorkspaceSpawnTypesBuilder {
+    pub(super) fn new<'a>(paths: impl IntoIterator<Item = &'a str>) -> Self {
+        let crate_names = paths
+            .into_iter()
+            .filter_map(|path| source_module(path).and_then(|module| module.first().cloned()))
+            .collect();
+        Self {
+            aliases: BTreeMap::new(),
+            crate_names,
+        }
+    }
+
+    pub(super) fn add_file(&mut self, path: &str, syntax: &syn::File) {
+        let Some(module) = source_module(path) else {
+            return;
+        };
+        let mut collector = SpawnTypeAliases {
+            aliases: &mut self.aliases,
+            crate_names: &self.crate_names,
+            module,
+        };
+        collector.visit_file(syntax);
+    }
+
+    pub(super) fn finish(self) -> WorkspaceSpawnTypes {
+        WorkspaceSpawnTypes {
+            aliases: Arc::new(self.aliases),
+            crate_names: Arc::new(self.crate_names),
         }
     }
 }
@@ -297,6 +319,17 @@ mod workspace_index_tests {
         assert!(!spawn_receiver_type(&cycle, &resolvers[0]));
         let local_shadow = syn::parse_str("LocalExecutor").expect("local type fixture parses");
         assert!(!spawn_receiver_type(&local_shadow, &resolvers[0]));
+
+        let mut streaming = WorkspaceSpawnTypesBuilder::new(files.iter().map(|(path, _)| *path));
+        for (path, syntax) in files {
+            streaming.add_file(path, syntax);
+        }
+        let streaming = streaming.finish();
+        assert_eq!(streaming.aliases.as_ref(), workspace.aliases.as_ref());
+        assert_eq!(
+            streaming.crate_names.as_ref(),
+            workspace.crate_names.as_ref()
+        );
     }
 }
 

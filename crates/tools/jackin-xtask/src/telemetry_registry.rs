@@ -16,7 +16,7 @@ use sha2::{Digest as _, Sha256};
 use syn::visit::Visit as _;
 mod ownership_census;
 mod source_policy;
-use source_policy::{SourcePolicyScanner, WorkspaceSpawnTypes};
+use source_policy::{SourcePolicyScanner, WorkspaceSpawnTypesBuilder};
 
 // Shrink-only: new files must use governed facades and helpers immediately.
 const RAW_SPAWN_ALLOWLIST: &[&str] = &[];
@@ -115,24 +115,29 @@ pub(crate) fn run(args: TelemetryRegistryArgs) -> Result<()> {
 }
 
 fn validate_source_policy(root: &Path) -> Result<()> {
-    let mut files = Vec::new();
-    collect_source_files(&root.join("crates"), root, &mut files)?;
-    let parsed = files
+    let mut sources = Vec::new();
+    collect_source_files(&root.join("crates"), root, &mut sources)?;
+    let sources = sources
         .into_iter()
-        .map(|(relative, source)| {
-            let path = relative.to_string_lossy().into_owned();
-            let syntax = syn::parse_file(&source)
-                .with_context(|| format!("parsing {path} for telemetry source policy"))?;
-            Ok((path, syntax))
-        })
-        .collect::<Result<Vec<_>>>()?;
-    let indexed = parsed
-        .iter()
-        .map(|(path, syntax)| (path.as_str(), syntax))
+        .map(|(relative, source)| (relative.to_string_lossy().into_owned(), source))
         .collect::<Vec<_>>();
-    let workspace_spawn_types = WorkspaceSpawnTypes::collect(&indexed);
+
+    // Build the cross-file alias index with one AST alive at a time. Keeping
+    // every parsed syn::File and cloning the resulting workspace index into
+    // each resolver multiplied memory by source count.
+    let mut builder =
+        WorkspaceSpawnTypesBuilder::new(sources.iter().map(|(path, _)| path.as_str()));
+    for (path, source) in &sources {
+        let syntax = syn::parse_file(source)
+            .with_context(|| format!("parsing {path} for telemetry spawn type index"))?;
+        builder.add_file(path, &syntax);
+    }
+    let workspace_spawn_types = builder.finish();
+
     let mut violations = Vec::new();
-    for (path, syntax) in parsed {
+    for (path, source) in &sources {
+        let syntax = syn::parse_file(source)
+            .with_context(|| format!("parsing {path} for telemetry source policy"))?;
         let mut scanner = SourcePolicyScanner::new(&path, &syntax, &workspace_spawn_types);
         scanner.visit_file(&syntax);
         violations.extend(
