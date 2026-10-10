@@ -22,6 +22,8 @@ use jackin_usage_coordinator::{
     UsageCoordinatorConfig, UsageProviderExecutor,
 };
 
+mod collector;
+
 const NOW: i64 = 1_800_000_000;
 const ACCOUNT_ID: &str = "acct-serve-ticker";
 
