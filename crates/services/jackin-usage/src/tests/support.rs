@@ -85,6 +85,7 @@ pub(super) fn validate_account(account: &Value) -> Result<(), String> {
             "provider_account_id",
             "provider_stable_handle",
             "local_source_handle",
+            "unverified_handle",
         ],
     )?;
     required_enum(

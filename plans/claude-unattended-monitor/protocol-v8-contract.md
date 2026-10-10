@@ -12,9 +12,17 @@ monitor state are separate contracts: a schema 4 state must not cause a schema
 
 Wire v8 adds `UsageIdentityKindV1::LocalSourceHandle` so a locally derived
 credential-source capability is never mislabeled as provider-issued identity.
-Provider account IDs and provider stable handles remain reserved for evidence
-issued by the provider. A v7 peer is rejected by the protocol/build handshake;
-there is no dual-version or compatibility path.
+The R37 amendment also adds `UsageIdentityKindV1::UnverifiedHandle` for legacy
+identity values whose provenance cannot be proved. It carries no provider or
+local-source authority. Provider account IDs and provider stable handles
+remain reserved for evidence issued by the provider. A v7 peer is rejected by
+the protocol/build handshake; there is no dual-version or compatibility path.
+
+The durable projection envelope has its own schema number: this integration
+writes schema 3, accepts schema 2 only through the broker startup migration,
+and preserves valid future schema bytes while failing closed. The projection
+payload remains `UsageProjectionSchemaV1`; per-account state remains schema 2,
+monitor state remains schema 4, and statusline input remains schema 2.
 
 Schema 4 adds source binding and consent fields. `MonitorAccountBindingInput`
 and persisted `MonitorAccountBinding` carry `provider_account_id` and
