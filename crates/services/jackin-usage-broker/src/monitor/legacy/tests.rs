@@ -100,7 +100,7 @@ mod binding_union_tests {
         let ids = binding_ids(&state).expect("allocate every bounded legacy account identity");
         assert_eq!(ids.len(), MAX_ACCOUNTS + MAX_GOALS + MAX_MONITORS);
         let bindings = build_bindings(&ids).expect("build migrated unconfirmed bindings");
-        assert_eq!(bindings.len(), super::MAX_BINDINGS);
+        assert_eq!(bindings.len(), MAX_BINDINGS);
     }
 
     #[test]
