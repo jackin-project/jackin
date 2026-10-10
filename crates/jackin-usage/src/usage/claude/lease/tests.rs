@@ -92,7 +92,7 @@ fn bootstrap_payload_validation_rejects_oversized_and_noncredential_json() {
     );
     valid.push_str(&" ".repeat(524 - valid.len()));
     assert_eq!(valid.len(), 524);
-    assert!(valid_claude_keychain_payload(&valid).is_ok());
+    valid_claude_keychain_payload(&valid).unwrap();
     assert!(valid_claude_keychain_payload(r#"{"claudeAiOauth":{}}"#).is_err());
     assert!(valid_claude_keychain_payload("not-json").is_err());
     let oversized_payload = format!("{valid}{}", " ".repeat(MAX_CLAUDE_KEYCHAIN_PAYLOAD_BYTES));

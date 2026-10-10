@@ -1079,10 +1079,9 @@ fn classify_raw(raw: &serde_json::value::RawValue, token: bool) -> ClaudePayload
 }
 
 fn raw_field_kind(field: &ClaudePayloadRawField<'_>) -> ClaudePayloadFieldKind {
-    field
-        .0
-        .map(|raw| classify_raw(raw, false).kind)
-        .unwrap_or(ClaudePayloadFieldKind::Missing)
+    field.0.map_or(ClaudePayloadFieldKind::Missing, |raw| {
+        classify_raw(raw, false).kind
+    })
 }
 
 fn raw_alias_kinds(
