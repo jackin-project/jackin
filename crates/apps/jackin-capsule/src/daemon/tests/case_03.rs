@@ -3,6 +3,25 @@
 
 use super::*;
 
+fn accept_fake_broker_client(
+    listener: &std::os::unix::net::UnixListener,
+    deadline: std::time::Instant,
+) -> Option<std::os::unix::net::UnixStream> {
+    loop {
+        match listener.accept() {
+            Ok((stream, _)) => return Some(stream),
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+                if remaining.is_zero() {
+                    return None;
+                }
+                std::thread::sleep(remaining.min(std::time::Duration::from_millis(5)));
+            }
+            Err(error) => panic!("accepting fake broker client failed: {error}"),
+        }
+    }
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn daemon_pty_lifecycle_reaches_shutdown_after_last_session_exit() -> Result<()> {
     use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
@@ -184,6 +203,7 @@ fn begin_exec_picker_supersedes_pending_reply_and_dialog() {
 fn broker_client_capsule_deduplicates_each_account_and_adopts_terminal_generation() {
     use std::collections::{BTreeMap, BTreeSet};
     use std::io::{BufRead as _, BufReader, Write as _};
+    use std::os::unix::fs::PermissionsExt as _;
     use std::os::unix::net::UnixListener;
 
     use jackin_protocol::control::{
@@ -196,8 +216,24 @@ fn broker_client_capsule_deduplicates_each_account_and_adopts_terminal_generatio
     };
 
     let temp = tempfile::tempdir().unwrap();
-    let socket = temp.path().join("usage.sock");
+    let socket_directory = temp.path().canonicalize().unwrap();
+    std::fs::set_permissions(&socket_directory, std::fs::Permissions::from_mode(0o700)).unwrap();
+    assert_eq!(
+        std::fs::metadata(&socket_directory)
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777,
+        0o700
+    );
+    let socket = socket_directory.join("usage.sock");
     let listener = UnixListener::bind(&socket).unwrap();
+    std::fs::set_permissions(&socket, std::fs::Permissions::from_mode(0o600)).unwrap();
+    assert_eq!(
+        std::fs::metadata(&socket).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+    listener.set_nonblocking(true).unwrap();
     let capability = UsageAccountCapability {
         account_id: "allowed-a".to_owned(),
         surface_id: "codex".to_owned(),
@@ -208,9 +244,14 @@ fn broker_client_capsule_deduplicates_each_account_and_adopts_terminal_generatio
     };
     let server_capabilities = BTreeSet::from([capability.clone(), second_capability.clone()]);
     let server = std::thread::spawn(move || {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
         let mut seen = BTreeMap::<UsageAccountCapability, [bool; 3]>::new();
+        let mut received = 0;
         for _ in 0..6 {
-            let (mut stream, _) = listener.accept().unwrap();
+            let Some((mut stream, _)) = accept_fake_broker_client(&listener, deadline) else {
+                break;
+            };
+            received += 1;
             let request = {
                 let mut line = String::new();
                 BufReader::new(&mut stream).read_line(&mut line).unwrap();
@@ -275,11 +316,7 @@ fn broker_client_capsule_deduplicates_each_account_and_adopts_terminal_generatio
             bytes.push(b'\n');
             stream.write_all(&bytes).unwrap();
         }
-        assert_eq!(
-            seen.keys().cloned().collect::<BTreeSet<_>>(),
-            server_capabilities
-        );
-        assert!(seen.values().all(|stages| stages == &[true, true, true]));
+        (seen, received)
     });
     let client =
         jackin_usage::host::UsageBrokerClient::at(socket, env!("CARGO_PKG_VERSION").to_owned());
@@ -304,7 +341,34 @@ fn broker_client_capsule_deduplicates_each_account_and_adopts_terminal_generatio
         Some(target.clone()),
         Some(&target),
     );
-    server.join().unwrap();
+
+    let client_errors = refreshes
+        .iter()
+        .filter_map(|refresh| {
+            refresh.result.as_ref().err().map(|error| {
+                format!(
+                    "{} / {}: {:?} ({})",
+                    refresh.target.capability.surface_id,
+                    refresh.target.capability.account_id,
+                    error.kind,
+                    error.message
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let (seen, received) = server.join().unwrap();
+
+    assert!(
+        client_errors.is_empty(),
+        "broker client operations failed after fake server received {received}/6 operations: {}",
+        client_errors.join("; ")
+    );
+    assert_eq!(received, 6, "broker client operation count");
+    assert_eq!(
+        seen.keys().cloned().collect::<BTreeSet<_>>(),
+        server_capabilities
+    );
+    assert!(seen.values().all(|stages| stages == &[true, true, true]));
 
     assert_eq!(refreshes.len(), 2);
     let states = refreshes
