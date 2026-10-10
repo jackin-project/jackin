@@ -2,16 +2,21 @@
 
 ## Current delivery checkpoint
 
-Delivery branch: `feat/claude-usage-monitor-main`, isolated from the running Claude checkout. Pushed checkpoint `471efcb2` includes the installed fixture harness. The broker wire is v7, durable monitor schema v4, and statusline input v2. The current direct-CLI contract is [bootstrap-contract.md](bootstrap-contract.md); statusline remains an optional credential-free source.
+Delivery branch: `feat/claude-usage-monitor-main`, isolated from the running Claude checkout. Pushed checkpoint `471efcb2` includes the installed fixture harness. The current candidate uses broker wire v8, durable monitor schema v4, and statusline input v2. `LocalSourceHandle` remains distinct from provider identity. The previously installed v3 pair uses wire v7 and is historical evidence only; it does not verify the current v8 candidate. The current direct-CLI contract is [bootstrap-contract.md](bootstrap-contract.md); statusline remains an optional credential-free source.
 
-All Cargo work must run through MBX 1.22.0. Main's `MISE_AUTO_INSTALL=false mise exec -- cargo ...` wrapper selects MBX. Current verification uses the explicit `MISE_AUTO_INSTALL=false mise exec -- mbx <Cargo-subcommand> ...` route with an owned isolated `CARGO_HOME`; the selected Rust toolchain binary directory is on that invocation's PATH solely so MBX can locate its delegate. Do not invoke plain Cargo with that PATH. Disable Mise automatic installation on every invocation. Main already supplies MBX; draft/red PR #1120 is not a prerequisite and remains untouched.
+A five-package MBX consumer compile check passed at an earlier checkpoint before the current wire-v8, projection-v3, and clock-fix changes. It is historical evidence only; the current candidate still needs compilation, behavior tests, the matching installed-pair rebuild, and acceptance gates.
 
-Completed offline gates: protocol 133, broker 173, coordinator 54, CLI 43, app 29; installation 5, lifecycle 2, bootstrap 2, monitor 5; docs 18 tests and 1,293 rendered routes. Installed v3 predecessor pair passed isolated observation, structured-output, sibling selection and composed-statusline checks. Its proxy request and credential-command trip counts were zero; native Keychain calls were not instrumented and successful foreground auth was not exercised. No real-account readiness claim follows.
+All Cargo work must run through MBX 1.22.0. Main's Mise Cargo wrapper selects MBX, but injecting the toolchain directory before `mise exec` can shadow that wrapper. Current invocations use `MISE_AUTO_INSTALL=false mise exec -- mbx <Cargo-subcommand>` with an owned isolated `CARGO_HOME`. For commands that can launch nested Cargo, inject wrapper-first PATH **after** Mise using `MISE_AUTO_INSTALL=false mise exec -- env PATH="<mise-command-wrappers>/bin:<selected-rust-toolchain>/bin:$PATH" mbx ...`; setting PATH before Mise is insufficient. Do not invoke plain Cargo. Main already supplies MBX; draft/red PR #1120 is not a prerequisite and remains untouched.
 
-Current cleanup removes dormant Claude CLI diagnostic/parser paths and strengthens provider-call inventory detection for both direct calls and callbacks. Post-cleanup provider contract 2/2 and broker 173/173 pass. Remaining queue:
+Previously recorded pre-v8 offline gates: protocol 133, broker 173, coordinator 54, CLI 43, app 29; installation 5, lifecycle 2, bootstrap 2, monitor 5; docs 18 tests and 1,293 rendered routes. The prior installed v3 pair used wire v7 and passed isolated observation, structured-output, sibling selection and composed-statusline checks. Its proxy request and credential-command trip counts were zero; native Keychain calls were not instrumented and successful foreground auth was not exercised. These results are historical and do not validate the current v8 candidate. No real-account readiness claim follows.
 
-- [x] Post-cleanup Claude fake-auth/provider 25 and initial contract 8 passed; forbidden-command guard extended and independently reviewed Ready within documented syntactic limits. Final stable-source rerun remains required.
-- [x] FFI passive/consumer regression 9 passed through MBX; docs typecheck and 18 tests passed after published research updates.
+The pre-v8 cleanup removed dormant Claude CLI diagnostic/parser paths and strengthened provider-call inventory detection for both direct calls and callbacks. Its recorded post-cleanup provider contract 2/2 and broker 173/173 results predate the current v8 candidate and require current-source verification. Remaining queue:
+
+- [x] Pre-v8 checkpoint: Claude fake-auth/provider 25 and initial contract 8 passed; forbidden-command guard extended and independently reviewed Ready within documented syntactic limits. Final stable-source rerun for the current candidate remains required.
+- [x] Pre-v8 checkpoint: FFI passive/consumer regression 9 passed through MBX; docs typecheck and 18 tests passed after published research updates. These results do not establish current wire-v8 behavior.
+- [ ] Verify current wire-v8 publication provider order against `HostSurfaceId::ALL`, account ordering by full display label with canonical-account-ID tie-break, and diagnostic-label lookup across the canonical surface inventory.
+- [ ] Verify the 300-second attempt floor with fractional Retry-After under forced refresh and after broker restart; assert that no request occurs before the persisted deadline.
+- [ ] Verify explicit `LocalSourceHandle` identity stays distinct from provider ID and stable-account identity through discovery, serialization, deduplication, and publication.
 - [ ] Port missing lifetime leader lock from predecessor `f669ec77`, verify deterministic sleep/wake/takeover and owned-path cleanup tests.
 - [ ] Finish removal of public retired host runtime after confirming active presentation dependencies; update crate README/generated internals docs.
 - [ ] Verify newly restored catalog-diagnostic publication lifecycle regressions, remaining consumers, and final independent reviews.
@@ -121,10 +126,10 @@ complete.
   review findings and required checks are resolved and verified.
 - [ ] Integrate the usage candidate with the resulting main branch and pass
   the required main-integration gates before the usage PR can land.
-- [done] Freeze the v7 protocol contract independently of callback input v2.
-  Checkpoint `fa7f2f0e` is pushed; 129 offline protocol tests passed. See
-  [protocol-v7-verification.md](protocol-v7-verification.md). Broker, CLI, and
-  installed workflow proof remain pending.
+- [x] Historical predecessor milestone: the v7 protocol contract was frozen
+  independently of callback input v2. Checkpoint `fa7f2f0e` is pushed; 129
+  offline protocol tests passed. See [protocol-v7-verification.md](protocol-v7-verification.md).
+  This is v7 evidence only; it does not verify the current v8 candidate.
 - [ ] Verify the reported baseline port and reconcile any remaining
   independent-review findings before treating the current source tree as a
   candidate.
@@ -240,9 +245,10 @@ fields remain unknown. Session list-price cost is not billing evidence.
 - statusline_docs: composition helper and official input contract documentation.
 - security_review: independent read-only security review.
 
-## Verified so far
+## Historical predecessor checks
 
-- `cargo check --offline -p jackin-protocol`: passed.
+- Historical direct-Cargo check `cargo check --offline -p jackin-protocol`:
+  passed.
 - Protocol monitor contract fixtures: 4 tests passed (agent report).
 - Original worktree status after moving our newly created files: clean.
 
@@ -322,11 +328,11 @@ fields remain unknown. Session list-price cost is not billing evidence.
   allocation zeroization (including malformed bytes and whitespace). This is
   static and fake-adapter evidence; live ACLs/provider availability are untested.
 
-## Final gate queue
+## Historical predecessor final gate queue
 
-- Implementation owners are frozen after mechanical lint refactors. Offline
-  verifier owns sequential Cargo gates; security, rate and contract reviewers
-  independently inspect the current code.
+- At that checkpoint, implementation owners were frozen after mechanical lint
+  refactors. The offline verifier owned sequential Cargo gates; security, rate
+  and contract reviewers independently inspected that source snapshot.
 - Final audit found normal desktop refresh could still poll Claude accounts.
   The production executor now rejects every Claude probe before cache lookup
   or fallback rediscovery; there is no enabled OAuth opt-in command. Other
@@ -501,7 +507,7 @@ record real SGD evidence before monitor creation and disclose pre-monitor
 spend. No product code changed. The durable proof and handoff are committed
 and published with this verification checkpoint.
 
-## Observation and policy implementation — verified 2026-10-10
+## Historical predecessor observation and policy implementation — 2026-10-10
 
 Objective: implement the full attached tracker goal, keeping collection separate
 from dispatch and preserving strict SGD semantics until explicit operator approval.
@@ -528,9 +534,10 @@ idle/restart/sleep persistence and all existing provider/freshness/reset/spend
 regressions. Real-account integration will be distinguished from fixture proof;
 the operator-controlled adapter installation remains outside authorized edits.
 
-Baseline on `cc4a0cb0`: `cargo test --offline --locked -p
-jackin-usage-broker -p jackin-protocol -p jackin-usage-coordinator` passed 274
-tests with one pre-existing ignored test. This is baseline evidence, not v2 proof.
+Historical pre-MBX baseline on `cc4a0cb0`: the direct-Cargo command
+`cargo test --offline --locked -p jackin-usage-broker -p jackin-protocol -p
+jackin-usage-coordinator` passed 274 tests with one pre-existing ignored test.
+This is baseline evidence, not v2 proof or current run guidance.
 
 Verification tooling incident: the read-only verification agent invoked
 `mise exec --deny-net -- mbx --help`, which activated a missing configured
@@ -538,12 +545,16 @@ Verification tooling incident: the read-only verification agent invoked
 traffic. The confirmed installer process tree was terminated; no Claude process
 or project package build was stopped. Tool cache mutation and network traffic
 occurred; exact external request count is unknown. This run is not wholly
-offline. No provider, auth or Keychain verification occurred. Do not activate
-Mise again; use direct offline Cargo commands. Future verification reports must
-distinguish this tooling traffic from fixture provider/credential counters.
+offline. No provider, auth or Keychain verification occurred. In response to
+the installer incident, that historical verification run avoided Mise and
+used direct offline Cargo. This is not current guidance; the MBX contract at
+the top of this file supersedes that workaround and disables Mise automatic
+installation on every invocation.
+Future verification reports must distinguish this tooling traffic from
+fixture provider/credential counters.
 
-V2 intermediate checks: protocol passed 132 tests with one pre-existing ignored
-test; Claude provider passed 37 tests, including changed/unchanged fake-source
+Historical V2 intermediate checks: protocol passed 132 tests with one
+pre-existing ignored test; Claude provider passed 37 tests, including changed/unchanged fake-source
 401 behavior. Direct Cargo used `--offline --locked`. The combined provider/relay
 run reached the unfinished broker migration and failed compilation; it is not
 a passing gate. Engine ownership is addressing the reported borrow/type errors.
@@ -569,7 +580,8 @@ retain their evidence age. Latest protocol gate passed 134 tests, one ignored.
 The provider-core/discovery/resolver gate passed 139 tests with 83 filtered cases;
 fake Keychain evidence remains distinct from live macOS verification.
 
-V2 integrated gate update: direct offline Cargo all-target CLI check passed.
+Historical V2 integrated-gate record: a direct offline Cargo all-target CLI
+check passed; this is not a current run instruction or main-port gate claim.
 Protocol now passes 135 cases (one existing ignored), relay 20. Broker passes
 119/120; the outstanding test expects PolicyConflict for an unapproved
 revision but the broker returns PolicyRequired. Fixture semantics are under
