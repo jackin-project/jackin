@@ -97,10 +97,13 @@ mod protocol_version_tests {
 
     #[test]
     fn v7_request_envelope_is_rejected_by_the_v8_dispatch_gate() {
+        // This is the v7 CurrentProjection envelope shape: the enum's own tag
+        // is nested under the request's `operation` field.
         let request: UsageBrokerRequest = serde_json::from_str(
-            r#"{"protocol_version":"v7","build_id":"test-build","operation":"current_projection"}"#,
+            r#"{"protocol_version":"v7","build_id":"test-build","operation":{"operation":"current_projection"}}"#,
         )
         .expect("v7 request envelope fixture should decode");
+        assert_eq!(request.operation, UsageBrokerOperation::CurrentProjection);
 
         assert!(!request_header_matches_current_protocol(
             &request.protocol_version,
