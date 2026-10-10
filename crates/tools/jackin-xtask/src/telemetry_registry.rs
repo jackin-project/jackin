@@ -1294,6 +1294,7 @@ struct NamespaceScanner<'a> {
     bindings: NamespaceBindings,
     event_metadata_bindings: BTreeSet<(String, String)>,
     event_attribute_bindings: BTreeSet<String>,
+    schema_key_bindings: BTreeSet<(String, String)>,
     violations: BTreeSet<(usize, String)>,
 }
 
@@ -1327,6 +1328,7 @@ impl<'a> NamespaceScanner<'a> {
             },
             event_metadata_bindings: BTreeSet::new(),
             event_attribute_bindings: BTreeSet::new(),
+            schema_key_bindings: BTreeSet::new(),
             violations: BTreeSet::new(),
         }
     }
@@ -1437,6 +1439,59 @@ impl<'a> NamespaceScanner<'a> {
         }
     }
 
+    fn is_schema_key_collection(
+        &self,
+        expression: &syn::Expr,
+        seen: &mut BTreeSet<String>,
+    ) -> bool {
+        if self.is_schema_all_keys_expression(expression) {
+            return true;
+        }
+        match expression {
+            syn::Expr::Array(array) => {
+                !array.elems.is_empty()
+                    && array.elems.iter().all(|element| {
+                        matches!(
+                            self.resolve_attr_key(element, &mut BTreeSet::new()),
+                            AttrKeySource::Schema
+                        )
+                    })
+            }
+            syn::Expr::Path(path) if path.path.segments.len() == 1 => {
+                let name = path.path.segments[0].ident.to_string();
+                let local = (self.context.clone(), name.clone());
+                let (binding, expressions) = if let Some(values) = self.bindings.locals.get(&local)
+                {
+                    (format!("local:{}:{name}", self.context), values)
+                } else if let Some(values) = self.bindings.constants.get(&name) {
+                    (format!("const:{name}"), values)
+                } else {
+                    return false;
+                };
+                if expressions.len() != 1 || !seen.insert(binding.clone()) {
+                    return false;
+                }
+                let result = self.is_schema_key_collection(&expressions[0], seen);
+                seen.remove(&binding);
+                result
+            }
+            syn::Expr::MethodCall(call)
+                if matches!(
+                    call.method.to_string().as_str(),
+                    "iter" | "iter_mut" | "into_iter" | "copied" | "cloned"
+                ) =>
+            {
+                self.is_schema_key_collection(&call.receiver, seen)
+            }
+            syn::Expr::Paren(expression) => self.is_schema_key_collection(&expression.expr, seen),
+            syn::Expr::Group(expression) => self.is_schema_key_collection(&expression.expr, seen),
+            syn::Expr::Reference(expression) => {
+                self.is_schema_key_collection(&expression.expr, seen)
+            }
+            _ => false,
+        }
+    }
+
     fn is_telemetry_attr_path(&self, path: &syn::Path) -> bool {
         let Some(segments) = self.bindings.expand_path(path) else {
             return false;
@@ -1474,6 +1529,12 @@ impl<'a> NamespaceScanner<'a> {
                     return AttrKeySource::Unknown;
                 }
                 let name = segments[0].clone();
+                if self
+                    .schema_key_bindings
+                    .contains(&(self.context.clone(), name.clone()))
+                {
+                    return AttrKeySource::Schema;
+                }
                 let local_key = (self.context.clone(), name.clone());
                 let local = self.bindings.locals.get(&local_key);
                 let constant = self.bindings.constants.get(&name);
@@ -1875,9 +1936,11 @@ impl<'ast> syn::visit::Visit<'ast> for NamespaceScanner<'_> {
     fn visit_block(&mut self, block: &'ast syn::Block) {
         let event_metadata_bindings = self.event_metadata_bindings.clone();
         let event_attribute_bindings = self.event_attribute_bindings.clone();
+        let schema_key_bindings = self.schema_key_bindings.clone();
         syn::visit::visit_block(self, block);
         self.event_metadata_bindings = event_metadata_bindings;
         self.event_attribute_bindings = event_attribute_bindings;
+        self.schema_key_bindings = schema_key_bindings;
     }
 
     fn visit_item_static(&mut self, item: &'ast syn::ItemStatic) {
@@ -1957,6 +2020,34 @@ impl<'ast> syn::visit::Visit<'ast> for NamespaceScanner<'_> {
 
     fn visit_expr_closure(&mut self, closure: &'ast syn::ExprClosure) {
         self.visit_scoped_closure(closure, false);
+    }
+
+    fn visit_expr_for_loop(&mut self, expression: &'ast syn::ExprForLoop) {
+        for attribute in &expression.attrs {
+            self.visit_attribute(attribute);
+        }
+        self.visit_expr(&expression.expr);
+
+        let previous_metadata_bindings = self.event_metadata_bindings.clone();
+        let previous_attribute_bindings = self.event_attribute_bindings.clone();
+        let previous_schema_key_bindings = self.schema_key_bindings.clone();
+        let is_schema_key_collection =
+            self.is_schema_key_collection(&expression.expr, &mut BTreeSet::new());
+        for name in pattern_binding_names(&expression.pat) {
+            self.event_metadata_bindings
+                .remove(&(self.context.clone(), name.clone()));
+            self.event_attribute_bindings.remove(&name);
+            self.schema_key_bindings
+                .remove(&(self.context.clone(), name.clone()));
+            if is_schema_key_collection {
+                self.schema_key_bindings
+                    .insert((self.context.clone(), name));
+            }
+        }
+        self.visit_block(&expression.body);
+        self.event_metadata_bindings = previous_metadata_bindings;
+        self.event_attribute_bindings = previous_attribute_bindings;
+        self.schema_key_bindings = previous_schema_key_bindings;
     }
 
     fn visit_macro(&mut self, invocation: &'ast syn::Macro) {

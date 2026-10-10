@@ -77,6 +77,22 @@ fn namespace_scan_resolves_telemetry_attr_bindings_and_rejects_unknown_keys() {
         "fixture.rs",
         "use jackin_telemetry::Attr; use jackin_telemetry::schema::attrs; let _ = Attr { key: attrs::ALL_KEYS[0], value: () };"
     ));
+    assert!(!contains_legacy_telemetry_name(
+        "fixture.rs",
+        "use jackin_telemetry::{schema, Attr}; fn project() { for key in [schema::attrs::CLI_INVOCATION_ID, schema::attrs::std_attrs::SESSION_ID] { let _ = Attr { key, value: () }; } }"
+    ));
+    assert!(!contains_legacy_telemetry_name(
+        "fixture.rs",
+        "use jackin_telemetry::{schema, Attr}; fn project() { const KEYS: &[&str] = &[schema::attrs::CLI_INVOCATION_ID, schema::attrs::std_attrs::SESSION_ID]; for key in KEYS.iter().copied() { let _ = Attr { key, value: () }; } }"
+    ));
+    assert!(contains_legacy_telemetry_name(
+        "fixture.rs",
+        "use jackin_telemetry::Attr; fn project() { let supplied = [unknown_key]; for key in supplied { let _ = Attr { key, value: () }; } }"
+    ));
+    assert!(contains_legacy_telemetry_name(
+        "fixture.rs",
+        "use jackin_telemetry::{schema, Attr}; fn project(unknown: &str) { for key in [schema::attrs::CLI_INVOCATION_ID, unknown] { let _ = Attr { key, value: () }; } }"
+    ));
     assert!(contains_legacy_telemetry_name(
         "fixture.rs",
         "use jackin_telemetry::Attr; use jackin_telemetry::schema::attrs as keys; let _ = Attr { key: keys::definition, value: () };"
