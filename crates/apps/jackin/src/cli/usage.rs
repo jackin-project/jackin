@@ -30,7 +30,7 @@ mod statusline;
 mod store;
 mod verify;
 #[cfg(test)]
-pub(super) use verify::{normalize_usage_provider_label, verify_usage_accounts};
+use verify::{normalize_usage_provider_label, verify_usage_accounts};
 
 /// `jackin usage` — broker-owned cached usage and durable monitor operations.
 #[derive(Debug, Args, PartialEq, Eq)]
