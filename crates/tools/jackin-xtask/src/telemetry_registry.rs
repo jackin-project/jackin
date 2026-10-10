@@ -1664,9 +1664,7 @@ impl<'ast> syn::visit::Visit<'ast> for NamespaceBindingCollector<'_> {
     }
 
     fn visit_local(&mut self, local: &'ast syn::Local) {
-        if let (syn::Pat::Ident(pattern), Some(initializer)) =
-            (local.pat.as_ref(), local.init.as_ref())
-        {
+        if let (syn::Pat::Ident(pattern), Some(initializer)) = (&local.pat, local.init.as_ref()) {
             self.bindings
                 .locals
                 .entry((self.context.clone(), pattern.ident.to_string()))
