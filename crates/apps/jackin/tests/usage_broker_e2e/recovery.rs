@@ -28,11 +28,11 @@ fn usage_broker_killed_owner_recovers_once_without_a_herd() -> Result<()> {
     owner.kill()?;
     let _owner_status = owner.wait()?;
 
-    // Advance only the persisted fake owner's start time so this process-level
+    // Backdate both persisted timestamps together so this process-level
     // recovery test does not sleep for Claude's full five-minute attempt
-    // floor. The account remains an active, abandoned generation; production
-    // admission still reads and enforces this timestamp. Unit tests cover the
-    // real restart floor boundary without advancing persisted time.
+    // floor. They use the same fake-clock premise, while production keeps the
+    // provider invocation timestamp as the floor authority. Unit tests cover
+    // the real restart floor boundary without changing persisted time.
     let recovery_now = epoch_now();
     let account_store = FileAccountStateStore::under_data_dir(&root.join("data"));
     let mut abandoned = account_store
@@ -44,7 +44,20 @@ fn usage_broker_killed_owner_recovers_once_without_a_herd() -> Result<()> {
         .started_at_epoch
         .context("active owner state lacked a start timestamp")?;
     assert!(original_start >= recovery_now.saturating_sub(300));
-    abandoned.started_at_epoch = Some(recovery_now.saturating_sub(301));
+    let original_invocation = abandoned
+        .provider_invoked_at_epoch
+        .context("active owner state lacked a provider invocation timestamp")?;
+    assert!(original_invocation >= original_start);
+    assert!(original_invocation >= recovery_now.saturating_sub(300));
+    assert!(original_invocation <= recovery_now);
+
+    let expired_attempt_at = recovery_now.saturating_sub(301);
+    abandoned.started_at_epoch = Some(expired_attempt_at);
+    abandoned.provider_invoked_at_epoch = Some(expired_attempt_at);
+    assert_eq!(
+        abandoned.started_at_epoch,
+        abandoned.provider_invoked_at_epoch
+    );
     account_store.store(&abandoned, recovery_now)?;
 
     let mut recovery = Vec::new();
