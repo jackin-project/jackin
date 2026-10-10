@@ -397,6 +397,7 @@ fn spawned_ticker_reconciles_one_sleep_jump_and_wakes_monitor_watch() {
             Duration::from_mins(10),
             harness.coordinator.is_idle(),
             harness.store.has_active(),
+            false,
         ),
         "an active monitor keeps the service out of idle exit after wake"
     );
@@ -406,7 +407,19 @@ fn spawned_ticker_reconciles_one_sleep_jump_and_wakes_monitor_watch() {
         Duration::from_mins(10),
         true,
         false,
+        false,
     ));
+    assert!(
+        !should_exit_idle(
+            Duration::from_mins(11),
+            Duration::ZERO,
+            Duration::from_mins(10),
+            true,
+            false,
+            true,
+        ),
+        "an authenticated foreground guard prevents idle exit while held"
+    );
 
     shutdown_ticker(shutdown, samples, ticker);
     watcher.join().expect("join watch thread");

@@ -137,6 +137,7 @@ pub fn run_usage_broker_foreground_bootstrap(
         None,
         Some(monitor_store),
         cleanup,
+        true,
         || on_ready(ready),
     )?;
     Ok(ClaudeCredentialBootstrapOutcome::Acquired(lease))
@@ -372,6 +373,7 @@ pub(crate) fn run_usage_broker_service_with_executor_and_metadata(
         catalog_refresh,
         None,
         cleanup,
+        false,
         || {},
     )
 }
@@ -384,6 +386,7 @@ fn run_usage_broker_service_with_cleanup(
     catalog_refresh: Option<Arc<BrokerCatalogRefresh>>,
     initial_monitor_store: Option<Arc<MonitorStore>>,
     cleanup: BrokerStartupCleanup,
+    has_authenticated_foreground_guard: bool,
     on_ready: impl FnOnce(),
 ) -> Result<(), UsageCoordinationError> {
     let socket_path = config.prepare_socket_path()?;
@@ -458,6 +461,7 @@ fn run_usage_broker_service_with_cleanup(
         publisher,
         monitor_store,
         catalog_refresh,
+        has_authenticated_foreground_guard,
     });
     Ok(())
 }
@@ -545,6 +549,7 @@ pub fn ensure_usage_broker_with_executor(
             publisher,
             monitor_store,
             catalog_refresh: None,
+            has_authenticated_foreground_guard: false,
         });
     })
     .map_err(|_| unavailable())?;

@@ -89,6 +89,7 @@ pub(crate) struct ServeConfig {
     pub(crate) publisher: publish::ProjectionPublisher,
     pub(crate) monitor_store: Arc<MonitorStore>,
     pub(crate) catalog_refresh: Option<Arc<BrokerCatalogRefresh>>,
+    pub(crate) has_authenticated_foreground_guard: bool,
 }
 
 struct ConnectionContext {
@@ -118,6 +119,7 @@ pub(crate) fn serve(config: ServeConfig) {
         publisher,
         monitor_store,
         catalog_refresh,
+        has_authenticated_foreground_guard,
     } = config;
     let (connections, receiver) = mpsc::sync_channel(BROKER_CONNECTION_QUEUE);
     let receiver = Arc::new(Mutex::new(receiver));
@@ -188,6 +190,7 @@ pub(crate) fn serve(config: ServeConfig) {
             policy.idle_exit,
             coordinator.is_idle(),
             monitor_store.has_active(),
+            has_authenticated_foreground_guard,
         ) {
             break;
         }
@@ -438,10 +441,12 @@ fn should_exit_idle(
     idle_exit: Duration,
     coordinator_idle: bool,
     has_active_monitor: bool,
+    has_authenticated_foreground_guard: bool,
 ) -> bool {
     now_monotonic.saturating_sub(last_activity_monotonic) >= idle_exit
         && coordinator_idle
         && !has_active_monitor
+        && !has_authenticated_foreground_guard
 }
 
 pub(crate) fn wall_clock_wake_detected(
