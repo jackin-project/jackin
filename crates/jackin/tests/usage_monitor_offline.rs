@@ -949,7 +949,17 @@ fn isolated_monitor_cli_stays_local_and_fails_closed_until_evidence_is_safe() ->
     );
 
     let bound_settings_path = fixture.root.path().join("bound-statusline-settings.json");
-    let original_bound_settings = serde_json::json!({"theme": "dark"});
+    let original_bound_settings = serde_json::json!({
+        "theme": "dark",
+        "env": {"API_SECRET": "offline-test-api-secret-sentinel"},
+        "statusLine": {
+            "type": "command",
+            "command": "printf 'legacy-statusline-command-sentinel'",
+            "padding": 3,
+            "refreshInterval": 10,
+            "futureOption": {"kept": true}
+        }
+    });
     let original_bound_settings_text = serde_json::to_string(&original_bound_settings)?;
     fs::write(&bound_settings_path, &original_bound_settings_text)?;
     let bound_settings_path = bound_settings_path
@@ -972,12 +982,27 @@ fn isolated_monitor_cli_stays_local_and_fails_closed_until_evidence_is_safe() ->
     let bound_composed = fixture.run_owned(compose_args, None)?;
     expect_exit(&bound_composed, 0)?;
     let bound_composed_settings = json_output(&bound_composed)?;
-    ensure!(bound_composed_settings["theme"] == "dark");
+    ensure!(
+        bound_composed_settings
+            .as_object()
+            .is_some_and(|proposal| proposal.len() == 1 && proposal.contains_key("statusLine")),
+        "statusline compose must return a patch containing only statusLine: {bound_composed_settings}"
+    );
+    let proposal_text = serde_json::to_string(&bound_composed_settings)?;
+    ensure!(
+        !proposal_text.contains("offline-test-api-secret-sentinel"),
+        "statusline compose exposed an unrelated environment secret"
+    );
+    ensure!(bound_composed_settings["statusLine"]["type"] == "command");
+    ensure!(bound_composed_settings["statusLine"]["padding"] == 3);
+    ensure!(bound_composed_settings["statusLine"]["refreshInterval"] == 10);
+    ensure!(bound_composed_settings["statusLine"]["futureOption"]["kept"] == true);
     let composed_command = bound_composed_settings["statusLine"]["command"]
         .as_str()
         .context("bound statusline compose omitted its command")?;
     ensure!(composed_command.contains(account_binding.binding_id.as_str()));
     ensure!(composed_command.contains(binding_revision.as_str()));
+    ensure!(composed_command.contains("legacy-statusline-command-sentinel"));
     ensure!(
         fs::read_to_string(bound_settings_path)? == original_bound_settings_text,
         "bound statusline compose wrote the proposed settings file"
