@@ -4910,6 +4910,7 @@ dependencies = [
  "jackin-protocol",
  "jackin-usage",
  "jackin-usage-provider-core",
+ "serde_json",
  "tempfile",
 ]
 
