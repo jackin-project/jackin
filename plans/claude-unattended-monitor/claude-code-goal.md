@@ -1,6 +1,6 @@
 # Claude Code goal
 
-**Install status: pending verification.** Prospective CLI: `/Users/donbeave/.local/share/jackin-claude-monitor-v2/bin/jackin`; expected broker is its sibling. Keep the v1 pair/state untouched; use v2 only after parent verifies both binaries. No real account callback is verified.
+**Installed fixture verified.** CLI/broker source: `4492d3cb91d9e45fafec2aa8acb8158268618cd9`; installed hashes and exact sibling selection are recorded in the handoff artifacts. No real account callback or dispatch policy is verified/approved here.
 
 Use only this pair and isolated state; do not fall back to v1 or a repo build:
 
@@ -11,7 +11,7 @@ DATA=/Users/donbeave/.local/share/jackin-claude-monitor-v2/state
 
 Follow [`claude-code-handoff.md`](/Users/donbeave/.local/share/jackin-claude-monitor-v2/docs/claude-code-handoff.md) for one-time local service setup, attended account binding or session-only compose review (never apply the proposal), and any explicitly operator-approved policy. Unset broker override is normal; an explicitly empty or different override is a stop. Do not use Keychain/auth or force provider refresh.
 
-Run passive doctor once; `auth_state: unknown` is informational, not readiness:
+Run passive doctor once; `report.auth_state: unknown` is informational, not readiness:
 
 ```bash
 "$JACKIN" usage doctor --provider claude --unattended --format json --data-dir "$DATA"
@@ -43,4 +43,4 @@ There is no dispatch policy approved here. Do not start until an operator separa
 
 Same key/config returns the same record; check `status.lifecycle`: a stopped monitor stays stopped and its key does not reactivate it. Use a new key only for an operator-intended run, never to bypass quota or policy. Parse errors exit 2 on stderr without JSON; valid runtime commands use 0/2/3. On external blockers, checkpoint durable WIP with exact resume steps, report the stable code, exit the goal, and do not loop doctor.
 
-Track five-hour and seven-day used/reset fields and ages independently. Process `status.latest_decision.actions` exactly once per `sequence`, in emitted array order. A `wait` action with `runnable=true` is only a reevaluation hint. At 90% checkpoint, 91% reduce to `max_parallel` (0 means no new work), 95% pause; reset time alone never releases a pause. Require reset grace plus fresh paired used/reset evidence, advanced reset, lower usage, and `runnable=true`; a five-hour reset does not clear weekly guards. For SGD50, SGD40 warns, SGD45 checkpoints with `max_parallel=0`, SGD48 pauses; unknown/stale spend pauses, and the local guard does not cap provider billing. Report-only `reset_validity` (`unknown`/`future`/`due`) with independent ages and `expected_model`/`model_guard_validity` are pending binary verification and do not change guards.
+Track five-hour and seven-day used/reset fields and ages independently. Process `status.latest_decision.actions` exactly once per `sequence`, in emitted array order. A `wait` action with `runnable=true` is only a reevaluation hint. At 90% stop large packs and ask every active lane for a commit or durable WIP with exact resume steps; at 91% reduce to `max_parallel` and small checkpointed slices (0 means no new work); at 95% finish the current slice, checkpoint and pause; reset time alone never releases a pause. Require reset grace plus fresh paired used/reset evidence, advanced reset, lower usage, and `runnable=true`; a five-hour reset does not clear weekly guards. For SGD50, SGD40 warns, SGD45 checkpoints with `max_parallel=0`, SGD48 pauses; in strict mode unknown/stale spend pauses, and the local guard does not cap provider billing. Report-only `reset_validity` (`unknown`/`future`/`due`) with independent ages and `expected_model`/`model_guard_validity` were verified with installed fixtures and do not relax guards.

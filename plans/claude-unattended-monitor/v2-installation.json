@@ -1,0 +1,60 @@
+{
+  "source_commit": "4492d3cb91d9e45fafec2aa8acb8158268618cd9",
+  "source_tree": "7412c4177b266e46485d5275fe1be6b336c0672c",
+  "branch": "claude-unattended-monitor",
+  "source_worktree": "/private/tmp/jackin-claude-monitor",
+  "clean_before_build": true,
+  "broker_protocol_version": 6,
+  "monitor_schema_version": 2,
+  "cargo_command": [
+    "/Users/donbeave/.rustup/toolchains/1.97.1-aarch64-apple-darwin/bin/cargo",
+    "build",
+    "--offline",
+    "--locked",
+    "-p",
+    "jackin",
+    "--bin",
+    "jackin",
+    "--bin",
+    "jackin-usage-broker"
+  ],
+  "installed_at_utc": "2026-10-10T01:10:27.801238+00:00",
+  "toolchain": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+  "installation_prefix": "/Users/donbeave/.local/share/jackin-claude-monitor-v2",
+  "binaries": [
+    {
+      "name": "jackin",
+      "built_path": "/private/tmp/jackin-claude-monitor/target/debug/jackin",
+      "installed_path": "/Users/donbeave/.local/share/jackin-claude-monitor-v2/bin/jackin",
+      "sha256": "910b51cf01d502bb11d08873ec0ca80190a87b506469e47c0594540ee26fa0a1",
+      "size_bytes": 216074040
+    },
+    {
+      "name": "jackin-usage-broker",
+      "built_path": "/private/tmp/jackin-claude-monitor/target/debug/jackin-usage-broker",
+      "installed_path": "/Users/donbeave/.local/share/jackin-claude-monitor-v2/bin/jackin-usage-broker",
+      "sha256": "b88276de449aa0cb610a394c0a28e14a025de66a42b0e18b7c4f0b8e0844421f",
+      "size_bytes": 56403336
+    }
+  ],
+  "fixture_verification": {
+    "result": "passed",
+    "transcript": "v2-installed-smoke.log",
+    "transcript_sha256": "0b9971b906da95084b1195defa863c886ba32c2474667148551e95fa86febb1e",
+    "broker_selection": "own lease PID plus exact installed sibling executable and private argv",
+    "JACKIN_USAGE_BROKER_BIN": "unset in isolated fixture; actual Claude environment not inspected",
+    "credential_command_trips": 0,
+    "http_proxy_requests": 0,
+    "native_keychain_verification": "not performed; fake Keychain tests only",
+    "real_account_callback": "not verified",
+    "fixture_removed_after_orderly_stop": true,
+    "started_at_utc": "2026-10-10T01:12:16.483810+00:00",
+    "finished_at_utc": "2026-10-10T01:12:22.102903+00:00",
+    "script_sha256": "c597d6533f2e71bb8f3abcf78838a75b3392ebc1940c34a89fd37739cf40e09a",
+    "exit_code": 0,
+    "counter_scope": "PATH op/claude/security trips and proxy-routed HTTP; not OS-enforced native Keychain or egress tracing",
+    "script_sha256_before_run": "c597d6533f2e71bb8f3abcf78838a75b3392ebc1940c34a89fd37739cf40e09a",
+    "script_sha256_after_run": "c597d6533f2e71bb8f3abcf78838a75b3392ebc1940c34a89fd37739cf40e09a",
+    "script_unchanged_during_run": true
+  }
+}

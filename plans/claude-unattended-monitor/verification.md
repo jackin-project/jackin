@@ -1,10 +1,146 @@
 # Verification evidence
 
-## V2 status — verification in progress
+## V2 status — source and installed fixture verified
 
-The historical V1 results below do not establish V2 completion or real-account readiness. V2 uses schema 2 / broker protocol 6, separate observers and explicit operator-approved policies. Final direct offline Cargo and installed-pair results will be recorded here after passing. The old pair and Claude settings remain untouched.
+V2 uses monitor/store schema 2 and broker wire protocol 6. The installed pair
+was built from clean source `4492d3cb91d9e45fafec2aa8acb8158268618cd9` and
+verified twice with isolated callbacks and state. This is **not real-account
+readiness**. Historical V1 results below are not V2 completion proof.
+The old pair/state, original checkout, and Claude settings remain untouched.
 
 A tooling incident activated a global `codebook-lsp` installation with crates.io traffic; that installer was stopped. Exact tooling request count is unknown. The overall session is not wholly offline. Provider/credential fixture counters are reported separately; no live provider or Keychain verification is authorized.
+
+## V2 final source gates
+
+Binary source commit: `4492d3cb91d9e45fafec2aa8acb8158268618cd9`.
+All commands used the absolute Rust 1.97.1 Cargo binary, `--offline --locked`,
+and the isolated `/private/tmp/jackin-claude-monitor` checkout.
+
+| Gate | Result |
+| --- | --- |
+| Protocol, relay, usage facade, broker, coordinator, host runtime, output, Claude provider | 439 passed; 1 pre-existing ignored |
+| CLI unit regressions (`-p jackin --lib cli::`) | 216 passed |
+| Installation/lifecycle/observation subprocess tests | 12 passed |
+| Credential resolver, discovery, provider core | 139 passed; 83 inner filtered |
+| Final broker rerun after fake HTTP fixture cleanup | 128 passed |
+| Retry-After/reset fixture stability | 5 consecutive runs, 2 tests each, passed |
+| Clippy: app, broker, protocol, relay, Claude provider; all targets, `-D warnings` | Passed |
+| Scoped rustfmt: 29 changed Rust files; `git diff --check` | Passed |
+| Direct offline pair build from clean source | Passed |
+
+Counts overlap between reruns; do not sum them as unique tests. Fake-clock tests
+cover idle/restart/suspend and reset deadlines without sleeping for ten minutes.
+Fake Keychain tests cover disabled UI, missing/locked/consent outcomes and failure
+to disable UI. They do not touch the native Keychain. Provider fixtures preserve typed 401 with zero implicit credential rereads or
+retries, including an unchanged token and a later explicitly caller-changed token;
+they also preserve 403, numeric/date 429, timeout and transport;
+independent Claude provider collection remains disabled without a supported
+contract, so no normal monitoring path invokes credential resolution or HTTP.
+
+The direct telemetry registry check and generation succeeded using the vendored
+semantic conventions and raw Weaver executable. The complete xtask gate then
+failed on pre-existing unrelated legacy namespace literals, unchanged from the
+base commit; it is **not** reported as passing. Generated usage telemetry consumers
+are covered by the 216 CLI tests. This is targeted verification, not a claim that
+all repository gates pass.
+
+Independent Luna max reviews covered CLI/security, provider deadlines, state
+integrity/migration, consumers, contract and handoff. Accepted findings were
+repaired and verified: zero-budget approval, migrated-policy authorization,
+strict account spend relevance for session-filtered guards, durable integrity,
+and installed-proof schema assertions. Final bounded integrity/security/consumer
+reviews have no outstanding actionable finding; static reviews are not live
+account verification.
+
+## Actual installed workflow proof
+
+- CLI: `/Users/donbeave/.local/share/jackin-claude-monitor-v2/bin/jackin`
+- Broker: `/Users/donbeave/.local/share/jackin-claude-monitor-v2/bin/jackin-usage-broker`
+- Built pair: `/private/tmp/jackin-claude-monitor/target/debug/` (isolated checkout).
+- Intended real state: `/Users/donbeave/.local/share/jackin-claude-monitor-v2/state`;
+  it was **not** populated with fixture approvals, goals, receipts or callbacks.
+
+[v2-installation.json](v2-installation.json) records source tree, clean-build
+assertion, exact hashes/sizes, toolchain, commands, script pre/post SHA and run times.
+[v2-checks.json](v2-checks.json) records passing source gates and local log hashes.
+[v2-coverage.txt](v2-coverage.txt) lists selected passing deterministic cases.
+[v2-installed-smoke.log](v2-installed-smoke.log) is the final installed transcript;
+[v2-installed-schema-examples.json](v2-installed-schema-examples.json) provides
+actual nested JSON response examples. All identity/value examples are synthetic.
+Independent Luna max installed review recomputed both installed binary hashes,
+checked log/schema/exit evidence, and reported PASS within that fixture scope.
+
+```text
+python3 plans/claude-unattended-monitor/installed-smoke.py
+# exit 0; two consecutive installed runs passed
+# broker_process_selection=verified exact installed sibling invocation
+# credential_trips=0
+# http_proxy_requests=0
+# installed_smoke=PASS
+# fixture_removed_after_orderly_stop=true
+```
+
+The fixture reads only its own broker PID lease and argv, requiring the actual
+installed sibling executable with the exact private data directory/build marker
+and `--local-only`. `JACKIN_USAGE_BROKER_BIN` was unset in cleared fixture env;
+this does not establish its value in Claude's environment. Versions alone were
+not used as provenance. Private HOME/config/data, bounded callbacks, fake model
+and rate-limit evidence, command tripwires and a loopback HTTP proxy were used.
+In both runs, the bound composed adapter execution preserves existing output;
+both composition proposals leave fixture settings files unchanged; no real settings proposal was applied.
+
+Observation starts without a receipt, goal, policy or spend baseline and never
+authorizes dispatch. A separately approved **synthetic** quota-only guard with
+fresh fixture quota evidence starts runnable, reports `readiness.budget=disabled`,
+spend unknown, and null budget/baseline/cumulative amount. Duplicate starts reuse
+IDs. Headless auth/binding/policy commands return `interaction_required` exit 2
+before helper/broker work. Passive reads leave counters unchanged. The installed
+observer proves reset validity unknown then future independently, plus expected
+model unknown then match. Strict baseline admission, rollback/history integrity,
+thresholds and reset barriers are verified by source fixtures, not a real SGD bill.
+
+Counters cover PATH `op`/`claude`/`security` commands and requests routed through
+the fixture proxy. They are **not OS-enforced native Keychain/egress tracing**.
+Static attach-only route reviews and disabled provider execution, along with fake
+Keychain no-UI tests, are the additional no-dialog/no-provider evidence. No live
+provider/Keychain/interactive-auth verification was performed. Provider fake HTTP
+request-count assertions include one shared flight, zero requests before persisted
+Retry-After, no reset-time bypass, and a next attempt only after the deadline.
+
+## Remaining operator steps and limits
+
+1. Verify the exact v2 paths and any broker override in the operator's environment.
+   Do not change Claude's environment or reuse an unknown service.
+2. Choose a genuine session for session-only observation, or confirm a stable
+   local account label in an attended terminal. A label is not authenticated
+   provider identity and cannot detect account switches automatically.
+3. Review the composed proposal and have the operator install it outside this
+   task's protected running-session scope; receive a **genuine supported Claude
+   callback**. No receipt is required to collect/report observations.
+4. Separately approve dispatch policy. Existing strict goals cannot downgrade;
+   strict first activation needs fresh compatible same-account SGD evidence.
+   No real receipt/policy selection has been supplied or inferred here.
+
+Statusline rate-limit fields were verified against the current official
+[statusline documentation](https://code.claude.com/docs/en/statusline) and
+[v2.1.80 changelog](https://raw.githubusercontent.com/anthropics/claude-code/v2.1.80/CHANGELOG.md).
+The source has no provider observation timestamp/account identity, model-specific
+limit, or authoritative extra-usage permission. Callback receipt time is reported
+separately; absent evidence time remains null. Unchanged values, timer replay and
+sibling changes do not refresh evidence age. A 300-second freshness bound can
+therefore block unchanged reset/model descriptors even during activity; report-only
+validity does not relax it. No guaranteed current data during inactivity.
+
+SGD receipts remain manual operator attestations with 300-second freshness, not
+an automatic authoritative billing updater. Quota-only provides no SGD enforcement;
+strict mode is a local conservative dispatch guard, not a hard per-goal billed cap.
+Session USD/list-price cost and unknown credits never become billed SGD. Hard billing
+protection requires the account-side Anthropic spending limit. Unsupported
+independent Claude provider observations remain disabled; local refresh does not
+fetch new evidence. The 300-second minimum is not a guarantee against bans.
+Reset time plus grace is only a wake hint, and weekly/model/spend guards remain.
+No automatic Claude reinvocation or guaranteed resumption is provided. External
+setup blockers require checkpoint/report/exit, not repeated doctor/completion loops.
 
 ## Historical V1 evidence
 

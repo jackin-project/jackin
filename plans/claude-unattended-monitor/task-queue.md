@@ -330,11 +330,11 @@ record real SGD evidence before monitor creation and disclose pre-monitor
 spend. No product code changed. The durable proof and handoff are committed
 and published with this verification checkpoint.
 
-## Observation and policy implementation — active 2026-10-10
+## Observation and policy implementation — verified 2026-10-10
 
 Objective: implement the full attached tracker goal, keeping collection separate
 from dispatch and preserving strict SGD semantics until explicit operator approval.
-Current product state is not yet proof of completion. Work remains isolated in
+Source and installed fixture proofs are recorded below. Work stayed isolated in
 `/private/tmp/jackin-claude-monitor`; live Claude settings, credentials and
 projects are outside mutation scope.
 
@@ -346,9 +346,9 @@ projects are outside mutation scope.
 | Operator authorization, passive paths and rate-limit audit | v2_security_review | Security/rate reviews complete; relay gate passed; no live verification |
 | CLI integration | v2_cli_implementation | Implemented; 216 CLI unit tests passed |
 | Existing broker regression migration | v2_verification_research | Migrated fixtures; core/consumer gate passed 439 cases |
-| Offline CLI and installed fixture migration | v2_cli_fixture_migration | Implemented; 12 subprocess cases passed; installed proof pending |
-| Deterministic tests + independent installed-pair proof | Parent + verifier to assign | Source gates passed; built/installed fixture workflow pending |
-| Documentation, handoff, completion audit and publication | Parent + independent reviewers | Source docs ready; final install evidence and publication pending |
+| Offline CLI and installed fixture migration | v2_cli_fixture_migration | Complete; 12 subprocess cases and installed workflow passed |
+| Deterministic tests + independent installed-pair proof | Parent + v2_installation_review | Complete; actual pair hashes, broker PID/argv and installed workflow verified |
+| Documentation, handoff, completion audit and publication | Parent + independent reviewers | Complete; installed docs/proof recorded and publication checkpoint prepared |
 
 Acceptance includes observation without receipt/baseline/dispatch, auditable
 persisted policy, separate readiness, atomic strict activation, no silent
@@ -487,3 +487,38 @@ Broker full gate completed successfully. Retry-After/reset fake HTTP fixtures
 passed five consecutive runs (2 tests per run); request-count assertions held.
 All 29 changed Rust files pass scoped rustfmt and git diff --check. The source
 implementation is ready for its coherent checkpoint; installed proof follows.
+
+Implementation 4492d3cb91d9e45fafec2aa8acb8158268618cd9 is committed and
+pushed. A direct offline build from that clean source installed both binaries
+into a new exclusive jackin-claude-monitor-v2 prefix; old pair/state unchanged.
+SHA-256/source-tree provenance is recorded in v2-installation.json. Installed
+fixture execution is pending; independent handoff review corrected doctor path
+and requested report-only reset/model assertions before that run.
+
+Final installed workflow passed twice using the exact new pair and independent
+private state. Both runs proved preserved composed output, no receipt/baseline
+for observers, synthetic attended binding/policy approval, approved quota-only
+readiness, idempotent starts, status/watch/bounded wait, independent reset/model
+metadata, exact sibling broker selection, and orderly owned service cleanup.
+Credential PATH tripwires and HTTP proxy counts were zero; these are not
+OS-enforced native Keychain/egress counters. Fake Keychain coverage and static
+routing review support the no-dialog design; no native Keychain check occurred.
+The final transcript is bound to a pre/post-unchanged script SHA in the manifest.
+Independent installed review verified both binary hashes and observed schema/exits.
+
+External real-account prerequisites remain intentionally unperformed: operator
+reviews/applies a composed statusline proposal outside this session, establishes
+a genuine session or confirmed local binding, and supplies a real callback.
+Observation requires no SGD receipt. Dispatch needs a separately approved policy;
+strict first activation still needs fresh compatible SGD billing evidence. No
+existing Claude goal has quota-only approval, and no strict policy can downgrade.
+On that external blocker Claude should checkpoint, report and exit its goal;
+there is no unattended doctor loop or promised automatic reinvocation.
+
+Final handoff review requested two documentation repairs: scope unknown-spend
+pause explicitly to strict-SGD, and record both pre/post smoke script hashes.
+Both are fixed and installed copies synchronized. Source401 evidence is described
+as zero implicit rereads/retries with later caller-supplied changed credentials,
+not an automatic provider retry. Final old pair hashes match the starting
+inspection; original checkout is clean; real V2 state remains absent, so no
+synthetic approval/baseline was installed for the actual Claude goal.

@@ -1,15 +1,16 @@
 # Claude Code operator handoff
 
-**V2 install status: pending verification.** The prospective CLI is
-`/Users/donbeave/.local/share/jackin-claude-monitor-v2/bin/jackin`; its expected
-broker is the sibling `jackin-usage-broker`. The existing v1 pair at
-`/Users/donbeave/.local/share/jackin-claude-monitor/bin/` and its state remain
-untouched. Use only the v2 pair after the parent verifies its exact CLI/broker
-binaries and updates this status. Source CLI/protocol names below
-were checked statically; no real account statusline callback, Keychain access,
-or provider request has been verified.
+**V2 installed fixture verification: passed.** The CLI is
+`/Users/donbeave/.local/share/jackin-claude-monitor-v2/bin/jackin`; its verified
+broker is the sibling `jackin-usage-broker`. Both were built from clean source
+`4492d3cb91d9e45fafec2aa8acb8158268618cd9`. See `v2-installation.json` for
+SHA-256 provenance and `v2-installed-smoke.log` for exact installed CLI/schema
+and broker-selection proof. The old v1 pair/state and Claude settings remain
+untouched. No real account callback, native Keychain or provider check was run.
+Quota-only approval in the proof belongs solely to the deleted synthetic fixture;
+it does not approve any existing Claude goal.
 
-## Paste into Claude Code after v2 binary verification
+## Use the verified v2 pair
 
 Use one binary and one isolated data directory throughout:
 
@@ -37,8 +38,8 @@ Inspect the service in this v2 data directory:
 "$JACKIN" usage service status --format json --data-dir "$DATA"
 ```
 
-If the directory is confirmed new and has never had a service, start it
-explicitly:
+If the directory is confirmed new, or its prior service is known to be your
+exact v2 pair in local-only mode and has exited, start it explicitly:
 
 ```bash
 "$JACKIN" usage service start --format json --data-dir "$DATA"
@@ -59,7 +60,11 @@ Run passive readiness once:
 Doctor does not read Keychain or contact Claude. `report.auth_state: "unknown"`
 and `auth_status_unknown` are informational, not evidence of authentication or
 quota readiness. Do not loop doctor to wait for callbacks; use monitor status
-and watch for evidence.
+and watch for evidence. With zero active observers/guards the broker may idle-exit
+after ten minutes. Create the observer promptly; active observers retain interest
+across idle/restart/sleep. Restart only a service whose exact ownership and
+local-only mode are known, using the explicit command above; never replace an
+unknown service or expect passive doctor polling to restart one.
 
 If the operator has supplied the exact local account ID and label, use the
 account-bound path. Confirm the binding in an attended terminal:
@@ -151,12 +156,13 @@ Clap argument/parse errors happen before runtime, exit 2 on stderr, and do not
 produce a JSON reply.
 
 The inspected source uses broker protocol v6 and monitor/statusline schema 2.
-The parent is adding report-only reset/model metadata: per-window
+The source defines report-only reset/model metadata: per-window
 `reset_validity` (`unknown`, `future`, or `due`) with independent field ages,
 plus `expected_model` and `model_guard_validity`. These fields explain evidence
-validity; they do not change policy or `status.runnable`. Their final JSON paths
-and presence must be confirmed against the verified binary before relying on
-them.
+validity; they do not change policy or `status.runnable`. The installed fixture confirms
+`status.five_hour.reset_validity`, `status.seven_day.reset_validity`,
+`status.expected_model`, and `status.model_guard_validity`; unknown-before-evidence
+and future/match-after-fixture-evidence assertions pass.
 
 The bounded wait command is for a blocked **dispatch guard** only, and accepts
 `--monitor ID --until runnable --timeout-secs 1..300`:
@@ -180,9 +186,10 @@ other field's age. Apply each ordered `status.latest_decision.actions` list
 once per `latest_decision.sequence`, saving the last handled decision sequence
 with the durable goal checkpoint:
 
-- `checkpoint`: stop starting large packs and save durable WIP with exact
-  resume steps.
-- `reduce_dispatch`: obey `max_parallel`; zero means start no new work.
+- `checkpoint`: stop starting large packs; ask every active lane to save a commit
+  or durable WIP checkpoint with exact resume steps.
+- `reduce_dispatch`: obey `max_parallel` and continue only small checkpointed
+  slices; zero means start no new work.
 - `pause`: finish only the bounded current slice, checkpoint, and stop new
   dispatch.
 - `wait`: if `status.runnable` is true, this is only a reevaluation hint; obey
@@ -230,9 +237,9 @@ attestation, not independent provider verification. No receipt is supplied for
 this setup; do not fabricate or record one for observation. A failed strict
 activation must not create a goal or reserve its idempotency key. The first successful
 activation captures the baseline; earlier work remains unknown and is not
-retroactively attributed. Keep cumulative goal spend across billing periods;
-unknown, stale, or unverified spend means checkpoint and pause, never assume
-zero. Quota-only reports spend enforcement disabled and spend unknown.
+retroactively attributed. Keep cumulative goal spend across billing periods.
+In strict-SGD mode, unknown, stale, or unverified spend means checkpoint and
+pause; never assume zero. Quota-only reports spend enforcement disabled and spend unknown.
 
 Policy changes fail closed: any prior strict-SGD policy cannot be changed to
 quota-only, even before activation. An activated quota-only goal cannot be

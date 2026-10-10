@@ -630,6 +630,8 @@ def main() -> int:
             "claude",
             "--session",
             "installed-proof-session",
+            "--expected-model",
+            "claude-sonnet-4-5",
             "--idempotency-key",
             "installed-proof-observer-1",
         )
@@ -645,6 +647,15 @@ def main() -> int:
             raise SmokeFailure("unbound observer acquired an account or goal")
         if observer_status.get("budget") is not None:
             raise SmokeFailure("unbound observer acquired an SGD budget")
+        if observer_status.get("expected_model") != "claude-sonnet-4-5":
+            raise SmokeFailure("observer status omitted its configured expected model")
+        if observer_status.get("model_guard_validity") != "unknown":
+            raise SmokeFailure("model guard should remain unknown before scoped evidence arrives")
+        for window_name in ("five_hour", "seven_day"):
+            if observer_status.get(window_name, {}).get("reset_validity") != "unknown":
+                raise SmokeFailure(
+                    f"{window_name} reset validity should be unknown before quota evidence arrives"
+                )
         if observer_status.get("readiness", {}).get("dispatch") != "not_authorized":
             raise SmokeFailure("observation-only monitor acquired dispatch authority")
         if observer_status.get("runnable") is not False:
@@ -715,6 +726,16 @@ def main() -> int:
             raise SmokeFailure("observer status reported runnable work")
         if observer_status.get("readiness", {}).get("dispatch") != "not_authorized":
             raise SmokeFailure("observer status reported dispatch authority")
+        if (
+            observer_status.get("expected_model") != "claude-sonnet-4-5"
+            or observer_status.get("model") != "claude-sonnet-4-5"
+            or observer_status.get("model_guard_validity") != "match"
+        ):
+            raise SmokeFailure("fresh session evidence did not match the configured model guard")
+        for window_name in ("five_hour", "seven_day"):
+            window = observer_status.get(window_name, {})
+            if window.get("reset_validity") != "future":
+                raise SmokeFailure(f"fresh {window_name} reset was not independently future")
         if observer_status.get("five_hour", {}).get("used_percentage_basis_points") != 1234:
             raise SmokeFailure("session-only ingress was not visible to its observer")
         for repeat in range(2):
