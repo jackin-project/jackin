@@ -21,12 +21,55 @@ use jackin_protocol::usage_monitor::{
     MonitorProvider, MonitorPurpose, MonitorReply, MonitorScope,
 };
 use jackin_usage_coordinator::{
-    FileAccountStateStore, FileProjectionStateStore, ProviderProbeOutcome, UsageCoordinator,
-    UsageCoordinatorConfig, UsageProviderExecutor,
+    ClockSample as CoordinatorClockSample, FileAccountStateStore, FileProjectionStateStore,
+    MonotonicClock, ProviderProbeOutcome, UsageCoordinator, UsageCoordinatorConfig,
+    UsageProviderExecutor,
 };
 
 const COLLECTOR_ACCOUNT_ID: &str = "collector-test-account";
 const SOURCE_ID_PREFIX: &str = "a";
+
+struct CollectorCoordinatorClock {
+    sample: Mutex<ClockSample>,
+}
+
+impl CollectorCoordinatorClock {
+    fn at(wall_epoch: i64) -> Self {
+        Self {
+            sample: Mutex::new(ClockSample {
+                wall_epoch,
+                monotonic_elapsed: Duration::ZERO,
+            }),
+        }
+    }
+
+    fn set(&self, sample: ClockSample) {
+        let mut current = self.sample.lock().expect("collector test clock");
+        assert!(
+            sample.wall_epoch >= current.wall_epoch,
+            "collector test wall clock cannot move backward"
+        );
+        assert!(
+            sample.monotonic_elapsed >= current.monotonic_elapsed,
+            "collector test monotonic clock cannot move backward"
+        );
+        *current = sample;
+    }
+}
+
+impl MonotonicClock for CollectorCoordinatorClock {
+    fn now(&self) -> Duration {
+        self.sample
+            .lock()
+            .expect("collector test clock")
+            .monotonic_elapsed
+    }
+
+    fn sample(&self, _fallback_epoch: i64) -> CoordinatorClockSample {
+        let sample = self.sample.lock().expect("collector test clock");
+        CoordinatorClockSample::anchored(sample.wall_epoch, sample.monotonic_elapsed)
+    }
+}
 
 fn source_id() -> String {
     SOURCE_ID_PREFIX.repeat(64)
@@ -118,6 +161,7 @@ fn provider_view(now_epoch: i64) -> FocusedUsageView {
 struct CollectorHarness {
     store: Arc<MonitorStore>,
     coordinator: Arc<UsageCoordinator>,
+    coordinator_clock: Arc<CollectorCoordinatorClock>,
     publisher: publish::ProjectionPublisher,
     temp: tempfile::TempDir,
     capability: UsageAccountCapability,
@@ -132,11 +176,13 @@ impl CollectorHarness {
             revision: "collector-test-catalog-revision".to_owned(),
             capability: capability.clone(),
         }];
-        let coordinator = Arc::new(UsageCoordinator::with_catalog(
+        let coordinator_clock = Arc::new(CollectorCoordinatorClock::at(NOW));
+        let coordinator = Arc::new(UsageCoordinator::with_catalog_and_clock(
             executor,
             Arc::new(FileAccountStateStore::at(temp.path().join("accounts"))),
             UsageCoordinatorConfig::default(),
             catalog.clone(),
+            Arc::clone(&coordinator_clock) as Arc<dyn MonotonicClock>,
         ));
         let publisher = publish::ProjectionPublisher::new(
             Arc::clone(&coordinator),
@@ -151,10 +197,15 @@ impl CollectorHarness {
         Self {
             store,
             coordinator,
+            coordinator_clock,
             publisher,
             temp,
             capability,
         }
+    }
+
+    fn set_coordinator_clock(&self, sample: ClockSample) {
+        self.coordinator_clock.set(sample);
     }
 
     fn start_approved_observer(&self) -> String {
@@ -266,15 +317,17 @@ fn ticker_polls_approved_source_and_publishes_terminal_result_while_idle() {
     let harness = CollectorHarness::new(executor_trait);
     let monitor_id = harness.start_approved_observer();
     let mut ticker_state = harness.ticker_state();
+    let initial_sample = ClockSample {
+        wall_epoch: NOW,
+        monotonic_elapsed: Duration::ZERO,
+    };
+    harness.set_coordinator_clock(initial_sample);
 
     publisher_tick_step(
         &harness.publisher,
         &harness.coordinator,
         &harness.store,
-        ClockSample {
-            wall_epoch: NOW,
-            monotonic_elapsed: Duration::from_millis(200),
-        },
+        initial_sample,
         &mut ticker_state,
     );
     started_receiver
@@ -299,6 +352,10 @@ fn ticker_polls_approved_source_and_publishes_terminal_result_while_idle() {
     let backup_file = state_file.with_extension("state-backup");
     fs::rename(&state_file, &backup_file).expect("move state file for persistence fault");
     symlink(&backup_file, &state_file).expect("install test-only state symlink");
+    harness.set_coordinator_clock(ClockSample {
+        wall_epoch: NOW + 2,
+        monotonic_elapsed: Duration::from_secs(2),
+    });
     release_sender.send(()).expect("release provider result");
     let terminal = harness
         .coordinator
@@ -318,7 +375,7 @@ fn ticker_polls_approved_source_and_publishes_terminal_result_while_idle() {
         &harness.store,
         ClockSample {
             wall_epoch: NOW + 2,
-            monotonic_elapsed: Duration::from_millis(1_200),
+            monotonic_elapsed: Duration::from_secs(2),
         },
         &mut ticker_state,
     );
@@ -341,28 +398,32 @@ fn ticker_polls_approved_source_and_publishes_terminal_result_while_idle() {
         "failed monitor persistence must leave the terminal projection pending"
     );
     let retry_after = ticker_state.observation_retry_after;
+    let retry_sample = ClockSample {
+        wall_epoch: NOW + 3,
+        monotonic_elapsed: Duration::from_secs(3),
+    };
+    harness.set_coordinator_clock(retry_sample);
     publisher_tick_step(
         &harness.publisher,
         &harness.coordinator,
         &harness.store,
-        ClockSample {
-            wall_epoch: NOW + 3,
-            monotonic_elapsed: Duration::from_millis(1_400),
-        },
+        retry_sample,
         &mut ticker_state,
     );
     assert_eq!(ticker_state.observation_retry_after, retry_after);
 
     fs::remove_file(&state_file).expect("remove test-only symlink");
     fs::rename(&backup_file, &state_file).expect("restore monitor state file");
+    let restored_sample = ClockSample {
+        wall_epoch: NOW + 4,
+        monotonic_elapsed: Duration::from_secs(4),
+    };
+    harness.set_coordinator_clock(restored_sample);
     publisher_tick_step(
         &harness.publisher,
         &harness.coordinator,
         &harness.store,
-        ClockSample {
-            wall_epoch: NOW + 3,
-            monotonic_elapsed: Duration::from_millis(2_200),
-        },
+        restored_sample,
         &mut ticker_state,
     );
     assert_eq!(
@@ -373,7 +434,7 @@ fn ticker_polls_approved_source_and_publishes_terminal_result_while_idle() {
     assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
     let MonitorReply::Status { status } = harness
         .store
-        .operate(MonitorOperation::Status { monitor_id }, NOW + 3)
+        .operate(MonitorOperation::Status { monitor_id }, NOW + 4)
         .expect("read monitor evidence after terminal publication")
     else {
         panic!("expected monitor status after terminal publication");
@@ -423,18 +484,20 @@ fn ticker_collector_preserves_minimum_attempt_floor_and_retry_after() {
     let mut ticker_state = harness.ticker_state();
 
     let tick = |wall_epoch, monotonic_elapsed, state: &mut TickerState| {
+        let sample = ClockSample {
+            wall_epoch,
+            monotonic_elapsed,
+        };
+        harness.set_coordinator_clock(sample);
         publisher_tick_step(
             &harness.publisher,
             &harness.coordinator,
             &harness.store,
-            ClockSample {
-                wall_epoch,
-                monotonic_elapsed,
-            },
+            sample,
             state,
         );
     };
-    tick(NOW, Duration::from_millis(200), &mut ticker_state);
+    tick(NOW, Duration::ZERO, &mut ticker_state);
     let first_generation = harness
         .coordinator
         .current(&harness.capability, NOW)
@@ -559,6 +622,11 @@ fn stop_waits_for_collector_admission_and_later_snapshots_exclude_it() {
     ));
     stop_thread.join().expect("join stop operation");
     assert!(harness.store.collection_accounts().is_empty());
+
+    harness.set_coordinator_clock(ClockSample {
+        wall_epoch: NOW + 2,
+        monotonic_elapsed: Duration::from_secs(2),
+    });
 
     collect_due_for_active_monitors(
         &harness.publisher,

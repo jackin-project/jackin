@@ -69,6 +69,24 @@ impl UsageCoordinator {
         Self::start(executor, store, config, Some(catalog), None)
     }
 
+    /// Start a coordinator with a catalog and a caller-supplied paired clock
+    /// for deterministic broker test coverage.
+    #[cfg(feature = "test-support")]
+    #[must_use]
+    pub fn with_catalog_and_clock(
+        executor: Arc<dyn UsageProviderExecutor>,
+        store: Arc<dyn AccountStateStore>,
+        config: UsageCoordinatorConfig,
+        catalog: impl IntoIterator<Item = UsageCatalogEntry>,
+        clock: Arc<dyn MonotonicClock>,
+    ) -> Self {
+        let catalog = catalog
+            .into_iter()
+            .map(|entry| (entry.capability, entry.revision))
+            .collect();
+        Self::start_with_clock(executor, store, config, Some(catalog), None, clock)
+    }
+
     /// Start a coordinator with the exact revision persisted beside the
     /// catalog. Broker recovery uses this so executor rollback is fenced by
     /// the same caller/service revision as the forward rotation.
