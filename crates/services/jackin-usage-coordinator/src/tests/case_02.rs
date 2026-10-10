@@ -907,7 +907,7 @@ fn crash_after_durable_cooldown_marker_precedes_purge_and_survives_restart() {
 
     store.panic_after_store.store(1, Ordering::SeqCst);
     let crash = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let _ = coordinator.reconcile_catalog([], 1_002);
+        drop(coordinator.reconcile_catalog([], 1_002));
     }));
     assert!(
         crash.is_err(),
