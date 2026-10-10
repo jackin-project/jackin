@@ -370,3 +370,20 @@ occurred; exact external request count is unknown. This run is not wholly
 offline. No provider, auth or Keychain verification occurred. Do not activate
 Mise again; use direct offline Cargo commands. Future verification reports must
 distinguish this tooling traffic from fixture provider/credential counters.
+
+V2 intermediate checks: protocol passed 132 tests with one pre-existing ignored
+test; Claude provider passed 37 tests, including changed/unchanged fake-source
+401 behavior. Direct Cargo used `--offline --locked`. The combined provider/relay
+run reached the unfinished broker migration and failed compilation; it is not
+a passing gate. Engine ownership is addressing the reported borrow/type errors.
+CLI and fixture migrations are prepared, pending integrated compilation.
+The unchanged coordinator gate separately passed 44 tests (three suites),
+including the persisted admission/deadline protections. This does not replace
+integrated broker, CLI, installed-pair or migration verification.
+
+Safe setup inspection: the selected user settings file has no `statusLine`
+field. Effective project/session overrides were not inspected. The previous
+installed pair remains unchanged and lacks the new observer/policy commands.
+No real binding, receipt, adapter installation or callback has been verified.
+The intended installation uses a separate v2 prefix so an unknown running
+service continues using its existing binaries and state.

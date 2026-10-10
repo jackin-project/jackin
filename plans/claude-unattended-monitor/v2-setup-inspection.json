@@ -1,0 +1,32 @@
+{
+  "phase": "before_v2_install",
+  "scope": "read-only inspection from the Codex process; not the running Claude environment",
+  "installed_pair": [
+    {
+      "path": "/Users/donbeave/.local/share/jackin-claude-monitor/bin/jackin",
+      "sha256": "5bee8b128d872fcfcea9476d15b7185c2eb0cbc5dce177bbe723bda9f5067d6f"
+    },
+    {
+      "path": "/Users/donbeave/.local/share/jackin-claude-monitor/bin/jackin-usage-broker",
+      "sha256": "6321536a6908ef0e0a594e7c0460be9527ac257ac0015940de71165d723412b0"
+    }
+  ],
+  "codex_broker_override": null,
+  "installed_monitor_help_commands": ["start", "stop"],
+  "user_settings": {
+    "path": "/Users/donbeave/.claude/settings.json",
+    "exists": true,
+    "has_statusline": false,
+    "effective_project_overrides_inspected": false,
+    "settings_changed": false
+  },
+  "original_checkout": {
+    "path": "/Users/donbeave/Projects/tailrocks/jackin-project/jackin",
+    "branch": "rust-policy-rollout",
+    "clean_at_inspection": true,
+    "optional_git_locks_disabled": true
+  },
+  "provider_checks_performed": false,
+  "keychain_checks_performed": false,
+  "real_account_binding_verified": false
+}
