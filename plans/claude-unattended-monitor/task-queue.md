@@ -63,7 +63,26 @@ generator-owned. The fix removes only that duplicate. Required failed downstream
 because Plan failed; Actionlint passed and the Rust matrix was skipped. Velnor
 also warned about malformed `mise.lock` line 388, but `mise.lock` is byte-identical
 at the PR base and failed head, so that warning did not trigger this failure.
-The fixed head still needs its own exact-head CI result before the PR is ready.
+The generated-file correction passed Plan and Actionlint at `b99824b7`. Five
+Rust matrix jobs then failed on two Clippy findings introduced with the parser
+diagnostic: `map_unwrap_or` in `raw_field_kind` and
+`assertions_on_result_states` in the 524-byte fixture. Signed commit
+[`ded71bd5`](https://github.com/jackin-project/jackin/commit/ded71bd51600eb2a12ec8c6741259fdc3f93eb80)
+rewrites those expressions as `map_or` and `unwrap`, with no behavior change.
+Focused MBX Clippy and format checks pass, and the `jackin-usage` suite passes
+718 tests. The latest PR head has its own exact-head CI run.
+
+The matching debug CLI/broker pair was rebuilt from clean source commit
+`ded71bd5` into the new v6 prefix. Its non-TTY auth sentinel returned
+`interaction_required` before launching the marker broker and left the fresh
+data directory absent. Hashes for the v2-v5 pairs are unchanged. See
+[v6-installation.json](v6-installation.json) for source/tree identity, build
+command, binary hashes, focused checks, and sentinel output. Independent
+installed-pair review passed and confirmed the source/tree and binary hashes,
+v2-v5 preservation, CLI and broker versions, and non-TTY sentinel. No Keychain item,
+live credential, account
+identity/status, provider endpoint, or settings was accessed or changed; the
+operator still needs to retry the attended account bootstrap.
 
 ## Current delivery checkpoint
 

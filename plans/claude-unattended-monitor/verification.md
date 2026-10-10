@@ -90,12 +90,40 @@ canonical template, and that file is unchanged between the PR base and head.
 `.github/AGENTS.md` says `.github/` is generator-owned, so the stale `.github`
 duplicate was removed while preserving the canonical docs template.
 
-The Required job failed only because Plan failed and the Rust matrix jobs were
-skipped; Actionlint passed. Velnor also reported that `mise.lock` line 388 could
-not be parsed, but the lockfile SHA-256 is identical at base and head
-(`d2d1b07a8f02fb07f405ac5b00607b35155207ebcb9651ec1e10ca09ac26e55d`), and the
-Plan job's exit was the extra `.github` file. Local generator parity and the
-fixed-head CI result remain pending.
+On the first generated-file correction head `b99824b7`, Plan's comparison and
+Actionlint passed. Five Rust matrix jobs then failed Clippy: the new
+`raw_field_kind` implementation used `map(...).unwrap_or(...)`, and its
+successful-payload assertion used `Result::is_ok()`. Those triggered
+`map_unwrap_or` and `assertions_on_result_states`, respectively, across five
+crate jobs. Signed commit
+[`ded71bd51600eb2a12ec8c6741259fdc3f93eb80`](https://github.com/jackin-project/jackin/commit/ded71bd51600eb2a12ec8c6741259fdc3f93eb80)
+rewrites them as `map_or` and `unwrap`. Focused MBX Clippy and format checks
+pass, and the `jackin-usage` suite passed 718 tests. The latest source head has
+its own exact-head CI run.
+
+The local Velnor preview attempt did not reach generation: offline preparation
+stopped because the Cargo cache lacked `android_system_properties v0.1.5`.
+The successful Plan comparison on `b99824b7` is the available generated-file
+parity proof. Velnor's warning about `mise.lock` line 388 was pre-existing: the
+lockfile SHA-256 is identical at base and head
+(`d2d1b07a8f02fb07f405ac5b00607b35155207ebcb9651ec1e10ca09ac26e55d`).
+
+## Clippy correction and v6 install
+
+MBX 1.22.0 with Rust 1.97.1 rebuilt the debug CLI and broker from clean source
+commit `ded71bd51600eb2a12ec8c6741259fdc3f93eb80` into the new v6 prefix. The
+non-TTY auth command returned `interaction_required` before launching an
+executable broker marker and did not create its fresh data directory. Installed
+v2-v5 hashes match their prior manifests. Exact source/tree IDs, toolchain,
+build command, artifact hashes, focused results, and sentinel output are in
+[v6-installation.json](v6-installation.json). Independent installed-pair review
+confirmed the source/tree and binary hashes, all eight v2-v5 hashes, CLI and
+broker versions, and the non-TTY marker sentinel.
+
+This remains synthetic fixture and interaction-gate evidence only. No Keychain
+item, live credential, account identity/status, provider endpoint, or settings
+was accessed or changed. The operator must retry the intended account through
+its normal attended bootstrap; actual account status remains unknown.
 
 ## Current main-port verification snapshot
 
