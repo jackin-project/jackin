@@ -481,6 +481,10 @@ fn configured_native_build_is_mac26_bounded_locked_and_mbx_routed() -> Result<()
         "native build retains its bounded timeout"
     );
     ensure!(
+        yaml_field(job, "if").is_none(),
+        "native build remains unconditional"
+    );
+    ensure!(
         job_needs(job)?.is_empty(),
         "native task has no unrelated dependencies"
     );
@@ -499,6 +503,53 @@ fn configured_native_build_is_mac26_bounded_locked_and_mbx_routed() -> Result<()
             .is_some_and(|value| value == &YamlValue::String("false".to_owned())),
         "native build checkout does not persist credentials"
     );
+    let bootstrap = steps
+        .iter()
+        .find(|step| {
+            yaml_field(step, "name").and_then(YamlValue::as_str)
+                == Some("Install selected locked prebuilt tools")
+        })
+        .context("native job installs its selected locked tool closure")?;
+    let bootstrap_scripts = yaml_field(bootstrap, "run")
+        .map(yaml_strings)
+        .unwrap_or_default();
+    ensure!(
+        bootstrap_scripts.iter().any(|script| {
+            script.contains("mise --no-env --locked --no-hooks install --jobs 2")
+        }),
+        "native tool installation is lock-backed and bounded"
+    );
+    let source_guard = steps
+        .iter()
+        .find(|step| {
+            yaml_field(step, "name").and_then(YamlValue::as_str)
+                == Some("Verify locked MBX Rust route")
+        })
+        .context("native job verifies its pinned toolchain and source inputs")?;
+    let guard_scripts = yaml_field(source_guard, "run")
+        .map(yaml_strings)
+        .unwrap_or_default();
+    let guard_script = guard_scripts
+        .iter()
+        .find(|script| script.contains("shasum -a 256"))
+        .context("native source guard checks input digests")?;
+    for path in [
+        "mise.toml",
+        "mise.lock",
+        "rust-toolchain.toml",
+        "native/mise.toml",
+        "native/mise.lock",
+    ] {
+        let digest = hex::encode(Sha256::digest(
+            fs::read(root.join(path))
+                .with_context(|| format!("native build source input exists: {path}"))?,
+        ));
+        ensure!(
+            guard_script.contains(&format!("shasum -a 256 \"$workspace_root/{path}\""))
+                && guard_script.contains(&format!("test \"$actual\" = '{digest}'")),
+            "native source guard binds the exact current file digest: {path}"
+        );
+    }
     let scripts = job_run_scripts(job);
     ensure!(
         scripts
