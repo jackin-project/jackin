@@ -20,10 +20,12 @@ probe generation, with file-backed generation and projection state.
 
 The broker protocol is wire `v8`; its account-identity values distinguish
 provider-issued IDs and handles from local source handles and unverified
-legacy handles. The projection payload remains `UsageProjectionSchemaV1`.
-These are separate from the durable projection envelope (schema `3`) and
-per-account envelope (schema `2`). Broker monitor state is schema `4`, and
-statusline input is schema `2`; neither is migrated by the projection store.
+legacy handles. The projection payload is `UsageProjectionSchemaV1`; it is
+distinct from the durable projection envelope and per-account state envelope,
+which are both schema `3`. The account-state envelope migration reads schemas
+`1` and `2` at the load boundary and writes schema `3` before returning
+migrated state. Broker monitor state is schema `4`, and statusline input is
+schema `2`; neither is migrated by the projection store.
 
 Projection envelope schema `2` is read only at the broker's explicit startup
 migration boundary. That migration canonicalizes provider IDs, marks legacy

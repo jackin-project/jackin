@@ -21,8 +21,11 @@ the protocol/build handshake; there is no dual-version or compatibility path.
 The durable projection envelope has its own schema number: this integration
 writes schema 3, accepts schema 2 only through the broker startup migration,
 and preserves valid future schema bytes while failing closed. The projection
-payload remains `UsageProjectionSchemaV1`; per-account state remains schema 2,
-monitor state remains schema 4, and statusline input remains schema 2.
+payload remains `UsageProjectionSchemaV1`; it is distinct from the durable
+per-account state envelope, which writes schema 3 and migrates schemas 1 and 2
+at its load boundary. Monitor state remains schema 4, and statusline input
+remains schema 2. These envelope migrations are independent; the projection
+store does not migrate account state, monitor state, or statusline input.
 
 Schema 4 adds source binding and consent fields. `MonitorAccountBindingInput`
 and persisted `MonitorAccountBinding` carry `provider_account_id` and

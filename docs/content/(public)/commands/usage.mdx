@@ -38,6 +38,13 @@ may use `--expected-revision N` for optimistic concurrency. `--format json`
 and `--data-dir PATH` are global options; watch uses JSON Lines. Statusline
 ingress reads its bounded JSON input from stdin.
 
+The revision `1` values in these command examples assume a newly created
+binding and policy. Use the current revision returned by the broker for
+existing state; each accepted binding or policy change creates a newer
+revision, and later commands must name the revision they are using. The strict
+SGD and quota-only approvals above are alternatives; quota-only cannot replace
+an already recorded strict policy.
+
 ## Implementation status
 
 The foreground `auth prepare` bootstrap and experimental collector described
