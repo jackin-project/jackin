@@ -587,7 +587,7 @@ fn coordinator_updating_store_failure_recovers_after_terminal_store_failure() {
 }
 
 #[test]
-fn catalog_revocation_retains_materialized_last_good_but_fences_late_result() {
+fn catalog_revocation_clears_materialized_data_and_fences_late_result() {
     let executor = Arc::new(GateExecutor::new(ProviderProbeOutcome::success(
         quota_view(1_000, 80),
     )));
@@ -622,10 +622,7 @@ fn catalog_revocation_retains_materialized_last_good_but_fences_late_result() {
         revoked.error.as_ref().unwrap().kind,
         UsageCoordinationErrorKind::CatalogRevoked
     );
-    assert_eq!(
-        revoked.snapshot.as_ref().unwrap().buckets[0].remaining_percent,
-        Some(80)
-    );
+    assert_eq!(revoked.snapshot, None);
     assert!(
         coordinator.is_idle(),
         "revocation must clear active ownership"
@@ -642,7 +639,21 @@ fn catalog_revocation_retains_materialized_last_good_but_fences_late_result() {
             .kind,
         UsageCoordinationErrorKind::CatalogRevoked
     );
-    assert!(store.purges.lock().unwrap().contains(&account));
+    assert!(
+        !store.purges.lock().unwrap().contains(&account),
+        "an in-flight provider attempt must retain its durable cooldown tombstone"
+    );
+    let pending = store
+        .states
+        .lock()
+        .unwrap()
+        .get(&account)
+        .cloned()
+        .expect("in-flight attempt marker is durable before provider work returns");
+    assert_eq!(pending.phase, UsageRefreshPhase::Updating);
+    assert!(pending.terminal_result.is_none());
+    assert!(pending.last_good.is_none());
+    assert!(pending.terminal_error.is_none());
 
     executor.release(1);
     executor.wait_idle();
@@ -652,16 +663,181 @@ fn catalog_revocation_retains_materialized_last_good_but_fences_late_result() {
         UsageCoordinationErrorKind::CatalogRevoked
     );
     assert_eq!(after_late_result.generation, revoked.generation);
-    assert_eq!(
-        after_late_result.snapshot.as_ref().unwrap().buckets[0].remaining_percent,
-        Some(80)
-    );
+    assert_eq!(after_late_result.snapshot, None);
     assert_eq!(
         coordinator
             .request_refresh(&account, revoked.generation, true, 1_402)
             .unwrap_err()
             .kind,
         UsageCoordinationErrorKind::CatalogRevoked
+    );
+}
+
+#[test]
+fn claude_cooldown_uses_monotonic_time_when_wall_clock_jumps_forward() {
+    let account = capability("clock-jump");
+    let executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
+        quota_view(2_000, 80),
+    )));
+    let store = Arc::new(MemoryStore::default());
+    let clock = Arc::new(ManualClock::at(2_000));
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce concrete ports to coordinator trait objects"
+    )]
+    let provider: Arc<dyn UsageProviderExecutor> = executor.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce concrete ports to coordinator trait objects"
+    )]
+    let state_store: Arc<dyn AccountStateStore> = store.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "share the controllable clock with the coordinator"
+    )]
+    let clock_port: Arc<dyn MonotonicClock> = clock.clone();
+    let coordinator = UsageCoordinator::start_with_clock(
+        provider,
+        state_store,
+        UsageCoordinatorConfig::default(),
+        Some(BTreeMap::from([(account.clone(), "revision-a".into())])),
+        None,
+        clock_port,
+    );
+
+    let first = coordinator
+        .request_refresh(&account, 0, true, 2_000)
+        .unwrap();
+    assert_eq!(
+        join_ok(&coordinator, &account, first.generation, 2_000).phase,
+        UsageRefreshPhase::Completed
+    );
+
+    clock.set_wall_epoch(2_500);
+    let after_forward_jump = coordinator
+        .request_refresh(&account, first.generation, true, 2_500)
+        .unwrap();
+    assert_eq!(after_forward_jump.generation, first.generation);
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
+
+    clock.advance(Duration::from_secs(299));
+    let before_monotonic_floor = coordinator
+        .request_refresh(&account, first.generation, true, 2_799)
+        .unwrap();
+    assert_eq!(before_monotonic_floor.generation, first.generation);
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
+
+    clock.advance(Duration::from_secs(1));
+    let allowed = coordinator
+        .request_refresh(&account, first.generation, true, 2_800)
+        .unwrap();
+    assert_eq!(allowed.generation, first.generation + 1);
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 2);
+    assert_eq!(
+        join_ok(&coordinator, &account, allowed.generation, 2_800).phase,
+        UsageRefreshPhase::Completed
+    );
+}
+
+#[test]
+fn catalog_revision_keeps_pending_marker_and_completion_floor_across_readd() {
+    let account = capability("pending-revision");
+    let executor = Arc::new(GateExecutor::new(ProviderProbeOutcome::success(
+        quota_view(1_000, 80),
+    )));
+    let store = Arc::new(MemoryStore::default());
+    let clock = Arc::new(ManualClock::at(1_000));
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce concrete ports to coordinator trait objects"
+    )]
+    let provider: Arc<dyn UsageProviderExecutor> = executor.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce concrete ports to coordinator trait objects"
+    )]
+    let state_store: Arc<dyn AccountStateStore> = store.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "share the controllable clock with the coordinator"
+    )]
+    let clock_port: Arc<dyn MonotonicClock> = clock.clone();
+    let coordinator = UsageCoordinator::start_with_clock(
+        provider,
+        state_store,
+        UsageCoordinatorConfig::default(),
+        Some(BTreeMap::from([(account.clone(), "revision-a".into())])),
+        None,
+        clock_port,
+    );
+
+    let started = coordinator
+        .request_refresh(&account, 0, true, 1_000)
+        .unwrap();
+    executor.wait_started(1);
+    let dispatch_marker = store
+        .states
+        .lock()
+        .unwrap()
+        .get(&account)
+        .cloned()
+        .expect("Updating state must be durable before dispatch");
+    assert_eq!(dispatch_marker.phase, UsageRefreshPhase::Updating);
+    assert!(dispatch_marker.terminal_result.is_none());
+    assert!(dispatch_marker.last_good.is_none());
+
+    coordinator
+        .reconcile_catalog([catalog_entry(&account, "revision-b")], 1_010)
+        .unwrap();
+    let revision_marker = store
+        .states
+        .lock()
+        .unwrap()
+        .get(&account)
+        .cloned()
+        .expect("catalog revision must persist a result-free pending marker");
+    assert_eq!(revision_marker.phase, UsageRefreshPhase::Updating);
+    assert!(revision_marker.terminal_result.is_none());
+    assert!(revision_marker.last_good.is_none());
+    assert!(revision_marker.terminal_error.is_none());
+
+    let readded = coordinator
+        .request_refresh(&account, started.generation + 1, true, 1_011)
+        .unwrap();
+    assert_eq!(readded.phase, UsageRefreshPhase::Idle);
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
+
+    clock.advance(Duration::from_secs(20));
+    executor.release(1);
+    executor.wait_idle();
+    let completed_tombstone = store
+        .states
+        .lock()
+        .unwrap()
+        .get(&account)
+        .cloned()
+        .expect("fenced completion must persist its cooldown");
+    assert_eq!(completed_tombstone.phase, UsageRefreshPhase::Idle);
+    assert_eq!(completed_tombstone.success_deadline_epoch, Some(1_320));
+    assert!(completed_tombstone.terminal_result.is_none());
+    assert!(completed_tombstone.last_good.is_none());
+
+    clock.advance(Duration::from_secs(299));
+    let before_floor = coordinator
+        .request_refresh(&account, readded.generation, true, 1_319)
+        .unwrap();
+    assert_eq!(before_floor.generation, readded.generation);
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
+    clock.advance(Duration::from_secs(1));
+    let after_floor = coordinator
+        .request_refresh(&account, readded.generation, true, 1_320)
+        .unwrap();
+    assert_eq!(after_floor.generation, readded.generation + 1);
+    executor.wait_started(2);
+    executor.release(1);
+    assert_eq!(
+        join_ok(&coordinator, &account, after_floor.generation, 1_321).phase,
+        UsageRefreshPhase::Completed
     );
 }
 

@@ -7,15 +7,15 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use jackin_protocol::usage_broker::{
-    UsageAccountCapability, UsageCatalogEntry, UsageCoordinationError,
+    UsageAccountCapability, UsageCatalogEntry, UsageCoordinationError, UsageRefreshPhase,
 };
 
 use super::{
     CatalogAccountPreimage, CatalogTransaction, CoordinatorState, Shared, StateStoreError,
-    UsageCoordinator, catalog_entries_from_map, catalog_purge_set, first_catalog_rollback_error,
-    preserve_catalog_error, reconcile_executor_catalog, reset_entry, reset_envelope,
-    restore_catalog_preimages, revoke_entry, state_error, unavailable_error,
-    validate_catalog_entries,
+    UsageCoordinator, catalog_entries_from_map, catalog_purge_set, cooldown_tombstone,
+    first_catalog_rollback_error, pending_attempt_envelope, preserve_catalog_error,
+    reconcile_executor_catalog, reset_entry, reset_envelope, restore_catalog_preimages,
+    revoke_entry, revoke_envelope, state_error, unavailable_error, validate_catalog_entries,
 };
 
 fn persist_reset_envelopes(
@@ -23,9 +23,10 @@ fn persist_reset_envelopes(
     state: &CoordinatorState,
     reset_capabilities: &BTreeSet<UsageAccountCapability>,
     preimages: &BTreeMap<UsageAccountCapability, CatalogAccountPreimage>,
-    now_epoch: i64,
+    clock_sample: super::ClockSample,
 ) -> Result<(), StateStoreError> {
     for capability in reset_capabilities {
+        let pending_attempt = has_pending_provider_attempt(state, preimages, capability);
         let envelope = state
             .accounts
             .get(capability)
@@ -41,7 +42,70 @@ fn persist_reset_envelopes(
                 }
             });
         if let Some(envelope) = envelope {
-            shared.store.store(&envelope, now_epoch)?;
+            let envelope = if pending_attempt {
+                pending_attempt_envelope(&envelope, clock_sample.ceil_epoch())
+            } else {
+                envelope
+            };
+            let persist_epoch = clock_sample
+                .ceil_epoch()
+                .max(envelope.provider_invoked_at_epoch.unwrap_or(0));
+            shared.store.store(&envelope, persist_epoch)?;
+        }
+    }
+    Ok(())
+}
+
+fn has_pending_provider_attempt(
+    state: &CoordinatorState,
+    preimages: &BTreeMap<UsageAccountCapability, CatalogAccountPreimage>,
+    capability: &UsageAccountCapability,
+) -> bool {
+    state
+        .accounts
+        .get(capability)
+        .is_some_and(|entry| entry.pending_provider_generation.is_some())
+        || preimages.get(capability).is_some_and(|preimage| {
+            matches!(preimage, CatalogAccountPreimage::Present(envelope)
+                if envelope.phase == UsageRefreshPhase::Updating)
+        })
+}
+
+fn persist_cooldown_tombstones(
+    shared: &Shared,
+    state: &CoordinatorState,
+    removed_capabilities: &BTreeSet<UsageAccountCapability>,
+    preimages: &BTreeMap<UsageAccountCapability, CatalogAccountPreimage>,
+    now_epoch: i64,
+    clock_sample: super::ClockSample,
+) -> Result<(), StateStoreError> {
+    for capability in removed_capabilities {
+        let already_revoked = state
+            .accounts
+            .get(capability)
+            .is_some_and(|entry| entry.revoked);
+        let pending_attempt = has_pending_provider_attempt(state, preimages, capability);
+        let Some(mut envelope) = state
+            .accounts
+            .get(capability)
+            .map(|entry| entry.envelope.clone())
+            .or_else(|| match preimages.get(capability) {
+                Some(CatalogAccountPreimage::Present(envelope)) => Some((**envelope).clone()),
+                Some(CatalogAccountPreimage::Missing | CatalogAccountPreimage::Corrupt) | None => {
+                    None
+                }
+            })
+        else {
+            continue;
+        };
+        if !already_revoked {
+            revoke_envelope(&mut envelope, now_epoch, clock_sample);
+        }
+        let persist_epoch = clock_sample
+            .ceil_epoch()
+            .max(envelope.provider_invoked_at_epoch.unwrap_or(0));
+        if let Some(tombstone) = cooldown_tombstone(&envelope, persist_epoch, pending_attempt) {
+            shared.store.store(&tombstone, persist_epoch)?;
         }
     }
     Ok(())
@@ -125,18 +189,17 @@ impl UsageCoordinator {
             .map(|entry| (entry.capability, entry.revision))
             .collect::<BTreeMap<_, _>>();
         let purge = catalog_purge_set(&state, &previous, &next);
-        let reset_capabilities = purge
+        let removed_capabilities = purge
             .iter()
-            .filter(|capability| {
-                next.contains_key(*capability)
-                    && !state
-                        .accounts
-                        .get(*capability)
-                        .is_some_and(|entry| entry.revoked)
-            })
+            .filter(|capability| !next.contains_key(*capability))
             .cloned()
             .collect::<BTreeSet<_>>();
-        let preimages = purge
+        let reset_capabilities = purge
+            .iter()
+            .filter(|capability| next.contains_key(*capability))
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        let mut preimages = purge
             .iter()
             .map(|capability| {
                 self.shared
@@ -171,8 +234,75 @@ impl UsageCoordinator {
             return Err(preserve_catalog_error(error, rollback));
         }
 
+        let revocation_sample = self.shared.clock.sample(now_epoch);
         let mut completed_purges = BTreeSet::new();
+        let mut preserved_pending_markers = BTreeSet::new();
         for capability in &purge {
+            if !has_pending_provider_attempt(&state, &preimages, capability) {
+                continue;
+            }
+            let Some(mut envelope) = state
+                .accounts
+                .get(capability)
+                .map(|entry| entry.envelope.clone())
+                .or_else(|| match preimages.get(capability) {
+                    Some(CatalogAccountPreimage::Present(envelope)) => Some((**envelope).clone()),
+                    Some(CatalogAccountPreimage::Missing | CatalogAccountPreimage::Corrupt)
+                    | None => None,
+                })
+            else {
+                continue;
+            };
+            let persist_epoch = revocation_sample
+                .ceil_epoch()
+                .max(envelope.provider_invoked_at_epoch.unwrap_or(0));
+            let marker = if !next.contains_key(capability) {
+                let already_revoked = state
+                    .accounts
+                    .get(capability)
+                    .is_some_and(|entry| entry.revoked);
+                if !already_revoked {
+                    revoke_envelope(&mut envelope, now_epoch, revocation_sample);
+                }
+                cooldown_tombstone(&envelope, persist_epoch, true)
+            } else {
+                // Install a result-free active marker before purging the old
+                // revision so a crash cannot erase the in-flight provider fence.
+                reset_envelope(&mut envelope);
+                Some(pending_attempt_envelope(&envelope, persist_epoch))
+            };
+            let Some(marker) = marker else {
+                continue;
+            };
+            if matches!(
+                preimages.get(capability),
+                Some(CatalogAccountPreimage::Missing)
+            ) {
+                preimages.insert(
+                    capability.clone(),
+                    CatalogAccountPreimage::Present(Box::new(marker.clone())),
+                );
+            }
+            completed_purges.insert(capability.clone());
+            if let Err(error) = self.shared.store.store(&marker, persist_epoch) {
+                let primary = state_error(error);
+                let rollback = rollback_catalog_reconciliation(
+                    &self.shared,
+                    &mut state,
+                    &previous_state,
+                    &previous,
+                    &preimages,
+                    completed_purges.clone(),
+                    now_epoch,
+                );
+                return Err(preserve_catalog_error(primary, rollback));
+            }
+            preserved_pending_markers.insert(capability.clone());
+        }
+        for capability in &purge {
+            if preserved_pending_markers.contains(capability) {
+                continue;
+            }
             let result: Result<(), StateStoreError> = match preimages.get(capability) {
                 Some(CatalogAccountPreimage::Corrupt) => self.shared.store.quarantine(capability),
                 Some(CatalogAccountPreimage::Missing | CatalogAccountPreimage::Present(_)) => {
@@ -202,24 +332,44 @@ impl UsageCoordinator {
             };
             match next.get(&capability) {
                 None => {
-                    revoke_entry(entry, now_epoch);
+                    revoke_entry(entry, now_epoch, revocation_sample);
                     state.blocked.remove(&capability);
                 }
                 Some(revision)
                     if entry.revoked || entry.catalog_revision.as_ref() != Some(revision) =>
                 {
-                    reset_entry(entry, now_epoch, revision.clone());
+                    reset_entry(entry, now_epoch, revocation_sample, revision.clone());
                     state.blocked.remove(&capability);
                 }
                 Some(_) => {}
             }
+        }
+        if let Err(error) = persist_cooldown_tombstones(
+            &self.shared,
+            &state,
+            &removed_capabilities,
+            &preimages,
+            now_epoch,
+            revocation_sample,
+        ) {
+            let primary = state_error(error);
+            let rollback = rollback_catalog_reconciliation(
+                &self.shared,
+                &mut state,
+                &previous_state,
+                &previous,
+                &preimages,
+                completed_purges.clone(),
+                now_epoch,
+            );
+            return Err(preserve_catalog_error(primary, rollback));
         }
         if let Err(error) = persist_reset_envelopes(
             &self.shared,
             &state,
             &reset_capabilities,
             &preimages,
-            now_epoch,
+            revocation_sample,
         ) {
             let primary = state_error(error);
             let rollback = rollback_catalog_reconciliation(

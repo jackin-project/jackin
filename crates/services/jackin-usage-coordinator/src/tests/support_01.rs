@@ -22,6 +22,46 @@ impl MonotonicClock for FakeMonotonicClock {
 }
 
 #[derive(Default)]
+pub(super) struct ManualClock {
+    wall_epoch_seconds: AtomicU64,
+    monotonic_seconds: AtomicU64,
+}
+
+impl ManualClock {
+    pub(super) fn at(epoch_seconds: u64) -> Self {
+        Self {
+            wall_epoch_seconds: AtomicU64::new(epoch_seconds),
+            monotonic_seconds: AtomicU64::new(0),
+        }
+    }
+
+    pub(super) fn advance(&self, duration: Duration) {
+        self.wall_epoch_seconds
+            .fetch_add(duration.as_secs(), Ordering::SeqCst);
+        self.monotonic_seconds
+            .fetch_add(duration.as_secs(), Ordering::SeqCst);
+    }
+
+    pub(super) fn set_wall_epoch(&self, epoch_seconds: u64) {
+        self.wall_epoch_seconds
+            .store(epoch_seconds, Ordering::SeqCst);
+    }
+}
+
+impl MonotonicClock for ManualClock {
+    fn now(&self) -> Duration {
+        Duration::from_secs(self.monotonic_seconds.load(Ordering::SeqCst))
+    }
+
+    fn sample(&self, _fallback_epoch: i64) -> ClockSample {
+        ClockSample::anchored(
+            i64::try_from(self.wall_epoch_seconds.load(Ordering::SeqCst)).unwrap_or(i64::MAX),
+            self.now(),
+        )
+    }
+}
+
+#[derive(Default)]
 pub(super) struct MemoryStore {
     pub(super) states: Mutex<BTreeMap<UsageAccountCapability, AccountStateEnvelope>>,
     pub(super) purges: Mutex<Vec<UsageAccountCapability>>,
