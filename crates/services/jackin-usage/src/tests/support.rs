@@ -81,7 +81,11 @@ pub(super) fn validate_account(account: &Value) -> Result<(), String> {
     required_enum(
         account,
         "identity_kind",
-        &["provider_account_id", "provider_stable_handle"],
+        &[
+            "provider_account_id",
+            "provider_stable_handle",
+            "local_source_handle",
+        ],
     )?;
     required_enum(
         account,

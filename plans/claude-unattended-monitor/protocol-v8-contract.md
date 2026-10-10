@@ -1,14 +1,20 @@
-# Usage monitor protocol v7 and durable schema 4
+# Usage monitor protocol v8 and durable schema 4
 
 Contract freeze: 2026-10-10. This document describes the grouped usage
 integration contract and supersedes the v2 wire/schema numbers recorded in
 older implementation notes. It is contract documentation, not installed-binary
 or native-platform verification.
 
-The broker wire protocol is v7, durable monitor state is schema 4, and
+The broker wire protocol is v8, durable monitor state is schema 4, and
 normalized statusline input remains schema 2. Statusline input and persisted
 monitor state are separate contracts: a schema 4 state must not cause a schema
 2 callback to be rejected or relabeled.
+
+Wire v8 adds `UsageIdentityKindV1::LocalSourceHandle` so a locally derived
+credential-source capability is never mislabeled as provider-issued identity.
+Provider account IDs and provider stable handles remain reserved for evidence
+issued by the provider. A v7 peer is rejected by the protocol/build handshake;
+there is no dual-version or compatibility path.
 
 Schema 4 adds source binding and consent fields. `MonitorAccountBindingInput`
 and persisted `MonitorAccountBinding` carry `provider_account_id` and

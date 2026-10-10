@@ -71,6 +71,20 @@ pub(crate) fn identity_kind_label(kind: UsageIdentityKindV1) -> &'static str {
     match kind {
         UsageIdentityKindV1::ProviderAccountId => "provider account id",
         UsageIdentityKindV1::ProviderStableHandle => "provider handle",
+        UsageIdentityKindV1::LocalSourceHandle => "local source handle",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn local_source_identity_label_does_not_claim_provider_identity() {
+        assert_eq!(
+            identity_kind_label(UsageIdentityKindV1::LocalSourceHandle),
+            "local source handle"
+        );
     }
 }
 

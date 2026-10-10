@@ -10,6 +10,17 @@ fn contract_baseline_projection_fixture_is_well_formed() {
 }
 
 #[test]
+fn contract_projection_accepts_local_source_identity_kind() {
+    let fixture = read_json("usage-projection-v1-current.json");
+    let mut account = fixture["providers"][0]["accounts"][0].clone();
+    account["canonical_account_id"] = Value::String("local-source-capability".to_owned());
+    account["display_label"] = Value::String("Claude Code source".to_owned());
+    account["identity_kind"] = Value::String("local_source_handle".to_owned());
+
+    validate_account(&account).expect("local source identity has a distinct valid wire kind");
+}
+
+#[test]
 fn contract_baseline_projection_rejects_invalid_fixtures() {
     let fixture = read_json("usage-projection-v1-invalid.json");
     let cases = fixture

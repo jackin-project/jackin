@@ -39,7 +39,7 @@ pub(crate) fn dispatch(
         operation,
         launch_credential_scope,
     } = request;
-    if protocol_version != USAGE_BROKER_PROTOCOL_VERSION || request_build_id != build_id {
+    if !request_header_matches_current_protocol(&protocol_version, &request_build_id, build_id) {
         return UsageBrokerResponse::Error {
             error: protocol_error(),
         };
@@ -80,6 +80,38 @@ pub(crate) fn dispatch(
             state: Box::new(state),
         },
         Err(error) => UsageBrokerResponse::Error { error },
+    }
+}
+
+fn request_header_matches_current_protocol(
+    protocol_version: &str,
+    request_build_id: &str,
+    build_id: &str,
+) -> bool {
+    protocol_version == USAGE_BROKER_PROTOCOL_VERSION && request_build_id == build_id
+}
+
+#[cfg(test)]
+mod protocol_version_tests {
+    use super::*;
+
+    #[test]
+    fn v7_request_envelope_is_rejected_by_the_v8_dispatch_gate() {
+        let request: UsageBrokerRequest = serde_json::from_str(
+            r#"{"protocol_version":"v7","build_id":"test-build","operation":"current_projection"}"#,
+        )
+        .expect("v7 request envelope fixture should decode");
+
+        assert!(!request_header_matches_current_protocol(
+            &request.protocol_version,
+            &request.build_id,
+            "test-build"
+        ));
+        assert!(request_header_matches_current_protocol(
+            USAGE_BROKER_PROTOCOL_VERSION,
+            "test-build",
+            "test-build"
+        ));
     }
 }
 

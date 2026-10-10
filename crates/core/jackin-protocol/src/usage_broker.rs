@@ -11,7 +11,7 @@ use crate::control::{FocusedUsageView, Money};
 use crate::usage_monitor::{MonitorIssue, MonitorOperation, MonitorReply};
 
 /// Usage-broker wire protocol version.
-pub const USAGE_BROKER_PROTOCOL_VERSION: &str = "v7";
+pub const USAGE_BROKER_PROTOCOL_VERSION: &str = "v8";
 
 /// Maximum newline-delimited request or response body.
 pub const USAGE_BROKER_MAX_FRAME_BYTES: usize = 1024 * 1024;
@@ -344,6 +344,11 @@ pub enum UsageIdentityKindV1 {
     ProviderAccountId,
     /// Provider-issued stable non-secret handle.
     ProviderStableHandle,
+    /// Locally derived, non-secret handle for one exact credential source.
+    ///
+    /// This identifies Jackin's selected local source capability, not an
+    /// authenticated provider account and never grants collection authority.
+    LocalSourceHandle,
 }
 
 /// Account or agent lifecycle independent of quota freshness.

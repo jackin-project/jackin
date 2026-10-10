@@ -1153,7 +1153,7 @@ mod tests {
         ));
         assert_eq!(USAGE_MONITOR_SCHEMA_VERSION, 4);
         assert_eq!(USAGE_STATUSLINE_INPUT_SCHEMA_VERSION, 2);
-        assert_eq!(crate::usage_broker::USAGE_BROKER_PROTOCOL_VERSION, "v7");
+        assert_eq!(crate::usage_broker::USAGE_BROKER_PROTOCOL_VERSION, "v8");
         assert_eq!(
             serde_json::to_value(super::MonitorBudgetReadiness::Disabled)
                 .expect("readiness should encode"),

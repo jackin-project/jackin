@@ -26,6 +26,21 @@ fn broker_conflict_has_a_specific_sanitized_bridge_error_code() {
     ));
 }
 
+#[test]
+fn local_source_identity_kind_round_trips_in_projection_json() {
+    let mut projection = fixture_projection();
+    projection.providers[0].accounts[0].identity_kind = UsageIdentityKindV1::LocalSourceHandle;
+
+    let encoded = serde_json::to_string(&projection).expect("projection should encode");
+    assert!(encoded.contains("local_source_handle"));
+    let decoded: UsageProjectionV1 =
+        serde_json::from_str(&encoded).expect("projection should decode");
+    assert_eq!(
+        decoded.providers[0].accounts[0].identity_kind,
+        UsageIdentityKindV1::LocalSourceHandle
+    );
+}
+
 fn open_bridge(dir: &std::path::Path) -> UsageMenuBarBridge {
     let bridge = UsageMenuBarBridge::create();
     bridge

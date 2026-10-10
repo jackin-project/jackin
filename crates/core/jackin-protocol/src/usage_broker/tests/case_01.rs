@@ -46,7 +46,19 @@ fn broker_conflict_has_a_stable_sanitized_wire_name() {
     let value = serde_json::to_value(UsageCoordinationErrorKind::BrokerConflict)
         .expect("broker conflict should encode");
     assert_eq!(value, "broker_conflict");
-    assert_eq!(USAGE_BROKER_PROTOCOL_VERSION, "v7");
+    assert_eq!(USAGE_BROKER_PROTOCOL_VERSION, "v8");
+}
+
+#[test]
+fn local_source_identity_has_its_own_wire_kind() {
+    let encoded = serde_json::to_value(UsageIdentityKindV1::LocalSourceHandle)
+        .expect("local source identity should encode");
+    assert_eq!(encoded, "local_source_handle");
+    assert_eq!(
+        serde_json::from_value::<UsageIdentityKindV1>(encoded)
+            .expect("local source identity should decode"),
+        UsageIdentityKindV1::LocalSourceHandle
+    );
 }
 
 #[test]

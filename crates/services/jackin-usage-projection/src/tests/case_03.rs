@@ -162,10 +162,10 @@ fn parity_auth_expired_login_state() {
     );
     assert_eq!(account.issues.len(), 1);
     assert_eq!(account.issues[0].code, "auth_required");
-    // Source-capability subjects map to the stable-handle evidence kind.
+    // A local source capability is not provider-issued identity evidence.
     assert_eq!(
         account.identity_kind,
-        Some(UsageIdentityKindV1::ProviderStableHandle)
+        Some(UsageIdentityKindV1::LocalSourceHandle)
     );
 
     let enriched = parity_tabs(&views);

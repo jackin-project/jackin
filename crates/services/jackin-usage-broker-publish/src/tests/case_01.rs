@@ -65,6 +65,10 @@ fn capsule_publication_preserves_identity_kind_and_provenance_per_account() {
         account_id: "account-b".to_owned(),
         surface_id: "claude".to_owned(),
     };
+    let third = UsageAccountCapability {
+        account_id: "account-c".to_owned(),
+        surface_id: "claude".to_owned(),
+    };
     let views = vec![
         UsageGenerationView {
             capability: first.clone(),
@@ -76,6 +80,14 @@ fn capsule_publication_preserves_identity_kind_and_provenance_per_account() {
         },
         UsageGenerationView {
             capability: second.clone(),
+            generation: 1,
+            phase: UsageRefreshPhase::Completed,
+            snapshot: Some(fresh_view()),
+            error: None,
+            retry_at_epoch: None,
+        },
+        UsageGenerationView {
+            capability: third.clone(),
             generation: 1,
             phase: UsageRefreshPhase::Completed,
             snapshot: Some(fresh_view()),
@@ -98,13 +110,20 @@ fn capsule_publication_preserves_identity_kind_and_provenance_per_account() {
                 provenance_count: 2,
             },
         ),
+        (
+            third,
+            AccountIdentityMetadata {
+                identity_kind: UsageIdentityKindV1::LocalSourceHandle,
+                provenance_count: 1,
+            },
+        ),
     ]);
     let mut projection = empty_projection();
 
     merge_views(&mut projection, &views, &metadata);
 
     let accounts = &projection.providers[0].accounts;
-    assert_eq!(accounts.len(), 2);
+    assert_eq!(accounts.len(), 3);
     assert_eq!(
         accounts[0].identity_kind,
         UsageIdentityKindV1::ProviderAccountId
@@ -115,6 +134,11 @@ fn capsule_publication_preserves_identity_kind_and_provenance_per_account() {
         UsageIdentityKindV1::ProviderStableHandle
     );
     assert_eq!(accounts[1].provenance_count, 2);
+    assert_eq!(
+        accounts[2].identity_kind,
+        UsageIdentityKindV1::LocalSourceHandle
+    );
+    assert_eq!(accounts[2].provenance_count, 1);
 }
 
 #[test]
