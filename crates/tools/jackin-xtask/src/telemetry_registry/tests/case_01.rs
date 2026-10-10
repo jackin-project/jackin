@@ -88,6 +88,20 @@ fn source_policy_keeps_known_tracing_sibling_of_cyclic_alias_branch() {
 }
 
 #[test]
+fn source_policy_propagates_cyclic_meter_binding_uncertainty() {
+    let violations = source_policy_violations(
+        "crates/group/example/src/lib.rs",
+        "use b as a; use a::nested as b; fn raw() { let meter_alias = a::meter; meter_alias(); }",
+    );
+
+    assert!(
+        violations.contains(&"cyclic telemetry import path"),
+        "{violations:?}"
+    );
+    assert!(!violations.contains(&"raw OpenTelemetry meter construction"));
+}
+
+#[test]
 fn source_policy_resolves_raw_meter_import_and_binding_aliases() {
     let path = "crates/group/example/src/lib.rs";
     for source in [

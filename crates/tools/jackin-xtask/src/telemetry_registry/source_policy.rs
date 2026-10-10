@@ -870,6 +870,12 @@ impl<'a> SourcePolicyScanner<'a> {
         }
     }
 
+    fn record_meter_alias(&mut self, local: &str, source: &str) {
+        if self.telemetry_imports.is_raw_meter(source) != TelemetryImportMatch::Unmatched {
+            self.telemetry_imports.record_alias_path(local, source);
+        }
+    }
+
     fn token_path(tokens: &[TokenTree], start: usize) -> Option<(String, usize)> {
         let first_index = if matches!(tokens.get(start), Some(TokenTree::Punct(punct)) if punct.as_char() == ':')
             && matches!(tokens.get(start + 1), Some(TokenTree::Punct(punct)) if punct.as_char() == ':')
@@ -1146,10 +1152,7 @@ impl<'ast> syn::visit::Visit<'ast> for SourcePolicyScanner<'_> {
         {
             if let syn::Expr::Path(path) = initializer.expr.as_ref() {
                 let source = Self::path_name(&path.path);
-                if self.telemetry_imports.is_raw_meter(&source) {
-                    self.telemetry_imports
-                        .record_alias_path(&binding.ident.to_string(), &source);
-                }
+                self.record_meter_alias(&binding.ident.to_string(), &source);
                 if Self::raw_spawn_path(&self.resolved_spawn_path(&source)) {
                     self.spawn_aliases.insert(binding.ident.to_string());
                 }
@@ -1167,10 +1170,7 @@ impl<'ast> syn::visit::Visit<'ast> for SourcePolicyScanner<'_> {
     fn visit_item_const(&mut self, node: &'ast syn::ItemConst) {
         if let syn::Expr::Path(path) = node.expr.as_ref() {
             let source = Self::path_name(&path.path);
-            if self.telemetry_imports.is_raw_meter(&source) {
-                self.telemetry_imports
-                    .record_alias_path(&node.ident.to_string(), &source);
-            }
+            self.record_meter_alias(&node.ident.to_string(), &source);
         }
         syn::visit::visit_item_const(self, node);
     }
@@ -1178,10 +1178,7 @@ impl<'ast> syn::visit::Visit<'ast> for SourcePolicyScanner<'_> {
     fn visit_item_static(&mut self, node: &'ast syn::ItemStatic) {
         if let syn::Expr::Path(path) = node.expr.as_ref() {
             let source = Self::path_name(&path.path);
-            if self.telemetry_imports.is_raw_meter(&source) {
-                self.telemetry_imports
-                    .record_alias_path(&node.ident.to_string(), &source);
-            }
+            self.record_meter_alias(&node.ident.to_string(), &source);
         }
         syn::visit::visit_item_static(self, node);
     }
