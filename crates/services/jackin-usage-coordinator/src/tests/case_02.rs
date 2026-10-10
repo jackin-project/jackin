@@ -1168,13 +1168,24 @@ fn catalog_revision_keeps_pending_marker_and_completion_floor_across_readd() {
     clock.advance(Duration::from_secs(20));
     executor.release(1);
     executor.wait_idle();
-    let completed_tombstone = store
-        .states
-        .lock()
-        .unwrap()
-        .get(&account)
-        .cloned()
-        .expect("fenced completion must persist its cooldown");
+    // The executor's active count reaches zero just before the coordinator
+    // worker commits the fenced completion. Observe the durable state rather
+    // than treating provider return as completion of the whole transaction.
+    let persistence_deadline = Instant::now() + Duration::from_secs(2);
+    let completed_tombstone = loop {
+        let persisted = store.states.lock().unwrap().get(&account).cloned();
+        if persisted.as_ref().is_some_and(|envelope| {
+            envelope.phase == UsageRefreshPhase::Idle
+                && envelope.success_deadline_epoch == Some(1_320)
+        }) {
+            break persisted.expect("checked durable completion marker");
+        }
+        assert!(
+            Instant::now() < persistence_deadline,
+            "fenced completion did not persist its cooldown"
+        );
+        std::thread::yield_now();
+    };
     assert_eq!(completed_tombstone.phase, UsageRefreshPhase::Idle);
     assert_eq!(completed_tombstone.success_deadline_epoch, Some(1_320));
     assert!(completed_tombstone.terminal_result.is_none());
