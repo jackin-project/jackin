@@ -18,10 +18,7 @@ use syn::spanned::Spanned as _;
 use syn::visit::Visit as _;
 mod ownership_census;
 mod source_policy;
-use source_policy::{
-    AsyncScopeGuardScanner, SourcePolicyScanner, SpawnDeclarations, SpawnTypeResolver,
-    WorkspaceSpawnTypes, spawn_receiver_type,
-};
+use source_policy::{SourcePolicyScanner, WorkspaceSpawnTypes};
 
 // Shrink-only: new files must use governed facades and helpers immediately.
 const RAW_SPAWN_ALLOWLIST: &[&str] = &[];
