@@ -116,7 +116,7 @@ fn statusline_ingest_is_a_typed_monitor_operation() {
 }
 
 #[test]
-fn v3_monitor_control_shapes_are_tagged_and_secret_free() {
+fn v4_monitor_control_shapes_are_tagged_and_secret_free() {
     use super::{
         MonitorAccountBindingInput, MonitorConfig, MonitorOperation, MonitorPolicy,
         MonitorPolicyApprovalInput, MonitorPurpose, MonitorScope, USAGE_MONITOR_SCHEMA_VERSION,
@@ -181,7 +181,7 @@ fn v3_monitor_control_shapes_are_tagged_and_secret_free() {
     };
     let start_value = serde_json::to_value(&start).expect("start should encode");
     let decoded: MonitorOperation =
-        serde_json::from_value(start_value.clone()).expect("v3 start should decode");
+        serde_json::from_value(start_value.clone()).expect("v4 start should decode");
     assert_eq!(decoded, start);
     assert_eq!(start_value["config"]["purpose"], "observe_only");
     assert_eq!(start_value["idempotency_key"], "retry-1");
@@ -193,7 +193,7 @@ fn v3_monitor_control_shapes_are_tagged_and_secret_free() {
     });
     serde_json::from_value::<MonitorOperation>(legacy_start)
         .expect_err("legacy budget override must be rejected");
-    assert_eq!(USAGE_MONITOR_SCHEMA_VERSION, 3);
+    assert_eq!(USAGE_MONITOR_SCHEMA_VERSION, 4);
     assert_eq!(crate::usage_broker::USAGE_BROKER_PROTOCOL_VERSION, "v7");
     let mut pre_opt_in_start = start_value;
     pre_opt_in_start["config"]

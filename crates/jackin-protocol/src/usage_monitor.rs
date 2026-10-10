@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::control::Money;
 
 /// Version of durable monitor-state records. Statusline input has its own version.
-pub const USAGE_MONITOR_SCHEMA_VERSION: u16 = 3;
+pub const USAGE_MONITOR_SCHEMA_VERSION: u16 = 4;
 
 /// Version of the normalized statusline input accepted by the monitor.
 pub const USAGE_STATUSLINE_INPUT_SCHEMA_VERSION: u16 = 2;
@@ -937,9 +937,10 @@ pub enum MonitorReply {
         /// Monotonic evidence sequence assigned by the broker.
         evidence_sequence: u64,
     },
-    /// Operator spend record was accepted and persisted.
+    /// Receipt for an accepted spend-record submission; verification may remain `Unverified`
+    /// while the broker retains uncertainty about the spend.
     SpendRecorded {
-        /// Persisted record with broker receipt time and verification state.
+        /// Submitted record with broker receipt time and verification state.
         record: SpendRecord,
     },
     /// Monitor was reconciled without an independent provider fetch.
