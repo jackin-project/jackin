@@ -2,13 +2,16 @@
 
 **Status:** Main already has a local Cargo-to-MBX route. The read-only setup
 and PR-status audits found that PR #1120 is not required to enable MBX on main.
-The isolated Claude usage test completed with 23 passed and 0 failed through
-the MBX wrapper. This does not establish native Keychain, real-account, or
-whole-workspace Rust readiness.
+At source checkpoint `33ddba4`, the isolated Claude usage (23), coordinator
+(54), and broker (160) tests passed; consumer compilation and docs rendering
+also passed. A previous MBX-backed CLI run passed 48 tests, while a newer CLI
+rerun and four integration-failure rerun remain pending. These results do not
+establish native Keychain, real-account, installed-binary, or whole-workspace
+readiness.
 
 ## Existing main setup
 
-At usage candidate HEAD `253c7cbc`, [`mise.toml`](../../mise.toml#L29-L59)
+At source checkpoint `33ddba4`, [`mise.toml`](../../mise.toml#L29-L59)
 pins `mr-boxington = "1.22.0"` and wraps `cargo` with `command = "mbx"` plus
 `MBX_CARGO_SHIM_MODE = "1"`. The checked-in
 [`mise.lock`](../../mise.lock#L490-L507) pins the MBX platform assets, checksums,
@@ -43,9 +46,26 @@ offline fixture tests, not live credential checks.
 The parent-run coordinator test process `30495` completed with exit status 0:
 54 passed, 0 failed; its log is `/private/tmp/jackin-mbx-coordinator-tests.log`.
 This is also isolated MBX-backed test evidence, not native Keychain or
-whole-workspace readiness. A consumer compilation is now running as process
-`80935`; its log is `/private/tmp/jackin-mbx-consumers-check.log`. Record that
-result only after the process exits and its complete log is reviewed.
+whole-workspace readiness. Consumer compilation run 5 passed for binary and
+library targets in `jackin`, `usage-ffi`, `runtime`, and `capsule`; its log is
+`/private/tmp/jackin-mbx-consumers-check-5.log`.
+
+The final isolated broker suite passed 160 tests and failed none at source
+checkpoint `33ddba4`; its log is
+`/private/tmp/jackin-mbx-broker-tests-final-2.log`. MBX reported 521 cache
+hits, 384 misses, 16 not looked up, 21 bypassed, 0 B transferred, and 1.4 GiB
+stored locally. This focused suite does not complete migration or integration
+verification.
+
+A previous MBX-backed CLI test run passed 48 tests. The newer rerun was
+reported running as process `12990`; its log is
+`/private/tmp/jackin-mbx-cli-tests-2.log`. Do not treat the earlier pass as
+current-checkpoint proof until the rerun is reviewed.
+
+MDX regeneration and docs verification passed 18 tests, built 1,293 HTML
+pages, and passed HTML plus hydrated rendering. The render verifier saved
+`/private/tmp/jackin-usage-schema4-final.png` and
+`/private/tmp/jackin-collector-final.png`; this is documentation proof only.
 
 ## PR #1120 status and relevance
 
@@ -63,9 +83,9 @@ check prevent treating the PR as merge-ready. The status audit found no
 submitted GitHub reviews or review threads. Independent Rust source review
 retained one bounded candidate around the download writer in
 [`net.rs`](https://github.com/jackin-project/jackin/blob/9ef617d014df15c6d967501bcbbdcb3689ed453c/crates/jackin-docker/src/net.rs#L197):
-a success-shaped result may panic if writing fails. This is source evidence,
-not runtime proof; disposition remains pending. Do not call the PR's Rust
-changes ready.
+the writer-error path may silently return `Ok`. This is source evidence, not
+runtime proof; disposition remains pending. Do not call the PR's Rust changes
+ready.
 
 PR #1120 is not needed to turn on MBX for the current main checkout because
 the `mise.toml` wrapper already routes Cargo through MBX. Consider the PR only
@@ -94,8 +114,10 @@ from upstream asset availability.
   offline-fixture limits in verification notes.
 - Preserve the coordinator test result (54 passed, 0 failed) with its isolated
   MBX and fixture limits.
-- Wait for consumer compilation process `80935`, then capture its final status
-  and review its complete log.
+- Preserve the completed consumer compilation result and its scoped limits.
+- Preserve the 160/0 broker result with its isolated MBX and fixture limits.
+- Review the pending CLI rerun and rerun the four failed Required integration
+  cases after their source fixes; do not treat either result as complete yet.
 - Record disposition of the source-only finding and refresh PR #1120's reviews,
   threads, and checks at its current head.
 - Decide whether PR #1120 is needed for main integration; do not merge it just
@@ -103,7 +125,8 @@ from upstream asset availability.
 - Pass the main-integration checks on the chosen usage candidate before the
   usage PR lands.
 
-The usage protocol gate remains 133 passing tests at canonical HEAD `253c7cbc`
-(wire v7, durable monitor schema v4). The latest broker run had 153 passes and
-3 failures in horizon/migration cases; a fix agent is working on those cases,
-so rerun and migration verification remain pending.
+The usage protocol gate remains 133 passing tests at source checkpoint
+`33ddba4` (wire v7, durable monitor schema v4). The isolated broker suite
+passed 160 tests with no failures. Four Required integration failures have
+source fixes in the worktree awaiting rerun; CLI rerun and migration runtime
+verification also remain pending.
