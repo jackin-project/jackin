@@ -1396,7 +1396,7 @@ fn reset_and_model_descriptors_report_state_without_relaxing_dispatch_guard() {
 }
 
 #[test]
-fn v1_migration_preserves_missing_baseline_and_existing_spend_history() {
+fn v1_disk_migration_rewrites_and_reopens_without_granting_dispatch() {
     let fixture = br#"
         {
           "schema_version": 1,
@@ -1429,9 +1429,32 @@ fn v1_migration_preserves_missing_baseline_and_existing_spend_history() {
           }
         }
     "#;
-    let migrated = legacy::migrate_v1(fixture).expect("migrate V1 fixture");
-    validate_store_state(&migrated).expect("validate migrated V2 state");
+    let (directory, initial_store) = open_store();
+    drop(initial_store);
+    let state_path = directory
+        .path()
+        .join(crate::BROKER_DIR)
+        .join("monitor")
+        .join("state.json");
+    let legacy_snapshot: serde_json::Value =
+        serde_json::from_slice(fixture).expect("parse V1 migration fixture");
+    assert_eq!(legacy_snapshot["schema_version"], serde_json::json!(1));
+    std::fs::write(&state_path, fixture).expect("install persisted V1 snapshot");
 
+    let migrated_once = MonitorStore::open(directory.path()).expect("migrate persisted V1 store");
+    let rewritten: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&state_path).expect("read rewritten monitor store"))
+            .expect("parse rewritten monitor store");
+    assert_eq!(
+        rewritten["schema_version"],
+        serde_json::json!(USAGE_MONITOR_SCHEMA_VERSION),
+        "V1 must be durably replaced with the current schema before returning"
+    );
+    drop(migrated_once);
+
+    let store = MonitorStore::open(directory.path()).expect("reopen migrated monitor store");
+    let migrated = store.lock().clone();
+    validate_store_state(&migrated).expect("validate reopened migrated state");
     assert_eq!(migrated.schema_version, USAGE_MONITOR_SCHEMA_VERSION);
     let goal = migrated
         .goals
@@ -1464,8 +1487,6 @@ fn v1_migration_preserves_missing_baseline_and_existing_spend_history() {
     assert_eq!(policy.new_policy, MonitorPolicy::StrictSgd);
     assert!(!policy.operator_confirmed);
 
-    let (_directory, store) = open_store();
-    install_store_state(&store, migrated);
     let binding = bind_account(&store, "acct-v1-history", NOW);
     assert_eq!(binding.revision, 2);
 
