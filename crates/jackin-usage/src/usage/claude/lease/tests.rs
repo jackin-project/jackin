@@ -245,6 +245,99 @@ fn revoked_consent_before_first_request_skips_provider_and_keychain() {
 }
 
 #[test]
+fn revoked_consent_after_first_success_rejects_provider_result() {
+    let _serial = test_lease_lock();
+    clear_bootstrapped_claude_credential();
+    let service = "Claude Code-credentials-selected";
+    let original = r#"{"claudeAiOauth":{"accessToken":"old-token"}}"#;
+    cached_credential().store(
+        service.to_owned(),
+        Zeroizing::new(original.to_owned()),
+        next_generation(),
+    );
+    let mut resolved = resolved_from_payload(original, service);
+    let fetch_count = Cell::new(0);
+    let reread_count = Cell::new(0);
+    let revoked = Cell::new(false);
+    let result = super::super::fetch_claude_with_one_401_reread(
+        service,
+        &mut resolved,
+        |_| {
+            fetch_count.set(fetch_count.get() + 1);
+            revoked.set(true);
+            serde_json::from_str::<crate::usage::ClaudeOAuthUsageResponse>("{}")
+                .map_err(|error| crate::usage::ProviderHttpError::Decode(error.to_string()))
+        },
+        |_| {
+            reread_count.set(reread_count.get() + 1);
+            ClaudeKeychainRead::Missing
+        },
+        || !revoked.get(),
+    );
+
+    assert!(matches!(
+        result,
+        Err(super::super::ClaudeFetchError::ConsentRevoked {
+            provider_http_status: None
+        })
+    ));
+    assert_eq!(fetch_count.get(), 1);
+    assert_eq!(reread_count.get(), 0);
+    clear_bootstrapped_claude_credential();
+}
+
+#[test]
+fn first_provider_error_is_preserved_when_consent_revokes_after_response() {
+    let _serial = test_lease_lock();
+    clear_bootstrapped_claude_credential();
+    let service = "Claude Code-credentials-selected";
+    let original = r#"{"claudeAiOauth":{"accessToken":"old-token"}}"#;
+    cached_credential().store(
+        service.to_owned(),
+        Zeroizing::new(original.to_owned()),
+        next_generation(),
+    );
+    let mut resolved = resolved_from_payload(original, service);
+    let fetch_count = Cell::new(0);
+    let reread_count = Cell::new(0);
+    let revoked = Cell::new(false);
+    let result = super::super::fetch_claude_with_one_401_reread(
+        service,
+        &mut resolved,
+        |_| {
+            fetch_count.set(fetch_count.get() + 1);
+            revoked.set(true);
+            Err(crate::usage::ProviderHttpError::HttpStatus {
+                status: 429,
+                message: "rate limited".to_owned(),
+                retry_after_seconds: Some(120),
+                response_received_at_epoch: Some(1_000),
+            })
+        },
+        |_| {
+            reread_count.set(reread_count.get() + 1);
+            ClaudeKeychainRead::Missing
+        },
+        || !revoked.get(),
+    );
+
+    assert!(matches!(
+        result,
+        Err(super::super::ClaudeFetchError::Provider(
+            crate::usage::ProviderHttpError::HttpStatus {
+                status: 429,
+                retry_after_seconds: Some(120),
+                response_received_at_epoch: Some(1_000),
+                ..
+            }
+        ))
+    ));
+    assert_eq!(fetch_count.get(), 1);
+    assert_eq!(reread_count.get(), 0);
+    clear_bootstrapped_claude_credential();
+}
+
+#[test]
 fn revoked_consent_after_401_skips_keychain_reread_and_preserves_401() {
     let _serial = test_lease_lock();
     clear_bootstrapped_claude_credential();

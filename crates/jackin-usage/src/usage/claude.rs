@@ -504,6 +504,11 @@ where
             ..
         }))
     ) {
+        if first.is_ok() && !consent_is_current() {
+            return Err(ClaudeFetchError::ConsentRevoked {
+                provider_http_status: None,
+            });
+        }
         return first;
     }
     if !consent_is_current() {

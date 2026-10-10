@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::quota::evidence_is_relevant;
-use super::reconcile::budget_is_same_or_tighter;
+use super::reconcile::{budget_is_same_or_tighter, is_migrated_zero_sgd_budget_repair};
 use super::*;
 
 pub(super) struct StartAuthority {
@@ -391,6 +391,7 @@ pub(super) fn validate_policy_records(state: &StoreState) -> Result<(), MonitorI
         }
         let mut previous_revision = 0;
         let mut previous_policy = None;
+        let mut previous_record: Option<&MonitorPolicyRecord> = None;
         for policy in history {
             if policy.goal_id != *goal_id
                 || !valid_identifier(&policy.account_id)
@@ -409,6 +410,8 @@ pub(super) fn validate_policy_records(state: &StoreState) -> Result<(), MonitorI
                         policy.acknowledge_no_sgd_cap,
                     )
                     .is_err())
+                || previous_record
+                    .is_some_and(|previous| !policy_transition_is_valid(previous, policy))
             {
                 return Err(store_unavailable());
             }
@@ -445,9 +448,28 @@ pub(super) fn validate_policy_records(state: &StoreState) -> Result<(), MonitorI
             }
             previous_revision = policy.revision;
             previous_policy = Some(policy.new_policy);
+            previous_record = Some(policy);
         }
     }
     Ok(())
+}
+
+fn policy_transition_is_valid(
+    previous: &MonitorPolicyRecord,
+    next: &MonitorPolicyRecord,
+) -> bool {
+    if previous.provider != next.provider || previous.account_id != next.account_id {
+        return false;
+    }
+
+    match (previous.new_policy, next.new_policy) {
+        (MonitorPolicy::StrictSgd, MonitorPolicy::QuotaOnly) => false,
+        (MonitorPolicy::StrictSgd, MonitorPolicy::StrictSgd) => {
+            budget_is_same_or_tighter(previous.budget.as_ref(), next.budget.as_ref())
+                || is_migrated_zero_sgd_budget_repair(previous)
+        }
+        _ => true,
+    }
 }
 
 pub(super) fn policy_binding_exists(
@@ -874,6 +896,10 @@ pub(super) fn current_policy<'a>(
         .get(goal_id)
         .and_then(|history| history.last())
 }
+
+#[cfg(test)]
+#[path = "validation/policy_history_tests.rs"]
+mod policy_history_tests;
 
 pub(super) fn validate_policy_input(
     policy: MonitorPolicy,
