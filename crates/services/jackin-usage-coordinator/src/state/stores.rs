@@ -343,7 +343,9 @@ impl AccountStateStore for FileAccountStateStore {
                         || envelope.completed_at_epoch.is_some()
                         || envelope.rate_limit_deadline_epoch.is_some()
                         || envelope.retry_deadline_epoch.is_some()
-                        || envelope.success_deadline_epoch.is_some());
+                        || envelope.success_deadline_epoch.is_some()
+                        || envelope.phase
+                            == jackin_protocol::usage_broker::UsageRefreshPhase::Updating);
                 envelope.schema_version = ACCOUNT_STATE_SCHEMA_VERSION;
                 (envelope, true)
             }

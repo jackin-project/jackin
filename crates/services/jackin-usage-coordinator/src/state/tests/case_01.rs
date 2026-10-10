@@ -61,7 +61,7 @@ fn account_state_v1_migration_retains_account_and_starts_conservative_attempt_fl
 }
 
 #[test]
-fn account_state_v1_fresh_queued_migration_does_not_invent_invocation_fence() {
+fn account_state_v1_migration_distinguishes_fresh_queue_from_ambiguous_attempts() {
     let temp = tempfile::tempdir().unwrap();
     let store = FileAccountStateStore::at(temp.path().join("accounts"));
     let account = capability();
@@ -91,7 +91,7 @@ fn account_state_v1_fresh_queued_migration_does_not_invent_invocation_fence() {
     assert_eq!(migrated.provider_invoked_at_epoch, None);
     assert!(!migrated.reload_fence_required);
 
-    let durable: AccountStateEnvelope = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+    let durable: AccountStateEnvelope = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
     assert_eq!(durable.schema_version, ACCOUNT_STATE_SCHEMA_VERSION);
     assert_eq!(durable.provider_invoked_at_epoch, None);
     assert!(!durable.reload_fence_required);
@@ -119,6 +119,29 @@ fn account_state_v1_fresh_queued_migration_does_not_invent_invocation_fence() {
     assert!(
         migrated.reload_fence_required,
         "contradictory queued state with a retry deadline is ambiguous"
+    );
+
+    let mut unresolved = AccountStateEnvelope::idle(account.clone());
+    unresolved.generation = 0;
+    unresolved.phase = UsageRefreshPhase::Updating;
+    let mut legacy = serde_json::to_value(&unresolved).unwrap();
+    legacy["schema_version"] = serde_json::json!(LEGACY_ACCOUNT_STATE_SCHEMA_VERSION);
+    legacy
+        .as_object_mut()
+        .unwrap()
+        .remove("provider_invoked_at_epoch");
+    legacy
+        .as_object_mut()
+        .unwrap()
+        .remove("reload_fence_required");
+    fs::write(&path, serde_json::to_vec(&legacy).unwrap()).unwrap();
+
+    let migrated = store.load(&account, 1_000).unwrap().unwrap();
+    assert_eq!(migrated.phase, UsageRefreshPhase::Updating);
+    assert_eq!(migrated.provider_invoked_at_epoch, None);
+    assert!(
+        migrated.reload_fence_required,
+        "an unresolved Updating record is uncertain even when other fields conflict"
     );
 }
 
