@@ -1031,7 +1031,7 @@ fn projection_account_destinations(
         .values()
         .filter_map(|history| history.last())
         .filter(|binding| {
-            binding.provider == MonitorProvider::Claude
+            binding.provider == jackin_protocol::usage_monitor::MonitorProvider::Claude
                 && binding.operator_confirmed
                 && binding.experimental_collector_approved
                 && binding.provider_account_id.as_deref() == Some(source_id)
