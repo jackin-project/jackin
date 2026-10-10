@@ -442,7 +442,11 @@ fn ticker_polls_approved_source_and_publishes_terminal_result_while_idle() {
     else {
         panic!("expected monitor status after terminal publication");
     };
-    assert_eq!(status.five_hour.used_percentage_basis_points, Some(3_600));
+    assert_eq!(
+        status.five_hour.used_percentage_basis_points,
+        Some(3_600),
+        "monitor status after paired-clock collection: {status:#?}"
+    );
     assert_eq!(status.seven_day.used_percentage_basis_points, Some(2_800));
     let evidence_source = |sequence| {
         status
