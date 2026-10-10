@@ -1,5 +1,31 @@
 # Claude unattended usage monitor
 
+## Foreground broker idle lifetime fix (PR #1124)
+
+Signed source commit `67f77ac01a160335a7b2ca1c101112034b4f5fc9` keeps a
+prepared foreground broker alive while its foreground liveness lease remains
+active, including when it has zero monitors. The operator must leave the
+attended terminal open until explicitly shutting the service down. A passive
+broker with no active monitors retains its idle timeout; active observers keep
+their existing lifetime behavior. This change does not guarantee credential
+availability, validity, or provider acceptance.
+
+MBX 1.22.0 / Rust 1.97.1 installed the debug CLI/broker pair from that exact
+source commit into the new v7 prefix. The 718-test `jackin-usage` library suite,
+focused sleep-jump regression, strict all-target Clippy, and workspace format
+check passed. The v7 non-TTY auth sentinel returned `interaction_required`
+before broker launch and left its fresh data directory absent. v2-v6 installed
+CLI and broker hashes still match their recorded values. Exact source/tree IDs,
+build command, installed hashes, sentinel output, MBX cache-pruning notice, and
+review status are in [v7-installation.json](v7-installation.json).
+
+The next operator step is an attended `auth prepare` using the v7 CLI and a
+fresh v7 state directory, left running in its terminal. Then, from a second
+attended terminal, complete the already-approved local binding and
+experimental-observation workflow against that state. This installation did
+not run bootstrap, inspect Keychain, make a provider request, or test a live
+account; the observation remains pending, and no dispatch policy is approved.
+
 ## Bounded auth diagnostic follow-up on main
 
 This narrow follow-up is being developed on isolated branch

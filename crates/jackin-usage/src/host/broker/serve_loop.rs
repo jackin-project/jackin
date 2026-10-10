@@ -201,6 +201,7 @@ pub(super) fn serve(config: ServeConfig) {
             policy.idle_exit,
             coordinator.is_idle(),
             monitor_store.has_active(),
+            collector_liveness.is_some(),
         ) {
             break;
         }
@@ -498,10 +499,12 @@ fn should_exit_idle(
     idle_exit: Duration,
     coordinator_idle: bool,
     has_active_monitor: bool,
+    has_foreground_liveness: bool,
 ) -> bool {
     now_monotonic.saturating_sub(last_activity_monotonic) >= idle_exit
         && coordinator_idle
         && !has_active_monitor
+        && !has_foreground_liveness
 }
 
 #[cfg(test)]

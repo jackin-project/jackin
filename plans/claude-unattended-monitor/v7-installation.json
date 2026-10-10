@@ -1,0 +1,109 @@
+{
+  "source_commit": "67f77ac01a160335a7b2ca1c101112034b4f5fc9",
+  "source_tree_sha1": "3c8df13f42a429d9436139cd9703ff3b52294bbd",
+  "installed_source_commit": "67f77ac01a160335a7b2ca1c101112034b4f5fc9",
+  "installed_source_tree_sha1": "3c8df13f42a429d9436139cd9703ff3b52294bbd",
+  "installed_source_matches_commit": true,
+  "branch": "fix/claude-foreground-idle-lease",
+  "base_commit": "835df8071da4b2802eef8619250e3c6b5bbfb4a6",
+  "build_command": [
+    "/Users/donbeave/.local/share/mise/installs/mr-boxington/1.22.0/mbx",
+    "+1.97.1",
+    "install",
+    "--debug",
+    "--locked",
+    "--path",
+    "crates/jackin",
+    "--root",
+    "/Users/donbeave/.local/share/jackin-claude-monitor-v7",
+    "--bin",
+    "jackin",
+    "--bin",
+    "jackin-usage-broker"
+  ],
+  "rust": "1.97.1 (8bab26f4f 2026-07-14)",
+  "mbx": "1.22.0",
+  "build_profile": "dev",
+  "cargo_profile_elapsed": "129s",
+  "cli_version": "0.6.4",
+  "broker_version": "0.6.4",
+  "install_root": "/Users/donbeave/.local/share/jackin-claude-monitor-v7",
+  "source_worktree_clean_at_install": true,
+  "source_code_matches_commit": true,
+  "uncommitted_paths_at_install": [],
+  "binaries": [
+    {
+      "name": "jackin",
+      "path": "/Users/donbeave/.local/share/jackin-claude-monitor-v7/bin/jackin",
+      "sha256": "526b5d842a26217e880367f9aef107219d2b019fe998a921ff32c7750b495d3a"
+    },
+    {
+      "name": "jackin-usage-broker",
+      "path": "/Users/donbeave/.local/share/jackin-claude-monitor-v7/bin/jackin-usage-broker",
+      "sha256": "08ddc7a618ae02f8288d763169dcdfca433fb013587b7f4161ee9cbd42cc8317"
+    }
+  ],
+  "focused_verification": [
+    {
+      "command": "/Users/donbeave/.local/share/mise/installs/mr-boxington/1.22.0/mbx +1.97.1 fmt --check --all",
+      "result": "passed"
+    },
+    {
+      "command": "/Users/donbeave/.local/share/mise/installs/mr-boxington/1.22.0/mbx +1.97.1 test --locked -p jackin-usage --lib spawned_ticker_reconciles_one_sleep_jump_and_wakes_monitor_watch",
+      "result": "1 passed, 717 filtered"
+    },
+    {
+      "command": "/Users/donbeave/.local/share/mise/installs/mr-boxington/1.22.0/mbx +1.97.1 test --locked -p jackin-usage --lib",
+      "result": "718 passed, 0 failed"
+    },
+    {
+      "command": "/Users/donbeave/.local/share/mise/installs/mr-boxington/1.22.0/mbx +1.97.1 clippy --locked -p jackin-usage --all-targets -- -D warnings",
+      "result": "passed"
+    }
+  ],
+  "installed_non_tty_check": {
+    "command": "/Users/donbeave/.local/share/jackin-claude-monitor-v7/bin/jackin usage --data-dir /var/folders/4s/k27jn48x1cggdq0ws6vsly4c0000gn/T/jackin-v7-auth-sentinel-y65l5en6/state auth prepare --provider claude --format json",
+    "environment": "JACKIN_USAGE_BROKER_BIN pointed to a marker executable; stdin was /dev/null and stdout/stderr were captured",
+    "exit_code": 2,
+    "stdout": "{\"version\":1,\"error\":{\"code\":\"interaction_required\",\"message\":\"authentication preparation requires stdin, stdout, and stderr attached to a terminal\"}}",
+    "stderr": "",
+    "diagnostic_present": false,
+    "broker_launch_attempted": false,
+    "data_dir_created": false
+  },
+  "unchanged_prior_prefix_sha256": {
+    "v2": {
+      "jackin": "910b51cf01d502bb11d08873ec0ca80190a87b506469e47c0594540ee26fa0a1",
+      "jackin-usage-broker": "b88276de449aa0cb610a394c0a28e14a025de66a42b0e18b7c4f0b8e0844421f"
+    },
+    "v3": {
+      "jackin": "b57e60f2f13b026ae2ec47034b61ecddc69644b230157e621c5ddb5cf447007d",
+      "jackin-usage-broker": "30b6f3b1f0777dbe9181851f83fbc2efb3f0356d290e1896bf2ccaf434fbf550"
+    },
+    "v4": {
+      "jackin": "c281e31a0d5365bfeea552029cda0037d6e361792e64cbdc404ae94db76d154b",
+      "jackin-usage-broker": "c35f73bf9e035c8533d59d089156cc7ec21d8cae2cea3718132efb3b32701406"
+    },
+    "v5": {
+      "jackin": "365d177ad3010a815cb86279eb614d18bbdef6e4df33f390cf22593d0a21be78",
+      "jackin-usage-broker": "f1fc536027287f062dcfba9b30e44d1bb41c1e5c101634774d4bd5fb4a4eb563"
+    },
+    "v6": {
+      "jackin": "ea1e92f9b321599c0d0c3ad34900fdb06b8062109766ad325002ecc3e741326b",
+      "jackin-usage-broker": "ba461b660ef9b697597576db3559de080b66e26f37cbea9665cd228aa082b597"
+    }
+  },
+  "cache_maintenance_note": "MBX reported `1.7 GiB stored locally` and `549.6 GiB logical tidied away` during install. This was tool-managed; no manual target/cache cleanup or garbage collection was run. v2-v6 installed CLI and broker hashes still match their recorded values; other shared cache contents were not inventoried.",
+  "independent_installed_review": {
+    "result": "pending",
+    "review_scope": "Independent read-only verification of exact source/tree identity, installed CLI and broker hashes and versions, unchanged v2-v6 hashes, and the non-TTY sentinel. No Keychain, live authentication, provider, settings, or state access."
+  },
+  "operator_next_step": {
+    "status": "pending operator action; not run",
+    "command": "/Users/donbeave/.local/share/jackin-claude-monitor-v7/bin/jackin usage --data-dir /Users/donbeave/.local/share/jackin-claude-monitor-v7/state auth prepare --provider claude",
+    "operator_requirement": "Run from an attended terminal and leave it open in the foreground until explicit shutdown. Then complete the approved local binding and experimental-observation workflow from a second attended terminal using the same v7 state directory.",
+    "actual_account_status": "unknown",
+    "dispatch_policy_approved": false
+  },
+  "verification_scope": "Source tests and an installed non-TTY interaction gate only. No Keychain item, live credential, account identity/status, provider endpoint, settings, or live authentication was accessed or changed; no provider request was made. The v7 state remains fresh and no real-account readiness is established."
+}
