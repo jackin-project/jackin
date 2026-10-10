@@ -1,5 +1,130 @@
 # Verification evidence
 
+## Bounded auth diagnostic follow-up on main
+
+Branch `fix/auth-malformed-diagnostic-dco` is based on remote main
+`3f3ddd7c48284b648b083305f969ee3e709b74b7`. DCO-signed source checkpoints
+`eb8f6b58c5fda32f437f7e9434edabaa1d47f0f8` and
+`31dc0574a8d0a052e115fa4031740eef31664af5` are on the delivery branch. The
+latest branch has source tree `ea7246252602ed897f0027ff448050219f191533`,
+identical to the tree used for the installed v4 pair. The bounded diagnostic
+is attached to `auth_malformed` only after the existing all-stream TTY gate;
+it uses the payload from the existing single bootstrap read and stops JSON
+classification above 65,536 bytes. It reports fixed JSON kinds, recognized
+alias presence/duplicates, access-token string/nonempty facts, and total
+payload/limit bytes. It includes no values, snippets, token length, identifiers,
+or unknown keys. Existing typed parsing remains the acceptance authority.
+
+MBX source check and scoped formatting passed. Focused offline tests passed:
+
+| Check | Result |
+| --- | --- |
+| Diagnostic fixtures | 9 passed, 0 failed |
+| Oversize bootstrap validation | 1 passed, 0 failed |
+| Malformed foreground bootstrap | 1 passed; one read, zero guard/ready calls |
+| Broker malformed JSON | 1 passed, 0 failed |
+| Broker foreground TTY/error mapping | 3 passed, 0 failed |
+| Claude credential lease regressions | 15 passed, 0 failed |
+
+The installed v4 debug pair was built with MBX 1.22.0/Rust 1.97.1 and reports
+version 0.6.4. The installed non-TTY command exited 2 with
+`interaction_required`, without a diagnostic and without calling the broker.
+Independent read-only review confirmed the parser and install checks; installed
+v2/v3 hashes were unchanged. Exact command, artifact hashes, and command output
+are in [v4-installation.json](v4-installation.json). This verifies only
+synthetic fixture behavior and the non-TTY interaction gate. No Keychain item,
+credential, account identity/status, live bootstrap, or provider endpoint was
+inspected; actual account status remains unknown.
+
+## Claude metadata alias correction and v5 install
+
+Operator feedback showed that a valid payload with separate `subscriptionType`
+and `rateLimitTier` strings was rejected. The typed parser had attached all
+four camel/snake spellings to one serde field, making the independent metadata
+fields look like duplicate aliases. Commit
+[`cc012603951c46d3fe909c21538af4c5b0715948`](https://github.com/jackin-project/jackin/commit/cc012603951c46d3fe909c21538af4c5b0715948)
+now preserves the fields independently, prefers subscription type when both
+are present, and falls back to rate limit tier when subscription type is
+absent or null. The structural diagnostic still reports each spelling's JSON
+kind and only marks both spellings of one logical field as duplicate.
+
+Focused offline MBX proof passed at source `cc012603`:
+
+| Check | Result |
+| --- | --- |
+| Claude parser, diagnostic, and lease suite | 39 passed, 0 failed |
+| Broker foreground bootstrap mapping | 3 passed, 0 failed |
+| Fake foreground bootstrap/lease lifecycle | 1 passed, 0 failed |
+| Malformed bootstrap read-count/no-start path | 1 passed, 0 failed |
+| `jackin-usage` and `jackin` scoped formatting | passed |
+
+The fixtures include the reported 524-byte structural shape with two different
+metadata values, camel/snake spellings, same-field duplicate rejection,
+subscription-first fallback, null/missing optional fields, wrong-type rejection,
+and value redaction. Bootstrap payload validation accepts the 524-byte shape.
+
+MBX 1.22.0/Rust 1.97.1 installed the debug pair at the new v5 prefix from the
+exact signed source tree. Both binaries report 0.6.4. A non-TTY sentinel
+returned `interaction_required` before broker launch and did not create its
+data directory. Installed v2/v3/v4 hashes match their pre-install values.
+Exact source IDs, command, hashes, tests, and sentinel output are in
+[v5-installation.json](v5-installation.json). Independent review verified the
+installed hashes and versions and reran the sentinel with an executable marker
+at `JACKIN_USAGE_BROKER_BIN`; the marker and data directory remained absent.
+The reviewer rehashed v2/v3/v4 and confirmed they were unchanged.
+
+This is fixture and interaction-gate evidence only. No Keychain item, live
+credential, account identity/status, provider endpoint, or settings was
+accessed or changed. The operator must retry the intended account through its
+normal attended bootstrap; actual account status remains unknown.
+
+## PR #1123 generated-file CI diagnosis
+
+On PR head `96b068e160a47b92dc6d6f01d38cba4690e83225`, CI run
+[38061798598](https://github.com/jackin-project/jackin/actions/runs/38061798598)
+failed Plan's generated-file comparison with the sole difference
+`.github/PULL_REQUEST_TEMPLATE.md`. The same deterministic failure occurred on
+earlier PR heads `e7e6864` and `cc012603`; it was not caused by the metadata
+parser fix. `PULL_REQUESTS.md` names `docs/PULL_REQUEST_TEMPLATE.md` as the
+canonical template, and that file is unchanged between the PR base and head.
+`.github/AGENTS.md` says `.github/` is generator-owned, so the stale `.github`
+duplicate was removed while preserving the canonical docs template.
+
+On the first generated-file correction head `b99824b7`, Plan's comparison and
+Actionlint passed. Five Rust matrix jobs then failed Clippy: the new
+`raw_field_kind` implementation used `map(...).unwrap_or(...)`, and its
+successful-payload assertion used `Result::is_ok()`. Those triggered
+`map_unwrap_or` and `assertions_on_result_states`, respectively, across five
+crate jobs. Signed commit
+[`ded71bd51600eb2a12ec8c6741259fdc3f93eb80`](https://github.com/jackin-project/jackin/commit/ded71bd51600eb2a12ec8c6741259fdc3f93eb80)
+rewrites them as `map_or` and `unwrap`. Focused MBX Clippy and format checks
+pass, and the `jackin-usage` suite passed 718 tests. The latest source head has
+its own exact-head CI run.
+
+The local Velnor preview attempt did not reach generation: offline preparation
+stopped because the Cargo cache lacked `android_system_properties v0.1.5`.
+The successful Plan comparison on `b99824b7` is the available generated-file
+parity proof. Velnor's warning about `mise.lock` line 388 was pre-existing: the
+lockfile SHA-256 is identical at base and head
+(`d2d1b07a8f02fb07f405ac5b00607b35155207ebcb9651ec1e10ca09ac26e55d`).
+
+## Clippy correction and v6 install
+
+MBX 1.22.0 with Rust 1.97.1 rebuilt the debug CLI and broker from clean source
+commit `ded71bd51600eb2a12ec8c6741259fdc3f93eb80` into the new v6 prefix. The
+non-TTY auth command returned `interaction_required` before launching an
+executable broker marker and did not create its fresh data directory. Installed
+v2-v5 hashes match their prior manifests. Exact source/tree IDs, toolchain,
+build command, artifact hashes, focused results, and sentinel output are in
+[v6-installation.json](v6-installation.json). Independent installed-pair review
+confirmed the source/tree and binary hashes, all eight v2-v5 hashes, CLI and
+broker versions, and the non-TTY marker sentinel.
+
+This remains synthetic fixture and interaction-gate evidence only. No Keychain
+item, live credential, account identity/status, provider endpoint, or settings
+was accessed or changed. The operator must retry the intended account through
+its normal attended bootstrap; actual account status remains unknown.
+
 ## Current main-port verification snapshot
 
 The canonical branch is `feat/claude-usage-monitor-main`, based on main

@@ -89,6 +89,7 @@ fn foreground_bootstrap_requires_all_terminal_streams_before_broker_call() {
     assert_eq!(exit_code, 2);
     let value: serde_json::Value = serde_json::from_str(&json).unwrap();
     assert_eq!(value["error"]["code"], "interaction_required");
+    assert!(value["error"].get("diagnostic").is_none());
 }
 
 #[test]
@@ -130,6 +131,9 @@ fn foreground_bootstrap_passes_exact_service_and_reports_safe_source_scope() {
 #[test]
 fn foreground_bootstrap_maps_auth_failures_without_starting_service() {
     let args = prepare_auth_args(&[]);
+    let malformed = jackin_usage::usage::diagnose_claude_profile_payload(
+        br#"{"claudeAiOauth":{"accessToken":"fixture-token"}}"#,
+    );
     for (outcome, expected) in [
         (ForegroundBootstrapOutcome::Missing, "auth_missing"),
         (ForegroundBootstrapOutcome::Denied, "auth_denied"),
@@ -137,7 +141,10 @@ fn foreground_bootstrap_maps_auth_failures_without_starting_service() {
             ForegroundBootstrapOutcome::InteractionRequired,
             "interaction_required",
         ),
-        (ForegroundBootstrapOutcome::Malformed, "auth_malformed"),
+        (
+            ForegroundBootstrapOutcome::Malformed(malformed.clone()),
+            "auth_malformed",
+        ),
     ] {
         let result = prepare_auth_with(
             &args,
@@ -149,7 +156,33 @@ fn foreground_bootstrap_maps_auth_failures_without_starting_service() {
         assert_eq!(exit_code, 2);
         let value: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!(value["error"]["code"], expected);
+        assert_eq!(
+            value["error"].get("diagnostic").is_some(),
+            expected == "auth_malformed"
+        );
     }
+}
+
+#[test]
+fn malformed_auth_json_contains_only_bounded_diagnostic_facts() {
+    let fixture = br#"{"claudeAiOauth":{"accessToken":"fixture-secret-token","subscriptionType":7},"oauthAccount":{"emailAddress":"fixture-private@example.test"}}"#;
+    let diagnostic = jackin_usage::usage::diagnose_claude_profile_payload(fixture);
+    let (exit_code, json) = auth_malformed_error(diagnostic);
+
+    assert_eq!(exit_code, 2);
+    let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(value["error"]["code"], "auth_malformed");
+    assert_eq!(value["error"]["diagnostic"]["payload_bytes"], fixture.len());
+    assert_eq!(
+        value["error"]["diagnostic"]["access_token"]["camel_case"],
+        "string"
+    );
+    assert_eq!(
+        value["error"]["diagnostic"]["access_token"]["camel_case_nonempty"],
+        true
+    );
+    assert!(!json.contains("fixture-secret-token"));
+    assert!(!json.contains("fixture-private@example.test"));
 }
 
 #[test]

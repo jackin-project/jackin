@@ -11,6 +11,10 @@ use zeroize::Zeroizing;
 use super::keychain::{
     ClaudeKeychainPolicyError, ClaudeKeychainRead, prepare_claude_keychain_auth,
 };
+use super::{
+    ClaudeCredentialPayloadDiagnostic, MAX_CLAUDE_KEYCHAIN_PAYLOAD_BYTES,
+    diagnose_claude_profile_payload,
+};
 
 /// Secret-free result of an explicit Claude Keychain bootstrap.
 #[derive(Debug, PartialEq, Eq)]
@@ -22,7 +26,7 @@ pub enum ClaudeCredentialBootstrapOutcome {
     /// Operator interaction is required, including a missing all-stdio TTY.
     InteractionRequired,
     /// The selected Keychain payload was not valid bounded credential data.
-    Malformed,
+    Malformed(ClaudeCredentialPayloadDiagnostic),
     /// The exact selected service is retained until this handle is dropped.
     Acquired(ClaudeCredentialLease),
 }
@@ -189,7 +193,6 @@ fn next_generation() -> u64 {
     NEXT_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
-pub(crate) const MAX_CLAUDE_KEYCHAIN_PAYLOAD_BYTES: usize = 64 * 1024;
 const MAX_CLAUDE_KEYCHAIN_SERVICE_BYTES: usize = 512;
 
 pub(crate) fn valid_claude_keychain_service(service: &str) -> bool {
@@ -198,10 +201,18 @@ pub(crate) fn valid_claude_keychain_service(service: &str) -> bool {
         && !service.contains('\0')
 }
 
-fn valid_claude_keychain_payload(json: &str) -> bool {
-    json.len() <= MAX_CLAUDE_KEYCHAIN_PAYLOAD_BYTES
-        && super::parse_claude_profile_payload(json.as_bytes())
-            .is_some_and(|profile| profile.credential.is_some())
+fn valid_claude_keychain_payload(json: &str) -> Result<(), ClaudeCredentialPayloadDiagnostic> {
+    let bytes = json.as_bytes();
+    if bytes.len() > MAX_CLAUDE_KEYCHAIN_PAYLOAD_BYTES {
+        return Err(diagnose_claude_profile_payload(bytes));
+    }
+    if super::parse_claude_profile_payload(bytes)
+        .is_some_and(|profile| profile.credential.is_some())
+    {
+        Ok(())
+    } else {
+        Err(diagnose_claude_profile_payload(bytes))
+    }
 }
 
 /// Read one exact Keychain service from an attached operator terminal and
@@ -233,9 +244,9 @@ pub fn bootstrap_claude_credential(
 
     match prepare_claude_keychain_auth(service) {
         ClaudeKeychainRead::Payload { mut json } => {
-            if !valid_claude_keychain_payload(&json) {
+            if let Err(diagnostic) = valid_claude_keychain_payload(&json) {
                 json.zeroize();
-                return Ok(ClaudeCredentialBootstrapOutcome::Malformed);
+                return Ok(ClaudeCredentialBootstrapOutcome::Malformed(diagnostic));
             }
             let generation = next_generation();
             cached_credential().store(service.to_owned(), json, generation);
