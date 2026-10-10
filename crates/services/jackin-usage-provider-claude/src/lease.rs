@@ -242,7 +242,7 @@ fn bootstrap_claude_credential_with(
     }
 
     match read_item() {
-        ClaudeKeychainRead::Payload { json } => {
+        ClaudeKeychainRead::Payload { mut json } => {
             if let Err(diagnostic) = valid_claude_keychain_payload(&json) {
                 json.zeroize();
                 return Ok(ClaudeCredentialBootstrapOutcome::Malformed(diagnostic));
