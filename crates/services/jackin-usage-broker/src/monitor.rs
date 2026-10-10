@@ -1739,7 +1739,7 @@ mod session_capacity_tests;
 mod watch_restart_tests;
 
 #[cfg(test)]
-#[path = "monitor/policy_regression_tests.rs"]
+#[path = "monitor/tests/policy_regression_tests.rs"]
 mod policy_regression_tests;
 
 #[cfg(test)]
