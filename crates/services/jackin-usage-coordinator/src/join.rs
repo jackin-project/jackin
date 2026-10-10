@@ -139,8 +139,14 @@ impl UsageCoordinator {
                 let recovery_sample = self.shared.clock.sample(now_epoch);
                 let mut envelope =
                     envelope.unwrap_or_else(|| AccountStateEnvelope::idle(capability.clone()));
-                let reload_safety_fence = envelope.provider_invoked_at_epoch.is_some()
+                let unresolved_updating_attempt = envelope.phase == UsageRefreshPhase::Updating
+                    && envelope.provider_invoked_at_epoch.is_none();
+                let reload_safety_fence = envelope.reload_fence_required
+                    || envelope.provider_invoked_at_epoch.is_some()
                     || envelope.phase == UsageRefreshPhase::Updating;
+                if unresolved_updating_attempt {
+                    envelope.reload_fence_required = true;
+                }
                 let recovery_pending = envelope.phase.is_active();
                 if recovery_pending {
                     let recovering_invoked_attempt = envelope.phase == UsageRefreshPhase::Updating;

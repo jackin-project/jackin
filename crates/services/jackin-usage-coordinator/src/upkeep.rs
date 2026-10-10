@@ -56,7 +56,7 @@ pub(crate) fn cooldown_tombstone(
     now_epoch: i64,
     pending_attempt: bool,
 ) -> Option<AccountStateEnvelope> {
-    if !pending_attempt {
+    if !pending_attempt && !envelope.reload_fence_required {
         account_cooldown_deadline(envelope).filter(|deadline| *deadline > now_epoch)?;
     }
     let mut tombstone = if pending_attempt {

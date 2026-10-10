@@ -34,24 +34,64 @@ fn account_state_v1_migration_retains_account_and_starts_conservative_attempt_fl
         .unwrap();
 
     let mut legacy = serde_json::to_value(completed(1_000, "existing@example.test")).unwrap();
-    legacy["schema_version"] = serde_json::json!(PREVIOUS_ACCOUNT_STATE_SCHEMA_VERSION);
+    legacy["schema_version"] = serde_json::json!(LEGACY_ACCOUNT_STATE_SCHEMA_VERSION);
     legacy
         .as_object_mut()
         .unwrap()
         .remove("provider_invoked_at_epoch");
+    legacy
+        .as_object_mut()
+        .unwrap()
+        .remove("reload_fence_required");
     fs::write(&path, serde_json::to_vec(&legacy).unwrap()).unwrap();
     fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
 
     let migrated = store.load(&capability(), 2_000).unwrap().unwrap();
     assert_eq!(migrated.schema_version, ACCOUNT_STATE_SCHEMA_VERSION);
     assert_eq!(migrated.started_at_epoch, Some(1_000));
-    assert_eq!(migrated.provider_invoked_at_epoch, Some(2_000));
+    assert_eq!(migrated.provider_invoked_at_epoch, None);
+    assert!(migrated.reload_fence_required);
     assert_eq!(
         migrated.last_good.unwrap().account.account_label,
         "existing@example.test"
     );
     let durable: AccountStateEnvelope = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
-    assert_eq!(durable.provider_invoked_at_epoch, Some(2_000));
+    assert_eq!(durable.provider_invoked_at_epoch, None);
+    assert!(durable.reload_fence_required);
+}
+
+#[test]
+fn account_state_v2_migration_persists_unresolved_attempt_provenance_atomically() {
+    let temp = tempfile::tempdir().unwrap();
+    let store = FileAccountStateStore::at(temp.path().join("accounts"));
+    let account = capability();
+    let path = temp.path().join("accounts/claude-account-123.json");
+    let mut updating = AccountStateEnvelope::idle(account.clone());
+    updating.schema_version = PREVIOUS_ACCOUNT_STATE_SCHEMA_VERSION;
+    updating.generation = 4;
+    updating.phase = UsageRefreshPhase::Updating;
+    updating.started_at_epoch = Some(1_000);
+    store.store(&updating, 1_000).unwrap();
+
+    let mut legacy = serde_json::to_value(&updating).unwrap();
+    legacy["schema_version"] = serde_json::json!(PREVIOUS_ACCOUNT_STATE_SCHEMA_VERSION);
+    legacy
+        .as_object_mut()
+        .unwrap()
+        .remove("reload_fence_required");
+    fs::write(&path, serde_json::to_vec(&legacy).unwrap()).unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+
+    let migrated = store.load(&account, 2_000).unwrap().unwrap();
+    assert_eq!(migrated.schema_version, ACCOUNT_STATE_SCHEMA_VERSION);
+    assert_eq!(migrated.phase, UsageRefreshPhase::Updating);
+    assert_eq!(migrated.provider_invoked_at_epoch, None);
+    assert!(migrated.reload_fence_required);
+
+    let durable: AccountStateEnvelope = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+    assert_eq!(durable.schema_version, ACCOUNT_STATE_SCHEMA_VERSION);
+    assert!(durable.reload_fence_required);
+    assert_eq!(durable.provider_invoked_at_epoch, None);
 }
 
 #[test]
@@ -100,6 +140,21 @@ fn atomic_state_corrupt_schema_and_future_epoch_fail_closed() {
     assert_eq!(
         store.load(&capability(), 1_000),
         Err(StateStoreError::Corrupt)
+    );
+
+    let mut future_schema = completed(1_000, "newer broker");
+    future_schema.schema_version = ACCOUNT_STATE_SCHEMA_VERSION + 1;
+    let future_bytes = serde_json::to_vec(&future_schema).unwrap();
+    fs::write(&path, &future_bytes).unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+    assert_eq!(
+        store.load(&capability(), 1_000),
+        Err(StateStoreError::Corrupt)
+    );
+    assert_eq!(
+        fs::read(&path).unwrap(),
+        future_bytes,
+        "an older broker must leave unknown future-schema bytes untouched"
     );
 
     let mut future = completed(1_301, "safe");

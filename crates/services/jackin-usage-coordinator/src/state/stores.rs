@@ -9,10 +9,11 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 
 use super::{
-    ACCOUNT_STATE_SCHEMA_VERSION, AccountStateEnvelope, MAX_ACCOUNT_STATE_BYTES,
-    PREVIOUS_ACCOUNT_STATE_SCHEMA_VERSION, PREVIOUS_PROJECTION_STATE_SCHEMA_VERSION,
-    PROJECTION_STATE_SCHEMA_VERSION, STATE_QUARANTINE_COUNTER, STATE_TMP_COUNTER, StateStoreError,
-    sanitize_envelope, state_filename, validate_capability, validate_envelope, validate_owned_mode,
+    ACCOUNT_STATE_SCHEMA_VERSION, AccountStateEnvelope, LEGACY_ACCOUNT_STATE_SCHEMA_VERSION,
+    MAX_ACCOUNT_STATE_BYTES, PREVIOUS_ACCOUNT_STATE_SCHEMA_VERSION,
+    PREVIOUS_PROJECTION_STATE_SCHEMA_VERSION, PROJECTION_STATE_SCHEMA_VERSION,
+    STATE_QUARANTINE_COUNTER, STATE_TMP_COUNTER, StateStoreError, sanitize_envelope,
+    state_filename, validate_capability, validate_envelope, validate_owned_mode,
 };
 use jackin_protocol::usage_broker::{UsageAccountCapability, UsageCatalogEntry, UsageProjectionV1};
 use nix::fcntl::{OFlag, open, openat, renameat};
@@ -308,19 +309,39 @@ impl AccountStateStore for FileAccountStateStore {
             .and_then(|version| u32::try_from(version).ok())
             .ok_or(StateStoreError::Corrupt)?;
         let (envelope, migrated) = match schema_version {
-            PREVIOUS_ACCOUNT_STATE_SCHEMA_VERSION => {
+            LEGACY_ACCOUNT_STATE_SCHEMA_VERSION => {
                 // v1 recorded queue admission as the attempt start. The actual
                 // provider start cannot be reconstructed, so retain the account
-                // and conservatively begin a fresh floor from migration time.
+                // and persist uncertainty without inventing an invocation.
+                let object = value.as_object_mut().ok_or(StateStoreError::Corrupt)?;
+                object.insert("provider_invoked_at_epoch".into(), serde_json::Value::Null);
+                object.insert(
+                    "reload_fence_required".into(),
+                    serde_json::Value::Bool(false),
+                );
+                let mut envelope: AccountStateEnvelope =
+                    serde_json::from_value(value).map_err(|_| StateStoreError::Corrupt)?;
+                envelope.reload_fence_required = envelope.started_at_epoch.is_some();
+                envelope.schema_version = ACCOUNT_STATE_SCHEMA_VERSION;
+                (envelope, true)
+            }
+            PREVIOUS_ACCOUNT_STATE_SCHEMA_VERSION => {
+                // v2 did not retain uncertainty after recovering an Updating
+                // record without a real invocation timestamp. Preserve that
+                // provenance explicitly in v3 so another restart cannot lose
+                // the conservative monotonic reload fence.
                 value
                     .as_object_mut()
                     .ok_or(StateStoreError::Corrupt)?
-                    .insert("provider_invoked_at_epoch".into(), serde_json::Value::Null);
+                    .insert(
+                        "reload_fence_required".into(),
+                        serde_json::Value::Bool(false),
+                    );
                 let mut envelope: AccountStateEnvelope =
                     serde_json::from_value(value).map_err(|_| StateStoreError::Corrupt)?;
-                envelope.provider_invoked_at_epoch = envelope
-                    .started_at_epoch
-                    .map(|admitted| admitted.max(now_epoch));
+                envelope.reload_fence_required = envelope.phase
+                    == jackin_protocol::usage_broker::UsageRefreshPhase::Updating
+                    && envelope.provider_invoked_at_epoch.is_none();
                 envelope.schema_version = ACCOUNT_STATE_SCHEMA_VERSION;
                 (envelope, true)
             }

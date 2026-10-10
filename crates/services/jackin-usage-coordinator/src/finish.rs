@@ -31,18 +31,21 @@ pub(crate) fn mark_updating(shared: &Arc<Shared>, job: &ProbeJob) -> Option<i64>
         return None;
     }
     let previous_invocation = entry.envelope.provider_invoked_at_epoch;
+    let previous_reload_fence = entry.envelope.reload_fence_required;
     let queue_wait = shared.clock.now().saturating_sub(job.admitted_at_monotonic);
     let provider_invoked_at_epoch = job
         .admitted_at_epoch
         .saturating_add(i64::try_from(queue_wait.as_secs()).unwrap_or(i64::MAX));
     entry.envelope.phase = UsageRefreshPhase::Updating;
     entry.envelope.provider_invoked_at_epoch = Some(provider_invoked_at_epoch);
+    entry.envelope.reload_fence_required = false;
     if shared
         .store
         .store(&entry.envelope, provider_invoked_at_epoch)
         .is_err()
     {
         entry.envelope.provider_invoked_at_epoch = previous_invocation;
+        entry.envelope.reload_fence_required = previous_reload_fence;
         // Retain the catalog transaction while resolving the owned generation;
         // reacquiring its lifecycle mutex here would deadlock this worker.
         finish_failure_in_state(

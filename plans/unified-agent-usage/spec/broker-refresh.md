@@ -59,7 +59,11 @@ SHALL add a fresh 300-second monotonic reload fence, in addition to any longer p
 wall deadline. This conservative reload fence is not a provider invocation and SHALL
 NOT update `provider_invoked_at_epoch`; a durable `Queued` request with no prior
 invocation SHALL not acquire this fence. A recovered unresolved attempt remains
-fail-closed until the reload fence expires.
+fail-closed until the reload fence expires. Account-state schema 3 persists this
+uncertainty through recovery, catalog reset, and cooldown tombstones, and clears it only
+when an actual invocation timestamp is durably written. The one-time schema 1 and 2
+conversions preserve ambiguous legacy attempts as uncertainty; schema 1 queue admission
+is never rewritten as an actual invocation timestamp.
 
 #### Scenario: restart after a forward wall-clock jump
 
