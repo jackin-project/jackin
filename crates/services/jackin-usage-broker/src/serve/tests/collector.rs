@@ -179,10 +179,9 @@ impl CollectorHarness {
             MonitorReply::AccountBound { binding } => binding,
             other => panic!("expected account-bound reply, got {other:?}"),
         };
-        assert_eq!(
-            self.store.collection_accounts(),
-            vec![source_id],
-            "only the exact approved foreground source enters collector polling"
+        assert!(
+            self.store.collection_accounts().is_empty(),
+            "a confirmed binding alone cannot enter collector polling"
         );
 
         let reply = self
@@ -210,6 +209,11 @@ impl CollectorHarness {
         let MonitorReply::Started { status } = reply else {
             panic!("expected collector observer to start, got {reply:?}");
         };
+        assert_eq!(
+            self.store.collection_accounts(),
+            vec![source_id],
+            "only the exact approved foreground source with an active opted-in monitor enters collector polling"
+        );
         status.monitor_id
     }
 
