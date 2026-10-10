@@ -10,19 +10,21 @@ published in [v3-installation.json](v3-installation.json),
 GitHub Actions run [38044592706](https://github.com/jackin-project/jackin/actions/runs/38044592706)
 for this exact source commit completed successfully: Required, all Rust matrix
 jobs, and Actionlint passed; the baseline publication job was skipped by its
-workflow rules. A later documentation/evidence commit requires its own
-exact-head checks. Native Security Framework calls, successful attended
-Keychain authorization and foreground bootstrap, real-account binding, and
-live provider collection remain unverified. The initial attended Keychain
+workflow rules. This source-head result does not substitute for checks on the
+separate documentation/evidence PR head. Native Security Framework calls,
+successful attended Keychain authorization and foreground bootstrap,
+real-account binding, and live provider collection remain unverified. The
+initial attended Keychain
 read may prompt; later unattended reads run under a no-UI guard and fail with
 `interaction_required` if UI would be required. That guard does not guarantee
 credential availability or validity.**
-The `45a33093` checkpoint and its installed fixture are historical; their
-provenance and hashes remain in
-[/private/tmp/jackin-v3-provenance-45a33093.json](/private/tmp/jackin-v3-provenance-45a33093.json)
-and [the installed fixture log](/private/tmp/jackin-v3-installed-smoke-45a33093.log).
-The earlier 22ac pair is also historical; its record remains in
-[v3-installation.json](v3-installation.json) and [v3-installed-smoke.log](v3-installed-smoke.log).
+The `45a33093` checkpoint and its installed fixture are historical; its
+source-gate record is in [v3-checks.json](v3-checks.json), and its exact
+installation provenance and smoke transcript are in
+[v3-installed-smoke-checkpoint-45a.log](v3-installed-smoke-checkpoint-45a.log).
+The earlier 22ac pair is also historical; its record is indexed in
+[v3-checks.json](v3-checks.json), with the exact fixture transcript in
+[v3-installed-smoke-checkpoint-22ac.log](v3-installed-smoke-checkpoint-22ac.log).
 
 ## Implemented path and limits
 
@@ -272,20 +274,23 @@ all seven affected packages. Current focused checks passed: FFI (11 tests),
 scope verification (7 tests), docs (5 tests), the V1 migration proof, host
 broker (184 tests), and capsule (1 test).
 Source-head CI run [38044592706](https://github.com/jackin-project/jackin/actions/runs/38044592706)
-passed for `8abfa235`, including Required, the Rust matrix, and Actionlint. A
-later documentation/evidence commit needs separate exact-head checks.
+passed for `8abfa235`, including Required, the Rust matrix, and Actionlint. PR
+documentation/evidence head `56181d4d` then passed exact-head run
+`38045612792`, including Required, the Rust matrix, Actionlint, and DCO. The
+documentation corrections in this commit create a new head requiring its own
+exact-head checks.
 
 The `45a33093` installed pair is historical. Its MBX build took 15.93 seconds;
 its local provider/lease lifecycle, host broker, and discovery scopes passed
-with 28, 183, and 41 tests respectively. Earlier evidence also records the
-57-test coordinator scope. The 22ac installed pair is historical as well.
+with 28, 183, and 41 tests respectively. The separate 22ac bounded source
+record includes the 57-test coordinator scope. The 22ac installed pair is
+historical as well.
 
 The 8abfa235 fixture did not instrument native Security Framework calls or
 exercise successful foreground authentication. It used fixture state, not a
-real account or configured evidence store. The historical 45a checkpoint's
-provenance and fixture log remain at
-[/private/tmp/jackin-v3-provenance-45a33093.json](/private/tmp/jackin-v3-provenance-45a33093.json)
-and [the installed fixture log](/private/tmp/jackin-v3-installed-smoke-45a33093.log).
+real account or configured evidence store. The historical 45a source gates
+and installed fixture are identified by [v3-checks.json](v3-checks.json) and
+[its checkpoint smoke transcript](v3-installed-smoke-checkpoint-45a.log).
 Neither the build, fixture, nor source tests establish successful authorization
 on this Mac, a stable provider-account identity, or successful live collection.
 The no-UI guarantee applies to unattended Keychain reads after the guard is

@@ -17,9 +17,13 @@ binaries. Manifest SHA-256 is
 `64a0a101224ad5c38f4292a59c5191a44071fc54eab3cc95e8a57a13bc454601`. Source-head
 CI run [38044592706](https://github.com/jackin-project/jackin/actions/runs/38044592706)
 passed for this exact commit: Required, all Rust matrix jobs, and Actionlint
-succeeded; the baseline publication job was skipped by workflow rules. A later
-documentation/evidence commit requires its own exact-head checks. CI run `38042237548`
-and the 45a installed pair are historical for this source.
+succeeded; the baseline publication job was skipped by workflow rules. The
+documentation/evidence PR head `56181d4d` passed run
+[38045612792](https://github.com/jackin-project/jackin/actions/runs/38045612792):
+Required, all Rust matrix jobs, Actionlint, and DCO passed; baseline publication
+was skipped by workflow rules. The documentation corrections in this commit
+create a new PR head and require their own exact-head checks. CI run
+`38042237548` and the 45a installed pair are historical for this source.
 
 P1's private one-way-migration rejection has fresh proof; follow-up reply
 `4237303703` is posted and the thread resolved. P2 was accepted: the FFI rank
@@ -53,10 +57,10 @@ is signed and pushed, its fixture install smoke passed, and source-head CI run
 [38044592706](https://github.com/jackin-project/jackin/actions/runs/38044592706)
 completed successfully. Native Security
 Framework calls were not instrumented; this smoke does not establish live
-account readiness or successful foreground authentication. Required CI, final
-checks for a later documentation/evidence commit, and landing remain required.
-The 45a installed pair above is a
-historical checkpoint and does not validate this source.
+account readiness or successful foreground authentication. The 56181d4 PR
+head's exact checks passed; final checks for the documentation corrections
+remain required before landing. The 45a installed pair is detailed below; it is
+historical and does not validate this source.
 
 Current Cargo verification must use MBX 1.22.0 with offline/locked flags.
 Earlier checks used the checked-in Mise-to-MBX Cargo wrapper. Current isolated
@@ -112,14 +116,18 @@ and `cleared_diagnostic_removes_empty_provider_row`.
 
 The unused public `HostUsageRuntime` and its references were removed; the
 active `HostUsageProjectionRuntime` remains. This was checked against current
-consumers and the seven-package scoped check. The retry/cooldown and security
-lifecycle roots were open at checkpoint 8288; their latest targeted test and
-review evidence is recorded below. The Linux Required job failed at 8288 on
-the `--modes` enum-import and Clippy-nesting issues. The later Linux CI run
-had five failed Rust jobs, all reporting the same three E0004 match-site
-diagnostics; one Required aggregate check failed from those jobs. The frozen
-cfg fix's selected MBX checks and affected test suites now pass, while a green
-Required CI rerun remains pending.
+consumers and the seven-package scoped check. The following records the
+historical 8288/14c gate state: retry/cooldown and security lifecycle work was
+still open at 8288. Linux CI run
+[38035268298](https://github.com/jackin-project/jackin/actions/runs/38035268298)
+for that exact head failed five Rust jobs plus Required; failures included
+excessive-nesting Clippy and E0308/E0599 compile errors. Later CI run
+`38042237548` on head 14c failed three
+Rust jobs (`jackin`, `jackin-runtime`, and `jackin-capsule`), and its Required
+aggregate failed. The cfg fix and subsequent changes are included in source
+checkpoint 8abfa; its final MBX gates and affected suites passed, and source-head
+CI run [38044592706](https://github.com/jackin-project/jackin/actions/runs/38044592706)
+passed. These historical failures do not describe 8abfa or the current PR head.
 
 ## Historical bounded source verification: checkpoint 22ac3581
 
@@ -128,9 +136,9 @@ verify signed, pushed source checkpoint
 `22ac3581a70310b9792f03d71168ee8bdd799591`; they are historical evidence and
 do not cover the cfg fix committed in 45a33093. The installed pair for 22ac3581
 passed its fixture smoke below.
-The prior Linux CI run had five failed Rust jobs, all reporting the same three
-E0004 match-site diagnostics; one Required aggregate check failed from those
-jobs.
+CI run [38040399067](https://github.com/jackin-project/jackin/actions/runs/38040399067)
+for this 22ac head had five failed Rust jobs, all reporting the same three
+E0004 match-site diagnostics; its Required aggregate check failed as well.
 Each suite is an independent scope and overlaps other suites; do not sum test
 counts.
 
@@ -174,11 +182,11 @@ Local macOS MBX results; each affected test suite is an independent scope.
 | Host broker | 183 passed, 0 failed, 522 filtered | `/private/tmp/jackin-mbx-v4-linux-payload-broker.log` |
 | Discovery | 41 passed | `/private/tmp/jackin-mbx-v4-linux-payload-discovery.log` |
 | MBX offline build | Passed, exit 0, 15.93 seconds | `/private/tmp/jackin-mbx-build-45a33093.log` |
-| Installed fixture smoke | Passed | [v3-installed-smoke.log](v3-installed-smoke.log) |
-| Intermediate Linux CI poll for 45a | 22 passed, 6 pending, 0 failed | Superseded by CI run `38042237548`, which failed three Rust jobs; see current snapshot above |
+| Installed fixture smoke | Passed | [v3-installed-smoke-checkpoint-45a.log](v3-installed-smoke-checkpoint-45a.log) |
+| Intermediate Linux CI poll for 45a | 22 passed, 6 pending, 0 failed | Later run `38042237548` failed three Rust jobs on head 14c; source-head run `38044592706` then passed for 8abfa; see current snapshot above |
 
-The installed 22ac pair below is historical. The 45a installed pair is also
-historical for the current post-14c production changes.
+The installed 22ac and 45a pairs below are historical relative to current
+source checkpoint 8abfa.
 
 The retry/cooldown suites cover restart floor recovery, projection cadence,
 and active cooldown tombstones across loaded, lazy-loaded, and
@@ -205,10 +213,11 @@ the consumer/integration matrix for historical checkpoint 22ac3581. Scoped
 formatting and strict Clippy across all targets passed for that checkpoint,
 and its MBX installed pair passed the isolated fixture smoke. The 45a source
 checks, build, and installed smoke are recorded as historical above. The
-current post-14c production changes passed the final seven-gate MBX
-verification listed above; a fresh build/install/smoke and required CI rerun
-for a new source checkpoint remain pending. CI run `38042237548` failed three
-Rust jobs on head 14c.
+post-14c production changes were finalized in checkpoint 8abfa. Its final
+seven-gate MBX verification and installed fixture smoke are recorded in the
+current snapshot at the top of this document, and source-head CI run
+`38044592706` passed. CI run `38042237548` is the historical failed run on
+head 14c; it does not describe checkpoint 8abfa or the current PR head.
 
 ## Historical installed fixture checkpoint 45a33093
 
@@ -217,16 +226,17 @@ The installed pair for signed, pushed checkpoint
 offline, locked flags. Build time was 15.93 seconds; build log:
 `/private/tmp/jackin-mbx-build-45a33093.log`.
 
-The isolated fixture smoke passed:
-[v3-installed-smoke.log](v3-installed-smoke.log). It verified the installed
+The isolated fixture smoke passed; its checkpoint-specific transcript is
+[v3-installed-smoke-checkpoint-45a.log](v3-installed-smoke-checkpoint-45a.log).
+It verified the installed
 CLI SHA-256
 `b57e60f2f13b026ae2ec47034b61ecddc69644b230157e621c5ddb5cf447007d` and
 broker SHA-256
 `30b6f3b1f0777dbe9181851f83fbc2efb3f0356d290e1896bf2ccaf434fbf550`.
 The provenance manifest SHA-256 is
-`8c3a3ba5b4d80ed6a11e1c0c6dc1d8b611a3e7a54f926c8886b5d7ee02d20c02`.
-These are also recorded in [v3-installation.json](v3-installation.json) and
-[v3-checks.json](v3-checks.json). The smoke selected the installed sibling
+`8c3a3ba5b4d80ed6a11e1c0c6dc1d8b611a3e7a54f926c8886b5d7ee02d20c02`,
+recorded with the binary hashes in that checkpoint-specific transcript. The
+smoke selected the installed sibling
 broker with `JACKIN_USAGE_BROKER_BIN` unset, recorded zero HTTP-proxy requests
 and zero credential-command trips, and left the fixture state directory
 empty. After orderly stop, no broker process or open files remained.
@@ -245,9 +255,10 @@ locked flags. Build time was 37.02 seconds and reported network transfer was
 The installed fixture smoke passed:
 `/private/tmp/jackin-v3-installed-smoke-22ac3581.log`. It verified the exact
 installed CLI hash `7f7d99960351b1da8fe3da9cd6ac35d577261bcdc42325a40d5e2d146d2d8225`
-and broker hash `b74c9cae283f454fcffe6b5c13e6fd498017fec3d808c97a8aeba72ea7f5bcc0`,
-also recorded in [v3-installation.json](v3-installation.json) and
-[v3-checks.json](v3-checks.json). It selected the installed sibling broker
+and broker hash `b74c9cae283f454fcffe6b5c13e6fd498017fec3d808c97a8aeba72ea7f5bcc0`.
+The exact binary hashes and provenance manifest are recorded in the
+[checkpoint-specific smoke transcript](v3-installed-smoke-checkpoint-22ac.log);
+the current JSON artifacts describe 8abfa. It selected the installed sibling broker
 with `JACKIN_USAGE_BROKER_BIN` unset, and recorded zero HTTP-proxy requests and
 zero credential-command executions. The fixture state was empty afterward;
 the service process and its open files were absent after orderly stop. The
@@ -287,11 +298,13 @@ cleanup. Native Security Framework calls were not instrumented; foreground
 auth success and dispatch approval were not exercised. The smoke does not
 assert persistence of a projection envelope. This section is historical
 evidence for source checkpoint 8288. The separate installed pair for checkpoint
-22ac3581 is recorded above as historical evidence. The 45a33093 MBX build and
-installed fixture smoke are also historical; the current post-14c production
-changes passed the final seven-gate MBX verification listed above, but need a
-fresh build/install/smoke and required CI on a new source checkpoint. CI run
-`38042237548` failed three Rust jobs on head 14c.
+22ac3581 is recorded above as historical evidence. The 45a33093 build and
+installed fixture smoke, and CI run `38042237548` on head 14c, are historical.
+The final 8abfa build, installed smoke, seven-gate MBX verification, and passing
+source-head CI run `38044592706` are recorded in the current snapshot at the top
+of this document. PR documentation/evidence head `56181d4d` passed exact-head
+run `38045612792`; this documentation correction creates a new head whose
+checks are still required before landing.
 
 Previously recorded pre-v8 scopes: protocol 133; broker 173; Claude
 fake-auth/provider 25; CLI usage 43; app 29; coordinator 54. These historical
