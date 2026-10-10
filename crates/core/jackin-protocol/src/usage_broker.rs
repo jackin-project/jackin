@@ -349,6 +349,10 @@ pub enum UsageIdentityKindV1 {
     /// This identifies Jackin's selected local source capability, not an
     /// authenticated provider account and never grants collection authority.
     LocalSourceHandle,
+    /// Stable published handle whose original identity evidence is unavailable.
+    ///
+    /// This classification carries no provider identity or local source claim.
+    UnverifiedHandle,
 }
 
 /// Account or agent lifecycle independent of quota freshness.

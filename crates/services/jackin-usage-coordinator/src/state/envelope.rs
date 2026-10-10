@@ -11,19 +11,20 @@ use jackin_protocol::usage_broker::{
 
 use serde::{Deserialize, Serialize};
 
-pub(crate) const ACCOUNT_STATE_SCHEMA_VERSION: u32 = 2;
-pub(crate) const PREVIOUS_ACCOUNT_STATE_SCHEMA_VERSION: u32 = 1;
+pub(crate) const ACCOUNT_STATE_SCHEMA_VERSION: u32 = 3;
+pub(crate) const PREVIOUS_ACCOUNT_STATE_SCHEMA_VERSION: u32 = 2;
+pub(crate) const LEGACY_ACCOUNT_STATE_SCHEMA_VERSION: u32 = 1;
 pub(crate) const MAX_ACCOUNT_STATE_BYTES: u64 = 512 * 1024;
 pub(crate) const MAX_CLOCK_SKEW_SECS: i64 = 300;
 pub(crate) const MAX_DISPLAY_CHARS: usize = 256;
 /// Exact durable projection envelope schema.
 ///
 /// Schema v1 is deliberately not migrated: it did not carry the admitted
-/// catalog required to fence removed credentials. Loading v1 quarantines the
-/// file and lets the broker rebuild an empty projection from the current host
-/// catalog. This is the migration contract; no serde default may hide a
-/// missing or unknown catalog.
-pub(crate) const PROJECTION_STATE_SCHEMA_VERSION: u32 = 2;
+/// catalog required to fence removed credentials. Schema v2 is read only by
+/// the broker's one-time migration path because its identity provenance may
+/// have been inferred from display labels. Ordinary readers accept v3 only.
+pub(crate) const PROJECTION_STATE_SCHEMA_VERSION: u32 = 3;
+pub(crate) const PREVIOUS_PROJECTION_STATE_SCHEMA_VERSION: u32 = 2;
 pub(crate) static STATE_TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 pub(crate) static STATE_QUARANTINE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -49,6 +50,10 @@ pub struct AccountStateEnvelope {
     /// Provider invocation start timestamp, persisted separately from queue
     /// admission so Claude's minimum interval begins when work actually runs.
     pub provider_invoked_at_epoch: Option<i64>,
+    /// Durable state lacks trustworthy evidence of its actual provider
+    /// invocation time. Keep the conservative reload fence across restarts
+    /// without treating recovery or queue time as provider work.
+    pub reload_fence_required: bool,
     /// Generation completion timestamp.
     pub completed_at_epoch: Option<i64>,
     /// Provider-mandated rate-limit deadline.
@@ -75,6 +80,7 @@ impl AccountStateEnvelope {
             terminal_error: None,
             started_at_epoch: None,
             provider_invoked_at_epoch: None,
+            reload_fence_required: false,
             completed_at_epoch: None,
             rate_limit_deadline_epoch: None,
             retry_deadline_epoch: None,
@@ -93,4 +99,7 @@ pub enum StateStoreError {
     /// Envelope bytes or schema failed validation.
     #[error("usage coordinator state is corrupt")]
     Corrupt,
+    /// A valid projection-state schema needs an explicit migration path.
+    #[error("projection state schema {found} requires migration to schema {current}")]
+    SchemaMigrationRequired { found: u64, current: u32 },
 }

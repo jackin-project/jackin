@@ -253,7 +253,7 @@ impl ProjectionPublisher {
         }
         let previous_envelope = self.store.load().map_err(projection_store_error)?;
         let envelope = ProjectionStateEnvelope {
-            schema_version: 2,
+            schema_version: ProjectionStateEnvelope::SCHEMA_VERSION,
             catalog_revision: next.discovery_revision.clone(),
             catalog: catalog_entries(&catalog),
             broker_instance_id: next.broker_instance_id.clone(),
@@ -373,7 +373,7 @@ impl ProjectionPublisher {
             return false;
         }
         let envelope = ProjectionStateEnvelope {
-            schema_version: 2,
+            schema_version: ProjectionStateEnvelope::SCHEMA_VERSION,
             catalog_revision: next.discovery_revision.clone(),
             catalog: self
                 .catalog

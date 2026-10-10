@@ -9,6 +9,7 @@ use super::StateStoreError;
 pub(crate) fn state_error(error: StateStoreError) -> UsageCoordinationError {
     match error {
         StateStoreError::Unavailable => unavailable_error(),
+        StateStoreError::SchemaMigrationRequired { .. } => unavailable_error(),
         StateStoreError::Corrupt => coordination_error(
             UsageCoordinationErrorKind::CorruptState,
             "usage coordinator state is corrupt",

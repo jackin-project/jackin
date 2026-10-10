@@ -9,8 +9,9 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 
 use super::{
-    ACCOUNT_STATE_SCHEMA_VERSION, AccountStateEnvelope, MAX_ACCOUNT_STATE_BYTES,
-    PREVIOUS_ACCOUNT_STATE_SCHEMA_VERSION, PROJECTION_STATE_SCHEMA_VERSION,
+    ACCOUNT_STATE_SCHEMA_VERSION, AccountStateEnvelope, LEGACY_ACCOUNT_STATE_SCHEMA_VERSION,
+    MAX_ACCOUNT_STATE_BYTES, PREVIOUS_ACCOUNT_STATE_SCHEMA_VERSION,
+    PREVIOUS_PROJECTION_STATE_SCHEMA_VERSION, PROJECTION_STATE_SCHEMA_VERSION,
     STATE_QUARANTINE_COUNTER, STATE_TMP_COUNTER, StateStoreError, sanitize_envelope,
     state_filename, validate_capability, validate_envelope, validate_owned_mode,
 };
@@ -69,6 +70,14 @@ pub struct ProjectionStateEnvelope {
     pub broker_instance_id: String,
 }
 
+impl ProjectionStateEnvelope {
+    /// Current durable projection envelope schema.
+    pub const SCHEMA_VERSION: u32 = PROJECTION_STATE_SCHEMA_VERSION;
+
+    /// Previous schema accepted only by the broker migration loader.
+    pub const MIGRATABLE_SCHEMA_VERSION: u32 = PREVIOUS_PROJECTION_STATE_SCHEMA_VERSION;
+}
+
 /// One secret-free capability-to-canonical alias transaction entry.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProjectionAlias {
@@ -93,28 +102,79 @@ impl FileProjectionStateStore {
         }
     }
 
-    /// Read one exact v2 envelope. Corrupt, v1, and future bytes are
-    /// quarantined and treated as unavailable rather than being rendered or
-    /// used for provider work. The caller deliberately rebuilds from the
-    /// current host catalog after this fail-closed reset.
+    /// Read one exact v3 envelope. Valid older and future versions require an
+    /// explicit migration and remain in place; corrupt bytes and unsupported
+    /// pre-v2 state are quarantined.
     pub fn load(&self) -> Result<Option<ProjectionStateEnvelope>, StateStoreError> {
+        self.load_with_previous_schema(false)
+    }
+
+    /// Read the current envelope or the immediately previous schema for the
+    /// broker's startup migration. The broker must normalize and atomically
+    /// store v2 as v3 before exposing its projection.
+    pub fn load_for_broker_migration(
+        &self,
+    ) -> Result<Option<ProjectionStateEnvelope>, StateStoreError> {
+        self.load_with_previous_schema(true)
+    }
+
+    fn load_with_previous_schema(
+        &self,
+        allow_previous_schema: bool,
+    ) -> Result<Option<ProjectionStateEnvelope>, StateStoreError> {
         let bytes = match fs::read(&self.path) {
             Ok(bytes) => bytes,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
             Err(_) => return Err(StateStoreError::Unavailable),
         };
-        let envelope = match serde_json::from_slice::<ProjectionStateEnvelope>(&bytes) {
-            Ok(envelope) if envelope.schema_version == PROJECTION_STATE_SCHEMA_VERSION => envelope,
+        let value = match serde_json::from_slice::<serde_json::Value>(&bytes) {
+            Ok(value @ serde_json::Value::Object(_)) => value,
             Ok(_) | Err(_) => {
                 self.quarantine()?;
                 return Err(StateStoreError::Corrupt);
             }
         };
-        if envelope.projection.validate().is_err() {
+        let Some(schema_version) = value
+            .get("schema_version")
+            .and_then(serde_json::Value::as_u64)
+        else {
+            self.quarantine()?;
+            return Err(StateStoreError::Corrupt);
+        };
+        let current = u64::from(PROJECTION_STATE_SCHEMA_VERSION);
+        let previous = u64::from(PREVIOUS_PROJECTION_STATE_SCHEMA_VERSION);
+        if schema_version > current {
+            return Err(StateStoreError::SchemaMigrationRequired {
+                found: schema_version,
+                current: PROJECTION_STATE_SCHEMA_VERSION,
+            });
+        }
+        if schema_version == previous && !allow_previous_schema {
+            self.decode_projection_envelope(value)?;
+            return Err(StateStoreError::SchemaMigrationRequired {
+                found: schema_version,
+                current: PROJECTION_STATE_SCHEMA_VERSION,
+            });
+        }
+        if schema_version != current && !(allow_previous_schema && schema_version == previous) {
             self.quarantine()?;
             return Err(StateStoreError::Corrupt);
         }
-        Ok(Some(envelope))
+        self.decode_projection_envelope(value).map(Some)
+    }
+
+    fn decode_projection_envelope(
+        &self,
+        value: serde_json::Value,
+    ) -> Result<ProjectionStateEnvelope, StateStoreError> {
+        let envelope = match serde_json::from_value::<ProjectionStateEnvelope>(value) {
+            Ok(envelope) if envelope.projection.validate().is_ok() => envelope,
+            Ok(_) | Err(_) => {
+                self.quarantine()?;
+                return Err(StateStoreError::Corrupt);
+            }
+        };
+        Ok(envelope)
     }
 
     /// Atomically replace one publication envelope and sync its directory.
@@ -249,19 +309,63 @@ impl AccountStateStore for FileAccountStateStore {
             .and_then(|version| u32::try_from(version).ok())
             .ok_or(StateStoreError::Corrupt)?;
         let (envelope, migrated) = match schema_version {
-            PREVIOUS_ACCOUNT_STATE_SCHEMA_VERSION => {
+            LEGACY_ACCOUNT_STATE_SCHEMA_VERSION => {
                 // v1 recorded queue admission as the attempt start. The actual
-                // provider start cannot be reconstructed, so retain the account
-                // and conservatively begin a fresh floor from migration time.
+                // provider start cannot be reconstructed for ambiguous attempts,
+                // so retain uncertainty without inventing an invocation. A
+                // fresh generation-1 Queued record with no prior result is the
+                // one provable pre-dispatch state and remains unfenced.
+                let object = value.as_object_mut().ok_or(StateStoreError::Corrupt)?;
+                object.insert("provider_invoked_at_epoch".into(), serde_json::Value::Null);
+                object.insert(
+                    "reload_fence_required".into(),
+                    serde_json::Value::Bool(false),
+                );
+                let mut envelope: AccountStateEnvelope =
+                    serde_json::from_value(value).map_err(|_| StateStoreError::Corrupt)?;
+                let fresh_queued_generation = envelope.phase
+                    == jackin_protocol::usage_broker::UsageRefreshPhase::Queued
+                    && envelope.generation == 1
+                    && envelope.started_at_epoch.is_some()
+                    && envelope.terminal_result.is_none()
+                    && envelope.last_good.is_none()
+                    && envelope.terminal_error.is_none()
+                    && envelope.completed_at_epoch.is_none()
+                    && envelope.rate_limit_deadline_epoch.is_none()
+                    && envelope.retry_deadline_epoch.is_none()
+                    && envelope.success_deadline_epoch.is_none();
+                envelope.reload_fence_required = !fresh_queued_generation
+                    && (envelope.started_at_epoch.is_some()
+                        || envelope.generation > 0
+                        || envelope.terminal_result.is_some()
+                        || envelope.last_good.is_some()
+                        || envelope.terminal_error.is_some()
+                        || envelope.completed_at_epoch.is_some()
+                        || envelope.rate_limit_deadline_epoch.is_some()
+                        || envelope.retry_deadline_epoch.is_some()
+                        || envelope.success_deadline_epoch.is_some()
+                        || envelope.phase
+                            == jackin_protocol::usage_broker::UsageRefreshPhase::Updating);
+                envelope.schema_version = ACCOUNT_STATE_SCHEMA_VERSION;
+                (envelope, true)
+            }
+            PREVIOUS_ACCOUNT_STATE_SCHEMA_VERSION => {
+                // v2 did not retain uncertainty after recovering an Updating
+                // record without a real invocation timestamp. Preserve that
+                // provenance explicitly in v3 so another restart cannot lose
+                // the conservative monotonic reload fence.
                 value
                     .as_object_mut()
                     .ok_or(StateStoreError::Corrupt)?
-                    .insert("provider_invoked_at_epoch".into(), serde_json::Value::Null);
+                    .insert(
+                        "reload_fence_required".into(),
+                        serde_json::Value::Bool(false),
+                    );
                 let mut envelope: AccountStateEnvelope =
                     serde_json::from_value(value).map_err(|_| StateStoreError::Corrupt)?;
-                envelope.provider_invoked_at_epoch = envelope
-                    .started_at_epoch
-                    .map(|admitted| admitted.max(now_epoch));
+                envelope.reload_fence_required = envelope.phase
+                    == jackin_protocol::usage_broker::UsageRefreshPhase::Updating
+                    && envelope.provider_invoked_at_epoch.is_none();
                 envelope.schema_version = ACCOUNT_STATE_SCHEMA_VERSION;
                 (envelope, true)
             }

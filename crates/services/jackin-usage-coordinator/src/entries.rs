@@ -3,6 +3,7 @@
 //! Account entries and catalog transactions.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::time::Duration;
 
 use std::sync::{Arc, Condvar, Mutex};
 
@@ -12,9 +13,9 @@ use jackin_protocol::usage_broker::{
 };
 
 use super::{
-    AccountStateEnvelope, AccountStateStore, TERMINAL_HISTORY_LIMIT, UsageCoordinatorConfig,
-    UsageProviderExecutor, account_cooldown_deadline, generation_view, reconcile_executor_catalog,
-    restore_catalog_preimages, state_error, unavailable_error,
+    AccountStateEnvelope, AccountStateStore, ClockSample, TERMINAL_HISTORY_LIMIT,
+    UsageCoordinatorConfig, UsageProviderExecutor, account_cooldown_deadline, generation_view,
+    policy, reconcile_executor_catalog, restore_catalog_preimages, state_error, unavailable_error,
 };
 
 /// In-memory periodic cadence for one account. Due times are scheduling
@@ -34,6 +35,12 @@ pub(crate) struct AccountEntry {
     pub(crate) cadence: AccountCadence,
     pub(crate) catalog_revision: Option<String>,
     pub(crate) revoked: bool,
+    /// In-process mirror of Claude's durable wall-clock cooldown. This keeps
+    /// clock adjustments from shortening the minimum interval before restart.
+    pub(crate) cooldown_not_before_monotonic: Option<Duration>,
+    /// A provider dispatch reserved by a generation that outlived its catalog
+    /// revision. Re-added capabilities stay blocked until that work finishes.
+    pub(crate) pending_provider_generation: Option<u64>,
     /// Generations fenced by a catalog revision change. Keeping this separate
     /// from terminal history makes an in-flight join wake and fail
     /// immediately even when the capability id itself is unchanged.
@@ -44,7 +51,9 @@ impl AccountEntry {
     pub(crate) fn new(
         envelope: AccountStateEnvelope,
         recovery_pending: bool,
+        reload_safety_fence: bool,
         now_epoch: i64,
+        clock_sample: ClockSample,
         catalog_revision: Option<String>,
     ) -> Self {
         let mut history = VecDeque::new();
@@ -54,6 +63,21 @@ impl AccountEntry {
         let next_due_epoch = account_cooldown_deadline(&envelope)
             .filter(|deadline| *deadline > now_epoch)
             .unwrap_or(now_epoch);
+        let mut cooldown_not_before_monotonic = runtime_cooldown_deadline(&envelope, clock_sample);
+        if reload_safety_fence && envelope.capability.surface_id == "claude" {
+            // A wall deadline cannot prove that a prior invocation's full
+            // interval elapsed across a process restart or clock jump. No
+            // trustworthy boot-relative clock is persisted, so conservatively
+            // start a fresh monotonic fence on load. This is not an invocation
+            // timestamp; queued work still has no provider-call floor.
+            let reload_deadline = clock_sample
+                .monotonic
+                .saturating_add(policy::CLAUDE_MIN_ATTEMPT_INTERVAL);
+            cooldown_not_before_monotonic = Some(
+                cooldown_not_before_monotonic
+                    .map_or(reload_deadline, |deadline| deadline.max(reload_deadline)),
+            );
+        }
         Self {
             envelope,
             history,
@@ -65,6 +89,8 @@ impl AccountEntry {
             },
             catalog_revision,
             revoked: false,
+            cooldown_not_before_monotonic,
+            pending_provider_generation: None,
             fenced_generations: BTreeSet::new(),
         }
     }
@@ -75,6 +101,91 @@ impl AccountEntry {
             drop(self.history.pop_front());
         }
     }
+
+    pub(crate) fn refresh_runtime_cooldown(&mut self, clock_sample: ClockSample) {
+        let existing = self
+            .cooldown_not_before_monotonic
+            .filter(|deadline| *deadline > clock_sample.monotonic);
+        let durable = runtime_cooldown_deadline(&self.envelope, clock_sample);
+        self.cooldown_not_before_monotonic = match (existing, durable) {
+            (Some(existing), Some(durable)) => Some(existing.max(durable)),
+            (Some(existing), None) => Some(existing),
+            (None, durable) => durable,
+        };
+    }
+}
+
+/// Project an in-process monotonic cooldown into the paired wall-clock domain.
+/// Rounding upward keeps scheduler wakeups from preceding admission.
+pub(crate) fn monotonic_cooldown_deadline_epoch(
+    entry: &AccountEntry,
+    clock_sample: ClockSample,
+) -> Option<i64> {
+    entry
+        .cooldown_not_before_monotonic
+        .filter(|deadline| *deadline > clock_sample.monotonic)
+        .map(|deadline| {
+            ClockSample {
+                wall_epoch: clock_sample
+                    .wall_epoch
+                    .saturating_add(deadline.saturating_sub(clock_sample.monotonic)),
+                monotonic: clock_sample.monotonic,
+            }
+            .ceil_epoch()
+        })
+}
+
+/// Persist a conservative wall deadline when a prior Claude invocation (or
+/// an unresolved legacy attempt) is observed outside the process that owned
+/// its monotonic clock origin.
+pub(crate) fn recovered_attempt_deadline_epoch(
+    envelope: &AccountStateEnvelope,
+    clock_sample: ClockSample,
+) -> Option<i64> {
+    if envelope.capability.surface_id != "claude"
+        || (envelope.provider_invoked_at_epoch.is_none() && !envelope.reload_fence_required)
+    {
+        return None;
+    }
+    Some(
+        ClockSample {
+            wall_epoch: clock_sample
+                .wall_epoch
+                .saturating_add(policy::CLAUDE_MIN_ATTEMPT_INTERVAL),
+            monotonic: clock_sample.monotonic,
+        }
+        .ceil_epoch(),
+    )
+}
+
+/// Earliest scheduler wake that respects cadence, durable provider deadlines,
+/// and the active monotonic recovery/admission fence.
+pub(crate) fn effective_due_epoch(entry: &AccountEntry, clock_sample: ClockSample) -> i64 {
+    [
+        Some(entry.cadence.next_due_epoch),
+        account_cooldown_deadline(&entry.envelope),
+        monotonic_cooldown_deadline_epoch(entry, clock_sample),
+    ]
+    .into_iter()
+    .flatten()
+    .max()
+    .unwrap_or(entry.cadence.next_due_epoch)
+}
+
+fn runtime_cooldown_deadline(
+    envelope: &AccountStateEnvelope,
+    clock_sample: ClockSample,
+) -> Option<Duration> {
+    if envelope.capability.surface_id != "claude" {
+        return None;
+    }
+    let deadline = account_cooldown_deadline(envelope)?;
+    let deadline_wall = Duration::from_secs(u64::try_from(deadline.max(0)).unwrap_or(u64::MAX));
+    let remaining = deadline_wall.saturating_sub(clock_sample.wall_epoch);
+    if remaining.is_zero() {
+        return None;
+    }
+    Some(clock_sample.monotonic.saturating_add(remaining))
 }
 
 #[derive(Clone, Default)]
@@ -101,8 +212,9 @@ pub(crate) struct Shared {
 pub(crate) enum CatalogAccountPreimage {
     Missing,
     Present(Box<AccountStateEnvelope>),
-    /// The old bytes were unreadable. Rotation quarantines them instead of
-    /// treating one revoked account as a catalog-wide failure.
+    /// The old bytes were unreadable. Claude rotation materializes a
+    /// result-free uncertainty marker before cleanup; other providers may
+    /// quarantine the corrupt preimage.
     Corrupt,
 }
 

@@ -203,7 +203,7 @@ fn coordinator_stale_and_error_success_results_schedule_retry() {
             reason = "coerce concrete executor to shared trait object"
         )]
         let provider_executor: Arc<dyn UsageProviderExecutor> = executor.clone();
-        let coordinator = UsageCoordinator::new(
+        let coordinator = coordinator_with_fake_clock(
             provider_executor,
             Arc::new(MemoryStore::default()),
             UsageCoordinatorConfig::default(),
@@ -253,7 +253,7 @@ fn coordinator_unsupported_result_stays_unsupported_without_quota() {
         reason = "coerce concrete executor to shared trait object"
     )]
     let provider_executor: Arc<dyn UsageProviderExecutor> = executor.clone();
-    let coordinator = UsageCoordinator::new(
+    let coordinator = coordinator_with_fake_clock(
         provider_executor,
         Arc::new(MemoryStore::default()),
         UsageCoordinatorConfig::default(),

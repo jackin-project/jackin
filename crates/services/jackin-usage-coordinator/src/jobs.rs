@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::sync::mpsc::SyncSender;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use jackin_protocol::usage_broker::{UsageAccountCapability, UsageCredentialScope};
 
@@ -23,8 +24,47 @@ pub(crate) struct ProbeJob {
     pub(crate) credential_scope: Option<UsageCredentialScope>,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ClockSample {
+    /// Wall time since the Unix epoch, including its fractional second.
+    pub(crate) wall_epoch: Duration,
+    /// Monotonic time from the coordinator clock origin.
+    pub(crate) monotonic: Duration,
+}
+
+impl ClockSample {
+    pub(crate) fn anchored(epoch_seconds: i64, monotonic: Duration) -> Self {
+        let wall_epoch =
+            Duration::from_secs(u64::try_from(epoch_seconds.max(0)).unwrap_or(u64::MAX));
+        Self {
+            wall_epoch,
+            monotonic,
+        }
+    }
+
+    pub(crate) fn floor_epoch(self) -> i64 {
+        i64::try_from(self.wall_epoch.as_secs()).unwrap_or(i64::MAX)
+    }
+
+    /// Round upward so a persisted deadline never starts before this sample.
+    pub(crate) fn ceil_epoch(self) -> i64 {
+        self.floor_epoch()
+            .saturating_add(if self.wall_epoch.subsec_nanos() != 0 {
+                1
+            } else {
+                0
+            })
+    }
+}
+
 pub(crate) trait MonotonicClock: Send + Sync {
     fn now(&self) -> Duration;
+
+    /// Pair the caller's deterministic epoch with this monotonic sample.
+    /// Production clocks override this with current system wall time.
+    fn sample(&self, fallback_epoch: i64) -> ClockSample {
+        ClockSample::anchored(fallback_epoch, self.now())
+    }
 }
 
 pub(crate) struct SystemMonotonicClock {
@@ -42,6 +82,16 @@ impl Default for SystemMonotonicClock {
 impl MonotonicClock for SystemMonotonicClock {
     fn now(&self) -> Duration {
         self.origin.elapsed()
+    }
+
+    fn sample(&self, fallback_epoch: i64) -> ClockSample {
+        let _ = fallback_epoch;
+        ClockSample {
+            wall_epoch: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default(),
+            monotonic: self.now(),
+        }
     }
 }
 

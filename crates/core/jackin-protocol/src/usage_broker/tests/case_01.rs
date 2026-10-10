@@ -62,6 +62,18 @@ fn local_source_identity_has_its_own_wire_kind() {
 }
 
 #[test]
+fn unverified_identity_has_its_own_wire_kind() {
+    let encoded = serde_json::to_value(UsageIdentityKindV1::UnverifiedHandle)
+        .expect("unverified identity should encode");
+    assert_eq!(encoded, "unverified_handle");
+    assert_eq!(
+        serde_json::from_value::<UsageIdentityKindV1>(encoded)
+            .expect("unverified identity should decode"),
+        UsageIdentityKindV1::UnverifiedHandle
+    );
+}
+
+#[test]
 fn projection_operations_and_publication_response_round_trip() {
     let operations = [
         UsageBrokerOperation::CurrentProjection,

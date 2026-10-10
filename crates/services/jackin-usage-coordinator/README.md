@@ -16,6 +16,22 @@ probe generation, with file-backed generation and projection state.
   behind `AccountStateStore`.
 - Policy (`policy`): refresh cadence policy.
 
+## Durable versions
+
+The broker protocol is wire `v8`; its account-identity values distinguish
+provider-issued IDs and handles from local source handles and unverified
+legacy handles. The projection payload remains `UsageProjectionSchemaV1`.
+These are separate from the durable projection envelope (schema `3`) and
+per-account envelope (schema `2`). Broker monitor state is schema `4`, and
+statusline input is schema `2`; neither is migrated by the projection store.
+
+Projection envelope schema `2` is read only at the broker's explicit startup
+migration boundary. That migration canonicalizes provider IDs, marks legacy
+account identity provenance as `UnverifiedHandle`, and atomically writes
+schema `3` before exposing the projection. Ordinary reads require schema `3`.
+Schema `1`, malformed state, and unsupported older state are quarantined;
+valid future schema versions fail closed while preserving their bytes.
+
 ## Structure
 
 | Module | Owns | Tests |
@@ -35,6 +51,6 @@ probe generation, with file-backed generation and projection state.
 ## How to verify
 
 ```sh
-cargo nextest run -p jackin-usage-coordinator
-cargo clippy -p jackin-usage-coordinator --all-targets -- -D warnings
+mbx +1.97.1 nextest run -p jackin-usage-coordinator --locked --offline
+mbx +1.97.1 clippy -p jackin-usage-coordinator --all-targets --locked --offline -- -D warnings
 ```

@@ -82,11 +82,9 @@ pub(super) fn cadence_coordinator<E>(
 where
     E: UsageProviderExecutor + 'static,
 {
-    UsageCoordinator::new(
-        executor,
-        Arc::new(CadenceMemoryStore {
-            states: Mutex::new(BTreeMap::new()),
-        }),
-        config,
-    )
+    let executor: Arc<dyn UsageProviderExecutor> = executor;
+    let store: Arc<dyn AccountStateStore> = Arc::new(CadenceMemoryStore {
+        states: Mutex::new(BTreeMap::new()),
+    });
+    coordinator_with_fake_clock(executor, store, config)
 }

@@ -110,7 +110,6 @@ impl ProfileCredentialReader for SystemProfileCredentialReader {
 
     fn read_claude_keychain(&self, scope: &jackin_core::ClaudeKeychainScope) -> ProfileReadOutcome {
         match jackin_usage_provider_claude::read_claude_keychain_item(&scope.service) {
-            #[cfg(any(target_os = "macos", test))]
             jackin_usage_provider_claude::ClaudeKeychainRead::Payload { json } => {
                 ProfileReadOutcome::Bytes(Zeroizing::new(json.as_bytes().to_vec()))
             }

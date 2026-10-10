@@ -9,29 +9,92 @@ use jackin_protocol::usage_broker::{
 };
 
 use super::{
-    AccountEntry, AccountStateEnvelope, CoordinatorState, TERMINAL_HISTORY_LIMIT,
+    AccountEntry, AccountStateEnvelope, ClockSample, CoordinatorState, TERMINAL_HISTORY_LIMIT,
     catalog_revoked_error, policy, unavailable_error,
 };
 
-pub(crate) fn revoke_entry(entry: &mut AccountEntry, now_epoch: i64) {
+pub(crate) fn revoke_entry(entry: &mut AccountEntry, now_epoch: i64, clock_sample: ClockSample) {
     entry.fenced_generations.insert(entry.envelope.generation);
-    entry.envelope.generation = entry.envelope.generation.saturating_add(1);
-    entry.envelope.phase = UsageRefreshPhase::Failed;
-    entry.envelope.terminal_result = None;
-    entry.envelope.terminal_error = Some(catalog_revoked_error());
-    entry.envelope.started_at_epoch = None;
-    entry.envelope.provider_invoked_at_epoch = None;
-    entry.envelope.completed_at_epoch = Some(now_epoch);
-    entry.envelope.rate_limit_deadline_epoch = None;
-    entry.envelope.retry_deadline_epoch = None;
-    entry.envelope.success_deadline_epoch = None;
+    revoke_envelope(&mut entry.envelope, now_epoch, clock_sample);
+    entry.refresh_runtime_cooldown(clock_sample);
     entry.recovery_pending = false;
     entry.catalog_revision = None;
     entry.revoked = true;
     entry.record_terminal();
 }
 
-pub(crate) fn reset_entry(entry: &mut AccountEntry, now_epoch: i64, revision: String) {
+/// Fence a stored generation while retaining account-level cooldown inputs.
+/// An updating generation receives a temporary floor from revocation time;
+/// the worker will move it forward to completion when it returns.
+pub(crate) fn revoke_envelope(
+    envelope: &mut AccountStateEnvelope,
+    now_epoch: i64,
+    clock_sample: ClockSample,
+) {
+    if envelope.phase == UsageRefreshPhase::Updating {
+        if let Some(floor) =
+            policy::minimum_attempt_deadline(&envelope.capability, Some(clock_sample.ceil_epoch()))
+        {
+            envelope.retry_deadline_epoch = Some(
+                envelope
+                    .retry_deadline_epoch
+                    .map_or(floor, |deadline| deadline.max(floor)),
+            );
+        }
+    }
+    envelope.generation = envelope.generation.saturating_add(1);
+    envelope.phase = UsageRefreshPhase::Failed;
+    envelope.terminal_result = None;
+    envelope.last_good = None;
+    envelope.terminal_error = Some(catalog_revoked_error());
+    envelope.started_at_epoch = None;
+    envelope.completed_at_epoch = Some(now_epoch);
+}
+
+pub(crate) fn cooldown_tombstone(
+    envelope: &AccountStateEnvelope,
+    now_epoch: i64,
+    pending_attempt: bool,
+) -> Option<AccountStateEnvelope> {
+    if !pending_attempt && !envelope.reload_fence_required {
+        account_cooldown_deadline(envelope).filter(|deadline| *deadline > now_epoch)?;
+    }
+    let mut tombstone = if pending_attempt {
+        pending_attempt_envelope(envelope, now_epoch)
+    } else {
+        envelope.clone()
+    };
+    if !pending_attempt {
+        tombstone.phase = UsageRefreshPhase::Idle;
+        tombstone.started_at_epoch = None;
+    }
+    tombstone.terminal_result = None;
+    tombstone.last_good = None;
+    tombstone.terminal_error = None;
+    tombstone.completed_at_epoch = None;
+    Some(tombstone)
+}
+
+pub(crate) fn pending_attempt_envelope(
+    envelope: &AccountStateEnvelope,
+    now_epoch: i64,
+) -> AccountStateEnvelope {
+    let mut pending = envelope.clone();
+    pending.phase = UsageRefreshPhase::Updating;
+    pending.terminal_result = None;
+    pending.last_good = None;
+    pending.terminal_error = None;
+    pending.started_at_epoch = pending.provider_invoked_at_epoch.or(Some(now_epoch));
+    pending.completed_at_epoch = None;
+    pending
+}
+
+pub(crate) fn reset_entry(
+    entry: &mut AccountEntry,
+    now_epoch: i64,
+    clock_sample: ClockSample,
+    revision: String,
+) {
     entry.fenced_generations.insert(entry.envelope.generation);
     reset_envelope(&mut entry.envelope);
     entry.history.clear();
@@ -47,6 +110,7 @@ pub(crate) fn reset_entry(entry: &mut AccountEntry, now_epoch: i64, revision: St
         .unwrap_or(now_epoch);
     entry.catalog_revision = Some(revision);
     entry.revoked = false;
+    entry.refresh_runtime_cooldown(clock_sample);
 }
 
 /// Reset materialized results while retaining provider cooldowns and the

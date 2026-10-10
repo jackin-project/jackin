@@ -72,6 +72,7 @@ pub(crate) fn identity_kind_label(kind: UsageIdentityKindV1) -> &'static str {
         UsageIdentityKindV1::ProviderAccountId => "provider account id",
         UsageIdentityKindV1::ProviderStableHandle => "provider handle",
         UsageIdentityKindV1::LocalSourceHandle => "local source handle",
+        UsageIdentityKindV1::UnverifiedHandle => "unverified handle",
     }
 }
 
@@ -84,6 +85,14 @@ mod tests {
         assert_eq!(
             identity_kind_label(UsageIdentityKindV1::LocalSourceHandle),
             "local source handle"
+        );
+    }
+
+    #[test]
+    fn unverified_identity_label_does_not_claim_provider_or_local_identity() {
+        assert_eq!(
+            identity_kind_label(UsageIdentityKindV1::UnverifiedHandle),
+            "unverified handle"
         );
     }
 }

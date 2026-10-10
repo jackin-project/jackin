@@ -21,6 +21,16 @@ fn contract_projection_accepts_local_source_identity_kind() {
 }
 
 #[test]
+fn contract_projection_accepts_unverified_identity_without_claiming_authority() {
+    let fixture = read_json("usage-projection-v1-current.json");
+    let mut account = fixture["providers"][0]["accounts"][0].clone();
+    account["identity_kind"] = Value::String("unverified_handle".to_owned());
+
+    validate_account(&account)
+        .expect("unverified legacy identity has an explicit non-authoritative wire kind");
+}
+
+#[test]
 fn contract_baseline_projection_rejects_invalid_fixtures() {
     let fixture = read_json("usage-projection-v1-invalid.json");
     let cases = fixture

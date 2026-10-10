@@ -4,24 +4,21 @@
 
 use jackin_protocol::usage_broker::{UsageAccountCapability, UsageGenerationView};
 
-use super::{UsageCoordinator, account_cooldown_deadline, cadence_deadline};
+use super::entries::effective_due_epoch;
+use super::{UsageCoordinator, cadence_deadline};
 
 impl UsageCoordinator {
     /// Earliest periodic due time across known accounts, for scheduler sleep.
     /// `None` when no account is tracked yet.
     #[must_use]
     pub fn next_due_epoch(&self) -> Option<i64> {
+        let clock_sample = self.shared.clock.sample(0);
         let _catalog_lifecycle = self.shared.catalog_lifecycle.lock().ok()?;
         self.shared.state.lock().ok().and_then(|state| {
             state
                 .accounts
                 .values()
-                .map(|entry| {
-                    account_cooldown_deadline(&entry.envelope)
-                        .map_or(entry.cadence.next_due_epoch, |deadline| {
-                            deadline.max(entry.cadence.next_due_epoch)
-                        })
-                })
+                .map(|entry| effective_due_epoch(entry, clock_sample))
                 .min()
         })
     }
@@ -32,6 +29,7 @@ impl UsageCoordinator {
     /// never produce a burst of missed polls. Returns the started or joined
     /// views; blocked accounts are skipped.
     pub fn poll_due(&self, now_epoch: i64) -> Vec<UsageGenerationView> {
+        let clock_sample = self.shared.clock.sample(now_epoch);
         let due: Vec<(UsageAccountCapability, u64)> = {
             let Ok(_catalog_lifecycle) = self.shared.catalog_lifecycle.lock() else {
                 return Vec::new();
@@ -46,9 +44,7 @@ impl UsageCoordinator {
                     if entry.revoked || state.blocked.contains_key(capability) {
                         return None;
                     }
-                    let shared_deadline =
-                        account_cooldown_deadline(&entry.envelope).unwrap_or(i64::MIN);
-                    let next_due = shared_deadline.max(entry.cadence.next_due_epoch);
+                    let next_due = effective_due_epoch(entry, clock_sample);
                     (now_epoch >= next_due).then(|| (capability.clone(), entry.envelope.generation))
                 })
                 .collect()
@@ -70,6 +66,7 @@ impl UsageCoordinator {
     /// account. Future due times are untouched. Returns the number of
     /// recalculated accounts. Never dispatches provider work.
     pub fn note_wake(&self, now_epoch: i64) -> usize {
+        let clock_sample = self.shared.clock.sample(now_epoch);
         let Ok(_catalog_lifecycle) = self.shared.catalog_lifecycle.lock() else {
             return 0;
         };
@@ -86,9 +83,8 @@ impl UsageCoordinator {
                     entry.envelope.generation,
                     now_epoch,
                 );
-                entry.cadence.next_due_epoch = account_cooldown_deadline(&entry.envelope)
-                    .filter(|deadline| *deadline > now_epoch)
-                    .map_or(cadence_due, |deadline| deadline.max(cadence_due));
+                entry.cadence.next_due_epoch = cadence_due;
+                entry.cadence.next_due_epoch = effective_due_epoch(entry, clock_sample);
                 recalculated += 1;
             }
         }
@@ -101,6 +97,7 @@ impl UsageCoordinator {
         _observed_generation: u64,
         now_epoch: i64,
     ) {
+        let clock_sample = self.shared.clock.sample(now_epoch);
         let Ok(_catalog_lifecycle) = self.shared.catalog_lifecycle.lock() else {
             return;
         };
@@ -117,9 +114,8 @@ impl UsageCoordinator {
             entry.envelope.generation,
             now_epoch,
         );
-        entry.cadence.next_due_epoch = account_cooldown_deadline(&entry.envelope)
-            .filter(|deadline| *deadline > now_epoch)
-            .map_or(cadence_due, |deadline| deadline.max(cadence_due));
+        entry.cadence.next_due_epoch = cadence_due;
+        entry.cadence.next_due_epoch = effective_due_epoch(entry, clock_sample);
     }
 
     /// Whether no queued or active generation is retained by this authority.

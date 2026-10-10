@@ -60,6 +60,7 @@ pub(crate) fn execute_probe(shared: &Arc<Shared>, job: ProbeJob) {
     let provider_elapsed = started.elapsed();
     let finished_at_epoch = provider_invoked_at_epoch
         .saturating_add(i64::try_from(provider_elapsed.as_secs()).unwrap_or(i64::MAX));
+    let finished_at = shared.clock.sample(finished_at_epoch);
     if provider_elapsed > shared.config.provider_timeout {
         finish_failure(
             shared,
@@ -67,13 +68,14 @@ pub(crate) fn execute_probe(shared: &Arc<Shared>, job: ProbeJob) {
             UsageCoordinationErrorKind::ProviderTimeout,
             "usage provider probe timed out",
             None,
-            finished_at_epoch,
+            finished_at,
+            true,
         );
         return;
     }
     match outcome {
         Ok(ProviderProbeOutcome::Success(view)) if data_bearing(&view) => {
-            finish_success(shared, &job, *view, finished_at_epoch);
+            finish_success(shared, &job, *view, finished_at);
         }
         Ok(ProviderProbeOutcome::Success(_)) => finish_failure(
             shared,
@@ -81,7 +83,8 @@ pub(crate) fn execute_probe(shared: &Arc<Shared>, job: ProbeJob) {
             UsageCoordinationErrorKind::ProviderUnavailable,
             "usage provider returned no quota data",
             None,
-            finished_at_epoch,
+            finished_at,
+            true,
         ),
         Ok(ProviderProbeOutcome::Failure {
             kind,
@@ -93,7 +96,8 @@ pub(crate) fn execute_probe(shared: &Arc<Shared>, job: ProbeJob) {
             kind,
             &message,
             retry_at_epoch,
-            finished_at_epoch,
+            finished_at,
+            true,
         ),
         Err(_) => finish_failure(
             shared,
@@ -101,7 +105,8 @@ pub(crate) fn execute_probe(shared: &Arc<Shared>, job: ProbeJob) {
             UsageCoordinationErrorKind::OwnerLost,
             "usage provider worker failed",
             None,
-            finished_at_epoch,
+            finished_at,
+            true,
         ),
     }
 }
