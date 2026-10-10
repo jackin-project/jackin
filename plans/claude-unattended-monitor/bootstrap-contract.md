@@ -1,19 +1,27 @@
 # Foreground Claude bootstrap and explicit usage collection
 
-**Status: implemented in source. The matching pair built from signed, pushed
-checkpoint `45a33093df524c03440ed524e71375953ee6834b` passed the offline, locked
-MBX build and isolated installed fixture. An intermediate poll of the Linux Required CI run for source head 45a33093
-showed no failures; it continued after that snapshot, and final-head checks
-remain required. Successful
-attended Keychain authorization and foreground bootstrap, real-account binding,
-and live provider collection remain unverified. The initial attended Keychain
+**Status: implemented in source. Signed, pushed source checkpoint `8abfa235`
+passed the clean, locked MBX build in 1.29 seconds, and its installed v3 fixture
+passed. The fixture exercised the actual installed v3 path with
+`JACKIN_USAGE_BROKER_BIN` unset and recorded zero HTTP-proxy requests and zero
+credential-command executions. Current fixture artifacts and provenance are
+published in [v3-installation.json](v3-installation.json),
+[v3-checks.json](v3-checks.json), and [v3-installed-smoke.log](v3-installed-smoke.log).
+GitHub Actions run [38044592706](https://github.com/jackin-project/jackin/actions/runs/38044592706)
+for this exact source commit completed successfully: Required, all Rust matrix
+jobs, and Actionlint passed; the baseline publication job was skipped by its
+workflow rules. A later documentation/evidence commit requires its own
+exact-head checks. Native Security Framework calls, successful attended
+Keychain authorization and foreground bootstrap, real-account binding, and
+live provider collection remain unverified. The initial attended Keychain
 read may prompt; later unattended reads run under a no-UI guard and fail with
 `interaction_required` if UI would be required. That guard does not guarantee
 credential availability or validity.**
-The current pair's provenance and hashes are in
-[/private/tmp/jackin-v3-provenance-45a33093.json](/private/tmp/jackin-v3-provenance-45a33093.json),
-and its [installed fixture log](/private/tmp/jackin-v3-installed-smoke-45a33093.log).
-The earlier 22ac pair is historical; its record remains in
+The `45a33093` checkpoint and its installed fixture are historical; their
+provenance and hashes remain in
+[/private/tmp/jackin-v3-provenance-45a33093.json](/private/tmp/jackin-v3-provenance-45a33093.json)
+and [the installed fixture log](/private/tmp/jackin-v3-installed-smoke-45a33093.log).
+The earlier 22ac pair is also historical; its record remains in
 [v3-installation.json](v3-installation.json) and [v3-installed-smoke.log](v3-installed-smoke.log).
 
 ## Implemented path and limits
@@ -200,11 +208,13 @@ success cooldown.
 Persisted deadlines use wall-clock epochs. A sufficiently large clock change
 between restarts can make an epoch deadline appear expired early, so this does
 not guarantee that a `Retry-After` interval survives arbitrary clock jumps.
-The lifecycle and recovery fixes pass the current 57-test coordinator scope
-and 28-test Claude provider and lease lifecycle scope. An intermediate poll of the Linux Required CI run for source head 45a33093
-showed no failures; it continued after that snapshot, and final-head checks
-remain required. This is not
-a claim of live-provider rate-limit behavior.
+At historical checkpoint `45a33093`, lifecycle and recovery fixes passed the
+57-test coordinator scope and 28-test Claude provider and lease lifecycle
+scope. Those counts are not the current checkpoint's verification. The latest
+source-head CI run [38044592706](https://github.com/jackin-project/jackin/actions/runs/38044592706)
+passed for `8abfa235`, including Required, the Rust matrix, and Actionlint.
+This result does not cover a later documentation/evidence commit and is not a
+claim of live-provider rate-limit behavior.
 
 An observation may collect quota evidence without an SGD receipt, goal, or
 dispatch policy. It remains `observe_only`, `goal_id=null`,
@@ -251,22 +261,29 @@ Keep strict history intact. Any migration incompatibility fails closed.
 
 The current source implements the foreground bootstrap, selected-service
 zeroizing cache, no-UI guard, explicit binding approval, and opt-in observer
-path. The matching CLI and broker built from signed, pushed checkpoint
-`45a33093df524c03440ed524e71375953ee6834b` passed the offline, locked MBX build
-in 15.93 seconds and the isolated v3 installed fixture. The fixture verified
-the exact installed sibling broker with `JACKIN_USAGE_BROKER_BIN` unset and
-observed zero HTTP-proxy requests and zero credential-command executions. The
-local seven-package formatting, source-check, and strict-Clippy scopes passed;
-the affected Claude provider and lease lifecycle, host broker, and discovery
-scopes passed with 28, 183, and 41 tests respectively. An intermediate poll of the Linux Required CI run for source head 45a33093
-showed no failures; it continued after that snapshot, and final-head checks
-remain required. The 22ac
-installed pair is historical and does not verify this source checkpoint.
+path. Signed, pushed checkpoint `8abfa235` passed the clean, locked MBX build
+in 1.29 seconds and its installed v3 fixture passed. That fixture exercised
+only the actual installed v3 path with `JACKIN_USAGE_BROKER_BIN` unset; it
+recorded zero HTTP-proxy requests and zero credential-command executions.
+Fixture artifacts and provenance are published in [v3-installation.json](v3-installation.json),
+[v3-checks.json](v3-checks.json), and [v3-installed-smoke.log](v3-installed-smoke.log).
+The final local formatting, source-check, and strict-Clippy checks passed for
+all seven affected packages. Current focused checks passed: FFI (11 tests),
+scope verification (7 tests), docs (5 tests), the V1 migration proof, host
+broker (184 tests), and capsule (1 test).
+Source-head CI run [38044592706](https://github.com/jackin-project/jackin/actions/runs/38044592706)
+passed for `8abfa235`, including Required, the Rust matrix, and Actionlint. A
+later documentation/evidence commit needs separate exact-head checks.
 
-The 45a fixture did not instrument native Security Framework calls or exercise
-successful foreground authentication. It used fixture state, not a real
-account or configured evidence store. Exact source provenance, binary hashes,
-and fixture result are recorded in
+The `45a33093` installed pair is historical. Its MBX build took 15.93 seconds;
+its local provider/lease lifecycle, host broker, and discovery scopes passed
+with 28, 183, and 41 tests respectively. Earlier evidence also records the
+57-test coordinator scope. The 22ac installed pair is historical as well.
+
+The 8abfa235 fixture did not instrument native Security Framework calls or
+exercise successful foreground authentication. It used fixture state, not a
+real account or configured evidence store. The historical 45a checkpoint's
+provenance and fixture log remain at
 [/private/tmp/jackin-v3-provenance-45a33093.json](/private/tmp/jackin-v3-provenance-45a33093.json)
 and [the installed fixture log](/private/tmp/jackin-v3-installed-smoke-45a33093.log).
 Neither the build, fixture, nor source tests establish successful authorization

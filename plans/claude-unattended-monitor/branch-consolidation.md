@@ -1,25 +1,25 @@
 # Branch consolidation inventory
 
-Audited 2026-10-10. Static inventory; no source implementation, branch, or Git
-ref was changed for this record.
+Audited 2026-10-10. This is a static source inventory. The current-status
+summary below was updated after source checkpoint `8abfa235`; no source
+implementation, branch, or Git ref was changed for this documentation update.
 
 ## Current supplemental review
 
-The independent 28-commit source audit covered the groups below against source
-tip `771bb088` and canonical target
-`45a33093df524c03440ed524e71375953ee6834b`. This signed source checkpoint is
-pushed and includes the Linux configuration fix. A clean MBX build completed
-in 15.93 seconds. The final installed fixture passed; binary hashes and
-provenance are recorded in `v3-installation.json` and `v3-installed-smoke.log`.
-Static review found the lifetime lease, legacy-runtime removal, and
-catalog-diagnostic publication behavior in source and fixtures. Critical
-source reviews are Ready within their stated scopes, and the recorded local
-source and consumer gates are green. The latest bounded source gates in
-[verification.md](verification.md) include 57 coordinator tests, 11
-coordinator-state tests, and 28 Claude provider/lease lifecycle tests,
-alongside the selected consumer, integration, formatting, and Clippy scopes.
-An intermediate Linux CI poll for source head `45a33093` had 22 checks green and 6 pending; the run continued after that snapshot. CI completion and landing
-remain open; this record makes no completion, merge, or release-readiness
+The independent 28-commit source audit covers the groups below against source
+tip `771bb088` and canonical target checkpoint `8abfa235`. The signed source
+checkpoint is pushed and includes the source fixes. The installed v3 fixture
+passed; manifest `64a0a101…` and the actual v3 handoff copy were verified.
+Critical review threads are resolved: the P1 was rejected with the required
+migration rationale preserved, and the P2 status-row ranking fix is included
+and tested in 8ab. The selected local source, consumer, and test-matrix gates passed. The
+MBX CLI/broker pair build completed in 1.29 seconds with exit 0; output hashes
+were unchanged for these FFI/test changes. Source-head CI run
+[38044592706](https://github.com/jackin-project/jackin/actions/runs/38044592706)
+passed for 8abfa: Required, all Rust matrix jobs, and Actionlint succeeded; the
+baseline publication job was skipped by workflow rules. A later
+documentation/evidence commit requires its own exact-head checks. This status
+is not a completion, merge, or release-readiness
 claim.
 
 | Source group | Current disposition |
@@ -29,10 +29,10 @@ claim.
 | `2e984db`, `887a1b4`, `e586381` | Exact-source attended bootstrap, guarded Keychain reads, and removal of the Claude CLI fallback are represented with forbidden-route guards. No live Keychain proof. |
 | `4c6ba90`, `013e5e6`, `d06582d` | Opaque typed diagnostics, atomic catalog publication, incremental diagnostic retention, and clean-scan clearing are represented in source and fixtures; the latest recorded broker scope includes these regressions. |
 | `29db185`, `f669ec7` | The legacy public `HostUsageRuntime` path is removed; the projection runtime and active broker client remain. Lifetime lease ownership, wake renewal, stale-owner fencing, and dead-owner reclamation are represented in source and fixtures; the latest broker and Claude lifecycle scopes are recorded in verification.md. |
-| `6c1709e`, `7bd6871` | Direct CLI monitor/status/watch/wait contracts are retained. The signed 45a MBX build and installed fixture passed, with hashes/provenance in the v3 installation and smoke records. Predecessor install evidence and the 8288 checkpoint are not final target proof. |
+| `6c1709e`, `7bd6871` | Direct CLI monitor/status/watch/wait contracts are retained. The signed 8ab source checkpoint and selected local source/consumer gates passed; the MBX CLI/broker pair build completed in 1.29 seconds with exit 0 and unchanged output hashes for these FFI/test changes. The installed v3 fixture passed with manifest `64a0a101…` and the actual v3 handoff copy verified. Source-head CI run [38044592706](https://github.com/jackin-project/jackin/actions/runs/38044592706) passed; a later documentation/evidence commit requires its own exact-head checks. Earlier 45a/8288 installation evidence is historical. |
 | Remaining documentation/design commits | Preserve dated v2 evidence as historical. Current wire v8, projection v3, store v4, and the bootstrap contract supersede predecessor command and schema claims. Do not import predecessor success claims. |
 
-The archive tag still peels to source tip `771bb088dd93451654f992aeef1b8976ad84ec85`. There is one delivery branch, `feat/claude-usage-monitor-main`; no raw merge of the 203 unrelated Rust-policy commits is authorized or needed. The 45a installed fixture passed; Linux CI still has six pending checks, and branch/PR review and landing remain open. This inventory does not authorize branch retirement or merge. Gate and installation provenance are tracked in [verification.md](verification.md) and the v3 installation/smoke records. All Cargo verification uses the Mise-to-MBX wrapper.
+The archive tag still peels to source tip `771bb088dd93451654f992aeef1b8976ad84ec85`. The usage delivery branch is `feat/claude-usage-monitor-main`; PR #1121 is the separate Rust-policy rollout and is not part of this consolidation. Retain the usage archive tag. After the usage branch merges, cleanup may retire only the old usage branch; this inventory does not authorize branch retirement or merge. Source-head CI run [38044592706](https://github.com/jackin-project/jackin/actions/runs/38044592706) passed for 8abfa; the final documentation/evidence head must pass its own checks before landing. Gate and installation provenance are tracked in [verification.md](verification.md) and the v3 installation/smoke records. All Cargo verification uses the Mise-to-MBX wrapper.
 
 ## Earlier inventory snapshot
 

@@ -3,19 +3,21 @@
 **Installed pair verified in an isolated fixture; live account setup remains
 unverified and setup-blocked.** CLI and matching sibling broker are version
 `0.6.4`, built and installed from source commit
-`45a33093df524c03440ed524e71375953ee6834b` with MBX `1.22.0` and Rust
+`8abfa235cce150d5382d99a5679afab49e098525` with MBX `1.22.0` and Rust
 `1.97.1` using offline, locked inputs.
 
 - CLI: `/Users/donbeave/.local/share/jackin-claude-monitor-v3/bin/jackin`
 - Broker: `/Users/donbeave/.local/share/jackin-claude-monitor-v3/bin/jackin-usage-broker`
 - CLI SHA-256: `b57e60f2f13b026ae2ec47034b61ecddc69644b230157e621c5ddb5cf447007d`
 - Broker SHA-256: `30b6f3b1f0777dbe9181851f83fbc2efb3f0356d290e1896bf2ccaf434fbf550`
-- Provenance manifest SHA-256: `8c3a3ba5b4d80ed6a11e1c0c6dc1d8b611a3e7a54f926c8886b5d7ee02d20c02`
+- Provenance manifest SHA-256: `64a0a101224ad5c38f4292a59c5191a44071fc54eab3cc95e8a57a13bc454601`
 - Current installed fixture: [v3-installed-smoke.log](v3-installed-smoke.log)
+- Prior installed checkpoint (45a): [v3-installed-smoke-checkpoint-45a.log](v3-installed-smoke-checkpoint-45a.log)
 - Prior installed checkpoint (22ac): [v3-installed-smoke-checkpoint-22ac.log](v3-installed-smoke-checkpoint-22ac.log)
 - Prior wire-v8 checkpoint: [v3-installed-smoke-checkpoint-8288.log](v3-installed-smoke-checkpoint-8288.log)
 - Historical wire-v7 fixture: [v3-installed-smoke-wire7.log](v3-installed-smoke-wire7.log)
 - Installed provenance: `/Users/donbeave/.local/share/jackin-claude-monitor-v3/docs/build-provenance.json`
+- Installed handoff: `/Users/donbeave/.local/share/jackin-claude-monitor-v3/docs/claude-code-handoff.md`
 
 The installed pair uses broker wire v8, projection envelope schema 3,
 statusline input schema 2, and durable monitor schema 4. The isolated fixture

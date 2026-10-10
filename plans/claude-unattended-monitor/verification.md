@@ -3,22 +3,29 @@
 ## Current main-port verification snapshot
 
 The canonical branch is `feat/claude-usage-monitor-main`, based on main
-`868ce535`. The latest committed/pushed PR head is
-`14c09cd5f0978925310fd3e15b53ce2aa1309f13`, containing source checkpoint
-`45a33093df524c03440ed524e71375953ee6834b` plus docs. The 45a build and
-installed smoke passed but are historical for the current uncommitted changes.
-CI run `38042237548` failed three Rust jobs: `jackin` docs parsing, runtime S6
-generation (2 cases), and capsule (180-second timeout). The frozen fixes cover
-the numeric/stdin parser, generic Claude rate-floor/fixture barrier, and
-capsule fake-socket mode 0600/bounded accept. The final seven-gate MBX rerun
-has now passed; final formatting, source-check, strict Clippy, and capsule
-logs are listed below. The fixes remain uncommitted. A fresh source SHA, CI
-rerun, and build/install/smoke are required before landing.
+`868ce535`. Latest signed/pushed source checkpoint:
+`8abfa235cce150d5382d99a5679afab49e098525`. The final seven-gate MBX rerun
+and scoped regression matrix passed. Its offline MBX pair build passed in
+1.29 seconds. CLI SHA-256 is
+`b57e60f2f13b026ae2ec47034b61ecddc69644b230157e621c5ddb5cf447007d`; broker
+SHA-256 is
+`30b6f3b1f0777dbe9181851f83fbc2efb3f0356d290e1896bf2ccaf434fbf550`. The
+installed fixture smoke passed with exit 0, selected the sibling broker,
+recorded one JSONL watch event, recorded zero proxy requests and
+credential-command trips, and left the fixture state empty with no open
+binaries. Manifest SHA-256 is
+`64a0a101224ad5c38f4292a59c5191a44071fc54eab3cc95e8a57a13bc454601`. Source-head
+CI run [38044592706](https://github.com/jackin-project/jackin/actions/runs/38044592706)
+passed for this exact commit: Required, all Rust matrix jobs, and Actionlint
+succeeded; the baseline publication job was skipped by workflow rules. A later
+documentation/evidence commit requires its own exact-head checks. CI run `38042237548`
+and the 45a installed pair are historical for this source.
 
-P1's private one-way-migration rejection has fresh proof; the reply is posted
-and the thread resolved. P2 was accepted: the FFI rank fix resets raw fields
-before capping, and its focused suite passed 11 tests. Its review thread remains
-unresolved pending the fixing commit, commit-linked reply URL, and resolution.
+P1's private one-way-migration rejection has fresh proof; follow-up reply
+`4237303703` is posted and the thread resolved. P2 was accepted: the FFI rank
+fix resets raw fields before capping, and its focused suite passed 11 tests.
+The fix is included in 8abfa; reply `4237302394` links the fixing commit and
+the thread is resolved. General comment `6096529404` has a linked disposition.
 A V1 end-to-end migration regression passed 1 test. The final seven-gate MBX
 rerun and its focused regression checks passed:
 
@@ -35,12 +42,21 @@ rerun and its focused regression checks passed:
 | Host broker | 184 passed | `/private/tmp/jackin-mbx-v4-final-freeze5-host-broker.log` |
 | Capsule diagnostic dedup | 1 passed | `/private/tmp/jackin-mbx-v4-final-freeze10-capsule-dedup1.log` |
 | Capsule proxy scope | 11 passed, 1 filtered | `/private/tmp/jackin-mbx-v4-final-freeze10-capsule-proxy.log` |
+| MBX offline pair build | Passed, exit 0, 1.29 seconds; CLI/broker hashes unchanged | `/private/tmp/jackin-mbx-build-8abfa235.log` |
+| Installed fixture smoke | Passed, exit 0; exact sibling selected, one JSONL watch event, zero proxy/credential-command trips, fixture cleaned, no open binaries | [v3-installed-smoke.log](v3-installed-smoke.log) |
+| Installed manifest | SHA-256 `64a0a101224ad5c38f4292a59c5191a44071fc54eab3cc95e8a57a13bc454601` | [v3-installation.json](v3-installation.json), [v3-checks.json](v3-checks.json) |
+| Installed handoff | Matches repository handoff; SHA-256 `3ca3855cb508ccc6785d5d28aee382f878f490e91021a03afbff02c4df935c43` | [claude-code-handoff.md](claude-code-handoff.md) |
 
 The capsule fake socket test used a canonical parent directory with mode 0700,
-a socket with mode 0600, and a bounded accept deadline. These frozen patches
-remain uncommitted: a new source SHA, fresh build/install/smoke, and green
-required CI are pending. The 45a installed pair above is a historical
-checkpoint and does not validate the current production changes.
+a socket with mode 0600, and a bounded accept deadline. Checkpoint `8abfa235`
+is signed and pushed, its fixture install smoke passed, and source-head CI run
+[38044592706](https://github.com/jackin-project/jackin/actions/runs/38044592706)
+completed successfully. Native Security
+Framework calls were not instrumented; this smoke does not establish live
+account readiness or successful foreground authentication. Required CI, final
+checks for a later documentation/evidence commit, and landing remain required.
+The 45a installed pair above is a
+historical checkpoint and does not validate this source.
 
 Current Cargo verification must use MBX 1.22.0 with offline/locked flags.
 Earlier checks used the checked-in Mise-to-MBX Cargo wrapper. Current isolated
@@ -146,7 +162,7 @@ counts.
 
 These results cover signed, pushed source checkpoint
 `45a33093df524c03440ed524e71375953ee6834b`. They are historical for the
-current post-14c worktree, which contains uncommitted production changes.
+later signed/pushed source checkpoint `8abfa235` and its current verification.
 Local macOS MBX results; each affected test suite is an independent scope.
 
 | Scope | Result | Evidence |

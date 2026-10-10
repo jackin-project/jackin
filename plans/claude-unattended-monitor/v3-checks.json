@@ -1,5 +1,5 @@
 {
-  "source_commit": "45a33093df524c03440ed524e71375953ee6834b",
+  "source_commit": "8abfa235cce150d5382d99a5679afab49e098525",
   "scope": "offline source gates and isolated installed pair only",
   "candidate_status": "installed_pair_smoke_passed; real_account_setup_unverified",
   "build": {
@@ -8,105 +8,64 @@
     "tool": "mbx 1.22.0",
     "rust": "1.97.1",
     "mode": "offline locked",
-    "log": "/private/tmp/jackin-mbx-build-45a33093.log",
+    "log": "/private/tmp/jackin-mbx-build-8abfa235.log",
     "cli_sha256": "b57e60f2f13b026ae2ec47034b61ecddc69644b230157e621c5ddb5cf447007d",
     "broker_sha256": "30b6f3b1f0777dbe9181851f83fbc2efb3f0356d290e1896bf2ccaf434fbf550",
     "source_worktree_clean_at_build": true
   },
   "source_gates": {
+    "source_commit": "8abfa235cce150d5382d99a5679afab49e098525",
     "seven_package_scoped_formatting": {
       "result": "PASS",
-      "log": "/private/tmp/jackin-mbx-v4-final-fmt-seven.log"
+      "log": "/private/tmp/jackin-mbx-v4-final-freeze11-fmt.log"
     },
     "seven_package_source_check": {
       "result": "PASS",
-      "log": "/private/tmp/jackin-mbx-v4-final-source-check.log"
+      "log": "/private/tmp/jackin-mbx-v4-final-freeze11-check.log"
     },
     "seven_package_strict_clippy_all_targets": {
       "result": "PASS",
-      "log": "/private/tmp/jackin-mbx-v4-final-clippy-seven.log"
+      "log": "/private/tmp/jackin-mbx-v4-final-freeze10-clippy.log"
     },
-    "coordinator": {
-      "passed": 57,
-      "log": "/private/tmp/jackin-mbx-v4-final-coordinator-tests2.log"
+    "s6_rotation": {
+      "passed": 1,
+      "log": "/private/tmp/jackin-mbx-v4-final-freeze4-s6-rotation.log"
     },
-    "coordinator_state": {
+    "s6_full_scope_verification": {
+      "passed": 7,
+      "log": "/private/tmp/jackin-mbx-v4-final-freeze4-scope-verification.log"
+    },
+    "ffi_rank_fix": {
       "passed": 11,
-      "log": "/private/tmp/jackin-mbx-v4-final-coordinator-state-tests.log"
+      "log": "/private/tmp/jackin-mbx-v4-final-freeze5-ffi.log"
+    },
+    "docs_commands": {
+      "passed": 5,
+      "log": "/private/tmp/jackin-mbx-v4-final-freeze5-docs-commands.log"
+    },
+    "v1_storage_migration": {
+      "passed": 1,
+      "log": "/private/tmp/jackin-mbx-v4-final-freeze5-v1-migration.log"
     },
     "host_broker": {
-      "passed": 183,
-      "failed": 0,
-      "filtered": 522,
-      "log": "/private/tmp/jackin-mbx-v4-final-host-broker.log"
+      "passed": 184,
+      "log": "/private/tmp/jackin-mbx-v4-final-freeze5-host-broker.log"
     },
-    "host_inventory": {
-      "passed": 13,
-      "log": "/private/tmp/jackin-mbx-v4-final-host-tests.log"
+    "capsule_diagnostic_dedup": {
+      "passed": 1,
+      "log": "/private/tmp/jackin-mbx-v4-final-freeze10-capsule-dedup1.log"
     },
-    "projection": {
-      "passed": 10,
-      "log": "/private/tmp/jackin-mbx-v4-usage-projection-tests-retry.log"
-    },
-    "discovery": {
-      "passed": 41,
-      "log": "/private/tmp/jackin-mbx-v4-usage-discovery-tests.log"
-    },
-    "runtime_usage_relay": {
-      "passed": 21,
-      "log": "/private/tmp/jackin-mbx-v4-final-runtime-tests.log"
-    },
-    "cli_usage": {
-      "passed": 43,
-      "log": "/private/tmp/jackin-mbx-v4-final-cli-usage-tests.log"
-    },
-    "ffi_bridge": {
-      "passed": 9,
-      "log": "/private/tmp/jackin-mbx-v4-final-ffi-tests.log"
-    },
-    "console": {
-      "passed": 61,
-      "log": "/private/tmp/jackin-mbx-v4-final-console-tests.log"
-    },
-    "capsule": {
+    "capsule_proxy_scope": {
       "passed": 11,
       "filtered": 1,
-      "log": "/private/tmp/jackin-mbx-v4-final-capsule-tests.log"
-    },
-    "offline_bootstrap_integration": {
-      "passed": 2,
-      "log": "/private/tmp/jackin-mbx-v4-final-integration-bootstrap.log"
-    },
-    "offline_monitor_integration": {
-      "passed": 5,
-      "log": "/private/tmp/jackin-mbx-v4-final-integration-monitor.log"
-    },
-    "app": {
-      "passed": 29,
-      "log": "/private/tmp/jackin-mbx-v4-final-app-tests.log"
-    },
-    "broker_installation_integration": {
-      "passed": 5,
-      "log": "/private/tmp/jackin-mbx-v4-final-integration-broker-installation.log"
-    },
-    "broker_service_lifecycle_integration": {
-      "passed": 2,
-      "log": "/private/tmp/jackin-mbx-v4-final-integration-broker-lifecycle.log"
-    },
-    "claude_provider_and_lease_lifecycle": {
-      "passed": 28,
-      "log": "/private/tmp/jackin-mbx-v4-final-claude-tests.log"
-    },
-    "contract_baseline": {
-      "passed": 10,
-      "log": "/private/tmp/jackin-mbx-v4-final-contract-baseline2.log"
+      "log": "/private/tmp/jackin-mbx-v4-final-freeze10-capsule-proxy.log"
     }
   },
   "installed_smoke": {
     "result": "PASS",
     "exit_code": 0,
     "log": "plans/claude-unattended-monitor/v3-installed-smoke.log",
-    "provenance_manifest_sha256": "8c3a3ba5b4d80ed6a11e1c0c6dc1d8b611a3e7a54f926c8886b5d7ee02d20c02",
+    "provenance_manifest_sha256": "64a0a101224ad5c38f4292a59c5191a44071fc54eab3cc95e8a57a13bc454601",
     "broker_protocol": 8,
     "projection_envelope_schema": "3; migration covered by source gates, smoke does not persist an envelope",
     "statusline_input_schema": 2,
@@ -117,7 +76,9 @@
     "native_security_framework": "not instrumented",
     "foreground_auth_success": "not exercised",
     "dispatch_policy_approvals": "none",
-    "fixture_removed_after_orderly_stop": true
+    "fixture_removed_after_orderly_stop": true,
+    "source_commit": "8abfa235cce150d5382d99a5679afab49e098525",
+    "watch_jsonl_events": 1
   },
   "historical_installed_smokes": [
     {
@@ -137,6 +98,12 @@
       "wire_protocol": 8,
       "log": "plans/claude-unattended-monitor/v3-installed-smoke-checkpoint-22ac.log",
       "current_pair_evidence": false
+    },
+    {
+      "source_commit": "45a33093df524c03440ed524e71375953ee6834b",
+      "wire_protocol": 8,
+      "log": "plans/claude-unattended-monitor/v3-installed-smoke-checkpoint-45a.log",
+      "current_pair_evidence": false
     }
   ],
   "pending": [
@@ -144,5 +111,105 @@
     "Native Security Framework calls and successful foreground authentication were not exercised by installed smoke.",
     "Unknown Claude extra-usage permission does not authorize overage or additional spend."
   ],
-  "real_account_readiness": "unverified"
+  "real_account_readiness": "unverified",
+  "historical_source_gates": [
+    {
+      "source_commit": "45a33093df524c03440ed524e71375953ee6834b",
+      "gates": {
+        "seven_package_scoped_formatting": {
+          "result": "PASS",
+          "log": "/private/tmp/jackin-mbx-v4-final-fmt-seven.log"
+        },
+        "seven_package_source_check": {
+          "result": "PASS",
+          "log": "/private/tmp/jackin-mbx-v4-final-source-check.log"
+        },
+        "seven_package_strict_clippy_all_targets": {
+          "result": "PASS",
+          "log": "/private/tmp/jackin-mbx-v4-final-clippy-seven.log"
+        },
+        "coordinator": {
+          "passed": 57,
+          "log": "/private/tmp/jackin-mbx-v4-final-coordinator-tests2.log"
+        },
+        "coordinator_state": {
+          "passed": 11,
+          "log": "/private/tmp/jackin-mbx-v4-final-coordinator-state-tests.log"
+        },
+        "host_broker": {
+          "passed": 183,
+          "failed": 0,
+          "filtered": 522,
+          "log": "/private/tmp/jackin-mbx-v4-final-host-broker.log"
+        },
+        "host_inventory": {
+          "passed": 13,
+          "log": "/private/tmp/jackin-mbx-v4-final-host-tests.log"
+        },
+        "projection": {
+          "passed": 10,
+          "log": "/private/tmp/jackin-mbx-v4-usage-projection-tests-retry.log"
+        },
+        "discovery": {
+          "passed": 41,
+          "log": "/private/tmp/jackin-mbx-v4-usage-discovery-tests.log"
+        },
+        "runtime_usage_relay": {
+          "passed": 21,
+          "log": "/private/tmp/jackin-mbx-v4-final-runtime-tests.log"
+        },
+        "cli_usage": {
+          "passed": 43,
+          "log": "/private/tmp/jackin-mbx-v4-final-cli-usage-tests.log"
+        },
+        "ffi_bridge": {
+          "passed": 9,
+          "log": "/private/tmp/jackin-mbx-v4-final-ffi-tests.log"
+        },
+        "console": {
+          "passed": 61,
+          "log": "/private/tmp/jackin-mbx-v4-final-console-tests.log"
+        },
+        "capsule": {
+          "passed": 11,
+          "filtered": 1,
+          "log": "/private/tmp/jackin-mbx-v4-final-capsule-tests.log"
+        },
+        "offline_bootstrap_integration": {
+          "passed": 2,
+          "log": "/private/tmp/jackin-mbx-v4-final-integration-bootstrap.log"
+        },
+        "offline_monitor_integration": {
+          "passed": 5,
+          "log": "/private/tmp/jackin-mbx-v4-final-integration-monitor.log"
+        },
+        "app": {
+          "passed": 29,
+          "log": "/private/tmp/jackin-mbx-v4-final-app-tests.log"
+        },
+        "broker_installation_integration": {
+          "passed": 5,
+          "log": "/private/tmp/jackin-mbx-v4-final-integration-broker-installation.log"
+        },
+        "broker_service_lifecycle_integration": {
+          "passed": 2,
+          "log": "/private/tmp/jackin-mbx-v4-final-integration-broker-lifecycle.log"
+        },
+        "claude_provider_and_lease_lifecycle": {
+          "passed": 28,
+          "log": "/private/tmp/jackin-mbx-v4-final-claude-tests.log"
+        },
+        "contract_baseline": {
+          "passed": 10,
+          "log": "/private/tmp/jackin-mbx-v4-final-contract-baseline2.log"
+        }
+      }
+    }
+  ],
+  "installed_handoff": {
+    "result": "PASS; byte-identical to repository handoff",
+    "repo_path": "plans/claude-unattended-monitor/claude-code-handoff.md",
+    "installed_path": "/Users/donbeave/.local/share/jackin-claude-monitor-v3/docs/claude-code-handoff.md",
+    "sha256": "3ca3855cb508ccc6785d5d28aee382f878f490e91021a03afbff02c4df935c43"
+  }
 }
