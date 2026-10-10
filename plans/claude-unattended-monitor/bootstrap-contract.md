@@ -1,16 +1,20 @@
 # Foreground Claude bootstrap and explicit usage collection
 
-**Status: implemented in source. The matching pair built from checkpoint
-`22ac3581a70310b9792f03d71168ee8bdd799591` passed the final MBX build and
-isolated installed fixture. Linux Required CI has three reported Clippy
-failures, so PR CI remains pending. Successful attended Keychain authorization
-and foreground bootstrap, real-account binding, and live provider collection
-remain unverified. The initial attended Keychain read may prompt; later
-unattended reads run under a no-UI guard and fail with `interaction_required`
-if UI would be required. That guard does not guarantee credential availability
-or validity.**
-The pair's source provenance, hashes, and fixture results are recorded in the
-[installation manifest](v3-installation.json) and [fixture log](v3-installed-smoke.log).
+**Status: implemented in source. The matching pair built from signed, pushed
+checkpoint `45a33093df524c03440ed524e71375953ee6834b` passed the offline, locked
+MBX build and isolated installed fixture. An intermediate poll of the Linux Required CI run for source head 45a33093
+showed no failures; it continued after that snapshot, and final-head checks
+remain required. Successful
+attended Keychain authorization and foreground bootstrap, real-account binding,
+and live provider collection remain unverified. The initial attended Keychain
+read may prompt; later unattended reads run under a no-UI guard and fail with
+`interaction_required` if UI would be required. That guard does not guarantee
+credential availability or validity.**
+The current pair's provenance and hashes are in
+[/private/tmp/jackin-v3-provenance-45a33093.json](/private/tmp/jackin-v3-provenance-45a33093.json),
+and its [installed fixture log](/private/tmp/jackin-v3-installed-smoke-45a33093.log).
+The earlier 22ac pair is historical; its record remains in
+[v3-installation.json](v3-installation.json) and [v3-installed-smoke.log](v3-installed-smoke.log).
 
 ## Implemented path and limits
 
@@ -197,9 +201,10 @@ Persisted deadlines use wall-clock epochs. A sufficiently large clock change
 between restarts can make an epoch deadline appear expired early, so this does
 not guarantee that a `Retry-After` interval survives arbitrary clock jumps.
 The lifecycle and recovery fixes pass the current 57-test coordinator scope
-and 28-test Claude provider and lease lifecycle scope. Linux Required CI has
-three reported Clippy failures; PR CI remains pending. This is not a claim of
-live-provider rate-limit behavior.
+and 28-test Claude provider and lease lifecycle scope. An intermediate poll of the Linux Required CI run for source head 45a33093
+showed no failures; it continued after that snapshot, and final-head checks
+remain required. This is not
+a claim of live-provider rate-limit behavior.
 
 An observation may collect quota evidence without an SGD receipt, goal, or
 dispatch policy. It remains `observe_only`, `goal_id=null`,
@@ -246,28 +251,32 @@ Keep strict history intact. Any migration incompatibility fails closed.
 
 The current source implements the foreground bootstrap, selected-service
 zeroizing cache, no-UI guard, explicit binding approval, and opt-in observer
-path. The matching CLI and broker built from checkpoint
-`22ac3581a70310b9792f03d71168ee8bdd799591` passed the offline, locked MBX build
-in 37.02 seconds (0 B reported) and the isolated v3 installed fixture. The
-fixture verified the exact installed sibling broker with
-`JACKIN_USAGE_BROKER_BIN` unset, and observed zero HTTP-proxy requests and zero
-credential-command executions. It did not instrument native Security
-Framework calls or exercise successful foreground authentication. It used
-fixture state, not a real account or configured evidence store. Source
-provenance, binary hashes, and fixture result are recorded in
-[v3-installation.json](v3-installation.json) and
-[v3-installed-smoke.log](v3-installed-smoke.log).
+path. The matching CLI and broker built from signed, pushed checkpoint
+`45a33093df524c03440ed524e71375953ee6834b` passed the offline, locked MBX build
+in 15.93 seconds and the isolated v3 installed fixture. The fixture verified
+the exact installed sibling broker with `JACKIN_USAGE_BROKER_BIN` unset and
+observed zero HTTP-proxy requests and zero credential-command executions. The
+local seven-package formatting, source-check, and strict-Clippy scopes passed;
+the affected Claude provider and lease lifecycle, host broker, and discovery
+scopes passed with 28, 183, and 41 tests respectively. An intermediate poll of the Linux Required CI run for source head 45a33093
+showed no failures; it continued after that snapshot, and final-head checks
+remain required. The 22ac
+installed pair is historical and does not verify this source checkpoint.
 
-The 57-test coordinator scope and 28-test Claude provider and lease lifecycle
-scope pass for the current source. Linux Required CI has three reported Clippy
-failures, and PR CI remains pending. Neither the build, fixture, nor source
-tests establish successful authorization on this Mac, a stable provider-account
-identity, or successful live collection. The no-UI guarantee applies to
-unattended Keychain reads after the guard is established; the attended initial
-read may prompt, and credential availability and provider acceptance are not
-guaranteed. The route remains experimental, undocumented, and unsupported; it
-can return 403 or change without notice. This document does not make a
-provider-readiness claim or authorize live credential/provider checks.
+The 45a fixture did not instrument native Security Framework calls or exercise
+successful foreground authentication. It used fixture state, not a real
+account or configured evidence store. Exact source provenance, binary hashes,
+and fixture result are recorded in
+[/private/tmp/jackin-v3-provenance-45a33093.json](/private/tmp/jackin-v3-provenance-45a33093.json)
+and [the installed fixture log](/private/tmp/jackin-v3-installed-smoke-45a33093.log).
+Neither the build, fixture, nor source tests establish successful authorization
+on this Mac, a stable provider-account identity, or successful live collection.
+The no-UI guarantee applies to unattended Keychain reads after the guard is
+established; the attended initial read may prompt, and credential availability
+and provider acceptance are not guaranteed. The route remains experimental,
+undocumented, and unsupported; it can return 403 or change without notice.
+This document does not make a provider-readiness claim or authorize live
+credential/provider checks.
 
 No auth/settings/Claude-project writes, live Keychain or provider checks,
 operator setup, or PR completion are part of this contract-writing task.
