@@ -1,111 +1,30 @@
 # Claude unattended usage monitor
 
-## Current delivery status — direct CLI priority
+## Current delivery checkpoint
 
-The current user priority is an attended, direct CLI path: foreground Claude
-credential bootstrap and an explicitly opted-in account collector. The revised
-contract is [bootstrap-contract.md](bootstrap-contract.md). It supersedes the
-older statusline-observer-only plan as the implementation target; statusline
-ingress remains optional and passive.
+Delivery branch: `feat/claude-usage-monitor-main`, isolated from the running Claude checkout. Pushed checkpoint `471efcb2` includes the installed fixture harness. The broker wire is v7, durable monitor schema v4, and statusline input v2. The current direct-CLI contract is [bootstrap-contract.md](bootstrap-contract.md); statusline remains an optional credential-free source.
 
-For branch/file accounting, see the [branch consolidation audit](#branch-consolidation-audit).
+All Cargo work uses `MISE_AUTO_INSTALL=false mise exec -- cargo ...`, which selects MBX 1.22.0. Main already supplies this route; draft/red PR #1120 is not a prerequisite and remains untouched.
 
-- The current worktree is branch `feat/claude-usage-monitor-main`, based on
-  main `868ce535`, at source checkpoint
-  `33ddba4251e8adf4a9de56aaa32caaddfa638f00`; this 124-file checkpoint is
-  committed and pushed, but is not a completed PR or readiness claim.
-- No current-port binary has been installed, and no live account/provider
-  verification has occurred. New fixes for integration failures reported
-  after the checkpoint are implemented in the worktree but await rerun and a
-  later source checkpoint.
-- The port remains incomplete. The checkpoint's focused usage, coordinator,
-  protocol, broker, consumer-compilation, and docs gates passed. A previous
-  MBX-backed CLI run passed 48 tests, but its latest rerun is still running as
-  process `12990` (log `/private/tmp/jackin-mbx-cli-tests-2.log`). The
-  integration gate reported four failures; fixes are implemented and rerun is
-  pending. The V1/V2/V3-to-V4 migration source review is ready after source
-  validation and nested-schema malformed-input/unchanged-bytes checks, but
-  migration runtime proof and remaining integration gates are pending.
-- Version contract: broker wire v7 and normalized statusline input v2 remain
-  unchanged; the candidate durable monitor schema is v4 for the historical
-  billing-correction horizon. At source checkpoint `33ddba4`, the protocol
-  gate has 133 passing tests. The final broker run passed 160 tests and failed
-  none; its log is `/private/tmp/jackin-mbx-broker-tests-final-2.log`. MBX
-  reported 521 cache hits, 384 misses, 16 not looked up, 21 bypassed, 0 B
-  transferred, and 1.4 GiB stored locally. These isolated gates do not replace
-  the pending integration rerun or migration runtime proof.
-- The read-only MBX audit confirms that main already routes Mise-managed Cargo
-  through MBX 1.22.0; details and source links are in
-  [mbx-prerequisite.md](mbx-prerequisite.md). The isolated Claude usage filter
-  completed 23 passed, 0 failed through MBX, with fixture-only coverage; this
-  is not native Keychain or whole-workspace Rust proof. The coordinator filter
-  completed 54 passed, 0 failed through MBX. A subsequent MBX consumer
-  compilation passed for binary and library targets in `jackin`, `usage-ffi`,
-  `runtime`, and `capsule` (log
-  `/private/tmp/jackin-mbx-consumers-check-5.log`). These gates do not
-  establish whole-workspace Rust readiness.
-- The MDX regeneration and docs verification passed: 18 tests, a build of
-  1,293 HTML pages, and HTML plus hydrated rendering. Screenshots from the
-  usage-doc render verifier: `/private/tmp/jackin-usage-schema4-final.png` and
-  `/private/tmp/jackin-collector-final.png`. This is documentation proof only.
-- The first MBX-backed Required integration run reported four failures; fixes
-  are implemented in the worktree and a rerun is pending. New Required reviews
-  also raised four items awaiting disposition and verification: first-success
-  consent revocation, unrecognized-socket handling before auth and cleanup
-  ownership, stale configured-model evidence, and the persisted policy-
-  transition invariant.
-- The read-only PR #1120 audit found it open and draft at `9ef617d`; Actionlint
-  and DCO pass, Plan and Required fail, and 28 checks are skipped. Independent
-  Rust source review retained one bounded candidate finding, with no runtime
-  proof; its disposition and a current-head review remain pending (see the
-  [MBX and PR audit](mbx-prerequisite.md)). PR #1120 is not needed to enable
-  MBX on main; no merge has happened or been verified. Do not claim root Rust
-  readiness.
-- The candidate source records `historical_correction_horizon_epoch` when a
-  verified closed-period billing correction is older than the two retained
-  account periods and cannot be applied. The correction remains
-  audit-only/unverified. This horizon is rollback protection: goals whose
-  baseline predates it retain their known cumulative-spend estimate but latch
-  `rollover_unknown` and incomplete cumulative spend; newer receipts do not
-  clear the affected goal's latch. A goal baselined after the horizon remains
-  independently evaluated. The isolated broker suite passed at checkpoint;
-  migration runtime and integration verification remain required for proof.
-- Earlier statements that `auth prepare` only discarded its credential and
-  that the local split disabled collection describe a previous snapshot, not
-  the reported current implementation. Direct usage is still unverified.
-- CLI-port's planned commands are `usage auth prepare --provider claude
-  [--keychain-service SERVICE] [--data-dir PATH]`, binding confirmation with
-  `--provider-account ... --approve-experimental-collector`, and `usage
-  monitor observe ... --experimental-collector`. The binding flag records
-  explicit, audited, default-false approval on that binding revision;
-  `observe --experimental-collector` only consumes an already-approved
-  mapping. Neither flag grants dispatch consent, and an unattended caller
-  cannot approve collection. These are agent-reported planned shapes, not yet
-  verified by the main-port binary; confirm actual help and output before
-  updating operator instructions.
-- The new path requires all-stdio TTY gates, a foreground broker lease before
-  Keychain access, one exact service in a bounded zeroizing in-memory cache,
-  and an explicit account mapping/collector opt-in. Auth preparation itself
-  makes no provider request. The collector targets an undocumented endpoint
-  with an honest Jackin user agent; make no provider-support claim.
-- Observation does not create a goal, spend receipt, or dispatch policy and
-  never makes a monitor runnable. Strict spend guards remain intact; any
-  quota-only dispatch approval is separate and acknowledges no SGD cap.
-- No real-account callback, native Keychain read, provider request, operator
-  setup, or installed proof is available for this port. Several focused
-  offline gates and docs checks passed at the checkpoint; integration rerun,
-  current CLI test rerun, remaining review dispositions, fresh install/fixture
-  proof, and PR work remain pending. The PR is not complete.
-- The predecessor `operator-unblock.md` was committed and pushed at
-  `771bb088`; the earlier “untracked” description is obsolete. Its archived
-  copy here is [historical-installed-v2-workaround.md](historical-installed-v2-workaround.md).
-  The predecessor branch remains preserved and is tagged
-  `archive/claude-unattended-monitor-2026-10-10`, peeled to
-  `771bb088dd93451654f992aeef1b8976ad84ec85` (tag object
-  `21a123dcca0b2ea65eb5a9ae771bfdc456e75969`). This archive tag preserves the
-  predecessor; it does not mark the main-port candidate as verified. Do not
-  treat the predecessor observer-only workflow or fixture evidence as
-  direct-collector proof, or copy it into this port's verification record.
+Completed offline gates: protocol 133, broker 173, coordinator 54, CLI 43, app 29; installation 5, lifecycle 2, bootstrap 2, monitor 5; docs 18 tests and 1,293 rendered routes. Installed v3 predecessor pair passed isolated observation, structured-output, sibling selection and composed-statusline checks. Its proxy request and credential-command trip counts were zero; native Keychain calls were not instrumented and successful foreground auth was not exercised. No real-account readiness claim follows.
+
+Current cleanup removes dormant Claude CLI diagnostic/parser paths and strengthens provider-call inventory detection for both direct calls and callbacks. Post-cleanup provider contract 2/2 and broker 173/173 pass. Remaining queue:
+
+- [x] Post-cleanup Claude fake-auth/provider 25 and initial contract 8 passed; forbidden-command guard extended and independently reviewed Ready within documented syntactic limits. Final stable-source rerun remains required.
+- [x] FFI passive/consumer regression 9 passed through MBX; docs typecheck and 18 tests passed after published research updates.
+- [ ] Port missing lifetime leader lock from predecessor `f669ec77`, verify deterministic sleep/wake/takeover and owned-path cleanup tests.
+- [ ] Finish removal of public retired host runtime after confirming active presentation dependencies; update crate README/generated internals docs.
+- [ ] Verify newly restored catalog-diagnostic publication lifecycle regressions, remaining consumers, and final independent reviews.
+- [ ] Commit and push cleanup; rebuild/install the matching owned v3 pair through MBX and rerun isolated installed workflow.
+- [ ] Refresh provenance, handoff and evidence; commit and push all relevant task documents.
+- [ ] Complete branch reconciliation, exact-head PR reviews/comments and required CI; land only after gates pass.
+- [ ] Operator-controlled real credential/account/provider verification remains outside offline acceptance. Do not modify running Claude settings, credentials, environment or worktrees.
+
+Observation alone never creates a spend baseline or grants dispatch. Collection opt-in is separate from dispatch policy approval. Strict SGD remains fail-closed; quota-only requires explicit audited approval and discloses unknown spend/disabled SGD enforcement. External prerequisites mean checkpoint/report, not endless diagnostics or automatic resumption claims.
+
+## Historical branch audit checkpoint
+
+The following audit notes are earlier checkpoint records; consult [branch-consolidation.md](branch-consolidation.md) and [verification.md](verification.md) for refreshed evidence.
 
 ### Branch consolidation audit
 
@@ -120,7 +39,7 @@ contains 203 unrelated commits; it is not a prerequisite for landing the
 main-port usage work. Exclude that unrelated history from the usage-port
 inventory. The earlier inventory snapshot found a dirty 59 tracked-file port
   plus untracked split modules, tests, and docs; those worktree counts predate
-  source checkpoint `33ddba4` and need refresh. The semantic inventory spans
+  source checkpoint `c18cdbf` and need refresh. The semantic inventory spans
 protocol, coordinator, monitor/broker, Claude auth/provider, CLI/broker binary
 and integration tests, runtime/FFI/telemetry, and usage docs. The full
 file-level reconciliation is still pending, so consolidation is not complete.
@@ -145,8 +64,10 @@ worktree. They remain historical findings pending compile, focused offline
 tests, and independent re-review; do not describe them as confirmed current
 defects or as verified fixes.
 
-The CLI test rerun, four integration-failure rerun, and installed-fixture
-verification remain pending; the consumer compilation above passed. The
+The new pair-command integration session, bootstrap fixture disposition,
+current CLI/auth compilation, branch-proof review, installed-fixture
+verification, and remaining Required-review dispositions remain pending; the
+broker and protocol runs passed. The
 telemetry gate reports eight unchanged baseline literals in
 `/private/tmp/jackin-main-telemetry-gate.log`; these findings have no broad
 fix or waiver. Any canonical tag for the consolidated port remains pending
@@ -155,26 +76,43 @@ complete.
 
 ### Current queue
 
-- [done] Complete read-only MBX setup and PR #1120 status audits; see
-  [mbx-prerequisite.md](mbx-prerequisite.md). Existing main MBX setup works
-  independently of PR #1120. Isolated Claude and coordinator tests passed
-  23/0 and 54/0 respectively; consumer compilation run 5 passed.
+- [done] Confirm the local Cargo wrapper path and MBX 1.22.0 route; PR #1120
+  is not needed to enable MBX on main and remains open/draft with failed
+  required checks. See [mbx-prerequisite.md](mbx-prerequisite.md).
+- [done] Record scoped MBX tests: Claude usage 23/0, coordinator 54/0,
+  consumer compilation run 5 passed, privacy CLI 43 passed, app suite 29
+  passed, consent/429 tests 25 passed, protocol 133 passed, and broker final 7
+  173 passed. The consent/429 run used a changed-service compile input; none
+  of these scoped gates substitutes for final-pair, integration, or install
+  proof.
 - [done] Capture MBX consumer compilation run 5: binary and library targets in
   `jackin`, `usage-ffi`, `runtime`, and `capsule` passed; see
   `/private/tmp/jackin-mbx-consumers-check-5.log`.
-- [done] Final isolated broker suite passed 160 tests, 0 failures at source
-  checkpoint `33ddba4`; see `/private/tmp/jackin-mbx-broker-tests-final-2.log`.
-- [ ] Rerun and review the four failed Required integration cases after the
-  source fixes; do not count the pending rerun as proof.
-- [ ] Close and verify the new Required findings: first-success consent
-  revocation, unknown-socket handling before auth and cleanup ownership, stale
-  configured-model evidence, and the persisted policy-transition invariant.
-- [ ] Capture and review CLI test rerun process `12990` at
-  `/private/tmp/jackin-mbx-cli-tests-2.log` after it exits. The earlier
-  MBX-backed 48-test pass is previous-run evidence, not a substitute for this
-  current-checkpoint rerun.
+- [done] Follow-up fixes `22ed2576`, `f6c3c8b6`, and `a3ecdf62` are pushed,
+  including first-success consent revocation and persisted-policy changes.
+  Latest source commit `c18cdbf` awaits push confirmation from session `67152`.
+- [done] Broker final 7 passed 173 tests, 0 failures, with no input-modified
+  warnings; socket, legacy-format, and model-evidence tests passed. See
+  `/private/tmp/jackin-mbx-broker-tests-final-7.log`.
+- [done] Protocol suite passed 133 tests through MBX; see
+  `/private/tmp/jackin-mbx-protocol-final.log`.
+- [ ] Capture integration session `41433` after the new pair commands finish.
+  Earlier broker installation passed 5/5 and lifecycle passed 2/2; the
+  bootstrap stale expected-unmapped failure still needs disposition.
+- [ ] Complete branch-proof review; source reviews for privacy, rate, policy,
+  and socket behavior are Ready only within their stated limits.
+- [done] Scoped CLI privacy suite (43/0), app suite (29/0), and consent/429
+  tests (25/0) passed through MBX. The consent/429 compile used a changed
+  service; auth source was unchanged after that run, but this is not final-pair
+  or installed-artifact proof.
+- [ ] Verify the current CLI/auth test compilation against the latest source
+  commit and record its exact command and result; scoped passes above do not
+  establish a final paired build.
 - [done] Regenerate MDX and verify docs: 18 tests, 1,293 HTML pages,
   and HTML/hydrated rendering passed; screenshot paths are recorded above.
+- [done] Complete source reviews for privacy/rate/policy/socket behavior; the
+  Ready verdict is bounded by the reviewers' stated limits. Branch-proof
+  review and verification of final integration behavior remain pending.
 - [ ] Record disposition of the bounded source-only Rust finding and re-fetch
   reviews, comments, replies, outdated/unresolved threads, and checks at PR
   #1120's current head. It remains open/draft with Plan and Required failing.
@@ -209,8 +147,10 @@ complete.
 - [ ] Build/install the exact local artifact and run its isolated fixture.
   Update handoff evidence only from those results; do not perform live account
   or provider checks under this task.
-- [ ] Reconcile docs and review the final main-port diff. Do not mark the PR
-  complete until the actual review, gates, and installed proof are recorded.
+- [ ] Reconcile docs and review the final main-port diff. Prepare/refresh the
+  usage PR only after the source, review, test, install, and main-integration
+  gates are recorded; re-fetch comments, threads, and required checks before
+  landing. Do not mark the PR complete before that evidence exists.
 - [ ] Finish the file/commit-level reconciliation of predecessor and agent
   work; review the single-branch result before considering the preserved
   predecessor branch for any cleanup.

@@ -1,5 +1,7 @@
 # MBX setup and PR #1120 prerequisite audit
 
+This is a checkpoint audit, with test/process statuses recorded at `33ddba4`. Later results and closed integration failures are in [verification.md](verification.md); do not interpret the pending process IDs below as current work. The local MBX setup finding remains valid and was rechecked during cleanup: Mise resolves Cargo to its MBX 1.22.0 wrapper.
+
 **Status:** Main already has a local Cargo-to-MBX route. The read-only setup
 and PR-status audits found that PR #1120 is not required to enable MBX on main.
 At source checkpoint `33ddba4`, the isolated Claude usage (23), coordinator
