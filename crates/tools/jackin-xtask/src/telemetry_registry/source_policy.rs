@@ -33,6 +33,7 @@ const RAW_TRACING_MACROS: &[&str] = &[
 struct TelemetryImports {
     aliases: BTreeMap<String, BTreeSet<String>>,
     globs: BTreeSet<String>,
+    modules: BTreeSet<String>,
 }
 
 struct TelemetryImportPaths {
@@ -50,6 +51,14 @@ enum TelemetryImportMatch {
 impl TelemetryImports {
     fn collect(syntax: &syn::File) -> Self {
         let mut imports = Self::default();
+        imports
+            .modules
+            .extend(syntax.items.iter().filter_map(|item| {
+                let syn::Item::Mod(module) = item else {
+                    return None;
+                };
+                Some(module.ident.to_string())
+            }));
         imports.visit_file(syntax);
         imports
     }
@@ -141,7 +150,14 @@ impl TelemetryImports {
                 .map_or((candidate.as_str(), None), |(head, tail)| {
                     (head, Some(tail))
                 });
-            if let Some(targets) = self.aliases.get(head) {
+            // A local module and a `use`-imported value may share a spelling.
+            // Qualified paths resolve the module namespace, so do not rewrite
+            // a known module head through an unrelated value re-export. Keep
+            // unqualified aliases and paths without a local module fully
+            // expanded so renamed telemetry APIs and cyclic aliases remain
+            // fail-closed.
+            let local_module_path = tail.is_some() && self.modules.contains(head);
+            if let Some(targets) = self.aliases.get(head).filter(|_| !local_module_path) {
                 if !alias_path.insert(head.to_owned()) {
                     // Prefix substitutions preserve the suffix. Tracking the
                     // path-local alias graph node, rather than the expanding
@@ -1252,6 +1268,7 @@ mod telemetry_import_path_tests {
                 ),
             ]),
             globs: BTreeSet::new(),
+            modules: BTreeSet::new(),
         };
 
         let paths = imports.paths("a::info");
@@ -1280,6 +1297,7 @@ mod telemetry_import_path_tests {
                 ),
             ]),
             globs: BTreeSet::new(),
+            modules: BTreeSet::new(),
         };
 
         let paths = imports.paths("emit");

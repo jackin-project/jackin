@@ -79,12 +79,23 @@ fn source_policy_treats_self_imports_as_identity_not_alias_cycles() {
 
 #[test]
 fn source_policy_fails_closed_on_growing_cyclic_macro_aliases() {
-    let violations = source_policy_violations(
-        "crates/group/example/src/lib.rs",
+    for source in [
         "use b as a; use a::nested as b; fn raw() { a::info!(\"event\"); }",
+        "use b as telemetry; use telemetry::nested as b; fn raw() { telemetry::info!(\"event\"); }",
+    ] {
+        let violations = source_policy_violations("crates/group/example/src/lib.rs", source);
+        assert_eq!(violations, ["cyclic telemetry import path"], "{source}");
+    }
+}
+
+#[test]
+fn source_policy_keeps_local_module_paths_separate_from_value_reexports() {
+    let violations = source_policy_violations(
+        "crates/ui/jackin-console/src/tui/components/file_browser.rs",
+        "mod render; use render::{listing_rect, render}; fn page() { listing_rect(); render(); }",
     );
 
-    assert_eq!(violations, ["cyclic telemetry import path"]);
+    assert!(violations.is_empty(), "{violations:?}");
 }
 
 #[test]
