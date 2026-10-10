@@ -6,7 +6,6 @@ use std::sync::Arc;
 use std::sync::mpsc::SyncSender;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
-#[cfg(not(test))]
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use jackin_protocol::usage_broker::{UsageAccountCapability, UsageCredentialScope};
@@ -86,19 +85,12 @@ impl MonotonicClock for SystemMonotonicClock {
     }
 
     fn sample(&self, fallback_epoch: i64) -> ClockSample {
-        #[cfg(test)]
-        {
-            ClockSample::anchored(fallback_epoch, self.now())
-        }
-        #[cfg(not(test))]
-        {
-            let _ = fallback_epoch;
-            ClockSample {
-                wall_epoch: SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or_default(),
-                monotonic: self.now(),
-            }
+        let _ = fallback_epoch;
+        ClockSample {
+            wall_epoch: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default(),
+            monotonic: self.now(),
         }
     }
 }

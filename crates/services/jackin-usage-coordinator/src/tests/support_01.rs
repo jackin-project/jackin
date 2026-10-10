@@ -19,6 +19,15 @@ impl MonotonicClock for FakeMonotonicClock {
     fn now(&self) -> Duration {
         Duration::from_secs(self.elapsed_seconds.load(Ordering::SeqCst))
     }
+
+    fn sample(&self, fallback_epoch: i64) -> ClockSample {
+        let fallback_seconds = u64::try_from(fallback_epoch.max(0)).unwrap_or(u64::MAX);
+        let observed = self
+            .elapsed_seconds
+            .fetch_max(fallback_seconds, Ordering::SeqCst)
+            .max(fallback_seconds);
+        ClockSample::anchored(fallback_epoch, Duration::from_secs(observed))
+    }
 }
 
 #[derive(Default)]
@@ -225,7 +234,32 @@ pub(super) fn coordinator(
     store: Arc<MemoryStore>,
     config: UsageCoordinatorConfig,
 ) -> UsageCoordinator {
-    UsageCoordinator::new(executor, store, config)
+    let provider: Arc<dyn UsageProviderExecutor> = executor;
+    let state_store: Arc<dyn AccountStateStore> = store;
+    coordinator_with_fake_clock(provider, state_store, config)
+}
+
+pub(super) fn coordinator_with_fake_clock(
+    executor: Arc<dyn UsageProviderExecutor>,
+    store: Arc<dyn AccountStateStore>,
+    config: UsageCoordinatorConfig,
+) -> UsageCoordinator {
+    let clock: Arc<dyn MonotonicClock> = Arc::new(FakeMonotonicClock::default());
+    UsageCoordinator::start_with_clock(executor, store, config, None, None, clock)
+}
+
+pub(super) fn catalog_coordinator_with_fake_clock(
+    executor: Arc<dyn UsageProviderExecutor>,
+    store: Arc<dyn AccountStateStore>,
+    config: UsageCoordinatorConfig,
+    catalog: impl IntoIterator<Item = UsageCatalogEntry>,
+) -> UsageCoordinator {
+    let catalog = catalog
+        .into_iter()
+        .map(|entry| (entry.capability, entry.revision))
+        .collect();
+    let clock: Arc<dyn MonotonicClock> = Arc::new(FakeMonotonicClock::default());
+    UsageCoordinator::start_with_clock(executor, store, config, Some(catalog), None, clock)
 }
 
 pub(super) fn join_ok(
@@ -306,7 +340,7 @@ pub(super) fn assert_updating_store_failure_terminates(persistent: bool) {
             quota_view(1_000, 80),
         )));
         let account = capability("account-a");
-        let coordinator = UsageCoordinator::with_catalog(
+        let coordinator = catalog_coordinator_with_fake_clock(
             Arc::<ImmediateExecutor>::clone(&executor),
             Arc::<UpdatingFailureStore>::clone(&store),
             UsageCoordinatorConfig::default(),

@@ -4,6 +4,22 @@
 use super::state::PREVIOUS_ACCOUNT_STATE_SCHEMA_VERSION;
 use super::*;
 
+#[test]
+fn system_clock_samples_real_wall_and_monotonic_domains() {
+    let before = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap();
+    let clock = SystemMonotonicClock::default();
+    let sample = clock.sample(1);
+    let after = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap();
+
+    assert!(before <= sample.wall_epoch);
+    assert!(sample.wall_epoch <= after);
+    assert!(sample.monotonic <= clock.now());
+}
+
 struct ResetWriteFailureStore {
     inner: MemoryStore,
     fail_reset_write: AtomicUsize,
@@ -143,7 +159,7 @@ fn claude_attempt_floor_persists_across_restart_and_force_cannot_bypass() {
             reason = "coerce concrete executor to shared trait object"
         )]
         let provider_executor: Arc<dyn UsageProviderExecutor> = executor.clone();
-        let coordinator = UsageCoordinator::new(
+        let coordinator = coordinator_with_fake_clock(
             provider_executor,
             Arc::<FileAccountStateStore>::clone(&store),
             UsageCoordinatorConfig {
@@ -180,7 +196,7 @@ fn claude_attempt_floor_persists_across_restart_and_force_cannot_bypass() {
             reason = "coerce concrete executor to shared trait object"
         )]
         let provider_executor: Arc<dyn UsageProviderExecutor> = restarted_executor.clone();
-        let restarted = UsageCoordinator::new(
+        let restarted = coordinator_with_fake_clock(
             provider_executor,
             Arc::<FileAccountStateStore>::clone(&store),
             UsageCoordinatorConfig {
@@ -342,7 +358,7 @@ fn account_state_v1_migration_preserves_results_and_enforces_fresh_attempt_floor
         reason = "coerce concrete executor to the coordinator port"
     )]
     let provider: Arc<dyn UsageProviderExecutor> = executor.clone();
-    let coordinator = UsageCoordinator::new(
+    let coordinator = coordinator_with_fake_clock(
         provider,
         Arc::<FileAccountStateStore>::clone(&store),
         UsageCoordinatorConfig::default(),
@@ -390,7 +406,7 @@ fn catalog_revision_retains_retry_after_across_restart() {
         reason = "coerce concrete executor to shared trait object"
     )]
     let provider_executor: Arc<dyn UsageProviderExecutor> = executor.clone();
-    let coordinator = UsageCoordinator::with_catalog(
+    let coordinator = catalog_coordinator_with_fake_clock(
         provider_executor,
         Arc::<FileAccountStateStore>::clone(&store),
         UsageCoordinatorConfig::default(),
@@ -422,7 +438,7 @@ fn catalog_revision_retains_retry_after_across_restart() {
         reason = "coerce concrete executor to shared trait object"
     )]
     let provider_executor: Arc<dyn UsageProviderExecutor> = restarted_executor.clone();
-    let restarted = UsageCoordinator::with_catalog(
+    let restarted = catalog_coordinator_with_fake_clock(
         provider_executor,
         store,
         UsageCoordinatorConfig::default(),
@@ -455,7 +471,7 @@ fn failed_catalog_reset_write_restores_retry_state_and_catalog() {
         message: "provider rate limited".into(),
         retry_at_epoch: Some(5_000),
     }));
-    let coordinator = UsageCoordinator::with_catalog(
+    let coordinator = catalog_coordinator_with_fake_clock(
         Arc::<ImmediateExecutor>::clone(&executor),
         Arc::<ResetWriteFailureStore>::clone(&store),
         UsageCoordinatorConfig::default(),
@@ -593,7 +609,7 @@ fn catalog_revocation_clears_materialized_data_and_fences_late_result() {
     )));
     let store = Arc::new(MemoryStore::default());
     let account = capability("account-a");
-    let coordinator = UsageCoordinator::with_catalog(
+    let coordinator = catalog_coordinator_with_fake_clock(
         Arc::<GateExecutor>::clone(&executor),
         Arc::<MemoryStore>::clone(&store),
         UsageCoordinatorConfig::default(),
@@ -848,7 +864,7 @@ fn catalog_revision_change_purges_old_state_and_allows_only_new_revision() {
     )));
     let store = Arc::new(MemoryStore::default());
     let account = capability("account-a");
-    let coordinator = UsageCoordinator::with_catalog(
+    let coordinator = catalog_coordinator_with_fake_clock(
         Arc::<ImmediateExecutor>::clone(&executor),
         Arc::<MemoryStore>::clone(&store),
         UsageCoordinatorConfig::default(),
@@ -891,7 +907,7 @@ fn catalog_purge_failure_restores_durable_state_and_keeps_old_catalog() {
     )));
     let store = Arc::new(MemoryStore::default());
     let account = capability("account-a");
-    let coordinator = UsageCoordinator::with_catalog(
+    let coordinator = catalog_coordinator_with_fake_clock(
         Arc::<ImmediateExecutor>::clone(&executor),
         Arc::<MemoryStore>::clone(&store),
         UsageCoordinatorConfig::default(),
@@ -929,7 +945,7 @@ fn same_capability_revision_change_fences_in_flight_join_immediately() {
     let executor = Arc::new(GateExecutor::new(ProviderProbeOutcome::success(
         quota_view(1_000, 80),
     )));
-    let coordinator = Arc::new(UsageCoordinator::with_catalog(
+    let coordinator = Arc::new(catalog_coordinator_with_fake_clock(
         Arc::<GateExecutor>::clone(&executor),
         Arc::new(MemoryStore::default()),
         UsageCoordinatorConfig::default(),
@@ -971,7 +987,7 @@ fn catalog_purge_prevents_restart_resurrection() {
     let executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
         quota_view(1_000, 80),
     )));
-    let first = UsageCoordinator::new(
+    let first = coordinator_with_fake_clock(
         Arc::<ImmediateExecutor>::clone(&executor),
         Arc::<FileAccountStateStore>::clone(&store),
         UsageCoordinatorConfig::default(),
@@ -986,7 +1002,7 @@ fn catalog_purge_prevents_restart_resurrection() {
     );
     drop(first);
 
-    let second = UsageCoordinator::with_catalog(
+    let second = catalog_coordinator_with_fake_clock(
         Arc::<ImmediateExecutor>::clone(&executor),
         Arc::<FileAccountStateStore>::clone(&store),
         UsageCoordinatorConfig::default(),
@@ -996,7 +1012,7 @@ fn catalog_purge_prevents_restart_resurrection() {
     assert_eq!(store.load(&account, 1_002).unwrap(), None);
     drop(second);
 
-    let restarted = UsageCoordinator::with_catalog(
+    let restarted = catalog_coordinator_with_fake_clock(
         Arc::<ImmediateExecutor>::clone(&executor),
         store,
         UsageCoordinatorConfig::default(),

@@ -17,7 +17,7 @@ fn corrupt_revoked_account_is_quarantined_without_poisoning_rotation() {
         quota_view(1_000, 80),
     )));
     let store = Arc::new(FileAccountStateStore::at(accounts.clone()));
-    let coordinator = UsageCoordinator::with_catalog(
+    let coordinator = catalog_coordinator_with_fake_clock(
         executor,
         store,
         UsageCoordinatorConfig::default(),
