@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Poll cadence methods.
 
+use std::collections::BTreeSet;
+
 use jackin_protocol::usage_broker::{UsageAccountCapability, UsageGenerationView};
 
 use super::entries::effective_due_epoch;
@@ -23,12 +25,71 @@ impl UsageCoordinator {
         })
     }
 
+    /// Earliest periodic due time among caller-selected capabilities. When a
+    /// catalog is installed, each selected account is resolved through that
+    /// catalog; omitted capabilities cannot wake this scheduler.
+    #[must_use]
+    pub fn next_due_epoch_for_capabilities(
+        &self,
+        capabilities: impl IntoIterator<Item = UsageAccountCapability>,
+        now_epoch: i64,
+    ) -> Option<i64> {
+        let selected = capabilities.into_iter().collect::<BTreeSet<_>>();
+        for capability in &selected {
+            drop(self.current(capability, now_epoch));
+        }
+        let clock_sample = self.shared.clock.sample(now_epoch);
+        let _catalog_lifecycle = self.shared.catalog_lifecycle.lock().ok()?;
+        self.shared.state.lock().ok().and_then(|state| {
+            state
+                .accounts
+                .iter()
+                .filter(|(capability, entry)| {
+                    selected.contains(*capability)
+                        && !entry.revoked
+                        && !state.blocked.contains_key(*capability)
+                })
+                .map(|(_, entry)| effective_due_epoch(entry, clock_sample))
+                .min()
+        })
+    }
+
     /// Poll every account whose periodic cadence is due. Each due account
     /// issues at most one ambient (non-force) refresh, which joins in-flight
     /// work and honors shared Retry-After/cooldown deadlines, so one call can
     /// never produce a burst of missed polls. Returns the started or joined
     /// views; blocked accounts are skipped.
     pub fn poll_due(&self, now_epoch: i64) -> Vec<UsageGenerationView> {
+        self.poll_due_filtered(now_epoch, None)
+    }
+
+    /// Poll due accounts only from the caller-selected capability set. This
+    /// scheduler path leaves omitted accounts untouched even when their
+    /// cadence is overdue. An installed catalog still rejects selected
+    /// capabilities it does not admit.
+    ///
+    /// Each selected account follows the same single-flight and shared
+    /// cooldown admission path as [`UsageCoordinator::poll_due`].
+    pub fn poll_due_for_capabilities(
+        &self,
+        capabilities: impl IntoIterator<Item = UsageAccountCapability>,
+        now_epoch: i64,
+    ) -> Vec<UsageGenerationView> {
+        let selected = capabilities.into_iter().collect::<BTreeSet<_>>();
+        if selected.is_empty() {
+            return Vec::new();
+        }
+        for capability in &selected {
+            drop(self.current(capability, now_epoch));
+        }
+        self.poll_due_filtered(now_epoch, Some(&selected))
+    }
+
+    fn poll_due_filtered(
+        &self,
+        now_epoch: i64,
+        selected: Option<&BTreeSet<UsageAccountCapability>>,
+    ) -> Vec<UsageGenerationView> {
         let clock_sample = self.shared.clock.sample(now_epoch);
         let due: Vec<(UsageAccountCapability, u64)> = {
             let Ok(_catalog_lifecycle) = self.shared.catalog_lifecycle.lock() else {
@@ -41,7 +102,10 @@ impl UsageCoordinator {
                 .accounts
                 .iter()
                 .filter_map(|(capability, entry)| {
-                    if entry.revoked || state.blocked.contains_key(capability) {
+                    if selected.is_some_and(|selected| !selected.contains(capability))
+                        || entry.revoked
+                        || state.blocked.contains_key(capability)
+                    {
                         return None;
                     }
                     let next_due = effective_due_epoch(entry, clock_sample);

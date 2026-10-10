@@ -165,6 +165,114 @@ fn cadence_poll_due_fires_once_per_interval_and_honors_success_cooldown() {
 }
 
 #[test]
+fn selected_cadence_polls_only_the_opted_in_capability() {
+    let executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
+        cadence_quota_view(1_000),
+    )));
+    let coordinator = catalog_coordinator_with_fake_clock(
+        Arc::clone(&executor),
+        Arc::new(MemoryStore::default()),
+        UsageCoordinatorConfig::default(),
+        [
+            catalog_entry(&capability("opted-in-account"), "revision-a"),
+            catalog_entry(&capability("stopped-account"), "revision-a"),
+        ],
+    );
+    let opted_in = capability("opted-in-account");
+    let stopped = capability("stopped-account");
+
+    assert_eq!(coordinator.current(&opted_in, 1_000).unwrap().generation, 0);
+    assert_eq!(coordinator.current(&stopped, 1_000).unwrap().generation, 0);
+
+    let first = coordinator.poll_due_for_capabilities([opted_in.clone()], 1_000);
+    assert_eq!(first.len(), 1);
+    assert_eq!(first[0].capability, opted_in);
+    assert_eq!(
+        join_ok(&coordinator, &opted_in, first[0].generation, 1_001).phase,
+        UsageRefreshPhase::Completed
+    );
+
+    let selected_due = coordinator
+        .next_due_epoch_for_capabilities([opted_in.clone()], 1_001)
+        .unwrap();
+    assert!(selected_due > 1_000);
+    assert_eq!(
+        coordinator.next_due_epoch(),
+        Some(1_000),
+        "the omitted account remains due without waking selected cadence"
+    );
+
+    let second = coordinator.poll_due_for_capabilities([opted_in.clone()], selected_due);
+    assert_eq!(second.len(), 1);
+    assert_eq!(second[0].capability, opted_in);
+    assert_eq!(
+        join_ok(
+            &coordinator,
+            &opted_in,
+            second[0].generation,
+            selected_due + 1,
+        )
+        .phase,
+        UsageRefreshPhase::Completed
+    );
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 2);
+    assert_eq!(
+        coordinator
+            .current(&stopped, selected_due + 1)
+            .unwrap()
+            .generation,
+        0
+    );
+    assert_eq!(coordinator.next_due_epoch(), Some(1_000));
+}
+
+#[test]
+fn selected_cadence_empty_duplicate_and_revoked_inputs_are_safe() {
+    let executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
+        cadence_quota_view(1_000),
+    )));
+    let selected = capability("selected-account");
+    let revoked = capability("revoked-account");
+    let coordinator = catalog_coordinator_with_fake_clock(
+        Arc::clone(&executor),
+        Arc::new(MemoryStore::default()),
+        UsageCoordinatorConfig::default(),
+        [
+            catalog_entry(&selected, "revision-a"),
+            catalog_entry(&revoked, "revision-a"),
+        ],
+    );
+
+    assert_eq!(coordinator.next_due_epoch_for_capabilities([], 1_000), None);
+    assert!(coordinator.poll_due_for_capabilities([], 1_000).is_empty());
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 0);
+
+    let duplicate =
+        coordinator.poll_due_for_capabilities([selected.clone(), selected.clone()], 1_000);
+    assert_eq!(duplicate.len(), 1, "duplicate selection dispatches once");
+    assert_eq!(duplicate[0].capability, selected);
+    assert_eq!(
+        join_ok(&coordinator, &selected, duplicate[0].generation, 1_001).phase,
+        UsageRefreshPhase::Completed
+    );
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
+
+    coordinator
+        .reconcile_catalog([catalog_entry(&selected, "revision-a")], 1_002)
+        .unwrap();
+    assert_eq!(
+        coordinator.next_due_epoch_for_capabilities([revoked.clone()], 1_002),
+        None
+    );
+    assert!(
+        coordinator
+            .poll_due_for_capabilities([revoked.clone(), revoked], 10_000)
+            .is_empty()
+    );
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
+}
+
+#[test]
 fn cadence_wake_recalculates_without_missed_poll_burst() {
     let executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
         cadence_quota_view(1_000),
