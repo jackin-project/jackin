@@ -43,270 +43,6 @@ const PROHIBITED_TELEMETRY_MACROS: &[&str] = &[
     "telemetry_error",
 ];
 
-const NON_TELEMETRY_EXEMPTIONS: &[(&str, &str, &str)] = &[
-    (
-        "crates/core/jackin-core/src/constants.rs",
-        "const:MANIFEST_FILENAME",
-        "jackin.role.toml",
-    ),
-    (
-        "crates/core/jackin-manifest/src/repo_contract.rs",
-        "const:LABEL_PUBLISHED_IMAGE_CONSTRUCT_VERSION",
-        "jackin.construct.version",
-    ),
-    (
-        "crates/core/jackin-manifest/src/repo_contract.rs",
-        "const:LABEL_PUBLISHED_IMAGE_ROLE_GIT_SHA",
-        "jackin.role.git.sha",
-    ),
-    (
-        "crates/services/jackin-runtime/src/runtime/snapshot.rs",
-        "fn:socket_path",
-        "jackin.sock",
-    ),
-    (
-        "crates/services/jackin-runtime/src/runtime/discovery.rs",
-        "fn:list_running_agent_display_names",
-        "jackin.display.name",
-    ),
-    (
-        "crates/services/jackin-runtime/src/runtime/launch/launch_dind.rs",
-        "fn:prewarmed_dind_state_is_live",
-        "jackin.kind",
-    ),
-    (
-        "crates/services/jackin-runtime/src/runtime/launch/launch_dind.rs",
-        "fn:adopt_prewarmed_dind_sidecar",
-        "jackin.kind",
-    ),
-    (
-        "crates/services/jackin-runtime/src/runtime/cleanup.rs",
-        "fn:collect_labeled_dind",
-        "jackin.kind",
-    ),
-    (
-        "crates/services/jackin-runtime/src/runtime/naming.rs",
-        "const:LABEL_ROLE_KEY",
-        "jackin.role",
-    ),
-    (
-        "crates/services/jackin-runtime/src/runtime/naming.rs",
-        "const:LABEL_IMAGE_KEY",
-        "jackin.image",
-    ),
-    (
-        "crates/adapters/jackin-image/src/naming.rs",
-        "const:LABEL_IMAGE_CONSTRUCT",
-        "jackin.construct.image",
-    ),
-    (
-        "crates/adapters/jackin-image/src/naming.rs",
-        "const:LABEL_IMAGE_RECIPE_HASH",
-        "jackin.image.recipe.hash",
-    ),
-    (
-        "crates/adapters/jackin-image/src/naming.rs",
-        "const:LABEL_IMAGE_RECIPE_VERSION",
-        "jackin.image.recipe.version",
-    ),
-    (
-        "crates/adapters/jackin-image/src/naming.rs",
-        "const:LABEL_IMAGE_AGENT_VERSION_PREFIX",
-        "jackin.agent",
-    ),
-    (
-        "crates/adapters/jackin-image/src/naming.rs",
-        "const:LABEL_IMAGE_CAPSULE_VERSION",
-        "jackin.capsule.version",
-    ),
-    (
-        "crates/adapters/jackin-image/src/naming.rs",
-        "const:LABEL_IMAGE_MANIFEST_VERSION",
-        "jackin.manifest.version",
-    ),
-];
-
-const TELEMETRY_NEGATIVE_TEST_EXEMPTIONS: &[(&str, &str, &str)] = &[
-    (
-        "crates/services/jackin-diagnostics/src/tests.rs",
-        "fn:conformance_no_prohibited_keys_or_bracket_bodies_on_records",
-        "parallax.run.id",
-    ),
-    (
-        "crates/services/jackin-diagnostics/src/tests.rs",
-        "fn:conformance_no_prohibited_keys_or_bracket_bodies_on_records",
-        "jackin.component",
-    ),
-    (
-        "crates/services/jackin-diagnostics/src/tests.rs",
-        "fn:conformance_has_no_legacy_screen_span_attributes",
-        "jackin.screen.name",
-    ),
-    (
-        "crates/services/jackin-diagnostics/src/observability/otlp/tests.rs",
-        "fn:resource_matrix_has_exact_allowlist_and_ignores_secret_env_injection",
-        "parallax.run.id",
-    ),
-    (
-        "crates/testing/jackin-otlp-testbed/src/tests.rs",
-        "fn:namespace_detector_rejects_synthetic_legacy_attribute",
-        "jackin.synthetic",
-    ),
-];
-
-const NAMESPACE_TEST_FIXTURES: &[(&str, &str)] = &[
-    (
-        "crates/apps/jackin/src/app/context/tests.rs",
-        "jackin.role.toml",
-    ),
-    (
-        "crates/apps/jackin/src/role_authoring/tests.rs",
-        "jackin.role.toml",
-    ),
-    (
-        "crates/apps/jackin/tests/agent_validation.rs",
-        "jackin.role.toml",
-    ),
-    ("crates/apps/jackin/tests/amp_launch.rs", "jackin.role.toml"),
-    (
-        "crates/apps/jackin/tests/codex_launch.rs",
-        "jackin.role.toml",
-    ),
-    (
-        "crates/apps/jackin/tests/dind_e2e/fixtures.rs",
-        "jackin.role.toml",
-    ),
-    (
-        "crates/apps/jackin/tests/migration_fixtures.rs",
-        "jackin.role.toml",
-    ),
-    ("crates/apps/jackin/tests/role_cli.rs", "jackin.role.toml"),
-    (
-        "crates/apps/jackin/tests/validate_cli.rs",
-        "jackin.role.toml",
-    ),
-    (
-        "crates/apps/jackin-capsule/src/socket/tests.rs",
-        "jackin.sock",
-    ),
-    (
-        "crates/adapters/jackin-image/src/derived_image/tests.rs",
-        "jackin.role.toml",
-    ),
-    (
-        "crates/adapters/jackin-image/src/image_decision/tests.rs",
-        "jackin.role.toml",
-    ),
-    (
-        "crates/adapters/jackin-image/src/image_recipe/tests.rs",
-        "jackin.role.toml",
-    ),
-    (
-        "crates/services/jackin-instance-roles/src/tests.rs",
-        "jackin.role.toml",
-    ),
-    (
-        "crates/core/jackin-manifest/src/manifest/tests.rs",
-        "jackin.role.toml",
-    ),
-    (
-        "crates/core/jackin-manifest/src/migrations/tests.rs",
-        "jackin.role.toml",
-    ),
-    (
-        "crates/core/jackin-manifest/src/repo/tests.rs",
-        "jackin.role.toml",
-    ),
-    (
-        "crates/core/jackin-manifest/src/validate/tests.rs",
-        "jackin.role.toml",
-    ),
-    (
-        "crates/services/jackin-runtime/benches/launch_pipeline.rs",
-        "jackin.role.toml",
-    ),
-    (
-        "crates/services/jackin-runtime/src/runtime/cleanup/tests.rs",
-        "jackin.kind",
-    ),
-    (
-        "crates/services/jackin-runtime/src/runtime/cleanup/tests.rs",
-        "jackin.prewarm",
-    ),
-    (
-        "crates/services/jackin-runtime/src/runtime/launch/capsule_setup/tests.rs",
-        "jackin.role.toml",
-    ),
-    (
-        "crates/services/jackin-runtime/src/runtime/discovery/tests.rs",
-        "jackin.display.name",
-    ),
-    (
-        "crates/services/jackin-runtime/src/runtime/image/tests.rs",
-        "jackin.role.toml",
-    ),
-    (
-        "crates/services/jackin-runtime/src/runtime/launch/launch_pipeline/launch_phases/tests.rs",
-        "jackin.role.toml",
-    ),
-    (
-        "crates/services/jackin-runtime/src/runtime/launch/launch_pipeline/tests.rs",
-        "jackin.role.toml",
-    ),
-    (
-        "crates/services/jackin-runtime/src/runtime/launch/tests.rs",
-        "jackin.kind",
-    ),
-    (
-        "crates/services/jackin-runtime/src/runtime/launch/tests.rs",
-        "jackin.prewarm",
-    ),
-    (
-        "crates/services/jackin-runtime/src/runtime/launch/tests.rs",
-        "jackin.role.toml",
-    ),
-    (
-        "crates/services/jackin-runtime/src/runtime/repo_cache/tests.rs",
-        "jackin.role.toml",
-    ),
-    (
-        "crates/testing/jackin-test-support/src/seed.rs",
-        "jackin.role.toml",
-    ),
-    (
-        "crates/tools/jackin-xtask/src/telemetry_registry.rs",
-        "jackin.",
-    ),
-    (
-        "crates/tools/jackin-xtask/src/telemetry_registry.rs",
-        "parallax.",
-    ),
-    (
-        "crates/tools/jackin-xtask/src/telemetry_registry/tests.rs",
-        "jackin.unregistered.field",
-    ),
-    (
-        "crates/tools/jackin-xtask/src/telemetry_registry/tests.rs",
-        "parallax.unregistered",
-    ),
-    (
-        "crates/tools/jackin-xtask/src/telemetry_registry/tests.rs",
-        "jackin.unregistered",
-    ),
-    (
-        "crates/tools/jackin-xtask/src/telemetry_registry/tests.rs",
-        "parallax.bad",
-    ),
-    (
-        "crates/tools/jackin-xtask/src/telemetry_registry/tests.rs",
-        "jackin.state",
-    ),
-    (
-        "crates/tools/jackin-xtask/src/telemetry_registry/tests.rs",
-        "jackin.bad",
-    ),
-];
-
 #[derive(Args, Debug)]
 pub(crate) struct TelemetryRegistryArgs {
     /// Regenerate Rust sources from the registry before validating.
@@ -1507,47 +1243,40 @@ fn is_project_namespace(literal: &str) -> bool {
             .all(|character| character.is_ascii_alphanumeric() || "._-".contains(character))
 }
 
-fn is_non_telemetry_name(path: &str, context: &str, literal: &str) -> bool {
-    NON_TELEMETRY_EXEMPTIONS
-        .iter()
-        .any(|(exempt_path, exempt_context, exempt_literal)| {
-            *exempt_path == path && *exempt_context == context && *exempt_literal == literal
-        })
-        || TELEMETRY_NEGATIVE_TEST_EXEMPTIONS.iter().any(
-            |(exempt_path, exempt_context, exempt_literal)| {
-                *exempt_path == path && *exempt_context == context && *exempt_literal == literal
-            },
-        )
-        || (path == "crates/tools/jackin-xtask/src/telemetry_registry.rs"
-            && matches!(
-                context,
-                "const:NON_TELEMETRY_EXEMPTIONS"
-                    | "const:TELEMETRY_NEGATIVE_TEST_EXEMPTIONS"
-                    | "const:NAMESPACE_TEST_FIXTURES"
-            )
-            && NON_TELEMETRY_EXEMPTIONS
-                .iter()
-                .map(|(_, _, fixture_name)| fixture_name)
-                .chain(
-                    TELEMETRY_NEGATIVE_TEST_EXEMPTIONS
-                        .iter()
-                        .map(|(_, _, fixture_name)| fixture_name),
-                )
-                .chain(
-                    NAMESPACE_TEST_FIXTURES
-                        .iter()
-                        .map(|(_, fixture_name)| fixture_name),
-                )
-                .any(|fixture_name| *fixture_name == literal))
-        || NAMESPACE_TEST_FIXTURES
-            .iter()
-            .any(|(fixture_path, fixture_name)| *fixture_path == path && *fixture_name == literal)
+fn is_schema_constant_name(name: Option<&String>) -> bool {
+    name.is_some_and(|name| {
+        name.chars()
+            .any(|character| character.is_ascii_alphabetic())
+            && name
+                .chars()
+                .all(|character| !character.is_ascii_lowercase())
+    })
 }
 
 struct NamespaceScanner<'a> {
     path: &'a str,
     context: String,
+    bindings: NamespaceBindings,
     violations: BTreeSet<(usize, String)>,
+}
+
+#[derive(Default)]
+struct NamespaceBindings {
+    imports: BTreeMap<String, Vec<String>>,
+    ambiguous_imports: BTreeSet<String>,
+    globs: BTreeSet<Vec<String>>,
+    local_types: BTreeSet<String>,
+    constants: BTreeMap<String, Vec<syn::Expr>>,
+    locals: BTreeMap<(String, String), Vec<syn::Expr>>,
+    telemetry_crate: bool,
+}
+
+#[derive(Debug)]
+enum AttrKeySource {
+    Literal(String),
+    Schema,
+    ValidatedForward,
+    Unknown,
 }
 
 impl<'a> NamespaceScanner<'a> {
@@ -1555,20 +1284,381 @@ impl<'a> NamespaceScanner<'a> {
         Self {
             path,
             context: String::from("file"),
+            bindings: NamespaceBindings {
+                telemetry_crate: path.starts_with("crates/services/jackin-telemetry/"),
+                ..NamespaceBindings::default()
+            },
             violations: BTreeSet::new(),
         }
     }
 
     fn inspect(&mut self, literal: &str, line: usize) {
-        if is_project_namespace(literal)
-            && !is_non_telemetry_name(self.path, &self.context, literal)
-        {
+        if is_project_namespace(literal) {
             self.violations.insert((line, literal.to_owned()));
+        }
+    }
+
+    fn reject_attr_key(&mut self, expression: &syn::Expr) {
+        self.violations.insert((
+            expression.span().start().line,
+            format!("unresolved telemetry Attr.key expression: {expression:?}"),
+        ));
+    }
+
+    fn is_telemetry_attr_path(&self, path: &syn::Path) -> bool {
+        let Some(segments) = self.bindings.expand_path(path) else {
+            return false;
+        };
+        if segments.last().is_none_or(|segment| segment != "Attr") {
+            return false;
+        }
+        self.bindings.is_telemetry_root(&segments)
+            || (segments.as_slice() == ["Attr"]
+                && !self.bindings.local_types.contains("Attr")
+                && self.bindings.has_telemetry_glob())
+    }
+
+    fn resolve_attr_key(
+        &self,
+        expression: &syn::Expr,
+        seen: &mut BTreeSet<String>,
+    ) -> AttrKeySource {
+        match expression {
+            syn::Expr::Lit(literal) => match &literal.lit {
+                syn::Lit::Str(value) => AttrKeySource::Literal(value.value()),
+                syn::Lit::ByteStr(value) => String::from_utf8(value.value())
+                    .map(AttrKeySource::Literal)
+                    .unwrap_or(AttrKeySource::Unknown),
+                _ => AttrKeySource::Unknown,
+            },
+            syn::Expr::Path(path) => {
+                let Some(segments) = self.bindings.expand_path(&path.path) else {
+                    return AttrKeySource::Unknown;
+                };
+                if self.bindings.is_schema_key_path(&segments) {
+                    return AttrKeySource::Schema;
+                }
+                if segments.len() != 1 {
+                    return AttrKeySource::Unknown;
+                }
+                let name = segments[0].clone();
+                let local_key = (self.context.clone(), name.clone());
+                let local = self.bindings.locals.get(&local_key);
+                let constant = self.bindings.constants.get(&name);
+                let (binding_key, expressions) = if let Some(values) = local {
+                    (format!("local:{}:{name}", self.context), values)
+                } else if let Some(values) = constant {
+                    (format!("const:{name}"), values)
+                } else {
+                    return AttrKeySource::Unknown;
+                };
+                if expressions.len() != 1 || !seen.insert(binding_key.clone()) {
+                    return AttrKeySource::Unknown;
+                }
+                let result = self.resolve_attr_key(&expressions[0], seen);
+                seen.remove(&binding_key);
+                result
+            }
+            syn::Expr::Reference(reference) => self.resolve_attr_key(&reference.expr, seen),
+            syn::Expr::Paren(parenthesized) => self.resolve_attr_key(&parenthesized.expr, seen),
+            syn::Expr::Group(group) => self.resolve_attr_key(&group.expr, seen),
+            syn::Expr::Field(field) => {
+                let syn::Member::Named(member) = &field.member else {
+                    return AttrKeySource::Unknown;
+                };
+                let syn::Expr::Path(base) = field.base.as_ref() else {
+                    return AttrKeySource::Unknown;
+                };
+                let base = base
+                    .path
+                    .segments
+                    .last()
+                    .map(|segment| segment.ident.to_string());
+                match (base.as_deref(), member.to_string().as_str()) {
+                    (Some("attr"), "key")
+                        if self.path == "crates/services/jackin-telemetry/src/event.rs"
+                            && self.context == "fn:emit_event" =>
+                    {
+                        AttrKeySource::ValidatedForward
+                    }
+                    (Some("requirement"), "name")
+                        if self.path == "crates/services/jackin-telemetry/src/event/tests.rs" =>
+                    {
+                        AttrKeySource::Schema
+                    }
+                    _ => AttrKeySource::Unknown,
+                }
+            }
+            syn::Expr::Index(index) => {
+                let syn::Expr::Path(path) = index.expr.as_ref() else {
+                    return AttrKeySource::Unknown;
+                };
+                self.bindings
+                    .expand_path(&path.path)
+                    .filter(|path| self.bindings.is_schema_all_keys_path(path))
+                    .map_or(AttrKeySource::Unknown, |_| AttrKeySource::Schema)
+            }
+            syn::Expr::Macro(invocation) => {
+                if invocation.mac.path.is_ident("concat") {
+                    let parser = syn::punctuated::Punctuated::<
+                        syn::LitStr,
+                        syn::Token![,],
+                    >::parse_terminated;
+                    return parser
+                        .parse2(invocation.mac.tokens.clone())
+                        .map(|parts| {
+                            AttrKeySource::Literal(parts.iter().map(syn::LitStr::value).collect())
+                        })
+                        .unwrap_or(AttrKeySource::Unknown);
+                }
+                if invocation.mac.path.is_ident("stringify") {
+                    return AttrKeySource::Literal(
+                        invocation
+                            .mac
+                            .tokens
+                            .to_string()
+                            .chars()
+                            .filter(|character| !character.is_whitespace())
+                            .collect(),
+                    );
+                }
+                AttrKeySource::Unknown
+            }
+            _ => AttrKeySource::Unknown,
+        }
+    }
+
+    fn inspect_attr_key(&mut self, expression: &syn::Expr) {
+        match self.resolve_attr_key(expression, &mut BTreeSet::new()) {
+            AttrKeySource::Literal(value) => self.inspect(&value, expression.span().start().line),
+            AttrKeySource::Schema | AttrKeySource::ValidatedForward => {}
+            AttrKeySource::Unknown => self.reject_attr_key(expression),
         }
     }
 }
 
+impl NamespaceBindings {
+    fn from_file(file: &syn::File, telemetry_crate: bool) -> Self {
+        let mut bindings = Self {
+            telemetry_crate,
+            ..Self::default()
+        };
+        let mut collector = NamespaceBindingCollector {
+            bindings: &mut bindings,
+            context: String::from("file"),
+        };
+        collector.visit_file(file);
+        drop(collector);
+        bindings
+    }
+
+    fn is_telemetry_root(&self, path: &[String]) -> bool {
+        path.first().is_some_and(|root| {
+            root == "jackin_telemetry"
+                || (self.telemetry_crate
+                    && matches!(root.as_str(), "crate" | "self" | "super" | "schema"))
+        })
+    }
+
+    fn is_schema_key_path(&self, path: &[String]) -> bool {
+        self.is_schema_all_keys_path(path)
+            || (self.is_telemetry_root(path)
+                && is_schema_constant_name(path.last())
+                && path.windows(2).any(|pair| pair == ["schema", "attrs"])
+                && (path.len() == 4
+                    || (path.len() == 5
+                        && path.get(3).is_some_and(|segment| segment == "std_attrs"))))
+    }
+
+    fn is_schema_all_keys_path(&self, path: &[String]) -> bool {
+        self.is_telemetry_root(path)
+            && (path.windows(2).any(|pair| pair == ["schema", "ALL_KEYS"])
+                || path
+                    .windows(3)
+                    .any(|triple| triple == ["schema", "attrs", "ALL_KEYS"])
+                || path
+                    .windows(4)
+                    .any(|quad| quad == ["schema", "attrs", "std_attrs", "ALL_KEYS"]))
+    }
+
+    fn has_telemetry_glob(&self) -> bool {
+        self.globs.iter().any(|path| {
+            self.expand_segments(path.clone())
+                .is_some_and(|expanded| self.is_telemetry_root(&expanded))
+        })
+    }
+
+    fn expand_path(&self, path: &syn::Path) -> Option<Vec<String>> {
+        let segments = path
+            .segments
+            .iter()
+            .map(|segment| segment.ident.to_string())
+            .collect::<Vec<_>>();
+        self.expand_segments(segments)
+    }
+
+    fn expand_segments(&self, mut segments: Vec<String>) -> Option<Vec<String>> {
+        let mut visited = BTreeSet::new();
+        while let Some(first) = segments.first().cloned() {
+            if self.ambiguous_imports.contains(&first) {
+                return None;
+            }
+            let Some(replacement) = self.imports.get(&first) else {
+                break;
+            };
+            if !visited.insert(first) {
+                return None;
+            }
+            let mut expanded = replacement.clone();
+            expanded.extend(segments.into_iter().skip(1));
+            segments = expanded;
+        }
+        Some(segments)
+    }
+}
+
+struct NamespaceBindingCollector<'a> {
+    bindings: &'a mut NamespaceBindings,
+    context: String,
+}
+
+impl NamespaceBindingCollector<'_> {
+    fn register_import(&mut self, local: String, target: Vec<String>) {
+        if local.is_empty() || target.is_empty() {
+            return;
+        }
+        match self.bindings.imports.get(&local) {
+            Some(previous) if previous != &target => {
+                self.bindings.ambiguous_imports.insert(local);
+            }
+            Some(_) => {}
+            None => {
+                self.bindings.imports.insert(local, target);
+            }
+        }
+    }
+
+    fn add_use_tree(&mut self, prefix: Vec<String>, tree: &syn::UseTree) {
+        match tree {
+            syn::UseTree::Path(path) => {
+                let mut nested = prefix;
+                nested.push(path.ident.to_string());
+                self.add_use_tree(nested, &path.tree);
+            }
+            syn::UseTree::Name(name) => {
+                let ident = name.ident.to_string();
+                let mut target = prefix;
+                let local = if ident == "self" {
+                    target.last().cloned().unwrap_or_default()
+                } else {
+                    target.push(ident.clone());
+                    ident
+                };
+                self.register_import(local, target);
+            }
+            syn::UseTree::Rename(rename) => {
+                let source = rename.ident.to_string();
+                let mut target = prefix;
+                if source != "self" {
+                    target.push(source);
+                }
+                self.register_import(rename.rename.to_string(), target);
+            }
+            syn::UseTree::Group(group) => {
+                for item in &group.items {
+                    self.add_use_tree(prefix.clone(), item);
+                }
+            }
+            syn::UseTree::Glob(_) => {
+                self.bindings.globs.insert(prefix);
+            }
+        }
+    }
+}
+
+impl<'ast> syn::visit::Visit<'ast> for NamespaceBindingCollector<'_> {
+    fn visit_item_use(&mut self, item: &'ast syn::ItemUse) {
+        self.add_use_tree(Vec::new(), &item.tree);
+        syn::visit::visit_item_use(self, item);
+    }
+
+    fn visit_item_const(&mut self, item: &'ast syn::ItemConst) {
+        self.bindings
+            .constants
+            .entry(item.ident.to_string())
+            .or_default()
+            .push(item.expr.as_ref().clone());
+        syn::visit::visit_item_const(self, item);
+    }
+
+    fn visit_item_static(&mut self, item: &'ast syn::ItemStatic) {
+        self.bindings
+            .constants
+            .entry(item.ident.to_string())
+            .or_default()
+            .push(item.expr.as_ref().clone());
+        syn::visit::visit_item_static(self, item);
+    }
+
+    fn visit_item_type(&mut self, item: &'ast syn::ItemType) {
+        if let syn::Type::Path(path) = item.ty.as_ref()
+            && path.qself.is_none()
+        {
+            self.register_import(
+                item.ident.to_string(),
+                path.path
+                    .segments
+                    .iter()
+                    .map(|segment| segment.ident.to_string())
+                    .collect(),
+            );
+        } else {
+            self.bindings.local_types.insert(item.ident.to_string());
+        }
+        syn::visit::visit_item_type(self, item);
+    }
+
+    fn visit_item_struct(&mut self, item: &'ast syn::ItemStruct) {
+        self.bindings.local_types.insert(item.ident.to_string());
+        syn::visit::visit_item_struct(self, item);
+    }
+
+    fn visit_item_enum(&mut self, item: &'ast syn::ItemEnum) {
+        self.bindings.local_types.insert(item.ident.to_string());
+        syn::visit::visit_item_enum(self, item);
+    }
+
+    fn visit_item_union(&mut self, item: &'ast syn::ItemUnion) {
+        self.bindings.local_types.insert(item.ident.to_string());
+        syn::visit::visit_item_union(self, item);
+    }
+
+    fn visit_item_fn(&mut self, item: &'ast syn::ItemFn) {
+        let previous = std::mem::replace(&mut self.context, format!("fn:{}", item.sig.ident));
+        syn::visit::visit_item_fn(self, item);
+        self.context = previous;
+    }
+
+    fn visit_local(&mut self, local: &'ast syn::Local) {
+        if let (syn::Pat::Ident(pattern), Some(initializer)) =
+            (local.pat.as_ref(), local.init.as_ref())
+        {
+            self.bindings
+                .locals
+                .entry((self.context.clone(), pattern.ident.to_string()))
+                .or_default()
+                .push(initializer.expr.as_ref().clone());
+        }
+        syn::visit::visit_local(self, local);
+    }
+}
+
 impl<'ast> syn::visit::Visit<'ast> for NamespaceScanner<'_> {
+    fn visit_file(&mut self, file: &'ast syn::File) {
+        self.bindings = NamespaceBindings::from_file(file, self.bindings.telemetry_crate);
+        syn::visit::visit_file(self, file);
+    }
+
     fn visit_item_static(&mut self, item: &'ast syn::ItemStatic) {
         let previous = std::mem::replace(&mut self.context, format!("static:{}", item.ident));
         syn::visit::visit_item_static(self, item);
@@ -1586,33 +1676,25 @@ impl<'ast> syn::visit::Visit<'ast> for NamespaceScanner<'_> {
         syn::visit::visit_item_fn(self, item);
         self.context = previous;
     }
-    fn visit_lit_str(&mut self, literal: &'ast syn::LitStr) {
-        self.inspect(&literal.value(), literal.span().start().line);
-    }
-
-    fn visit_lit_byte_str(&mut self, literal: &'ast syn::LitByteStr) {
-        if let Ok(value) = String::from_utf8(literal.value()) {
-            self.inspect(&value, literal.span().start().line);
-        }
-    }
 
     fn visit_macro(&mut self, invocation: &'ast syn::Macro) {
-        if invocation.path.is_ident("concat") {
-            let parser =
-                syn::punctuated::Punctuated::<syn::LitStr, syn::Token![,]>::parse_terminated;
-            if let Ok(parts) = parser.parse2(invocation.tokens.clone()) {
-                let value = parts.iter().map(syn::LitStr::value).collect::<String>();
-                self.inspect(&value, invocation.span().start().line);
-            }
-        } else if invocation.path.is_ident("stringify") {
-            let value = invocation
-                .tokens
-                .to_string()
-                .chars()
-                .filter(|character| !character.is_whitespace())
-                .collect::<String>();
-            self.inspect(&value, invocation.span().start().line);
+        let tokens = invocation.tokens.clone();
+        if let Ok(expression) = syn::parse2::<syn::Expr>(tokens.clone()) {
+            self.visit_expr(&expression);
+        } else if let Ok(block) = syn::parse2::<syn::Block>(tokens) {
+            self.visit_block(&block);
         }
+    }
+
+    fn visit_expr_struct(&mut self, expression: &'ast syn::ExprStruct) {
+        if self.is_telemetry_attr_path(&expression.path) {
+            for field in &expression.fields {
+                if matches!(&field.member, syn::Member::Named(member) if member == "key") {
+                    self.inspect_attr_key(&field.expr);
+                }
+            }
+        }
+        syn::visit::visit_expr_struct(self, expression);
     }
 }
 
