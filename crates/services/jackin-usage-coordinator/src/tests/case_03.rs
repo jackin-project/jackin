@@ -169,8 +169,13 @@ fn selected_cadence_polls_only_the_opted_in_capability() {
     let executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
         cadence_quota_view(1_000),
     )));
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce concrete executor to shared trait object"
+    )]
+    let provider: Arc<dyn UsageProviderExecutor> = executor.clone();
     let coordinator = catalog_coordinator_with_fake_clock(
-        Arc::clone(&executor),
+        provider,
         Arc::new(MemoryStore::default()),
         UsageCoordinatorConfig::default(),
         [
@@ -233,8 +238,13 @@ fn selected_cadence_empty_duplicate_and_revoked_inputs_are_safe() {
     )));
     let selected = capability("selected-account");
     let revoked = capability("revoked-account");
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce concrete executor to shared trait object"
+    )]
+    let provider: Arc<dyn UsageProviderExecutor> = executor.clone();
     let coordinator = catalog_coordinator_with_fake_clock(
-        Arc::clone(&executor),
+        provider,
         Arc::new(MemoryStore::default()),
         UsageCoordinatorConfig::default(),
         [
