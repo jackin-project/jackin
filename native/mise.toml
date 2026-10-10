@@ -20,16 +20,16 @@ description = "PR cadence: full nonmutating jackin❯ desktop gate graph"
 dir = ".."
 run = '''
 set -euo pipefail
-mbx +1.97.1 xtask desktop bindings-check
+mbx +1.99.0 xtask desktop bindings-check
 xcodegen generate --spec native/project.yml
 mise -C native run format-check
 swiftlint lint --strict
-mbx +1.97.1 xtask desktop test
+mbx +1.99.0 xtask desktop test
 export JACKIN_APP_VERSION="${JACKIN_APP_VERSION:-0.6.0}"
 export JACKIN_APP_BUILD="${JACKIN_APP_BUILD:-1}"
-mbx +1.97.1 xtask desktop build
-mbx +1.97.1 xtask desktop test-swift --jobs 2
-mbx +1.97.1 xtask desktop verify
+mbx +1.99.0 xtask desktop build
+mbx +1.99.0 xtask desktop test-swift --jobs 2
+mbx +1.99.0 xtask desktop verify
 '''
 
 [tasks.merge]
@@ -103,7 +103,7 @@ set -- "${usage_app:-native/dist/JackinDesktop.app}"
 if [ -n "${usage_out_zip:-}" ]; then set -- "$@" "$usage_out_zip"; fi
 if [ -n "${usage_version:-}" ]; then set -- "$@" --version "$usage_version"; fi
 if [ -n "${usage_build:-}" ]; then set -- "$@" --build "$usage_build"; fi
-mbx +1.97.1 xtask desktop sign-notarize "$@"
+mbx +1.99.0 xtask desktop sign-notarize "$@"
 '''
 
 [tasks.prototype-build]

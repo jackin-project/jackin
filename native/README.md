@@ -100,9 +100,9 @@ Settings is a standard titled `NSWindow` containing a grouped `Form`. It owns me
 
 ```bash
 mise install
-mise exec -- mbx +1.97.1 xtask desktop build --version 0.6.0 --build 1
-mise exec -- mbx +1.97.1 xtask desktop verify
-mise exec -- mbx +1.97.1 xtask desktop run
+mise exec -- mbx +1.99.0 xtask desktop build --version 0.6.0 --build 1
+mise exec -- mbx +1.99.0 xtask desktop verify
+mise exec -- mbx +1.99.0 xtask desktop run
 ```
 
 The default bundle is `native/dist/JackinDesktop.app`. Build/verify/run print its absolute path and `DESKTOP_APP=…`. The app begins as an `LSUIElement` status-item process; opening a normal window temporarily gives it regular app menu/window citizenship. For the local verification cadence, use `mise -C native run ci`.
@@ -114,9 +114,9 @@ mise -C native run ci
 mise -C native run format-check
 mise -C native exec -- swiftlint lint --strict
 mise -C native run deadcode
-mise exec -- mbx +1.97.1 xtask desktop test
+mise exec -- mbx +1.99.0 xtask desktop test
 native/Scripts/run-ui-tests.sh
-mise exec -- mbx +1.97.1 xtask desktop test-swift --jobs 2
+mise exec -- mbx +1.99.0 xtask desktop test-swift --jobs 2
 ```
 
 The native mise tasks live in `native/mise.toml`, keeping platform-specific workflows out of the root configuration. `ci` runs the local native gate graph: bindings drift check, Xcode project generation, formatting, SwiftLint, Rust/FFI plus parity harnesses, app build, counted SwiftPM tests, then fail-closed app verification. `merge` adds UI tests against the real app host; `scheduled` adds the dead-code scan. The checked-in GitHub workflow currently does not invoke these native cadences. `desktop test` covers Rust/FFI and native architecture/parity harnesses. SwiftPM tests protect ownership, navigation normalization, native component confinement, brand tokens, and visual-QA fixture isolation. The UI suite audits popover, Overview, provider detail, sidebar coordinates, commands, scrolling, recovery, and retained context.
@@ -134,10 +134,10 @@ The script rebuilds and verifies the canonical branch-head app, then drives dete
 One path builds local, PR, and release apps:
 
 1. `mise install` installs pinned tools.
-2. `mise exec -- mbx +1.97.1 xtask desktop xcframework` creates the arm64 static `target/xcframework/JackinUsage.xcframework` (FFI module `JackinUsageFFI`).
+2. `mise exec -- mbx +1.99.0 xtask desktop xcframework` creates the arm64 static `target/xcframework/JackinUsage.xcframework` (FFI module `JackinUsageFFI`).
 3. `native/Package.swift` consumes it as a binary target.
-4. `mise exec -- mbx +1.97.1 xtask desktop build --version <version> --build <build>` generates bindings/project, builds `JackinDesktop.app`, and ad-hoc signs local/validation output.
-5. `mise exec -- mbx +1.97.1 xtask desktop verify` proves bundle architecture, metadata, dependency, and signature shape. Release verification additionally requires Developer ID, notarization, staple, and Gatekeeper acceptance.
+4. `mise exec -- mbx +1.99.0 xtask desktop build --version <version> --build <build>` generates bindings/project, builds `JackinDesktop.app`, and ad-hoc signs local/validation output.
+5. `mise exec -- mbx +1.99.0 xtask desktop verify` proves bundle architecture, metadata, dependency, and signature shape. Release verification additionally requires Developer ID, notarization, staple, and Gatekeeper acceptance.
 
 After an XCFramework rename or FFI module change, delete `native/DerivedData` before rebuilding — Xcode caches clang module resolution and otherwise fails with stale module errors.
 
@@ -176,7 +176,7 @@ Credential material is never committed. The `sign-notarize` task removes tempora
 export DEVELOPER_ID_APPLICATION='Developer ID Application: Your Name (TEAMID)'
 export NOTARY_PROFILE=jackin-notary
 export JACKIN_APP_VERSION=0.6.0 JACKIN_APP_BUILD=1
-mise exec -- mbx +1.97.1 xtask desktop build --version 0.6.0 --build 1
+mise exec -- mbx +1.99.0 xtask desktop build --version 0.6.0 --build 1
 mise -C native run sign-notarize
 ```
 

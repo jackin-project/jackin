@@ -161,7 +161,7 @@ fn generated_evidence_workflows_reject_skip_controls() {
         display_name: "CI first-attempt evidence",
         artifact: CI_EVIDENCE_ARTIFACT_PATH,
         job_id: "ci-evidence",
-        command: "MISE_AUTO_INSTALL=false mise exec -- mbx +1.97.1 xtask ci-evidence run",
+        command: "MISE_AUTO_INSTALL=false mise exec -- mbx +1.99.0 xtask ci-evidence run",
         timeout: 30,
         schedule: Some("47 4 * * *"),
         push_main: false,
@@ -178,7 +178,7 @@ fn generated_evidence_workflows_reject_skip_controls() {
     let error = validate_generated_workflow_shape(&skipped_job, &contract).unwrap_err();
     assert!(error.to_string().contains("unexpected fields"), "{error:#}");
 
-    let mut optional_command = workflow;
+    let mut optional_command = workflow.clone();
     optional_command["jobs"]["ci-evidence"]["steps"][2]
         .as_object_mut()
         .unwrap()
@@ -196,7 +196,7 @@ fn push_head_ledger_requires_full_history_checkout() {
         display_name: "CI push-head ledger",
         artifact: CI_PUSH_HEAD_LEDGER_ARTIFACT_PATH,
         job_id: "ci-push-head-ledger",
-        command: "MISE_AUTO_INSTALL=false mise exec -- mbx +1.97.1 xtask ci-evidence record-push",
+        command: "MISE_AUTO_INSTALL=false mise exec -- mbx +1.99.0 xtask ci-evidence record-push",
         timeout: 10,
         schedule: None,
         push_main: true,

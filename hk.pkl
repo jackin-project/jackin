@@ -1,8 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-// Pre-commit hooks for jackin (hk 2.0.1; pinned in mise.toml [tools] and
-// mise.lock, and in the Pkl URL below).
+// Pre-commit hooks for jackin (hk pinned in mise.toml and mise.lock).
 //
 // Install once per checkout (idempotent):
 //   scripts/hooks-install         # install the repo-owned hook boundary
@@ -40,7 +39,7 @@
 //     Full workspace Clippy stays in CI (`cargo xtask ci --only lint`).
 //   - `hk check --all` runs the clippy step scoped by `git status`, not
 //     literally over every file; on a clean tree it skips green.
-amends "package://github.com/jdx/hk/releases/download/v2.0.1/hk@2.0.1#/Config.pkl"
+amends "package://github.com/jdx/hk/releases/download/v2.5.0/hk@2.5.0#/Config.pkl"
 
 steps {
   ["fmt"] {

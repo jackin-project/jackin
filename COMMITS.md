@@ -70,15 +70,15 @@ Do not run the full verification suite before every commit by default. Run it wh
 Use the aggregate local CI gate:
 
 ```sh
-mise exec -- mbx +1.97.1 xtask ci
+mise exec -- mbx +1.99.0 xtask ci
 ```
 
 For a faster local pass that skips feature-powerset and Docker-backed smoke tests:
 
 ```sh
-mise exec -- mbx +1.97.1 xtask ci --fast
+mise exec -- mbx +1.99.0 xtask ci --fast
 ```
 
-`mise exec -- mbx +1.97.1 xtask ci --e2e` includes the Docker-backed lane. It checks Docker availability, builds and exports the local capsule binary, then runs the Docker-backed nextest profile.
+`mise exec -- mbx +1.99.0 xtask ci --e2e` includes the Docker-backed lane. It checks Docker availability, builds and exports the local capsule binary, then runs the Docker-backed nextest profile.
 
-If formatting fails, run `mise exec -- mbx +1.97.1 fmt`, then re-run `mise exec -- mbx +1.97.1 fmt --check`. See [TESTING.md](TESTING.md) for test runner setup, commands, and additional details.
+If formatting fails, run `mise exec -- mbx +1.99.0 fmt`, then re-run `mise exec -- mbx +1.99.0 fmt --check`. See [TESTING.md](TESTING.md) for test runner setup, commands, and additional details.

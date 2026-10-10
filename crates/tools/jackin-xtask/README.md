@@ -1,6 +1,6 @@
 # jackin-xtask
 
-Workspace automation for CI, lints, docs, releases, schemas, and PRs. Merge-readiness entry points are `mise exec -- mbx +1.97.1 xtask ci`, `mise exec -- mbx +1.97.1 xtask ci --fast`, and `mise exec -- mbx +1.97.1 xtask ci --e2e`.
+Workspace automation for CI, lints, docs, releases, schemas, and PRs. Merge-readiness entry points are `mise exec -- mbx +1.99.0 xtask ci`, `mise exec -- mbx +1.99.0 xtask ci --fast`, and `mise exec -- mbx +1.99.0 xtask ci --e2e`.
 
 ## What this crate owns
 
@@ -46,9 +46,9 @@ Workspace automation for CI, lints, docs, releases, schemas, and PRs. Merge-read
 
 ## Public API
 
-The `mise exec -- mbx +1.97.1 xtask <lane>` CLI. Merge-readiness is `mise exec -- mbx +1.97.1 xtask ci` (or `--fast` / `--e2e`). New checks are added as lanes here so they are discoverable from one command.
+The `mise exec -- mbx +1.99.0 xtask <lane>` CLI. Merge-readiness is `mise exec -- mbx +1.99.0 xtask ci` (or `--fast` / `--e2e`). New checks are added as lanes here so they are discoverable from one command.
 
-`mise exec -- mbx +1.97.1 xtask lint ratchet` checks every configured family. CI jobs that own one
+`mise exec -- mbx +1.99.0 xtask lint ratchet` checks every configured family. CI jobs that own one
 artifact use repeatable `--only <family>` arguments so they do not measure
 unrelated families or launch nested build work. Artifact-backed families skip
 when their artifact is absent; the job that produces an artifact must run the
@@ -57,12 +57,12 @@ matching scoped ratchet after generation.
 ## How to verify
 
 ```sh
-mise exec -- mbx +1.97.1 nextest run -p jackin-xtask
-mise exec -- mbx +1.97.1 clippy -p jackin-xtask --all-targets -- -D warnings
-mise exec -- mbx +1.97.1 xtask docs brand
-mise exec -- mbx +1.97.1 xtask docs specs
-mise exec -- mbx +1.97.1 xtask lint agents
-mise exec -- mbx +1.97.1 xtask lint agents --format json
-mise exec -- mbx +1.97.1 xtask lint files --format json
-mise exec -- mbx +1.97.1 xtask ci --fast
+mise exec -- mbx +1.99.0 nextest run -p jackin-xtask
+mise exec -- mbx +1.99.0 clippy -p jackin-xtask --all-targets -- -D warnings
+mise exec -- mbx +1.99.0 xtask docs brand
+mise exec -- mbx +1.99.0 xtask docs specs
+mise exec -- mbx +1.99.0 xtask lint agents
+mise exec -- mbx +1.99.0 xtask lint agents --format json
+mise exec -- mbx +1.99.0 xtask lint files --format json
+mise exec -- mbx +1.99.0 xtask ci --fast
 ```

@@ -22,7 +22,7 @@ jackin-core = { workspace = true }
 jackin-usage = { workspace = true }
 jackin-usage-provider-core = { workspace = true }
 jackin-protocol = { workspace = true }
-boltffi = "=0.30.1"
+boltffi = "=0.31.0"
 
 [dev-dependencies]
 serde_json = { workspace = true }

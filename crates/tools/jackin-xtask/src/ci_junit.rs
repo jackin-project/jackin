@@ -48,7 +48,7 @@ fn parse_report(path: &Path) -> Result<Vec<TestCase>> {
     loop {
         match reader.read_event_into(&mut buffer) {
             Ok(Event::Start(element) | Event::Empty(element))
-                if element.name().as_ref() == b"testcase" =>
+                if element.name().as_ref() == "testcase" =>
             {
                 let mut name = String::new();
                 let mut seconds = 0.0;
@@ -56,12 +56,12 @@ fn parse_report(path: &Path) -> Result<Vec<TestCase>> {
                 for attribute in element.attributes() {
                     let attribute = attribute.context("parsing JUnit testcase attribute")?;
                     let value = attribute
-                        .decoded_and_normalized_value(XmlVersion::Implicit1_0, reader.decoder())
+                        .normalized_value(XmlVersion::Implicit1_0)
                         .context("decoding JUnit testcase attribute")?;
                     match attribute.key.as_ref() {
-                        b"name" => name = value.into_owned(),
-                        b"time" => seconds = value.parse().unwrap_or(0.0),
-                        b"flaky" => flaky = matches!(value.as_ref(), "true" | "1"),
+                        "name" => name = value.into_owned(),
+                        "time" => seconds = value.parse().unwrap_or(0.0),
+                        "flaky" => flaky = matches!(value.as_ref(), "true" | "1"),
                         _ => {}
                     }
                 }

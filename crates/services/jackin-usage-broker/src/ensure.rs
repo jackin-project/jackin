@@ -27,7 +27,7 @@ pub fn ensure_usage_broker_process(
         .ok_or_else(|| UsageCoordinationError {
             kind: UsageCoordinationErrorKind::Unavailable,
             message:
-                "usage broker executable cannot be located; from a source checkout run `mise exec -- mbx +1.97.1 build --bins -p jackin`, or reinstall the complete jackin package"
+                "usage broker executable cannot be located; from a source checkout run `mise exec -- mbx +1.99.0 build --bins -p jackin`, or reinstall the complete jackin package"
                     .to_owned(),
         })?;
     let mut command = Command::new(executable);
@@ -55,7 +55,7 @@ pub fn ensure_usage_broker_process(
     command.spawn().map_err(|error| UsageCoordinationError {
         kind: UsageCoordinationErrorKind::Unavailable,
         message: format!(
-            "cannot start usage broker executable {}: {error}; from a source checkout run `mise exec -- mbx +1.97.1 build --bins -p jackin`, or reinstall the complete jackin package",
+            "cannot start usage broker executable {}: {error}; from a source checkout run `mise exec -- mbx +1.99.0 build --bins -p jackin`, or reinstall the complete jackin package",
             executable.display(),
         ),
     })?;
@@ -85,7 +85,7 @@ pub fn ensure_usage_monitor_process(
         .ok_or_else(|| UsageCoordinationError {
             kind: UsageCoordinationErrorKind::Unavailable,
             message:
-                "usage broker executable cannot be located; from a source checkout run `mise exec -- mbx +1.97.1 build --bins -p jackin`, or reinstall the complete jackin package"
+                "usage broker executable cannot be located; from a source checkout run `mise exec -- mbx +1.99.0 build --bins -p jackin`, or reinstall the complete jackin package"
                     .to_owned(),
         })?;
     Command::new(executable)
@@ -101,7 +101,7 @@ pub fn ensure_usage_monitor_process(
         .map_err(|_| UsageCoordinationError {
             kind: UsageCoordinationErrorKind::Unavailable,
             message: format!(
-                "cannot start local-only usage broker executable {}; from a source checkout run `mise exec -- mbx +1.97.1 build --bins -p jackin`, or reinstall the complete jackin package",
+                "cannot start local-only usage broker executable {}; from a source checkout run `mise exec -- mbx +1.99.0 build --bins -p jackin`, or reinstall the complete jackin package",
                 executable.display(),
             ),
         })?;

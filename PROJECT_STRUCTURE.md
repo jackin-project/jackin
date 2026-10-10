@@ -2,7 +2,7 @@
 
 Quick nav for AI agents and human contributors. **Canonical detailed module map lives in docs** ([`reference/getting-oriented/codebase-map`](https://jackin.tailrocks.com/reference/getting-oriented/codebase-map/), served from [docs/content/reference/getting-oriented/codebase-map.mdx](docs/content/reference/getting-oriented/codebase-map.mdx)). This file is the short pointer agents land on first; covers **multi-repo ecosystem** and per-PR **code ↔ docs contract**, sends you to docs for rest.
 
-**For what a specific crate is for, its tier/allowed dependencies, its `src/` structure, and its public API, read that crate's README directly** — it is the authoritative per-crate record. Shared repository rules live in the root [AGENTS.md](AGENTS.md); `mise exec -- mbx +1.97.1 xtask lint agents` checks the root agent-file pair. The Codebase Map is the ecosystem/tier overview; the per-crate detail lives in the crate that owns it.
+**For what a specific crate is for, its tier/allowed dependencies, its `src/` structure, and its public API, read that crate's README directly** — it is the authoritative per-crate record. Shared repository rules live in the root [AGENTS.md](AGENTS.md); `mise exec -- mbx +1.99.0 xtask lint agents` checks the root agent-file pair. The Codebase Map is the ecosystem/tier overview; the per-crate detail lives in the crate that owns it.
 
 ## What this file is for
 

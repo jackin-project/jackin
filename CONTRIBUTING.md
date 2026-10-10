@@ -22,7 +22,7 @@ Employer contributions: confirm authorization before submitting. Use personal em
 ## Git hooks
 
 Pre-commit checks run via [hk](https://hk.jdx.dev) (`hk.pkl` at the repo
-root; hk 2.0.1 pinned in `mise.toml`/`mise.lock`). Install per checkout —
+root; the version is pinned in `mise.toml`/`mise.lock`). Install per checkout —
 idempotent, safe to re-run:
 
 ```sh
@@ -42,8 +42,8 @@ boundary.
 What runs on every commit (see `hk.pkl` for the exact commands — each
 mirrors the CI definition it cites):
 
-- `fmt`: `mise exec -- mbx +1.97.1 fmt --check` (workspace; fix: `mise exec -- mbx +1.97.1 fmt`)
-- `clippy`: `mise exec -- mbx +1.97.1 xtask clippy-affected` — Clippy with the exact CI flags
+- `fmt`: `mise exec -- mbx +1.99.0 fmt --check` (workspace; fix: `mise exec -- mbx +1.99.0 fmt`)
+- `clippy`: `mise exec -- mbx +1.99.0 xtask clippy-affected` — Clippy with the exact CI flags
   over the affected closure (changed crates + reverse dependents +
   detached fuzz/arrayref packages + cross-crate file inputs; widens to
   the workspace when unprovable)
@@ -78,7 +78,7 @@ patches remain until the author removes them. Bypass with `HK=0 git commit`
 
 Two intentional divergences from CI: hook Clippy is closure-scoped while
 CI lints the workspace (same flags; full coverage stays in CI /
-`mise exec -- mbx +1.97.1 xtask ci --only lint`), and `hk check --all` scopes Clippy by `git status`
+`mise exec -- mbx +1.99.0 xtask ci --only lint`), and `hk check --all` scopes Clippy by `git status`
 (skips green on a clean tree). The global install
 (`hk install --global --mise`) is GUI-robust but forces `--staged`,
 which disables stashing — hence the repo-owned bootstrap above. Do not
@@ -153,19 +153,19 @@ DCO fail on PR: fix first, before anything else.
 Run when PR ready to merge (not before every commit):
 
 ```sh
-mise exec -- mbx +1.97.1 xtask ci
+mise exec -- mbx +1.99.0 xtask ci
 # or
-mise exec -- mbx +1.97.1 xtask ci
+mise exec -- mbx +1.99.0 xtask ci
 ```
 
 For a faster local pass that skips feature-powerset and Docker-backed smoke tests:
 
 ```sh
-mise exec -- mbx +1.97.1 xtask ci --fast
+mise exec -- mbx +1.99.0 xtask ci --fast
 ```
 
-`mise exec -- mbx +1.97.1 xtask ci --e2e` includes the Docker-backed lane. It first checks that Docker is running, builds and exports the local capsule binary, then runs `mise exec -- mbx +1.97.1 nextest run -p jackin --features e2e --profile docker-e2e`. In PR checkouts, `jackin-dev pr sync <PR_NUMBER>` still prepares the isolated env and capsule export for manual smoke tests; source `$(jackin-dev pr path <PR_NUMBER>)/env.sh` before manual `jackin` commands.
+`mise exec -- mbx +1.99.0 xtask ci --e2e` includes the Docker-backed lane. It first checks that Docker is running, builds and exports the local capsule binary, then runs `mise exec -- mbx +1.99.0 nextest run -p jackin --features e2e --profile docker-e2e`. In PR checkouts, `jackin-dev pr sync <PR_NUMBER>` still prepares the isolated env and capsule export for manual smoke tests; source `$(jackin-dev pr path <PR_NUMBER>)/env.sh` before manual `jackin` commands.
 
 Local builds outside CI default to the package version for `JACKIN_VERSION` / `JACKIN_CAPSULE_VERSION` so each commit does not invalidate every build-meta consumer and capsule cache entry. GitHub Actions sets `CI`, so release, preview, construct, and CI builds still stamp the real `<version>+<sha>`. Set `JACKIN_VERSION_OVERRIDE=<value>` only when you need an explicit local version.
 
-Fmt fail → `mise exec -- mbx +1.97.1 fmt`, then re-check with `mise exec -- mbx +1.97.1 fmt --check`. See [TESTING.md](TESTING.md).
+Fmt fail → `mise exec -- mbx +1.99.0 fmt`, then re-check with `mise exec -- mbx +1.99.0 fmt --check`. See [TESTING.md](TESTING.md).

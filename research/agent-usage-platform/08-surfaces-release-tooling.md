@@ -75,15 +75,15 @@ Rust commands use the pinned MBX integration. Native macOS tasks live in `native
 
 | Purpose | Exact command | Proven owner / qualification |
 |---|---|---|
-| Rust formatting | `mise exec -- mbx +1.97.1 fmt --check` | Nonmutating; fix with `mise exec -- mbx +1.97.1 fmt`. |
-| Unified Rust tests | `mise exec -- mbx +1.97.1 xtask ci --only tests --fast` | Fast Rust test partition; full non-Docker gate is `mise exec -- mbx +1.97.1 xtask ci`. |
-| Unified Rust lint | `mise exec -- mbx +1.97.1 xtask ci --only lint --fast` | Runs the unified lint partition. |
-| Focused crate tests during iteration | `mise exec -- mbx +1.97.1 nextest run -p jackin-usage -p jackin-usage-ffi -p jackin-runtime -p jackin-capsule -p jackin-console -p jackin` | Package set corresponds to the usage surfaces in this research; final proof still runs the unified gate. |
-| Generated binding drift | `mise exec -- mbx +1.97.1 xtask desktop bindings-check` | Never edit generated Swift manually. |
+| Rust formatting | `mise exec -- mbx +1.99.0 fmt --check` | Nonmutating; fix with `mise exec -- mbx +1.99.0 fmt`. |
+| Unified Rust tests | `mise exec -- mbx +1.99.0 xtask ci --only tests --fast` | Fast Rust test partition; full non-Docker gate is `mise exec -- mbx +1.99.0 xtask ci`. |
+| Unified Rust lint | `mise exec -- mbx +1.99.0 xtask ci --only lint --fast` | Runs the unified lint partition. |
+| Focused crate tests during iteration | `mise exec -- mbx +1.99.0 nextest run -p jackin-usage -p jackin-usage-ffi -p jackin-runtime -p jackin-capsule -p jackin-console -p jackin` | Package set corresponds to the usage surfaces in this research; final proof still runs the unified gate. |
+| Generated binding drift | `mise exec -- mbx +1.99.0 xtask desktop bindings-check` | Never edit generated Swift manually. |
 | Regenerate native project | `mise exec -- xcodegen generate --spec native/project.yml` | Writes the generated Xcode project. |
 | Swift formatting check | `mise -C native run format-check` | Native task excludes generated bindings. |
 | SwiftLint | `mise -C native exec -- swiftlint lint --strict` | Runs from `native/` to preserve nested SwiftLint configuration. |
-| Native Rust/FFI/parity tests | `mise exec -- mbx +1.97.1 xtask desktop test` | Does not run the Xcode app build. |
+| Native Rust/FFI/parity tests | `mise exec -- mbx +1.99.0 xtask desktop test` | Does not run the Xcode app build. |
 | Native PR graph | `mise -C native run ci` | Bindings, project, formatting, lint, tests, build, Swift tests, and app verification; macOS/Xcode required. |
 | Native merge graph | `mise -C native run merge` | Adds UI tests against the real app host. |
 | Native scheduled graph | `mise -C native run scheduled` | Adds dead-code analysis. |
@@ -91,12 +91,12 @@ Rust commands use the pinned MBX integration. Native macOS tasks live in `native
 | Prototype tests | `mise exec -- swift test --package-path native/Design/Prototypes/UnifiedAgentUsage` | Prototype signoff records the visual acceptance scenarios. |
 | Prototype scenario | `mise -C native run prototype-run -- F02 1000x680 dark` | Supports F00–F29 and the documented appearance/accessibility arguments. |
 | Production deterministic captures | `native/Scripts/VisualQA/capture-final-matrix.sh native/dist/JackinDesktop.app` | Requires macOS WindowServer and Screen Recording permission, and temporarily changes app/system presentation state. |
-| Local app build | `mise exec -- mbx +1.97.1 xtask desktop build --version 0.6.0 --build 1` | Produces the app/dSYM with the fixture version/build. |
-| Local fail-closed verify | `mise exec -- mbx +1.97.1 xtask desktop verify native/dist/JackinDesktop.app` | Secret-free ad-hoc validation. |
-| Release-mode verify | `mise exec -- mbx +1.97.1 xtask desktop verify native/dist/JackinDesktop.app --release` | Requires Developer ID signing, notarization, staple, and Gatekeeper acceptance. |
+| Local app build | `mise exec -- mbx +1.99.0 xtask desktop build --version 0.6.0 --build 1` | Produces the app/dSYM with the fixture version/build. |
+| Local fail-closed verify | `mise exec -- mbx +1.99.0 xtask desktop verify native/dist/JackinDesktop.app` | Secret-free ad-hoc validation. |
+| Release-mode verify | `mise exec -- mbx +1.99.0 xtask desktop verify native/dist/JackinDesktop.app --release` | Requires Developer ID signing, notarization, staple, and Gatekeeper acceptance. |
 | Sign/notarize/staple | `mise -C native run sign-notarize` | Credential-dependent; secret values never enter plans/docs. |
-| Read-only release/cask reconciliation | `mise exec -- mbx +1.97.1 xtask desktop release-state <version> --repo jackin-project/jackin --tap jackin-project/homebrew-tap` | Network/auth may be required; no publication write. |
-| Credential bootstrap | `mise exec -- mbx +1.97.1 xtask desktop bootstrap-secrets` | Requires GitHub/Apple credential material and operator authorization. |
+| Read-only release/cask reconciliation | `mise exec -- mbx +1.99.0 xtask desktop release-state <version> --repo jackin-project/jackin --tap jackin-project/homebrew-tap` | Network/auth may be required; no publication write. |
+| Credential bootstrap | `mise exec -- mbx +1.99.0 xtask desktop bootstrap-secrets` | Requires GitHub/Apple credential material and operator authorization. |
 
 The desktop capture script currently enumerates light fixtures despite the settled dark-only product contract (`native/Scripts/VisualQA/capture-final-matrix.sh:123-157`). Implementation planning must update the canonical production matrix so dark-only proof cannot silently pass via obsolete light cases, while retaining accessibility contrast/transparency/motion evidence. This is a concrete verification-gap fix, not permission to restore light mode. (confidence: HIGH)
 

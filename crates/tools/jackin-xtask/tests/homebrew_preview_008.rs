@@ -556,7 +556,7 @@ fn desktop_sign_notarize_task_retains_credential_cleanup() {
     assert_task_contains(
         &native_tasks,
         "sign-notarize",
-        "mbx +1.97.1 xtask desktop sign-notarize",
+        "mbx +1.99.0 xtask desktop sign-notarize",
     );
 }
 
