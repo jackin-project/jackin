@@ -27,7 +27,9 @@ impl UsageCoordinator {
     }
 
     /// Start a coordinator with a caller-supplied paired wall and monotonic
-    /// clock. The default [`Self::new`] constructor uses the system clock.
+    /// clock for deterministic test coverage. The default [`Self::new`]
+    /// constructor uses the system clock.
+    #[cfg(feature = "test-support")]
     #[must_use]
     pub fn new_with_clock(
         executor: Arc<dyn UsageProviderExecutor>,
