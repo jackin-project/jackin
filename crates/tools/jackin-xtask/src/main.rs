@@ -127,7 +127,7 @@ enum Command {
     Construct(construct::ConstructCommand),
     /// jackin❯ desktop (native macOS usage menu bar) build, verify, and release.
     ///
-    /// Use as `cargo xtask desktop build|verify|run|…`.
+    /// Use as `mise exec -- mbx +1.97.1 xtask desktop build|verify|run|…`.
     #[command(subcommand)]
     Desktop(desktop::DesktopCommand),
     /// Generate pull request body skeletons.

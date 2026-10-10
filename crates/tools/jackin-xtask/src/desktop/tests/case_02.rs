@@ -86,16 +86,20 @@ fn cadence_tasks_define_the_canonical_graph() {
     assert_subsequence(
         task_block(&mise, "ci"),
         &[
-            "cargo xtask desktop bindings-check",
+            "mbx +1.97.1 xtask desktop bindings-check",
             "xcodegen generate",
             "format-check",
             "lint",
-            "cargo xtask desktop test",
-            "cargo xtask desktop build",
+            "mbx +1.97.1 xtask desktop test",
+            "mbx +1.97.1 xtask desktop build",
             "desktop test-swift",
-            "cargo xtask desktop verify",
+            "mbx +1.97.1 xtask desktop verify",
         ],
         "native ci",
+    );
+    assert!(
+        !task_block(&mise, "ci").contains("cargo xtask desktop"),
+        "native ci must dispatch Rust work through MBX"
     );
     assert_subsequence(
         task_block(&mise, "merge"),
@@ -137,10 +141,10 @@ fn mise_native_rust_option_routes_cargo_through_mbx() {
 
     let native_mise = repo_text("native/mise.toml");
     let desktop_ci = task_block(&native_mise, "ci");
-    assert!(desktop_ci.contains("cargo xtask desktop test-swift --jobs 2"));
+    assert!(desktop_ci.contains("mbx +1.97.1 xtask desktop test-swift --jobs 2"));
     assert!(
-        !desktop_ci.contains("mbx build"),
-        "do not nest MBX commands inside Mise's native Cargo integration"
+        !desktop_ci.contains("cargo xtask desktop"),
+        "native Rust task invocations must pass through MBX explicitly"
     );
 
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");

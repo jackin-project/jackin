@@ -1,7 +1,7 @@
 // swift-tools-version: 6.2
 import PackageDescription
 
-// Static XCFramework produced by `cargo xtask desktop xcframework` (boltffi pack apple).
+// Static XCFramework produced by `mise exec -- mbx +1.97.1 xtask desktop xcframework` (boltffi pack apple).
 // Binary target name must match the boltffi FFI module JackinUsageFFI.
 let package = Package(
     name: "JackinDesktop",
