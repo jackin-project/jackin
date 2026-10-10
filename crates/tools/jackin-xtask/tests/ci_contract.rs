@@ -106,6 +106,22 @@ fn configured_workflow_tasks(root: &Path) -> Result<Vec<TomlValue>> {
     Ok(tasks.clone())
 }
 
+fn configured_task_source(task: &TomlValue) -> Result<(&str, &str)> {
+    let source = task
+        .get("source")
+        .and_then(TomlValue::as_table)
+        .context("workflow task has an explicit source")?;
+    let mise_config = source
+        .get("mise_config")
+        .and_then(TomlValue::as_str)
+        .context("workflow task source has a Mise config path")?;
+    let working_directory = source
+        .get("working_directory")
+        .and_then(TomlValue::as_str)
+        .context("workflow task source has a working directory")?;
+    Ok((mise_config, working_directory))
+}
+
 fn job_needs(job: &YamlValue) -> Result<BTreeSet<String>> {
     Ok(yaml_field(job, "needs")
         .and_then(YamlValue::as_sequence)
@@ -239,6 +255,15 @@ fn configured_verification_jobs_are_isolated_and_run_only_the_declared_mise_task
             .get("id")
             .and_then(TomlValue::as_str)
             .context("verification task has an ID")?;
+        let expected_source = match id {
+            "construct-upstream-assets" => ("mise.toml", "."),
+            "native-swift-format" | "native-swiftlint" => ("native/mise.toml", "native"),
+            other => anyhow::bail!("unexpected configured verification task: {other}"),
+        };
+        ensure!(
+            configured_task_source(task)? == expected_source,
+            "verification task keeps its declared source config and working directory: {id}"
+        );
         let mise_task = task
             .get("mise_task")
             .and_then(TomlValue::as_str)
@@ -357,6 +382,10 @@ fn configured_native_build_is_mac26_bounded_locked_and_mbx_routed() -> Result<()
     ensure!(
         task.get("runner").and_then(TomlValue::as_str) == Some("macos-26-arm64"),
         "native build runs on the pinned macOS 26 ARM64 runner"
+    );
+    ensure!(
+        configured_task_source(task)? == ("native/mise.toml", "native"),
+        "native build preserves its declared Mise config and working directory"
     );
     ensure!(
         task.get("cargo_build_jobs").and_then(TomlValue::as_integer) == Some(2)
