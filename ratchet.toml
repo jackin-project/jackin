@@ -23,9 +23,6 @@ bound = 2012
 [[family.entry]]
 key = "crates/jackin-xtask/src/telemetry_registry.rs"
 bound = 2012
-[[family.entry]]
-key = "crates/jackin-usage/src/host.rs"
-bound = 1930
 
 [[family]]
 id = "file-size-test"

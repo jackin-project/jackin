@@ -14,6 +14,26 @@ use jackin_protocol::usage_broker::{
 
 const TEST_NOW_EPOCH: i64 = 1_800_000_000;
 
+#[test]
+fn identity_kind_labels_keep_provider_and_local_sources_distinct() {
+    assert_eq!(
+        super::identity_kind_label(UsageIdentityKindV1::ProviderAccountId),
+        "provider account id"
+    );
+    assert_eq!(
+        super::identity_kind_label(UsageIdentityKindV1::ProviderStableHandle),
+        "provider handle"
+    );
+    assert_eq!(
+        super::identity_kind_label(UsageIdentityKindV1::LocalSourceHandle),
+        "local source handle"
+    );
+    assert_eq!(
+        super::identity_kind_label(UsageIdentityKindV1::UnverifiedHandle),
+        "unverified handle"
+    );
+}
+
 fn test_window(label: &str, remaining: Option<u8>) -> UsageWindow {
     UsageWindow {
         window_id: format!("{label}-id"),

@@ -7,6 +7,9 @@ use std::time::Duration;
 
 use jackin_protocol::usage_broker::{UsageAccountCapability, UsageCoordinationErrorKind};
 
+/// Claude usage attempts are spaced at least five minutes apart.
+pub(crate) const CLAUDE_MIN_ATTEMPT_INTERVAL: Duration = Duration::from_mins(5);
+
 /// Operator activity used to select the automatic refresh cadence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UsageActivity {
@@ -77,8 +80,9 @@ pub const fn is_retryable(kind: UsageCoordinationErrorKind) -> bool {
     )
 }
 
-/// Deterministic full-jitter retry deadline. The capability and generation seed
-/// it, so joined callers never derive different retry times.
+/// Deterministic positive exponential retry deadline. The capability and
+/// generation seed bounded jitter, so joined callers never derive different
+/// retry times and backoff never falls below its exponential interval.
 #[must_use]
 pub fn retry_deadline(
     policy: UsagePolicy,
@@ -97,11 +101,37 @@ pub fn retry_deadline(
         .checked_mul(1u32 << shift)
         .unwrap_or(policy.retry_cap)
         .min(policy.retry_cap);
+    let cap_seconds = policy.retry_cap.as_secs().max(1);
+    let exponential_seconds = exponential.as_secs().max(1).min(cap_seconds);
     let seed = account_key_hash_seed(capability, generation, failures);
-    let span = exponential.as_secs().saturating_add(1);
-    let jitter = seed % span;
-    let fallback = finished_at_epoch.saturating_add(i64::try_from(jitter).unwrap_or(i64::MAX));
+    let jitter_cap = (exponential_seconds / 4).min(cap_seconds - exponential_seconds);
+    let jitter = if jitter_cap == 0 {
+        0
+    } else {
+        seed % (jitter_cap + 1)
+    };
+    let backoff = exponential_seconds.saturating_add(jitter);
+    let fallback = finished_at_epoch.saturating_add(i64::try_from(backoff).unwrap_or(i64::MAX));
     Some(provider_deadline.map_or(fallback, |deadline| deadline.max(fallback)))
+}
+
+/// Claude's persisted provider invocation is the authority for a hard minimum
+/// interval. This remains enforceable after restart and is independent of the
+/// caller's `force` flag.
+#[must_use]
+pub(crate) fn minimum_attempt_deadline(
+    capability: &UsageAccountCapability,
+    provider_invoked_at_epoch: Option<i64>,
+) -> Option<i64> {
+    if capability.surface_id == "claude" {
+        provider_invoked_at_epoch.map(|invoked_at| {
+            invoked_at.saturating_add(
+                i64::try_from(CLAUDE_MIN_ATTEMPT_INTERVAL.as_secs()).unwrap_or(i64::MAX),
+            )
+        })
+    } else {
+        None
+    }
 }
 
 fn account_key_hash_seed(

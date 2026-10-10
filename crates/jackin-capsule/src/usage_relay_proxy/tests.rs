@@ -3,9 +3,10 @@
 
 use super::*;
 use jackin_protocol::usage_broker::{
-    USAGE_BROKER_PROTOCOL_VERSION, UsageAccountCapability, UsageBrokerOperation, UsageCatalogEntry,
+    USAGE_BROKER_PROTOCOL_VERSION, UsageAccountCapability, UsageBrokerOperation,
     UsageCoordinationError,
 };
+use jackin_protocol::usage_monitor::MonitorOperation;
 use jackin_protocol::{CapsuleConfig, SessionIdentity};
 use std::collections::BTreeMap;
 use tokio::io::BufReader;
@@ -220,40 +221,31 @@ fn usage_relay_rejects_agent_root_but_accepts_capsule_supervisor() {
 }
 
 #[test]
-fn usage_relay_rejects_host_only_catalog_reconciliation() {
-    let account = capability("account-a");
-    let config = CapsuleConfig {
-        instances: vec!["session-a".to_owned()],
-        usage_capabilities: BTreeMap::from([("session-a".to_owned(), account.clone())]),
-        instance_identities: BTreeMap::from([(
-            "session-a".to_owned(),
-            SessionIdentity {
-                uid: 2_001,
-                gid: 2_001,
-            },
-        )]),
-        ..CapsuleConfig::default()
+fn relay_authorization_rejects_host_monitor_and_capability_resolution() {
+    let (authorization, _) = single_session_authorization(2_001, 2_001, "account-a");
+    let binding = supervisor(DEFAULT_CAPSULE_SUPERVISOR_PID);
+    let session_peer = PeerIdentity {
+        pid: Some(77),
+        start_time: Some(SUPERVISOR_START_TIME),
+        uid: 2_001,
+        gid: 2_001,
     };
-    let authorization = UsageRelayAuthorization::from_config(&config).unwrap();
-    let operation = UsageBrokerOperation::ReconcileCatalog {
-        expected_projection_id: None,
-        catalog_revision: "catalog-2".to_owned(),
-        entries: vec![UsageCatalogEntry {
-            capability: account,
-            revision: "credential-2".to_owned(),
-        }],
-    };
+    let supervisor_peer = root_peer(DEFAULT_CAPSULE_SUPERVISOR_PID, Some(SUPERVISOR_START_TIME));
+    let operations = [
+        UsageBrokerOperation::Monitor {
+            request: MonitorOperation::ServiceStatus,
+        },
+        UsageBrokerOperation::ResolveRelayCapabilities {
+            scope_label: "workspace fixture role reviewer".to_owned(),
+            forwarded_sources: jackin_protocol::usage_broker::UsageRelayForwardedSourcesV1::default(
+            ),
+        },
+    ];
 
-    assert!(!authorization.authorizes(
-        supervisor(DEFAULT_CAPSULE_SUPERVISOR_PID),
-        Some(PeerIdentity {
-            pid: Some(1),
-            start_time: Some(SUPERVISOR_START_TIME),
-            uid: 0,
-            gid: 0,
-        }),
-        &operation,
-    ));
+    for operation in &operations {
+        assert!(!authorization.authorizes(binding, Some(session_peer), operation));
+        assert!(!authorization.authorizes(binding, Some(supervisor_peer), operation));
+    }
 }
 
 fn capability(account_id: &str) -> UsageAccountCapability {

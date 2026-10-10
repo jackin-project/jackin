@@ -151,11 +151,23 @@ fn print_root_help_banner() {
     reason = "binary entrypoint — exit is the correct mechanism"
 )]
 fn exit_for_run_error(error: &anyhow::Error, debug: bool) -> ! {
+    if let Some((exit_code, json)) = usage_cli_error(error) {
+        if !json.is_empty() {
+            println!("{json}");
+        }
+        std::process::exit(exit_code);
+    }
     let classification = jackin::classify_error(error);
     if classification.failed() {
         render_error(error, debug);
     }
     std::process::exit(i32::try_from(classification.exit_code).unwrap_or(1));
+}
+
+fn usage_cli_error(error: &anyhow::Error) -> Option<(i32, &str)> {
+    error
+        .downcast_ref::<jackin::cli::usage::UsageCommandExit>()
+        .map(|error| (error.exit_code(), error.json()))
 }
 
 /// Render an error at the binary entry point.
@@ -174,3 +186,6 @@ fn render_error(error: &anyhow::Error, debug: bool) {
         jackin_launch::output::fatal(&format!("{error:#}"));
     }
 }
+
+#[cfg(test)]
+mod tests;

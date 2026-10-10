@@ -6,8 +6,17 @@
 //! Account-registry authority, path roots, provider ownership, and deduplication stay in
 //! this crate. Native clients receive only sanitized descriptors/diagnostics.
 
+mod profile_validation;
+
+pub(super) use profile_validation::refresh_credential_binding;
+pub use profile_validation::validate_usage_sources;
+#[cfg(test)]
+use profile_validation::{
+    ProfileCredentialReader, ProfileReadOutcome, ProfileValidation, opencode_profile_identity,
+    profile_identity, validate_source, validate_usage_sources_with_reader,
+};
+
 use std::collections::{BTreeMap, BTreeSet};
-use std::fmt::Write as _;
 use std::path::{Component, Path, PathBuf};
 
 use jackin_config::{
@@ -20,10 +29,7 @@ use jackin_core::{
 use jackin_protocol::control::FocusedUsageView;
 use jackin_protocol::usage_broker::UsageCredentialSourceIdentity;
 
-use super::{
-    CanonicalAccountIdentity, CanonicalAccountSubject, HostSurfaceId, HostUsageRuntime,
-    StagedUsageDiscovery, discovered_account_keys,
-};
+use super::{CanonicalAccountIdentity, CanonicalAccountSubject, HostSurfaceId};
 
 /// Discovery boundary: Desktop may scan host config; Capsule sees capabilities only.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -286,6 +292,8 @@ pub enum ProviderCredentialRefreshOutcome {
         view: Box<FocusedUsageView>,
         /// Typed provider rate-limit metadata, when the provider returned HTTP 429.
         rate_limit: Option<crate::usage::ProviderRateLimit>,
+        /// Typed provider failure metadata, independent of display text.
+        failure_metadata: Option<crate::usage::ProviderFailureMetadata>,
     },
     /// Credential disappeared after discovery.
     Missing,
@@ -370,14 +378,37 @@ impl UsageDiscoveryIssue {
 }
 
 /// Sanitized provider/scope diagnostic. No path, secret, or 1Password coordinate.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct UsageDiscoveryDiagnostic {
     /// Provider surface when the failure is provider-specific.
     pub surface_id: Option<String>,
     /// Rust-composed scope label (`account …`, `workspace …`).
     pub scope_label: String,
+    /// Opaque identity of the configured source that failed validation.
+    pub unresolved_source: Option<UsageDiscoveryUnresolvedSource>,
     /// Stable machine-readable category.
     pub issue: UsageDiscoveryIssue,
+}
+
+/// Secret-free identity and observation count for one unresolved source.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UsageDiscoveryUnresolvedSource {
+    /// Stable opaque source identifier, never a path, alias, or secret.
+    pub capability_id: String,
+    /// Number of current config observations contributing this source.
+    pub configuration_count: u32,
+}
+
+impl std::fmt::Debug for UsageDiscoveryDiagnostic {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("UsageDiscoveryDiagnostic")
+            .field("surface_id", &self.surface_id)
+            .field("scope_label", &"[REDACTED]")
+            .field("unresolved_source", &self.unresolved_source)
+            .field("issue", &self.issue)
+            .finish()
+    }
 }
 
 /// Sanitized candidate source descriptor.
@@ -447,17 +478,6 @@ impl ValidatedUsageDiscovery {
             })
         })
     }
-
-    pub(super) fn canonical_aliases(
-        &self,
-    ) -> impl Iterator<Item = (&str, &CanonicalAccountIdentity)> {
-        self.bindings.iter().filter_map(|binding| {
-            binding
-                .identity
-                .as_ref()
-                .map(|identity| (binding.capability_id.as_str(), identity))
-        })
-    }
 }
 
 impl std::fmt::Debug for ValidatedUsageDiscovery {
@@ -477,7 +497,6 @@ impl std::fmt::Debug for ValidatedUsageDiscovery {
 pub(super) struct ValidatedCredentialBinding {
     pub surface: HostSurfaceId,
     pub identity: Option<CanonicalAccountIdentity>,
-    pub source_id: String,
     pub capability_id: String,
     pub credential_revision: String,
     pub provenance: BTreeSet<String>,
@@ -553,6 +572,8 @@ enum CredentialSourceKey {
     Profile {
         agent: Agent,
         root: PathBuf,
+        /// Exact selected Keychain source used as the Claude local identity.
+        claude_service: Option<String>,
     },
     Env {
         surface: HostSurfaceId,
@@ -802,26 +823,15 @@ fn enumerate_registered_accounts(
             agent, directory, ..
         } = &account.credential
         {
-            let root = resolve_profile_root(operator_home, directory);
-            candidates
-                .entry(CredentialSourceKey::Profile {
-                    agent: *agent,
-                    root,
-                })
-                .and_modify(|candidate| {
-                    candidate.provenance.extend(provenance.clone());
-                    if candidate.account_label.is_none() {
-                        candidate.account_label = label.clone();
-                    }
-                })
-                .or_insert_with(|| CandidateAccumulator {
-                    surface,
-                    kind: UsageCredentialKind::Profile,
-                    provenance,
-                    env_keys: BTreeSet::new(),
-                    account_label: label.clone(),
-                    operator_home: Some(operator_home.to_path_buf()),
-                });
+            add_registered_profile_candidate(
+                *agent,
+                directory,
+                surface,
+                provenance,
+                label,
+                operator_home,
+                candidates,
+            );
             continue;
         }
 
@@ -840,6 +850,8 @@ fn enumerate_registered_accounts(
             diagnostics.push(account_diagnostic(
                 surface,
                 id,
+                None,
+                1,
                 UsageDiscoveryIssue::CredentialMalformed,
             ));
             continue;
@@ -849,6 +861,8 @@ fn enumerate_registered_accounts(
                 diagnostics.push(account_diagnostic(
                     surface,
                     id,
+                    Some(route.env_name),
+                    1,
                     UsageDiscoveryIssue::CredentialMalformed,
                 ));
                 continue;
@@ -861,6 +875,8 @@ fn enumerate_registered_accounts(
                 diagnostics.push(account_diagnostic(
                     surface,
                     id,
+                    Some(route.env_name),
+                    1,
                     UsageDiscoveryIssue::CredentialMalformed,
                 ));
                 continue;
@@ -921,9 +937,47 @@ fn enumerate_registered_accounts(
                     UsageDiscoveryIssue::InteractionRequired
                 }
             };
-            diagnostics.push(account_diagnostic(surface, id, issue));
+            diagnostics.push(account_diagnostic(surface, id, Some(entry.name), 1, issue));
         }
     }
+}
+
+fn add_registered_profile_candidate(
+    agent: Agent,
+    directory: &Path,
+    surface: HostSurfaceId,
+    provenance: BTreeSet<String>,
+    label: Option<String>,
+    operator_home: &Path,
+    candidates: &mut BTreeMap<CredentialSourceKey, CandidateAccumulator>,
+) {
+    let root = resolve_profile_root(operator_home, directory);
+    let claude_service = if agent == Agent::Claude {
+        jackin_core::claude_keychain_scope(&root, operator_home, operator_home)
+            .map(|scope| scope.service)
+    } else {
+        None
+    };
+    candidates
+        .entry(CredentialSourceKey::Profile {
+            agent,
+            root,
+            claude_service,
+        })
+        .and_modify(|candidate| {
+            candidate.provenance.extend(provenance.clone());
+            if candidate.account_label.is_none() {
+                candidate.account_label = label.clone();
+            }
+        })
+        .or_insert_with(|| CandidateAccumulator {
+            surface,
+            kind: UsageCredentialKind::Profile,
+            provenance,
+            env_keys: BTreeSet::new(),
+            account_label: label,
+            operator_home: Some(operator_home.to_path_buf()),
+        });
 }
 
 fn provider_surface(provider: AiProvider) -> HostSurfaceId {
@@ -996,11 +1050,28 @@ fn resolve_profile_root(operator_home: &Path, configured: &Path) -> PathBuf {
 fn account_diagnostic(
     surface: HostSurfaceId,
     account_id: &str,
+    source_key: Option<&str>,
+    configuration_count: u32,
     issue: UsageDiscoveryIssue,
 ) -> UsageDiscoveryDiagnostic {
+    let material = format!(
+        "surface:{}:account:{}:source:{}",
+        surface.id(),
+        account_id,
+        source_key.unwrap_or("account-credential")
+    );
+    let capability_id =
+        jackin_core::account_key_hash("usage-discovery-unresolved-source-v1", &material);
     UsageDiscoveryDiagnostic {
         surface_id: Some(surface.id().to_owned()),
-        scope_label: format!("account {account_id}"),
+        scope_label: "account".to_owned(),
+        unresolved_source: Some(UsageDiscoveryUnresolvedSource {
+            capability_id: capability_id
+                .strip_prefix("sha256:")
+                .unwrap_or(&capability_id)
+                .to_owned(),
+            configuration_count,
+        }),
         issue,
     }
 }
@@ -1018,6 +1089,7 @@ fn config_diagnostics(snapshot: &ReadOnlyConfigSnapshot) -> Vec<UsageDiscoveryDi
                     format!("workspace {name}")
                 }
             },
+            unresolved_source: None,
             issue: match diagnostic.issue {
                 ConfigSourceIssue::Unreadable => UsageDiscoveryIssue::ConfigUnreadable,
                 ConfigSourceIssue::UnsupportedVersion => {
@@ -1056,16 +1128,18 @@ fn materialize_catalog(
             provenance,
         });
         let source = match key {
-            CredentialSourceKey::Profile { agent, root } => DiscoveredCredentialSource::Profile {
-                surface: candidate.surface,
-                agent,
-                root,
-                operator_home: candidate.operator_home.unwrap_or_default(),
-                account_label: candidate.account_label,
-                source_id,
-                capability_id,
-                provenance: candidate.provenance,
-            },
+            CredentialSourceKey::Profile { agent, root, .. } => {
+                DiscoveredCredentialSource::Profile {
+                    surface: candidate.surface,
+                    agent,
+                    root,
+                    operator_home: candidate.operator_home.unwrap_or_default(),
+                    account_label: candidate.account_label,
+                    source_id,
+                    capability_id,
+                    provenance: candidate.provenance,
+                }
+            }
             CredentialSourceKey::Env {
                 surface,
                 handle,
@@ -1107,7 +1181,12 @@ fn source_capability_id(surface: HostSurfaceId, key: &CredentialSourceKey) -> St
         return id.clone();
     }
     let evidence = match key {
-        CredentialSourceKey::Profile { agent, root } => {
+        CredentialSourceKey::Profile {
+            agent: Agent::Claude,
+            claude_service: Some(service),
+            ..
+        } => return crate::usage::claude_source_capability_id_for_service(service),
+        CredentialSourceKey::Profile { agent, root, .. } => {
             format!("profile-v1:{}:{}", agent.slug(), root.to_string_lossy())
         }
         CredentialSourceKey::Env {
@@ -1131,1398 +1210,6 @@ fn source_capability_id(surface: HostSurfaceId, key: &CredentialSourceKey) -> St
     };
     let hashed = jackin_core::account_key_hash(surface.id(), &evidence);
     hashed.strip_prefix("sha256:").unwrap_or(&hashed).to_owned()
-}
-
-#[derive(Clone)]
-enum ProfileReadOutcome {
-    Bytes(Vec<u8>),
-    Missing,
-    Denied,
-    ConsentRequired,
-}
-
-trait ProfileCredentialReader {
-    fn read(&self, path: &Path) -> ProfileReadOutcome;
-    fn exists(&self, path: &Path) -> bool;
-    fn read_claude_keychain(&self, scope: &jackin_core::ClaudeKeychainScope) -> ProfileReadOutcome;
-    /// Presence-only probe for the Antigravity Keychain grant singleton.
-    /// `Bytes` is always empty and never carries the grant: the CLI owns the
-    /// secret, discovery only learns whether it exists.
-    fn read_antigravity_keychain(&self) -> ProfileReadOutcome;
-}
-
-struct CachingProfileCredentialReader<'a> {
-    inner: &'a dyn ProfileCredentialReader,
-    exists: std::cell::RefCell<BTreeMap<PathBuf, bool>>,
-    files: std::cell::RefCell<BTreeMap<PathBuf, ProfileReadOutcome>>,
-    keychain: std::cell::RefCell<BTreeMap<String, ProfileReadOutcome>>,
-    antigravity_grant: std::cell::RefCell<Option<ProfileReadOutcome>>,
-}
-
-impl<'a> CachingProfileCredentialReader<'a> {
-    fn new(inner: &'a dyn ProfileCredentialReader) -> Self {
-        Self {
-            inner,
-            exists: std::cell::RefCell::new(BTreeMap::new()),
-            files: std::cell::RefCell::new(BTreeMap::new()),
-            keychain: std::cell::RefCell::new(BTreeMap::new()),
-            antigravity_grant: std::cell::RefCell::new(None),
-        }
-    }
-}
-
-impl ProfileCredentialReader for CachingProfileCredentialReader<'_> {
-    fn read(&self, path: &Path) -> ProfileReadOutcome {
-        if let Some(outcome) = self.files.borrow().get(path).cloned() {
-            return outcome;
-        }
-        let outcome = self.inner.read(path);
-        self.files
-            .borrow_mut()
-            .insert(path.to_path_buf(), outcome.clone());
-        outcome
-    }
-
-    fn exists(&self, path: &Path) -> bool {
-        if let Some(exists) = self.exists.borrow().get(path).copied() {
-            return exists;
-        }
-        let exists = self.inner.exists(path);
-        self.exists.borrow_mut().insert(path.to_path_buf(), exists);
-        exists
-    }
-
-    fn read_claude_keychain(&self, scope: &jackin_core::ClaudeKeychainScope) -> ProfileReadOutcome {
-        if let Some(outcome) = self.keychain.borrow().get(&scope.service).cloned() {
-            return outcome;
-        }
-        let outcome = self.inner.read_claude_keychain(scope);
-        self.keychain
-            .borrow_mut()
-            .insert(scope.service.clone(), outcome.clone());
-        outcome
-    }
-
-    fn read_antigravity_keychain(&self) -> ProfileReadOutcome {
-        if let Some(outcome) = self.antigravity_grant.borrow().clone() {
-            return outcome;
-        }
-        let outcome = self.inner.read_antigravity_keychain();
-        *self.antigravity_grant.borrow_mut() = Some(outcome.clone());
-        outcome
-    }
-}
-
-struct SystemProfileCredentialReader;
-
-impl ProfileCredentialReader for SystemProfileCredentialReader {
-    fn read(&self, path: &Path) -> ProfileReadOutcome {
-        match std::fs::read(path) {
-            Ok(bytes) => ProfileReadOutcome::Bytes(bytes),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                ProfileReadOutcome::Missing
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
-                ProfileReadOutcome::Denied
-            }
-            Err(_) => ProfileReadOutcome::Missing,
-        }
-    }
-
-    fn exists(&self, path: &Path) -> bool {
-        path.exists()
-    }
-
-    fn read_claude_keychain(&self, scope: &jackin_core::ClaudeKeychainScope) -> ProfileReadOutcome {
-        match crate::usage::read_claude_keychain_item(&scope.service) {
-            #[cfg(any(target_os = "macos", test))]
-            crate::usage::ClaudeKeychainRead::Payload { json } => {
-                ProfileReadOutcome::Bytes(json.into_bytes())
-            }
-            crate::usage::ClaudeKeychainRead::Denied => ProfileReadOutcome::Denied,
-            crate::usage::ClaudeKeychainRead::Missing => ProfileReadOutcome::Missing,
-            crate::usage::ClaudeKeychainRead::ConsentRequired => {
-                ProfileReadOutcome::ConsentRequired
-            }
-        }
-    }
-
-    fn read_antigravity_keychain(&self) -> ProfileReadOutcome {
-        #[cfg(target_os = "macos")]
-        {
-            use security_framework::item::{ItemClass, ItemSearchOptions};
-
-            // Reference-only search: no `load_data`, so the grant payload is
-            // never read into this process — presence is the whole answer.
-            let mut options = ItemSearchOptions::new();
-            options
-                .class(ItemClass::generic_password())
-                .service(crate::usage::ANTIGRAVITY_KEYCHAIN_SERVICE)
-                .limit(1);
-            match options.search() {
-                Ok(results) if !results.is_empty() => ProfileReadOutcome::Bytes(Vec::new()),
-                Ok(_) => ProfileReadOutcome::Missing,
-                Err(error) => match crate::usage::classify_claude_keychain_status(error.code()) {
-                    // Unreachable: the classifier only emits Denied/Missing.
-                    // Fail closed to absence either way.
-                    crate::usage::ClaudeKeychainRead::Payload { .. } => ProfileReadOutcome::Missing,
-                    crate::usage::ClaudeKeychainRead::Denied => ProfileReadOutcome::Denied,
-                    crate::usage::ClaudeKeychainRead::Missing => ProfileReadOutcome::Missing,
-                    crate::usage::ClaudeKeychainRead::ConsentRequired => {
-                        ProfileReadOutcome::ConsentRequired
-                    }
-                },
-            }
-        }
-        #[cfg(not(target_os = "macos"))]
-        {
-            ProfileReadOutcome::Missing
-        }
-    }
-}
-
-enum ProfileValidation {
-    Authenticated {
-        provider_id: Option<String>,
-        account_label: Option<String>,
-        material: Option<Box<ProfileCredentialMaterial>>,
-    },
-    Anonymous(Option<Box<ProfileCredentialMaterial>>),
-    Missing,
-    Denied,
-    ConsentRequired,
-    Malformed,
-}
-
-struct AccountAccumulator {
-    label: String,
-    provenance: BTreeSet<String>,
-    source_ids: BTreeSet<String>,
-}
-
-/// Validate every pre-deduplicated source and merge authenticated identities.
-///
-/// Missing/malformed/denied sources produce diagnostics and never account rows.
-pub fn validate_usage_sources(
-    catalog: UsageDiscoveryCatalog,
-    env_resolver: &dyn ProviderCredentialEnvResolver,
-) -> ValidatedUsageDiscovery {
-    validate_usage_sources_with_reader(catalog, env_resolver, &SystemProfileCredentialReader)
-}
-
-fn validate_usage_sources_with_reader(
-    catalog: UsageDiscoveryCatalog,
-    env_resolver: &dyn ProviderCredentialEnvResolver,
-    profile_reader: &dyn ProfileCredentialReader,
-) -> ValidatedUsageDiscovery {
-    let mut diagnostics = catalog.diagnostics;
-    let mut bindings = Vec::new();
-    let mut accounts = BTreeMap::<CanonicalAccountIdentity, AccountAccumulator>::new();
-
-    let profile_reader = CachingProfileCredentialReader::new(profile_reader);
-    let validated: Vec<ValidatedSourceParts> = catalog
-        .sources
-        .into_iter()
-        .map(|source| validate_source(source, env_resolver, &profile_reader))
-        .collect();
-    // Provider-issued identities per surface, from any source form. An
-    // anonymous env/key credential carries no identity evidence of its own;
-    // when exactly one same-surface provider identity exists, the key joins
-    // that canonical account instead of minting a source-scoped row.
-    let mut strong = BTreeMap::<HostSurfaceId, BTreeSet<CanonicalAccountIdentity>>::new();
-    for (surface, _, _, _, _, _, outcome) in &validated {
-        if let ProfileValidation::Authenticated {
-            provider_id: Some(id),
-            ..
-        } = outcome
-            && !id.trim().is_empty()
-        {
-            strong
-                .entry(*surface)
-                .or_default()
-                .insert(CanonicalAccountIdentity {
-                    surface: *surface,
-                    subject: CanonicalAccountSubject::ProviderId(id.trim().to_owned()),
-                });
-        }
-    }
-    let (primary, attachable): (Vec<ValidatedSourceParts>, Vec<ValidatedSourceParts>) = validated
-        .into_iter()
-        .partition(|parts| !is_attachable_env_source(&parts.5, &parts.6));
-    // Strong sources accumulate first so canonical labels come from
-    // authenticated evidence, never from an attached anonymous key.
-    for parts in primary {
-        accumulate_validated_source(parts, None, &mut diagnostics, &mut bindings, &mut accounts);
-    }
-    for parts in attachable {
-        let attach_to = match strong.get(&parts.0) {
-            Some(ids) if ids.len() == 1 => ids.iter().next().cloned(),
-            _ => None,
-        };
-        accumulate_validated_source(
-            parts,
-            attach_to,
-            &mut diagnostics,
-            &mut bindings,
-            &mut accounts,
-        );
-    }
-
-    let accounts = accounts
-        .into_iter()
-        .map(|(identity, account)| DiscoveredAccountDescriptor {
-            surface_id: identity.surface.id().to_owned(),
-            account_key: identity.account_key(),
-            account_label: account.label,
-            provenance: account.provenance.into_iter().collect(),
-            source_ids: account.source_ids.into_iter().collect(),
-            identity,
-        })
-        .collect();
-
-    ValidatedUsageDiscovery {
-        config_generation: catalog.config_generation,
-        accounts,
-        diagnostics,
-        candidates: catalog.candidates,
-        bindings,
-    }
-}
-
-/// Whether an env/key source proved no identity of its own.
-///
-/// Anonymous API-key/OAuth-token credentials are bearer material without
-/// local identity evidence. Unlike profiles (distinct local logins) and
-/// forwarded capabilities (a separate trust domain), they may join the one
-/// same-surface provider-authenticated account when it exists.
-fn is_attachable_env_source(
-    source: &ValidatedCredentialSource,
-    outcome: &ProfileValidation,
-) -> bool {
-    if !matches!(source, ValidatedCredentialSource::Env { .. }) {
-        return false;
-    }
-    match outcome {
-        ProfileValidation::Authenticated { provider_id, .. } => {
-            provider_id.as_deref().is_none_or(|id| id.trim().is_empty())
-        }
-        ProfileValidation::Anonymous(_) => true,
-        ProfileValidation::Missing
-        | ProfileValidation::Denied
-        | ProfileValidation::ConsentRequired
-        | ProfileValidation::Malformed => false,
-    }
-}
-
-fn accumulate_validated_source(
-    parts: ValidatedSourceParts,
-    attach_to: Option<CanonicalAccountIdentity>,
-    diagnostics: &mut Vec<UsageDiscoveryDiagnostic>,
-    bindings: &mut Vec<ValidatedCredentialBinding>,
-    accounts: &mut BTreeMap<CanonicalAccountIdentity, AccountAccumulator>,
-) {
-    let (surface, source_id, capability_id, credential_revision, provenance, source, outcome) =
-        parts;
-    if let Some(identity) = attach_to {
-        let label = match &outcome {
-            ProfileValidation::Authenticated {
-                provider_id,
-                account_label,
-                ..
-            } => account_label
-                .as_deref()
-                .map(str::trim)
-                .filter(|label| !label.is_empty())
-                .map(str::to_owned)
-                .or_else(|| provider_id.clone())
-                .unwrap_or_default(),
-            _ => String::new(),
-        };
-        let entry = accounts.entry(identity.clone()).or_insert_with(|| {
-            // Unreachable: the strong target accumulates first and always
-            // mints its account. The fallback keeps the merge total.
-            AccountAccumulator {
-                label,
-                provenance: BTreeSet::new(),
-                source_ids: BTreeSet::new(),
-            }
-        });
-        entry.provenance.extend(provenance.iter().cloned());
-        entry.source_ids.insert(source_id.clone());
-        bindings.push(ValidatedCredentialBinding {
-            surface,
-            identity: Some(identity),
-            source_id,
-            capability_id,
-            credential_revision,
-            provenance,
-            source,
-        });
-        return;
-    }
-
-    match outcome {
-        ProfileValidation::Authenticated {
-            provider_id,
-            account_label,
-            material: _,
-        } => {
-            let subject = provider_id
-                .as_ref()
-                .filter(|id| !id.trim().is_empty())
-                .map(|id| CanonicalAccountSubject::ProviderId(id.trim().to_owned()))
-                .or_else(|| {
-                    account_label
-                        .as_ref()
-                        .filter(|label| !label.trim().is_empty())
-                        .map(|_| {
-                            // A label is presentation evidence only. Keep
-                            // source identity when the provider did not
-                            // return a stronger canonical subject.
-                            CanonicalAccountSubject::SourceCapability(capability_id.clone())
-                        })
-                });
-            let Some(subject) = subject else {
-                bindings.push(ValidatedCredentialBinding {
-                    surface,
-                    identity: None,
-                    source_id,
-                    capability_id,
-                    credential_revision,
-                    provenance,
-                    source,
-                });
-                return;
-            };
-            let identity = CanonicalAccountIdentity { surface, subject };
-            let label = account_label
-                .as_deref()
-                .map(str::trim)
-                .filter(|label| !label.is_empty())
-                .map(str::to_owned)
-                .or_else(|| provider_id.clone())
-                .unwrap_or_default();
-            let entry = accounts
-                .entry(identity.clone())
-                .or_insert_with(|| AccountAccumulator {
-                    label,
-                    provenance: BTreeSet::new(),
-                    source_ids: BTreeSet::new(),
-                });
-            entry.provenance.extend(provenance.iter().cloned());
-            entry.source_ids.insert(source_id.clone());
-            bindings.push(ValidatedCredentialBinding {
-                surface,
-                identity: Some(identity),
-                source_id,
-                capability_id,
-                credential_revision,
-                provenance,
-                source,
-            });
-        }
-        ProfileValidation::Anonymous(_) => bindings.push(ValidatedCredentialBinding {
-            surface,
-            identity: None,
-            source_id,
-            capability_id,
-            credential_revision,
-            provenance,
-            source,
-        }),
-        ProfileValidation::Missing => diagnostics.push(source_diagnostic(
-            surface,
-            &provenance,
-            UsageDiscoveryIssue::CredentialMissing,
-        )),
-        ProfileValidation::Denied => diagnostics.push(source_diagnostic(
-            surface,
-            &provenance,
-            UsageDiscoveryIssue::CredentialDenied,
-        )),
-        ProfileValidation::ConsentRequired => diagnostics.push(source_diagnostic(
-            surface,
-            &provenance,
-            UsageDiscoveryIssue::KeychainConsentRequired,
-        )),
-        ProfileValidation::Malformed => diagnostics.push(source_diagnostic(
-            surface,
-            &provenance,
-            UsageDiscoveryIssue::CredentialMalformed,
-        )),
-    }
-}
-
-type ValidatedSourceParts = (
-    HostSurfaceId,
-    String,
-    String,
-    String,
-    BTreeSet<String>,
-    ValidatedCredentialSource,
-    ProfileValidation,
-);
-
-fn validate_source(
-    source: DiscoveredCredentialSource,
-    env_resolver: &dyn ProviderCredentialEnvResolver,
-    profile_reader: &dyn ProfileCredentialReader,
-) -> ValidatedSourceParts {
-    match source {
-        DiscoveredCredentialSource::Profile {
-            surface,
-            agent,
-            root,
-            operator_home,
-            account_label,
-            source_id,
-            capability_id,
-            provenance,
-        } => {
-            let outcome = profile_identity(profile_reader, agent, &root, &operator_home);
-            let credential_revision =
-                profile_credential_revision(profile_reader, agent, &root, &operator_home);
-            let source = match &outcome {
-                ProfileValidation::Authenticated { material, .. }
-                | ProfileValidation::Anonymous(material) => material.clone().map_or(
-                    // A material-less local profile (Muse identity, omp/hermes
-                    // attribution) is unpollable by design — never a forwarded
-                    // trust-domain token, so never `Capability`.
-                    ValidatedCredentialSource::Unpollable,
-                    |material| ValidatedCredentialSource::Profile(*material),
-                ),
-                _ => ValidatedCredentialSource::Capability,
-            };
-            let outcome = match outcome {
-                ProfileValidation::Authenticated {
-                    provider_id,
-                    account_label: auth_label,
-                    material,
-                } => ProfileValidation::Authenticated {
-                    provider_id,
-                    account_label: auth_label.or(account_label),
-                    material,
-                },
-                ProfileValidation::Anonymous(_) => {
-                    if let Some(label) = account_label {
-                        ProfileValidation::Authenticated {
-                            account_label: Some(label),
-                            provider_id: None,
-                            material: None,
-                        }
-                    } else {
-                        outcome
-                    }
-                }
-                other => other,
-            };
-            (
-                surface,
-                source_id,
-                capability_id,
-                credential_revision,
-                provenance,
-                source,
-                outcome,
-            )
-        }
-        DiscoveredCredentialSource::Env {
-            surface,
-            handle,
-            key,
-            dispatch_key,
-            launch_keys,
-            kind: _,
-            account_label,
-            source_id,
-            capability_id,
-            provenance,
-        } => {
-            let material = env_resolver.source_material(surface, &key, &handle);
-            let outcome = match env_resolver.identify_provider_credential(surface, &handle) {
-                ProviderCredentialIdentityOutcome::Authenticated {
-                    provider_id,
-                    account_label: auth_label,
-                } => ProfileValidation::Authenticated {
-                    provider_id,
-                    account_label: auth_label.or(account_label),
-                    material: None,
-                },
-                ProviderCredentialIdentityOutcome::Anonymous => {
-                    if let Some(label) = account_label {
-                        ProfileValidation::Authenticated {
-                            account_label: Some(label),
-                            provider_id: None,
-                            material: None,
-                        }
-                    } else {
-                        ProfileValidation::Anonymous(None)
-                    }
-                }
-                ProviderCredentialIdentityOutcome::Missing => ProfileValidation::Missing,
-                ProviderCredentialIdentityOutcome::Denied => ProfileValidation::Denied,
-                ProviderCredentialIdentityOutcome::Malformed => ProfileValidation::Malformed,
-            };
-            let credential_revision = opaque_credential_revision(&format!(
-                "env:{}:{}:{}:{}",
-                surface.id(),
-                key,
-                dispatch_key,
-                handle.0
-            ));
-            (
-                surface,
-                source_id,
-                capability_id,
-                credential_revision,
-                provenance,
-                ValidatedCredentialSource::Env {
-                    handle,
-                    key,
-                    dispatch_key,
-                    launch_keys,
-                    material,
-                },
-                outcome,
-            )
-        }
-        DiscoveredCredentialSource::Capability {
-            surface,
-            account_label,
-            source_id,
-            capability_id,
-        } => {
-            let provenance = BTreeSet::from(["forwarded to Capsule".to_owned()]);
-            let outcome = account_label.map_or(ProfileValidation::Anonymous(None), |label| {
-                ProfileValidation::Authenticated {
-                    provider_id: None,
-                    account_label: Some(label),
-                    material: None,
-                }
-            });
-            (
-                surface,
-                source_id,
-                capability_id.clone(),
-                opaque_credential_revision(&format!("capability:{capability_id}")),
-                provenance,
-                ValidatedCredentialSource::Capability,
-                outcome,
-            )
-        }
-    }
-}
-
-fn source_diagnostic(
-    surface: HostSurfaceId,
-    provenance: &BTreeSet<String>,
-    issue: UsageDiscoveryIssue,
-) -> UsageDiscoveryDiagnostic {
-    UsageDiscoveryDiagnostic {
-        surface_id: Some(surface.id().to_owned()),
-        scope_label: provenance.iter().cloned().collect::<Vec<_>>().join(", "),
-        issue,
-    }
-}
-
-/// Return an opaque revision for the complete credential material read for a
-/// profile source. The path-derived source id is intentionally not enough:
-/// providers frequently rotate tokens in place without changing the profile
-/// path or account identity.
-fn profile_credential_revision(
-    reader: &dyn ProfileCredentialReader,
-    agent: Agent,
-    root: &Path,
-    operator_home: &Path,
-) -> String {
-    let mut evidence = Vec::new();
-    let mut file = |label: &str, path: PathBuf| {
-        append_profile_read(&mut evidence, label, reader.read(&path));
-    };
-    match agent {
-        Agent::Claude => {
-            file("claude.credentials", root.join(".credentials.json"));
-            file("claude.config", root.join(".claude.json"));
-            if root == operator_home.join(".claude") {
-                file("claude.home-config", operator_home.join(".claude.json"));
-            }
-            if let Some(scope) =
-                jackin_core::claude_keychain_scope(root, operator_home, operator_home)
-            {
-                append_profile_read(
-                    &mut evidence,
-                    "claude.keychain",
-                    reader.read_claude_keychain(&scope),
-                );
-            }
-        }
-        Agent::Codex => file("codex.auth", root.join("auth.json")),
-        Agent::Amp => {
-            let direct = root.join("secrets.json");
-            let path = if reader.exists(&direct) {
-                direct
-            } else {
-                root.join("data/amp/secrets.json")
-            };
-            file("amp.secrets", path);
-        }
-        Agent::Kimi => file("kimi.credentials", root.join("credentials/kimi-code.json")),
-        Agent::Grok => file("grok.auth", root.join("auth.json")),
-        Agent::Opencode => file("opencode.auth", root.join("auth.json")),
-        Agent::Antigravity => append_profile_read(
-            &mut evidence,
-            "antigravity.keychain",
-            reader.read_antigravity_keychain(),
-        ),
-        Agent::Gemini => file("gemini.oauth", root.join("oauth_creds.json")),
-        Agent::Cursor => {
-            file("cursor.auth", root.join("auth.json"));
-            file("cursor.config", root.join("cli-config.json"));
-        }
-        Agent::Muse => file("muse.auth", root.join("auth.json")),
-        Agent::Omp => file("omp.database", root.join("agent/agent.db")),
-        Agent::Hermes => file("hermes.auth", root.join("auth.json")),
-    }
-    opaque_credential_revision(&evidence.join("|"))
-}
-
-fn append_profile_read(evidence: &mut Vec<String>, label: &str, outcome: ProfileReadOutcome) {
-    match outcome {
-        ProfileReadOutcome::Bytes(bytes) => {
-            let mut hex = String::with_capacity(bytes.len().saturating_mul(2));
-            for byte in &bytes {
-                let _ignored = write!(hex, "{byte:02x}");
-            }
-            evidence.push(format!("{label}:bytes:{}:{hex}", bytes.len()));
-        }
-        ProfileReadOutcome::Missing => evidence.push(format!("{label}:missing")),
-        ProfileReadOutcome::Denied => evidence.push(format!("{label}:denied")),
-        ProfileReadOutcome::ConsentRequired => {
-            evidence.push(format!("{label}:consent-required"));
-        }
-    }
-}
-
-fn opaque_credential_revision(evidence: &str) -> String {
-    let hashed = jackin_core::account_key_hash("usage-credential-material-v2", evidence);
-    hashed.strip_prefix("sha256:").unwrap_or(&hashed).to_owned()
-}
-
-fn profile_identity(
-    reader: &dyn ProfileCredentialReader,
-    agent: Agent,
-    root: &Path,
-    operator_home: &Path,
-) -> ProfileValidation {
-    match agent {
-        Agent::Claude => claude_profile_identity(reader, root, operator_home),
-        Agent::Codex => codex_profile_identity(reader, &root.join("auth.json")),
-        Agent::Amp => {
-            let direct = root.join("secrets.json");
-            let path = if reader.exists(&direct) {
-                direct
-            } else {
-                root.join("data/amp/secrets.json")
-            };
-            amp_profile_identity(reader, &path)
-        }
-        Agent::Kimi => {
-            let value = match read_json(reader, &root.join("credentials/kimi-code.json")) {
-                Ok(Some(value)) => value,
-                Ok(None) => return ProfileValidation::Missing,
-                Err(outcome) => return outcome,
-            };
-            crate::usage::kimi_local_token_from_value(&value, chrono::Utc::now().timestamp())
-                .map_or(ProfileValidation::Malformed, |token| {
-                    ProfileValidation::Anonymous(Some(Box::new(ProfileCredentialMaterial::Kimi {
-                        token,
-                    })))
-                })
-        }
-        Agent::Grok => grok_profile_identity(reader, &root.join("auth.json")),
-        Agent::Opencode => opencode_profile_identity(reader, &root.join("auth.json")),
-        // Antigravity wires through the host Keychain grant singleton: the
-        // CLI owns the secret, so grant presence alone mints refresh
-        // material and refresh shells out to `agy`.
-        Agent::Antigravity => antigravity_profile_identity(reader),
-        Agent::Gemini => gemini_profile_identity(reader, &root.join("oauth_creds.json")),
-        Agent::Cursor => cursor_profile_identity(reader, root),
-        // Muse stays explicitly unwired: identity is verified locally but no
-        // material is minted — the secret lives in the platform credential
-        // store and no pollable usage fetch exists by design
-        // (`MuseKeyExchangePolicy::polling_enabled` is false), so refresh
-        // cannot dispatch.
-        Agent::Muse => muse_profile_identity(reader, &root.join("auth.json")),
-        // omp stays explicitly unwired: it is an attribution-only aggregator
-        // with no native identity or usage endpoint. SQLite store presence
-        // (not content) is verified; table parsing belongs to a later lane.
-        Agent::Omp => {
-            if reader.exists(&root.join("agent/agent.db")) {
-                ProfileValidation::Anonymous(None)
-            } else {
-                ProfileValidation::Missing
-            }
-        }
-        // Hermes stays explicitly unwired: attribution-only adapter with no
-        // Hermes-native quota API; usage needs caller-supplied underlying
-        // buckets the refresh lane cannot produce.
-        Agent::Hermes => anonymous_when_present(reader, &root.join("auth.json")),
-    }
-}
-
-/// File present (any JSON shape) → anonymous binding; missing/denied/
-/// malformed propagate truthfully. Used for agents whose identity
-/// extraction is deferred to the usage lane.
-fn anonymous_when_present(reader: &dyn ProfileCredentialReader, path: &Path) -> ProfileValidation {
-    match read_json(reader, path) {
-        Ok(Some(_)) => ProfileValidation::Anonymous(None),
-        Ok(None) => ProfileValidation::Missing,
-        Err(outcome) => outcome,
-    }
-}
-
-/// Cursor identity comes from the sibling `cli-config.json` (`authInfo`
-/// email), verified locally; token presence in `auth.json` is proven at
-/// discovery and the path is kept as refresh material, so refresh re-reads
-/// the registered root instead of a stale discovery-time copy. A
-/// present-but-tokenless `auth.json` is malformed, never an anonymous
-/// binding refresh cannot serve.
-fn cursor_profile_identity(reader: &dyn ProfileCredentialReader, root: &Path) -> ProfileValidation {
-    let auth_path = root.join("auth.json");
-    let value = match read_json(reader, &auth_path) {
-        Ok(Some(value)) => value,
-        Ok(None) => return ProfileValidation::Missing,
-        Err(outcome) => return outcome,
-    };
-    if crate::usage::cursor_auth_from_value(&value).is_none() {
-        return ProfileValidation::Malformed;
-    }
-    let material = Some(Box::new(ProfileCredentialMaterial::Cursor { auth_path }));
-    let label = read_json(reader, &root.join("cli-config.json"))
-        .ok()
-        .flatten()
-        .and_then(|config| crate::usage::cursor_cli_identity_from_value(&config));
-    match label {
-        Some(label) => ProfileValidation::Authenticated {
-            provider_id: None,
-            account_label: Some(label),
-            material,
-        },
-        None => ProfileValidation::Anonymous(material),
-    }
-}
-
-/// Gemini identity comes from `oauth_creds.json` when it names the login;
-/// any valid credential file mints material (the Grok shape), since refresh
-/// only needs discovery-proven OAuth presence until an entitlement endpoint
-/// lands.
-fn gemini_profile_identity(reader: &dyn ProfileCredentialReader, path: &Path) -> ProfileValidation {
-    let value = match read_json(reader, path) {
-        Ok(Some(value)) => value,
-        Ok(None) => return ProfileValidation::Missing,
-        Err(outcome) => return outcome,
-    };
-    let material = Some(Box::new(ProfileCredentialMaterial::Gemini {
-        creds_path: path.to_path_buf(),
-    }));
-    first_recursive_string(&value, &["email", "user_email", "user_id", "account"]).map_or(
-        ProfileValidation::Anonymous(material.clone()),
-        |label| ProfileValidation::Authenticated {
-            provider_id: None,
-            account_label: Some(label),
-            material,
-        },
-    )
-}
-
-/// Antigravity identity is the host Keychain grant singleton, probed for
-/// presence only: the CLI owns the secret, so any payload is ignored and no
-/// identity label is extracted. Grant present → anonymous binding with
-/// refresh material; absent/denied propagates truthfully.
-fn antigravity_profile_identity(reader: &dyn ProfileCredentialReader) -> ProfileValidation {
-    match reader.read_antigravity_keychain() {
-        ProfileReadOutcome::Bytes(_) => {
-            ProfileValidation::Anonymous(Some(Box::new(ProfileCredentialMaterial::Antigravity)))
-        }
-        ProfileReadOutcome::Missing => ProfileValidation::Missing,
-        ProfileReadOutcome::Denied => ProfileValidation::Denied,
-        ProfileReadOutcome::ConsentRequired => ProfileValidation::ConsentRequired,
-    }
-}
-
-/// Muse identity comes from `auth.json` (`providers.meta.user_email`),
-/// verified locally; the secret itself stays in the host Keychain.
-fn muse_profile_identity(reader: &dyn ProfileCredentialReader, path: &Path) -> ProfileValidation {
-    let value = match read_json(reader, path) {
-        Ok(Some(value)) => value,
-        Ok(None) => return ProfileValidation::Missing,
-        Err(outcome) => return outcome,
-    };
-    let label = value
-        .pointer("/providers/meta/user_email")
-        .or_else(|| value.pointer("/providers/meta/user_full_name"))
-        .and_then(serde_json::Value::as_str)
-        .map(str::trim)
-        .filter(|label| !label.is_empty())
-        .map(str::to_owned);
-    match label {
-        Some(label) => ProfileValidation::Authenticated {
-            provider_id: None,
-            account_label: Some(label),
-            material: None,
-        },
-        None => ProfileValidation::Anonymous(None),
-    }
-}
-
-fn opencode_profile_identity(
-    reader: &dyn ProfileCredentialReader,
-    path: &Path,
-) -> ProfileValidation {
-    match reader.read(path) {
-        ProfileReadOutcome::Missing => {
-            if path
-                .parent()
-                .map(|parent| parent.join("opencode.db"))
-                .is_some_and(|database| reader.exists(&database))
-            {
-                // Database-only OpenCode stores have no materializable auth
-                // source. Do not advertise a usage profile until the database
-                // credential identity can be carried through launch binding.
-                ProfileValidation::Malformed
-            } else {
-                ProfileValidation::Missing
-            }
-        }
-        ProfileReadOutcome::Denied => ProfileValidation::Denied,
-        ProfileReadOutcome::ConsentRequired => ProfileValidation::ConsentRequired,
-        ProfileReadOutcome::Bytes(bytes) => {
-            let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
-                return ProfileValidation::Malformed;
-            };
-            let Some(entries) = value.as_object() else {
-                return ProfileValidation::Malformed;
-            };
-            if entries.len() != 1 {
-                return ProfileValidation::Malformed;
-            }
-            let entry = value.get("opencode-go");
-            let Some(entry) = entry else {
-                return ProfileValidation::Missing;
-            };
-            let kind = entry.get("type").and_then(serde_json::Value::as_str);
-            let key = entry
-                .get("key")
-                .and_then(serde_json::Value::as_str)
-                .map(str::trim)
-                .filter(|key| !key.is_empty());
-            if kind != Some("api") || key.is_none() {
-                return ProfileValidation::Malformed;
-            }
-            ProfileValidation::Anonymous(Some(Box::new(ProfileCredentialMaterial::OpenCode {
-                auth_path: path.to_path_buf(),
-            })))
-        }
-    }
-}
-
-fn claude_profile_identity(
-    reader: &dyn ProfileCredentialReader,
-    root: &Path,
-    operator_home: &Path,
-) -> ProfileValidation {
-    let mut paths = vec![root.join(".credentials.json"), root.join(".claude.json")];
-    if root == operator_home.join(".claude") {
-        paths.push(operator_home.join(".claude.json"));
-    }
-    let mut credential = None;
-    let mut account_label = None;
-    let mut organization_type = None;
-    for path in paths {
-        match read_json(reader, &path) {
-            Ok(Some(value)) => {
-                if credential.is_none() {
-                    credential = crate::usage::claude_oauth_from_value(&value);
-                }
-                if account_label.is_none() {
-                    account_label = crate::usage::claude_email_from_value(&value);
-                }
-                if organization_type.is_none() {
-                    organization_type = crate::usage::claude_organization_type_from_value(&value);
-                }
-            }
-            Ok(None) => {}
-            Err(ProfileValidation::Denied) => return ProfileValidation::Denied,
-            Err(ProfileValidation::ConsentRequired) => return ProfileValidation::ConsentRequired,
-            Err(_) => return ProfileValidation::Malformed,
-        }
-    }
-    if let Some(credential) = credential {
-        let is_anonymous = account_label.is_none() && credential.refresh_token.is_none();
-        let material = Some(Box::new(ProfileCredentialMaterial::Claude(
-            crate::usage::ClaudeResolved {
-                access_token: credential.access_token,
-                subscription_type: credential.subscription_type,
-                account_email: account_label.clone(),
-                organization_type,
-                credential_origin: "OAuth · configured profile".to_owned(),
-                is_anonymous,
-            },
-        )));
-        return account_label.map_or(ProfileValidation::Anonymous(material.clone()), |label| {
-            ProfileValidation::Authenticated {
-                provider_id: None,
-                account_label: Some(label),
-                material,
-            }
-        });
-    }
-    let current_dir = operator_home;
-    let Some(scope) = jackin_core::claude_keychain_scope(root, operator_home, current_dir) else {
-        return ProfileValidation::Malformed;
-    };
-    match reader.read_claude_keychain(&scope) {
-        ProfileReadOutcome::Bytes(bytes) => {
-            let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
-                return ProfileValidation::Malformed;
-            };
-            let Some(credential) = crate::usage::claude_oauth_from_value(&value) else {
-                return ProfileValidation::Malformed;
-            };
-            let account_label = crate::usage::claude_email_from_value(&value);
-            let is_anonymous = account_label.is_none() && credential.refresh_token.is_none();
-            let material = Some(Box::new(ProfileCredentialMaterial::Claude(
-                crate::usage::ClaudeResolved {
-                    access_token: credential.access_token,
-                    subscription_type: credential.subscription_type,
-                    account_email: account_label.clone(),
-                    organization_type: crate::usage::claude_organization_type_from_value(&value),
-                    credential_origin: "OAuth · configured profile".to_owned(),
-                    is_anonymous,
-                },
-            )));
-            account_label.map_or(ProfileValidation::Anonymous(material.clone()), |label| {
-                ProfileValidation::Authenticated {
-                    provider_id: None,
-                    account_label: Some(label),
-                    material,
-                }
-            })
-        }
-        ProfileReadOutcome::Missing => ProfileValidation::Missing,
-        ProfileReadOutcome::Denied => ProfileValidation::Denied,
-        ProfileReadOutcome::ConsentRequired => ProfileValidation::ConsentRequired,
-    }
-}
-
-fn codex_profile_identity(reader: &dyn ProfileCredentialReader, path: &Path) -> ProfileValidation {
-    let value = match read_json(reader, path) {
-        Ok(Some(value)) => value,
-        Ok(None) => return ProfileValidation::Missing,
-        Err(outcome) => return outcome,
-    };
-    let Some(credentials) = crate::usage::codex_oauth_from_value(&value) else {
-        return ProfileValidation::Malformed;
-    };
-    let material = Some(Box::new(ProfileCredentialMaterial::Codex {
-        credentials: credentials.clone(),
-        root: path.parent().unwrap_or_else(|| Path::new("")).to_path_buf(),
-    }));
-    if credentials.account_id.is_none() && credentials.account_label.is_none() {
-        ProfileValidation::Anonymous(material)
-    } else {
-        ProfileValidation::Authenticated {
-            provider_id: credentials.account_id,
-            account_label: credentials.account_label,
-            material,
-        }
-    }
-}
-
-fn amp_profile_identity(reader: &dyn ProfileCredentialReader, path: &Path) -> ProfileValidation {
-    let value = match read_json(reader, path) {
-        Ok(Some(value)) => value,
-        Ok(None) => return ProfileValidation::Missing,
-        Err(outcome) => return outcome,
-    };
-    let Some(object) = value.as_object() else {
-        return ProfileValidation::Malformed;
-    };
-    let labeled = object.iter().find_map(|(key, value)| {
-        let label = key.strip_prefix("apiKey@")?.trim();
-        let secret = value.as_str()?.trim();
-        (!label.is_empty() && !secret.is_empty()).then(|| (label.to_owned(), secret.to_owned()))
-    });
-    let fallback_key = object.values().find_map(|value| {
-        value
-            .as_str()
-            .map(str::trim)
-            .filter(|secret| !secret.is_empty())
-            .map(str::to_owned)
-    });
-    let Some(key) = labeled
-        .as_ref()
-        .map(|(_, key)| key.clone())
-        .or(fallback_key)
-    else {
-        return ProfileValidation::Malformed;
-    };
-    let material = Some(Box::new(ProfileCredentialMaterial::Amp { key }));
-    labeled.map_or(
-        ProfileValidation::Anonymous(material.clone()),
-        |(label, _)| ProfileValidation::Authenticated {
-            provider_id: None,
-            account_label: Some(label),
-            material,
-        },
-    )
-}
-
-fn grok_profile_identity(reader: &dyn ProfileCredentialReader, path: &Path) -> ProfileValidation {
-    let value = match read_json(reader, path) {
-        Ok(Some(value)) => value,
-        Ok(None) => return ProfileValidation::Missing,
-        Err(outcome) => return outcome,
-    };
-    let material = Some(Box::new(ProfileCredentialMaterial::Grok {
-        auth_path: path.to_path_buf(),
-    }));
-    first_recursive_string(&value, &["email", "user_id", "team_id"]).map_or(
-        ProfileValidation::Anonymous(material.clone()),
-        |label| ProfileValidation::Authenticated {
-            provider_id: None,
-            account_label: Some(label),
-            material,
-        },
-    )
-}
-
-fn read_json(
-    reader: &dyn ProfileCredentialReader,
-    path: &Path,
-) -> Result<Option<serde_json::Value>, ProfileValidation> {
-    match reader.read(path) {
-        ProfileReadOutcome::Bytes(bytes) => serde_json::from_slice(&bytes)
-            .map(Some)
-            .map_err(|_| ProfileValidation::Malformed),
-        ProfileReadOutcome::Missing => Ok(None),
-        ProfileReadOutcome::Denied => Err(ProfileValidation::Denied),
-        ProfileReadOutcome::ConsentRequired => Err(ProfileValidation::ConsentRequired),
-    }
-}
-
-fn first_recursive_string(value: &serde_json::Value, keys: &[&str]) -> Option<String> {
-    match value {
-        serde_json::Value::Object(map) => {
-            for key in keys {
-                if let Some(found) = map
-                    .get(*key)
-                    .and_then(serde_json::Value::as_str)
-                    .map(str::trim)
-                    .filter(|found| !found.is_empty())
-                {
-                    return Some(found.to_owned());
-                }
-            }
-            map.values()
-                .find_map(|nested| first_recursive_string(nested, keys))
-        }
-        serde_json::Value::Array(values) => values
-            .iter()
-            .find_map(|nested| first_recursive_string(nested, keys)),
-        _ => None,
-    }
-}
-
-pub(super) fn refresh_credential_binding(
-    binding: &ValidatedCredentialBinding,
-    env_resolver: &dyn ProviderCredentialEnvResolver,
-) -> ProviderCredentialRefreshOutcome {
-    let (view, rate_limit) = match &binding.source {
-        ValidatedCredentialSource::Env {
-            handle,
-            dispatch_key,
-            ..
-        } => {
-            return env_resolver.refresh_provider_credential(binding.surface, dispatch_key, handle);
-        }
-        ValidatedCredentialSource::Capability => {
-            return ProviderCredentialRefreshOutcome::Malformed;
-        }
-        // Deliberate no-poll, never a provider outage: the honest
-        // `Unsupported` view flows through the success path, outside
-        // retry/backoff.
-        ValidatedCredentialSource::Unpollable => (
-            crate::usage::unpollable_snapshot(
-                binding.surface.agent_slug(),
-                binding.surface.provider_label(),
-                chrono::Utc::now().timestamp(),
-            ),
-            None,
-        ),
-        ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Claude(resolved)) => {
-            crate::usage::claude_view_from_wave_with_rate_limit(
-                binding.surface.agent_slug(),
-                binding.surface.provider_label(),
-                chrono::Utc::now().timestamp(),
-                crate::usage::ClaudeWaveResolution::Resolved(Box::new(resolved.clone())),
-            )
-        }
-        ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Codex {
-            credentials,
-            root,
-        }) => crate::usage::codex_profile_snapshot_with_rate_limit(
-            binding.surface.agent_slug(),
-            credentials,
-            root,
-            chrono::Utc::now().timestamp(),
-        ),
-        ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Amp { key }) => (
-            crate::usage::amp_api_key_snapshot(
-                binding.surface.agent_slug(),
-                key,
-                chrono::Utc::now().timestamp(),
-            ),
-            None,
-        ),
-        ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Grok { auth_path }) => {
-            let now = chrono::Utc::now().timestamp();
-            let result = crate::usage::fetch_grok_rest_billing(auth_path, now)
-                .map(|response| crate::usage::GrokBillingSnapshot::Rest(Box::new(response)));
-            crate::usage::grok_snapshot_from_rpc_result_with_rate_limit(
-                binding.surface.agent_slug(),
-                now,
-                auth_path,
-                true,
-                false,
-                false,
-                result,
-            )
-        }
-        ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Kimi { token }) => {
-            let now = chrono::Utc::now().timestamp();
-            (
-                crate::usage::kimi_snapshot(
-                    binding.surface.agent_slug(),
-                    Some(token.as_str()),
-                    now,
-                ),
-                None,
-            )
-        }
-        ValidatedCredentialSource::Profile(ProfileCredentialMaterial::OpenCode { auth_path }) => (
-            crate::usage::opencode_profile_snapshot(
-                binding.surface.agent_slug(),
-                auth_path,
-                chrono::Utc::now().timestamp(),
-            ),
-            None,
-        ),
-        ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Cursor { auth_path }) => (
-            crate::usage::cursor_profile_snapshot(
-                binding.surface.agent_slug(),
-                auth_path,
-                chrono::Utc::now().timestamp(),
-            ),
-            None,
-        ),
-        ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Gemini { creds_path }) => {
-            // Re-prove OAuth presence at refresh: a file deleted after
-            // discovery is NeedsSecret, never a stale Unsupported.
-            let has_oauth = creds_path.is_file();
-            (
-                crate::usage::gemini_snapshot_with_presence(
-                    binding.surface.agent_slug(),
-                    binding.surface.provider_label(),
-                    has_oauth,
-                    false,
-                    "OAuth · configured profile",
-                    chrono::Utc::now().timestamp(),
-                ),
-                None,
-            )
-        }
-        // The Keychain grant needs no secret material here: `agy` owns the
-        // grant and the collector shells out to it.
-        ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Antigravity) => (
-            crate::usage::antigravity_snapshot(
-                binding.surface.agent_slug(),
-                binding.surface.provider_label(),
-                chrono::Utc::now().timestamp(),
-            ),
-            None,
-        ),
-    };
-    ProviderCredentialRefreshOutcome::Snapshot {
-        view: Box::new(view),
-        rate_limit,
-    }
-}
-
-impl HostUsageRuntime {
-    /// Run one fresh, read-only discovery scan. A failed scan returns `None`
-    /// and never hands stale credentials back to broker rotation.
-    pub fn stage_discovery(
-        &mut self,
-        resolver: &dyn ProviderCredentialEnvResolver,
-    ) -> Result<Option<StagedUsageDiscovery>, String> {
-        self.require_open()?;
-        let Some(scope) = self.discovery_scope.clone() else {
-            return Ok(None);
-        };
-        resolver.begin_manual_retry();
-        let Ok(catalog) = discover_usage_sources(&scope, resolver) else {
-            self.push_event(
-                "discovery_failed",
-                None,
-                Some("current account discovery unavailable".to_owned()),
-            );
-            return Ok(None);
-        };
-        let discovered = validate_usage_sources(catalog, resolver);
-        let changed = self.discovery.as_ref().is_none_or(|current| {
-            super::broker::usage_catalog_entries(current)
-                != super::broker::usage_catalog_entries(&discovered)
-        });
-        Ok(Some(StagedUsageDiscovery {
-            base_generation: self.discovery_generation,
-            changed,
-            discovery: discovered,
-        }))
-    }
-
-    /// Commit a successful discovery stage after broker activation. The local
-    /// generation fence rejects an older scan even when its catalog revision
-    /// string happens to match the newer scan.
-    pub fn commit_staged_discovery(
-        &mut self,
-        staged: StagedUsageDiscovery,
-    ) -> Result<bool, String> {
-        self.require_open()?;
-        if staged.base_generation != self.discovery_generation {
-            return Err("stale usage discovery stage".to_owned());
-        }
-        if !staged.changed {
-            self.push_event("discovery_reconciled", None, Some("unchanged".to_owned()));
-            return Ok(false);
-        }
-        let current = discovered_account_keys(Some(&staged.discovery));
-        self.discovery = Some(staged.discovery);
-        self.discovery_generation = self.discovery_generation.saturating_add(1);
-        self.discovered_views.retain(|key, _| current.contains(key));
-        let active = self
-            .broker_phases
-            .iter()
-            .filter(|(_, phase)| phase.is_active())
-            .map(|(capability, _)| capability.clone())
-            .collect::<Vec<_>>();
-        self.broker_phases.clear();
-        self.broker_generations.clear();
-        for capability in active {
-            self.push_event(
-                "broker_phase_changed",
-                Some(&capability.surface_id),
-                Some("failed".to_owned()),
-            );
-        }
-        self.push_event("discovery_reconciled", None, Some("changed".to_owned()));
-        Ok(true)
-    }
-
-    /// Rescan the retained Rust discovery scope without dispatching provider probes.
-    ///
-    /// This is the manual-refresh reconciliation boundary used before broker
-    /// capabilities are rebuilt. The prior validated generation remains usable
-    /// when the read-only config scan is unavailable.
-    pub fn reconcile_discovery(
-        &mut self,
-        resolver: &dyn ProviderCredentialEnvResolver,
-    ) -> Result<bool, String> {
-        let Some(staged) = self.stage_discovery(resolver)? else {
-            return Ok(false);
-        };
-        self.commit_staged_discovery(staged)
-    }
-
-    pub(super) fn record_discovered_snapshot(
-        &mut self,
-        binding: &ValidatedCredentialBinding,
-        mut view: FocusedUsageView,
-    ) {
-        let identity = binding.identity.clone().or_else(|| {
-            CanonicalAccountIdentity::from_view(binding.surface, &view).map(|_| {
-                CanonicalAccountIdentity::source_capability(binding.surface, &binding.capability_id)
-            })
-        });
-        let Some(identity) = identity else {
-            let error = view.last_error.clone();
-            let kind = if error.is_some() {
-                "probe_failed"
-            } else {
-                "snapshot_updated"
-            };
-            self.discovered_provider_views.insert(binding.surface, view);
-            self.push_event(kind, Some(binding.surface.id()), error);
-            return;
-        };
-        if view.account.account_label.trim().is_empty()
-            && let Some(account) = self.discovery.as_ref().and_then(|discovery| {
-                discovery
-                    .accounts
-                    .iter()
-                    .find(|account| account.identity == identity)
-            })
-        {
-            view.account.account_label = account.account_label.clone();
-        }
-        let account_key = identity.account_key();
-        self.discovered_views
-            .insert((binding.surface, account_key.clone()), view);
-        self.discovered_provider_views.remove(&binding.surface);
-        self.ensure_discovered_account(identity, account_key, binding);
-        self.push_event("snapshot_updated", Some(binding.surface.id()), None);
-    }
-
-    fn ensure_discovered_account(
-        &mut self,
-        identity: CanonicalAccountIdentity,
-        account_key: String,
-        binding: &ValidatedCredentialBinding,
-    ) {
-        let Some(discovery) = &mut self.discovery else {
-            return;
-        };
-        if let Some(account) = discovery
-            .accounts
-            .iter_mut()
-            .find(|account| account.identity == identity)
-        {
-            account
-                .provenance
-                .extend(binding.provenance.iter().cloned());
-            account.provenance.sort();
-            account.provenance.dedup();
-            if !account.source_ids.contains(&binding.source_id) {
-                account.source_ids.push(binding.source_id.clone());
-                account.source_ids.sort();
-            }
-            return;
-        }
-        let Some(view) = self
-            .discovered_views
-            .get(&(binding.surface, account_key.clone()))
-        else {
-            return;
-        };
-        discovery.accounts.push(DiscoveredAccountDescriptor {
-            surface_id: binding.surface.id().to_owned(),
-            account_key,
-            account_label: view.account.account_label.clone(),
-            provenance: binding.provenance.iter().cloned().collect(),
-            source_ids: vec![binding.source_id.clone()],
-            identity,
-        });
-    }
 }
 
 #[cfg(test)]

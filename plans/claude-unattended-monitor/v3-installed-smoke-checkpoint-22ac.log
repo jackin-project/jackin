@@ -1,0 +1,378 @@
+fixture_root=/tmp/jkin-installed-smoke-t4b3ujf8
+provenance_manifest_source_commit=22ac3581a70310b9792f03d71168ee8bdd799591
+provenance_manifest_sha256=3982ae357883ec5e67ab586790dc1b195024290e4731e9f963dbbb8555381738
+installed_jackin_sha256=7f7d99960351b1da8fe3da9cd6ac35d577261bcdc42325a40d5e2d146d2d8225
+installed_broker_sha256=b74c9cae283f454fcffe6b5c13e6fd498017fec3d808c97a8aeba72ea7f5bcc0
+JACKIN_USAGE_BROKER_BIN=unset
+[jackin-version] jackin 0.6.4
+[broker-version] jackin-usage-broker 0.6.4
+[usage-help] exit=0
+   jackin❯
+
+
+Read cached usage and quota data from a running Capsule daemon
+
+Usage: jackin usage [OPTIONS] [INSTANCE] [COMMAND]
+
+Commands:
+  accounts    Show cached provider account/quota buckets
+  verify      Verify all provider quota rows are present and trusted
+  doctor      Run passive readiness checks without accessing credentials or providers
+  service     Manage the local usage broker
+  monitor     Manage an unattended quota monitor
+  binding     Confirm a local monitor-account to source-scope mapping for quota monitoring
+  policy      Approve a durable quota-monitor policy for a bound account and goal
+  status      Read the status of a durable monitor
+  refresh     Reconcile a monitor against local evidence without provider refresh
+  watch       Stream new monitor events as JSON Lines
+  wait        Wait for runnable evidence for a bounded time
+  statusline  Ingest or compose Claude Code statusline integration
+  spend       Record an explicit account-bound spend baseline
+  auth        Prepare provider authentication in an attached terminal
+
+Arguments:
+  [INSTANCE]
+          Instance name for Capsule account inspection, or `cache` for the host account cache
+
+Options:
+      --format <FORMAT>
+          Output format
+
+          [default: human]
+
+      --data-dir <PATH>
+          Use an isolated jackin data directory for this usage operation
+
+      --debug
+          Print raw container output for troubleshooting.
+
+          Global flag: accepted before or after any subcommand. Also enabled by setting `JACKIN_DEBUG=1` in the environment.
+
+          [env: JACKIN_DEBUG=]
+
+  -h, --help
+          Print help (see a summary with '-h')
+[monitor-start-help] exit=0
+Start dispatch guard using an already approved policy
+
+Usage: jackin usage monitor start [OPTIONS] --provider <PROVIDER> --binding <ID> --binding-revision <REVISION> --goal <ID> --policy-revision <REVISION> --idempotency-key <KEY>
+
+Options:
+      --provider <PROVIDER>
+          [possible values: claude]
+
+      --binding <ID>
+
+
+      --binding-revision <REVISION>
+
+
+      --goal <ID>
+
+
+      --policy-revision <REVISION>
+
+
+      --idempotency-key <KEY>
+
+
+      --session <ID>
+
+
+      --expected-model <MODEL>
+
+
+      --format <FORMAT>
+          Output format
+
+          [default: human]
+
+      --data-dir <PATH>
+          Use an isolated jackin data directory for this usage operation
+
+      --debug
+          Print raw container output for troubleshooting.
+
+          Global flag: accepted before or after any subcommand. Also enabled by setting `JACKIN_DEBUG=1` in the environment.
+
+          [env: JACKIN_DEBUG=]
+
+  -h, --help
+          Print help (see a summary with '-h')
+[monitor-observe-help] exit=0
+Start an observation-only monitor and the broker if needed
+
+Usage: jackin usage monitor observe [OPTIONS] --provider <PROVIDER> --idempotency-key <KEY>
+
+Options:
+      --provider <PROVIDER>
+          [possible values: claude]
+
+      --session <ID>
+          Unbound observer scope. If omitted, pass `--binding` and its revision
+
+      --binding <ID>
+          Previously confirmed account binding
+
+      --binding-revision <REVISION>
+
+
+      --idempotency-key <KEY>
+
+
+      --expected-model <MODEL>
+
+
+      --experimental-collector
+          Opt into the experimental collector for a bound account (undocumented endpoint, Jackin identity); policy is unchanged
+
+      --format <FORMAT>
+          Output format
+
+          [default: human]
+
+      --data-dir <PATH>
+          Use an isolated jackin data directory for this usage operation
+
+      --debug
+          Print raw container output for troubleshooting.
+
+          Global flag: accepted before or after any subcommand. Also enabled by setting `JACKIN_DEBUG=1` in the environment.
+
+          [env: JACKIN_DEBUG=]
+
+  -h, --help
+          Print help (see a summary with '-h')
+[auth-prepare-help] exit=0
+Explicitly request interactive authentication preparation
+
+Usage: jackin usage auth prepare [OPTIONS] --provider <PROVIDER>
+
+Options:
+      --provider <PROVIDER>
+          [possible values: claude]
+
+      --keychain-service <SERVICE>
+          Explicit Claude Keychain generic-password service name
+
+      --format <FORMAT>
+          Output format
+
+          [default: human]
+
+      --data-dir <PATH>
+          Use an isolated jackin data directory for this usage operation
+
+      --debug
+          Print raw container output for troubleshooting.
+
+          Global flag: accepted before or after any subcommand. Also enabled by setting `JACKIN_DEBUG=1` in the environment.
+
+          [env: JACKIN_DEBUG=]
+
+  -h, --help
+          Print help (see a summary with '-h')
+[binding-confirm-help] exit=0
+Confirm that one local account label represents the selected provider account
+
+Usage: jackin usage binding confirm [OPTIONS] --provider <PROVIDER> --account <ACCOUNT> --operator-label <LABEL> --confirm
+
+Options:
+      --provider <PROVIDER>
+          [possible values: claude]
+
+      --account <ACCOUNT>
+
+
+      --provider-account <CANONICAL_LOCAL_ID>
+          Canonical local provider source-scope account ID to bind
+
+      --approve-experimental-collector
+          Approve the mapped source for the undocumented experimental Claude collector
+
+      --operator-label <LABEL>
+
+
+      --confirm
+          Confirm this operator-supplied account binding
+
+      --format <FORMAT>
+          Output format
+
+          [default: human]
+
+      --data-dir <PATH>
+          Use an isolated jackin data directory for this usage operation
+
+      --debug
+          Print raw container output for troubleshooting.
+
+          Global flag: accepted before or after any subcommand. Also enabled by setting `JACKIN_DEBUG=1` in the environment.
+
+          [env: JACKIN_DEBUG=]
+
+  -h, --help
+          Print help (see a summary with '-h')
+[statusline-ingest-help] exit=0
+Ingest one bounded JSON document from stdin
+
+Usage: jackin usage statusline ingest [OPTIONS]
+
+Options:
+      --session-only
+          Ingest this callback only under its session ID from the JSON payload
+
+      --binding <ID>
+          Previously confirmed account binding
+
+      --binding-revision <REVISION>
+
+
+      --format <FORMAT>
+          Output format
+
+          [default: human]
+
+      --data-dir <PATH>
+          Use an isolated jackin data directory for this usage operation
+
+      --debug
+          Print raw container output for troubleshooting.
+
+          Global flag: accepted before or after any subcommand. Also enabled by setting `JACKIN_DEBUG=1` in the environment.
+
+          [env: JACKIN_DEBUG=]
+
+  -h, --help
+          Print help (see a summary with '-h')
+[statusline-compose-help] exit=0
+Print a statusLine-only JSON merge patch; merge it into settings without replacing the file
+
+Usage: jackin usage statusline compose [OPTIONS] --settings <PATH>
+
+Options:
+      --settings <PATH>
+
+
+      --session-only
+          Ingest this callback only under its session ID from the JSON payload
+
+      --binding <ID>
+          Previously confirmed account binding
+
+      --binding-revision <REVISION>
+
+
+      --format <FORMAT>
+          Output format
+
+          [default: human]
+
+      --data-dir <PATH>
+          Use an isolated jackin data directory for this usage operation
+
+      --debug
+          Print raw container output for troubleshooting.
+
+          Global flag: accepted before or after any subcommand. Also enabled by setting `JACKIN_DEBUG=1` in the environment.
+
+          [env: JACKIN_DEBUG=]
+
+  -h, --help
+          Print help (see a summary with '-h')
+[headless-auth-prepare] exit=2
+{"version":1,"error":{"code":"interaction_required","message":"authentication preparation requires stdin, stdout, and stderr attached to a terminal"}}
+[headless-binding-confirm] exit=2
+{"version":1,"error":{"code":"interaction_required","message":"binding confirmation and policy approval require attached stdin, stdout, and stderr terminals"}}
+[headless-policy-approve] exit=2
+{"version":1,"error":{"code":"interaction_required","message":"binding confirmation and policy approval require attached stdin, stdout, and stderr terminals"}}
+[unbound-experimental-collector-rejected] exit=3
+{"version":1,"error":{"code":"invalid_argument","message":"the experimental collector requires an account-bound observer"}}
+[bare-usage-before-service] exit=3
+{"version":1,"error":{"code":"broker_unavailable","message":"cached usage projection is unavailable (UsageCoordinationError { kind: Unavailable, message: \"usage broker is unavailable\" })"}}
+[service-start] exit=0
+{"result":"service_status","status":{"running":true,"experimental_collector_source":null,"active_monitors":0,"next_wake_epoch":null}}
+broker_process_id=44890
+broker_process_executable=/Users/donbeave/.local/share/jackin-claude-monitor-v3/bin/jackin-usage-broker
+broker_process_selection=verified exact installed sibling invocation
+[doctor] exit=0
+{"result":"doctor","report":{"provider":"claude","broker_available":true,"statusline_ingress_supported":true,"auth_state":"unknown","issues":[{"code":"auth_status_unknown","message":"authentication was not inspected by this passive check","retry_at_epoch":null}]}}
+[doctor-repeat-1] exit=0
+{"result":"doctor","report":{"provider":"claude","broker_available":true,"statusline_ingress_supported":true,"auth_state":"unknown","issues":[{"code":"auth_status_unknown","message":"authentication was not inspected by this passive check","retry_at_epoch":null}]}}
+[doctor-repeat-2] exit=0
+{"result":"doctor","report":{"provider":"claude","broker_available":true,"statusline_ingress_supported":true,"auth_state":"unknown","issues":[{"code":"auth_status_unknown","message":"authentication was not inspected by this passive check","retry_at_epoch":null}]}}
+[bare-usage-current-projection] exit=0
+{
+  "schema_version": 1,
+  "projection_id": "0.6.4:empty",
+  "generated_at_epoch": 1791623570,
+  "discovery_revision": "empty",
+  "broker_instance_id": "sha256:54d31079dfac03df6795ed65c805ae6158e343ae6e1b78db7140ab8d3ed5fbaa",
+  "broker_generation": 0,
+  "refresh_state": "idle",
+  "providers": [],
+  "unresolved": [],
+  "issues": []
+}
+[passive-service-status] exit=0
+{"result":"service_status","status":{"running":true,"experimental_collector_source":null,"active_monitors":0,"next_wake_epoch":null}}
+[monitor-observe] exit=0
+{"result":"started","status":{"schema_version":4,"monitor_id":"monitor-00000001","provider":"claude","purpose":"observe_only","scope":{"scope":"session","session_id":"installed-proof-session"},"account_id":null,"goal_id":null,"session_id":"installed-proof-session","claude_code_version":null,"policy":null,"expected_model":"claude-sonnet-4-5","model":null,"model_evidence":null,"model_guard_validity":"unknown","lifecycle":"needs_evidence","readiness":{"tracking":"waiting","quota":"unknown","budget":"unknown","dispatch":"not_authorized"},"runnable":false,"five_hour":{"used_percentage_basis_points":null,"used_evidence":null,"reset_at_epoch":null,"reset_validity":"unknown","reset_evidence":null},"seven_day":{"used_percentage_basis_points":null,"used_evidence":null,"reset_at_epoch":null,"reset_validity":"unknown","reset_evidence":null},"budget":null,"cumulative_goal_spend":null,"spend_period_baseline":null,"evidence":[],"latest_decision":{"sequence":1,"decided_at_epoch":1791623570,"evidence_sequences":[],"actions":[]},"updated_at_epoch":1791623570,"issues":[{"code":"quota_unknown","message":"fresh quota utilization evidence is unavailable","retry_at_epoch":null},{"code":"missing_reset","message":"fresh quota reset evidence is unavailable","retry_at_epoch":null},{"code":"model_unknown","message":"model evidence is unavailable or its session context has expired","retry_at_epoch":null}]}}
+[statusline-compose-session-only] exit=0
+{
+  "statusLine": {
+    "command": "sh -c 'if command -v python3 >/dev/null 2>&1; then python3 -I -S -c \"$1\" \"$2\" \"$3\" \"$4\" \"$5\" \"$6\" \"$7\"; else \"${SHELL:-/bin/sh}\" -c \"$2\"; fi' jackin-statusline '\nimport os\nimport subprocess\nimport sys\nimport threading\n\nMAX_INPUT_BYTES = 16384\nCAPTURE_LIMIT = MAX_INPUT_BYTES + 1\nlegacy_command, jackin_binary, scope_mode, binding_id, binding_revision, data_dir = sys.argv[1:7]\nshell_path = os.environ.get(\"SHELL\") or \"/bin/sh\"\n\ntry:\n    legacy = subprocess.Popen(\n        [shell_path, \"-c\", legacy_command],\n        stdin=subprocess.PIPE,\n        bufsize=0,\n    )\nexcept OSError:\n    sys.exit(127)\n\ncaptured = bytearray()\nforward_to_legacy = True\n\ndef relay_input():\n    global forward_to_legacy\n    while True:\n        chunk = sys.stdin.buffer.read(8192)\n        if not chunk:\n            break\n        remaining = CAPTURE_LIMIT - len(captured)\n        if remaining > 0:\n            captured.extend(chunk[:remaining])\n        if forward_to_legacy:\n            view = memoryview(chunk)\n            while view:\n                try:\n                    written = legacy.stdin.write(view)\n                    if written is None or written <= 0:\n                        raise BrokenPipeError()\n                    view = view[written:]\n                except (BrokenPipeError, OSError):\n                    forward_to_legacy = False\n                    break\n    if forward_to_legacy:\n        try:\n            legacy.stdin.close()\n        except (BrokenPipeError, OSError):\n            pass\n\nrelay = threading.Thread(target=relay_input)\nrelay.start()\nlegacy_status = legacy.wait()\nrelay.join()\nif legacy_status != 0:\n    sys.exit(legacy_status if legacy_status > 0 else 128 - legacy_status)\n\nif len(captured) <= MAX_INPUT_BYTES:\n    if scope_mode == \"session-only\":\n        scope_args = [\"--session-only\"]\n    else:\n        scope_args = [\"--binding\", binding_id, \"--binding-revision\", binding_revision]\n    try:\n        subprocess.run(\n            [\n                jackin_binary,\n                \"usage\",\n                \"statusline\",\n                \"ingest\",\n                *scope_args,\n                \"--format\",\n                \"json\",\n                \"--data-dir\",\n                data_dir,\n            ],\n            input=bytes(captured),\n            stdout=subprocess.DEVNULL,\n            stderr=subprocess.DEVNULL,\n            timeout=2,\n            check=False,\n        )\n    except (OSError, subprocess.TimeoutExpired):\n        pass\nsys.exit(0)\n' 'printf existing' '/Users/donbeave/.local/share/jackin-claude-monitor-v3/bin/jackin' 'session-only' '' '' '/tmp/jkin-installed-smoke-t4b3ujf8/data'",
+    "type": "command"
+  }
+}
+[monitor-observe-idempotent-repeat] exit=0
+{"result":"started","status":{"schema_version":4,"monitor_id":"monitor-00000001","provider":"claude","purpose":"observe_only","scope":{"scope":"session","session_id":"installed-proof-session"},"account_id":null,"goal_id":null,"session_id":"installed-proof-session","claude_code_version":null,"policy":null,"expected_model":"claude-sonnet-4-5","model":null,"model_evidence":null,"model_guard_validity":"unknown","lifecycle":"needs_evidence","readiness":{"tracking":"waiting","quota":"unknown","budget":"unknown","dispatch":"not_authorized"},"runnable":false,"five_hour":{"used_percentage_basis_points":null,"used_evidence":null,"reset_at_epoch":null,"reset_validity":"unknown","reset_evidence":null},"seven_day":{"used_percentage_basis_points":null,"used_evidence":null,"reset_at_epoch":null,"reset_validity":"unknown","reset_evidence":null},"budget":null,"cumulative_goal_spend":null,"spend_period_baseline":null,"evidence":[],"latest_decision":{"sequence":1,"decided_at_epoch":1791623570,"evidence_sequences":[],"actions":[]},"updated_at_epoch":1791623570,"issues":[{"code":"quota_unknown","message":"fresh quota utilization evidence is unavailable","retry_at_epoch":null},{"code":"missing_reset","message":"fresh quota reset evidence is unavailable","retry_at_epoch":null},{"code":"model_unknown","message":"model evidence is unavailable or its session context has expired","retry_at_epoch":null}]}}
+[statusline-ingest-session-only] exit=0
+{"result":"ingested","scope":{"scope":"session","session_id":"installed-proof-session"},"account_id":null,"session_id":"installed-proof-session","evidence_sequence":1}
+[observer-status] exit=2
+{"result":"status","status":{"schema_version":4,"monitor_id":"monitor-00000001","provider":"claude","purpose":"observe_only","scope":{"scope":"session","session_id":"installed-proof-session"},"account_id":null,"goal_id":null,"session_id":"installed-proof-session","claude_code_version":"2.1.80","policy":null,"expected_model":"claude-sonnet-4-5","model":"claude-sonnet-4-5","model_evidence":{"evidence_sequence":1,"evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":1,"freshness":"current"},"model_guard_validity":"match","lifecycle":"active","readiness":{"tracking":"ready","quota":"ready","budget":"unknown","dispatch":"not_authorized"},"runnable":false,"five_hour":{"used_percentage_basis_points":1234,"used_evidence":{"evidence_sequence":2,"evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":1,"freshness":"current"},"reset_at_epoch":1791627170,"reset_validity":"future","reset_evidence":{"evidence_sequence":3,"evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":1,"freshness":"current"}},"seven_day":{"used_percentage_basis_points":850,"used_evidence":{"evidence_sequence":4,"evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":1,"freshness":"current"},"reset_at_epoch":1791630770,"reset_validity":"future","reset_evidence":{"evidence_sequence":5,"evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":1,"freshness":"current"}},"budget":null,"cumulative_goal_spend":null,"spend_period_baseline":null,"evidence":[{"sequence":1,"account_id":null,"session_id":"installed-proof-session","claude_code_version":"2.1.80","source":"statusline","evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":1,"value":{"kind":"model","model":"claude-sonnet-4-5"}},{"sequence":2,"account_id":null,"session_id":"installed-proof-session","claude_code_version":"2.1.80","source":"statusline","evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":1,"value":{"kind":"quota_used_percentage","window":"five_hour","used_percentage_basis_points":1234}},{"sequence":3,"account_id":null,"session_id":"installed-proof-session","claude_code_version":"2.1.80","source":"statusline","evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":1,"value":{"kind":"quota_reset","window":"five_hour","reset_at_epoch":1791627170}},{"sequence":4,"account_id":null,"session_id":"installed-proof-session","claude_code_version":"2.1.80","source":"statusline","evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":1,"value":{"kind":"quota_used_percentage","window":"seven_day","used_percentage_basis_points":850}},{"sequence":5,"account_id":null,"session_id":"installed-proof-session","claude_code_version":"2.1.80","source":"statusline","evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":1,"value":{"kind":"quota_reset","window":"seven_day","reset_at_epoch":1791630770}}],"latest_decision":{"sequence":2,"decided_at_epoch":1791623570,"evidence_sequences":[1,2,3,4,5],"actions":[]},"updated_at_epoch":1791623570,"issues":[]}}
+[observer-status-repeat-1] exit=2
+{"result":"status","status":{"schema_version":4,"monitor_id":"monitor-00000001","provider":"claude","purpose":"observe_only","scope":{"scope":"session","session_id":"installed-proof-session"},"account_id":null,"goal_id":null,"session_id":"installed-proof-session","claude_code_version":"2.1.80","policy":null,"expected_model":"claude-sonnet-4-5","model":"claude-sonnet-4-5","model_evidence":{"evidence_sequence":1,"evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":1,"freshness":"current"},"model_guard_validity":"match","lifecycle":"active","readiness":{"tracking":"ready","quota":"ready","budget":"unknown","dispatch":"not_authorized"},"runnable":false,"five_hour":{"used_percentage_basis_points":1234,"used_evidence":{"evidence_sequence":2,"evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":1,"freshness":"current"},"reset_at_epoch":1791627170,"reset_validity":"future","reset_evidence":{"evidence_sequence":3,"evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":1,"freshness":"current"}},"seven_day":{"used_percentage_basis_points":850,"used_evidence":{"evidence_sequence":4,"evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":1,"freshness":"current"},"reset_at_epoch":1791630770,"reset_validity":"future","reset_evidence":{"evidence_sequence":5,"evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":1,"freshness":"current"}},"budget":null,"cumulative_goal_spend":null,"spend_period_baseline":null,"evidence":[{"sequence":1,"account_id":null,"session_id":"installed-proof-session","claude_code_version":"2.1.80","source":"statusline","evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":1,"value":{"kind":"model","model":"claude-sonnet-4-5"}},{"sequence":2,"account_id":null,"session_id":"installed-proof-session","claude_code_version":"2.1.80","source":"statusline","evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":1,"value":{"kind":"quota_used_percentage","window":"five_hour","used_percentage_basis_points":1234}},{"sequence":3,"account_id":null,"session_id":"installed-proof-session","claude_code_version":"2.1.80","source":"statusline","evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":1,"value":{"kind":"quota_reset","window":"five_hour","reset_at_epoch":1791627170}},{"sequence":4,"account_id":null,"session_id":"installed-proof-session","claude_code_version":"2.1.80","source":"statusline","evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":1,"value":{"kind":"quota_used_percentage","window":"seven_day","used_percentage_basis_points":850}},{"sequence":5,"account_id":null,"session_id":"installed-proof-session","claude_code_version":"2.1.80","source":"statusline","evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":1,"value":{"kind":"quota_reset","window":"seven_day","reset_at_epoch":1791630770}}],"latest_decision":{"sequence":2,"decided_at_epoch":1791623570,"evidence_sequences":[1,2,3,4,5],"actions":[]},"updated_at_epoch":1791623570,"issues":[]}}
+[observer-status-repeat-2] exit=2
+{"result":"status","status":{"schema_version":4,"monitor_id":"monitor-00000001","provider":"claude","purpose":"observe_only","scope":{"scope":"session","session_id":"installed-proof-session"},"account_id":null,"goal_id":null,"session_id":"installed-proof-session","claude_code_version":"2.1.80","policy":null,"expected_model":"claude-sonnet-4-5","model":"claude-sonnet-4-5","model_evidence":{"evidence_sequence":1,"evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":1,"freshness":"current"},"model_guard_validity":"match","lifecycle":"active","readiness":{"tracking":"ready","quota":"ready","budget":"unknown","dispatch":"not_authorized"},"runnable":false,"five_hour":{"used_percentage_basis_points":1234,"used_evidence":{"evidence_sequence":2,"evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":1,"freshness":"current"},"reset_at_epoch":1791627170,"reset_validity":"future","reset_evidence":{"evidence_sequence":3,"evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":1,"freshness":"current"}},"seven_day":{"used_percentage_basis_points":850,"used_evidence":{"evidence_sequence":4,"evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":1,"freshness":"current"},"reset_at_epoch":1791630770,"reset_validity":"future","reset_evidence":{"evidence_sequence":5,"evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":1,"freshness":"current"}},"budget":null,"cumulative_goal_spend":null,"spend_period_baseline":null,"evidence":[{"sequence":1,"account_id":null,"session_id":"installed-proof-session","claude_code_version":"2.1.80","source":"statusline","evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":1,"value":{"kind":"model","model":"claude-sonnet-4-5"}},{"sequence":2,"account_id":null,"session_id":"installed-proof-session","claude_code_version":"2.1.80","source":"statusline","evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":1,"value":{"kind":"quota_used_percentage","window":"five_hour","used_percentage_basis_points":1234}},{"sequence":3,"account_id":null,"session_id":"installed-proof-session","claude_code_version":"2.1.80","source":"statusline","evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":1,"value":{"kind":"quota_reset","window":"five_hour","reset_at_epoch":1791627170}},{"sequence":4,"account_id":null,"session_id":"installed-proof-session","claude_code_version":"2.1.80","source":"statusline","evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":1,"value":{"kind":"quota_used_percentage","window":"seven_day","used_percentage_basis_points":850}},{"sequence":5,"account_id":null,"session_id":"installed-proof-session","claude_code_version":"2.1.80","source":"statusline","evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":1,"value":{"kind":"quota_reset","window":"seven_day","reset_at_epoch":1791630770}}],"latest_decision":{"sequence":2,"decided_at_epoch":1791623570,"evidence_sequences":[1,2,3,4,5],"actions":[]},"updated_at_epoch":1791623570,"issues":[]}}
+[watch] exit=0
+{"sequence":3,"occurred_at_epoch":1791623571,"status":{"schema_version":4,"monitor_id":"monitor-00000001","provider":"claude","purpose":"observe_only","scope":{"scope":"session","session_id":"installed-proof-session"},"account_id":null,"goal_id":null,"session_id":"installed-proof-session","claude_code_version":"2.1.80","policy":null,"expected_model":"claude-sonnet-4-5","model":"claude-sonnet-4-5","model_evidence":{"evidence_sequence":1,"evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":1,"freshness":"current"},"model_guard_validity":"match","lifecycle":"active","readiness":{"tracking":"ready","quota":"ready","budget":"unknown","dispatch":"not_authorized"},"runnable":false,"five_hour":{"used_percentage_basis_points":1234,"used_evidence":{"evidence_sequence":2,"evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":1,"freshness":"current"},"reset_at_epoch":1791627170,"reset_validity":"future","reset_evidence":{"evidence_sequence":3,"evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":1,"freshness":"current"}},"seven_day":{"used_percentage_basis_points":850,"used_evidence":{"evidence_sequence":4,"evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":1,"freshness":"current"},"reset_at_epoch":1791630770,"reset_validity":"future","reset_evidence":{"evidence_sequence":5,"evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":1,"freshness":"current"}},"budget":null,"cumulative_goal_spend":null,"spend_period_baseline":null,"evidence":[{"sequence":1,"account_id":null,"session_id":"installed-proof-session","claude_code_version":"2.1.80","source":"statusline","evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":1,"value":{"kind":"model","model":"claude-sonnet-4-5"}},{"sequence":2,"account_id":null,"session_id":"installed-proof-session","claude_code_version":"2.1.80","source":"statusline","evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":1,"value":{"kind":"quota_used_percentage","window":"five_hour","used_percentage_basis_points":1234}},{"sequence":3,"account_id":null,"session_id":"installed-proof-session","claude_code_version":"2.1.80","source":"statusline","evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":1,"value":{"kind":"quota_reset","window":"five_hour","reset_at_epoch":1791627170}},{"sequence":4,"account_id":null,"session_id":"installed-proof-session","claude_code_version":"2.1.80","source":"statusline","evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":1,"value":{"kind":"quota_used_percentage","window":"seven_day","used_percentage_basis_points":850}},{"sequence":5,"account_id":null,"session_id":"installed-proof-session","claude_code_version":"2.1.80","source":"statusline","evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":1,"value":{"kind":"quota_reset","window":"seven_day","reset_at_epoch":1791630770}}],"latest_decision":{"sequence":2,"decided_at_epoch":1791623570,"evidence_sequences":[1,2,3,4,5],"actions":[]},"updated_at_epoch":1791623570,"issues":[]}}
+[wait] exit=2
+{"result":"status","status":{"schema_version":4,"monitor_id":"monitor-00000001","provider":"claude","purpose":"observe_only","scope":{"scope":"session","session_id":"installed-proof-session"},"account_id":null,"goal_id":null,"session_id":"installed-proof-session","claude_code_version":"2.1.80","policy":null,"expected_model":"claude-sonnet-4-5","model":"claude-sonnet-4-5","model_evidence":{"evidence_sequence":1,"evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":3,"freshness":"current"},"model_guard_validity":"match","lifecycle":"active","readiness":{"tracking":"ready","quota":"ready","budget":"unknown","dispatch":"not_authorized"},"runnable":false,"five_hour":{"used_percentage_basis_points":1234,"used_evidence":{"evidence_sequence":2,"evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":3,"freshness":"current"},"reset_at_epoch":1791627170,"reset_validity":"future","reset_evidence":{"evidence_sequence":3,"evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":3,"freshness":"current"}},"seven_day":{"used_percentage_basis_points":850,"used_evidence":{"evidence_sequence":4,"evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":3,"freshness":"current"},"reset_at_epoch":1791630770,"reset_validity":"future","reset_evidence":{"evidence_sequence":5,"evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":3,"freshness":"current"}},"budget":null,"cumulative_goal_spend":null,"spend_period_baseline":null,"evidence":[{"sequence":1,"account_id":null,"session_id":"installed-proof-session","claude_code_version":"2.1.80","source":"statusline","evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":3,"value":{"kind":"model","model":"claude-sonnet-4-5"}},{"sequence":2,"account_id":null,"session_id":"installed-proof-session","claude_code_version":"2.1.80","source":"statusline","evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":3,"value":{"kind":"quota_used_percentage","window":"five_hour","used_percentage_basis_points":1234}},{"sequence":3,"account_id":null,"session_id":"installed-proof-session","claude_code_version":"2.1.80","source":"statusline","evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":3,"value":{"kind":"quota_reset","window":"five_hour","reset_at_epoch":1791627170}},{"sequence":4,"account_id":null,"session_id":"installed-proof-session","claude_code_version":"2.1.80","source":"statusline","evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":3,"value":{"kind":"quota_used_percentage","window":"seven_day","used_percentage_basis_points":850}},{"sequence":5,"account_id":null,"session_id":"installed-proof-session","claude_code_version":"2.1.80","source":"statusline","evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":3,"value":{"kind":"quota_reset","window":"seven_day","reset_at_epoch":1791630770}}],"latest_decision":{"sequence":2,"decided_at_epoch":1791623570,"evidence_sequences":[1,2,3,4,5],"actions":[]},"updated_at_epoch":1791623570,"issues":[{"code":"wait_timeout","message":"wait for runnable evidence expired before the monitor became runnable","retry_at_epoch":null}]}}
+[fixture-binding-confirm-tty] exit=0 (all stdio attached to PTY)
+{"result":"account_bound","binding":{"binding_id":"binding-00000001","provider":"claude","account_id":"installed-proof-observer-account","provider_account_id":null,"experimental_collector_approved":false,"operator_label":"installed smoke fixture","revision":1,"operator_confirmed":true,"confirmed_at_epoch":1791623573}}
+[service-status-before-experimental-rejection] exit=0
+{"result":"service_status","status":{"running":true,"experimental_collector_source":null,"active_monitors":1,"next_wake_epoch":1791623871}}
+[passive-bound-experimental-collector-rejected] exit=3
+{"version":1,"error":{"code":"collector_auth_required","message":"experimental collection requires a running foreground `usage auth prepare` service for the mapped Claude source; this command does not start or prepare credentials"}}
+[passive-service-status-after-experimental-rejection] exit=0
+{"result":"service_status","status":{"running":true,"experimental_collector_source":null,"active_monitors":1,"next_wake_epoch":1791623871}}
+[statusline-compose-bound-fixture] exit=0
+{
+  "statusLine": {
+    "command": "sh -c 'if command -v python3 >/dev/null 2>&1; then python3 -I -S -c \"$1\" \"$2\" \"$3\" \"$4\" \"$5\" \"$6\" \"$7\"; else \"${SHELL:-/bin/sh}\" -c \"$2\"; fi' jackin-statusline '\nimport os\nimport subprocess\nimport sys\nimport threading\n\nMAX_INPUT_BYTES = 16384\nCAPTURE_LIMIT = MAX_INPUT_BYTES + 1\nlegacy_command, jackin_binary, scope_mode, binding_id, binding_revision, data_dir = sys.argv[1:7]\nshell_path = os.environ.get(\"SHELL\") or \"/bin/sh\"\n\ntry:\n    legacy = subprocess.Popen(\n        [shell_path, \"-c\", legacy_command],\n        stdin=subprocess.PIPE,\n        bufsize=0,\n    )\nexcept OSError:\n    sys.exit(127)\n\ncaptured = bytearray()\nforward_to_legacy = True\n\ndef relay_input():\n    global forward_to_legacy\n    while True:\n        chunk = sys.stdin.buffer.read(8192)\n        if not chunk:\n            break\n        remaining = CAPTURE_LIMIT - len(captured)\n        if remaining > 0:\n            captured.extend(chunk[:remaining])\n        if forward_to_legacy:\n            view = memoryview(chunk)\n            while view:\n                try:\n                    written = legacy.stdin.write(view)\n                    if written is None or written <= 0:\n                        raise BrokenPipeError()\n                    view = view[written:]\n                except (BrokenPipeError, OSError):\n                    forward_to_legacy = False\n                    break\n    if forward_to_legacy:\n        try:\n            legacy.stdin.close()\n        except (BrokenPipeError, OSError):\n            pass\n\nrelay = threading.Thread(target=relay_input)\nrelay.start()\nlegacy_status = legacy.wait()\nrelay.join()\nif legacy_status != 0:\n    sys.exit(legacy_status if legacy_status > 0 else 128 - legacy_status)\n\nif len(captured) <= MAX_INPUT_BYTES:\n    if scope_mode == \"session-only\":\n        scope_args = [\"--session-only\"]\n    else:\n        scope_args = [\"--binding\", binding_id, \"--binding-revision\", binding_revision]\n    try:\n        subprocess.run(\n            [\n                jackin_binary,\n                \"usage\",\n                \"statusline\",\n                \"ingest\",\n                *scope_args,\n                \"--format\",\n                \"json\",\n                \"--data-dir\",\n                data_dir,\n            ],\n            input=bytes(captured),\n            stdout=subprocess.DEVNULL,\n            stderr=subprocess.DEVNULL,\n            timeout=2,\n            check=False,\n        )\n    except (OSError, subprocess.TimeoutExpired):\n        pass\nsys.exit(0)\n' 'printf existing' '/Users/donbeave/.local/share/jackin-claude-monitor-v3/bin/jackin' 'binding' 'binding-00000001' '1' '/tmp/jkin-installed-smoke-t4b3ujf8/data'",
+    "type": "command"
+  }
+}
+[statusline-bound-wrapper-fixture] exit=0
+existing
+[monitor-observe-bound-fixture] exit=0
+{"result":"started","status":{"schema_version":4,"monitor_id":"monitor-00000002","provider":"claude","purpose":"observe_only","scope":{"scope":"bound_account","binding_id":"binding-00000001","binding_revision":1,"session_id":null},"account_id":"installed-proof-observer-account","goal_id":null,"session_id":"installed-proof-bound-session","claude_code_version":"2.1.80","policy":null,"expected_model":null,"model":"claude-sonnet-4-5","model_evidence":{"evidence_sequence":1,"evidence_at_epoch":null,"evidence_received_at_epoch":1791623574,"age_seconds":0,"freshness":"current"},"model_guard_validity":"not_configured","lifecycle":"active","readiness":{"tracking":"ready","quota":"ready","budget":"unknown","dispatch":"not_authorized"},"runnable":false,"five_hour":{"used_percentage_basis_points":1234,"used_evidence":{"evidence_sequence":2,"evidence_at_epoch":null,"evidence_received_at_epoch":1791623574,"age_seconds":0,"freshness":"current"},"reset_at_epoch":1791627174,"reset_validity":"future","reset_evidence":{"evidence_sequence":3,"evidence_at_epoch":null,"evidence_received_at_epoch":1791623574,"age_seconds":0,"freshness":"current"}},"seven_day":{"used_percentage_basis_points":850,"used_evidence":{"evidence_sequence":4,"evidence_at_epoch":null,"evidence_received_at_epoch":1791623574,"age_seconds":0,"freshness":"current"},"reset_at_epoch":1791630774,"reset_validity":"future","reset_evidence":{"evidence_sequence":5,"evidence_at_epoch":null,"evidence_received_at_epoch":1791623574,"age_seconds":0,"freshness":"current"}},"budget":null,"cumulative_goal_spend":null,"spend_period_baseline":null,"evidence":[{"sequence":1,"account_id":"installed-proof-observer-account","session_id":"installed-proof-bound-session","claude_code_version":"2.1.80","source":"statusline","evidence_at_epoch":null,"evidence_received_at_epoch":1791623574,"age_seconds":0,"value":{"kind":"model","model":"claude-sonnet-4-5"}},{"sequence":2,"account_id":"installed-proof-observer-account","session_id":"installed-proof-bound-session","claude_code_version":"2.1.80","source":"statusline","evidence_at_epoch":null,"evidence_received_at_epoch":1791623574,"age_seconds":0,"value":{"kind":"quota_used_percentage","window":"five_hour","used_percentage_basis_points":1234}},{"sequence":3,"account_id":"installed-proof-observer-account","session_id":"installed-proof-bound-session","claude_code_version":"2.1.80","source":"statusline","evidence_at_epoch":null,"evidence_received_at_epoch":1791623574,"age_seconds":0,"value":{"kind":"quota_reset","window":"five_hour","reset_at_epoch":1791627174}},{"sequence":4,"account_id":"installed-proof-observer-account","session_id":"installed-proof-bound-session","claude_code_version":"2.1.80","source":"statusline","evidence_at_epoch":null,"evidence_received_at_epoch":1791623574,"age_seconds":0,"value":{"kind":"quota_used_percentage","window":"seven_day","used_percentage_basis_points":850}},{"sequence":5,"account_id":"installed-proof-observer-account","session_id":"installed-proof-bound-session","claude_code_version":"2.1.80","source":"statusline","evidence_at_epoch":null,"evidence_received_at_epoch":1791623574,"age_seconds":0,"value":{"kind":"quota_reset","window":"seven_day","reset_at_epoch":1791630774}}],"latest_decision":{"sequence":1,"decided_at_epoch":1791623574,"evidence_sequences":[1,2,3,4,5],"actions":[]},"updated_at_epoch":1791623574,"issues":[]}}
+[passive-service-status-after-callback] exit=0
+{"result":"service_status","status":{"running":true,"experimental_collector_source":null,"active_monitors":2,"next_wake_epoch":1791623871}}
+[monitor-stop-observer] exit=0
+{"result":"stopped","status":{"schema_version":4,"monitor_id":"monitor-00000001","provider":"claude","purpose":"observe_only","scope":{"scope":"session","session_id":"installed-proof-session"},"account_id":null,"goal_id":null,"session_id":"installed-proof-session","claude_code_version":"2.1.80","policy":null,"expected_model":"claude-sonnet-4-5","model":"claude-sonnet-4-5","model_evidence":{"evidence_sequence":1,"evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":4,"freshness":"current"},"model_guard_validity":"match","lifecycle":"stopped","readiness":{"tracking":"ready","quota":"ready","budget":"unknown","dispatch":"not_authorized"},"runnable":false,"five_hour":{"used_percentage_basis_points":1234,"used_evidence":{"evidence_sequence":2,"evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":4,"freshness":"current"},"reset_at_epoch":1791627170,"reset_validity":"future","reset_evidence":{"evidence_sequence":3,"evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":4,"freshness":"current"}},"seven_day":{"used_percentage_basis_points":850,"used_evidence":{"evidence_sequence":4,"evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":4,"freshness":"current"},"reset_at_epoch":1791630770,"reset_validity":"future","reset_evidence":{"evidence_sequence":5,"evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":4,"freshness":"current"}},"budget":null,"cumulative_goal_spend":null,"spend_period_baseline":null,"evidence":[{"sequence":1,"account_id":null,"session_id":"installed-proof-session","claude_code_version":"2.1.80","source":"statusline","evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":4,"value":{"kind":"model","model":"claude-sonnet-4-5"}},{"sequence":2,"account_id":null,"session_id":"installed-proof-session","claude_code_version":"2.1.80","source":"statusline","evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":4,"value":{"kind":"quota_used_percentage","window":"five_hour","used_percentage_basis_points":1234}},{"sequence":3,"account_id":null,"session_id":"installed-proof-session","claude_code_version":"2.1.80","source":"statusline","evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":4,"value":{"kind":"quota_reset","window":"five_hour","reset_at_epoch":1791627170}},{"sequence":4,"account_id":null,"session_id":"installed-proof-session","claude_code_version":"2.1.80","source":"statusline","evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":4,"value":{"kind":"quota_used_percentage","window":"seven_day","used_percentage_basis_points":850}},{"sequence":5,"account_id":null,"session_id":"installed-proof-session","claude_code_version":"2.1.80","source":"statusline","evidence_at_epoch":null,"evidence_received_at_epoch":1791623570,"age_seconds":4,"value":{"kind":"quota_reset","window":"seven_day","reset_at_epoch":1791630770}}],"latest_decision":null,"updated_at_epoch":1791623574,"issues":[]}}
+[monitor-stop-bound-observer] exit=0
+{"result":"stopped","status":{"schema_version":4,"monitor_id":"monitor-00000002","provider":"claude","purpose":"observe_only","scope":{"scope":"bound_account","binding_id":"binding-00000001","binding_revision":1,"session_id":null},"account_id":"installed-proof-observer-account","goal_id":null,"session_id":"installed-proof-bound-session","claude_code_version":"2.1.80","policy":null,"expected_model":null,"model":"claude-sonnet-4-5","model_evidence":{"evidence_sequence":1,"evidence_at_epoch":null,"evidence_received_at_epoch":1791623574,"age_seconds":0,"freshness":"current"},"model_guard_validity":"not_configured","lifecycle":"stopped","readiness":{"tracking":"ready","quota":"ready","budget":"unknown","dispatch":"not_authorized"},"runnable":false,"five_hour":{"used_percentage_basis_points":1234,"used_evidence":{"evidence_sequence":2,"evidence_at_epoch":null,"evidence_received_at_epoch":1791623574,"age_seconds":0,"freshness":"current"},"reset_at_epoch":1791627174,"reset_validity":"future","reset_evidence":{"evidence_sequence":3,"evidence_at_epoch":null,"evidence_received_at_epoch":1791623574,"age_seconds":0,"freshness":"current"}},"seven_day":{"used_percentage_basis_points":850,"used_evidence":{"evidence_sequence":4,"evidence_at_epoch":null,"evidence_received_at_epoch":1791623574,"age_seconds":0,"freshness":"current"},"reset_at_epoch":1791630774,"reset_validity":"future","reset_evidence":{"evidence_sequence":5,"evidence_at_epoch":null,"evidence_received_at_epoch":1791623574,"age_seconds":0,"freshness":"current"}},"budget":null,"cumulative_goal_spend":null,"spend_period_baseline":null,"evidence":[{"sequence":1,"account_id":"installed-proof-observer-account","session_id":"installed-proof-bound-session","claude_code_version":"2.1.80","source":"statusline","evidence_at_epoch":null,"evidence_received_at_epoch":1791623574,"age_seconds":0,"value":{"kind":"model","model":"claude-sonnet-4-5"}},{"sequence":2,"account_id":"installed-proof-observer-account","session_id":"installed-proof-bound-session","claude_code_version":"2.1.80","source":"statusline","evidence_at_epoch":null,"evidence_received_at_epoch":1791623574,"age_seconds":0,"value":{"kind":"quota_used_percentage","window":"five_hour","used_percentage_basis_points":1234}},{"sequence":3,"account_id":"installed-proof-observer-account","session_id":"installed-proof-bound-session","claude_code_version":"2.1.80","source":"statusline","evidence_at_epoch":null,"evidence_received_at_epoch":1791623574,"age_seconds":0,"value":{"kind":"quota_reset","window":"five_hour","reset_at_epoch":1791627174}},{"sequence":4,"account_id":"installed-proof-observer-account","session_id":"installed-proof-bound-session","claude_code_version":"2.1.80","source":"statusline","evidence_at_epoch":null,"evidence_received_at_epoch":1791623574,"age_seconds":0,"value":{"kind":"quota_used_percentage","window":"seven_day","used_percentage_basis_points":850}},{"sequence":5,"account_id":"installed-proof-observer-account","session_id":"installed-proof-bound-session","claude_code_version":"2.1.80","source":"statusline","evidence_at_epoch":null,"evidence_received_at_epoch":1791623574,"age_seconds":0,"value":{"kind":"quota_reset","window":"seven_day","reset_at_epoch":1791630774}}],"latest_decision":null,"updated_at_epoch":1791623574,"issues":[]}}
+[service-status] exit=0
+{"result":"service_status","status":{"running":true,"experimental_collector_source":null,"active_monitors":0,"next_wake_epoch":null}}
+[service-stop] exit=0
+{"result":"service_stopped"}
+watch_jsonl_events=1
+shell_credential_trips=0 (/tmp/jkin-installed-smoke-t4b3ujf8/credential-trips.log)
+http_proxy_requests=0
+native_security_framework_calls=not_instrumented
+foreground_auth_success=not_exercised
+dispatch_policy_approvals=none
+installed_smoke=PASS
+fixture_removed_after_orderly_stop=true

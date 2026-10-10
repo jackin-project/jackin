@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use crate::usage::format::run_cli_with_timeout_full;
 use crate::usage::refresh::ProviderError;
 use std::thread;
 
@@ -529,8 +530,8 @@ fn first_credential_uses_home_first_then_handoff_fallback() {
     let home = dir.path().join("home.credentials.json");
     let handoff = dir.path().join("handoff.credentials.json");
     // Home present but WITHOUT a usable token — the proven in-container
-    // failure mode — so resolution must fall through to the forwarded
-    // handoff rather than dropping to the impoverished CLI path.
+    // failure mode — so OAuth resolution must continue with the forwarded
+    // handoff credential.
     fs::write(&home, r#"{"oauthAccount":{"emailAddress":"a@b.c"}}"#).expect("write home");
     fs::write(
         &handoff,
@@ -542,14 +543,14 @@ fn first_credential_uses_home_first_then_handoff_fallback() {
         load_claude_oauth_credentials,
     );
     assert_eq!(
-        resolved.map(|c| c.access_token),
+        resolved.map(|c| c.access_token.as_str().to_owned()),
         Some("handoff-token".to_owned())
     );
     // A valid home token wins over the handoff (home is the source of truth).
     fs::write(&home, r#"{"claudeAiOauth":{"accessToken":"home-token"}}"#).expect("rewrite home");
     let resolved = first_credential(&[home, handoff], load_claude_oauth_credentials);
     assert_eq!(
-        resolved.map(|c| c.access_token),
+        resolved.map(|c| c.access_token.as_str().to_owned()),
         Some("home-token".to_owned())
     );
 }
@@ -2660,122 +2661,6 @@ fn managed_cli_launch_gate_cools_down_after_launch_failure() {
 }
 
 #[test]
-fn claude_usage_diagnostic_invokes_explicit_usage_command() {
-    let diagnostic = run_claude_usage_diagnostic_with(|command, args, timeout| {
-        assert_eq!(command, "claude");
-        assert_eq!(args, ["-p", "/usage"]);
-        assert_eq!(timeout, PROVIDER_CLI_TIMEOUT);
-        Ok(CliOutput {
-            success: true,
-            exit_code: Some(0),
-            stdout: "usage output".to_owned(),
-            stderr: String::new(),
-        })
-    })
-    .expect("diagnostic");
-
-    assert_eq!(diagnostic.command, "claude");
-    assert_eq!(diagnostic.args, vec!["-p", "/usage"]);
-    assert!(diagnostic.success);
-    assert_eq!(diagnostic.stdout, "usage output");
-}
-
-#[test]
-fn claude_usage_diagnostic_preserves_cli_failure_output() {
-    let diagnostic = run_claude_usage_diagnostic_with(|_, _, _| {
-        Ok(CliOutput {
-            success: false,
-            exit_code: Some(1),
-            stdout: String::new(),
-            stderr: "not logged in".to_owned(),
-        })
-    })
-    .expect("diagnostic");
-
-    assert!(!diagnostic.success);
-    assert_eq!(diagnostic.exit_code, Some(1));
-    assert_eq!(diagnostic.stderr, "not logged in");
-}
-
-#[test]
-fn claude_cli_usage_output_maps_current_windows() {
-    let usage = parse_claude_usage_output(
-        "You are currently using your subscription to power your Claude Code usage\n\
-             \n\
-             Current session: 0% used\n\
-             Current week (all models): 46% used · resets Jun 26, 6:59am (UTC)\n\
-             Current week (Sonnet only): 15% used · resets Jun 26, 6:59am (UTC)\n",
-    )
-    .expect("usage output");
-
-    let buckets = usage.buckets();
-
-    assert_eq!(buckets[0].label, "Session");
-    assert_eq!(buckets[0].remaining_percent, Some(100));
-    // The CLI fallback still fills the headline slots (regression guard:
-    // OAuth-fetch failure must not blank the Claude status bar).
-    assert_eq!(buckets[0].status_slot, Some(StatusSlot::Session));
-    assert_eq!(buckets[1].label, "Weekly");
-    assert_eq!(buckets[1].remaining_percent, Some(54));
-    assert_eq!(buckets[1].status_slot, Some(StatusSlot::Weekly));
-    assert_eq!(buckets[2].label, "Sonnet");
-    assert_eq!(buckets[2].remaining_percent, Some(85));
-    assert_eq!(buckets[2].status_slot, None);
-
-    // End-to-end: the tagged CLI buckets still render the Claude headline, so
-    // an OAuth-fetch failure that drops to the CLI path does not blank it.
-    assert_eq!(
-        status_bar_label(
-            UsageSurface::Claude,
-            "",
-            UsageSnapshotStatus::Fresh,
-            &buckets
-        ),
-        "Session 100% · Weekly 54%"
-    );
-}
-
-/// The CLI prints per-model weekly lines as `Current week (<model>): …` (Fable
-/// today, future codenames tomorrow). The parser captures each generically so
-/// a new model prints without a per-model edit. Mirrors the live 2026-07-03
-/// `claude -p /usage` output, where Sonnet was replaced by Fable.
-#[test]
-fn claude_cli_usage_output_maps_scoped_weekly_fable() {
-    let usage = parse_claude_usage_output(
-        "You are currently using your subscription to power your Claude Code usage\n\
-             \n\
-             Current session: 9% used · resets Jul 3 at 10:19am (Asia/Saigon)\n\
-             Current week (all models): 28% used · resets Jul 3 at 2pm (Asia/Saigon)\n\
-             Current week (Fable): 35% used · resets Jul 3 at 1:59pm (Asia/Saigon)\n",
-    )
-    .expect("usage output");
-
-    // The model-scoped line lands in `scoped_weekly` (not `sonnet_used`).
-    assert_eq!(usage.scoped_weekly.len(), 1);
-    assert_eq!(usage.scoped_weekly[0].0, "Fable");
-    assert!((usage.scoped_weekly[0].1 - 35.0).abs() < f64::EPSILON);
-
-    let buckets = usage.buckets();
-    let fable = buckets
-        .iter()
-        .find(|b| b.label == "Fable")
-        .expect("Fable CLI bucket");
-    assert_eq!(fable.remaining_percent, Some(65));
-    assert_eq!(fable.status_slot, None);
-
-    // Headline still binds to the slot from the explicit (all models) line.
-    assert_eq!(
-        status_bar_label(
-            UsageSurface::Claude,
-            "",
-            UsageSnapshotStatus::Fresh,
-            &buckets
-        ),
-        "Session 91% · Weekly 72%"
-    );
-}
-
-#[test]
 fn grok_billing_config_maps_current_fallback_and_bounds() {
     let usage: GrokBillingResponse = serde_json::from_value(serde_json::json!({
         "subscription_tier": "SuperGrok",
@@ -3074,7 +2959,8 @@ fn credential_file_loaders_reread_updated_container_files() {
     assert_eq!(
         load_claude_oauth_credentials(&claude_path)
             .expect("Claude credentials")
-            .access_token,
+            .access_token
+            .as_str(),
         "old-claude"
     );
     fs::write(
@@ -3091,7 +2977,8 @@ fn credential_file_loaders_reread_updated_container_files() {
     assert_eq!(
         load_claude_oauth_credentials(&claude_path)
             .expect("updated Claude credentials")
-            .access_token,
+            .access_token
+            .as_str(),
         "new-claude"
     );
 
@@ -3202,26 +3089,17 @@ fn reset_label_uses_relative_and_local_timestamp() {
     let same_day = parse_iso_epoch("2026-06-11T15:12:00Z").expect("same day");
     assert_eq!(
         reset_label(same_day, now),
-        format!(
-            "Resets in 1h 26m ({})",
-            format::local_timestamp_label(same_day)
-        )
+        format!("Resets in 1h 26m ({})", local_timestamp_label(same_day))
     );
     let tomorrow = parse_iso_epoch("2026-06-12T04:18:00Z").expect("tomorrow");
     assert_eq!(
         reset_label(tomorrow, now),
-        format!(
-            "Resets in 14h 32m ({})",
-            format::local_timestamp_label(tomorrow)
-        )
+        format!("Resets in 14h 32m ({})", local_timestamp_label(tomorrow))
     );
     let future = parse_iso_epoch("2026-07-01T16:31:00Z").expect("future");
     assert_eq!(
         reset_label(future, now),
-        format!(
-            "Resets in 20d 2h ({})",
-            format::local_timestamp_label(future)
-        )
+        format!("Resets in 20d 2h ({})", local_timestamp_label(future))
     );
     assert_eq!(reset_label(now, now), "Resets now");
 }
@@ -3244,7 +3122,7 @@ fn claude_oauth_credentials_parse_subscription_label() {
 
     let credentials = load_claude_oauth_credentials(&path).expect("credentials");
 
-    assert_eq!(credentials.access_token, "access");
+    assert_eq!(credentials.access_token.as_str(), "access");
     assert_eq!(credentials.subscription_type.as_deref(), Some("Claude Max"));
 }
 
@@ -3266,7 +3144,7 @@ fn claude_oauth_credentials_fall_back_to_rate_limit_tier() {
 
     let credentials = load_claude_oauth_credentials(&path).expect("credentials");
 
-    assert_eq!(credentials.access_token, "access");
+    assert_eq!(credentials.access_token.as_str(), "access");
     assert_eq!(credentials.subscription_type.as_deref(), Some("Max"));
 }
 
@@ -3343,29 +3221,6 @@ fn claude_organization_type_absent_returns_none() {
     )
     .expect("write account");
     assert_eq!(load_claude_organization_type(&path), None);
-}
-
-#[test]
-fn claude_code_user_agent_parses_cli_version() {
-    assert_eq!(
-        claude_code_version_from_text("Claude Code 2.1.7\n").as_deref(),
-        Some("2.1.7")
-    );
-    assert_eq!(
-        claude_code_user_agent_with(|command, args, timeout| {
-            assert_eq!(command, "claude");
-            assert_eq!(args, ["--version"]);
-            assert_eq!(timeout, CLAUDE_VERSION_TIMEOUT);
-            Ok(CliOutput {
-                success: true,
-                exit_code: Some(0),
-                stdout: "Claude Code 2.2.0".to_owned(),
-                stderr: String::new(),
-            })
-        })
-        .as_deref(),
-        Some("claude-code/2.2.0")
-    );
 }
 
 const AMP_DAILY_FIXTURE: &str = "Signed in as user@example.com (example)\n\
@@ -4444,7 +4299,8 @@ fn keychain_test_scope(is_default: bool) -> jackin_core::ClaudeKeychainScope {
     }
 }
 
-const KEYCHAIN_PAYLOAD: &str = r#"{"claudeAiOauth":{"accessToken":"kc-token","subscriptionType":"max","refreshToken":"rt-1"}}"#;
+const KEYCHAIN_PAYLOAD: &str =
+    r#"{"claudeAiOauth":{"accessToken":"kc-token","subscriptionType":"max"}}"#;
 
 fn empty_file_probe() -> ClaudeFileProbe {
     ClaudeFileProbe {
@@ -4487,7 +4343,7 @@ fn claude_keychain_credential_wins_over_file_paths() {
         &scope,
         &state,
         |_service| ClaudeKeychainRead::Payload {
-            json: KEYCHAIN_PAYLOAD.to_owned(),
+            json: zeroize::Zeroizing::new(KEYCHAIN_PAYLOAD.to_owned()),
         },
         || ClaudeFileProbe {
             credential: claude_oauth_from_value(
@@ -4501,7 +4357,7 @@ fn claude_keychain_credential_wins_over_file_paths() {
     );
     match resolution {
         ClaudeWaveResolution::Resolved(resolved) => {
-            assert_eq!(resolved.access_token, "kc-token");
+            assert_eq!(resolved.access_token.as_str(), "kc-token");
             assert_eq!(
                 resolved.credential_origin,
                 "OAuth · macOS Keychain (Claude Code-credentials)"
@@ -4549,7 +4405,7 @@ fn claude_keychain_missing_falls_back_to_file_then_env() {
         |_| ClaudeKeychainRead::Missing,
         || ClaudeFileProbe {
             credential: claude_oauth_from_value(
-                &serde_json::json!({"claudeAiOauth":{"accessToken":"file-token","refreshToken":"rt"}}),
+                &serde_json::json!({"claudeAiOauth":{"accessToken":"file-token"}}),
             ),
             origin: Some("OAuth · file".to_owned()),
             account_email: None,
@@ -4558,7 +4414,7 @@ fn claude_keychain_missing_falls_back_to_file_then_env() {
         || None,
     );
     match with_file {
-        ClaudeWaveResolution::Resolved(r) => assert_eq!(r.access_token, "file-token"),
+        ClaudeWaveResolution::Resolved(r) => assert_eq!(r.access_token.as_str(), "file-token"),
         _ => panic!("file fallback"),
     }
     let state2 = ClaudeKeychainState::default();
@@ -4571,7 +4427,7 @@ fn claude_keychain_missing_falls_back_to_file_then_env() {
     );
     match &with_env {
         ClaudeWaveResolution::Resolved(r) => {
-            assert_eq!(r.access_token, "env-token");
+            assert_eq!(r.access_token.as_str(), "env-token");
             assert!(r.is_anonymous);
         }
         _ => panic!("env fallback"),
@@ -4624,7 +4480,7 @@ fn claude_keychain_consent_required_falls_back_like_missing() {
     );
     match resolution {
         ClaudeWaveResolution::Resolved(resolved) => {
-            assert_eq!(resolved.access_token, "file-token");
+            assert_eq!(resolved.access_token.as_str(), "file-token");
         }
         _ => panic!("consent-gated Keychain must preserve file fallback"),
     }
@@ -4657,7 +4513,7 @@ fn claude_keychain_metadata_makes_resolution_shared() {
         &scope,
         &state,
         |_| ClaudeKeychainRead::Payload {
-            json: r#"{"claudeAiOauth":{"accessToken":"kc"}}"#.to_owned(),
+            json: zeroize::Zeroizing::new(r#"{"claudeAiOauth":{"accessToken":"kc"}}"#.to_owned()),
         },
         || ClaudeFileProbe {
             credential: None,
@@ -5275,54 +5131,6 @@ fn claude_limits_inactive_flag_does_not_gate_rendering() {
         .expect("weekly bucket despite is_active false");
     assert_eq!(weekly.label, "All models");
     assert_eq!(weekly.remaining_percent, Some(58));
-}
-
-#[test]
-fn claude_scope_restriction_error_is_explicit() {
-    let forbidden = ProviderError::from(ProviderHttpError::HttpStatus {
-        status: 403,
-        message: "Claude OAuth usage HTTP 403 Forbidden".to_owned(),
-        retry_after_seconds: None,
-        response_received_at_epoch: None,
-    });
-    assert!(claude_error_is_scope_restriction(&forbidden));
-    assert!(!claude_error_is_scope_restriction(&ProviderError::from(
-        ProviderHttpError::Transport("HTTP 403 insufficient_scope".to_owned()),
-    )));
-    assert!(!claude_error_is_scope_restriction(&ProviderError::from(
-        ProviderHttpError::HttpStatus {
-            status: 401,
-            message: "Claude OAuth usage HTTP 401 Unauthorized".to_owned(),
-            retry_after_seconds: None,
-            response_received_at_epoch: None,
-        },
-    )));
-    assert!(!claude_error_is_scope_restriction(&ProviderError::from(
-        "Claude OAuth usage request failed: connection reset".to_owned(),
-    )));
-    assert_eq!(
-        claude_provider_error_label(
-            Some(&forbidden),
-            Some(&ProviderError::from("cli boom".to_owned()))
-        )
-        .as_deref(),
-        Some("Claude token lacks usage scope (inference-only); quota unavailable")
-    );
-    // Non-scope errors pass through verbatim, OAuth first.
-    assert_eq!(
-        claude_provider_error_label(
-            Some(&ProviderError::from("oauth boom".to_owned())),
-            Some(&ProviderError::from("cli boom".to_owned())),
-        )
-        .as_deref(),
-        Some("oauth boom")
-    );
-    assert_eq!(
-        claude_provider_error_label(None, Some(&ProviderError::from("cli boom".to_owned())))
-            .as_deref(),
-        Some("cli boom")
-    );
-    assert_eq!(claude_provider_error_label(None, None), None);
 }
 
 #[test]

@@ -28,15 +28,23 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
 fn capability(account_id: &str) -> UsageAccountCapability {
+    capability_for_surface(account_id, "claude")
+}
+
+fn capability_for_surface(account_id: &str, surface_id: &str) -> UsageAccountCapability {
     UsageAccountCapability {
         account_id: account_id.into(),
-        surface_id: "claude".into(),
+        surface_id: surface_id.into(),
     }
 }
 
 fn entry(account_id: &str, revision: &str) -> UsageCatalogEntry {
+    entry_for_capability(capability(account_id), revision)
+}
+
+fn entry_for_capability(capability: UsageAccountCapability, revision: &str) -> UsageCatalogEntry {
     UsageCatalogEntry {
-        capability: capability(account_id),
+        capability,
         revision: revision.into(),
     }
 }
@@ -44,6 +52,40 @@ fn entry(account_id: &str, revision: &str) -> UsageCatalogEntry {
 #[derive(Default)]
 struct MemoryStore {
     states: Mutex<BTreeMap<UsageAccountCapability, AccountStateEnvelope>>,
+    changed: Condvar,
+}
+
+impl MemoryStore {
+    fn wait_for_fenced_probe_completion(
+        &self,
+        capability: &UsageAccountCapability,
+        generation: u64,
+    ) -> AccountStateEnvelope {
+        let deadline = std::time::Instant::now() + WAIT;
+        let mut states = self
+            .states
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        loop {
+            if let Some(envelope) = states.get(capability)
+                && envelope.generation == generation
+                && envelope.phase == UsageRefreshPhase::Idle
+                && envelope.success_deadline_epoch.is_some()
+            {
+                return envelope.clone();
+            }
+            let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+            assert!(
+                !remaining.is_zero(),
+                "fenced provider completion was not persisted"
+            );
+            let (next, _) = self
+                .changed
+                .wait_timeout(states, remaining)
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            states = next;
+        }
+    }
 }
 
 impl AccountStateStore for MemoryStore {
@@ -64,18 +106,22 @@ impl AccountStateStore for MemoryStore {
         envelope: &AccountStateEnvelope,
         _now_epoch: i64,
     ) -> Result<(), StateStoreError> {
-        self.states
+        let mut states = self
+            .states
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .insert(envelope.capability.clone(), envelope.clone());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        states.insert(envelope.capability.clone(), envelope.clone());
+        self.changed.notify_all();
         Ok(())
     }
 
     fn purge(&self, capability: &UsageAccountCapability) -> Result<(), StateStoreError> {
-        self.states
+        let mut states = self
+            .states
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .remove(capability);
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        states.remove(capability);
+        self.changed.notify_all();
         Ok(())
     }
 }
@@ -196,11 +242,20 @@ fn quota_view() -> FocusedUsageView {
 }
 
 fn coordinator_with(executor: Arc<GateExecutor>) -> (UsageCoordinator, Arc<GateExecutor>) {
+    let (coordinator, executor, _) = coordinator_with_store(executor);
+    (coordinator, executor)
+}
+
+fn coordinator_with_store(
+    executor: Arc<GateExecutor>,
+) -> (UsageCoordinator, Arc<GateExecutor>, Arc<MemoryStore>) {
     let cloned = Arc::clone(&executor);
     let provider: Arc<dyn UsageProviderExecutor> = cloned;
-    let store: Arc<dyn AccountStateStore> = Arc::new(MemoryStore::default());
-    let coordinator = UsageCoordinator::new(provider, store, UsageCoordinatorConfig::default());
-    (coordinator, executor)
+    let store = Arc::new(MemoryStore::default());
+    let state_store: Arc<dyn AccountStateStore> = Arc::<MemoryStore>::clone(&store);
+    let coordinator =
+        UsageCoordinator::new(provider, state_store, UsageCoordinatorConfig::default());
+    (coordinator, executor, store)
 }
 
 const NOW: i64 = 1_800_000_000;
@@ -354,7 +409,9 @@ fn s6_stale_cas_adopts_the_winner() {
         quota_view(),
     )));
     let (coordinator, gate) = coordinator_with(gate);
-    let cap = capability("acc-a");
+    // This generic coordinator race must not invoke Claude's five-minute
+    // provider-attempt floor between the two deliberately immediate probes.
+    let cap = capability_for_surface("acc-a", "codex");
 
     let winner = coordinator.request_refresh(&cap, 0, true, NOW).unwrap();
     assert_eq!(winner.phase, UsageRefreshPhase::Queued);
@@ -395,16 +452,18 @@ fn s6_rotation_fences_in_flight_and_discards_late_results() {
     let gate = Arc::new(GateExecutor::new(ProviderProbeOutcome::success(
         quota_view(),
     )));
-    let (coordinator, gate) = coordinator_with(gate);
-    let cap = capability("acc-a");
+    let (coordinator, gate, store) = coordinator_with_store(gate);
+    // Keep this generic fencing scenario independent of Claude's provider
+    // attempt spacing; the fake executor is the only provider involved.
+    let cap = capability_for_surface("acc-a", "codex");
     coordinator
-        .reconcile_catalog([entry("acc-a", "rev-1")], NOW)
+        .reconcile_catalog([entry_for_capability(cap.clone(), "rev-1")], NOW)
         .unwrap();
 
     let stale = coordinator.request_refresh(&cap, 0, true, NOW).unwrap();
     gate.wait_started(1);
     coordinator
-        .reconcile_catalog([entry("acc-a", "rev-2")], NOW)
+        .reconcile_catalog([entry_for_capability(cap.clone(), "rev-2")], NOW)
         .unwrap();
 
     // The join fails immediately even though the probe is still running.
@@ -415,7 +474,10 @@ fn s6_rotation_fences_in_flight_and_discards_late_results() {
 
     // The late probe result lands on a fenced generation and is discarded.
     gate.release(1);
-    gate.wait_idle();
+    // The executor callback returns before the coordinator persists its
+    // fenced completion. Wait for that durable transition before retrying.
+    let completed = store.wait_for_fenced_probe_completion(&cap, stale.generation + 1);
+    assert_eq!(completed.phase, UsageRefreshPhase::Idle);
     // Rotation reset the cursor to Idle; observing the stale generation would
     // adopt, not fork — so a correct CAS observes the current generation.
     let cursor = coordinator.current(&cap, NOW).unwrap();

@@ -74,7 +74,7 @@ Keyboard commands:
 
 jackin❯ desktop reuses the provider sign-ins already available on the Mac. It stores no passwords and does not ask you to create a second set of provider logins.
 
-On a default Claude Code install, macOS may ask for Keychain permission on first read. **Allow** permits that read; **Always Allow** keeps later reads silent. **Deny** disables Claude for that app session without repeatedly prompting or affecting other providers.
+Claude uses the existing Keychain item. An attended Keychain authorization may permit a read, but it does not guarantee that the credential stays valid or that later access remains authorized. When broker access requires user interaction, Jackin reports an interaction-required state instead of opening a prompt from the unattended broker. Claude usage stays unavailable until access is restored; other providers remain available.
 
 Multiple known accounts appear in native account menus. The desktop app saves one selection shared by its status item, popover, and Usage window. Capsule keeps its own local account selection. Both surfaces use the host broker's quota data, but selecting an account in one does not change the other surface's selection.
 

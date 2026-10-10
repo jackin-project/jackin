@@ -2,12 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::fs;
+
 use std::os::unix::fs::symlink;
 
 use jackin_protocol::control::{
     FocusedUsageView, QuotaBucketView, UsageConfidence, UsageSeverity, UsageSnapshotStatus,
     UsageSource,
 };
+
 use jackin_protocol::usage_broker::{
     UsageAccountCapability, UsageProjectionRefreshStateV1, UsageProjectionSchemaV1,
     UsageProjectionV1, UsageRefreshPhase,
@@ -58,11 +60,27 @@ fn completed(epoch: i64, label: &str) -> AccountStateEnvelope {
         last_good: Some(view),
         terminal_error: None,
         started_at_epoch: Some(epoch),
+        provider_invoked_at_epoch: Some(epoch),
         completed_at_epoch: Some(epoch),
         rate_limit_deadline_epoch: None,
         retry_deadline_epoch: None,
         success_deadline_epoch: Some(epoch + 300),
         consecutive_failures: 0,
+    }
+}
+
+fn empty_projection() -> UsageProjectionV1 {
+    UsageProjectionV1 {
+        schema_version: UsageProjectionSchemaV1,
+        projection_id: "projection-1".into(),
+        generated_at_epoch: 1_000,
+        discovery_revision: "catalog-1".into(),
+        broker_instance_id: "instance-1".into(),
+        broker_generation: 1,
+        refresh_state: UsageProjectionRefreshStateV1::Idle,
+        providers: Vec::new(),
+        unresolved: Vec::new(),
+        issues: Vec::new(),
     }
 }
 
@@ -85,6 +103,36 @@ fn atomic_state_round_trip_uses_private_permissions_and_old_or_new_envelopes() {
     let metadata = fs::metadata(file).unwrap();
     assert_eq!(metadata.mode() & 0o777, 0o600);
     assert_eq!(metadata.uid(), geteuid().as_raw());
+}
+
+#[test]
+fn account_state_v1_migration_retains_account_and_starts_conservative_attempt_floor() {
+    let temp = tempfile::tempdir().unwrap();
+    let store = FileAccountStateStore::at(temp.path().join("accounts"));
+    let path = temp.path().join("accounts/claude-account-123.json");
+    store
+        .store(&completed(1_000, "existing@example.test"), 1_000)
+        .unwrap();
+
+    let mut legacy = serde_json::to_value(completed(1_000, "existing@example.test")).unwrap();
+    legacy["schema_version"] = serde_json::json!(PREVIOUS_ACCOUNT_STATE_SCHEMA_VERSION);
+    legacy
+        .as_object_mut()
+        .unwrap()
+        .remove("provider_invoked_at_epoch");
+    fs::write(&path, serde_json::to_vec(&legacy).unwrap()).unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+
+    let migrated = store.load(&capability(), 2_000).unwrap().unwrap();
+    assert_eq!(migrated.schema_version, ACCOUNT_STATE_SCHEMA_VERSION);
+    assert_eq!(migrated.started_at_epoch, Some(1_000));
+    assert_eq!(migrated.provider_invoked_at_epoch, Some(2_000));
+    assert_eq!(
+        migrated.last_good.unwrap().account.account_label,
+        "existing@example.test"
+    );
+    let durable: AccountStateEnvelope = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+    assert_eq!(durable.provider_invoked_at_epoch, Some(2_000));
 }
 
 #[test]
@@ -160,27 +208,12 @@ fn atomic_state_sanitizes_control_characters_and_clamps_display_fields() {
     assert!(!label.chars().any(char::is_control));
 }
 
-fn empty_projection() -> UsageProjectionV1 {
-    UsageProjectionV1 {
-        schema_version: UsageProjectionSchemaV1,
-        projection_id: "projection-1".into(),
-        generated_at_epoch: 1_000,
-        discovery_revision: "catalog-1".into(),
-        broker_instance_id: "instance-1".into(),
-        broker_generation: 1,
-        refresh_state: UsageProjectionRefreshStateV1::Idle,
-        providers: Vec::new(),
-        unresolved: Vec::new(),
-        issues: Vec::new(),
-    }
-}
-
 #[test]
 fn projection_state_is_one_atomic_envelope_and_quarantines_corruption() {
     let temp = tempfile::tempdir().unwrap();
     let store = FileProjectionStateStore::under_data_dir(temp.path());
     let envelope = ProjectionStateEnvelope {
-        schema_version: 2,
+        schema_version: ProjectionStateEnvelope::SCHEMA_VERSION,
         projection: empty_projection(),
         aliases: vec![ProjectionAlias {
             capability_id: "capability-1".into(),
@@ -204,6 +237,100 @@ fn projection_state_is_one_atomic_envelope_and_quarantines_corruption() {
             .flatten()
             .any(|entry| entry.file_name().to_string_lossy().contains("corrupt"))
     );
+}
+
+#[test]
+fn projection_v2_is_visible_only_to_the_broker_migration_loader() {
+    let temp = tempfile::tempdir().unwrap();
+    let store = FileProjectionStateStore::under_data_dir(temp.path());
+    let path = temp.path().join("usage-broker/projection.json");
+    let legacy = ProjectionStateEnvelope {
+        schema_version: ProjectionStateEnvelope::MIGRATABLE_SCHEMA_VERSION,
+        projection: empty_projection(),
+        aliases: Vec::new(),
+        catalog_revision: "catalog-1".into(),
+        catalog: Vec::new(),
+        retry_deadline_epoch: Some(1_030),
+        success_deadline_epoch: Some(1_300),
+        broker_instance_id: "instance-1".into(),
+    };
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(&path, serde_json::to_vec(&legacy).unwrap()).unwrap();
+
+    assert_eq!(
+        store.load_for_broker_migration().unwrap(),
+        Some(legacy.clone())
+    );
+    assert_eq!(store.store(&legacy), Err(StateStoreError::Corrupt));
+    assert_eq!(
+        store.load(),
+        Err(StateStoreError::SchemaMigrationRequired {
+            found: u64::from(ProjectionStateEnvelope::MIGRATABLE_SCHEMA_VERSION),
+            current: ProjectionStateEnvelope::SCHEMA_VERSION,
+        })
+    );
+    assert!(
+        path.exists(),
+        "ordinary reads must leave migration input intact"
+    );
+
+    let mut migrated = legacy;
+    migrated.schema_version = ProjectionStateEnvelope::SCHEMA_VERSION;
+    store.store(&migrated).unwrap();
+    assert_eq!(store.load().unwrap(), Some(migrated));
+}
+
+#[test]
+fn projection_store_preserves_valid_future_schema_for_a_newer_broker() {
+    let temp = tempfile::tempdir().unwrap();
+    let store = FileProjectionStateStore::under_data_dir(temp.path());
+    let path = temp.path().join("usage-broker/projection.json");
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(
+        &path,
+        serde_json::to_vec(&serde_json::json!({
+            "schema_version": 4,
+            "future_projection_payload": { "opaque": true }
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        store.load(),
+        Err(StateStoreError::SchemaMigrationRequired {
+            found: 4,
+            current: ProjectionStateEnvelope::SCHEMA_VERSION,
+        })
+    );
+    assert!(
+        path.exists(),
+        "an older broker must not quarantine future state"
+    );
+}
+
+#[test]
+fn projection_store_still_quarantines_corrupt_v2_contents() {
+    let temp = tempfile::tempdir().unwrap();
+    let store = FileProjectionStateStore::under_data_dir(temp.path());
+    let path = temp.path().join("usage-broker/projection.json");
+    let mut legacy = serde_json::to_value(ProjectionStateEnvelope {
+        schema_version: ProjectionStateEnvelope::MIGRATABLE_SCHEMA_VERSION,
+        projection: empty_projection(),
+        aliases: Vec::new(),
+        catalog_revision: "catalog-1".into(),
+        catalog: Vec::new(),
+        retry_deadline_epoch: None,
+        success_deadline_epoch: None,
+        broker_instance_id: "instance-1".into(),
+    })
+    .unwrap();
+    legacy["projection"]["broker_generation"] = serde_json::json!(-1);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(&path, serde_json::to_vec(&legacy).unwrap()).unwrap();
+
+    assert_eq!(store.load(), Err(StateStoreError::Corrupt));
+    assert!(!path.exists());
 }
 
 #[test]

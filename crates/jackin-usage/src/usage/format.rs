@@ -115,7 +115,7 @@ pub(super) fn reset_label(reset_at: i64, now: i64) -> String {
 }
 
 /// Reset label shaped by presentation prefs (Countdown is the shipped form).
-pub(crate) fn reset_label_with_prefs(reset_at: i64, now: i64, prefs: UsageFormatPrefs) -> String {
+pub fn reset_label_with_prefs(reset_at: i64, now: i64, prefs: UsageFormatPrefs) -> String {
     if reset_at <= now {
         return "Resets now".to_owned();
     }
@@ -136,13 +136,8 @@ pub(crate) fn reset_label_with_prefs(reset_at: i64, now: i64, prefs: UsageFormat
     }
 }
 
-/// Exact-clock fragment for overview rows, e.g. `(Jul 28, 17:02)`.
-pub(crate) fn exact_reset_parenthetical(reset_at: i64) -> String {
-    format!("({})", local_timestamp_label(reset_at))
-}
-
 /// Compact percent headline from remaining: default `97% left`, or `3% used`.
-pub(crate) fn percent_headline(remaining: u8, prefs: UsageFormatPrefs) -> String {
+pub fn percent_headline(remaining: u8, prefs: UsageFormatPrefs) -> String {
     match prefs.percent_style {
         PercentStyle::Left => format!("{remaining}% left"),
         PercentStyle::Used => {
@@ -163,7 +158,7 @@ pub(super) fn expiry_label(expires_at: i64, now: i64) -> String {
     )
 }
 
-pub(crate) fn local_timestamp_label(epoch: i64) -> String {
+pub fn local_timestamp_label(epoch: i64) -> String {
     Local.timestamp_opt(epoch, 0).single().map_or_else(
         || "local time unavailable".to_owned(),
         |timestamp| timestamp.format("%b %-d, %H:%M").to_string(),
@@ -474,14 +469,6 @@ pub(super) fn dollar_amounts(text: &str) -> Vec<f64> {
         }
     }
     values
-}
-
-pub(super) fn percent_before_used(text: &str) -> Option<f64> {
-    let before_used = text.split("% used").next()?;
-    let percent = before_used
-        .rsplit(|ch: char| !(ch.is_ascii_digit() || ch == '.'))
-        .find(|part| !part.is_empty())?;
-    percent.parse().ok()
 }
 
 pub(super) fn format_currency(value: f64) -> String {

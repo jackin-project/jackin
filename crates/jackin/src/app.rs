@@ -90,6 +90,7 @@ pub async fn run(cli: Cli, lifecycle: crate::lifecycle::ProductLifecycle) -> Res
         Some(cmd) => cmd,
         None => Command::Console(cli.console_args),
     };
+    let announce_teardown = should_announce_run_teardown(&command);
     let command_name = crate::cli::command_name(&command);
     let app_mode = command_app_mode(&command);
     let paths = JackinPaths::detect()?;
@@ -104,27 +105,19 @@ pub async fn run(cli: Cli, lifecycle: crate::lifecycle::ProductLifecycle) -> Res
     // subscriber exists, so configuration failures share the one-shot harness.
     if let Some(requested) = jackin_diagnostics::unsupported_otlp_protocol() {
         let result = Err(crate::error::JackinError::UnsupportedOtlpProtocol { requested }.into());
-        finish_invocation(&diagnostics, invocation, &result);
+        finish_invocation(&diagnostics, invocation, &result, announce_teardown);
         return result;
     }
 
     // The startup bootstrap report threads first-run discovery into
     // `account scan` so a fresh-config scan prints the true imported count.
-    let (mut config, startup_bootstrap) = match &command {
-        // Role authoring is repository-local and must not create or read the
-        // operator's product configuration as a side effect.
-        Command::Role(_) => (
-            AppConfig::default(),
-            jackin_config::BootstrapReport::default(),
-        ),
-        _ => match AppConfig::load_or_init_detailed(&paths) {
-            Ok(loaded) => loaded,
-            Err(error) => {
-                let result: Result<()> = Err(error.into());
-                finish_invocation(&diagnostics, invocation, &result);
-                return result;
-            }
-        },
+    let (mut config, startup_bootstrap) = match load_startup_config(&command, &paths) {
+        Ok(loaded) => loaded,
+        Err(error) => {
+            let result: Result<()> = Err(error.into());
+            finish_invocation(&diagnostics, invocation, &result, announce_teardown);
+            return result;
+        }
     };
     apply_telemetry_config(&config);
     let interactive = app_mode == jackin_telemetry::schema::enums::AppMode::Interactive;
@@ -208,7 +201,7 @@ pub async fn run(cli: Cli, lifecycle: crate::lifecycle::ProductLifecycle) -> Res
     if interactive {
         invocation.exit_requested();
     }
-    finish_invocation(&diagnostics, invocation, &result);
+    finish_invocation(&diagnostics, invocation, &result, announce_teardown);
     result
 }
 
@@ -216,13 +209,39 @@ fn finish_invocation(
     diagnostics: &jackin_diagnostics::RunDiagnostics,
     invocation: crate::lifecycle::InvocationTelemetry,
     result: &Result<()>,
+    announce_teardown: bool,
 ) {
     record_run_error(result);
     // Emit per-stage duration summary before the run guard drops (Defect 47.5).
     // The guard's Drop then flushes OTLP, so the summary makes the export.
     diagnostics.emit_run_summary();
-    announce_run_teardown(diagnostics);
+    if announce_teardown {
+        announce_run_teardown(diagnostics);
+    }
     let _classification = invocation.finish(result);
+}
+
+fn should_announce_run_teardown(command: &Command) -> bool {
+    !matches!(command, Command::Usage(_))
+}
+
+fn load_startup_config(
+    command: &Command,
+    paths: &JackinPaths,
+) -> jackin_config::ConfigResult<(AppConfig, jackin_config::BootstrapReport)> {
+    match command {
+        // Role authoring and Usage are local interfaces which must not read
+        // the operator's account configuration. In particular, Usage's
+        // headless and passive paths are required to perform zero credential
+        // inspection; even a read-only config snapshot parses inline account
+        // credential values. Usage receives its local broker/data scope from
+        // paths separately.
+        Command::Role(_) | Command::Usage(_) => Ok((
+            AppConfig::default(),
+            jackin_config::BootstrapReport::default(),
+        )),
+        _ => AppConfig::load_or_init_detailed(paths),
+    }
 }
 
 fn apply_telemetry_config(config: &AppConfig) {

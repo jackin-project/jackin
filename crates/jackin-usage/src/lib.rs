@@ -2,7 +2,8 @@
 //!
 //! **Architecture Invariant:** T3.
 //! Entry point: [`UsageTotals`] — usage aggregation surface.
-//! Host menu-bar / CLI: [`host::HostUsageRuntime`] (Capsule-free).
+//! Host menu-bar / CLI usage: [`host::UsageBrokerClient`] and the
+//! credential-free [`host::HostUsageProjectionRuntime`] (Capsule-free).
 
 pub mod coordinator;
 pub mod host;

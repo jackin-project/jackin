@@ -1,92 +1,509 @@
 ---
 title: jackin❯ usage
-description: "Inspect cached Capsule usage and quota data for a running instance"
+description: "Read broker-owned usage and durable Claude monitor decisions"
 ---
 
-## Synopsis
+## Commands
 
 ```bash
-jackin usage cache accounts [--format human|json]
-jackin usage <INSTANCE> accounts [--sync-host-cache] [--format human|json]
-jackin usage <INSTANCE> verify [--format human|json]
+jackin usage --format json
+jackin usage service start --format json
+jackin usage service status --format json
+jackin usage service stop --format json
+jackin usage doctor --provider claude --unattended --format json
+jackin usage binding confirm --provider claude --account LOCAL_ID [--provider-account CANONICAL_LOCAL_ID] --operator-label LABEL --confirm --format json
+jackin usage binding confirm --provider claude --account LOCAL_ID --provider-account CANONICAL_LOCAL_ID --operator-label LABEL --confirm --approve-experimental-collector --format json
+jackin usage policy approve --binding ID --binding-revision 1 --goal GOAL --policy strict-sgd --budget-sgd 50 --operator-label LABEL --confirm --format json
+jackin usage policy approve --binding ID --binding-revision 1 --goal GOAL --policy quota-only --operator-label LABEL --confirm --acknowledge-no-sgd-cap --format json
+jackin usage monitor observe --provider claude --session SESSION --idempotency-key KEY --format json
+jackin usage monitor observe --provider claude --binding ID --binding-revision 1 --idempotency-key KEY --format json
+jackin usage monitor observe --provider claude --binding ID --binding-revision 1 --idempotency-key KEY --experimental-collector --format json
+jackin usage monitor start --provider claude --binding ID --binding-revision 1 --goal GOAL --policy-revision 1 --idempotency-key KEY --format json
+jackin usage monitor stop --monitor ID --format json
+jackin usage status --monitor ID --format json
+jackin usage refresh --monitor ID --format json
+jackin usage watch --monitor ID --timeout-secs 300 --format jsonl
+jackin usage wait --monitor ID --until runnable --timeout-secs 300 --format json
+jackin usage statusline ingest --session-only --format json < statusline.json
+jackin usage statusline ingest --binding ID --binding-revision 1 --format json < statusline.json
+jackin usage statusline compose --session-only --settings settings.json --format json
+jackin usage statusline compose --binding ID --binding-revision 1 --settings settings.json --format json
+jackin usage spend record --account ACCOUNT --file account-spend.json --verified --format json
+jackin usage --data-dir PATH auth prepare --provider claude [--keychain-service SERVICE]
 ```
 
-`jackin usage` reads the same daemon-cached usage and quota snapshots that the
-Capsule status bar and usage overlay render. It never polls Claude, Codex, Amp,
-or any provider directly from the host command; the selected running Capsule
-daemon owns provider refresh, caching, retry, and stale-state decisions.
+Observer and dispatch-guard commands may also take `--expected-model MODEL`;
+account-bound monitor commands may take `--session SESSION`. A policy approval
+may use `--expected-revision N` for optimistic concurrency. `--format json`
+and `--data-dir PATH` are global options; watch uses JSON Lines. Statusline
+ingress reads its bounded JSON input from stdin.
 
-`<INSTANCE>` accepts a full container name or the short instance id shown by
-[`jackin status`](/commands/status/).
+## Implementation status
 
-## Scopes
+The foreground `auth prepare` bootstrap and experimental collector described
+below are candidate behavior under implementation on main. They remain
+unverified until the matching installed CLI/broker pair passes verification. A
+predecessor v2 fixture using synthetic data does not validate this candidate,
+and no real account, Keychain grant, or provider request has been verified.
+Experimental collection does not establish Anthropic support or provider
+readiness.
 
-### cache accounts
+### Candidate durable monitor schema 4
+
+The candidate durable monitor store advances to schema 4 to persist a
+monotonic historical correction horizon for account spend. When a closed-period
+correction can no longer be applied from retained receipts, the horizon keeps
+affected goal accounting incomplete or unknown; later receipts or clock
+rollback cannot clear that protection.
+
+The V1, V2, and V3 migrations carry forward existing policy revisions and
+origins, baselines and cumulative estimates, quota-pause latches, and
+unknown/incomplete markers. They do not clear an existing latch or unknown
+state. V1 strict history remains migrated and unconfirmed; V2 known state is
+preserved unchanged.
+
+V3 snapshots without the correction horizon decode it as `None`. If migration
+finds no affected forward rollover, that horizon stays `None` and known goal
+state is preserved. For a V3 strict goal with a baseline and a forward
+billing-period transition in its retained goal or account anchors, migration
+preserves its cumulative estimate but conservatively marks spend unknown and
+incomplete, even when a closed-period anchor exists; that anchor cannot rule out
+an older lost correction. It records the latest affected forward anchor start
+as the account horizon, so later receipts or clock rollback cannot clear that
+uncertainty. Goals whose baseline starts at that horizon remain known; a later
+horizon is required to mark their spend incomplete.
+
+Migration does not invent a baseline, zero spend, approval, or quota evidence.
+Invalid and unsupported future schemas fail closed before stored state is
+replaced.
+
+The current source versions are independent: broker wire protocol v8, durable
+monitor-store schema 4, normalized statusline input schema v2, and durable
+projection-envelope schema 3. The broker migrates a v2 projection envelope by
+canonicalizing its serialized provider IDs and persisting v3 before exposing
+the projection; ordinary projection reads accept only v3. This migration is
+separate from the monitor-store schema migration.
+
+Use one installed `jackin` binary and its matching sibling broker throughout,
+with the same explicit `--data-dir PATH`. Do not switch to a repository
+`target/debug/jackin`. If `JACKIN_USAGE_BROKER_BIN` is set, it must name the
+matching sibling executable; an empty or different path is a provenance
+mismatch. Do not change Claude's environment to work around a mismatch.
+
+`usage host snapshot` and `usage host projection` were removed. The bare
+`jackin usage` command reads the current cached projection; it does not force a
+provider request. `usage refresh --monitor ID` reconciles local monitor evidence
+and returns status; it is not a provider refresh command.
+
+`usage service start` starts the passive statusline service. It does not inspect
+credentials or contact providers. The foreground bootstrap below claims its
+broker lease before it accesses Keychain. If any service already owns the lease,
+or ownership cannot be established, bootstrap returns `broker_conflict` without
+attaching, stopping, replacing, or unlinking that service. Do not start the
+passive service first on a data directory intended for the collector.
+
+An ordinary `monitor observe` without `--experimental-collector` is also passive
+and can start the local passive broker. If you intend to collect on that data
+directory, run attended `auth prepare` before starting the passive service or
+ordinary observer. Do not stop or replace an existing or unknown service to
+make room; resolve the `broker_conflict` through the responsible operator.
+
+`usage service status --format json` reports `experimental_collector_source` as
+an opaque canonical local source ID when the foreground collector service is
+running, and `null` for a passive service. This field reports service mode
+only. It does not prove that credentials are still valid, quota evidence is
+fresh, or the endpoint is available; it is not an authenticated provider
+account ID.
+
+V1 migration preserves each goal's strict policy semantics and history with
+origin `migrated_v1`; this is not explicit operator approval. Before any
+dispatch under a migrated goal, the operator must confirm the account binding
+and record a new strict policy revision with origin `operator`. Migrated
+bindings remain `operator_confirmed: false` with `confirmed_at_epoch: null`;
+migrated policies remain `operator_confirmed: false` with
+`recorded_at_epoch: null`. Missing callback source times stay unknown; migration
+does not infer an observation time or refresh evidence age.
+
+The only budget-repair exception is a V1 `migrated_v1` strict policy whose
+recorded budget is exactly SGD with exponent 2 and amount zero. A separate
+explicit operator approval may replace it with a positive strict SGD budget,
+creating a new `operator` revision. The migrated policy, baseline, cumulative
+spend, and historical uncertainty remain auditable. This exception never
+permits quota-only or applies to other currencies or malformed state. If the
+migrated baseline is absent or unverifiable, approval can still record the new
+operator policy revision, but the existing migrated goal remains blocked and
+non-runnable for dispatch until valid baseline admission. Repairing the budget
+does not invent a baseline or convert unknown history to zero spend. A new
+strict-goal activation without valid baseline admission is rejected atomically,
+without reserving its idempotency key or assigning a monitor ID.
+
+The foreground bootstrap is a separate path from `service start`:
 
 ```bash
-jackin usage cache accounts
+jackin usage --data-dir PATH auth prepare --provider claude [--keychain-service SERVICE]
 ```
 
-Reads the host-global jackin❯ account cache at
-`~/.jackin/data/daemon/accounts.db`. This is a read-only command: it does not
-create the cache file, poll providers, launch provider CLIs, or repair
-credentials. If the cache has not been explicitly seeded yet, it prints an
-empty table.
+All three standard streams must be terminals. Bootstrap first claims the exact
+broker lease, then reads the selected Claude Keychain source while interaction
+is allowed. It retains the credential in zeroizing memory and activates the
+lifetime no-UI guard in that same foreground process. It emits a secret-free
+`service_ready` record, then remains running; use a second terminal for binding
+and monitor commands. The readiness record means only that the local bootstrap
+completed. It does not certify the experimental endpoint or current quota.
+During this foreground service lifetime, collection uses the cached source and
+does not repeat a Keychain lookup. The source cache and broker lease are
+ephemeral: stopping or restarting the foreground process clears the cache, and
+the collector requires another attended `auth prepare` before it can run again.
+Provider authorization may expire sooner and require another attended
+preparation. No permanent credential availability or no-dialog guarantee is
+implied.
 
-### accounts
+The readiness record includes `source.account_id` and
+`source.scope: "claude_keychain_service"`; it omits the service string and
+credential. This canonical local source ID identifies the selected Jackin
+credential source, not an authenticated Anthropic account. If the service is
+already active or ownership is unknown, preserve the conflict and resolve it
+with the operator. Do not call `service stop` to make bootstrap succeed.
+
+## Observation, bindings, and policy
+
+`monitor observe` creates a durable observation-only monitor. Without
+`--experimental-collector`, it remains passive: it needs no spend receipt,
+dispatch policy approval, Claude authentication, or quota evidence, and can
+receive statusline observations. It can use an unbound session scope or a
+separately confirmed local binding. Unbound session evidence remains in an
+isolated session partition; it does not enter an account aggregate or merge
+retroactively. The optional `--experimental-collector` flag is available only
+for an account-bound observer. It requests experimental polling for that source,
+but cannot approve collection on its own.
+
+An observer always reports dispatch as `not_authorized` and `runnable: false`;
+its creation exits 0 when tracking starts, including when quota evidence is
+missing.
+
+A binding maps a local monitor account ID to a canonical local source ID. The
+canonical ID selects a Jackin credential source; it is not an authenticated
+Anthropic account identity. A callback's `session_id` is not an account ID, and
+statusline input cannot reveal which provider account Claude Code selected.
+Before changing the selected source or ingesting evidence from another Claude
+account, review or confirm the corresponding local binding. Binding confirmation
+and dispatch policy approval are separate commands. To allow collection, include
+`--approve-experimental-collector` on the attended binding confirmation and
+provide `--provider-account CANONICAL_LOCAL_ID`. This records explicit collector
+approval on that audited binding revision; approval defaults to false.
+`monitor observe --experimental-collector` can use only an already-approved
+mapping and cannot grant approval or enable provider requests by itself. The
+collector approval is independent of dispatch policy and does not authorize
+dispatch. Binding confirmation and policy approval require `--confirm`, an
+operator label, and attached stdin, stdout, and stderr terminals before
+contacting the broker. The broker records the exact scope and revision. This is
+a same-user local trust-boundary assertion, not cryptographic proof of human
+presence. There is no headless approval bypass.
+
+A dispatch guard requires a confirmed binding, goal, and already approved
+policy revision. `monitor start` consumes those exact references and a required
+idempotency key; it cannot choose or downgrade policy. Strict SGD requires a
+fresh, compatible, operator-attested baseline before the first goal activation.
+Quota-only requires explicit acknowledgement that Jackin's SGD spend
+protection is disabled; missing or unsupported policy never defaults to
+quota-only. Once a strict policy has been recorded, approving quota-only is
+rejected even before the goal's first activation; do not present this as a
+supported policy transition. Approval records retain the operator label,
+selected scope, policy revision, time, and origin.
+
+Strict activation is atomic. If baseline admission fails, the broker does not
+reserve the idempotency key, assign a monitor ID, or persist a partially
+activated goal. Repeating the same key/configuration returns the original
+record, including after stop; reusing a key with different configuration is an
+idempotency conflict. Use a new key for an intentional new run. New runs do not
+reset cumulative goal spend or account quota-pause state.
+
+## Readiness and exit status
+
+Monitor JSON reports purpose, scope, policy, and independent tracking, quota,
+budget, and dispatch readiness. `runnable` is authoritative. A `Wait` action,
+future reset time, or lifecycle label does not override it. Observation-only
+status is never runnable. Dispatch status, refresh, and wait exit 0 only when
+work is permitted, exit 2 when work is blocked or degraded, and exit 3 for an
+unavailable service or invalid request. An observation start exits 0 when
+tracking is durable even when quota is unknown.
+
+Each quota window reports `reset_validity` as `unknown`, `future`, or `due`,
+independently of reset-field freshness. `unknown` means no usable reset epoch is
+available; `future` and `due` classify the reported epoch against broker time.
+`due` is not confirmation of a reset, fresh quota, or permission to resume.
+
+Status also reports the configured `expected_model` and `model_guard_validity`:
+`not_configured`, `unknown`, `match`, or `mismatch`. `match` requires fresh
+model evidence. With a configured guard, missing or stale model evidence is
+`unknown`; a fresh different model is `mismatch`. The guard compares a model
+label only; a match is not model-specific quota evidence. The statusline does
+not report model-specific limits or permission for extra usage. Unknown extra
+usage permission never authorizes overage. These audit fields do not renew
+evidence, change freshness limits, clear reset barriers, relax guards, or
+override `runnable`.
+
+Passive commands—including bare `usage`, service status/start, `doctor`,
+`monitor observe` without `--experimental-collector`, monitor status/watch/refresh,
+and statusline ingest/compose—do not resolve credentials or make provider
+requests. `usage refresh --monitor ID` only reconciles local evidence. `doctor`
+reports broker and statusline-ingress capability; it does not establish quota,
+endpoint support, spend, policy, or dispatch readiness.
+
+### Foreground authentication bootstrap (implementation in progress)
+
+`usage auth prepare` is the explicit foreground bootstrap for the experimental
+collector. It requires stdin, stdout, and stderr to be terminals. It acquires
+the broker lease before the Keychain lookup, reads only the exact selected
+Claude Keychain service, retains that credential in zeroizing memory, then
+establishes the process-wide no-UI guard. It emits a secret-free
+`service_ready` result and remains in the foreground as the broker owner. Use a
+second terminal for subsequent binding and monitor commands. The ready result
+reports `source.account_id` and `source.scope: "claude_keychain_service"`; that
+ID identifies a local source, not an authenticated Anthropic identity.
+
+If a service already owns the lease, or ownership cannot be established,
+bootstrap returns `broker_conflict` before Keychain access. It does not attach,
+stop, replace, or unlink another service. Do not use `service stop` to clear a
+conflict. A passive broker started by `usage service start` or an ordinary
+`monitor observe` does not load a credential or contact Claude and cannot be
+reused for the experimental collector; choose one service path per data
+directory.
+
+The interactive Keychain read may require operator consent. While the
+foreground service retains its exact-source cache, collection does not reread
+Keychain and the no-UI guard prevents Jackin's unattended lookup from opening a
+dialog. If consent is still required, the read fails closed. This does not
+promise permanent credential availability or prevent prompts from other
+processes. Do not run authentication preparation from a statusline hook or an
+automated lane.
+
+### Experimental Claude collector (implementation in progress)
+
+Polling is off by default and requires two separate gates: the binding must
+first be confirmed by an operator with `--approve-experimental-collector`, then
+an account-bound `monitor observe` must be started with
+`--experimental-collector`.
+The binding flag records audited, durable approval for the mapped source;
+without it, the observe flag cannot authorize a provider request. Neither choice
+changes the monitor's observation-only purpose or dispatch policy. Statusline
+ingestion remains optional and is the primary supported quota source. Without
+both collector gates, observers do not poll Claude; passive commands remain
+credential- and network-free.
+
+Use the `source.account_id` from the foreground bootstrap's `service_ready`
+record as `CANONICAL_LOCAL_ID` in the attended binding command. Keep that
+foreground `auth prepare` process running while the collector observes. The
+experimental observe command attaches only to an already-running foreground
+service. The broker schedules provider requests only when that foreground source
+matches the approved binding's canonical local source ID.
+
+If no broker is running, or service status reports
+`experimental_collector_source: null` for a passive broker, the command returns
+`collector_auth_required`; it does not start a broker, convert a passive service,
+or run `auth prepare` automatically. If no service owns the lease, start the
+foreground bootstrap explicitly before retrying. If a passive or unknown service
+already owns it, preserve the conflict and resolve it with the operator; do not
+stop or replace that service.
+
+Then start the collector against that binding revision:
 
 ```bash
-jackin usage jk-k7p9m2xq accounts
+jackin usage binding confirm --provider claude --account LOCAL_ID --provider-account CANONICAL_LOCAL_ID --operator-label LABEL --confirm --approve-experimental-collector --format json
+jackin usage monitor observe --provider claude --binding BINDING_ID --binding-revision 1 --idempotency-key KEY --experimental-collector --format json
 ```
 
-Prints provider account/quota buckets known to the Capsule daemon: provider,
-account label, quota window, status, usage amount, and source.
+The experimental collector uses a Jackin user agent and Anthropic's
+undocumented OAuth usage endpoint. The endpoint has no documented public usage
+contract; it may change or reject requests. Label its results experimental and
+do not claim Anthropic support, guaranteed availability, or provider readiness.
+The existing broker attempt floor and rate-limit backoff apply; the experimental
+flag does not bypass them. This implementation is in progress and has not been
+verified against a live account or provider.
 
-`--sync-host-cache` also upserts the returned rows into jackin❯'s host-global
-account cache at `~/.jackin/data/daemon/accounts.db`. This is an explicit
-host-side write, intended as a diagnostic bridge until the long-running host
-daemon owns provider refresh and writes that cache itself.
+## Local Claude Code evidence
 
-### verify
+The [official statusline guide](https://code.claude.com/docs/en/statusline)
+documents `rate_limits.five_hour` and `rate_limits.seven_day`. Each may
+independently contain `used_percentage` and a `resets_at` Unix timestamp. The
+fields were introduced in Claude Code [v2.1.80](https://github.com/anthropics/claude-code/blob/v2.1.80/CHANGELOG.md).
+`version` in the callback is an optional reported Claude Code version; it is
+stored as `claude_code_version`, separate from Jackin's monitor schema version.
+Quota fields claimed by versions before 2.1.80 are rejected. A missing version
+remains unknown and is not authenticated proof of compatibility. Jackin does
+not execute Claude to inspect its installed version or obtain quota.
 
-```bash
-jackin usage jk-k7p9m2xq verify
-```
+The raw callback has a `session_id`, an optional model label, and optional
+five-hour and seven-day quota windows. It has no verified account identity or
+provider observation timestamp, model-specific quota limits, or permission for
+extra usage. Choose either
+`--session-only`, which uses the payload session ID without asserting an
+account, or `--binding ID --binding-revision N`, which assigns observations to
+the operator-confirmed local account mapping. Binding does not authenticate to
+the provider. Ingress accepts at most 16 KiB, ignores unrelated fields
+including session cost and `extra_usage`, and never reads credentials or sends
+provider requests. Missing fields stay unknown. Each field carries its source,
+account/session, broker receipt time, evidence time when available, sequence,
+and age. Repeated identical callbacks preserve evidence age. A timer running
+the callback again does not observe the provider, and inactivity can leave data
+stale. The local evidence age limit remains 300 seconds, evaluated per field.
 
-Checks that every provider quota row known to the Capsule daemon is present and
-trusted (fresh enough and from an expected source). Use this after auth or
-provider changes to confirm the status bar and usage overlay will see the same
-data.
-
-## Output
-
-Human output is compact and intended for diagnostics:
-
-```text
-  jackin❯
-
-usage accounts for jk-k7p9m2xq (k7p9m2xq)
-
-  provider      account                 window        status        usage               source
-  ----------------------------------------------------------------------------------------------
-  codex         alexey@example.com      session       fresh         37/100 percent      codex-rpc
-```
-
-`--format json` wraps the shared protocol shape in a stable command envelope:
+`statusline compose` reads the supplied settings file and prints a JSON Merge
+Patch containing only the top-level `statusLine` property. For an existing
+statusline, that object preserves its command metadata and other options while
+replacing only `command`; if none exists, it proposes a command statusline.
+For a new statusline, the patch has this shape:
 
 ```json
 {
-  "schema_version": "v1",
-  "data": {
-    "container": "jk-k7p9m2xq-myproj-agent",
-    "accounts": [],
-    "synced_host_cache_path": null,
-    "host_cache_path": null
+  "statusLine": {
+    "type": "command",
+    "command": "<composed command>"
   }
 }
 ```
 
-## Related
+When a statusline already exists, its additional `statusLine` properties are
+also preserved in the patch.
 
-- [`jackin status`](/commands/status/) - find running instances and short ids
-- [`jackin console`](/commands/console/) - open the Capsule TUI and usage overlay
+The patch does not include unrelated settings keys or environment values. It
+does not write settings or modify a running Claude session. Review the patch,
+then manually merge only its `statusLine` property into the existing settings
+file, preserving every other setting. Never replace the whole settings file
+with the patch. The wrapper requires a
+POSIX-compatible shell and Python 3 for ingestion.
+If Python 3 is unavailable, it runs the existing command directly once and
+skips ingestion. It invokes `statusline ingest` with the selected
+`--session-only` or confirmed `--binding`/`--binding-revision` scope, plus the
+explicit data directory and JSON format. The existing command owns the displayed
+stdout and exit status; failed or timed-out ingestion does not replace them. A
+payload over 16 KiB still reaches the existing command but skips ingestion.
+Composition performs no OAuth lookup, Keychain access, provider HTTP request,
+or policy approval.
+
+Without an installed statusline callback or the explicit experimental
+collector, Jackin has no source of new Claude quota evidence. An observation
+monitor may remain active, but quota readiness stays unknown as evidence ages.
+Claude Code's interactive `/usage` display is separate from this data path; it
+does not automatically send usage to Jackin.
+
+## Decisions and resets
+
+Used values in monitor JSON are integer `used_percentage_basis_points`:
+`9000` means 90%. Read the five-hour and seven-day windows independently.
+Unknown or stale evidence blocks runnable decisions. Treat `status.runnable` as
+authoritative regardless of lifecycle or a `Wait` action. A future reset can
+produce `Wait` while the monitor remains runnable; it is a reevaluation hint,
+not a pause. Continue work within any checkpoint or dispatch limits. If a
+`Pause` action is present or `status.runnable` is false, checkpoint and stop new
+work. Use bounded `wait --until runnable` only while blocked, then re-read
+status before resuming. Execute the actions in each `latest_decision.sequence`
+once, saving the last handled sequence durably.
+`watch` starts with the latest reconciled event and then streams newer events;
+it does not replay an old runnable state on a fresh attachment. Treat event
+history as history, and use current status before starting work.
+
+| Used limit | Required behavior |
+| --- | --- |
+| 90% | Stop large packs and request a durable checkpoint from every active lane. |
+| 91% | Reduce dispatch concurrency; use small checkpointed slices. |
+| 95% | Finish the current slice, checkpoint and pause new work. |
+
+A threshold jump includes the necessary checkpoint and concurrency actions
+before pause. Decisions are requests to the coordinator/operator; Jackin does
+not forcibly terminate lanes or edit their projects.
+
+A reported reset schedules reevaluation after a small grace. Time passing
+produces `reset_due_unverified`, never proof of replenished allowance. A reset
+hint or `Wait` action alone does not release a paused monitor. New evidence must
+confirm the relevant reset before the monitor can resume. Weekly, model and
+spend guards still apply after a five-hour reset. A missing reset remains unknown.
+The 95% pause stays latched even if a later callback reports a lower value for
+the same old window. Recovery requires fresh lower-use and advanced-reset fields from one paired
+observation after the reported reset plus 60 seconds. Its bound session may
+differ from the session that triggered the pause.
+The quota latch belongs to the account, including high observations received
+before a monitor was created. Starting another monitor or goal cannot bypass it.
+`wait --until runnable` is bounded and returns the latest useful JSON when its
+wait ends, with `wait_timeout` and exit 2 if still blocked; another wait can be
+issued after checkpointing. No automatic resumption
+is guaranteed.
+
+Unchanged fields retain their own evidence age even when another field changes.
+This conservative rule can leave a weekly window, reset or expected model stale
+during an active session. A callback has no authoritative per-field provider
+timestamp; a changed sibling cannot certify its freshness. Jackin blocks until
+usable new evidence arrives.
+
+Monitor state, goal baselines, decisions and reset waits persist across broker
+restart. Long idle periods and sleep do not schedule catch-up polling bursts.
+Elapsed time can age evidence or make a reset due; it cannot manufacture new
+quota or spend evidence. The broker holds its owner lease lock throughout its
+lifetime, including startup and sleep. A live hung broker requires operator
+lifecycle intervention; expiry alone cannot replace it while it still owns the
+lock. Process exit releases the lock.
+
+The experimental collector uses the broker's persisted attempt floor,
+`Retry-After` handling, and backoff. `usage refresh --monitor ID` only reconciles
+local evidence; it cannot force a provider request or bypass cooldowns. A
+collector attempt can fail or return stale evidence, and no stability or
+readiness guarantee follows. Jackin does not invoke `claude -p /usage` or
+independently rotate Claude Code refresh tokens. This collection path remains in
+progress and has not been validated against a live endpoint or account.
+
+## Spend guard
+
+A goal needs an account-bound, fresh same-period baseline with explicit
+currency, amount, and decimal exponent. Record a verified operator receipt
+before strict goal activation. The file schema is:
+
+```json
+{
+  "billing_period_start_epoch": 1790812800,
+  "billing_period_end_epoch": 1793491200,
+  "amount": {"amount_minor": 12000, "currency": "SGD", "exponent": 2},
+  "evidence_at_epoch": 1791532800
+}
+```
+
+These are illustrative values, not current billing evidence. `--verified` is an
+operator attestation of the selected account, currency and period. Without it
+the observation is explicitly unverified. Session list-price cost, unknown credits, USD and unspecified
+currency cannot be treated as billed SGD. The account total's increases since
+the baseline are counted conservatively toward the goal; simultaneous goals can
+attribute the same account spending to more than one goal.
+
+First strict activation captures the current account total as the goal spend
+baseline. The monitor attributes only later increases to that goal. Work already
+done before monitoring is untracked and unknown; the receipt cannot make prior
+spend retroactive. Do not present the SGD50 guard as a whole-goal historical
+cap or change the goal ID to erase attribution. A missing or invalid baseline
+leaves the goal unverifiable; a later receipt does not create a zero-spend
+baseline for that goal. `--verified` is an operator attestation, not independent
+provider billing verification.
+
+The default SGD50 guard warns at SGD40, checkpoints and stops new work at SGD45,
+and pauses at SGD48. Missing or unverifiable evidence returns
+`budget_unverifiable` and requires checkpointing and reporting the issue. Billing
+rollover retains cumulative goal spending and fails closed when closing/opening
+period evidence is incomplete. Operator attestation is not independent provider
+verification or a guarantee of final billed amounts.
+Stopping or recreating a monitor for the same goal retains its spend state. A
+goal started without a valid baseline remains unverifiable; a later receipt
+does not silently establish a zero-spend baseline for that existing goal.
+
+Configure an **account-side Anthropic monthly spending limit** for hard billing
+protection. Jackin's local goal guard is not a hard per-goal SGD billing cap.
+
+## Cached Capsule inspection
+
+```bash
+jackin usage cache accounts --format json
+jackin usage INSTANCE accounts --format json
+jackin usage INSTANCE accounts --sync-host-cache --format json
+jackin usage INSTANCE verify --format json
+```
+
+These commands inspect existing account snapshots. `--sync-host-cache` explicitly
+copies Capsule rows into the host account cache. They do not replace the durable
+monitor contract.

@@ -4,14 +4,20 @@
 //! Immediately admitted, bounded long polls never occupy control workers.
 
 use std::os::unix::net::UnixStream;
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use super::{dispatch, unavailable, write_response};
+use super::catalog::BrokerCatalogRefresh;
+use super::dispatch_ops::{DispatchControls, dispatch_with_liveness};
+use super::monitor::{MONITOR_WATCH_TIMEOUT_CAP_MS, MonitorStore};
+use super::serve_loop::write_response;
+use super::unavailable;
 use crate::coordinator::UsageCoordinator;
 use jackin_protocol::usage_broker::{
     UsageBrokerOperation, UsageBrokerRequest, UsageBrokerResponse,
 };
+use jackin_protocol::usage_monitor::MonitorOperation;
 
 // The broker contract includes twenty simultaneous Capsule clients plus Desktop.
 // Excess admission fails immediately; no short wait can queue behind a long one.
@@ -21,6 +27,9 @@ pub(super) struct WaitPool {
     coordinator: Arc<UsageCoordinator>,
     build_id: Arc<str>,
     publisher: super::publish::ProjectionPublisher,
+    monitor_store: Arc<MonitorStore>,
+    shutdown: Arc<AtomicBool>,
+    catalog_refresh: Option<Arc<BrokerCatalogRefresh>>,
     workers: Mutex<Vec<std::thread::JoinHandle<()>>>,
 }
 
@@ -29,11 +38,17 @@ impl WaitPool {
         coordinator: Arc<UsageCoordinator>,
         build_id: Arc<str>,
         publisher: super::publish::ProjectionPublisher,
+        monitor_store: Arc<MonitorStore>,
+        shutdown: Arc<AtomicBool>,
+        catalog_refresh: Option<Arc<BrokerCatalogRefresh>>,
     ) -> Self {
         Self {
             coordinator,
             build_id,
             publisher,
+            monitor_store,
+            shutdown,
+            catalog_refresh,
             workers: Mutex::new(Vec::new()),
         }
     }
@@ -65,11 +80,25 @@ impl WaitPool {
         let coordinator = Arc::clone(&self.coordinator);
         let build_id = Arc::clone(&self.build_id);
         let publisher = self.publisher.clone();
+        let monitor_store = Arc::clone(&self.monitor_store);
+        let shutdown = Arc::clone(&self.shutdown);
+        let catalog_refresh = self.catalog_refresh.clone();
         if let Ok(worker) = jackin_telemetry::spawn::thread_joined_named(
             "usage-broker-wait".to_owned(),
             move || {
                 account_for_dispatch_time(&mut request.operation, accepted.elapsed());
-                let response = dispatch(&coordinator, request, &build_id, &publisher);
+                let response = dispatch_with_liveness(
+                    &coordinator,
+                    request,
+                    &build_id,
+                    &publisher,
+                    &monitor_store,
+                    DispatchControls {
+                        shutdown: shutdown.as_ref(),
+                        catalog_refresh: catalog_refresh.as_deref(),
+                        collector_liveness: None,
+                    },
+                );
                 write_response(&mut worker_stream, response);
             },
         ) {
@@ -111,6 +140,9 @@ pub(super) const fn is_wait(operation: &UsageBrokerOperation) -> bool {
             | UsageBrokerOperation::JoinForCapability { .. }
             | UsageBrokerOperation::JoinPublication { .. }
             | UsageBrokerOperation::JoinPublicationForSurface { .. }
+            | UsageBrokerOperation::Monitor {
+                request: MonitorOperation::Watch { .. }
+            }
     )
 }
 
@@ -118,11 +150,14 @@ fn account_for_dispatch_time(operation: &mut UsageBrokerOperation, elapsed: Dura
     let (UsageBrokerOperation::Join { timeout_ms, .. }
     | UsageBrokerOperation::JoinForCapability { timeout_ms, .. }
     | UsageBrokerOperation::JoinPublication { timeout_ms, .. }
-    | UsageBrokerOperation::JoinPublicationForSurface { timeout_ms, .. }) = operation
+    | UsageBrokerOperation::JoinPublicationForSurface { timeout_ms, .. }
+    | UsageBrokerOperation::Monitor {
+        request: MonitorOperation::Watch { timeout_ms, .. },
+    }) = operation
     else {
         return;
     };
     *timeout_ms = (*timeout_ms)
-        .min(30_000)
+        .min(MONITOR_WATCH_TIMEOUT_CAP_MS)
         .saturating_sub(u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX));
 }

@@ -1106,24 +1106,126 @@ fn seed_usage_dialog_for_refresh_test(mux: &mut Multiplexer) {
     mux.dialog_push(Dialog::new_usage(stale));
 }
 
-#[test]
-fn broker_client_capsule_deduplicates_each_account_and_adopts_terminal_generation() {
-    use std::collections::{BTreeMap, BTreeSet};
+fn accept_fake_broker_client(
+    listener: &std::os::unix::net::UnixListener,
+    deadline: Instant,
+) -> Option<std::os::unix::net::UnixStream> {
+    use std::sync::{Condvar, Mutex};
+
+    let wait_lock = Mutex::new(());
+    let changed = Condvar::new();
+    loop {
+        match listener.accept() {
+            Ok((stream, _)) => return Some(stream),
+            Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                if remaining.is_zero() {
+                    return None;
+                }
+                let guard = wait_lock.lock().unwrap();
+                let (_guard, _) = changed
+                    .wait_timeout(guard, remaining.min(Duration::from_millis(5)))
+                    .unwrap();
+            }
+            Err(error) => panic!("accepting fake broker client failed: {error}"),
+        }
+    }
+}
+
+fn serve_fake_broker_request(
+    stream: &mut std::os::unix::net::UnixStream,
+    seen: &mut BTreeMap<jackin_protocol::usage_broker::UsageAccountCapability, [bool; 3]>,
+) {
     use std::io::{BufRead as _, BufReader, Write as _};
-    use std::os::unix::net::UnixListener;
 
     use jackin_protocol::control::{
         FocusedUsageView, QuotaBucketView, StatusSlot, UsageConfidence, UsageSeverity,
         UsageSnapshotStatus, UsageSource,
     };
     use jackin_protocol::usage_broker::{
-        USAGE_BROKER_PROTOCOL_VERSION, UsageAccountCapability, UsageBrokerOperation,
-        UsageBrokerRequest, UsageBrokerResponse, UsageGenerationView, UsageRefreshPhase,
+        USAGE_BROKER_PROTOCOL_VERSION, UsageBrokerOperation, UsageBrokerRequest,
+        UsageBrokerResponse, UsageGenerationView, UsageRefreshPhase,
     };
 
+    let request = {
+        let mut line = String::new();
+        BufReader::new(&mut *stream).read_line(&mut line).unwrap();
+        serde_json::from_str::<UsageBrokerRequest>(line.trim()).unwrap()
+    };
+    assert_eq!(request.protocol_version, USAGE_BROKER_PROTOCOL_VERSION);
+    let (request_capability, generation, phase, snapshot, stage) = match request.operation {
+        UsageBrokerOperation::CurrentForCapability { capability } => {
+            (capability, 0, UsageRefreshPhase::Idle, None, 0)
+        }
+        UsageBrokerOperation::RefreshForCapability {
+            capability,
+            observed_generation,
+            ..
+        } => {
+            assert_eq!(observed_generation, 0);
+            (capability, 1, UsageRefreshPhase::Queued, None, 1)
+        }
+        UsageBrokerOperation::JoinForCapability {
+            capability,
+            generation,
+            ..
+        } => {
+            assert_eq!(generation, 1);
+            let mut view = FocusedUsageView::unavailable("fixture", 1);
+            view.status = UsageSnapshotStatus::Fresh;
+            view.source = UsageSource::ProviderApi;
+            view.confidence = UsageConfidence::Authoritative;
+            view.account.provider_label = "OpenAI / Codex".to_owned();
+            view.account.account_label = format!("{}@capsule.example.test", capability.account_id);
+            view.buckets = vec![QuotaBucketView {
+                label: "Weekly".to_owned(),
+                used_label: None,
+                limit_label: None,
+                remaining_percent: Some(71),
+                reset_label: None,
+                resets_at: None,
+                status_slot: Some(StatusSlot::Weekly),
+                pace_label: None,
+                status: UsageSnapshotStatus::Fresh,
+                used_money: None,
+                limit_money: None,
+                severity: UsageSeverity::Normal,
+            }];
+            (capability, 1, UsageRefreshPhase::Completed, Some(view), 2)
+        }
+        operation => panic!("unexpected relay operation: {operation:?}"),
+    };
+    seen.entry(request_capability.clone()).or_default()[stage] = true;
+    let response = UsageBrokerResponse::State {
+        state: Box::new(UsageGenerationView {
+            capability: request_capability,
+            generation,
+            phase,
+            snapshot,
+            error: None,
+            retry_at_epoch: None,
+        }),
+    };
+    let mut bytes = serde_json::to_vec(&response).unwrap();
+    bytes.push(b'\n');
+    stream.write_all(&bytes).unwrap();
+}
+
+#[test]
+fn broker_client_capsule_deduplicates_each_account_and_adopts_terminal_generation() {
+    use std::collections::BTreeSet;
+    use std::os::unix::fs::PermissionsExt as _;
+    use std::os::unix::net::UnixListener;
+
+    use jackin_protocol::usage_broker::{UsageAccountCapability, UsageRefreshPhase};
+
     let temp = tempfile::tempdir().unwrap();
-    let socket = temp.path().join("usage.sock");
+    let socket_directory = temp.path().canonicalize().unwrap();
+    std::fs::set_permissions(&socket_directory, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let socket = socket_directory.join("usage.sock");
     let listener = UnixListener::bind(&socket).unwrap();
+    std::fs::set_permissions(&socket, std::fs::Permissions::from_mode(0o600)).unwrap();
+    listener.set_nonblocking(true).unwrap();
     let capability = UsageAccountCapability {
         account_id: "allowed-a".to_owned(),
         surface_id: "codex".to_owned(),
@@ -1134,78 +1236,17 @@ fn broker_client_capsule_deduplicates_each_account_and_adopts_terminal_generatio
     };
     let server_capabilities = BTreeSet::from([capability.clone(), second_capability.clone()]);
     let server = std::thread::spawn(move || {
+        let deadline = Instant::now() + Duration::from_secs(5);
         let mut seen = BTreeMap::<UsageAccountCapability, [bool; 3]>::new();
+        let mut received = 0;
         for _ in 0..6 {
-            let (mut stream, _) = listener.accept().unwrap();
-            let request = {
-                let mut line = String::new();
-                BufReader::new(&mut stream).read_line(&mut line).unwrap();
-                serde_json::from_str::<UsageBrokerRequest>(line.trim()).unwrap()
+            let Some(mut stream) = accept_fake_broker_client(&listener, deadline) else {
+                break;
             };
-            assert_eq!(request.protocol_version, USAGE_BROKER_PROTOCOL_VERSION);
-            let (request_capability, generation, phase, snapshot, stage) = match request.operation {
-                UsageBrokerOperation::CurrentForCapability { capability } => {
-                    (capability, 0, UsageRefreshPhase::Idle, None, 0)
-                }
-                UsageBrokerOperation::RefreshForCapability {
-                    capability,
-                    observed_generation,
-                    ..
-                } => {
-                    assert_eq!(observed_generation, 0);
-                    (capability, 1, UsageRefreshPhase::Queued, None, 1)
-                }
-                UsageBrokerOperation::JoinForCapability {
-                    capability,
-                    generation,
-                    ..
-                } => {
-                    assert_eq!(generation, 1);
-                    let mut view = FocusedUsageView::unavailable("fixture", 1);
-                    view.status = UsageSnapshotStatus::Fresh;
-                    view.source = UsageSource::ProviderApi;
-                    view.confidence = UsageConfidence::Authoritative;
-                    view.account.provider_label = "OpenAI / Codex".to_owned();
-                    view.account.account_label =
-                        format!("{}@capsule.example.test", capability.account_id);
-                    view.buckets = vec![QuotaBucketView {
-                        label: "Weekly".to_owned(),
-                        used_label: None,
-                        limit_label: None,
-                        remaining_percent: Some(71),
-                        reset_label: None,
-                        resets_at: None,
-                        status_slot: Some(StatusSlot::Weekly),
-                        pace_label: None,
-                        status: UsageSnapshotStatus::Fresh,
-                        used_money: None,
-                        limit_money: None,
-                        severity: UsageSeverity::Normal,
-                    }];
-                    (capability, 1, UsageRefreshPhase::Completed, Some(view), 2)
-                }
-                operation => panic!("unexpected relay operation: {operation:?}"),
-            };
-            seen.entry(request_capability.clone()).or_default()[stage] = true;
-            let response = UsageBrokerResponse::State {
-                state: Box::new(UsageGenerationView {
-                    capability: request_capability,
-                    generation,
-                    phase,
-                    snapshot,
-                    error: None,
-                    retry_at_epoch: None,
-                }),
-            };
-            let mut bytes = serde_json::to_vec(&response).unwrap();
-            bytes.push(b'\n');
-            stream.write_all(&bytes).unwrap();
+            received += 1;
+            serve_fake_broker_request(&mut stream, &mut seen);
         }
-        assert_eq!(
-            seen.keys().cloned().collect::<BTreeSet<_>>(),
-            server_capabilities
-        );
-        assert!(seen.values().all(|stages| stages == &[true, true, true]));
+        (seen, received)
     });
     let client =
         jackin_usage::host::UsageBrokerClient::at(socket, env!("CARGO_PKG_VERSION").to_owned());
@@ -1230,8 +1271,33 @@ fn broker_client_capsule_deduplicates_each_account_and_adopts_terminal_generatio
         Some(target.clone()),
         Some(&target),
     );
-    server.join().unwrap();
+    let client_errors = refreshes
+        .iter()
+        .filter_map(|refresh| {
+            refresh.result.as_ref().err().map(|error| {
+                format!(
+                    "{} / {}: {:?} ({})",
+                    refresh.target.capability.surface_id,
+                    refresh.target.capability.account_id,
+                    error.kind,
+                    error.message
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let (seen, received) = server.join().unwrap();
 
+    assert!(
+        client_errors.is_empty(),
+        "broker client operations failed after fake server received {received}/6 operations: {}",
+        client_errors.join("; ")
+    );
+    assert_eq!(received, 6, "broker client operation count");
+    assert_eq!(
+        seen.keys().cloned().collect::<BTreeSet<_>>(),
+        server_capabilities
+    );
+    assert!(seen.values().all(|stages| stages == &[true, true, true]));
     assert_eq!(refreshes.len(), 2);
     let states = refreshes
         .into_iter()

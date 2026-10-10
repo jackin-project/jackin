@@ -83,7 +83,7 @@ Settings is a standard titled `NSWindow` containing a grouped `Form`. It owns me
 
 | Path | Role |
 |---|---|
-| `../crates/jackin-usage` | Host probes and `HostUsageRuntime` |
+| `../crates/jackin-usage` | Broker-owned probes and credential-free `HostUsageProjectionRuntime` |
 | `../crates/jackin-usage-ffi` | Synchronous boltffi facade |
 | `Sources/JackinUsageBindings` | Generated boltffi Swift only (never handwritten) |
 | `Sources/JackinUsageBridge` | Handwritten sole FFI importer: typed facade, `PresentationStore`, pure projections |

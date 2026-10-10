@@ -5,7 +5,9 @@ description: Inventories current provider probes, credential sources, normalized
 
 ## Summary
 
-Current probes cover seven providers through one normalized limits pipeline, with provider-specific credential and quota gaps documented below.
+At the 2026-07-24 verification cutoff, probes covered seven providers through
+one normalized limits pipeline, with provider-specific credential and quota
+gaps documented below.
 
 ## Question and scope
 
@@ -19,6 +21,9 @@ This chapter informs jackin-desktop.
 **Verification cutoff:** 2026-07-24
 
 All paths below are relative to the repository root unless absolute. `usage/` means `crates/jackin-usage/src/usage/`.
+The provider matrix below records that cutoff. The separate main-port monitor note
+dated 2026-10-10 records later Claude collection changes; it does not extend the
+earlier live/provider evidence.
 
 ## Findings
 
@@ -28,7 +33,7 @@ All paths below are relative to the repository root unless absolute. `usage/` me
   - CLI RPC: spawns `codex -s read-only -a untrusted app-server` (usage/codex.rs:719-720); JSON-RPC methods `account/rateLimits/read` (usage/codex.rs:771) and `account/read` (usage/codex.rs:781). (confidence: HIGH)
   - OAuth HTTP: base URL from `$CODEX_HOME/config.toml` `chatgpt_base_url`, default `https://chatgpt.com/backend-api` (usage/codex.rs:1040-1062); usage path `/wham/usage` (or `/api/codex/usage` for non-backend-api bases) via `resolve_codex_usage_url` (usage/codex.rs:1023-1031); reset-credits at `{base}/wham/rate-limit-reset-credits` via `resolve_codex_reset_credits_url` (usage/codex.rs:1033-1038). (confidence: HIGH)
   - Token refresh (401/403 retry only, never persisted back): POST `https://auth.openai.com/oauth/token` with public client id — `CODEX_OAUTH_TOKEN_URL` / `CODEX_OAUTH_CLIENT_ID` (crates/jackin-usage/src/usage.rs:1294-1295; refresh flow usage/codex.rs:930-986). (confidence: HIGH)
-- **Claude (usage/claude.rs)** — GET `https://api.anthropic.com/api/oauth/usage` with `anthropic-beta: oauth-2025-04-20` and a `claude-code/<version>` User-Agent (endpoint gated to that UA) (usage/claude.rs:825-846; UA resolution 848-873, fallback `claude-code/2.1.0` at crates/jackin-usage/src/usage.rs:179). Fallback when OAuth fetch fails but a token exists: CLI `claude -p /usage` (usage/claude.rs:901-911; command args crates/jackin-usage/src/usage.rs:1522). (confidence: HIGH)
+- **Claude (usage/claude.rs)** — Historical finding at the 2026-07-24 cutoff: GET `https://api.anthropic.com/api/oauth/usage` with `anthropic-beta: oauth-2025-04-20` and a `claude-code/<version>` User-Agent; that snapshot also described a `claude -p /usage` fallback. Current main-port candidate source, as of 2026-10-10, instead sends `User-Agent: jackin/<version>` (`crates/jackin-usage/src/usage/claude.rs:1492-1510`) and has no CLI usage fallback. The route remains private and undocumented; this source change does not establish Anthropic support or live readiness.
 - **Amp (usage/amp.rs)** — POST `https://ampcode.com/api/internal?userDisplayBalanceInfo` with JSON body `{"method":"userDisplayBalanceInfo","params":{}}` (usage/amp.rs:214-243). Fallback: CLI `amp --no-color usage` (usage/amp.rs:339-343). (confidence: HIGH)
 - **Grok (usage/grok.rs)** — dual source (usage/grok.rs:336-353):
   - CLI ACP RPC preferred: spawns `~/.grok/bin/grok agent stdio` (or `grok` on PATH) (usage/grok.rs:355-366, 440-447); JSON-RPC method `x.ai/billing` (usage/grok.rs:416-423). (confidence: HIGH)
@@ -53,7 +58,7 @@ All bearer GETs route through the shared `get_json_bearer` helper (crates/jackin
 ### Q3 — Extracted fields and UI labels
 
 - **Codex**: primary/secondary rate-limit windows (`used_percent`, `resets_at`, window duration) → buckets "Session" (StatusSlot::Session) and "Weekly" (StatusSlot::Weekly) (usage/codex.rs:567-584); per-limit-id extra limits (everything except limit id `codex`) → "`<label>` 5-hour" / "`<label>` Weekly" detail rows — the Codex-Spark entry yields "Codex Spark 5-hour"/"Codex Spark Weekly" (usage/codex.rs:446-448, 521-542, 586-609; fallback placeholders 163-204); "Limit Reset Credits" bucket with "N manual resets available · Next expires …" detail (usage/codex.rs:610-622, 649-675); "Credits" bucket with balance/unlimited (usage/codex.rs:624-637); plan label mapped following CodexBar — `pro` → "Pro 20x", pro-lite variants → "Pro 5x" (usage/codex.rs:36-76); account label from RPC email or JWT email (usage/codex.rs:501-511). (confidence: HIGH)
-- **Claude**: authoritative `limits[]` entries (`kind` session/weekly_all/weekly_scoped, `percent`, `severity`, `resets_at`, `scope.model.display_name`) → "Session", "All models" (Weekly slot), and per-model weekly windows labeled by model display name (Fable etc., no per-model code) (usage/claude.rs:264-307, 361-380, 548-594); legacy named windows backfill → "Session", "Weekly", "Sonnet", "Opus", "Daily Routines" (usage/claude.rs:596-689); fallback placeholder buckets "Session"/"Weekly"/"Daily Routines" (usage/claude.rs:110-138); money-cap surfaces: "Extra usage" spend bucket (StatusSlot::Spend, Money-typed used/limit, disabled-reason honesty) from `spend{}` or legacy `extra_usage` (usage/claude.rs:309-336, 382-399, 740-823) and rotating-codename dollar-budget windows (e.g. `amber_ladder`) → title-cased dollar buckets with used/limit money (usage/claude.rs:691-736); plan label from `oauthAccount.organizationType` else `subscriptionType`/`rateLimitTier` (usage/claude.rs:140-147, 210-257); CLI fallback parses "Current session:", "Current week (all models):", "Current week (Sonnet only):", and generic `"Current week (<model>):"` lines (crates/jackin-usage/src/usage.rs:1535-1566), marked `UsageConfidence::Estimated` (usage/claude.rs:160-171). (confidence: HIGH)
+- **Claude**: the 2026-07-24 matrix recorded `limits[]` and legacy named-window parsing, placeholder buckets, spend bounds, and plan labels. Current main-port source retains the API parsing path but removes the CLI `claude -p /usage` parser/fallback described by that earlier snapshot. Treat the older CLI behavior as historical, not current coverage.
 - **Amp**: `free_remaining`/`free_limit`/`hourly_replenishment`/`individual_credits` (+account email) (usage/amp.rs:129-165) → buckets "Amp Free" (currency used/limit, remaining %, replenishment-derived "Resets in …" label) and "Individual credits" (usage/amp.rs:177-211, 278-337); plan label fixed "Amp Free" when data present (usage/amp.rs:99); CLI fallback parses "Signed in as", "Amp Free:", "Individual credits:" lines (usage/amp.rs:345-372). (confidence: HIGH)
 - **Grok**: RPC billing — `monthlyLimit`, `onDemandCap`, `on_demand_enabled`, usage `includedUsed`/`onDemandUsed`/`totalUsed` (cents), billing cycle start/end (usage/grok.rs:129-163) → headline bucket labeled "Weekly"/"Monthly"/"Credits" by cycle length (Weekly slot; Grok has no session window), plus "Included usage" and "On-demand usage" detail rows (usage/grok.rs:223-334); web fallback extracts only `used_percent` + reset epoch from protobuf (usage/grok.rs:171-221); plan label `auth_mode` oidc → "SuperGrok" (usage/grok.rs:793-802); account from email/user_id/team_id keys (usage/grok.rs:786-791). (confidence: HIGH)
 - **Z.AI**: `limits[]` with `type` TOKENS_LIMIT/TIME_LIMIT, unit/number windows, usage/currentValue/remaining/percentage, `nextResetTime` (ms) (usage/zai.rs:83-117) → buckets "5-hour" (Session slot, shortest token window), "Tokens" (Weekly slot, longest), "MCP" (time limit, count detail line) (usage/zai.rs:119-161); plan label from `planName`/aliases (usage/zai.rs:92-102, 163-170). (confidence: HIGH)
@@ -88,7 +93,7 @@ All bearer GETs route through the shared `get_json_bearer` helper (crates/jackin
 
 ### Dead ends and contradictions
 
-- No probe has a macOS Keychain credential reader; comments state the origin always names a file (usage/claude.rs:48-49). Ruled out.
+- The Capsule-side Claude provider probe has no macOS Keychain reader; its source comments describe file-based credentials (usage/claude.rs:48-49). The separate main-port monitor bootstrap is host-only and attended; it does not change the Capsule probe's credential path.
 - Claude env keys (`ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN`) are not used to fetch usage; presence/origin only (usage/claude.rs:73-89). Same for Codex `OPENAI_API_KEY` env and Grok `XAI_API_KEY`/`GROK_DEPLOYMENT_KEY` env (usage/codex.rs:113-121; usage/grok.rs:29-30, 59-71).
 - Telemetry route-template vs actual URL mismatch for Codex reset credits: the telemetry label says `/backend-api/wham/usage/reset_credits` (usage/codex.rs:1011) while the real request path is `{base}/wham/rate-limit-reset-credits` (usage/codex.rs:1033-1038). Label-only discrepancy; the HTTP call uses the latter.
 - Credential-origin label vs actual source for MiniMax/Z.AI: MiniMax always reports "API token · env MINIMAX_API_KEY" (usage/minimax.rs:49-56) and Z.AI "API token · env ZAI_API_KEY" (usage/zai.rs:58-62) even when the key came from `MINIMAX_CODING_API_KEY`, `Z_AI_API_KEY`, or the injected `provider_keys` map (crates/jackin-usage/src/usage.rs:901-926). Cosmetic origin inaccuracy, not a data-flow issue.

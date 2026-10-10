@@ -75,30 +75,35 @@ pub(crate) use self::antigravity::{
     antigravity_snapshot, fetch_antigravity_cli_credits, fetch_antigravity_cli_usage,
     parse_agy_version, parse_antigravity_credits_output, parse_antigravity_usage_output,
 };
-pub use self::claude::ClaudeUsageDiagnostic;
 #[cfg(any(target_os = "macos", test))]
-pub(crate) use self::claude::classify_claude_keychain_status;
+pub use self::claude::classify_claude_keychain_status;
 #[expect(
     unused_imports,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
 pub(crate) use self::claude::{
-    ClaudeCliUsage, ClaudeKeychainRead, ClaudeOAuthCredentials, ClaudeOAuthEnvToken,
-    ClaudeOAuthExtraUsage, ClaudeOAuthLimit, ClaudeOAuthLimitModel, ClaudeOAuthLimitScope,
-    ClaudeOAuthMoney, ClaudeOAuthSpend, ClaudeOAuthUsageResponse, ClaudeOAuthUsageWindow,
-    ClaudeQuotaWindow, ClaudeResolved, ClaudeSpend, ClaudeWavePolicy, ClaudeWaveResolution,
-    claude_account_identity, claude_api_key_snapshot, claude_code_user_agent,
-    claude_code_user_agent_with, claude_code_version_from_text, claude_email_from_value,
-    claude_error_is_scope_restriction, claude_oauth_candidates, claude_oauth_from_value,
-    claude_organization_type_from_value, claude_provider_error_label, claude_snapshot,
-    claude_spend_bucket, claude_view_from_wave_with_rate_limit, claude_wave_policy,
-    fetch_claude_cli_usage, fetch_claude_oauth_usage, load_claude_account_email,
-    normalize_claude_spend, push_claude_dollar_windows, read_claude_keychain_item,
-    resolve_claude_wave,
+    ClaudeCollectionError, ClaudeCollectorLiveness, ClaudeCollectorOperationPermit,
+    ClaudeOAuthCredentials, ClaudeOAuthEnvToken, ClaudeOAuthExtraUsage, ClaudeOAuthLimit,
+    ClaudeOAuthLimitModel, ClaudeOAuthLimitScope, ClaudeOAuthMoney, ClaudeOAuthSpend,
+    ClaudeOAuthUsageResponse, ClaudeOAuthUsageWindow, ClaudeProfilePayload, ClaudeQuotaWindow,
+    ClaudeResolved, ClaudeSpend, ClaudeWavePolicy, ClaudeWaveResolution,
+    bootstrapped_claude_service, claude_account_identity, claude_api_key_snapshot,
+    claude_credential_generation_is_current, claude_error_is_scope_restriction,
+    claude_oauth_candidates, claude_provider_error_label, claude_service_is_bootstrapped,
+    claude_snapshot, claude_source_capability_id_for_service, claude_spend_bucket,
+    claude_view_from_wave_with_metadata, claude_view_from_wave_with_rate_limit, claude_wave_policy,
+    experimental_claude_usage_snapshot_for_service, fetch_claude_oauth_usage,
+    load_claude_account_email, normalize_claude_spend, parse_claude_profile_payload,
+    push_claude_dollar_windows, resolve_claude_wave,
+};
+pub use self::claude::{
+    ClaudeCredentialBootstrapOutcome, ClaudeCredentialLease, ClaudeKeychainPolicyError,
+    ClaudeKeychainRead, ClaudeUnattendedKeychainGuard, bootstrap_claude_credential,
+    prepare_claude_keychain_auth, read_claude_keychain_item, unattended_keychain_guard,
 };
 #[cfg(test)]
 pub(crate) use self::claude::{
-    ClaudeFileProbe, ClaudeKeychainState, load_claude_oauth_credentials,
+    ClaudeFileProbe, ClaudeKeychainState, claude_oauth_from_value, load_claude_oauth_credentials,
     load_claude_organization_type, read_claude_oauth_env_token, resolve_claude_refresh_wave_with,
 };
 #[cfg(test)]
@@ -205,7 +210,7 @@ pub(crate) use self::openrouter::{
 };
 #[cfg(test)]
 pub(crate) use self::refresh::MaterializedUsageAccounts;
-pub use self::refresh::ProviderRateLimit;
+pub use self::refresh::{ProviderErrorKind, ProviderFailureMetadata, ProviderRateLimit};
 
 #[expect(
     unused_imports,
@@ -239,25 +244,19 @@ pub(crate) use self::zai::{
 };
 
 use format::{
-    CliOutput, codex_account_from_value, codex_limit_label, compact_count, dollar_amounts,
-    env_value, expiry_label, first_string_key, format_amount_with_unit, format_cents,
-    format_currency, home_path, humanize_plan_label, humanize_words_with, json_number,
-    oauth_origin, parse_iso_epoch, percent_before_used, quota_pace_label, remaining_from_fraction,
-    reset_label, run_cli_with_timeout, run_cli_with_timeout_full, titlecase_ascii,
-    used_percent_from_fraction, used_percent_label, window_minutes_label,
+    codex_account_from_value, codex_limit_label, compact_count, dollar_amounts, env_value,
+    expiry_label, first_string_key, format_amount_with_unit, format_cents, format_currency,
+    home_path, humanize_plan_label, humanize_words_with, json_number, oauth_origin,
+    parse_iso_epoch, quota_pace_label, remaining_from_fraction, reset_label, run_cli_with_timeout,
+    titlecase_ascii, used_percent_from_fraction, used_percent_label, window_minutes_label,
 };
 // Crate-visible re-exports for host overview/compact presentation (plan 008).
-pub(crate) use format::{
-    compact_duration_label, exact_reset_parenthetical, percent_headline, reset_label_with_prefs,
-};
 
 pub(crate) const PROVIDER_HTTP_TIMEOUT: Duration = Duration::from_secs(10);
 pub(crate) const PROVIDER_CLI_TIMEOUT: Duration = Duration::from_secs(10);
 pub(crate) const CODEX_RPC_INIT_TIMEOUT: Duration = Duration::from_secs(8);
 pub(crate) const CODEX_RPC_REQUEST_TIMEOUT: Duration = Duration::from_secs(3);
 pub(crate) const CODEX_RPC_LAUNCH_COOLDOWN: Duration = Duration::from_mins(30);
-pub(crate) const CLAUDE_VERSION_TIMEOUT: Duration = Duration::from_secs(2);
-pub(crate) const CLAUDE_CODE_USER_AGENT_FALLBACK: &str = "claude-code/2.1.0";
 pub(crate) const GROK_RPC_INIT_TIMEOUT: Duration = Duration::from_secs(8);
 pub(crate) const GROK_RPC_REQUEST_TIMEOUT: Duration = Duration::from_secs(12);
 pub(crate) const MATERIALIZED_USAGE_ACCOUNTS_PATH: &str = container_paths::USAGE_ACCOUNTS;
@@ -751,8 +750,9 @@ pub fn estimate_caption(view: &FocusedUsageView) -> Option<String> {
 }
 
 pub use self::format::{
-    PercentStyle, ResetStyle, UsageBucketPresentation, UsageFormatPrefs, usage_bucket_presentation,
-    usage_detail_presentation, usage_display_status_label, usage_identity_presentation,
+    PercentStyle, ResetStyle, UsageBucketPresentation, UsageFormatPrefs, local_timestamp_label,
+    percent_headline, reset_label_with_prefs, usage_bucket_presentation, usage_detail_presentation,
+    usage_display_status_label, usage_identity_presentation,
 };
 
 pub fn usage_status_storage_label(status: UsageSnapshotStatus) -> &'static str {
@@ -811,11 +811,12 @@ pub(crate) fn provider_credential_snapshot_with_rate_limit(
                 Some("Claude"),
                 now,
                 ClaudeWaveResolution::Resolved(Box::new(ClaudeResolved {
-                    access_token: secret.to_owned(),
+                    access_token: zeroize::Zeroizing::new(secret.to_owned()),
                     subscription_type: None,
                     account_email: None,
                     organization_type: None,
                     credential_origin: "OAuth · configured source".to_owned(),
+                    keychain_service: None,
                     is_anonymous: true,
                 })),
             );
@@ -892,6 +893,37 @@ pub(crate) fn provider_credential_snapshot_with_rate_limit(
         _ => unsupported_snapshot(surface_id, None, now),
     };
     (view, None)
+}
+
+pub(crate) fn provider_credential_snapshot_with_metadata(
+    surface_id: &str,
+    key_name: &str,
+    secret: &str,
+) -> (
+    FocusedUsageView,
+    Option<ProviderRateLimit>,
+    Option<ProviderFailureMetadata>,
+) {
+    let now = now_epoch();
+    if surface_id == "claude" && key_name == jackin_core::CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME {
+        return claude_view_from_wave_with_metadata(
+            "claude",
+            Some("Claude"),
+            now,
+            ClaudeWaveResolution::Resolved(Box::new(ClaudeResolved {
+                access_token: zeroize::Zeroizing::new(secret.to_owned()),
+                subscription_type: None,
+                account_email: None,
+                organization_type: None,
+                credential_origin: "OAuth · configured source".to_owned(),
+                keychain_service: None,
+                is_anonymous: true,
+            })),
+        );
+    }
+    let (view, rate_limit) =
+        provider_credential_snapshot_with_rate_limit(surface_id, key_name, secret);
+    (view, rate_limit, None)
 }
 
 pub(crate) fn resolve_surface(agent: &str, provider: Option<&str>) -> UsageSurface {
@@ -1463,10 +1495,11 @@ pub(crate) fn provider_request<T, E>(
 /// Failure classes preserved by the shared bearer-auth JSON fetcher.
 ///
 /// Provider snapshots may map an HTTP auth status to `NeedsLogin`, but a
-/// transport or decode failure must remain an ordinary provider error even if
+/// timeout, transport, or decode failure must remain an ordinary provider error even if
 /// its rendered message happens to contain the same digits.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ProviderHttpError {
+    Timeout(String),
     Transport(String),
     HttpStatus {
         status: u16,
@@ -1480,9 +1513,10 @@ pub(crate) enum ProviderHttpError {
 impl std::fmt::Display for ProviderHttpError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Transport(message) | Self::HttpStatus { message, .. } | Self::Decode(message) => {
-                formatter.write_str(message)
-            }
+            Self::Timeout(message)
+            | Self::Transport(message)
+            | Self::HttpStatus { message, .. }
+            | Self::Decode(message) => formatter.write_str(message),
         }
     }
 }
@@ -1547,7 +1581,12 @@ pub(crate) fn get_json_bearer<T: serde::de::DeserializeOwned>(
             request = request.header(name.clone(), *value);
         }
         let response = request.send().map_err(|err| {
-            ProviderHttpError::Transport(format!("{label} request failed: {err}"))
+            let message = format!("{label} request failed: {err}");
+            if err.is_timeout() {
+                ProviderHttpError::Timeout(message)
+            } else {
+                ProviderHttpError::Transport(message)
+            }
         })?;
         let response_received_at_epoch = now_epoch();
         let status = response.status();
@@ -1561,9 +1600,14 @@ pub(crate) fn get_json_bearer<T: serde::de::DeserializeOwned>(
                 response_received_at_epoch: Some(response_received_at_epoch),
             });
         }
-        response
-            .json::<T>()
-            .map_err(|err| ProviderHttpError::Decode(format!("{label} decode failed: {err}")))
+        response.json::<T>().map_err(|err| {
+            let message = format!("{label} decode failed: {err}");
+            if err.is_timeout() {
+                ProviderHttpError::Timeout(message)
+            } else {
+                ProviderHttpError::Decode(message)
+            }
+        })
     })
 }
 
@@ -1594,64 +1638,6 @@ pub(crate) fn normalize_url_or_host(value: &str, suffix: &str) -> String {
     } else {
         format!("{trimmed}/{suffix}")
     }
-}
-
-pub fn run_claude_usage_diagnostic() -> Result<ClaudeUsageDiagnostic, String> {
-    run_claude_usage_diagnostic_with(|command, args, timeout| {
-        run_cli_with_timeout_full(command, args, timeout)
-    })
-}
-
-pub(crate) fn run_claude_usage_diagnostic_with<F>(
-    mut runner: F,
-) -> Result<ClaudeUsageDiagnostic, String>
-where
-    F: FnMut(&str, &[&str], Duration) -> Result<CliOutput, String>,
-{
-    let args = ["-p", "/usage"];
-    let output = runner("claude", &args, PROVIDER_CLI_TIMEOUT)?;
-    Ok(ClaudeUsageDiagnostic {
-        command: "claude".to_owned(),
-        args: args.iter().map(|arg| (*arg).to_owned()).collect(),
-        success: output.success,
-        exit_code: output.exit_code,
-        stdout: output.stdout,
-        stderr: output.stderr,
-        fetched_at_epoch: now_epoch(),
-    })
-}
-
-pub(crate) fn parse_claude_usage_output(text: &str) -> Option<ClaudeCliUsage> {
-    let mut usage = ClaudeCliUsage::default();
-    for line in text.lines().map(str::trim).filter(|line| !line.is_empty()) {
-        if line.starts_with("Current session:") {
-            usage.session_used = percent_before_used(line);
-        } else if line.starts_with("Current week (all models):") {
-            usage.weekly_used = percent_before_used(line);
-        } else if line.starts_with("Current week (Sonnet only):") {
-            usage.sonnet_used = percent_before_used(line);
-        } else if let Some(rest) = line.strip_prefix("Current week (") {
-            // Per-model weekly line, e.g. "Current week (Fable): 35% used · …".
-            // The model name is the text between the parens; "all models" and
-            // "Sonnet only" are handled by the explicit branches above, so
-            // anything reaching here is a model-scoped window (Fable today,
-            // future codenames tomorrow). Surfaced generically so a new model
-            // prints without a per-model parser edit.
-            if let Some(close) = rest.find(')') {
-                let label = rest[..close].trim();
-                if !label.is_empty()
-                    && let Some(percent) = percent_before_used(line)
-                {
-                    usage.scoped_weekly.push((label.to_owned(), percent));
-                }
-            }
-        }
-    }
-    (usage.session_used.is_some()
-        || usage.weekly_used.is_some()
-        || usage.sonnet_used.is_some()
-        || !usage.scoped_weekly.is_empty())
-    .then_some(usage)
 }
 
 /// `Auth:` origin label for an OAuth credential resolved from `path`, with the
