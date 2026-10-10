@@ -3,11 +3,11 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use proc_macro2::{Delimiter, TokenStream, TokenTree};
 use super::{
     PROHIBITED_TELEMETRY_MACROS, RAW_SCOPED_THREAD_ALLOWLIST, RAW_SPAWN_ALLOWLIST,
     RAW_TRACING_ALLOWLIST,
 };
+use proc_macro2::{Delimiter, TokenStream, TokenTree};
 use syn::spanned::Spanned as _;
 use syn::visit::Visit as _;
 

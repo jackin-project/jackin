@@ -73,11 +73,13 @@ fn source_policy_resolves_raw_meter_import_and_binding_aliases() {
             "{source}"
         );
     }
-    assert!(source_policy_violations(
-        path,
-        "mod global { pub fn meter() {} } fn safe() { let _ = global::meter; }"
-    )
-    .is_empty());
+    assert!(
+        source_policy_violations(
+            path,
+            "mod global { pub fn meter() {} } fn safe() { let _ = global::meter; }"
+        )
+        .is_empty()
+    );
 }
 
 #[test]
