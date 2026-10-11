@@ -629,3 +629,44 @@ and Plan jobs both stop in Setup Mise: the action installs 2026.9.18 while the
 checked-in config requires 2026.10.7. This confirms the PR still has no current
 full-CI success; the new contract tests remain unexecuted because the generated
 workflow is not yet the owner-v1 task-manifest output.
+
+## Live PR and focused fixture checkpoint — 2026-10-11
+
+At 00:31 UTC, PR #1121 is still OPEN/DRAFT at
+`c7a7f1b2866f1b54b72abe438967662a2de035a9` on `rust-policy-rollout`, based on
+main `1c3dd1be4a3b1ed518133ec3899c084c792370ff`. Its latest run,
+[38094607092](https://github.com/jackin-project/jackin/actions/runs/38094607092),
+failed Plan, Actionlint, and Required; all 27 Rust package jobs and baseline
+publication were skipped, and DCO was `action_required`. The latest API review
+refresh found no reviews, inline review comments, or review threads; one older
+bot issue comment remains.
+This run is not a validation of the local changes recorded below.
+
+The separate Velnor PR #144 is OPEN/DRAFT at remote head
+`b9ea8d2dff3c1b1eb119aee8be9964aeb24ccd61`, based on main
+`b7b3da582aa8042f7a465ec0cdfc794eb9a90c35`. Its latest run,
+[38097357540](https://github.com/tailrocks/velnor-new/actions/runs/38097357540),
+completed with 9 of 13 Rust jobs passing and four failing: CLI, workflow
+renderer, orchestrator, and Mise. Plan, Cargo Machete, Alint, Actionlint,
+Cargo Deny, Zizmor, and maintenance helpers passed; Required failed and baseline
+publication was skipped. The PR has no reviews, inline comments, issue
+comments, or review threads. Main has not moved on either repository.
+
+The local Velnor candidate at
+`5ca22ba30b5dcbd1cdc64d0c7bd9b08bf042073b` / tree
+`64fb1b35d11681a13081570bd544f3c6de08dd09` contains three fixture-only
+follow-ups on top of remote #144: the Rust 1.99 qualified target expectation,
+the matching attach fixture pin, and the renderer fixture's current Rust/MBX
+pins. A focused Nextest inventory over the Mise, orchestrator, and workflow
+renderer packages contained 2,482 cases. The four exact cases corresponding to
+the failed remote jobs passed locally in run
+`4a9ad639-d766-4e31-9d03-c72edfbc9d57` (4 passed, 1,356 skipped):
+`impl_mise_catalog::rust_toolchain_name_pins_version_and_target`,
+`attach::attach_tests::mbx_tests::preseed_restores_mbx_builds_after_sources_with_homes`,
+`verification_jobs::workflow_task_jobs::tests::mixed_variants_validate_and_join_required_fan_in`,
+and
+`verification_jobs::workflow_task_jobs::tests::undeclared_task_prefixed_jobs_fail_closed`.
+This is targeted local fixture evidence only; the PR's hosted checks remain
+failed at the older remote head, and the action-owned MBX metadata guard is
+still in progress. No full workspace test result or native-host acceptance is
+claimed.
