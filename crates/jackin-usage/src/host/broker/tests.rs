@@ -2792,6 +2792,276 @@ fn expired_lease_is_reclaimed_after_dead_owner_releases_lifetime_lock() {
     assert!(replacement.stale_lease_reclaimed);
 }
 
+fn foreign_broker_lease(
+    protocol_version: &str,
+    build_id: &str,
+    process_id: u32,
+    renewed_at_epoch: i64,
+) -> BrokerLease {
+    BrokerLease {
+        instance_id: format!("sha256:{}", "a".repeat(64)),
+        process_id,
+        protocol_version: protocol_version.to_owned(),
+        build_id: build_id.to_owned(),
+        renewed_at_epoch,
+    }
+}
+
+fn definitely_dead_process_id() -> u32 {
+    let mut child = std::process::Command::new("/bin/sh")
+        .args(["-c", "exit 0"])
+        .spawn()
+        .expect("spawn a short-lived PID fixture");
+    let process_id = child.id();
+    assert!(child.wait().expect("reap PID fixture").success());
+    assert!(broker_owner_pid_is_definitely_absent(
+        i32::try_from(process_id).expect("child pid fits pid_t")
+    ));
+    process_id
+}
+
+fn write_lease_fixture(path: &Path, lease: &BrokerLease) -> Vec<u8> {
+    let bytes = serde_json::to_vec(lease).expect("serialize lease fixture");
+    fs::write(path, &bytes).expect("write lease fixture");
+    fs::set_permissions(path, fs::Permissions::from_mode(0o600))
+        .expect("restrict lease fixture permissions");
+    bytes
+}
+
+#[test]
+fn expired_v8_lease_is_reclaimed_only_after_dead_owner_and_unowned_socket_checks() {
+    let temp = tempfile::tempdir().unwrap();
+    let lease_path = temp.path().join(BROKER_LEADER);
+    let socket_path = temp.path().join(BROKER_SOCKET);
+    let duration = Duration::from_secs(30);
+    let started_at = 1_700_000_000;
+    let expired_at = started_at + i64::try_from(duration.as_secs()).unwrap() + 1;
+    write_lease_fixture(
+        &lease_path,
+        &foreign_broker_lease(
+            PREVIOUS_USAGE_BROKER_PROTOCOL_VERSION,
+            "0.6.4",
+            definitely_dead_process_id(),
+            started_at,
+        ),
+    );
+
+    let replacement = claim_leader_at_with_socket(
+        &lease_path,
+        Some(&socket_path),
+        "0.6.4",
+        duration,
+        expired_at,
+    )
+    .unwrap()
+    .expect("known stale v8 lease with no owner or socket can be reclaimed");
+    assert!(replacement.stale_lease_reclaimed);
+    assert_eq!(
+        replacement.lease.protocol_version,
+        USAGE_BROKER_PROTOCOL_VERSION
+    );
+    assert_eq!(replacement.lease.build_id, "0.6.4");
+    assert_eq!(replacement.lease.renewed_at_epoch, expired_at);
+}
+
+#[test]
+fn expired_v9_lease_from_another_build_can_be_reclaimed_after_owner_exit() {
+    let temp = tempfile::tempdir().unwrap();
+    let lease_path = temp.path().join(BROKER_LEADER);
+    let socket_path = temp.path().join(BROKER_SOCKET);
+    let duration = Duration::from_secs(30);
+    let started_at = 1_700_000_000;
+    let expired_at = started_at + i64::try_from(duration.as_secs()).unwrap() + 1;
+    write_lease_fixture(
+        &lease_path,
+        &foreign_broker_lease(
+            USAGE_BROKER_PROTOCOL_VERSION,
+            "old-build",
+            definitely_dead_process_id(),
+            started_at,
+        ),
+    );
+
+    let replacement = claim_leader_at_with_socket(
+        &lease_path,
+        Some(&socket_path),
+        "new-build",
+        duration,
+        expired_at,
+    )
+    .unwrap()
+    .expect("known stale v9 lease from another build can be reclaimed");
+    assert_eq!(replacement.lease.build_id, "new-build");
+}
+
+#[test]
+fn foreign_lease_recovery_fails_closed_for_live_unknown_future_and_malformed_owners() {
+    let duration = Duration::from_secs(30);
+    let started_at = 1_700_000_000;
+    let expired_at = started_at + i64::try_from(duration.as_secs()).unwrap() + 1;
+
+    for (name, lease) in [
+        (
+            "live pid",
+            foreign_broker_lease(
+                PREVIOUS_USAGE_BROKER_PROTOCOL_VERSION,
+                "0.6.4",
+                std::process::id(),
+                started_at,
+            ),
+        ),
+        (
+            "unknown protocol",
+            foreign_broker_lease("v10", "0.6.4", definitely_dead_process_id(), started_at),
+        ),
+        (
+            "future timestamp",
+            foreign_broker_lease(
+                PREVIOUS_USAGE_BROKER_PROTOCOL_VERSION,
+                "0.6.4",
+                definitely_dead_process_id(),
+                expired_at + 1,
+            ),
+        ),
+        (
+            "invalid identity",
+            BrokerLease {
+                instance_id: "not-an-instance-id".to_owned(),
+                process_id: definitely_dead_process_id(),
+                protocol_version: PREVIOUS_USAGE_BROKER_PROTOCOL_VERSION.to_owned(),
+                build_id: "0.6.4".to_owned(),
+                renewed_at_epoch: started_at,
+            },
+        ),
+        (
+            "invalid pid",
+            foreign_broker_lease(
+                PREVIOUS_USAGE_BROKER_PROTOCOL_VERSION,
+                "0.6.4",
+                0,
+                started_at,
+            ),
+        ),
+    ] {
+        let temp = tempfile::tempdir().unwrap();
+        let lease_path = temp.path().join(BROKER_LEADER);
+        let socket_path = temp.path().join(BROKER_SOCKET);
+        let original = write_lease_fixture(&lease_path, &lease);
+
+        assert!(
+            claim_leader_at_with_socket(
+                &lease_path,
+                Some(&socket_path),
+                "current-build",
+                duration,
+                expired_at,
+            )
+            .unwrap()
+            .is_none(),
+            "{name} must block foreign lease recovery"
+        );
+        assert_eq!(
+            fs::read(&lease_path).unwrap(),
+            original,
+            "{name} mutated lease"
+        );
+    }
+}
+
+#[test]
+fn foreign_lease_recovery_preserves_responsive_socket_and_lease() {
+    let temp = tempfile::tempdir().unwrap();
+    let lease_path = temp.path().join(BROKER_LEADER);
+    let socket_path = temp.path().join(BROKER_SOCKET);
+    let listener = UnixListener::bind(&socket_path).unwrap();
+    let original_socket = fs::symlink_metadata(&socket_path).unwrap();
+    let duration = Duration::from_secs(30);
+    let started_at = 1_700_000_000;
+    let expired_at = started_at + i64::try_from(duration.as_secs()).unwrap() + 1;
+    let original_lease = write_lease_fixture(
+        &lease_path,
+        &foreign_broker_lease(
+            PREVIOUS_USAGE_BROKER_PROTOCOL_VERSION,
+            "0.6.4",
+            definitely_dead_process_id(),
+            started_at,
+        ),
+    );
+
+    assert!(
+        claim_leader_at_with_socket(
+            &lease_path,
+            Some(&socket_path),
+            "current-build",
+            duration,
+            expired_at,
+        )
+        .unwrap()
+        .is_none(),
+        "responsive socket must block foreign lease recovery"
+    );
+    assert_eq!(fs::read(&lease_path).unwrap(), original_lease);
+    let current_socket = fs::symlink_metadata(&socket_path).unwrap();
+    assert_eq!(
+        (current_socket.dev(), current_socket.ino()),
+        (original_socket.dev(), original_socket.ino()),
+    );
+    drop(listener);
+}
+
+#[test]
+fn foreign_lease_recovery_rejects_unknown_fields_and_oversized_payloads() {
+    let temp = tempfile::tempdir().unwrap();
+    let lease_path = temp.path().join(BROKER_LEADER);
+    let socket_path = temp.path().join(BROKER_SOCKET);
+    let duration = Duration::from_secs(30);
+    let started_at = 1_700_000_000;
+    let mut json = serde_json::to_value(foreign_broker_lease(
+        PREVIOUS_USAGE_BROKER_PROTOCOL_VERSION,
+        "0.6.4",
+        definitely_dead_process_id(),
+        started_at,
+    ))
+    .unwrap();
+    json["future_owner_field"] = serde_json::Value::Bool(true);
+    let unknown_field_bytes = serde_json::to_vec(&json).unwrap();
+    fs::write(&lease_path, &unknown_field_bytes).unwrap();
+    fs::set_permissions(&lease_path, fs::Permissions::from_mode(0o600)).unwrap();
+    assert!(
+        claim_leader_at_with_socket(
+            &lease_path,
+            Some(&socket_path),
+            "current-build",
+            duration,
+            started_at + 31,
+        )
+        .unwrap()
+        .is_none()
+    );
+    assert_eq!(fs::read(&lease_path).unwrap(), unknown_field_bytes);
+
+    fs::write(
+        &lease_path,
+        vec![b'x'; usize::try_from(BROKER_LEASE_MAX_BYTES).unwrap() + 1],
+    )
+    .unwrap();
+    fs::set_permissions(&lease_path, fs::Permissions::from_mode(0o600)).unwrap();
+    assert!(
+        claim_leader_at_with_socket(
+            &lease_path,
+            Some(&socket_path),
+            "current-build",
+            duration,
+            started_at + 31,
+        )
+        .is_err()
+    );
+    assert_eq!(
+        fs::metadata(&lease_path).unwrap().len(),
+        BROKER_LEASE_MAX_BYTES + 1
+    );
+}
+
 #[test]
 fn broker_refuses_legacy_pid_lease_without_mutating_it() {
     let temp = tempfile::tempdir().unwrap();
@@ -3991,6 +4261,74 @@ fn foreground_expired_lease_keeps_responsive_unrecognized_socket() {
     let after = fs::symlink_metadata(&socket_path).expect("responsive socket remains");
     assert_eq!((after.dev(), after.ino()), before_identity);
     drop(listener);
+}
+
+#[test]
+fn foreground_foreign_lease_denials_never_start_auth_bootstrap() {
+    use super::service::{
+        ForegroundBootstrapOutcome, run_usage_broker_foreground_bootstrap_with_for_test,
+    };
+
+    let now_epoch = chrono::Utc::now().timestamp();
+    let stale_epoch = now_epoch - i64::try_from(BROKER_LEASE_DURATION.as_secs()).unwrap() - 1;
+    for (name, process_id, responsive_socket) in [
+        ("live pid", std::process::id(), false),
+        ("responsive socket", definitely_dead_process_id(), true),
+    ] {
+        let temp = tempfile::tempdir().expect("isolated foreign lease data directory");
+        let config = UsageBrokerConfig::for_data_dir(temp.path().to_owned());
+        let run_dir = secure_run_directory(&config.data_dir).expect("create private run directory");
+        let lease_path = run_dir.join(BROKER_LEADER);
+        let socket_path = config.socket_path();
+        let listener = responsive_socket
+            .then(|| UnixListener::bind(&socket_path).expect("bind responsive stale endpoint"));
+        let original_socket = listener
+            .as_ref()
+            .map(|_| fs::symlink_metadata(&socket_path).expect("inspect stale endpoint"));
+        let original_lease = write_lease_fixture(
+            &lease_path,
+            &foreign_broker_lease(
+                PREVIOUS_USAGE_BROKER_PROTOCOL_VERSION,
+                "0.6.4",
+                process_id,
+                stale_epoch,
+            ),
+        );
+        let bootstrap_calls = Arc::new(AtomicUsize::new(0));
+        let result = run_usage_broker_foreground_bootstrap_with_for_test(
+            config,
+            host_desktop_scope(temp.path()),
+            "blocked-foreign-lease-service",
+            {
+                let calls = Arc::clone(&bootstrap_calls);
+                move |_| {
+                    calls.fetch_add(1, Ordering::SeqCst);
+                    Ok(ForegroundBootstrapOutcome::<FakeForegroundCredentialLease>::Missing)
+                }
+            },
+            || Ok(()),
+            |_| {},
+        );
+
+        let Err(error) = result else {
+            panic!("{name} must block foreground auth bootstrap");
+        };
+        assert_eq!(
+            error.kind,
+            UsageCoordinationErrorKind::BrokerConflict,
+            "{name}"
+        );
+        assert_eq!(bootstrap_calls.load(Ordering::SeqCst), 0, "{name}");
+        assert_eq!(fs::read(&lease_path).unwrap(), original_lease, "{name}");
+        if let Some(before) = original_socket {
+            let after = fs::symlink_metadata(&socket_path).expect("responsive socket remains");
+            assert_eq!((after.dev(), after.ino()), (before.dev(), before.ino()));
+        }
+        drop(listener);
+        if responsive_socket {
+            fs::remove_file(&socket_path).expect("remove test socket after closing listener");
+        }
+    }
 }
 
 #[test]

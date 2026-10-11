@@ -28,7 +28,7 @@ use super::client_security;
 use super::{
     BROKER_LEADER, BrokerSocketIdentity, BrokerStartupCleanup, DiscoveryProviderExecutor,
     EmptyProviderCredentialResolver, LoadedProjection, ServePolicy, UsageBrokerClient,
-    UsageBrokerConfig, UsageDiscoveryScope, broker_conflict, claim_leader,
+    UsageBrokerConfig, UsageDiscoveryScope, broker_conflict, claim_leader_with_socket,
     claude_usage_capability_for_service, connect_probe, load_projection, monitor,
     projection_identity_metadata, secure_run_directory, unavailable, validate_owned_mode,
     wait_for_leader,
@@ -495,7 +495,13 @@ fn claim_startup_cleanup(
     config: &UsageBrokerConfig,
 ) -> Result<Option<BrokerStartupCleanup>, UsageCoordinationError> {
     let (leader_path, socket_path) = startup_lease_paths(config)?;
-    let Some(lease) = claim_leader(&leader_path, &config.build_id, config.lease_duration)? else {
+    let Some(lease) = claim_leader_with_socket(
+        &leader_path,
+        &socket_path,
+        &config.build_id,
+        config.lease_duration,
+    )?
+    else {
         return Ok(None);
     };
     Ok(Some(BrokerStartupCleanup::new(
@@ -509,9 +515,14 @@ fn claim_foreground_startup_cleanup(
     config: &UsageBrokerConfig,
 ) -> Result<BrokerStartupCleanup, UsageCoordinationError> {
     let (leader_path, socket_path) = startup_lease_paths(config)?;
-    let lease = claim_leader(&leader_path, &config.build_id, config.lease_duration)
-        .map_err(|_| broker_conflict())?
-        .ok_or_else(broker_conflict)?;
+    let lease = claim_leader_with_socket(
+        &leader_path,
+        &socket_path,
+        &config.build_id,
+        config.lease_duration,
+    )
+    .map_err(|_| broker_conflict())?
+    .ok_or_else(broker_conflict)?;
     let cleanup = BrokerStartupCleanup::new(leader_path, socket_path, lease);
     prepare_socket_for_startup(config, &cleanup)?;
     Ok(cleanup)
@@ -730,7 +741,13 @@ pub fn ensure_usage_broker_with_executor(
 
     let run_dir = secure_run_directory(&config.data_dir)?;
     let leader_path = run_dir.join(BROKER_LEADER);
-    let Some(lease) = claim_leader(&leader_path, &config.build_id, config.lease_duration)? else {
+    let Some(lease) = claim_leader_with_socket(
+        &leader_path,
+        &socket_path,
+        &config.build_id,
+        config.lease_duration,
+    )?
+    else {
         wait_for_leader(&client)?;
         return Ok(client);
     };

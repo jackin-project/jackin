@@ -18,7 +18,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, SyncSender};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use std::thread::{self, JoinHandle};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, bail, ensure};
 use serde_json::{Value, json};
@@ -36,6 +36,7 @@ const SEVEN_DAY_RESET: i64 = INITIAL_WALL_EPOCH + 604_800;
 const MAX_COORDINATOR_STATE_BYTES: u64 = 512 * 1024;
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(15);
 const PROVIDER_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+const BROKER_LEASE_STALE_AFTER_SECONDS: i64 = 30;
 
 static PROVIDER_FLOW_TEST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
@@ -54,10 +55,12 @@ fn acquire_provider_flow_test_lock() -> MutexGuard<'static, ()> {
 fn cli_auth_binding_watch_and_natural_provider_poll_survive_restart() -> Result<()> {
     let _test_guard = acquire_provider_flow_test_lock();
     let mut fixture = Fixture::new()?;
+    let stale_lease_pid = fixture.seed_stale_v8_lease()?;
     fixture.write_credential(FIRST_TOKEN)?;
     fixture.start_auth()?;
 
     let service = fixture.wait_service_ready()?;
+    fixture.assert_v9_lease_replaced(stale_lease_pid)?;
     let first_credential_reads = fixture.wait_ticker_ready()?;
     ensure!(
         first_credential_reads == 1,
@@ -626,6 +629,68 @@ impl Fixture {
                 }
             }),
         )
+    }
+
+    fn seed_stale_v8_lease(&self) -> Result<u32> {
+        let broker_dir = self.data_dir.join("usage-broker");
+        let run_dir = broker_dir.join("run");
+        fs::create_dir_all(&run_dir)?;
+        fs::set_permissions(&broker_dir, fs::Permissions::from_mode(0o700))?;
+        fs::set_permissions(&run_dir, fs::Permissions::from_mode(0o700))?;
+
+        let socket_path = run_dir.join("usage-broker.sock");
+        ensure!(
+            !socket_path.exists(),
+            "stale-v8 fixture expected an unowned broker socket path"
+        );
+
+        let stale_pid = exited_child_pid()?;
+        let wall_epoch = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .context("system clock predates the Unix epoch")?
+            .as_secs();
+        let wall_epoch = i64::try_from(wall_epoch).context("wall epoch exceeds i64")?;
+        let renewed_at_epoch = wall_epoch
+            .checked_sub(BROKER_LEASE_STALE_AFTER_SECONDS + 1)
+            .context("stale lease epoch underflowed")?;
+        let lease_path = run_dir.join("leader.pid");
+        let instance_id = stale_v8_instance_id();
+        write_private_json(
+            &lease_path,
+            &json!({
+                "instance_id": instance_id,
+                "process_id": stale_pid,
+                "protocol_version": "v8",
+                "build_id": "synthetic-old-build",
+                "renewed_at_epoch": renewed_at_epoch,
+            }),
+        )?;
+        Ok(stale_pid)
+    }
+
+    fn assert_v9_lease_replaced(&self, stale_pid: u32) -> Result<()> {
+        let lease_path = self
+            .data_dir
+            .join("usage-broker")
+            .join("run")
+            .join("leader.pid");
+        let bytes = fs::read(&lease_path).context("foreground broker did not write a lease")?;
+        let lease: Value =
+            serde_json::from_slice(&bytes).context("foreground broker lease was not valid JSON")?;
+        let live_pid = lease["process_id"]
+            .as_u64()
+            .context("foreground broker lease omitted its process ID")?;
+        let live_instance_id = lease["instance_id"]
+            .as_str()
+            .context("foreground broker lease omitted its instance ID")?;
+        ensure!(
+            lease["protocol_version"] == "v9"
+                && is_sha256_instance_id(live_instance_id)
+                && live_instance_id != stale_v8_instance_id()
+                && live_pid != u64::from(stale_pid),
+            "foreground auth prepare did not replace the stale v8 lease"
+        );
+        Ok(())
     }
 
     fn command(&self) -> Command {
@@ -2381,6 +2446,37 @@ fn lock_token(token: &Mutex<String>) -> Result<String> {
         .lock()
         .map(|value| value.clone())
         .map_err(|_| anyhow::anyhow!("fake provider credential state was poisoned"))
+}
+
+fn exited_child_pid() -> Result<u32> {
+    let mut child = Command::new("/bin/sh")
+        .args(["-c", "exit 0"])
+        .spawn()
+        .context("spawn a short-lived child for the stale lease fixture")?;
+    let child_pid = child.id();
+    ensure!(
+        child.wait()?.success(),
+        "short-lived child did not exit successfully"
+    );
+    let signal_pid = i32::try_from(child_pid).context("child process ID exceeds i32")?;
+    match nix::sys::signal::kill(nix::unistd::Pid::from_raw(signal_pid), None) {
+        Err(nix::errno::Errno::ESRCH) => Ok(child_pid),
+        Ok(()) => bail!("short-lived child PID was reused or remains active"),
+        Err(error) => bail!("could not prove short-lived child PID is absent: {error}"),
+    }
+}
+
+fn is_sha256_instance_id(value: &str) -> bool {
+    value.strip_prefix("sha256:").is_some_and(|hex| {
+        hex.len() == 64
+            && hex
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    })
+}
+
+fn stale_v8_instance_id() -> String {
+    jackin_core::account_key_hash("usage-broker-instance-v1", "synthetic-stale-v8-instance")
 }
 
 fn write_private_json(path: &Path, value: &Value) -> Result<()> {

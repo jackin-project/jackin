@@ -43,6 +43,11 @@ const BROKER_DIR: &str = "usage-broker";
 const BROKER_RUN_DIR: &str = "run";
 const BROKER_SOCKET: &str = "usage-broker.sock";
 const BROKER_LEADER: &str = "leader.pid";
+/// Only the immediately previous on-disk lease protocol may cross the
+/// protocol-mismatch recovery path.
+const PREVIOUS_USAGE_BROKER_PROTOCOL_VERSION: &str = "v8";
+const BROKER_LEASE_MAX_BYTES: u64 = 4 * 1024;
+const BROKER_LEASE_MAX_BUILD_ID_BYTES: usize = 256;
 /// Bounded CAS-conflict retries for broker-owned catalog refresh.
 const BROKER_CATALOG_ATTEMPTS: u32 = 3;
 const BROKER_LEASE_DURATION: Duration = Duration::from_secs(30);
@@ -68,6 +73,7 @@ pub(crate) const UNIX_SOCKET_PATH_LIMIT: usize = 108;
 const BROKER_SOCKET_ALIAS_DIR_PREFIX: &str = "jk-ub-";
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 struct BrokerLease {
     instance_id: String,
     process_id: u32,
@@ -1281,21 +1287,49 @@ fn validate_owned_mode(path: &Path, mode: u32) -> Result<(), UsageCoordinationEr
     Ok(())
 }
 
+#[cfg(test)]
 fn claim_leader(
     path: &Path,
     build_id: &str,
     lease_duration: Duration,
 ) -> Result<Option<BrokerLeaseOwner>, UsageCoordinationError> {
-    claim_leader_at(
+    claim_leader_at_with_socket(
         path,
+        None,
         build_id,
         lease_duration,
         chrono::Utc::now().timestamp(),
     )
 }
 
+fn claim_leader_with_socket(
+    path: &Path,
+    socket_path: &Path,
+    build_id: &str,
+    lease_duration: Duration,
+) -> Result<Option<BrokerLeaseOwner>, UsageCoordinationError> {
+    claim_leader_at_with_socket(
+        path,
+        Some(socket_path),
+        build_id,
+        lease_duration,
+        chrono::Utc::now().timestamp(),
+    )
+}
+
+#[cfg(test)]
 fn claim_leader_at(
     path: &Path,
+    build_id: &str,
+    lease_duration: Duration,
+    now_epoch: i64,
+) -> Result<Option<BrokerLeaseOwner>, UsageCoordinationError> {
+    claim_leader_at_with_socket(path, None, build_id, lease_duration, now_epoch)
+}
+
+fn claim_leader_at_with_socket(
+    path: &Path,
+    socket_path: Option<&Path>,
     build_id: &str,
     lease_duration: Duration,
     now_epoch: i64,
@@ -1320,8 +1354,15 @@ fn claim_leader_at(
                     drop(file);
                     continue;
                 }
-                let result =
-                    claim_existing_lease(&mut file, &lease, build_id, lease_duration, now_epoch);
+                let result = claim_existing_lease(
+                    path,
+                    &mut file,
+                    &lease,
+                    build_id,
+                    lease_duration,
+                    now_epoch,
+                    socket_path,
+                );
                 return match result {
                     // Keep the descriptor lock in the returned owner.
                     Ok(Some(stale_lease_reclaimed)) => {
@@ -1384,11 +1425,13 @@ fn create_new_lease(
 }
 
 fn claim_existing_lease(
+    lease_path: &Path,
     file: &mut File,
     replacement: &BrokerLease,
     build_id: &str,
     lease_duration: Duration,
     now_epoch: i64,
+    socket_path: Option<&Path>,
 ) -> Result<Option<bool>, UsageCoordinationError> {
     if file.metadata().map_err(|_| unavailable())?.nlink() == 0 {
         return Ok(None);
@@ -1396,15 +1439,22 @@ fn claim_existing_lease(
     let bytes = read_lease_bytes(file).map_err(|_| unavailable())?;
     let existing = serde_json::from_slice::<BrokerLease>(&bytes).ok();
     let replace = if let Some(existing) = existing {
+        let expired = now_epoch.saturating_sub(existing.renewed_at_epoch)
+            >= i64::try_from(lease_duration.as_secs()).unwrap_or(i64::MAX);
         if existing.protocol_version != USAGE_BROKER_PROTOCOL_VERSION
             || existing.build_id != build_id
         {
-            // A healthy incompatible endpoint is never replaced by an
-            // activator; the client will receive protocol_mismatch.
-            return Ok(None);
+            // A mismatched endpoint is replaced only when its known lease
+            // format is stale, its recorded owner is definitely gone, and
+            // its exact socket path is absent or refuses connections. The
+            // caller still holds the descriptor lock throughout this check.
+            if !known_foreign_lease_is_reclaimable(&existing, expired, now_epoch, socket_path) {
+                return Ok(None);
+            }
+            true
+        } else {
+            expired
         }
-        now_epoch.saturating_sub(existing.renewed_at_epoch)
-            >= i64::try_from(lease_duration.as_secs()).unwrap_or(i64::MAX)
     } else {
         // Unknown or legacy formats do not carry enough ownership data to
         // authorize replacing the lease path.
@@ -1413,8 +1463,92 @@ fn claim_existing_lease(
     if !replace {
         return Ok(None);
     }
+    if !lease_path_matches_open_file(lease_path, file)
+        || read_lease_bytes(file).map_err(|_| unavailable())? != bytes
+        || !lease_path_matches_open_file(lease_path, file)
+    {
+        return Ok(None);
+    }
     write_lease(file, replacement).map_err(|_| unavailable())?;
     Ok(Some(true))
+}
+
+fn known_foreign_lease_is_reclaimable(
+    lease: &BrokerLease,
+    expired: bool,
+    now_epoch: i64,
+    socket_path: Option<&Path>,
+) -> bool {
+    if !expired
+        || !matches!(
+            lease.protocol_version.as_str(),
+            PREVIOUS_USAGE_BROKER_PROTOCOL_VERSION | USAGE_BROKER_PROTOCOL_VERSION
+        )
+        || !valid_broker_lease_identity(lease)
+        || lease.renewed_at_epoch <= 0
+        || lease.renewed_at_epoch > now_epoch
+    {
+        return false;
+    }
+    let Some(pid) = i32::try_from(lease.process_id).ok().filter(|pid| *pid > 0) else {
+        return false;
+    };
+    if !broker_owner_pid_is_definitely_absent(pid) {
+        return false;
+    }
+    socket_path.is_some_and(stale_socket_is_unowned)
+}
+
+fn valid_broker_lease_identity(lease: &BrokerLease) -> bool {
+    let Some(hash) = lease.instance_id.strip_prefix("sha256:") else {
+        return false;
+    };
+    hash.len() == 64
+        && hash
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        && !lease.build_id.trim().is_empty()
+        && lease.build_id.len() <= BROKER_LEASE_MAX_BUILD_ID_BYTES
+        && !lease.build_id.chars().any(char::is_control)
+}
+
+fn broker_owner_pid_is_definitely_absent(pid: i32) -> bool {
+    matches!(
+        nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), None),
+        Err(nix::errno::Errno::ESRCH)
+    )
+}
+
+fn stale_socket_is_unowned(socket_path: &Path) -> bool {
+    let metadata = match fs::symlink_metadata(socket_path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return true,
+        Err(_) => return false,
+    };
+    if !metadata.file_type().is_socket() {
+        return false;
+    }
+    let expected = BrokerSocketIdentity {
+        device: metadata.dev(),
+        inode: metadata.ino(),
+    };
+    match UnixStream::connect(socket_path) {
+        Err(error)
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::ConnectionRefused | std::io::ErrorKind::NotFound
+            ) => {}
+        _ => return false,
+    }
+    match fs::symlink_metadata(socket_path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => true,
+        Ok(current) => {
+            current.file_type().is_socket()
+                && current.dev() == expected.device
+                && current.ino() == expected.inode
+        }
+        Err(_) => false,
+    }
 }
 
 fn renew_lease(path: &Path, owner: &mut BrokerLeaseOwner) -> bool {
@@ -1559,7 +1693,14 @@ fn read_lease(file: &mut File) -> Result<BrokerLease, std::io::Error> {
 fn read_lease_bytes(file: &mut File) -> Result<Vec<u8>, std::io::Error> {
     file.seek(SeekFrom::Start(0))?;
     let mut bytes = Vec::new();
-    file.read_to_end(&mut bytes)?;
+    file.take(BROKER_LEASE_MAX_BYTES + 1)
+        .read_to_end(&mut bytes)?;
+    if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > BROKER_LEASE_MAX_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "usage broker lease exceeds the size limit",
+        ));
+    }
     Ok(bytes)
 }
 
