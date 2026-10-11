@@ -127,6 +127,34 @@ acceptance remains pending because weekly monitor evidence is stale. The user
 explicitly confirmed attendance, and the foreground v10 service was reported
 ready; the native UI interaction itself is not recorded.
 
+### Current schema-6 repair checkpoint
+
+The current uncommitted source keeps broker wire v9 and statusline input v2,
+and advances only the durable monitor store from schema 5 to schema 6. Each
+quota window now records a tri-state Statusline reset watermark: `KnownNone`
+for a new account with no accepted Statusline reset, `Known { reset_at_epoch,
+received_at_epoch }` after an accepted reset, or `Unknown` when older persisted
+state cannot prove which source established its account-wide reset high-water
+mark. V1–v5 migration maps an empty old high-water mark to `KnownNone`; a
+nonempty mark stays `Unknown` and gets a separate local ordering cutoff at the
+old store's `last_now_epoch`. That cutoff is not freshness evidence. A provider
+repair must be a current complete pair whose source observation and local
+receipt are both strictly later than the cutoff; migration/rebind does not
+lower ambiguous global reset marks or barriers. Old envelopes that inject
+either v6-only field are rejected before migration, nested event schemas are
+validated and restamped, and history is retained.
+
+The scoped MBX format check and protocol suite (135 tests) passed. The latest
+`jackin-usage` MBX library attempt failed during test compilation, before tests
+ran; indexed `BTreeMap` fixture mutations have since been changed to `get_mut`,
+and the owner of the reported unused test imports is correcting those. A rerun
+is pending. The expanded five-scenario CLI/provider flow has three passes and
+two failures under diagnosis: one migration/service-readiness case and one
+main-completion case. A separate review blocker remains for the source identity
+and window-label collision path. These are open findings; schema-6 source gates
+have not passed, no v11 pair is installed from this source, and there is no
+acceptance or handoff claim.
+
 The older `8abfa235` delivery and CI details below are historical records; they
 do not describe the current source or installed pair. The current real-account
 gate and operator confirmation requirements are tracked at the end of this
@@ -1039,6 +1067,56 @@ unverified. The correction and evidence are committed/pushed as one checkpoint.
   OS-level egress, complete two-window monitor freshness, and two post-fix
   natural collection cycles as separate pending acceptance boundaries. No real
   provider or account credentials were used by the offline fixture.
+
+## Current weekly-publication repair review (2026-10-11; not accepted)
+
+The live v10 source projection is fresh at account generation 86. Its weekly
+usage is 86% by calculation, below 90%. The monitor still reports stale weekly
+quota evidence at 85% (age 795 seconds); its retained reset also differs from
+the current source reset by one second. The monitor is not runnable. This
+confirms the publication gap affects current evidence for both windows; it
+does not establish the final source fix or monitor acceptance.
+
+The working source change now models statusline reset provenance and a
+per-window admission cutoff for ambiguous pre-v6 high-water marks. Schema 6
+migrates old nonempty marks as Unknown with a cutoff at the source snapshot's
+`last_now_epoch`, and old empty marks as KnownNone. Provider projection clear
+preserves an Unknown high-water mark/cutoff and recomputes only when source
+provenance is known. New regression cases cover v5 migration, downgrade-field
+rejection, rebind clear behavior, validation, and session pruning. The
+source-aware projection repair is still under review; the independent review
+found the former proof could be lost by TTL pruning. The latest coordinated
+MBX library attempt failed during test compilation before tests ran; indexed
+`BTreeMap` fixture writes have since been changed to `get_mut`, with a rerun
+pending. The expanded five-scenario CLI/provider flow has run 3/5 successfully;
+two failures remain under diagnosis (migration/service readiness and main
+completion). The format check and protocol suite (135 tests) passed. No full
+library-test or strict-Clippy result exists for this schema-6 tree. Do not
+install or treat the patch as ready until all source owners freeze, the
+post-prune path is proven, and the shared MBX gates pass.
+
+Earlier checks are preliminary only. A targeted provider-diagnostics run
+reported 8 passed and 739 filtered, but it used direct Cargo and raw
+`rustfmt`; those commands do not satisfy the repository's MBX-only toolchain
+rule and are not authoritative acceptance. The earlier CLI/provider flow
+result of 4/4 also predates the latest partial-reset guard. Neither result
+proves the current working tree.
+
+After the durable cutoff repair and tests are complete, freeze all changed
+Rust files and rerun the current tree through MBX 1.22.0 / Rust 1.97.1:
+
+- [ ] Scoped formatting and diff checks for the changed files.
+- [ ] Full `jackin-usage` library suite (expected current count: 747).
+- [ ] Full CLI/provider flow target (5 scenarios).
+- [ ] Default offline CLI regressions (9 tests).
+- [ ] Strict feature Clippy for both affected packages/all targets.
+- [ ] Independent source review confirms the post-prune proof remains durable
+  and both monitor windows publish with original evidence timestamps.
+
+The live v10 service and its existing state are outside this source gate. No
+live/auth/provider action is authorized by these offline checks; real-account
+acceptance remains pending until a corrected pair is installed and verified
+through natural collection.
 
 ## Active real-account acceptance task
 
