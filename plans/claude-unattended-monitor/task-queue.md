@@ -990,8 +990,22 @@ unverified. The correction and evidence are committed/pushed as one checkpoint.
   focused restart/Retry-After test passes 1/1 and the full suite passes.
 - [x] Run strict Clippy on both packages, all targets, with `test-support` and
   without it; both passed with `-Dwarnings`. Scoped MBX formatting passed.
-- [ ] Extend the CLI flow with numeric and HTTP-date `Retry-After`, preserved
-  last-good quota, restart recovery, and an exact post-deadline natural poll.
+- [x] Extend the CLI flow with delta-seconds and HTTP-date `Retry-After`,
+  last-good quota/evidence preservation, restart recovery, no request at
+  deadline minus one second, and exactly one natural poll at the persisted
+  deadline. The same real CLI/broker/parser path now covers unchanged and
+  changed HTTP 401 credentials, HTTP 403, transport failure, and timeout; no
+  retry follows unchanged 401/403/transport/timeout. Three consecutive
+  default-threading runs passed all four test entrypoints (eight scenarios),
+  with durations 65.78s, 66.22s, and 66.61s. Earlier parallel runs had
+  accepted connections without complete headers; the test harness now
+  serializes its process-heavy flows and handles only bounded transient
+  read-timeout retries. Those historical failures did not establish a
+  production root cause.
+- [x] Run default-feature offline CLI regressions: broker service lifecycle
+  2/2, auth bootstrap 2/2, monitor CLI 5/5. The updated feature integration
+  target also passed three times, and strict feature Clippy, scoped formatting,
+  and `git diff --check` passed.
 - [ ] Keep native macOS Security Framework/UI behavior, Anthropic HTTPS/TLS,
   OS-level egress, live quota values, and live installed-v9 status/watch as
   separate unverified acceptance boundaries. No real provider or account

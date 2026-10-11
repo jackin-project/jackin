@@ -14,15 +14,18 @@ use std::os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, SyncSender};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail, ensure};
 use serde_json::{Value, json};
 use tempfile::TempDir;
+
+#[path = "usage_provider_flow/auth_outcomes.rs"]
+mod auth_outcomes;
 
 const FIRST_TOKEN: &str = "synthetic-claude-access-token-one";
 const KEYCHAIN_SERVICE: &str = "synthetic-claude-keychain-service";
@@ -34,12 +37,22 @@ const MAX_COORDINATOR_STATE_BYTES: u64 = 512 * 1024;
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(15);
 const PROVIDER_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
+static PROVIDER_FLOW_TEST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+fn acquire_provider_flow_test_lock() -> MutexGuard<'static, ()> {
+    PROVIDER_FLOW_TEST_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 #[test]
 #[expect(
     clippy::too_many_lines,
     reason = "one integration scenario keeps the real CLI lifecycle and restart assertions in order"
 )]
 fn cli_auth_binding_watch_and_natural_provider_poll_survive_restart() -> Result<()> {
+    let _test_guard = acquire_provider_flow_test_lock();
     let mut fixture = Fixture::new()?;
     fixture.write_credential(FIRST_TOKEN)?;
     fixture.start_auth()?;
@@ -358,6 +371,26 @@ fn cli_auth_binding_watch_and_natural_provider_poll_survive_restart() -> Result<
 
     fixture.stop_auth()?;
     Ok(())
+}
+
+#[test]
+fn cli_http_429_retry_after_delta_seconds_survives_restart() -> Result<()> {
+    let _test_guard = acquire_provider_flow_test_lock();
+    run_retry_after_restart_case(RetryAfterCase {
+        label: "delta-seconds",
+        header: "600",
+        deadline_epoch: INITIAL_WALL_EPOCH + 1_202,
+    })
+}
+
+#[test]
+fn cli_http_429_retry_after_date_survives_restart() -> Result<()> {
+    let _test_guard = acquire_provider_flow_test_lock();
+    run_retry_after_restart_case(RetryAfterCase {
+        label: "http-date",
+        header: "Tue, 14 Nov 2023 22:38:22 GMT",
+        deadline_epoch: INITIAL_WALL_EPOCH + 1_502,
+    })
 }
 
 struct Fixture {
@@ -916,6 +949,29 @@ impl Fixture {
         .context("provider result did not reach its expected durable completion before the bound")
     }
 
+    fn wait_for_coordinator_terminal(
+        &self,
+        source_id: &str,
+        expected_generation: u64,
+        provider_invoked_at_epoch: i64,
+        timeout: Duration,
+    ) -> Result<CoordinatorTiming> {
+        wait_until(timeout, || {
+            self.coordinator_timing(source_id).ok().filter(|timing| {
+                let terminal = match timing.phase.as_str() {
+                    "completed" => timing.has_terminal_result,
+                    "failed" => timing.terminal_error_kind.is_some(),
+                    _ => false,
+                };
+                timing.generation == expected_generation
+                    && timing.provider_invoked_at_epoch == Some(provider_invoked_at_epoch)
+                    && timing.completed_at_epoch.is_some()
+                    && terminal
+            })
+        })
+        .context("provider attempt did not reach a durable terminal generation before the bound")
+    }
+
     fn start_watch(&self, monitor_id: &str) -> Result<WatchProcess> {
         let mut command = self.command();
         command
@@ -1021,6 +1077,463 @@ impl Drop for Fixture {
             }
         }
     }
+}
+
+#[derive(Clone, Copy)]
+struct RetryAfterCase {
+    label: &'static str,
+    header: &'static str,
+    deadline_epoch: i64,
+}
+
+struct ProviderFlow {
+    fixture: Fixture,
+    source_id: String,
+    monitor_id: String,
+    credential_reads: usize,
+}
+
+struct SeededQuota {
+    expectation: QuotaExpectation,
+    status: Value,
+}
+
+struct RateLimitedQuota {
+    timing: CoordinatorTiming,
+    status: Value,
+}
+
+impl ProviderFlow {
+    fn new(label: &str) -> Result<Self> {
+        let mut fixture = Fixture::new()?;
+        fixture.write_credential(FIRST_TOKEN)?;
+        fixture.start_auth()?;
+        let service = fixture.wait_service_ready()?;
+        let credential_reads = fixture.wait_ticker_ready()?;
+        ensure!(
+            credential_reads == 1,
+            "fake keychain reader was not used once before the initial ticker step"
+        );
+        let source_id = service["status"]["experimental_collector_source"]
+            .as_str()
+            .context("foreground service omitted its selected source ID")?
+            .to_owned();
+        let binding_reply = fixture.run_pty_json(&[
+            "binding",
+            "confirm",
+            "--provider",
+            "claude",
+            "--provider-account",
+            &source_id,
+            "--account",
+            &format!("local-claude-account-{label}"),
+            "--approve-experimental-collector",
+            "--operator-label",
+            "synthetic provider rate-limit test",
+            "--confirm",
+        ])?;
+        ensure!(
+            binding_reply["result"] == "account_bound",
+            "binding confirmation did not return account_bound"
+        );
+        let binding = &binding_reply["binding"];
+        let binding_id = binding["binding_id"]
+            .as_str()
+            .context("binding response omitted its ID")?
+            .to_owned();
+        let binding_revision = binding["revision"]
+            .as_u64()
+            .context("binding response omitted its revision")?;
+        let observer_reply = fixture.run_json(&[
+            "monitor",
+            "observe",
+            "--provider",
+            "claude",
+            "--binding",
+            &binding_id,
+            "--binding-revision",
+            &binding_revision.to_string(),
+            "--idempotency-key",
+            &format!("synthetic-provider-rate-limit-{label}-v1"),
+            "--experimental-collector",
+        ])?;
+        ensure!(
+            observer_reply["result"] == "started",
+            "provider observer did not start"
+        );
+        let monitor_id = observer_reply["status"]["monitor_id"]
+            .as_str()
+            .context("observer response omitted its monitor ID")?
+            .to_owned();
+        Ok(Self {
+            fixture,
+            source_id,
+            monitor_id,
+            credential_reads,
+        })
+    }
+
+    fn set_clock(&self, wall_epoch: i64) -> Result<()> {
+        let monotonic_millis = monotonic_millis_at(wall_epoch)?;
+        ensure!(
+            self.fixture.set_clock(wall_epoch, monotonic_millis)? == 1,
+            "fake keychain reader was not used exactly once"
+        );
+        Ok(())
+    }
+
+    fn restart_at(&mut self, wall_epoch: i64) -> Result<()> {
+        self.fixture.stop_auth()?;
+        self.fixture
+            .write_fixture_config(wall_epoch, monotonic_millis_at(wall_epoch)?)?;
+        self.fixture.start_auth()?;
+        let service = self.fixture.wait_service_ready()?;
+        ensure!(
+            service["status"]["experimental_collector_source"].as_str()
+                == Some(self.source_id.as_str()),
+            "broker restart changed the selected provider source"
+        );
+        self.credential_reads = self.fixture.wait_ticker_ready()?;
+        ensure!(
+            self.credential_reads == 1,
+            "fake keychain reader was not used once before the restarted ticker step"
+        );
+        Ok(())
+    }
+}
+
+fn monotonic_millis_at(wall_epoch: i64) -> Result<u64> {
+    let elapsed_seconds = u64::try_from(
+        wall_epoch
+            .checked_sub(INITIAL_WALL_EPOCH)
+            .context("fake wall clock moved before its initial sample")?,
+    )
+    .context("fake clock interval did not fit monotonic seconds")?;
+    INITIAL_MONOTONIC_MILLIS
+        .checked_add(
+            elapsed_seconds
+                .checked_mul(1_000)
+                .context("fake clock interval overflowed monotonic milliseconds")?,
+        )
+        .context("fake monotonic clock overflowed")
+}
+
+fn run_retry_after_restart_case(case: RetryAfterCase) -> Result<()> {
+    let mut flow = ProviderFlow::new(case.label)?;
+    let seeded = seed_provider_quota(&flow)?;
+    let limited = publish_rate_limit_after_restart(&mut flow, case, &seeded)?;
+    restart_before_retry_deadline(&mut flow, case, &seeded, &limited)?;
+    complete_natural_retry(&mut flow, case)?;
+    flow.fixture.stop_auth()?;
+    Ok(())
+}
+
+fn seed_provider_quota(flow: &ProviderFlow) -> Result<SeededQuota> {
+    let request_epoch = INITIAL_WALL_EPOCH + 1;
+    flow.set_clock(request_epoch)?;
+    let request = next_provider_request(
+        &flow.fixture,
+        &flow.monitor_id,
+        &flow.source_id,
+        "rate-limit seed",
+        flow.credential_reads,
+    )?;
+    assert_provider_request(&request)?;
+    let timing = flow.fixture.wait_for_coordinator_attempt(
+        &flow.source_id,
+        request_epoch,
+        Duration::from_secs(5),
+    )?;
+    let mut watch = flow.fixture.start_watch(&flow.monitor_id)?;
+    let sequence = watch.wait_for_event(&flow.monitor_id, Duration::from_secs(10))?;
+    let five_hour_reset = INITIAL_WALL_EPOCH + 6_400;
+    let weekly_reset = INITIAL_WALL_EPOCH + 604_800;
+    let five_hour_reset_at = rfc3339_utc_from_epoch(five_hour_reset);
+    let weekly_reset_at = rfc3339_utc_from_epoch(weekly_reset);
+    request.respond.send(HttpResponse::ok(
+        37,
+        23,
+        &five_hour_reset_at,
+        &weekly_reset_at,
+    ))?;
+    flow.fixture.wait_for_coordinator_completion(
+        &flow.source_id,
+        timing.generation,
+        request_epoch,
+        "37% used",
+        "23% used",
+        Duration::from_secs(10),
+    )?;
+    let expectation = QuotaExpectation {
+        five_hour_used: 3_700,
+        seven_day_used: 2_300,
+        five_hour_reset,
+        seven_day_reset: weekly_reset,
+        evidence_at_epoch: request_epoch,
+        received_at_min_epoch: request_epoch,
+        received_at_max_epoch: INITIAL_WALL_EPOCH + 2,
+    };
+    flow.set_clock(INITIAL_WALL_EPOCH + 2)?;
+    watch.wait_for_quota_after(
+        &flow.monitor_id,
+        sequence,
+        expectation,
+        Duration::from_secs(15),
+    )?;
+    watch.wait_for_exit(Duration::from_secs(5))?;
+    let status = flow.fixture.status(&flow.monitor_id)?;
+    assert_provider_quota(&status, expectation)?;
+    assert_successful_coordinator_timing(&flow.fixture.coordinator_timing(&flow.source_id)?)?;
+    Ok(SeededQuota {
+        expectation,
+        status,
+    })
+}
+
+fn publish_rate_limit_after_restart(
+    flow: &mut ProviderFlow,
+    case: RetryAfterCase,
+    seeded: &SeededQuota,
+) -> Result<RateLimitedQuota> {
+    let first_timing = flow.fixture.coordinator_timing(&flow.source_id)?;
+    assert_successful_coordinator_timing(&first_timing)?;
+    flow.set_clock(INITIAL_WALL_EPOCH + 299)?;
+    assert_request_count_remains(
+        &flow.fixture.http,
+        1,
+        Duration::from_millis(750),
+        "provider polled before the first restart",
+    )?;
+    flow.restart_at(INITIAL_WALL_EPOCH + 301)?;
+    ensure!(
+        flow.fixture.coordinator_timing(&flow.source_id)? == first_timing
+            && flow.fixture.http.request_count() == 1,
+        "first successful provider result changed during the first restart"
+    );
+    flow.set_clock(INITIAL_WALL_EPOCH + 600)?;
+    assert_request_count_remains(
+        &flow.fixture.http,
+        1,
+        Duration::from_millis(750),
+        "provider polled before the recovered success cooldown elapsed",
+    )?;
+
+    let request_epoch = INITIAL_WALL_EPOCH + 601;
+    flow.set_clock(request_epoch)?;
+    let request = next_provider_request(
+        &flow.fixture,
+        &flow.monitor_id,
+        &flow.source_id,
+        case.label,
+        flow.credential_reads,
+    )?;
+    assert_provider_request(&request)?;
+    let attempt = flow.fixture.wait_for_coordinator_attempt(
+        &flow.source_id,
+        request_epoch,
+        Duration::from_secs(5),
+    )?;
+    let mut watch = flow.fixture.start_watch(&flow.monitor_id)?;
+    let sequence = watch.wait_for_event(&flow.monitor_id, Duration::from_secs(10))?;
+    let response_epoch = INITIAL_WALL_EPOCH + 602;
+    flow.set_clock(response_epoch)?;
+    request
+        .respond
+        .send(HttpResponse::too_many_requests(case.header))?;
+    let timing = flow.fixture.wait_for_coordinator_terminal(
+        &flow.source_id,
+        attempt.generation,
+        request_epoch,
+        Duration::from_secs(10),
+    )?;
+    assert_rate_limited_coordinator_timing(
+        &timing,
+        case.deadline_epoch,
+        request_epoch,
+        response_epoch,
+        seeded.expectation.evidence_at_epoch,
+    )?;
+    flow.set_clock(response_epoch + 1)?;
+    let watched_status = watch.wait_for_rate_limited_after(
+        &flow.monitor_id,
+        sequence,
+        seeded.expectation,
+        case.deadline_epoch,
+        Duration::from_secs(15),
+    )?;
+    assert_provider_rate_limited_quota(
+        &watched_status,
+        &seeded.status,
+        seeded.expectation,
+        case.deadline_epoch,
+    )?;
+    watch.wait_for_exit(Duration::from_secs(5))?;
+    let status = flow.fixture.status(&flow.monitor_id)?;
+    assert_provider_rate_limited_quota(
+        &status,
+        &seeded.status,
+        seeded.expectation,
+        case.deadline_epoch,
+    )?;
+    ensure!(
+        flow.fixture.coordinator_timing(&flow.source_id)? == timing
+            && flow.fixture.http.request_count() == 2,
+        "rate-limit failure changed or duplicated its durable provider attempt"
+    );
+    Ok(RateLimitedQuota { timing, status })
+}
+
+fn assert_rate_limited_coordinator_timing(
+    timing: &CoordinatorTiming,
+    retry_deadline_epoch: i64,
+    provider_invoked_at_epoch: i64,
+    completed_at_epoch: i64,
+    last_good_fetched_at_epoch: i64,
+) -> Result<()> {
+    ensure!(
+        timing.generation >= 2
+            && timing.phase == "failed"
+            && timing.terminal_error_kind.as_deref() == Some("rate_limited")
+            && !timing.has_terminal_result
+            && timing.provider_invoked_at_epoch == Some(provider_invoked_at_epoch)
+            && timing.completed_at_epoch == Some(completed_at_epoch)
+            && timing.last_good_fetched_at_epoch == Some(last_good_fetched_at_epoch)
+            && timing.last_good_session_used_label.as_deref() == Some("37% used")
+            && timing.last_good_weekly_used_label.as_deref() == Some("23% used")
+            && timing.success_deadline_epoch.is_none()
+            && timing.retry_deadline_epoch == Some(retry_deadline_epoch)
+            && timing.rate_limit_deadline_epoch == Some(retry_deadline_epoch),
+        "durable coordinator state did not retain the typed 429 and exact retry deadline"
+    );
+    Ok(())
+}
+
+fn restart_before_retry_deadline(
+    flow: &mut ProviderFlow,
+    case: RetryAfterCase,
+    seeded: &SeededQuota,
+    limited: &RateLimitedQuota,
+) -> Result<()> {
+    let restart_epoch = case
+        .deadline_epoch
+        .checked_sub(300)
+        .context("retry deadline was too small for the restart recovery floor")?;
+    flow.restart_at(restart_epoch)?;
+    let recovered_timing = flow.fixture.coordinator_timing(&flow.source_id)?;
+    ensure!(
+        recovered_timing == limited.timing,
+        "broker restart changed the persisted provider rate-limit attempt"
+    );
+    let restored_status = flow.fixture.status(&flow.monitor_id)?;
+    assert_provider_rate_limited_quota(
+        &restored_status,
+        &seeded.status,
+        seeded.expectation,
+        case.deadline_epoch,
+    )?;
+    ensure!(
+        restored_status["issues"] == limited.status["issues"],
+        "broker restart changed the exact monitor provider rate-limit issue"
+    );
+    ensure!(
+        flow.fixture.http.request_count() == 2,
+        "broker restart retried before the persisted provider deadline"
+    );
+    let before_deadline = case
+        .deadline_epoch
+        .checked_sub(1)
+        .context("retry deadline underflowed before the pre-deadline check")?;
+    flow.set_clock(before_deadline)?;
+    assert_request_count_remains(
+        &flow.fixture.http,
+        2,
+        Duration::from_millis(750),
+        "provider retried before the exact Retry-After deadline",
+    )?;
+    let early_status = flow.fixture.status(&flow.monitor_id)?;
+    assert_provider_rate_limited_quota(
+        &early_status,
+        &seeded.status,
+        seeded.expectation,
+        case.deadline_epoch,
+    )?;
+    Ok(())
+}
+
+fn complete_natural_retry(flow: &mut ProviderFlow, case: RetryAfterCase) -> Result<()> {
+    let request_epoch = case.deadline_epoch;
+    flow.set_clock(request_epoch)?;
+    let request = next_provider_request(
+        &flow.fixture,
+        &flow.monitor_id,
+        &flow.source_id,
+        "retry at persisted deadline",
+        flow.credential_reads,
+    )?;
+    assert_provider_request(&request)?;
+    ensure!(
+        flow.fixture.http.request_count() == 3,
+        "exactly one natural provider request was not admitted at Retry-After"
+    );
+    let attempt = flow.fixture.wait_for_coordinator_attempt(
+        &flow.source_id,
+        request_epoch,
+        Duration::from_secs(5),
+    )?;
+    let mut watch = flow.fixture.start_watch(&flow.monitor_id)?;
+    let sequence = watch.wait_for_event(&flow.monitor_id, Duration::from_secs(10))?;
+    let five_hour_reset = request_epoch + 18_000;
+    let weekly_reset = INITIAL_WALL_EPOCH + 604_800;
+    let five_hour_reset_at = rfc3339_utc_from_epoch(five_hour_reset);
+    let weekly_reset_at = rfc3339_utc_from_epoch(weekly_reset);
+    request.respond.send(HttpResponse::ok(
+        52,
+        41,
+        &five_hour_reset_at,
+        &weekly_reset_at,
+    ))?;
+    flow.fixture.wait_for_coordinator_completion(
+        &flow.source_id,
+        attempt.generation,
+        request_epoch,
+        "52% used",
+        "41% used",
+        Duration::from_secs(10),
+    )?;
+    let expectation = QuotaExpectation {
+        five_hour_used: 5_200,
+        seven_day_used: 4_100,
+        five_hour_reset,
+        seven_day_reset: weekly_reset,
+        evidence_at_epoch: request_epoch,
+        received_at_min_epoch: request_epoch,
+        received_at_max_epoch: request_epoch + 1,
+    };
+    flow.set_clock(request_epoch + 1)?;
+    watch.wait_for_quota_after(
+        &flow.monitor_id,
+        sequence,
+        expectation,
+        Duration::from_secs(15),
+    )?;
+    watch.wait_for_exit(Duration::from_secs(5))?;
+    let status = flow.fixture.status(&flow.monitor_id)?;
+    assert_provider_quota(&status, expectation)?;
+    ensure!(
+        !status["issues"].as_array().is_some_and(|issues| {
+            issues
+                .iter()
+                .any(|issue| issue["code"] == "provider_rate_limited")
+        }),
+        "successful retry did not clear the provider rate-limit issue"
+    );
+    assert_request_count_remains(
+        &flow.fixture.http,
+        3,
+        Duration::from_millis(750),
+        "provider duplicated the successful natural retry",
+    )?;
+    Ok(())
 }
 
 struct AuthProcess {
@@ -1136,6 +1649,39 @@ impl WatchProcess {
         }
         bail!("CLI watch did not receive the expected quota update")
     }
+
+    fn wait_for_rate_limited_after(
+        &mut self,
+        monitor_id: &str,
+        after_sequence: u64,
+        expected: QuotaExpectation,
+        retry_deadline_epoch: i64,
+        timeout: Duration,
+    ) -> Result<Value> {
+        let deadline = Instant::now() + timeout;
+        while Instant::now() < deadline {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            match self.receiver.recv_timeout(remaining) {
+                Ok(line) => {
+                    let Ok(event) = serde_json::from_str::<Value>(&line) else {
+                        continue;
+                    };
+                    let status = &event["status"];
+                    if event["sequence"]
+                        .as_u64()
+                        .is_some_and(|sequence| sequence > after_sequence)
+                        && status["monitor_id"].as_str() == Some(monitor_id)
+                        && expected.matches(status)
+                        && has_provider_rate_limit_issue(status, retry_deadline_epoch)
+                    {
+                        return Ok(status.clone());
+                    }
+                }
+                Err(RecvTimeoutError::Timeout | RecvTimeoutError::Disconnected) => break,
+            }
+        }
+        bail!("CLI watch did not receive the expected provider rate-limit issue")
+    }
 }
 
 impl Drop for WatchProcess {
@@ -1182,6 +1728,95 @@ fn assert_provider_quota(status: &Value, expected: QuotaExpectation) -> Result<(
         "monitor status did not contain provider quota and reset evidence from the expected fetch"
     );
     Ok(())
+}
+
+fn has_provider_rate_limit_issue(status: &Value, retry_deadline_epoch: i64) -> bool {
+    status["issues"].as_array().is_some_and(|issues| {
+        let matching = issues
+            .iter()
+            .filter(|issue| issue["code"] == "provider_rate_limited")
+            .collect::<Vec<_>>();
+        matching.len() == 1
+            && matching[0]["message"] == "provider rate limited the usage refresh"
+            && matching[0]["retry_at_epoch"].as_i64() == Some(retry_deadline_epoch)
+    })
+}
+
+fn assert_provider_rate_limited_quota(
+    status: &Value,
+    before_failure: &Value,
+    expected: QuotaExpectation,
+    retry_deadline_epoch: i64,
+) -> Result<()> {
+    ensure!(
+        status["purpose"] == "observe_only" && status["runnable"] == false,
+        "rate-limited provider quota did not remain observe-only"
+    );
+    ensure!(
+        status["readiness"]["dispatch"] == "not_authorized",
+        "rate-limited observe-only monitor gained dispatch authorization"
+    );
+    ensure!(
+        status["readiness"]["provider"] == "rate_limited",
+        "monitor status did not preserve rate-limited provider readiness"
+    );
+    ensure!(
+        status["readiness"]["quota"] == "stale",
+        "rate-limited provider made aged last-good quota appear ready"
+    );
+    ensure!(
+        expected.matches(status),
+        "rate-limited status did not retain the last-good quota and evidence"
+    );
+    ensure!(
+        has_provider_rate_limit_issue(status, retry_deadline_epoch),
+        "monitor status did not expose exactly one provider rate-limit issue at the exact retry deadline"
+    );
+    for window in ["five_hour", "seven_day"] {
+        ensure!(
+            status[window]["used_percentage_basis_points"]
+                == before_failure[window]["used_percentage_basis_points"]
+                && status[window]["reset_at_epoch"] == before_failure[window]["reset_at_epoch"],
+            "rate-limited provider replaced the last-good {window} quota"
+        );
+        ensure!(
+            status[window]["used_evidence"]["freshness"] == "stale",
+            "rate-limited {window} used evidence did not become stale"
+        );
+        for evidence_kind in ["used_evidence", "reset_evidence"] {
+            for evidence_field in [
+                "evidence_sequence",
+                "evidence_at_epoch",
+                "evidence_received_at_epoch",
+            ] {
+                ensure!(
+                    status[window][evidence_kind][evidence_field]
+                        == before_failure[window][evidence_kind][evidence_field],
+                    "rate-limited provider changed last-good {window} {evidence_kind} identity"
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+fn assert_request_count_remains(
+    server: &FakeHttpServer,
+    expected_count: usize,
+    timeout: Duration,
+    reason: &str,
+) -> Result<()> {
+    let deadline = Instant::now() + timeout;
+    loop {
+        ensure!(
+            server.request_count() == expected_count,
+            "{reason}: fake provider request count changed"
+        );
+        if Instant::now() >= deadline {
+            return Ok(());
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
 }
 
 fn next_provider_request(
@@ -1240,6 +1875,7 @@ struct FakeHttpServer {
     endpoint: String,
     requests: Receiver<FakeRequest>,
     counters: Arc<FakeHttpCounters>,
+    expected_token: Arc<Mutex<String>>,
     shutdown: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
 }
@@ -1253,9 +1889,11 @@ struct FakeHttpCounters {
     malformed_requests: AtomicUsize,
     write_failures: AtomicUsize,
     requests: AtomicUsize,
+    last_request_bytes_read: AtomicUsize,
+    last_header_read_elapsed_millis: AtomicU64,
+    last_header_read_error_kind: Mutex<Option<String>>,
 }
 
-#[derive(Clone, Copy)]
 struct FakeHttpCounterSnapshot {
     accepted_connections: usize,
     accept_failures: usize,
@@ -1264,6 +1902,9 @@ struct FakeHttpCounterSnapshot {
     malformed_requests: usize,
     write_failures: usize,
     requests: usize,
+    last_request_bytes_read: usize,
+    last_header_read_elapsed_millis: u64,
+    last_header_read_error_kind: Option<String>,
 }
 
 impl FakeHttpCounters {
@@ -1276,12 +1917,38 @@ impl FakeHttpCounters {
             malformed_requests: self.malformed_requests.load(Ordering::Acquire),
             write_failures: self.write_failures.load(Ordering::Acquire),
             requests: self.requests.load(Ordering::Acquire),
+            last_request_bytes_read: self.last_request_bytes_read.load(Ordering::Acquire),
+            last_header_read_elapsed_millis: self
+                .last_header_read_elapsed_millis
+                .load(Ordering::Acquire),
+            last_header_read_error_kind: self
+                .last_header_read_error_kind
+                .lock()
+                .ok()
+                .and_then(|kind| kind.clone()),
+        }
+    }
+
+    fn record_header_read(
+        &self,
+        bytes_read: usize,
+        elapsed: Duration,
+        error_kind: Option<std::io::ErrorKind>,
+    ) {
+        self.last_request_bytes_read
+            .store(bytes_read, Ordering::Release);
+        self.last_header_read_elapsed_millis.store(
+            elapsed.as_millis().min(u128::from(u64::MAX)) as u64,
+            Ordering::Release,
+        );
+        if let Ok(mut last_kind) = self.last_header_read_error_kind.lock() {
+            *last_kind = error_kind.map(|kind| format!("{kind:?}"));
         }
     }
 }
 
 impl FakeHttpCounterSnapshot {
-    fn diagnostic_json(self) -> Value {
+    fn diagnostic_json(&self) -> Value {
         json!({
             "accepted_connections": self.accepted_connections,
             "accept_failures": self.accept_failures,
@@ -1290,10 +1957,13 @@ impl FakeHttpCounterSnapshot {
             "malformed_requests": self.malformed_requests,
             "write_failures": self.write_failures,
             "complete_requests": self.requests,
+            "last_request_bytes_read": self.last_request_bytes_read,
+            "last_header_read_elapsed_millis": self.last_header_read_elapsed_millis,
+            "last_header_read_error_kind": self.last_header_read_error_kind.as_deref(),
         })
     }
 
-    fn timeout_kind(self) -> &'static str {
+    fn timeout_kind(&self) -> &'static str {
         if self.accepted_connections == 0 {
             "no TCP connection reached the fake provider"
         } else if self.partial_requests > 0 {
@@ -1306,13 +1976,6 @@ impl FakeHttpCounterSnapshot {
             "fake provider accepted a connection but did not publish a complete request"
         }
     }
-}
-
-#[derive(Clone, Copy)]
-enum RequestParseFailure {
-    Read,
-    Partial,
-    Malformed,
 }
 
 impl FakeHttpServer {
@@ -1358,6 +2021,7 @@ impl FakeHttpServer {
             endpoint,
             requests,
             counters,
+            expected_token: token,
             shutdown,
             thread: Some(thread),
         })
@@ -1392,6 +2056,15 @@ impl FakeHttpServer {
         self.counters.requests.load(Ordering::Acquire)
     }
 
+    fn set_expected_token(&self, token: &str) -> Result<()> {
+        *self
+            .expected_token
+            .lock()
+            .map_err(|_| anyhow::anyhow!("fake provider credential state was poisoned"))? =
+            token.to_owned();
+        Ok(())
+    }
+
     fn diagnostic_json(&self) -> Value {
         self.counters.snapshot().diagnostic_json()
     }
@@ -1416,6 +2089,7 @@ struct FakeRequest {
 struct HttpResponse {
     status: u16,
     reason: &'static str,
+    retry_after: Option<String>,
     body: String,
 }
 
@@ -1424,11 +2098,39 @@ impl HttpResponse {
         Self {
             status: 200,
             reason: "OK",
+            retry_after: None,
             body: json!({
                 "five_hour": {"utilization": five_hour, "resets_at": five_hour_reset},
                 "seven_day": {"utilization": seven_day, "resets_at": seven_day_reset},
             })
             .to_string(),
+        }
+    }
+
+    fn too_many_requests(retry_after: &str) -> Self {
+        Self {
+            status: 429,
+            reason: "Too Many Requests",
+            retry_after: Some(retry_after.to_owned()),
+            body: String::new(),
+        }
+    }
+
+    fn unauthorized(body: Option<&str>) -> Self {
+        Self {
+            status: 401,
+            reason: "Unauthorized",
+            retry_after: None,
+            body: body.unwrap_or_default().to_owned(),
+        }
+    }
+
+    fn forbidden(body: Option<&str>) -> Self {
+        Self {
+            status: 403,
+            reason: "Forbidden",
+            retry_after: None,
+            body: body.unwrap_or_default().to_owned(),
         }
     }
 }
@@ -1440,35 +2142,54 @@ fn serve_provider_request(
     expected_token: &Mutex<String>,
     shutdown: &AtomicBool,
 ) -> Result<()> {
-    if stream
-        .set_read_timeout(Some(Duration::from_secs(5)))
-        .is_err()
-    {
-        counters.read_failures.fetch_add(1, Ordering::AcqRel);
-        bail!("fake provider could not set its bounded header read timeout");
-    }
-    let (method, path, authorization_matches_expected) =
-        match parse_request(&mut stream, expected_token) {
-            Ok(request) => request,
-            Err(RequestParseFailure::Read) => {
-                counters.read_failures.fetch_add(1, Ordering::AcqRel);
-                bail!("fake provider failed while reading request headers");
+    let parsed_request = match parse_request(&mut stream, expected_token) {
+        Ok(request) => request,
+        Err(failure) => {
+            let stats = match failure {
+                RequestParseFailure::Read { stats, .. }
+                | RequestParseFailure::Partial { stats }
+                | RequestParseFailure::Malformed { stats } => stats,
+            };
+            counters.record_header_read(stats.bytes_read, stats.elapsed, failure.error_kind());
+            match failure {
+                RequestParseFailure::Read { kind, stats } => {
+                    counters.read_failures.fetch_add(1, Ordering::AcqRel);
+                    bail!(
+                        "fake provider header read failed ({kind:?}) after {}ms with {} bytes",
+                        stats.elapsed.as_millis(),
+                        stats.bytes_read
+                    );
+                }
+                RequestParseFailure::Partial { stats } => {
+                    counters.partial_requests.fetch_add(1, Ordering::AcqRel);
+                    bail!(
+                        "fake provider received partial request headers after {}ms with {} bytes",
+                        stats.elapsed.as_millis(),
+                        stats.bytes_read
+                    );
+                }
+                RequestParseFailure::Malformed { stats } => {
+                    counters.malformed_requests.fetch_add(1, Ordering::AcqRel);
+                    bail!(
+                        "fake provider received malformed request headers after {}ms with {} bytes",
+                        stats.elapsed.as_millis(),
+                        stats.bytes_read
+                    );
+                }
             }
-            Err(RequestParseFailure::Partial) => {
-                counters.partial_requests.fetch_add(1, Ordering::AcqRel);
-                bail!("fake provider received partial request headers");
-            }
-            Err(RequestParseFailure::Malformed) => {
-                counters.malformed_requests.fetch_add(1, Ordering::AcqRel);
-                bail!("fake provider received malformed request headers");
-            }
-        };
+        }
+    };
+    counters.record_header_read(
+        parsed_request.stats.bytes_read,
+        parsed_request.stats.elapsed,
+        None,
+    );
     let (respond, response) = mpsc::sync_channel(1);
     counters.requests.fetch_add(1, Ordering::AcqRel);
     requests.send(FakeRequest {
-        method,
-        path,
-        authorization_matches_expected,
+        method: parsed_request.method,
+        path: parsed_request.path,
+        authorization_matches_expected: parsed_request.authorization_matches_expected,
         respond,
     })?;
     loop {
@@ -1478,8 +2199,14 @@ fn serve_provider_request(
         match response.recv_timeout(Duration::from_millis(100)) {
             Ok(response) => {
                 let bytes = response.body.as_bytes();
+                let retry_after_header = response
+                    .retry_after
+                    .as_ref()
+                    .map_or_else(String::new, |retry_after| {
+                        format!("Retry-After: {retry_after}\r\n")
+                    });
                 let header = format!(
-                    "HTTP/1.1 {} {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    "HTTP/1.1 {} {}\r\nContent-Type: application/json\r\n{retry_after_header}Content-Length: {}\r\nConnection: close\r\n\r\n",
                     response.status,
                     response.reason,
                     bytes.len()
@@ -1500,16 +2227,88 @@ fn serve_provider_request(
     }
 }
 
+const FAKE_HEADER_READ_DEADLINE: Duration = Duration::from_secs(12);
+const FAKE_HEADER_READ_POLL_INTERVAL: Duration = Duration::from_secs(2);
+const MAX_FAKE_HEADER_BYTES: usize = 16 * 1024;
+
+#[derive(Clone, Copy)]
+struct HeaderReadStats {
+    bytes_read: usize,
+    elapsed: Duration,
+}
+
+struct ParsedRequest {
+    method: String,
+    path: String,
+    authorization_matches_expected: bool,
+    stats: HeaderReadStats,
+}
+
+#[derive(Clone, Copy)]
+enum RequestParseFailure {
+    Read {
+        kind: std::io::ErrorKind,
+        stats: HeaderReadStats,
+    },
+    Partial {
+        stats: HeaderReadStats,
+    },
+    Malformed {
+        stats: HeaderReadStats,
+    },
+}
+
+impl RequestParseFailure {
+    fn error_kind(self) -> Option<std::io::ErrorKind> {
+        match self {
+            Self::Read { kind, .. } => Some(kind),
+            Self::Partial { .. } | Self::Malformed { .. } => None,
+        }
+    }
+}
+
 fn parse_request(
     stream: &mut TcpStream,
     expected_token: &Mutex<String>,
-) -> std::result::Result<(String, String, bool), RequestParseFailure> {
+) -> std::result::Result<ParsedRequest, RequestParseFailure> {
+    let read_started_at = Instant::now();
+    let read_deadline = read_started_at + FAKE_HEADER_READ_DEADLINE;
     let mut bytes = Vec::with_capacity(2048);
     let mut chunk = [0_u8; 1024];
-    while bytes.len() < 16 * 1024 {
-        let count = stream
-            .read(&mut chunk)
-            .map_err(|_| RequestParseFailure::Read)?;
+    while bytes.len() < MAX_FAKE_HEADER_BYTES {
+        let remaining = read_deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(RequestParseFailure::Read {
+                kind: std::io::ErrorKind::TimedOut,
+                stats: header_read_stats(&bytes, read_started_at),
+            });
+        }
+        let read_timeout = remaining.min(FAKE_HEADER_READ_POLL_INTERVAL);
+        if let Err(error) = stream.set_read_timeout(Some(read_timeout)) {
+            return Err(RequestParseFailure::Read {
+                kind: error.kind(),
+                stats: header_read_stats(&bytes, read_started_at),
+            });
+        }
+        let read_capacity = (MAX_FAKE_HEADER_BYTES - bytes.len()).min(chunk.len());
+        let count = match stream.read(&mut chunk[..read_capacity]) {
+            Ok(count) => count,
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock
+                ) && Instant::now() < read_deadline =>
+            {
+                thread::sleep(Duration::from_millis(50));
+                continue;
+            }
+            Err(error) => {
+                return Err(RequestParseFailure::Read {
+                    kind: error.kind(),
+                    stats: header_read_stats(&bytes, read_started_at),
+                });
+            }
+        };
         if count == 0 {
             break;
         }
@@ -1518,26 +2317,40 @@ fn parse_request(
             break;
         }
     }
-    if !bytes.windows(4).any(|window| window == b"\r\n\r\n") {
-        return Err(RequestParseFailure::Partial);
-    }
-    let text = std::str::from_utf8(&bytes).map_err(|_| RequestParseFailure::Malformed)?;
+    let Some(header_end) = bytes
+        .windows(4)
+        .position(|window| window == b"\r\n\r\n")
+        .map(|delimiter_start| delimiter_start + 4)
+    else {
+        return Err(RequestParseFailure::Partial {
+            stats: header_read_stats(&bytes, read_started_at),
+        });
+    };
+    let stats = header_read_stats(&bytes, read_started_at);
+    let header_bytes = &bytes[..header_end];
+    let text =
+        std::str::from_utf8(header_bytes).map_err(|_| RequestParseFailure::Malformed { stats })?;
     let mut lines = text.lines();
-    let request_line = lines.next().ok_or(RequestParseFailure::Malformed)?;
+    let request_line = lines
+        .next()
+        .ok_or(RequestParseFailure::Malformed { stats })?;
     let mut parts = request_line.split_whitespace();
     let method = parts
         .next()
-        .ok_or(RequestParseFailure::Malformed)?
+        .ok_or(RequestParseFailure::Malformed { stats })?
         .to_owned();
     let path = parts
         .next()
-        .ok_or(RequestParseFailure::Malformed)?
+        .ok_or(RequestParseFailure::Malformed { stats })?
         .to_owned();
-    let version = parts.next().ok_or(RequestParseFailure::Malformed)?;
+    let version = parts
+        .next()
+        .ok_or(RequestParseFailure::Malformed { stats })?;
     if parts.next().is_some() || !version.starts_with("HTTP/") {
-        return Err(RequestParseFailure::Malformed);
+        return Err(RequestParseFailure::Malformed { stats });
     }
-    let expected_token = lock_token(expected_token).map_err(|_| RequestParseFailure::Malformed)?;
+    let expected_token =
+        lock_token(expected_token).map_err(|_| RequestParseFailure::Malformed { stats })?;
     let expected = format!("Bearer {expected_token}");
     let authorization_matches_expected =
         lines
@@ -1548,7 +2361,19 @@ fn parse_request(
     // `bytes` temporarily contained request headers. Do not retain or format
     // them: in particular, never put the bearer value in test diagnostics.
     drop(bytes);
-    Ok((method, path, authorization_matches_expected))
+    Ok(ParsedRequest {
+        method,
+        path,
+        authorization_matches_expected,
+        stats,
+    })
+}
+
+fn header_read_stats(bytes: &[u8], read_started_at: Instant) -> HeaderReadStats {
+    HeaderReadStats {
+        bytes_read: bytes.len(),
+        elapsed: read_started_at.elapsed(),
+    }
 }
 
 fn lock_token(token: &Mutex<String>) -> Result<String> {

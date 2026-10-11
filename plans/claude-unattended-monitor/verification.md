@@ -1294,7 +1294,7 @@ one integration test:
 | Repeat 3 | 1 passed, 0 failed | 13.58 s |
 
 Those four results are historical for the earlier driver. That version used
-fixed 250 ms delays after releasing each fake provider response. The current
+fixed 250 ms delays after releasing each fake provider response. The later
 driver uses the durable, typed coordinator-completion state as its handshake
 instead of those publication sleeps. A separate callback-driven snapshot then
 passed one test in 13.90 seconds; that snapshot also predates the current
@@ -1305,8 +1305,8 @@ That failure remains unresolved and is not considered fixed by later passing
 runs: it recorded neither the typed terminal failure kind nor the TCP request
 phase, so the cause was not established.
 
-After adding credential and loopback request counters, the current
-instrumented driver passed ten executions, with one test passing in each run:
+After adding credential and loopback request counters, the instrumented
+success-flow driver passed ten executions, with one test passing in each run:
 
 | Runs | Result per run | Elapsed per run |
 | ---: | --- | ---: |
@@ -1316,7 +1316,7 @@ Each passing instrumented run asserts one fake credential read per foreground
 service bootstrap and exactly two GETs at the loopback fixture endpoint, one
 per successful collection. Passive CLI status/watch reads do not increase
 those counters. These are fixture-local counts, not counts of requests to
-Anthropic or any real provider. In the latest run, the post-restart mock
+Anthropic or any real provider. In that instrumented run, the post-restart mock
 provider request and source sample were observed at fixture time +601. The
 valid evidence-received time is bounded by the request and publication times
 (+601 through +602); the assertion does not require exactly +602 on every run.
@@ -1332,12 +1332,72 @@ because the fake HTTP parser used the wrong timeout index for non-GET handling;
 that run is retained here as historical failure evidence, and the subsequent
 fix is covered by the new passing runs. The earlier 736-test default pass from
 pre-integration runtime snapshot `f5163e98` is also historical and does not
-verify the current fixture/seam changes. Final strict all-target Clippy passed
-for both packages with `test-support` enabled (7.46 seconds) and without that
-feature (19.78 seconds); both runs used `-Dwarnings`. Formatting also passed.
-Clean final-head checks remain outstanding.
+verify the current fixture/seam changes. At committed checkpoint
+`a238c9eb18b107e85595c73f1ca5e13c7aa52494`, strict all-target Clippy passed for
+both packages with `test-support` enabled (7.46 seconds) and without that
+feature (19.78 seconds); both runs used `-Dwarnings`, and formatting passed.
+The same checkpoint passed default-feature offline CLI regressions:
+`broker_service_lifecycle` 2/2, `usage_bootstrap_offline` 2/2, and
+`usage_monitor_offline` 5/5. The expanded test source described below was
+modified after that checkpoint. Its strict all-target feature-enabled Clippy
+run passed in 2.68 seconds after a diagnostic-name cleanup and equivalent
+integer-cast lint fix; formatting and `git diff --check` passed. The earlier
+unfeatured strict Clippy run was not repeated for these test-only changes, so
+that checkpoint result is not final verification of the expanded source.
 Separate attended live v9 acceptance is still required before claiming real
 credential-to-provider-to-projection behavior.
+
+### Expanded full-flow retry and credential outcome cases
+
+A later integration-driver snapshot adds two end-to-end `Retry-After` restart
+variants and a credential-outcome matrix. Four test entrypoints cover eight
+scenarios: the successful collect/publish/restart flow, both retry-header
+formats, unchanged and changed HTTP 401 credentials, HTTP 403, transport
+failure, and provider timeout. The first run passed 4/4 test entrypoints in
+24.14 seconds before the final stale-readiness assertions were added; it is
+historical for the revised source. Three earlier parallel runs against the
+revised assertions finished 3/4 in 34.68 seconds, 1/4 in 45.71 seconds, and
+4/4 in 23.76 seconds. After test-only serialization and bounded header-read
+handling, three consecutive full-target runs with default test threading each
+passed 4/4: 65.78 seconds, 66.22 seconds, and 66.61 seconds. The passing runs
+establish repeatability under the revised fixture setup; they do not establish
+the cause of the earlier failures.
+
+The earlier parallel-run failures accepted TCP connections but did not
+complete an HTTP request; the provider terminal was typed
+`provider_unavailable`. Those runs used four concurrent test processes, but
+the instrumentation did not capture the OS error kind, so the exact cause
+remains unknown. The final harness changes serialize this integration binary,
+bound transient parser/header reads, restrict auth inspection to the
+authorization header, and record safe error-kind, byte-count, and elapsed-time
+diagnostics. These are test-harness changes, not a product-code fix; the
+passing serial runs do not prove the cause of the earlier failures. This
+accepted-connection failure is distinct from the earlier pre-instrumentation
+miss that recorded no HTTP request, and from the separate fake-server
+timeout-index bug that was fixed. None of these results establishes live
+readiness.
+
+Each retry-header case seeds quota with HTTP 200, records a typed HTTP 429 with
+either delta-seconds or HTTP-date `Retry-After`, and restarts the broker at
+300 seconds before the persisted deadline. During that wait, the old quota
+remains visible but stale and the provider rate-limit issue remains present.
+No provider GET is admitted at deadline minus one second; exactly one is
+admitted at the deadline. Its HTTP 200 clears the provider issue and publishes
+the replacement observation. These counts and times are from the controllable
+local fixture clock and loopback server.
+
+The auth-outcome scenarios also assert the selected hashed credential source
+does not change. An unchanged HTTP 401 performs two synthetic credential reads
+but only one provider request and ends as `needs_secret`; a changed credential
+on that exact source performs two reads and two requests and can complete. A
+403, transport failure, or timeout each performs one credential read and one
+provider request, with no retry, and records its typed terminal outcome. These
+are fixture-local counts, not native Keychain or real-provider request counts.
+The final fixture lifecycle audit found no remaining test process, temporary
+marker, socket, or state directory.
+The earlier ten-run success-flow stress result remains separate from this
+expanded suite. The pre-instrumentation no-HTTP failure above remains
+unexplained and must not be attributed to the fixed fake-server parser bug.
 
 The fake clock also avoids the time an operator may encounter during a real
 restart: production can still wait for the remaining or full 300-second
