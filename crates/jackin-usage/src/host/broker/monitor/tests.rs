@@ -146,6 +146,18 @@ fn overwrite_persisted_state(directory: &tempfile::TempDir, snapshot: &serde_jso
     .expect("write migration fixture");
 }
 
+fn remove_v6_reset_metadata(snapshot: &mut serde_json::Value) {
+    for account in snapshot["accounts"]
+        .as_object_mut()
+        .expect("persisted accounts")
+        .values_mut()
+    {
+        let fields = account.as_object_mut().expect("persisted account");
+        fields.remove("statusline_reset_watermarks");
+        fields.remove("legacy_reset_admission_after_epochs");
+    }
+}
+
 #[derive(Debug, Clone)]
 struct StartSpec {
     account_id: String,
@@ -3707,6 +3719,7 @@ fn v2_store_migrates_explicitly_to_current_schema() {
     .expect("start monitor with a persisted event");
     let mut snapshot = serde_json::to_value(store.lock().clone()).expect("serialize V2 fixture");
     snapshot["schema_version"] = serde_json::json!(2);
+    remove_v6_reset_metadata(&mut snapshot);
     for monitor in snapshot["monitors"]
         .as_object_mut()
         .expect("persisted monitors")
@@ -3752,6 +3765,7 @@ fn v2_store_rejects_wrong_nested_event_schema_without_rewriting_source() {
     .expect("start monitor with a persisted event");
     let mut snapshot = serde_json::to_value(store.lock().clone()).expect("serialize V2 fixture");
     snapshot["schema_version"] = serde_json::json!(2);
+    remove_v6_reset_metadata(&mut snapshot);
     let monitor = snapshot["monitors"]
         .as_object_mut()
         .expect("persisted monitors")
@@ -3792,6 +3806,7 @@ fn v3_store_migration_defaults_horizon_and_preserves_goal_history() {
 
     let mut snapshot = serde_json::to_value(store.lock().clone()).expect("serialize V3 fixture");
     snapshot["schema_version"] = serde_json::json!(3);
+    remove_v6_reset_metadata(&mut snapshot);
     let account = snapshot["accounts"]["acct-v3-migration"]
         .as_object_mut()
         .expect("persisted account");
@@ -3866,8 +3881,14 @@ fn v3_store_migration_defaults_horizon_and_preserves_goal_history() {
     );
     assert_eq!(
         state.accounts["acct-v3-migration"].latest_reset_epochs,
-        [None, None],
-        "legacy unscoped provider resets are removed during pre-v5 migration"
+        [Some(NOW + 3_600), Some(NOW + 86_400)],
+        "pre-v5 migration preserves ambiguous high-water marks conservatively"
+    );
+    assert!(
+        state.accounts["acct-v3-migration"]
+            .statusline_reset_watermarks
+            .iter()
+            .all(|watermark| matches!(watermark, StatuslineResetWatermark::Unknown))
     );
     let goal = &state.goals["goal-v3-migration"];
     assert_eq!(goal.budget, Some(Money::new(5_000, "SGD", 2)));
@@ -3925,6 +3946,7 @@ fn v3_migration_rejects_goal_monitor_mismatch_without_rewriting_source() {
 
     let mut snapshot = serde_json::to_value(store.lock().clone()).expect("serialize V3 fixture");
     snapshot["schema_version"] = serde_json::json!(3);
+    remove_v6_reset_metadata(&mut snapshot);
     snapshot["accounts"]["acct-v3-invalid-mismatch"]["spend"]
         .as_object_mut()
         .expect("persisted account spend")
@@ -3971,6 +3993,7 @@ fn v3_migration_rejects_wrong_or_future_nested_event_schema_without_rewriting_so
         let mut snapshot =
             serde_json::to_value(store.lock().clone()).expect("serialize V3 fixture");
         snapshot["schema_version"] = serde_json::json!(3);
+        remove_v6_reset_metadata(&mut snapshot);
         let monitor = snapshot["monitors"]
             .as_object_mut()
             .expect("persisted monitors")
@@ -3994,6 +4017,396 @@ fn v3_migration_rejects_wrong_or_future_nested_event_schema_without_rewriting_so
             source_bytes,
             "a rejected migration must not rewrite its source"
         );
+    }
+}
+
+fn v5_reset_watermark_fixture() -> (tempfile::TempDir, serde_json::Value) {
+    let (directory, store) = open_store();
+    ingest(
+        &store,
+        "acct-v5-reset-known",
+        observation(
+            "session-v5-reset-known",
+            None,
+            (Some(2_500), Some(NOW + 3_600)),
+            (None, None),
+        ),
+        NOW,
+    );
+    ingest(
+        &store,
+        "acct-v5-reset-none",
+        observation(
+            "session-v5-reset-none",
+            None,
+            (Some(2_500), None),
+            (None, None),
+        ),
+        NOW,
+    );
+    let started = start_result(
+        &store,
+        observe_config("session-v5-migration-event"),
+        "v5-migration-event",
+        NOW + 1,
+    )
+    .expect("start monitor with persisted event");
+
+    let mut snapshot = serde_json::to_value(store.lock().clone()).expect("serialize V5 fixture");
+    let fingerprint_key = "broker_projection:used:five_hour:account";
+    let fingerprint = serde_json::to_string(&(
+        MonitorEvidenceSource::BrokerProjection,
+        None::<String>,
+        Some(NOW),
+        NOW,
+        None::<String>,
+        MonitorEvidenceValue::QuotaUsedPercentage {
+            window: MonitorQuotaWindow::FiveHour,
+            used_percentage_basis_points: 4_200,
+        },
+    ))
+    .expect("serialize V5 quota fingerprint");
+    snapshot["monitors"][started.monitor_id.as_str()]["evidence_fingerprints"][fingerprint_key] =
+        serde_json::json!(fingerprint);
+    snapshot["schema_version"] = serde_json::json!(5);
+    remove_v6_reset_metadata(&mut snapshot);
+    for monitor in snapshot["monitors"]
+        .as_object_mut()
+        .expect("persisted monitors")
+        .values_mut()
+    {
+        for event in monitor["events"].as_array_mut().expect("monitor events") {
+            event["status"]["schema_version"] = serde_json::json!(5);
+        }
+    }
+    drop(store);
+    (directory, snapshot)
+}
+
+#[test]
+fn v5_migration_records_unknown_or_known_none_and_restamps_event_schema() {
+    let (directory, mut snapshot) = v5_reset_watermark_fixture();
+    let last_now_epoch = snapshot["last_now_epoch"]
+        .as_i64()
+        .expect("legacy fixture clock");
+    let maximum_future_evidence_epoch = last_now_epoch.saturating_add(MAX_FUTURE_SKEW_SECS);
+    let session_window = snapshot["accounts"]["acct-v5-reset-known"]["sessions"]
+        ["session-v5-reset-known"]["windows"][0]
+        .clone();
+    snapshot["accounts"]["acct-v5-reset-known"]["broker_windows"][0] = session_window;
+    snapshot["accounts"]["acct-v5-reset-known"]["broker_windows"][0]["used"]["evidence_at_epoch"] =
+        serde_json::json!(maximum_future_evidence_epoch);
+    let monitor_id = snapshot["monitors"]
+        .as_object()
+        .expect("persisted monitors")
+        .keys()
+        .next()
+        .expect("fixture monitor")
+        .clone();
+    let expected_events = snapshot["monitors"][monitor_id.as_str()]["events"]
+        .as_array()
+        .expect("legacy monitor events")
+        .iter()
+        .cloned()
+        .map(|mut event| {
+            event["status"]["schema_version"] = serde_json::json!(USAGE_MONITOR_SCHEMA_VERSION);
+            event
+        })
+        .collect::<Vec<_>>();
+    overwrite_persisted_state(&directory, &snapshot);
+
+    let migrated = MonitorStore::open(directory.path()).expect("migrate V5 monitor state");
+    let state = migrated.lock();
+    assert_eq!(state.schema_version, USAGE_MONITOR_SCHEMA_VERSION);
+    assert_eq!(
+        state.accounts["acct-v5-reset-known"].statusline_reset_watermarks[0],
+        StatuslineResetWatermark::Unknown
+    );
+    assert_eq!(
+        state.accounts["acct-v5-reset-none"].statusline_reset_watermarks[0],
+        StatuslineResetWatermark::KnownNone
+    );
+    assert_eq!(
+        state.accounts["acct-v5-reset-known"].legacy_reset_admission_after_epochs[0],
+        Some(state.last_now_epoch)
+    );
+    assert_eq!(
+        state.accounts["acct-v5-reset-none"].legacy_reset_admission_after_epochs[0],
+        None
+    );
+    let monitor = state
+        .monitors
+        .get(&monitor_id)
+        .expect("migrated fixture monitor");
+    assert_eq!(
+        state.accounts["acct-v5-reset-known"].broker_windows[0]
+            .used
+            .as_ref()
+            .expect("migrated used evidence")
+            .evidence_at_epoch,
+        Some(maximum_future_evidence_epoch),
+        "the maximum supported evidence skew remains valid through migration"
+    );
+    assert!(
+        monitor
+            .evidence_fingerprints
+            .contains_key("broker_projection:used:five_hour:account")
+    );
+    assert_eq!(
+        serde_json::to_value(&monitor.events).expect("serialize migrated event history"),
+        serde_json::json!(expected_events),
+        "migration preserves event contents and changes only nested schema version"
+    );
+    assert!(
+        monitor
+            .events
+            .iter()
+            .all(|event| event.status.schema_version == USAGE_MONITOR_SCHEMA_VERSION)
+    );
+    drop(state);
+
+    let persisted: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(persisted_state_path(&directory)).expect("read migrated state"),
+    )
+    .expect("parse migrated state");
+    assert_eq!(
+        persisted["accounts"]["acct-v5-reset-known"]["statusline_reset_watermarks"][0],
+        serde_json::json!("unknown")
+    );
+    assert_eq!(
+        persisted["accounts"]["acct-v5-reset-none"]["statusline_reset_watermarks"][0],
+        serde_json::json!("known_none")
+    );
+}
+
+#[test]
+fn v5_migration_rejects_wrong_nested_schema_and_downgraded_watermark_metadata() {
+    for invalid_case in 0..6 {
+        let (directory, mut snapshot) = v5_reset_watermark_fixture();
+        let monitor_id = snapshot["monitors"]
+            .as_object()
+            .expect("persisted monitors")
+            .keys()
+            .next()
+            .expect("fixture monitor")
+            .clone();
+        match invalid_case {
+            0 => {
+                snapshot["monitors"][monitor_id.as_str()]["events"][0]["status"]["schema_version"] =
+                    serde_json::json!(4);
+            }
+            1 => {
+                snapshot["accounts"]["acct-v5-reset-known"]["statusline_reset_watermarks"] = serde_json::json!([
+                    { "known": { "reset_at_epoch": NOW + 3_600, "received_at_epoch": NOW } },
+                    "known_none"
+                ]);
+            }
+            2 => {
+                snapshot["accounts"]["acct-v5-reset-known"]["legacy_reset_admission_after_epochs"] =
+                    serde_json::json!([NOW, null]);
+            }
+            3 => {
+                let last_now_epoch = snapshot["last_now_epoch"]
+                    .as_i64()
+                    .expect("legacy fixture clock");
+                snapshot["accounts"]["acct-v5-reset-known"]["sessions"]["session-v5-reset-known"]
+                    ["windows"][0]["reset"]["received_at_epoch"] =
+                    serde_json::json!(last_now_epoch + 100);
+            }
+            4 => {
+                let last_now_epoch = snapshot["last_now_epoch"]
+                    .as_i64()
+                    .expect("legacy fixture clock");
+                let future_evidence_epoch = last_now_epoch
+                    .saturating_add(MAX_FUTURE_SKEW_SECS)
+                    .saturating_add(1);
+                snapshot["accounts"]["acct-v5-reset-known"]["sessions"]["session-v5-reset-known"]
+                    ["windows"][0]["used"]["evidence_at_epoch"] =
+                    serde_json::json!(future_evidence_epoch);
+            }
+            5 => {
+                let last_now_epoch = snapshot["last_now_epoch"]
+                    .as_i64()
+                    .expect("legacy fixture clock");
+                let session_window = snapshot["accounts"]["acct-v5-reset-known"]["sessions"]
+                    ["session-v5-reset-known"]["windows"][0]
+                    .clone();
+                snapshot["accounts"]["acct-v5-reset-known"]["broker_windows"][0] = session_window;
+                snapshot["accounts"]["acct-v5-reset-known"]["broker_windows"][0]["used"]["received_at_epoch"] =
+                    serde_json::json!(last_now_epoch + 1);
+            }
+            _ => unreachable!(),
+        }
+        let source_bytes = serde_json::to_vec(&snapshot).expect("serialize invalid V5 fixture");
+        std::fs::write(persisted_state_path(&directory), &source_bytes)
+            .expect("write invalid V5 source");
+
+        let error =
+            MonitorStore::open(directory.path()).expect_err("invalid V5 state must not migrate");
+        assert_eq!(error.code, MonitorIssueCode::MonitorStoreUnavailable);
+        assert_eq!(
+            std::fs::read(persisted_state_path(&directory)).expect("read rejected source"),
+            source_bytes,
+            "a rejected migration must not rewrite its source"
+        );
+    }
+}
+
+#[test]
+fn clearing_provider_projection_uses_statusline_watermark_completeness() {
+    let mut known = AccountObservations {
+        latest_reset_epochs: [Some(NOW + 20), None],
+        statusline_reset_watermarks: [
+            StatuslineResetWatermark::Known {
+                reset_at_epoch: NOW + 10,
+                received_at_epoch: NOW,
+            },
+            StatuslineResetWatermark::KnownNone,
+        ],
+        legacy_reset_admission_after_epochs: [Some(NOW), None],
+        ..AccountObservations::default()
+    };
+    clear_account_broker_projection(&mut known);
+    assert_eq!(known.latest_reset_epochs, [Some(NOW + 10), None]);
+    assert_eq!(known.legacy_reset_admission_after_epochs, [None, None]);
+
+    let mut known_none = AccountObservations {
+        latest_reset_epochs: [Some(NOW + 20), None],
+        ..AccountObservations::default()
+    };
+    clear_account_broker_projection(&mut known_none);
+    assert_eq!(known_none.latest_reset_epochs, [None, None]);
+
+    let mut unknown = AccountObservations {
+        latest_reset_epochs: [Some(NOW + 20), None],
+        statusline_reset_watermarks: [
+            StatuslineResetWatermark::Unknown,
+            StatuslineResetWatermark::KnownNone,
+        ],
+        legacy_reset_admission_after_epochs: [Some(NOW - 1), None],
+        ..AccountObservations::default()
+    };
+    clear_account_broker_projection(&mut unknown);
+    assert_eq!(unknown.latest_reset_epochs, [Some(NOW + 20), None]);
+    assert_eq!(
+        unknown.legacy_reset_admission_after_epochs[0],
+        Some(NOW - 1)
+    );
+}
+
+#[test]
+fn statusline_reset_watermark_survives_session_pruning_and_provider_clear() {
+    let (_directory, store) = open_store();
+    let account_id = "acct-pruned-statusline-watermark";
+    let reset = NOW + 3_600;
+    ingest(
+        &store,
+        account_id,
+        observation(
+            "old-statusline-session",
+            None,
+            (Some(2_500), Some(reset)),
+            (None, None),
+        ),
+        NOW,
+    );
+    let mut state = store.lock().clone();
+    let input_sequence = state.next_input_sequence;
+    prune_inactive_sessions(
+        &mut state,
+        account_id,
+        None,
+        NOW + MONITOR_EVIDENCE_TTL_SECS + 1,
+    );
+    let account = state
+        .accounts
+        .get_mut(account_id)
+        .expect("account observations");
+    assert!(account.sessions.is_empty(), "expired session is pruned");
+    account.latest_reset_epochs[0] = Some(reset + 60);
+    clear_account_broker_projection(account);
+    assert_eq!(account.latest_reset_epochs[0], Some(reset));
+    assert_eq!(account.input_sequence, input_sequence);
+    assert_eq!(
+        account.statusline_reset_watermarks[0],
+        StatuslineResetWatermark::Known {
+            reset_at_epoch: reset,
+            received_at_epoch: NOW,
+        }
+    );
+}
+
+#[test]
+fn account_reset_watermark_validation_rejects_future_receipt_and_inconsistent_max() {
+    let (_directory, store) = open_store();
+    ingest(
+        &store,
+        "acct-watermark-validation",
+        observation(
+            "session-watermark-validation",
+            None,
+            (Some(2_500), Some(NOW + 3_600)),
+            (None, None),
+        ),
+        NOW,
+    );
+    let mut state = store.lock().clone();
+    let valid_state = state.clone();
+    {
+        let account = state
+            .accounts
+            .get_mut("acct-watermark-validation")
+            .expect("validated account");
+        account.statusline_reset_watermarks[0] = StatuslineResetWatermark::Known {
+            reset_at_epoch: NOW + 3_600,
+            received_at_epoch: NOW + 1,
+        };
+    }
+    assert_invalid_state(&state);
+
+    {
+        let account = state
+            .accounts
+            .get_mut("acct-watermark-validation")
+            .expect("validated account");
+        account.statusline_reset_watermarks[0] = StatuslineResetWatermark::Unknown;
+        account.legacy_reset_admission_after_epochs[0] = Some(NOW + 1);
+    }
+    assert_invalid_state(&state);
+
+    {
+        let account = state
+            .accounts
+            .get_mut("acct-watermark-validation")
+            .expect("validated account");
+        account.statusline_reset_watermarks[0] = StatuslineResetWatermark::Known {
+            reset_at_epoch: NOW + 3_600,
+            received_at_epoch: NOW,
+        };
+        account.legacy_reset_admission_after_epochs[0] = None;
+        account.latest_reset_epochs[0] = Some(NOW + 3_599);
+    }
+    assert_invalid_state(&state);
+
+    for invalid_watermark in [
+        StatuslineResetWatermark::KnownNone,
+        StatuslineResetWatermark::Known {
+            reset_at_epoch: NOW + 3_599,
+            received_at_epoch: NOW,
+        },
+        StatuslineResetWatermark::Known {
+            reset_at_epoch: NOW + 3_600,
+            received_at_epoch: NOW - 1,
+        },
+    ] {
+        let mut inconsistent = valid_state.clone();
+        let account = inconsistent
+            .accounts
+            .get_mut("acct-watermark-validation")
+            .expect("validated account");
+        account.statusline_reset_watermarks[0] = invalid_watermark;
+        account.legacy_reset_admission_after_epochs[0] = None;
+        assert_invalid_state(&inconsistent);
     }
 }
 
@@ -4243,6 +4656,7 @@ fn migrate_rolled_goal_fixture(fixture: RolledGoalMigrationFixture) -> RolledGoa
     } = fixture;
     let mut snapshot = serde_json::to_value(store.lock().clone()).expect("serialize V3 fixture");
     snapshot["schema_version"] = serde_json::json!(3);
+    remove_v6_reset_metadata(&mut snapshot);
     snapshot["accounts"][account_id]["spend"]
         .as_object_mut()
         .expect("persisted account spend")

@@ -7,7 +7,7 @@ use super::super::spend::{SpendAccountState, SpendState};
 use super::super::{
     AccountObservations, AccountResetBarrier, DurableGoalSpend, DurableMonitor, Observed,
     ObservedPercentage, ObservedQuotaPair, ObservedWindow, ResetBarrier, SessionObservation,
-    StoreState,
+    StatuslineResetWatermark, StoreState,
 };
 use super::validation::{
     valid_bounded_text, valid_goal_id, valid_identifier, valid_timestamp, validate_v1,
@@ -91,7 +91,9 @@ pub(in crate::host::broker::monitor) fn migrate_v1(
         .map(|(account_id, account)| {
             Ok((
                 account_id.clone(),
-                account.clone().into_account_observations(account_id)?,
+                account
+                    .clone()
+                    .into_account_observations(account_id, legacy.last_now_epoch)?,
             ))
         })
         .collect::<Result<BTreeMap<_, _>, MonitorIssue>>()?;
@@ -391,7 +393,18 @@ impl V1AccountObservations {
     fn into_account_observations(
         self,
         account_id: &str,
+        legacy_reset_cutoff_epoch: i64,
     ) -> Result<AccountObservations, MonitorIssue> {
+        let statusline_reset_watermarks = self.latest_reset_epochs.map(|reset| {
+            if reset.is_some() {
+                StatuslineResetWatermark::Unknown
+            } else {
+                StatuslineResetWatermark::KnownNone
+            }
+        });
+        let legacy_reset_admission_after_epochs = self
+            .latest_reset_epochs
+            .map(|reset| reset.map(|_| legacy_reset_cutoff_epoch));
         Ok(AccountObservations {
             sessions: self
                 .sessions
@@ -402,6 +415,8 @@ impl V1AccountObservations {
                 .broker_windows
                 .map(V1ObservedWindow::into_observed_window),
             latest_reset_epochs: self.latest_reset_epochs,
+            statusline_reset_watermarks,
+            legacy_reset_admission_after_epochs,
             reset_barriers: self
                 .reset_barriers
                 .map(|barrier| barrier.map(V1AccountResetBarrier::into_account_reset_barrier)),

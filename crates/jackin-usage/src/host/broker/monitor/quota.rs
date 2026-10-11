@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use super::evidence::lower_reset_admission_after_epoch;
 use super::status::push_issue;
 use super::validation::scope_session_id;
 use super::{
@@ -8,7 +9,7 @@ use super::{
     MONITOR_RESET_GRACE_SECS, MonitorEvidence, MonitorEvidenceFreshness, MonitorEvidenceSource,
     MonitorEvidenceValue, MonitorFieldEvidence, MonitorIssue, MonitorIssueCode, MonitorQuotaWindow,
     MonitorQuotaWindowStatus, MonitorResetValidity, MonitorScope, ResetBarrier, SessionObservation,
-    StoreState, issue,
+    StatuslineResetWatermark, StoreState, issue,
 };
 
 pub(super) fn quota_window_status(
@@ -29,7 +30,7 @@ pub(super) fn quota_window_status(
                 window: evidence_window,
                 used_percentage_basis_points,
             } if evidence_window == window => {
-                if evidence_is_effective_used(evidence, account, index) {
+                if evidence_is_effective_used(evidence, account, index, now_epoch) {
                     used_candidates.push((evidence, used_percentage_basis_points));
                 }
             }
@@ -37,7 +38,7 @@ pub(super) fn quota_window_status(
                 window: evidence_window,
                 reset_at_epoch,
             } if evidence_window == window
-                && evidence_is_effective_reset(evidence, account, index) =>
+                && evidence_is_effective_reset(evidence, account, index, now_epoch) =>
             {
                 reset_candidates.push((evidence, reset_at_epoch));
             }
@@ -130,22 +131,45 @@ pub(super) fn evidence_is_effective_used(
     evidence: &MonitorEvidence,
     account: Option<&AccountObservations>,
     index: usize,
+    now_epoch: i64,
 ) -> bool {
     let Some(account) = account else {
         return true;
     };
+    if evidence.source == MonitorEvidenceSource::BrokerProjection {
+        let MonitorEvidenceValue::QuotaUsedPercentage {
+            window: _,
+            used_percentage_basis_points,
+        } = &evidence.value
+        else {
+            return false;
+        };
+        let Some(used) = account.broker_windows[index].used.as_ref() else {
+            return false;
+        };
+        if used.value != *used_percentage_basis_points
+            || used.evidence_at_epoch != evidence.evidence_at_epoch
+            || used.received_at_epoch != evidence.evidence_received_at_epoch
+        {
+            return false;
+        }
+        let Some(latest_reset) = account.latest_reset_epochs[index] else {
+            return true;
+        };
+        let Some(reset) = used.reset_at_epoch else {
+            return false;
+        };
+        return reset >= latest_reset
+            || broker_lower_reset_is_after_admission_fence(
+                account,
+                index,
+                latest_reset,
+                now_epoch,
+            );
+    }
     let Some(latest_reset) = account.latest_reset_epochs[index] else {
         return true;
     };
-    if evidence.source == MonitorEvidenceSource::BrokerProjection {
-        return account.broker_windows[index]
-            .used
-            .as_ref()
-            .is_some_and(|used| {
-                used.reset_at_epoch
-                    .is_some_and(|reset| reset >= latest_reset)
-            });
-    }
     let Some(session_id) = evidence.session_id.as_deref() else {
         return true;
     };
@@ -163,19 +187,42 @@ pub(super) fn evidence_is_effective_reset(
     evidence: &MonitorEvidence,
     account: Option<&AccountObservations>,
     index: usize,
+    now_epoch: i64,
 ) -> bool {
     let Some(account) = account else {
         return true;
     };
+    if evidence.source == MonitorEvidenceSource::BrokerProjection {
+        let MonitorEvidenceValue::QuotaReset {
+            window: _,
+            reset_at_epoch,
+        } = &evidence.value
+        else {
+            return false;
+        };
+        let Some(reset) = account.broker_windows[index].reset.as_ref() else {
+            return false;
+        };
+        if reset.value != *reset_at_epoch
+            || reset.evidence_at_epoch != evidence.evidence_at_epoch
+            || reset.received_at_epoch != evidence.evidence_received_at_epoch
+        {
+            return false;
+        }
+        let Some(latest_reset) = account.latest_reset_epochs[index] else {
+            return true;
+        };
+        return reset.value >= latest_reset
+            || broker_lower_reset_is_after_admission_fence(
+                account,
+                index,
+                latest_reset,
+                now_epoch,
+            );
+    }
     let Some(latest_reset) = account.latest_reset_epochs[index] else {
         return true;
     };
-    if evidence.source == MonitorEvidenceSource::BrokerProjection {
-        return account.broker_windows[index]
-            .reset
-            .as_ref()
-            .is_some_and(|reset| reset.value >= latest_reset);
-    }
     let Some(session_id) = evidence.session_id.as_deref() else {
         return true;
     };
@@ -184,6 +231,86 @@ pub(super) fn evidence_is_effective_reset(
         .get(session_id)
         .and_then(|session| session.windows[index].reset.as_ref())
         .is_some_and(|reset| reset.value >= latest_reset)
+}
+
+fn broker_lower_reset_is_after_admission_fence(
+    account: &AccountObservations,
+    index: usize,
+    latest_reset: i64,
+    now_epoch: i64,
+) -> bool {
+    if matches!(
+        account.statusline_reset_watermarks.get(index),
+        Some(StatuslineResetWatermark::KnownNone)
+    ) {
+        return broker_lower_reset_is_known_none_cohort(account, index, latest_reset, now_epoch);
+    }
+    let Some(admission_after_epoch) =
+        lower_reset_admission_after_epoch(account, index, latest_reset)
+    else {
+        return false;
+    };
+    let window = &account.broker_windows[index];
+    let (Some(used), Some(reset)) = (window.used.as_ref(), window.reset.as_ref()) else {
+        return false;
+    };
+    // The admission fence is either a Statusline receipt or a v5 migration
+    // cutoff. It establishes ordering only, not evidence freshness. Keep an
+    // accepted last-good pair visible after it ages out; `field_evidence`
+    // reports it as stale and dispatch remains blocked. This read-time check
+    // verifies the source/receipt cohort and rejects implausibly future times.
+    let source_time_is_bounded = |evidence_at: Option<i64>, received_at: i64| {
+        received_at >= 0
+            && received_at <= now_epoch.saturating_add(MAX_FUTURE_SKEW_SECS)
+            && evidence_at.is_some_and(|observed| {
+                observed >= 0 && observed <= received_at.saturating_add(MAX_FUTURE_SKEW_SECS)
+            })
+    };
+    reset.value < latest_reset
+        && used.reset_at_epoch == Some(reset.value)
+        && used.input_sequence == reset.input_sequence
+        && used.evidence_at_epoch == reset.evidence_at_epoch
+        && used.received_at_epoch == reset.received_at_epoch
+        && used
+            .evidence_at_epoch
+            .is_some_and(|observed| observed > admission_after_epoch)
+        && reset
+            .evidence_at_epoch
+            .is_some_and(|observed| observed > admission_after_epoch)
+        && used.received_at_epoch > admission_after_epoch
+        && reset.received_at_epoch > admission_after_epoch
+        && source_time_is_bounded(used.evidence_at_epoch, used.received_at_epoch)
+        && source_time_is_bounded(reset.evidence_at_epoch, reset.received_at_epoch)
+}
+
+fn broker_lower_reset_is_known_none_cohort(
+    account: &AccountObservations,
+    index: usize,
+    latest_reset: i64,
+    now_epoch: i64,
+) -> bool {
+    let Some(window) = account.broker_windows.get(index) else {
+        return false;
+    };
+    let (Some(used), Some(reset)) = (window.used.as_ref(), window.reset.as_ref()) else {
+        return false;
+    };
+    let source_time_is_bounded = |evidence_at: Option<i64>, received_at: i64| {
+        received_at >= 0
+            && received_at <= now_epoch.saturating_add(MAX_FUTURE_SKEW_SECS)
+            && evidence_at.is_some_and(|observed| {
+                observed >= 0 && observed <= received_at.saturating_add(MAX_FUTURE_SKEW_SECS)
+            })
+    };
+    reset.value < latest_reset
+        && used.reset_at_epoch == Some(reset.value)
+        && used.input_sequence == reset.input_sequence
+        && used.evidence_at_epoch.is_some()
+        && used.evidence_at_epoch == reset.evidence_at_epoch
+        && used.received_at_epoch == reset.received_at_epoch
+        && window.paired.is_none()
+        && source_time_is_bounded(used.evidence_at_epoch, used.received_at_epoch)
+        && source_time_is_bounded(reset.evidence_at_epoch, reset.received_at_epoch)
 }
 
 pub(super) fn evidence_is_relevant(evidence: &MonitorEvidence, monitor: &DurableMonitor) -> bool {
@@ -565,7 +692,12 @@ pub(super) fn reset_barrier_satisfied(
             MonitorEvidenceValue::QuotaReset {
                 window: found,
                 reset_at_epoch,
-            } if found == window && reset_at_epoch > prior_reset => {
+            } if found == window
+                && reset_at_epoch > prior_reset
+                && account
+                    .and_then(|account| account.latest_reset_epochs.get(index).copied().flatten())
+                    .is_none_or(|latest| reset_at_epoch >= latest) =>
+            {
                 resets.push((evidence, reset_at_epoch));
             }
             MonitorEvidenceValue::QuotaUsedPercentage {

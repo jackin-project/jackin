@@ -34,6 +34,7 @@ const INITIAL_MONOTONIC_MILLIS: u64 = 1_000;
 const FIRST_FIVE_HOUR_RESET: i64 = INITIAL_WALL_EPOCH + 6_400;
 const SEVEN_DAY_RESET: i64 = INITIAL_WALL_EPOCH + 604_800;
 const MAX_COORDINATOR_STATE_BYTES: u64 = 512 * 1024;
+const MAX_MONITOR_STATE_BYTES: u64 = 32 * 1024 * 1024;
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(15);
 const PROVIDER_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const BROKER_LEASE_STALE_AFTER_SECONDS: i64 = 30;
@@ -164,11 +165,14 @@ fn cli_auth_binding_watch_and_natural_provider_poll_survive_restart() -> Result<
     ))?;
     fixture.wait_for_coordinator_completion(
         &source_id,
-        first_in_flight_timing.generation,
-        first_request_wall_epoch,
-        "37% used",
-        "23% used",
-        Duration::from_secs(10),
+        CoordinatorCompletionExpectation {
+            generation: first_in_flight_timing.generation,
+            provider_invoked_at_epoch: first_request_wall_epoch,
+            fetched_at_epoch: first_request_wall_epoch,
+            session_used_label: "37% used",
+            weekly_used_label: "23% used",
+            timeout: Duration::from_secs(10),
+        },
     )?;
     let first_publication_wall_epoch = fixture.initial_wall_epoch + 2;
     let first_publication_monotonic_millis = INITIAL_MONOTONIC_MILLIS + 2_000;
@@ -236,6 +240,60 @@ fn cli_auth_binding_watch_and_natural_provider_poll_survive_restart() -> Result<
     );
     let first_coordinator_timing = fixture.coordinator_timing(&source_id)?;
     assert_successful_coordinator_timing(&first_coordinator_timing)?;
+    // Seed a reset-only statusline observation one second beyond the broker's
+    // weekly reset. The next provider result has a newer source observation
+    // but a reset one second earlier; it must still publish its own fields
+    // without lowering the account-wide statusline watermark. This sample is
+    // later pruned through ordinary CLI ingress to prove the watermark is
+    // durable independently of its source session.
+    let statusline_watermark_epoch = SEVEN_DAY_RESET + 1;
+    let statusline_watermark_payload = serde_json::to_vec(&json!({
+        "session_id": "synthetic-statusline-watermark",
+        "rate_limits": {
+            "seven_day": {
+                "resets_at": statusline_watermark_epoch,
+            }
+        }
+    }))?;
+    let binding_revision_arg = binding_revision.to_string();
+    let statusline_watermark_args = [
+        "statusline",
+        "ingest",
+        "--binding",
+        binding_id.as_str(),
+        "--binding-revision",
+        binding_revision_arg.as_str(),
+    ];
+    let prune_trigger_payload = serde_json::to_vec(&json!({
+        "session_id": "synthetic-statusline-prune-trigger",
+        "rate_limits": {},
+    }))?;
+    let statusline_watermark_wall_epoch = fixture.initial_wall_epoch + 300;
+    let statusline_watermark_monotonic_millis = INITIAL_MONOTONIC_MILLIS + 300_000;
+    ensure!(
+        fixture.set_clock(
+            statusline_watermark_wall_epoch,
+            statusline_watermark_monotonic_millis
+        )? == 1,
+        "fake keychain reader was not used exactly once before the statusline watermark sample"
+    );
+    let statusline_watermark_receipt =
+        fixture.run_json_with_stdin(&statusline_watermark_args, &statusline_watermark_payload)?;
+    ensure!(
+        statusline_watermark_receipt["result"] == "ingested"
+            && statusline_watermark_receipt["scope"]["scope"] == "bound_account"
+            && statusline_watermark_receipt["account_id"] == "local-claude-account",
+        "bound reset-only statusline sample was not ingested for the selected account"
+    );
+    assert_known_weekly_reset_watermark(
+        &fixture.monitor_account("local-claude-account")?,
+        statusline_watermark_epoch,
+        statusline_watermark_wall_epoch,
+    )?;
+    ensure!(
+        fixture.http.request_count() == 1,
+        "provider polled at +300 before restart"
+    );
     fixture.stop_auth()?;
 
     let restart_wall_epoch = fixture.initial_wall_epoch + 301;
@@ -299,6 +357,33 @@ fn cli_auth_binding_watch_and_natural_provider_poll_survive_restart() -> Result<
     )?;
     let mut second_watch = fixture.start_watch(&monitor_id)?;
     let second_sequence = second_watch.wait_for_event(&monitor_id, Duration::from_secs(10))?;
+    // The reset-only source session is now 302 seconds old. A no-quota input
+    // through the CLI triggers the real session-pruning path while the
+    // provider HTTP response remains held.
+    let prune_wall_epoch = fixture.initial_wall_epoch + 602;
+    let prune_monotonic_millis = INITIAL_MONOTONIC_MILLIS + 602_000;
+    ensure!(
+        fixture.set_clock(prune_wall_epoch, prune_monotonic_millis)? == 1,
+        "fake keychain reader was not used exactly once before session pruning"
+    );
+    let prune_receipt =
+        fixture.run_json_with_stdin(&statusline_watermark_args, &prune_trigger_payload)?;
+    ensure!(
+        prune_receipt["result"] == "ingested"
+            && prune_receipt["scope"]["scope"] == "bound_account"
+            && prune_receipt["account_id"] == "local-claude-account",
+        "no-quota CLI callback did not reach the selected bound account"
+    );
+    let pruned_account = fixture.monitor_account("local-claude-account")?;
+    ensure!(
+        pruned_account["sessions"]["synthetic-statusline-watermark"].is_null(),
+        "ordinary CLI ingress did not prune the expired statusline source session"
+    );
+    assert_known_weekly_reset_watermark(
+        &pruned_account,
+        statusline_watermark_epoch,
+        statusline_watermark_wall_epoch,
+    )?;
     let second_five_hour_reset = second_request_wall_epoch + 18_000;
     let second_seven_day_reset = SEVEN_DAY_RESET;
     let second_five_hour_reset_at = rfc3339_utc_from_epoch(second_five_hour_reset);
@@ -311,23 +396,25 @@ fn cli_auth_binding_watch_and_natural_provider_poll_survive_restart() -> Result<
     ))?;
     fixture.wait_for_coordinator_completion(
         &source_id,
-        second_in_flight_timing.generation,
-        second_request_wall_epoch,
-        "52% used",
-        "41% used",
-        Duration::from_secs(10),
+        CoordinatorCompletionExpectation {
+            generation: second_in_flight_timing.generation,
+            provider_invoked_at_epoch: second_request_wall_epoch,
+            fetched_at_epoch: second_request_wall_epoch + 1,
+            session_used_label: "52% used",
+            weekly_used_label: "41% used",
+            timeout: Duration::from_secs(10),
+        },
     )?;
-    let second_evidence_received_at_epoch = fixture.initial_wall_epoch + 602;
-    let second_publication_wall_epoch = second_evidence_received_at_epoch;
-    let second_publication_monotonic_millis = INITIAL_MONOTONIC_MILLIS + 602_000;
+    let second_publication_wall_epoch = fixture.initial_wall_epoch + 603;
+    let second_publication_monotonic_millis = INITIAL_MONOTONIC_MILLIS + 603_000;
     let second_quota_expectation = QuotaExpectation {
         five_hour_used: 5_200,
         seven_day_used: 4_100,
         five_hour_reset: second_five_hour_reset,
         seven_day_reset: second_seven_day_reset,
-        evidence_at_epoch: fixture.initial_wall_epoch + 601,
-        received_at_min_epoch: fixture.initial_wall_epoch + 601,
-        received_at_max_epoch: fixture.initial_wall_epoch + 602,
+        evidence_at_epoch: fixture.initial_wall_epoch + 602,
+        received_at_min_epoch: fixture.initial_wall_epoch + 602,
+        received_at_max_epoch: fixture.initial_wall_epoch + 603,
     };
     ensure!(
         fixture.set_clock(
@@ -347,32 +434,331 @@ fn cli_auth_binding_watch_and_natural_provider_poll_survive_restart() -> Result<
 
     let second_status = fixture.status(&monitor_id)?;
     assert_provider_quota(&second_status, second_quota_expectation)?;
+    assert_known_weekly_reset_watermark(
+        &fixture.monitor_account("local-claude-account")?,
+        statusline_watermark_epoch,
+        statusline_watermark_wall_epoch,
+    )?;
     ensure!(
         second_status["five_hour"]["used_evidence"]["evidence_at_epoch"].as_i64()
-            == Some(fixture.initial_wall_epoch + 601)
+            == Some(fixture.initial_wall_epoch + 602)
             && second_status["five_hour"]["used_evidence"]["evidence_received_at_epoch"]
                 .as_i64()
                 .is_some_and(|received| {
-                    (fixture.initial_wall_epoch + 601..=fixture.initial_wall_epoch + 602)
+                    (fixture.initial_wall_epoch + 602..=fixture.initial_wall_epoch + 603)
                         .contains(&received)
                 })
             && second_status["seven_day"]["used_evidence"]["evidence_at_epoch"].as_i64()
-                == Some(fixture.initial_wall_epoch + 601)
+                == Some(fixture.initial_wall_epoch + 602)
             && second_status["seven_day"]["used_evidence"]["evidence_received_at_epoch"]
                 .as_i64()
                 .is_some_and(|received| {
-                    (fixture.initial_wall_epoch + 601..=fixture.initial_wall_epoch + 602)
+                    (fixture.initial_wall_epoch + 602..=fixture.initial_wall_epoch + 603)
                         .contains(&received)
                 }),
-        "second provider evidence was not observed at +601 or received after +602"
+        "second provider response was not observed at +602 or received by +603"
     );
-    thread::sleep(Duration::from_millis(750));
+    // Stop before the successful poll's 300-second deadline and restart. The
+    // retained last-good display must become stale without changing its
+    // source or receipt evidence, and replaying a no-quota callback cannot
+    // make it look fresh.
+    let before_second_deadline = fixture.initial_wall_epoch + 901;
     ensure!(
-        fixture.http.request_count() == 2,
-        "expected one initial provider request and exactly one natural post-restart poll"
+        fixture.set_clock(before_second_deadline, INITIAL_MONOTONIC_MILLIS + 901_000)? == 1,
+        "fake keychain reader was not used exactly once before the stale-display restart"
     );
+    assert_request_count_remains(
+        &fixture.http,
+        2,
+        Duration::from_millis(750),
+        "provider polled before the second successful cooldown elapsed",
+    )?;
+    fixture.stop_auth()?;
+    let stale_restart_epoch = fixture.initial_wall_epoch + 903;
+    fixture.write_fixture_config(stale_restart_epoch, INITIAL_MONOTONIC_MILLIS + 903_000)?;
+    fixture.start_auth()?;
+    fixture.wait_service_ready()?;
+    ensure!(
+        fixture.wait_ticker_ready()? == 1,
+        "fake keychain reader was not used exactly once before stale-display observation"
+    );
+    let stale_observation_epoch = fixture.initial_wall_epoch + 904;
+    ensure!(
+        fixture.set_clock(stale_observation_epoch, INITIAL_MONOTONIC_MILLIS + 904_000)? == 1,
+        "fake keychain reader was not used exactly once before stale status"
+    );
+    let stale_status = fixture.status(&monitor_id)?;
+    assert_retained_quota_is_stale(&stale_status, &second_status)?;
+    let cached_statusline_receipt =
+        fixture.run_json_with_stdin(&statusline_watermark_args, &prune_trigger_payload)?;
+    ensure!(
+        cached_statusline_receipt["result"] == "ingested",
+        "replayed no-quota callback was not handled by the CLI ingress"
+    );
+    let after_cached_statusline = fixture.status(&monitor_id)?;
+    assert_retained_quota_is_stale(&after_cached_statusline, &second_status)?;
+    assert_known_weekly_reset_watermark(
+        &fixture.monitor_account("local-claude-account")?,
+        statusline_watermark_epoch,
+        statusline_watermark_wall_epoch,
+    )?;
+    assert_request_count_remains(
+        &fixture.http,
+        2,
+        Duration::from_millis(750),
+        "provider polled before the restarted success cooldown elapsed",
+    )?;
 
     fixture.stop_auth()?;
+    Ok(())
+}
+
+#[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "one migration scenario asserts the real CLI restart and cutoff repair in order"
+)]
+fn cli_v5_migration_admits_new_provider_reset_without_statusline_adapter() -> Result<()> {
+    let _test_guard = acquire_provider_flow_test_lock();
+    let mut flow = ProviderFlow::new("v5-reset-cutoff")?;
+    seed_provider_quota(&flow)?;
+
+    // Persist a +300 local observation epoch, just before the original
+    // success cooldown expires. The synthetic v5 conversion below preserves
+    // this exact legacy cutoff while removing all v6 reset metadata.
+    let cutoff_epoch = INITIAL_WALL_EPOCH + 300;
+    flow.set_clock(cutoff_epoch)?;
+    let before_migration = flow.fixture.status(&flow.monitor_id)?;
+    ensure!(
+        before_migration["readiness"]["quota"] == "ready",
+        "seed provider quota became stale before the legacy migration fixture"
+    );
+    let local_account_id = "local-claude-account-v5-reset-cutoff";
+    let before_migration_account = flow.fixture.monitor_account(local_account_id)?;
+    let prior_weekly_reset_barrier = before_migration_account["reset_barriers"][1].clone();
+    ensure!(
+        before_migration_account["latest_reset_epochs"][1].as_i64() == Some(SEVEN_DAY_RESET)
+            && before_migration_account["statusline_reset_watermarks"][1] == "known_none",
+        "provider-only seed did not establish a reset with no statusline adapter"
+    );
+    let prior_state = flow.fixture.monitor_state()?;
+    ensure!(
+        prior_state["last_now_epoch"].as_i64() == Some(cutoff_epoch),
+        "monitor state did not persist the intended v5 migration cutoff"
+    );
+    flow.fixture.stop_auth()?;
+
+    let (legacy_snapshot, migrated_cutoff) = flow.fixture.rewrite_monitor_snapshot_as_v5()?;
+    ensure!(
+        migrated_cutoff == cutoff_epoch
+            && legacy_snapshot["schema_version"] == 5
+            && legacy_snapshot["accounts"][local_account_id]["statusline_reset_watermarks"]
+                .is_null()
+            && legacy_snapshot["accounts"][local_account_id]["legacy_reset_admission_after_epochs"]
+                .is_null(),
+        "synthetic v5 source did not strip both v6 account fields and preserve its cutoff"
+    );
+    ensure!(
+        legacy_snapshot["monitors"]
+            .as_object()
+            .is_some_and(|monitors| monitors.values().all(|monitor| {
+                monitor["events"].as_array().is_some_and(|events| {
+                    !events.is_empty()
+                        && events
+                            .iter()
+                            .all(|event| event["status"]["schema_version"] == 5)
+                })
+            })),
+        "synthetic v5 source did not restamp every nested event status"
+    );
+
+    let restart_epoch = INITIAL_WALL_EPOCH + 301;
+    flow.fixture
+        .write_fixture_config(restart_epoch, monotonic_millis_at(restart_epoch)?)?;
+    flow.fixture.start_auth()?;
+    let restarted_service = match flow.fixture.wait_service_ready() {
+        Ok(service) => service,
+        Err(error) => {
+            let service_status = flow.fixture.diagnostic_json(&["service", "status"]);
+            let auth_exit_code = flow
+                .fixture
+                .auth
+                .as_mut()
+                .and_then(|auth| auth.child.try_wait().ok().flatten())
+                .and_then(|status| status.code());
+            let migration_state = match flow.fixture.monitor_state() {
+                Ok(state) => {
+                    let account = &state["accounts"][local_account_id];
+                    let session_count = account["sessions"].as_object().map(serde_json::Map::len);
+                    json!({
+                        "schema_version": state["schema_version"],
+                        "last_now_epoch": state["last_now_epoch"],
+                        "latest_reset_epochs": account["latest_reset_epochs"],
+                        "statusline_reset_watermarks": account["statusline_reset_watermarks"],
+                        "legacy_reset_admission_after_epochs": account["legacy_reset_admission_after_epochs"],
+                        "session_count": session_count,
+                    })
+                }
+                Err(_) => json!({ "readable": false }),
+            };
+            let preserved_state = flow
+                .fixture
+                .preserve_monitor_state_diagnostic()
+                .map_or_else(
+                    |_| json!({ "available": false }),
+                    |path| json!({ "available": true, "path": path.display().to_string() }),
+                );
+            bail!(
+                "foreground auth service did not become ready after v5 migration ({error}); sanitized diagnostics: {}",
+                json!({
+                    "service_status": service_status,
+                    "auth_child_exit_code": auth_exit_code,
+                    "auth_prepare_json": flow.fixture.auth_prepare_json_diagnostic(),
+                    "migration_state": migration_state,
+                    "preserved_state": preserved_state,
+                    "http_counters": flow.fixture.http.diagnostic_json(),
+                })
+            )
+        }
+    };
+    ensure!(
+        restarted_service["status"]["experimental_collector_source"].as_str()
+            == Some(flow.source_id.as_str()),
+        "legacy migration restart changed the selected provider source"
+    );
+    flow.credential_reads = flow.fixture.wait_ticker_ready()?;
+    ensure!(
+        flow.credential_reads == 1,
+        "fake keychain reader was not used once after legacy migration"
+    );
+    let migrated = flow.fixture.monitor_state()?;
+    ensure!(
+        migrated["schema_version"] == 6,
+        "foreground broker did not migrate the v5 snapshot to v6"
+    );
+    ensure!(
+        migrated["monitors"]
+            .as_object()
+            .is_some_and(|monitors| monitors.values().all(|monitor| {
+                monitor["events"].as_array().is_some_and(|events| {
+                    !events.is_empty()
+                        && events
+                            .iter()
+                            .all(|event| event["status"]["schema_version"] == 6)
+                })
+            })),
+        "foreground migration did not restamp nested event statuses to v6"
+    );
+    let migrated_account = &migrated["accounts"][local_account_id];
+    ensure!(
+        migrated_account["latest_reset_epochs"][1].as_i64() == Some(SEVEN_DAY_RESET)
+            && migrated_account["statusline_reset_watermarks"][1] == "unknown"
+            && migrated_account["legacy_reset_admission_after_epochs"][1].as_i64()
+                == Some(cutoff_epoch)
+            && migrated_account["reset_barriers"][1] == prior_weekly_reset_barrier
+            && migrated_account["sessions"]
+                .as_object()
+                .is_some_and(serde_json::Map::is_empty),
+        "v5 migration lost the provider-only global reset or derived metadata from statusline data"
+    );
+
+    let recovered_floor_minus_one = INITIAL_WALL_EPOCH + 600;
+    flow.set_clock(recovered_floor_minus_one)?;
+    assert_request_count_remains(
+        &flow.fixture.http,
+        1,
+        Duration::from_millis(750),
+        "provider polled before the restart recovery floor elapsed",
+    )?;
+    let lower_repair_source_epoch = INITIAL_WALL_EPOCH + 601;
+    flow.set_clock(lower_repair_source_epoch)?;
+    let request = next_provider_request(
+        &flow.fixture,
+        &flow.monitor_id,
+        &flow.source_id,
+        "v5 lower-reset repair",
+        flow.credential_reads,
+    )?;
+    assert_provider_request(&request)?;
+    let attempt = flow.fixture.wait_for_coordinator_attempt(
+        &flow.source_id,
+        lower_repair_source_epoch,
+        Duration::from_secs(5),
+    )?;
+    let mut watch = flow.fixture.start_watch(&flow.monitor_id)?;
+    let sequence = watch.wait_for_event(&flow.monitor_id, Duration::from_secs(10))?;
+    let lower_five_hour_reset = lower_repair_source_epoch + 18_000;
+    let lower_weekly_reset = SEVEN_DAY_RESET - 1;
+    let lower_five_hour_reset_at = rfc3339_utc_from_epoch(lower_five_hour_reset);
+    let lower_weekly_reset_at = rfc3339_utc_from_epoch(lower_weekly_reset);
+    request.respond.send(HttpResponse::ok(
+        52,
+        41,
+        &lower_five_hour_reset_at,
+        &lower_weekly_reset_at,
+    ))?;
+    flow.fixture.wait_for_coordinator_completion(
+        &flow.source_id,
+        CoordinatorCompletionExpectation {
+            generation: attempt.generation,
+            provider_invoked_at_epoch: lower_repair_source_epoch,
+            fetched_at_epoch: lower_repair_source_epoch,
+            session_used_label: "52% used",
+            weekly_used_label: "41% used",
+            timeout: Duration::from_secs(10),
+        },
+    )?;
+    let publication_epoch = INITIAL_WALL_EPOCH + 603;
+    flow.set_clock(publication_epoch)?;
+    let expected = QuotaExpectation {
+        five_hour_used: 5_200,
+        seven_day_used: 4_100,
+        five_hour_reset: lower_five_hour_reset,
+        seven_day_reset: lower_weekly_reset,
+        evidence_at_epoch: lower_repair_source_epoch,
+        received_at_min_epoch: lower_repair_source_epoch,
+        received_at_max_epoch: publication_epoch,
+    };
+    watch.wait_for_quota_after(
+        &flow.monitor_id,
+        sequence,
+        expected,
+        Duration::from_secs(15),
+    )?;
+    watch.wait_for_exit(Duration::from_secs(5))?;
+    let status = flow.fixture.status(&flow.monitor_id)?;
+    assert_provider_quota(&status, expected)?;
+
+    let account = flow.fixture.monitor_account(local_account_id)?;
+    let weekly = &account["broker_windows"][1];
+    ensure!(
+        account["latest_reset_epochs"][1].as_i64() == Some(SEVEN_DAY_RESET)
+            && account["statusline_reset_watermarks"][1] == "unknown"
+            && account["legacy_reset_admission_after_epochs"][1].as_i64() == Some(cutoff_epoch)
+            && account["reset_barriers"][1] == prior_weekly_reset_barrier
+            && weekly["reset"]["value"].as_i64() == Some(lower_weekly_reset)
+            && weekly["used"]["value"].as_i64() == Some(4_100)
+            && weekly["used"]["reset_at_epoch"].as_i64() == Some(lower_weekly_reset)
+            && weekly["paired"].is_null(),
+        "provider-only lower reset did not repair display while retaining the v5 global fence"
+    );
+    for field in ["used", "reset"] {
+        ensure!(
+            weekly[field]["evidence_at_epoch"]
+                .as_i64()
+                .is_some_and(|observed| observed > cutoff_epoch)
+                && weekly[field]["received_at_epoch"]
+                    .as_i64()
+                    .is_some_and(|received| received > cutoff_epoch),
+            "accepted provider {field} evidence did not cross both strict legacy cutoff checks"
+        );
+    }
+    ensure!(
+        weekly["used"]["evidence_at_epoch"] == weekly["reset"]["evidence_at_epoch"]
+            && weekly["used"]["received_at_epoch"] == weekly["reset"]["received_at_epoch"],
+        "provider-only lower reset was not stored as one coherent evidence pair"
+    );
+    flow.fixture.stop_auth()?;
     Ok(())
 }
 
@@ -404,9 +790,16 @@ struct Fixture {
     fixture_config: PathBuf,
     credential_payload: PathBuf,
     clock_socket: PathBuf,
+    clock_checkpoint: Mutex<ClockCheckpoint>,
     initial_wall_epoch: i64,
     http: FakeHttpServer,
     auth: Option<AuthProcess>,
+}
+
+#[derive(Clone, Copy)]
+struct ClockCheckpoint {
+    wall_epoch: i64,
+    monotonic_millis: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -423,6 +816,16 @@ struct CoordinatorTiming {
     success_deadline_epoch: Option<i64>,
     retry_deadline_epoch: Option<i64>,
     rate_limit_deadline_epoch: Option<i64>,
+}
+
+#[derive(Clone, Copy)]
+struct CoordinatorCompletionExpectation<'a> {
+    generation: u64,
+    provider_invoked_at_epoch: i64,
+    fetched_at_epoch: i64,
+    session_used_label: &'a str,
+    weekly_used_label: &'a str,
+    timeout: Duration,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -583,6 +986,10 @@ impl Fixture {
             fixture_config,
             credential_payload,
             clock_socket,
+            clock_checkpoint: Mutex::new(ClockCheckpoint {
+                wall_epoch: INITIAL_WALL_EPOCH,
+                monotonic_millis: INITIAL_MONOTONIC_MILLIS,
+            }),
             initial_wall_epoch: INITIAL_WALL_EPOCH,
             http,
             auth: None,
@@ -607,7 +1014,15 @@ impl Fixture {
                 "initial_wall_epoch": wall_epoch,
                 "initial_monotonic_millis": monotonic_millis,
             }),
-        )
+        )?;
+        *self
+            .clock_checkpoint
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = ClockCheckpoint {
+            wall_epoch,
+            monotonic_millis,
+        };
+        Ok(())
     }
 
     fn write_fixture_config(&self, wall_epoch: i64, monotonic_millis: u64) -> Result<()> {
@@ -717,6 +1132,31 @@ impl Fixture {
         json_from_output(&output.stdout).context("usage CLI returned no JSON reply")
     }
 
+    fn run_json_with_stdin(&self, args: &[&str], stdin_bytes: &[u8]) -> Result<Value> {
+        let mut command = self.command();
+        command.args(args);
+        let output = output_with_stdin_timeout(
+            command,
+            stdin_bytes,
+            COMMAND_TIMEOUT,
+            "run isolated usage CLI with statusline input",
+        )?;
+        let cli_error = json_from_output(&output.stdout).map(|reply| {
+            json!({
+                "code": reply["error"]["code"],
+                "message": reply["error"]["message"],
+            })
+        });
+        ensure!(
+            output.status.success(),
+            "usage CLI statusline command failed with exit status {:?}; error: {:?}; stderr: {}",
+            output.status.code(),
+            cli_error,
+            redact_diagnostic_stderr(&output.stderr)
+        );
+        json_from_output(&output.stdout).context("usage CLI returned no JSON reply")
+    }
+
     fn diagnostic_json(&self, args: &[&str]) -> Value {
         let mut command = self.command();
         command.args(args);
@@ -725,17 +1165,53 @@ impl Fixture {
         else {
             return json!({ "diagnostic_unavailable": true });
         };
-        if let Some(reply) = json_from_output(&output.stdout) {
+        let parsed_reply = json_from_output(&output.stdout);
+        if let Some(reply) = parsed_reply.as_ref() {
             let expected_observe_only_status = args.first() == Some(&"status")
                 && reply["result"] == "status"
                 && output.status.code() == Some(2);
             if output.status.success() || expected_observe_only_status {
-                return reply;
+                return reply.clone();
             }
         }
         json!({
             "exit_code": output.status.code(),
+            "json_error_code": parsed_reply.as_ref().and_then(|reply| reply["error"]["code"].as_str()),
+            "json_error_message": parsed_reply.as_ref().and_then(safe_json_error_message),
             "stderr": redact_diagnostic_stderr(&output.stderr),
+        })
+    }
+
+    fn auth_prepare_json_diagnostic(&self) -> Value {
+        const MAX_TRANSCRIPT_BYTES: u64 = 16 * 1024;
+        let path = self.root.path().join("auth-prepare-transcript.txt");
+        let Ok(file) = fs::File::open(path) else {
+            return json!({ "available": false });
+        };
+        let Ok(metadata) = file.metadata() else {
+            return json!({ "available": false });
+        };
+        if !metadata.is_file() || metadata.len() > MAX_TRANSCRIPT_BYTES {
+            return json!({ "available": false, "bounded_regular_file": false });
+        }
+        let mut bytes = Vec::new();
+        if file
+            .take(MAX_TRANSCRIPT_BYTES + 1)
+            .read_to_end(&mut bytes)
+            .is_err()
+            || bytes.len() as u64 > MAX_TRANSCRIPT_BYTES
+        {
+            return json!({ "available": false, "bounded_regular_file": false });
+        }
+        let Some(reply) = json_from_output(&bytes) else {
+            return json!({ "available": true, "json_reply": false });
+        };
+        json!({
+            "available": true,
+            "json_reply": true,
+            "result": reply["result"].as_str(),
+            "error_code": reply["error"]["code"].as_str(),
+            "error_message": safe_json_error_message(&reply),
         })
     }
 
@@ -976,6 +1452,128 @@ impl Fixture {
         })
     }
 
+    fn monitor_state_path(&self) -> PathBuf {
+        self.data_dir
+            .join("usage-broker")
+            .join("monitor")
+            .join("state.json")
+    }
+
+    fn monitor_state(&self) -> Result<Value> {
+        let path = self.monitor_state_path();
+        let file = fs::File::open(&path).context("open read-only monitor state snapshot")?;
+        let metadata = file.metadata().context("read monitor state metadata")?;
+        ensure!(
+            metadata.is_file() && metadata.len() <= MAX_MONITOR_STATE_BYTES,
+            "monitor state snapshot exceeded its bounded regular-file contract"
+        );
+        let mut bytes = Vec::new();
+        file.take(MAX_MONITOR_STATE_BYTES + 1)
+            .read_to_end(&mut bytes)
+            .context("read bounded monitor state snapshot")?;
+        ensure!(
+            bytes.len() as u64 <= MAX_MONITOR_STATE_BYTES,
+            "monitor state snapshot grew beyond its read bound"
+        );
+        serde_json::from_slice(&bytes).context("decode read-only monitor state snapshot")
+    }
+
+    fn preserve_monitor_state_diagnostic(&self) -> Result<PathBuf> {
+        let source_path = self.monitor_state_path();
+        let source_metadata = fs::symlink_metadata(&source_path)
+            .context("inspect synthetic monitor state for failure diagnosis")?;
+        ensure!(
+            source_metadata.is_file() && source_metadata.len() <= MAX_MONITOR_STATE_BYTES,
+            "synthetic monitor state exceeded its bounded regular-file contract"
+        );
+        let source = fs::File::open(&source_path)
+            .context("open synthetic monitor state for failure diagnosis")?;
+        let mut bytes = Vec::new();
+        source
+            .take(MAX_MONITOR_STATE_BYTES + 1)
+            .read_to_end(&mut bytes)
+            .context("read synthetic monitor state for failure diagnosis")?;
+        ensure!(
+            bytes.len() as u64 <= MAX_MONITOR_STATE_BYTES,
+            "synthetic monitor state exceeded its bounded read contract"
+        );
+
+        let private_dir = tempfile::Builder::new()
+            .prefix("jackin-v5-monitor-state-")
+            .tempdir()
+            .context("create private directory for synthetic state diagnosis")?;
+        let private_state_path = private_dir.path().join("state.json");
+        let mut destination = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&private_state_path)
+            .context("create private synthetic state diagnosis copy")?;
+        destination
+            .write_all(&bytes)
+            .context("copy synthetic monitor state for diagnosis")?;
+        destination
+            .sync_all()
+            .context("sync synthetic monitor state diagnosis copy")?;
+        fs::set_permissions(&private_state_path, fs::Permissions::from_mode(0o600))
+            .context("set private synthetic state diagnosis permissions")?;
+        Ok(private_dir.keep().join("state.json"))
+    }
+
+    fn monitor_account(&self, account_id: &str) -> Result<Value> {
+        self.monitor_state()?["accounts"][account_id]
+            .as_object()
+            .cloned()
+            .map(Value::Object)
+            .context("monitor state omitted the selected account")
+    }
+
+    fn rewrite_monitor_snapshot_as_v5(&self) -> Result<(Value, i64)> {
+        let mut state = self.monitor_state()?;
+        ensure!(
+            state["schema_version"] == 6,
+            "legacy fixture conversion requires a current v6 monitor snapshot"
+        );
+        let cutoff = state["last_now_epoch"]
+            .as_i64()
+            .context("current monitor snapshot omitted its persisted clock epoch")?;
+        let accounts = state["accounts"]
+            .as_object_mut()
+            .context("current monitor snapshot omitted account records")?;
+        for account in accounts.values_mut() {
+            let account = account
+                .as_object_mut()
+                .context("current account snapshot was not an object")?;
+            ensure!(
+                account.remove("statusline_reset_watermarks").is_some()
+                    && account
+                        .remove("legacy_reset_admission_after_epochs")
+                        .is_some(),
+                "current account omitted a v6 reset metadata field"
+            );
+        }
+        let monitors = state["monitors"]
+            .as_object_mut()
+            .context("current monitor snapshot omitted monitor records")?;
+        for monitor in monitors.values_mut() {
+            let events = monitor["events"]
+                .as_array_mut()
+                .context("current monitor record omitted its event history")?;
+            for event in events {
+                ensure!(
+                    event["status"]["schema_version"] == 6,
+                    "current monitor event had a non-v6 status schema"
+                );
+                event["status"]["schema_version"] = json!(5);
+            }
+        }
+        state["schema_version"] = json!(5);
+        let encoded = serde_json::to_vec(&state).context("encode synthetic v5 monitor snapshot")?;
+        fs::write(self.monitor_state_path(), encoded)
+            .context("write synthetic v5 monitor snapshot fixture")?;
+        Ok((state, cutoff))
+    }
+
     fn wait_for_coordinator_attempt(
         &self,
         source_id: &str,
@@ -994,24 +1592,31 @@ impl Fixture {
     fn wait_for_coordinator_completion(
         &self,
         source_id: &str,
-        expected_generation: u64,
-        evidence_at_epoch: i64,
-        session_used_label: &str,
-        weekly_used_label: &str,
-        timeout: Duration,
+        expected: CoordinatorCompletionExpectation<'_>,
     ) -> Result<CoordinatorTiming> {
-        wait_until(timeout, || {
+        if let Some(timing) = wait_until(expected.timeout, || {
             self.coordinator_timing(source_id).ok().filter(|timing| {
-                timing.generation == expected_generation
+                timing.generation == expected.generation
                     && timing.phase == "completed"
                     && timing.has_terminal_result
-                    && timing.provider_invoked_at_epoch == Some(evidence_at_epoch)
-                    && timing.last_good_fetched_at_epoch == Some(evidence_at_epoch)
-                    && timing.last_good_session_used_label.as_deref() == Some(session_used_label)
-                    && timing.last_good_weekly_used_label.as_deref() == Some(weekly_used_label)
+                    && timing.provider_invoked_at_epoch == Some(expected.provider_invoked_at_epoch)
+                    && timing.last_good_fetched_at_epoch == Some(expected.fetched_at_epoch)
+                    && timing.last_good_session_used_label.as_deref()
+                        == Some(expected.session_used_label)
+                    && timing.last_good_weekly_used_label.as_deref()
+                        == Some(expected.weekly_used_label)
             })
-        })
-        .context("provider result did not reach its expected durable completion before the bound")
+        }) {
+            return Ok(timing);
+        }
+        let coordinator = self.coordinator_timing(source_id).map_or_else(
+            |_| json!({ "unavailable": true }),
+            |timing| timing.diagnostic_json(),
+        );
+        bail!(
+            "provider result did not reach its expected durable completion before the bound; sanitized coordinator state: {coordinator}; fake HTTP counters: {}",
+            self.http.diagnostic_json()
+        )
     }
 
     fn wait_for_coordinator_terminal(
@@ -1061,6 +1666,10 @@ impl Fixture {
     }
 
     fn set_clock(&self, wall_epoch: i64, monotonic_millis: u64) -> Result<usize> {
+        let previous = *self
+            .clock_checkpoint
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut socket = UnixStream::connect(&self.clock_socket)
             .context("connect to private fixture clock control socket")?;
         socket.set_read_timeout(Some(Duration::from_secs(3)))?;
@@ -1080,8 +1689,17 @@ impl Fixture {
         let reply: Value = serde_json::from_str(&reply).context("decode fixture clock reply")?;
         ensure!(
             reply["ok"] == true,
-            "fixture clock rejected the requested time"
+            "fixture clock rejected request wall_epoch={wall_epoch}, monotonic_millis={monotonic_millis}; last configured or acknowledged sample was wall_epoch={}, monotonic_millis={}",
+            previous.wall_epoch,
+            previous.monotonic_millis
         );
+        *self
+            .clock_checkpoint
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = ClockCheckpoint {
+            wall_epoch,
+            monotonic_millis,
+        };
         reply["credential_reads"]
             .as_u64()
             .and_then(|reads| usize::try_from(reads).ok())
@@ -1323,11 +1941,14 @@ fn seed_provider_quota(flow: &ProviderFlow) -> Result<SeededQuota> {
     ))?;
     flow.fixture.wait_for_coordinator_completion(
         &flow.source_id,
-        timing.generation,
-        request_epoch,
-        "37% used",
-        "23% used",
-        Duration::from_secs(10),
+        CoordinatorCompletionExpectation {
+            generation: timing.generation,
+            provider_invoked_at_epoch: request_epoch,
+            fetched_at_epoch: request_epoch,
+            session_used_label: "37% used",
+            weekly_used_label: "23% used",
+            timeout: Duration::from_secs(10),
+        },
     )?;
     let expectation = QuotaExpectation {
         five_hour_used: 3_700,
@@ -1559,11 +2180,14 @@ fn complete_natural_retry(flow: &mut ProviderFlow, case: RetryAfterCase) -> Resu
     ))?;
     flow.fixture.wait_for_coordinator_completion(
         &flow.source_id,
-        attempt.generation,
-        request_epoch,
-        "52% used",
-        "41% used",
-        Duration::from_secs(10),
+        CoordinatorCompletionExpectation {
+            generation: attempt.generation,
+            provider_invoked_at_epoch: request_epoch,
+            fetched_at_epoch: request_epoch,
+            session_used_label: "52% used",
+            weekly_used_label: "41% used",
+            timeout: Duration::from_secs(10),
+        },
     )?;
     let expectation = QuotaExpectation {
         five_hour_used: 5_200,
@@ -1792,6 +2416,58 @@ fn assert_provider_quota(status: &Value, expected: QuotaExpectation) -> Result<(
         expected.matches(status),
         "monitor status did not contain provider quota and reset evidence from the expected fetch"
     );
+    Ok(())
+}
+
+fn assert_known_weekly_reset_watermark(
+    account: &Value,
+    expected_reset_epoch: i64,
+    expected_received_at_epoch: i64,
+) -> Result<()> {
+    ensure!(
+        account["latest_reset_epochs"][1].as_i64() == Some(expected_reset_epoch)
+            && account["statusline_reset_watermarks"][1]
+                == json!({
+                    "known": {
+                        "reset_at_epoch": expected_reset_epoch,
+                        "received_at_epoch": expected_received_at_epoch,
+                    }
+                }),
+        "durable weekly reset watermark did not retain its reset and original receipt epochs"
+    );
+    Ok(())
+}
+
+fn assert_retained_quota_is_stale(status: &Value, before: &Value) -> Result<()> {
+    ensure!(
+        status["purpose"] == "observe_only"
+            && status["runnable"] == false
+            && status["readiness"]["dispatch"] == "not_authorized"
+            && status["readiness"]["quota"] == "stale",
+        "stale last-good quota was not shown as non-runnable and stale"
+    );
+    for window in ["five_hour", "seven_day"] {
+        ensure!(
+            status[window]["used_percentage_basis_points"]
+                == before[window]["used_percentage_basis_points"]
+                && status[window]["reset_at_epoch"] == before[window]["reset_at_epoch"]
+                && status[window]["used_evidence"]["freshness"] == "stale",
+            "stale display did not retain the last-good {window} quota and mark used evidence stale"
+        );
+        for evidence_kind in ["used_evidence", "reset_evidence"] {
+            for evidence_field in [
+                "evidence_sequence",
+                "evidence_at_epoch",
+                "evidence_received_at_epoch",
+            ] {
+                ensure!(
+                    status[window][evidence_kind][evidence_field]
+                        == before[window][evidence_kind][evidence_field],
+                    "stale display changed {window} {evidence_kind} evidence identity"
+                );
+            }
+        }
+    }
     Ok(())
 }
 
@@ -2501,15 +3177,42 @@ fn json_from_output(output: &[u8]) -> Option<Value> {
     })
 }
 
+fn safe_json_error_message(reply: &Value) -> Option<&'static str> {
+    match reply["error"]["message"].as_str()? {
+        "fixture broker could not start" => Some("fixture broker could not start"),
+        "no fixture credential is available" => Some("no fixture credential is available"),
+        "fixture credential access was denied" => Some("fixture credential access was denied"),
+        "fixture bootstrap requires an attached terminal" => {
+            Some("fixture bootstrap requires an attached terminal")
+        }
+        "fixture credential is invalid" => Some("fixture credential is invalid"),
+        "authentication preparation requires an attached terminal" => {
+            Some("authentication preparation requires an attached terminal")
+        }
+        "authentication bootstrap arguments are invalid" => {
+            Some("authentication bootstrap arguments are invalid")
+        }
+        "usage broker is unavailable" => Some("usage broker is unavailable"),
+        "monitor state is unavailable or invalid" => {
+            Some("monitor state is unavailable or invalid")
+        }
+        "host usage broker is unavailable or returned an incompatible response" => {
+            Some("host usage broker is unavailable or returned an incompatible response")
+        }
+        "usage broker test fixture configuration is unavailable" => {
+            Some("usage broker test fixture configuration is unavailable")
+        }
+        _ => None,
+    }
+}
+
 fn redact_diagnostic_stderr(stderr: &[u8]) -> String {
     String::from_utf8_lossy(stderr)
         .lines()
         .map(|line| {
-            if line
-                .split_once(':')
-                .is_some_and(|(name, _)| name.trim().eq_ignore_ascii_case("authorization"))
-            {
-                "Authorization: [redacted]".to_owned()
+            let lowercase = line.to_ascii_lowercase();
+            if lowercase.contains("authorization:") || lowercase.contains("bearer ") {
+                "[redacted sensitive diagnostic line]".to_owned()
             } else {
                 line.replace(FIRST_TOKEN, "[redacted]")
             }
@@ -2550,6 +3253,41 @@ fn rfc3339_utc_from_epoch(epoch: i64) -> String {
 fn output_with_timeout(mut command: Command, timeout: Duration, label: &str) -> Result<Output> {
     command.stdout(Stdio::piped()).stderr(Stdio::piped());
     let mut child = command.spawn().with_context(|| format!("{label}: spawn"))?;
+    let deadline = Instant::now() + timeout;
+    loop {
+        if child.try_wait()?.is_some() {
+            return child
+                .wait_with_output()
+                .with_context(|| format!("{label}: collect output"));
+        }
+        if Instant::now() >= deadline {
+            let _kill_result = child.kill();
+            let _wait_result = child.wait();
+            bail!("{label}: timed out");
+        }
+        thread::sleep(Duration::from_millis(25));
+    }
+}
+
+fn output_with_stdin_timeout(
+    mut command: Command,
+    stdin_bytes: &[u8],
+    timeout: Duration,
+    label: &str,
+) -> Result<Output> {
+    command
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = command.spawn().with_context(|| format!("{label}: spawn"))?;
+    let mut stdin = child.stdin.take().context("child stdin was not piped")?;
+    if let Err(error) = stdin.write_all(stdin_bytes) {
+        drop(stdin);
+        let _kill_result = child.kill();
+        let _wait_result = child.wait();
+        return Err(error).with_context(|| format!("{label}: write input"));
+    }
+    drop(stdin);
     let deadline = Instant::now() + timeout;
     loop {
         if child.try_wait()?.is_some() {

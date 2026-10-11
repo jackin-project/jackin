@@ -5,8 +5,10 @@
 recovery and integration coverage. Its focused lease tests passed 38/38, the
 seeded CLI/provider flow passed 4/4, default offline CLI regressions passed
 9/9, strict feature Clippy and formatting passed, and independent review is
-Ready. The current source contract is broker wire v9, normalized statusline
-input v2, and durable monitor schema v5.
+Ready. That pushed source checkpoint uses broker wire v9, normalized statusline
+input v2, and durable monitor schema v5. The current working source advances
+the durable monitor schema to v6 while keeping wire v9 and statusline input v2;
+the v6 source has not yet been built or installed.
 
 The installed default-feature v10 pair has been rebuilt from the fixed source
 checkpoint `9809c24400e9f24ad86e83e45dca7bf5d9bab278` and passed the private
@@ -90,10 +92,11 @@ establish endpoint availability or provider support. The public account
 projection labels this locally derived hash as
 `identity_kind: "local_source_handle"`; it is not a provider-issued account
 identity. The command stays attached to the foreground service until it exits,
-releasing the lease and cache. Do not background or detach it. Current source
-versions are broker wire v9, normalized statusline input v2, and durable
-monitor state v5. The v8/v4 wire and monitor versions shown in older install
-artifacts are historical; do not use that old pair against current v5 state.
+releasing the lease and cache. Do not background or detach it. The current
+working source versions are broker wire v9, normalized statusline input v2,
+and durable monitor state v6. The installed v10 pair and its existing state
+remain on schema v5; do not use that pair against v6 state. The v8/v4 wire and
+monitor versions shown in older install artifacts are historical.
 
 For real-account verification, first complete the read-only inventory and the
 explicit presence-confirmation gate in
@@ -246,13 +249,61 @@ intentional overage.
 
 ## Durable-state migration
 
-The current source uses broker wire v9, normalized statusline input v2, and
-durable monitor schema v5. Migrate V1, V2, V3, and V4 snapshots explicitly to
-V5, without a legacy alias or parallel old-schema write path. Preserve strict
-policy, baselines, spend and other history, action/event sequences, evidence
-ages, cooldowns, and existing unknown/latched state. The V5 migration drops
-provider snapshots that lack current binding/source provenance so they cannot
-be attributed to the wrong account; it does not make those values fresh.
+The current working source uses broker wire v9, normalized statusline input v2,
+and durable monitor schema v6. Migrate V1, V2, V3, V4, and V5 snapshots
+explicitly to V6, without a legacy alias or parallel old-schema write path.
+Preserve strict policy, baselines, spend and other history, action/event
+sequences, evidence ages, cooldowns, and existing unknown/latched state. The
+V1–V4 migrations drop provider snapshots whose current binding/source
+provenance cannot be established, so those values cannot be attributed to the
+wrong account or treated as fresh. V5 already has source-bound provider
+provenance; its migration preserves quota and goal history.
+
+V6 adds a per-window `statusline_reset_watermarks` value with three states:
+`Unknown`, `KnownNone`, or `Known { reset_at_epoch, received_at_epoch }`.
+`Known` records the highest accepted statusline reset and when that evidence
+was received. For every V1–V5 account window, a nonempty legacy
+`latest_reset_epochs` value migrates to `Unknown`; an empty value migrates to
+`KnownNone`. Migration does not infer a statusline reset or receipt time from
+the old account-wide reset, retained quota values, or event evidence. `Unknown`
+keeps the account-wide reset fence from moving backward when a provider
+projection is cleared; `KnownNone` means no prior statusline reset is recorded.
+New accounts begin at `KnownNone`.
+
+For a legacy window whose account-wide reset was nonempty, V6 also records
+`legacy_reset_admission_after_epochs` at the old store's `last_now_epoch`. This
+is an ordering cutoff, not statusline or provider evidence and not a receipt or
+freshness timestamp. A lower-reset repair requires a complete current provider
+quota pair whose used, reset, and paired source timestamps and receipt
+timestamps are all strictly after its admission fence. For `Unknown`, that
+fence is the V1–V5 migration cutoff; without a cutoff, lower-reset provider
+data remains fail-closed. For `Known`, the fence is the receipt time of its own
+statusline reset when that reset is at or below the account-wide reset. For
+`KnownNone`, an initial valid retained provider reset equal to the account-wide
+reset can establish the fence even if its older used or paired fields are
+missing; the fence uses the maximum receipt time available in that window.
+After a lower-reset repair, the next fence requires its matching used/reset
+fields and an absent paired value. The read path validates that accepted
+lower-reset cohort separately, so it does not compare the cohort against its
+own receipt time.
+
+An admitted lower reset updates displayed used/reset values but does not promote
+`Unknown` to `Known` or lower the account-wide reset. It removes the paired
+value, so it cannot release a latched reset barrier. A later pair must advance
+beyond the barrier's prior reset and meet the account-wide reset fence, along
+with the existing freshness conditions. The accepted lower-reset values remain
+visible after their evidence ages out, marked stale, and dispatch stays blocked.
+This lets a provider-only V5 account such as the one in the v10 live record
+above display a new complete/current provider pair after migration even if
+reset rounding makes its reset slightly lower. No adapter or inferred
+statusline history is needed, and the old global fence and barrier remain.
+
+A V1–V5 snapshot containing either V6-only account field,
+`statusline_reset_watermarks` or `legacy_reset_admission_after_epochs`, is
+rejected, including a V6 snapshot relabeled with an older schema number. The
+legacy V1 decoder also rejects unknown fields. This prevents newer provenance
+from being trusted after a schema downgrade.
+
 V2 preserves its known state. V3 has no persisted correction horizon (it
 defaults to `None`); for a strict goal with a baseline and a retained forward
 rollover signal in the account's current-period record or the goal-period

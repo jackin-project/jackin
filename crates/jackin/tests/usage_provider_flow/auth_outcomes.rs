@@ -249,11 +249,14 @@ fn changed_401_retries_only_with_the_exact_source_payload() -> Result<()> {
         .send(HttpResponse::ok(37, 23, &five_hour_reset, &seven_day_reset))?;
     let completed = scenario.fixture.wait_for_coordinator_completion(
         &scenario.source_id,
-        timing.generation,
-        scenario.provider_invoked_at_epoch,
-        "37% used",
-        "23% used",
-        Duration::from_secs(10),
+        CoordinatorCompletionExpectation {
+            generation: timing.generation,
+            provider_invoked_at_epoch: scenario.provider_invoked_at_epoch,
+            fetched_at_epoch: scenario.provider_invoked_at_epoch,
+            session_used_label: "37% used",
+            weekly_used_label: "23% used",
+            timeout: Duration::from_secs(10),
+        },
     )?;
     ensure!(
         completed.phase == "completed" && completed.has_terminal_result,

@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::control::Money;
 
 /// Version of durable monitor-state records. Statusline input has its own version.
-pub const USAGE_MONITOR_SCHEMA_VERSION: u16 = 5;
+pub const USAGE_MONITOR_SCHEMA_VERSION: u16 = 6;
 
 /// Version of the normalized statusline input accepted by the monitor.
 pub const USAGE_STATUSLINE_INPUT_SCHEMA_VERSION: u16 = 2;

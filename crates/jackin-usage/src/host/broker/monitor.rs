@@ -148,17 +148,57 @@ impl Default for StoreState {
     }
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct AccountObservations {
     sessions: BTreeMap<String, SessionObservation>,
     broker_windows: [ObservedWindow; 2],
     latest_reset_epochs: [Option<i64>; 2],
+    #[serde(default)]
+    statusline_reset_watermarks: [StatuslineResetWatermark; 2],
+    #[serde(default)]
+    legacy_reset_admission_after_epochs: [Option<i64>; 2],
     reset_barriers: [Option<AccountResetBarrier>; 2],
     input_sequence: u64,
     spend: SpendAccountState,
     #[serde(default)]
     provider_observation: Option<ProviderObservation>,
+}
+
+impl Default for AccountObservations {
+    fn default() -> Self {
+        Self {
+            sessions: BTreeMap::new(),
+            broker_windows: Default::default(),
+            latest_reset_epochs: [None, None],
+            statusline_reset_watermarks: [
+                StatuslineResetWatermark::KnownNone,
+                StatuslineResetWatermark::KnownNone,
+            ],
+            legacy_reset_admission_after_epochs: [None, None],
+            reset_barriers: [None, None],
+            input_sequence: 0,
+            spend: SpendAccountState::default(),
+            provider_observation: None,
+        }
+    }
+}
+
+/// Durable provenance for the highest accepted statusline reset in one window.
+///
+/// `Unknown` is fail-closed history from pre-v6 data: a provider or statusline
+/// reset may have been pruned, so clearing a provider projection cannot lower
+/// the account-wide reset fence. New accounts start at `KnownNone`.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+enum StatuslineResetWatermark {
+    #[default]
+    Unknown,
+    KnownNone,
+    Known {
+        reset_at_epoch: i64,
+        received_at_epoch: i64,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -1298,8 +1338,10 @@ fn clear_broker_projection(state: &mut StoreState, account_id: &str) {
 
 fn clear_account_broker_projection(account: &mut AccountObservations) {
     account.broker_windows = Default::default();
-    account.latest_reset_epochs = std::array::from_fn(|index| {
-        account
+    let mut latest_reset_epochs = account.latest_reset_epochs;
+    let mut legacy_cutoffs = account.legacy_reset_admission_after_epochs;
+    for (index, latest_reset) in latest_reset_epochs.iter_mut().enumerate() {
+        let retained_statusline_reset = account
             .sessions
             .values()
             .filter_map(|session| {
@@ -1308,8 +1350,23 @@ fn clear_account_broker_projection(account: &mut AccountObservations) {
                     .as_ref()
                     .map(|reset| reset.value)
             })
-            .max()
-    });
+            .max();
+        match account.statusline_reset_watermarks[index] {
+            StatuslineResetWatermark::Unknown => {
+                *latest_reset = (*latest_reset).max(retained_statusline_reset);
+            }
+            StatuslineResetWatermark::KnownNone => {
+                legacy_cutoffs[index] = None;
+                *latest_reset = retained_statusline_reset;
+            }
+            StatuslineResetWatermark::Known { reset_at_epoch, .. } => {
+                legacy_cutoffs[index] = None;
+                *latest_reset = Some(reset_at_epoch).max(retained_statusline_reset);
+            }
+        }
+    }
+    account.latest_reset_epochs = latest_reset_epochs;
+    account.legacy_reset_admission_after_epochs = legacy_cutoffs;
     for barrier in &mut account.reset_barriers {
         if barrier
             .as_ref()

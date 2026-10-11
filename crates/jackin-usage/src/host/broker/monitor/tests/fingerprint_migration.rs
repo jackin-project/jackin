@@ -100,6 +100,14 @@ fn v4_fingerprint_migration_preserves_account_named_statusline_session_and_drops
             .as_object_mut()
             .expect("persisted account")
             .remove("provider_observation");
+        account
+            .as_object_mut()
+            .expect("persisted account")
+            .remove("statusline_reset_watermarks");
+        account
+            .as_object_mut()
+            .expect("persisted account")
+            .remove("legacy_reset_admission_after_epochs");
     }
     for monitor in snapshot["monitors"]
         .as_object_mut()

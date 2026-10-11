@@ -5,9 +5,10 @@ use super::quota::field_age;
 use super::validation::scope_session_id;
 use super::{
     AccountObservations, AccountResetBarrier, DurableMonitor, MAX_EVIDENCE_PER_MONITOR,
-    MONITOR_EVIDENCE_TTL_SECS, MONITOR_RESET_GRACE_SECS, MonitorEvidence, MonitorEvidenceSource,
-    MonitorEvidenceValue, MonitorIssueCode, MonitorQuotaWindow, Observed, ObservedPercentage,
-    ObservedQuotaPair, ObservedWindow, SessionObservation, StatuslineObservation,
+    MAX_FUTURE_SKEW_SECS, MONITOR_EVIDENCE_TTL_SECS, MONITOR_RESET_GRACE_SECS, MonitorEvidence,
+    MonitorEvidenceSource, MonitorEvidenceValue, MonitorIssueCode, MonitorQuotaWindow, Observed,
+    ObservedPercentage, ObservedQuotaPair, ObservedWindow, SessionObservation,
+    StatuslineObservation, StatuslineResetWatermark,
 };
 use jackin_protocol::usage_monitor::StatuslineQuotaWindow;
 use std::collections::BTreeMap;
@@ -19,6 +20,15 @@ pub(super) fn apply_statusline(
     input_sequence: u64,
 ) -> (bool, bool) {
     let mut latest_resets = account.latest_reset_epochs;
+    // Statusline ordering is source-specific. Keep the account-wide maximum
+    // separate so a lower source reset can be retained without becoming
+    // effective quota evidence or reducing the global fence.
+    let statusline_watermarks =
+        std::array::from_fn(|index| match &account.statusline_reset_watermarks[index] {
+            StatuslineResetWatermark::Unknown => account.latest_reset_epochs[index],
+            StatuslineResetWatermark::KnownNone => None,
+            StatuslineResetWatermark::Known { reset_at_epoch, .. } => Some(*reset_at_epoch),
+        });
     let new_session = !account.sessions.contains_key(&observation.session_id);
     let (session_changed, fields_changed, resets) = apply_statusline_session(
         account
@@ -28,7 +38,7 @@ pub(super) fn apply_statusline(
         observation,
         now_epoch,
         input_sequence,
-        latest_resets,
+        statusline_watermarks,
         new_session,
     );
     let changed = session_changed || new_session;
@@ -36,6 +46,40 @@ pub(super) fn apply_statusline(
     latest_resets[0] = max_option(latest_resets[0], five_hour_reset);
     latest_resets[1] = max_option(latest_resets[1], seven_day_reset);
     account.latest_reset_epochs = latest_resets;
+    if let Some(session) = account.sessions.get(&observation.session_id) {
+        for (index, window) in session.windows.iter().enumerate() {
+            let Some(reset) = window
+                .reset
+                .as_ref()
+                .filter(|reset| reset.input_sequence == input_sequence)
+            else {
+                continue;
+            };
+            let next = StatuslineResetWatermark::Known {
+                reset_at_epoch: reset.value,
+                received_at_epoch: reset.received_at_epoch,
+            };
+            let watermark = &mut account.statusline_reset_watermarks[index];
+            let should_update = match watermark {
+                StatuslineResetWatermark::Unknown => {
+                    latest_resets[index].is_some_and(|latest| reset.value >= latest)
+                }
+                StatuslineResetWatermark::KnownNone => true,
+                StatuslineResetWatermark::Known {
+                    reset_at_epoch,
+                    received_at_epoch,
+                } => {
+                    reset.value > *reset_at_epoch
+                        || (reset.value == *reset_at_epoch
+                            && reset.received_at_epoch > *received_at_epoch)
+                }
+            };
+            if should_update {
+                *watermark = next;
+                account.legacy_reset_admission_after_epochs[index] = None;
+            }
+        }
+    }
     if changed {
         let new_barriers = account
             .sessions
@@ -205,6 +249,12 @@ pub(super) fn account_reset_barrier_satisfied(
             .prior_reset_at_epoch
             .is_none_or(|previous| pair.reset_at_epoch > previous);
         pair.input_sequence > barrier.input_sequence_before
+            && account
+                .latest_reset_epochs
+                .get(index)
+                .copied()
+                .flatten()
+                .is_none_or(|latest| pair.reset_at_epoch >= latest)
             && pair.received_at_epoch >= required_at
             && pair.received_at_epoch <= now_epoch
             && pair
@@ -350,6 +400,98 @@ pub(super) fn max_option(left: Option<i64>, right: Option<i64>) -> Option<i64> {
         (Some(value), None) | (None, Some(value)) => Some(value),
         (None, None) => None,
     }
+}
+
+pub(super) fn statusline_reset_received_at(
+    account: &AccountObservations,
+    index: usize,
+    watermark: i64,
+) -> Option<i64> {
+    match account.statusline_reset_watermarks.get(index)? {
+        StatuslineResetWatermark::Known {
+            reset_at_epoch,
+            received_at_epoch,
+        } if *reset_at_epoch <= watermark => Some(*received_at_epoch),
+        StatuslineResetWatermark::Unknown | StatuslineResetWatermark::KnownNone => None,
+        StatuslineResetWatermark::Known { .. } => None,
+    }
+}
+
+pub(super) fn lower_reset_admission_after_epoch(
+    account: &AccountObservations,
+    index: usize,
+    latest_reset: i64,
+) -> Option<i64> {
+    match account.statusline_reset_watermarks.get(index)? {
+        StatuslineResetWatermark::Known { .. } => {
+            statusline_reset_received_at(account, index, latest_reset)
+        }
+        StatuslineResetWatermark::Unknown => account
+            .legacy_reset_admission_after_epochs
+            .get(index)
+            .copied()
+            .flatten(),
+        StatuslineResetWatermark::KnownNone => {
+            let window = account.broker_windows.get(index)?;
+            let reset = window.reset.as_ref()?;
+            if reset.value < 0
+                || reset.value > latest_reset
+                || !broker_observation_time_is_valid(
+                    reset.evidence_at_epoch,
+                    reset.received_at_epoch,
+                )
+                || window.used.as_ref().is_some_and(|used| {
+                    used.reset_at_epoch.is_some_and(|epoch| epoch < 0)
+                        || !broker_observation_time_is_valid(
+                            used.evidence_at_epoch,
+                            used.received_at_epoch,
+                        )
+                })
+                || window.paired.as_ref().is_some_and(|pair| {
+                    pair.reset_at_epoch < 0
+                        || !broker_observation_time_is_valid(
+                            pair.evidence_at_epoch,
+                            pair.received_at_epoch,
+                        )
+                })
+            {
+                return None;
+            }
+            if reset.value < latest_reset {
+                let (Some(used), None) = (window.used.as_ref(), window.paired.as_ref()) else {
+                    return None;
+                };
+                if used.reset_at_epoch != Some(reset.value)
+                    || used.input_sequence != reset.input_sequence
+                    || used.evidence_at_epoch.is_none()
+                    || used.evidence_at_epoch != reset.evidence_at_epoch
+                    || used.received_at_epoch != reset.received_at_epoch
+                {
+                    return None;
+                }
+            }
+            Some(
+                window
+                    .used
+                    .iter()
+                    .map(|field| field.received_at_epoch)
+                    .chain(std::iter::once(reset.received_at_epoch))
+                    .chain(window.paired.iter().map(|pair| pair.received_at_epoch))
+                    .max()?,
+            )
+        }
+    }
+}
+
+fn broker_observation_time_is_valid(
+    evidence_at_epoch: Option<i64>,
+    received_at_epoch: i64,
+) -> bool {
+    received_at_epoch >= 0
+        && evidence_at_epoch.is_none_or(|evidence_at_epoch| {
+            evidence_at_epoch >= 0
+                && evidence_at_epoch <= received_at_epoch.saturating_add(MAX_FUTURE_SKEW_SECS)
+        })
 }
 
 pub(super) fn update_observed<T: Clone + PartialEq>(

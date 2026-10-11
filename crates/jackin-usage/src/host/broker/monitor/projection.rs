@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use super::evidence::latch_account_reset_barrier;
+use super::evidence::{latch_account_reset_barrier, lower_reset_admission_after_epoch};
 use super::validation::valid_identifier;
 use super::{
     AccountObservations, AccountResetBarrier, MAX_ACCOUNTS, MAX_FUTURE_SKEW_SECS,
@@ -29,6 +29,11 @@ pub(super) fn observe_projection_account(
     // source timestamps; it never receives a new evidence time here.
     let proposed_sequence = state.next_input_sequence.saturating_add(1);
     let windows = projection_windows(account, now_epoch, proposed_sequence);
+    let current_windows = std::array::from_fn(|index| {
+        windows[index].as_ref().is_some_and(|window| {
+            projection_window_pair_is_current(account, index, window, now_epoch)
+        })
+    });
     if !state.accounts.contains_key(local_account_id) && state.accounts.len() >= MAX_ACCOUNTS {
         return Err(issue(
             MonitorIssueCode::MonitorStoreUnavailable,
@@ -79,7 +84,8 @@ pub(super) fn observe_projection_account(
     if provider_changed {
         account_state.provider_observation = Some(next_provider_observation);
     }
-    let windows_changed = update_broker_windows(account_state, windows, proposed_sequence);
+    let windows_changed =
+        update_broker_windows(account_state, windows, current_windows, proposed_sequence);
     if windows_changed {
         if !provider_changed && let Some(previous) = account_state.provider_observation.as_ref() {
             let mut fenced = previous.clone();
@@ -262,6 +268,7 @@ pub(super) fn projection_windows(
                     metric_group_time(
                         account,
                         index,
+                        &window.label,
                         Some(value),
                         window.reset_at_epoch,
                         received_at_epoch,
@@ -269,8 +276,15 @@ pub(super) fn projection_windows(
                     .unwrap_or(fallback_evidence_at)
                 });
                 let reset_at = window.reset_at_epoch.and_then(|reset| {
-                    metric_group_time(account, index, raw_used, Some(reset), received_at_epoch)
-                        .unwrap_or(fallback_evidence_at)
+                    metric_group_time(
+                        account,
+                        index,
+                        &window.label,
+                        raw_used,
+                        Some(reset),
+                        received_at_epoch,
+                    )
+                    .unwrap_or(fallback_evidence_at)
                 });
                 (used.is_some() || window.reset_at_epoch.is_some())
                     .then_some((window, used, used_at, reset_at))
@@ -350,11 +364,62 @@ pub(super) fn projection_windows(
 pub(super) fn metric_group_time(
     account: &UsageAccountV1,
     window_index: usize,
+    window_label: &str,
     used_raw_percent: Option<i32>,
     reset_at_epoch: Option<i64>,
     now_epoch: i64,
 ) -> Option<Option<i64>> {
-    let period_matches = |period: UsageMetricPeriodV1| match period {
+    let window_groups = account
+        .metric_groups
+        .iter()
+        .filter(|group| group.kind == UsageMetricGroupKindV1::Window)
+        .collect::<Vec<_>>();
+    if window_groups.is_empty() {
+        return None;
+    }
+    let groups = window_groups
+        .into_iter()
+        .filter(|group| {
+            if group.label != window_label
+                || group.scope.service.is_some()
+                || group.scope.model.is_some()
+                || group.scope.pool.is_some()
+                || group.scope.key_id.is_some()
+            {
+                return false;
+            }
+            let UsageMetricValueV1::Window {
+                used_raw_percent: group_used,
+                remaining_raw_percent: group_remaining,
+                period,
+                ..
+            } = &group.value
+            else {
+                return false;
+            };
+            if !metric_group_period_matches_window(*period, window_index) {
+                return false;
+            }
+            let group_used = (*group_used)
+                .or_else(|| group_remaining.map(|remaining| 100i32.saturating_sub(remaining)));
+            (used_raw_percent.is_none() || group_used == used_raw_percent)
+                && (reset_at_epoch.is_none() || group.reset_at_epoch == reset_at_epoch)
+        })
+        .collect::<Vec<_>>();
+    if groups.len() != 1 {
+        // Typed provider evidence is authoritative for each Rust-owned
+        // principal window label. A same-valued sibling or ambiguous duplicate
+        // must not lend it a fresh timestamp.
+        return Some(None);
+    }
+    let group = groups[0];
+    group_evidence_time(account, group)
+        .filter(|time| *time <= now_epoch.saturating_add(MAX_FUTURE_SKEW_SECS))
+        .map_or(Some(None), |time| Some(Some(time)))
+}
+
+fn metric_group_period_matches_window(period: UsageMetricPeriodV1, window_index: usize) -> bool {
+    match period {
         UsageMetricPeriodV1::Rolling { window_secs } => {
             (window_index == 0 && window_secs <= 86_400)
                 || (window_index == 1 && window_secs > 86_400)
@@ -373,52 +438,7 @@ pub(super) fn metric_group_time(
         // still identifies independent per-window freshness and is authoritative.
         UsageMetricPeriodV1::ProviderDefined => window_index == 0,
         UsageMetricPeriodV1::Unknown => false,
-    };
-    let window_groups = account
-        .metric_groups
-        .iter()
-        .filter(|group| group.kind == UsageMetricGroupKindV1::Window)
-        .filter(|group| match &group.value {
-            UsageMetricValueV1::Window { period, .. } => period_matches(*period),
-            _ => false,
-        })
-        .collect::<Vec<_>>();
-    if window_groups.is_empty() {
-        return None;
     }
-    let groups = window_groups
-        .into_iter()
-        .filter(|group| {
-            let UsageMetricValueV1::Window {
-                used_raw_percent: group_used,
-                remaining_raw_percent: group_remaining,
-                ..
-            } = &group.value
-            else {
-                return false;
-            };
-            let group_used = (*group_used)
-                .or_else(|| group_remaining.map(|remaining| 100i32.saturating_sub(remaining)));
-            (used_raw_percent.is_none() || group_used == used_raw_percent)
-                && (reset_at_epoch.is_none() || group.reset_at_epoch == reset_at_epoch)
-        })
-        .collect::<Vec<_>>();
-    if groups.is_empty() {
-        // Typed provider evidence for this quota category is authoritative.
-        // A different metric group cannot lend it a fresh timestamp.
-        return Some(None);
-    }
-    let current = groups
-        .iter()
-        .filter(|group| group_evidence_time(account, group).is_some())
-        .filter(|group| {
-            group_evidence_time(account, group)
-                .is_some_and(|time| time <= now_epoch.saturating_add(MAX_FUTURE_SKEW_SECS))
-        })
-        .max_by_key(|group| group_evidence_time(account, group));
-    current.map_or(Some(None), |group| {
-        group_evidence_time(account, group).map(Some)
-    })
 }
 
 fn group_evidence_time(
@@ -442,6 +462,7 @@ fn group_evidence_time(
 pub(super) fn update_broker_windows(
     account: &mut AccountObservations,
     input: [Option<ObservedWindow>; 2],
+    current_windows: [bool; 2],
     input_sequence: u64,
 ) -> bool {
     let mut changed = false;
@@ -449,9 +470,26 @@ pub(super) fn update_broker_windows(
         let Some(window) = maybe_window else {
             continue;
         };
-        if window.reset.as_ref().is_some_and(|reset| {
-            account.latest_reset_epochs[index].is_some_and(|latest| reset.value < latest)
-        }) {
+        let lower_than_watermark = account.latest_reset_epochs[index].is_some_and(|latest| {
+            window
+                .reset
+                .as_ref()
+                .is_some_and(|reset| reset.value < latest)
+                || window
+                    .used
+                    .as_ref()
+                    .and_then(|used| used.reset_at_epoch)
+                    .is_some_and(|reset| reset < latest)
+        });
+        let lower_reset_repair = lower_than_watermark
+            && current_windows[index]
+            && account.latest_reset_epochs[index]
+                .and_then(|latest| lower_reset_admission_after_epoch(account, index, latest))
+                .is_some_and(|admission_after_epoch| {
+                    projection_window_is_after_admission_fence(&window, admission_after_epoch)
+                        && lower_reset_projection_is_newer(&account.broker_windows[index], &window)
+                });
+        if lower_than_watermark && !lower_reset_repair {
             continue;
         }
         if let Some(reset) = window.reset.as_ref().filter(|reset| {
@@ -461,7 +499,7 @@ pub(super) fn update_broker_windows(
             changed = true;
         }
         let current = &mut account.broker_windows[index];
-        changed |= update_broker_window(current, &window, input_sequence);
+        changed |= update_broker_window(current, &window, input_sequence, lower_reset_repair);
     }
     changed
 }
@@ -470,7 +508,22 @@ pub(super) fn update_broker_window(
     current: &mut ObservedWindow,
     next: &ObservedWindow,
     input_sequence: u64,
+    lower_reset_repair: bool,
 ) -> bool {
+    if lower_reset_repair {
+        let (Some(mut used), Some(mut reset)) = (next.used.clone(), next.reset.clone()) else {
+            return false;
+        };
+        used.input_sequence = input_sequence;
+        reset.input_sequence = input_sequence;
+        // A lower reset can refresh quota display, but it cannot prove that a
+        // quota reset barrier has been crossed. A later non-lower reset can
+        // produce a new paired observation and satisfy that barrier.
+        current.used = Some(used);
+        current.reset = Some(reset);
+        current.paired = None;
+        return true;
+    }
     let mut changed = false;
     if let Some(next_reset) = &next.reset {
         let mut next_reset = next_reset.clone();
@@ -546,6 +599,229 @@ pub(super) fn update_broker_window(
         }
     }
     changed
+}
+
+fn projection_window_pair_is_current(
+    account: &UsageAccountV1,
+    window_index: usize,
+    window: &ObservedWindow,
+    now_epoch: i64,
+) -> bool {
+    let (Some(used), Some(reset), Some(pair)) = (
+        window.used.as_ref(),
+        window.reset.as_ref(),
+        window.paired.as_ref(),
+    ) else {
+        return false;
+    };
+    let Some(window_label) = principal_window_label_for_observed(account, window_index, window)
+    else {
+        return false;
+    };
+    if used.value % 100 != 0
+        || used.reset_at_epoch != Some(reset.value)
+        || pair.used_percentage_basis_points != used.value
+        || pair.reset_at_epoch != reset.value
+        || pair.evidence_at_epoch.is_none()
+    {
+        return false;
+    }
+    let matching_groups = account
+        .metric_groups
+        .iter()
+        .filter(|group| {
+            if group.kind != UsageMetricGroupKindV1::Window
+                || group.label != window_label
+                || group.scope.service.is_some()
+                || group.scope.model.is_some()
+                || group.scope.pool.is_some()
+                || group.scope.key_id.is_some()
+                || group.phase != UsageFreshnessPhaseV1::Current
+                || group.is_stale
+                || group.reset_at_epoch != Some(reset.value)
+            {
+                return false;
+            }
+            let UsageMetricValueV1::Window {
+                used_raw_percent,
+                remaining_raw_percent,
+                period,
+                ..
+            } = &group.value
+            else {
+                return false;
+            };
+            let group_used = (*used_raw_percent).or_else(|| {
+                remaining_raw_percent.map(|remaining| 100i32.saturating_sub(remaining))
+            });
+            if group_used != Some(used.value / 100)
+                || !metric_group_period_matches_window(*period, window_index)
+            {
+                return false;
+            }
+            true
+        })
+        .collect::<Vec<_>>();
+    let [group] = matching_groups.as_slice() else {
+        return false;
+    };
+    group_evidence_time(account, group).is_some_and(|evidence_at| {
+        used.evidence_at_epoch == Some(evidence_at)
+            && reset.evidence_at_epoch == Some(evidence_at)
+            && pair.evidence_at_epoch == Some(evidence_at)
+            && evidence_at <= now_epoch.saturating_add(MAX_FUTURE_SKEW_SECS)
+            && now_epoch.saturating_sub(evidence_at) <= MONITOR_EVIDENCE_TTL_SECS
+    })
+}
+
+fn principal_window_label_for_observed<'a>(
+    account: &'a UsageAccountV1,
+    window_index: usize,
+    window: &ObservedWindow,
+) -> Option<&'a str> {
+    let category = match window_index {
+        0 => UsageWindowCategoryV1::Session,
+        1 => UsageWindowCategoryV1::LongRange,
+        _ => return None,
+    };
+    let (Some(used), Some(reset), Some(pair)) = (
+        window.used.as_ref(),
+        window.reset.as_ref(),
+        window.paired.as_ref(),
+    ) else {
+        return None;
+    };
+    let expected_used = used.value / 100;
+    let matching_windows = account
+        .windows
+        .iter()
+        .filter(|candidate| {
+            if candidate.category != category
+                || candidate.reset_at_epoch != Some(reset.value)
+                || used.reset_at_epoch != Some(reset.value)
+                || pair.reset_at_epoch != reset.value
+                || pair.used_percentage_basis_points != used.value
+            {
+                return false;
+            }
+            candidate
+                .used_raw_percent
+                .or_else(|| {
+                    candidate
+                        .remaining_raw_percent
+                        .map(|remaining| 100i32.saturating_sub(remaining))
+                })
+                .filter(|raw_used| *raw_used >= 0)
+                .map(|raw_used| raw_used.min(100))
+                == Some(expected_used)
+        })
+        .collect::<Vec<_>>();
+    let [candidate] = matching_windows.as_slice() else {
+        return None;
+    };
+    Some(candidate.label.as_str())
+}
+
+fn projection_window_is_after_admission_fence(
+    window: &ObservedWindow,
+    admission_after_epoch: i64,
+) -> bool {
+    let (Some(used), Some(reset), Some(pair)) = (
+        window.used.as_ref(),
+        window.reset.as_ref(),
+        window.paired.as_ref(),
+    ) else {
+        return false;
+    };
+    used.evidence_at_epoch
+        .is_some_and(|observed| observed > admission_after_epoch)
+        && reset
+            .evidence_at_epoch
+            .is_some_and(|observed| observed > admission_after_epoch)
+        && pair
+            .evidence_at_epoch
+            .is_some_and(|observed| observed > admission_after_epoch)
+        && used.received_at_epoch > admission_after_epoch
+        && reset.received_at_epoch > admission_after_epoch
+        && pair.received_at_epoch > admission_after_epoch
+}
+
+fn lower_reset_projection_is_newer(current: &ObservedWindow, next: &ObservedWindow) -> bool {
+    let (Some(next_reset), Some(next_used), Some(pair)) = (
+        next.reset.as_ref(),
+        next.used.as_ref(),
+        next.paired.as_ref(),
+    ) else {
+        return false;
+    };
+    let time_is_valid = |evidence_at: Option<i64>, received_at: i64| {
+        received_at >= 0
+            && evidence_at.is_none_or(|observed| {
+                observed >= 0 && observed <= received_at.saturating_add(MAX_FUTURE_SKEW_SECS)
+            })
+    };
+    let previous_fields_are_valid = current.used.as_ref().is_none_or(|used| {
+        used.reset_at_epoch.is_none_or(|reset| reset >= 0)
+            && time_is_valid(used.evidence_at_epoch, used.received_at_epoch)
+    }) && current.reset.as_ref().is_none_or(|reset| {
+        reset.value >= 0 && time_is_valid(reset.evidence_at_epoch, reset.received_at_epoch)
+    }) && current.paired.as_ref().is_none_or(|pair| {
+        pair.reset_at_epoch >= 0 && time_is_valid(pair.evidence_at_epoch, pair.received_at_epoch)
+    });
+    if !previous_fields_are_valid
+        || next_reset.value < 0
+        || next_used.reset_at_epoch != Some(next_reset.value)
+        || pair.reset_at_epoch != next_reset.value
+    {
+        return false;
+    }
+    let field_is_newer =
+        |next: Option<i64>, previous: Option<i64>, next_received: i64, previous_received: i64| {
+            next_received > previous_received
+                && next.is_some_and(|next| {
+                    previous.map_or(next > previous_received, |previous| next > previous)
+                })
+        };
+    let reset_is_newer = current.reset.as_ref().map_or_else(
+        || next_reset.evidence_at_epoch.is_some(),
+        |previous| {
+            field_is_newer(
+                next_reset.evidence_at_epoch,
+                previous.evidence_at_epoch,
+                next_reset.received_at_epoch,
+                previous.received_at_epoch,
+            )
+        },
+    );
+    let used_is_newer = current.used.as_ref().map_or_else(
+        || next_used.evidence_at_epoch.is_some(),
+        |previous| {
+            field_is_newer(
+                next_used.evidence_at_epoch,
+                previous.evidence_at_epoch,
+                next_used.received_at_epoch,
+                previous.received_at_epoch,
+            )
+        },
+    );
+    let pair_is_newer = current.paired.as_ref().map_or_else(
+        || pair.evidence_at_epoch.is_some(),
+        |previous| {
+            field_is_newer(
+                pair.evidence_at_epoch,
+                previous.evidence_at_epoch,
+                pair.received_at_epoch,
+                previous.received_at_epoch,
+            )
+        },
+    );
+    reset_is_newer
+        && used_is_newer
+        && pair_is_newer
+        && next_used.reset_at_epoch == Some(next_reset.value)
+        && pair.reset_at_epoch == next_reset.value
+        && pair.used_percentage_basis_points == next_used.value
+        && pair.evidence_at_epoch.is_some()
 }
 
 pub(super) fn source_observation_is_newer<T>(next: &Observed<T>, current: &Observed<T>) -> bool {

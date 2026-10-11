@@ -5,7 +5,7 @@ use super::quota::evidence_is_relevant;
 use super::reconcile::{budget_is_same_or_tighter, is_migrated_zero_sgd_budget_repair};
 use super::spend::{self, capture_goal_baseline};
 use super::{
-    DurableGoalSpend, MAX_ACCOUNTS, MAX_BINDINGS, MAX_EVENTS_PER_MONITOR,
+    AccountObservations, DurableGoalSpend, MAX_ACCOUNTS, MAX_BINDINGS, MAX_EVENTS_PER_MONITOR,
     MAX_EVIDENCE_FINGERPRINTS, MAX_EVIDENCE_PER_MONITOR, MAX_FUTURE_SKEW_SECS, MAX_GOAL_ID_LENGTH,
     MAX_GOALS, MAX_ID_LENGTH, MAX_IDEMPOTENCY_KEY_LENGTH, MAX_MODEL_LENGTH, MAX_MONITORS,
     MAX_OPERATOR_LABEL_LENGTH, MAX_POLICY_REVISIONS, MAX_SESSIONS_PER_ACCOUNT,
@@ -13,8 +13,8 @@ use super::{
     MonitorDecision, MonitorDispatchReadiness, MonitorEvidence, MonitorEvidenceSource,
     MonitorIssue, MonitorIssueCode, MonitorPolicy, MonitorPolicyOrigin, MonitorPolicyRecord,
     MonitorProviderReadiness, MonitorPurpose, MonitorScope, ProviderObservation, SpendAccountState,
-    SpendState, StatuslineObservation, StoreState, USAGE_MONITOR_SCHEMA_VERSION,
-    USAGE_STATUSLINE_INPUT_SCHEMA_VERSION, issue, store_unavailable,
+    SpendState, StatuslineObservation, StatuslineResetWatermark, StoreState,
+    USAGE_MONITOR_SCHEMA_VERSION, USAGE_STATUSLINE_INPUT_SCHEMA_VERSION, issue, store_unavailable,
 };
 use jackin_protocol::control::Money;
 use std::collections::BTreeSet;
@@ -273,6 +273,7 @@ pub(super) fn validate_accounts(state: &StoreState) -> Result<(), MonitorIssue> 
         {
             return Err(store_unavailable());
         }
+        validate_account_reset_metadata(account, state.last_now_epoch)?;
         for barrier in account.reset_barriers.iter().flatten() {
             if !(9_500..=10_000).contains(&barrier.prior_used_percentage_basis_points)
                 || barrier.started_at_epoch < 0
@@ -317,31 +318,116 @@ pub(super) fn validate_accounts(state: &StoreState) -> Result<(), MonitorIssue> 
                 return Err(store_unavailable());
             }
             for window in &session.windows {
-                if window
-                    .used
-                    .as_ref()
-                    .is_some_and(|used| used.input_sequence > account.input_sequence)
-                    || window
-                        .reset
-                        .as_ref()
-                        .is_some_and(|reset| reset.input_sequence > account.input_sequence)
-                {
+                if !observed_window_is_valid(window, account.input_sequence, state.last_now_epoch) {
                     return Err(store_unavailable());
                 }
             }
         }
         for window in &account.broker_windows {
-            if window
-                .used
-                .as_ref()
-                .is_some_and(|used| used.input_sequence > account.input_sequence)
-                || window
-                    .reset
-                    .as_ref()
-                    .is_some_and(|reset| reset.input_sequence > account.input_sequence)
-            {
+            if !observed_window_is_valid(window, account.input_sequence, state.last_now_epoch) {
                 return Err(store_unavailable());
             }
+        }
+    }
+    Ok(())
+}
+
+fn observed_window_is_valid(
+    window: &super::ObservedWindow,
+    input_sequence: u64,
+    last_now_epoch: i64,
+) -> bool {
+    let sequence_is_valid = |sequence| sequence > 0 && sequence <= input_sequence;
+    let timestamp_is_valid = |evidence_at_epoch: Option<i64>, received_at_epoch: i64| {
+        received_at_epoch >= 0
+            && received_at_epoch <= last_now_epoch
+            && evidence_at_epoch.is_none_or(|epoch| {
+                epoch >= 0 && epoch <= last_now_epoch.saturating_add(MAX_FUTURE_SKEW_SECS)
+            })
+    };
+
+    window.used.as_ref().is_none_or(|used| {
+        (0..=10_000).contains(&used.value)
+            && used.reset_at_epoch.is_none_or(|epoch| epoch >= 0)
+            && sequence_is_valid(used.input_sequence)
+            && timestamp_is_valid(used.evidence_at_epoch, used.received_at_epoch)
+    }) && window.reset.as_ref().is_none_or(|reset| {
+        reset.value >= 0
+            && sequence_is_valid(reset.input_sequence)
+            && timestamp_is_valid(reset.evidence_at_epoch, reset.received_at_epoch)
+    }) && window.paired.as_ref().is_none_or(|pair| {
+        (0..=10_000).contains(&pair.used_percentage_basis_points)
+            && pair.reset_at_epoch >= 0
+            && sequence_is_valid(pair.input_sequence)
+            && timestamp_is_valid(pair.evidence_at_epoch, pair.received_at_epoch)
+    })
+}
+
+fn validate_account_reset_metadata(
+    account: &AccountObservations,
+    last_now_epoch: i64,
+) -> Result<(), MonitorIssue> {
+    for (index, watermark) in account.statusline_reset_watermarks.iter().enumerate() {
+        let retained_statusline_reset = account
+            .sessions
+            .values()
+            .filter_map(|session| session.windows[index].reset.as_ref())
+            .fold(None, |current: Option<(i64, i64)>, reset| {
+                let candidate = (reset.value, reset.received_at_epoch);
+                match current {
+                    None => Some(candidate),
+                    Some((epoch, _)) if candidate.0 > epoch => Some(candidate),
+                    Some((epoch, received)) if candidate.0 == epoch => {
+                        Some((epoch, received.max(candidate.1)))
+                    }
+                    Some(current) => Some(current),
+                }
+            });
+        match watermark {
+            StatuslineResetWatermark::Unknown => {}
+            StatuslineResetWatermark::KnownNone => {
+                if retained_statusline_reset.is_some() {
+                    return Err(store_unavailable());
+                }
+            }
+            StatuslineResetWatermark::Known {
+                reset_at_epoch,
+                received_at_epoch,
+            } => {
+                let invalid_retained_reset = retained_statusline_reset.is_some_and(
+                    |(retained_epoch, retained_received_at)| {
+                        retained_epoch > *reset_at_epoch
+                            || (retained_epoch == *reset_at_epoch
+                                && retained_received_at > *received_at_epoch)
+                    },
+                );
+                if *reset_at_epoch < 0
+                    || *received_at_epoch < 0
+                    || *received_at_epoch > last_now_epoch
+                    || account.latest_reset_epochs[index]
+                        .is_none_or(|latest| latest < *reset_at_epoch)
+                    || invalid_retained_reset
+                {
+                    return Err(store_unavailable());
+                }
+            }
+        }
+    }
+    for (index, cutoff) in account
+        .legacy_reset_admission_after_epochs
+        .iter()
+        .enumerate()
+    {
+        if cutoff.is_some_and(|epoch| {
+            epoch < 0
+                || epoch > last_now_epoch
+                || !matches!(
+                    account.statusline_reset_watermarks[index],
+                    StatuslineResetWatermark::Unknown
+                )
+                || account.latest_reset_epochs[index].is_none()
+        }) {
+            return Err(store_unavailable());
         }
     }
     Ok(())
@@ -414,14 +500,7 @@ pub(super) fn validate_unbound_sessions(state: &StoreState) -> Result<(), Monito
                     || !valid_bounded_text(&model.value, MAX_MODEL_LENGTH)
             })
             || session.windows.iter().any(|window| {
-                window
-                    .used
-                    .as_ref()
-                    .is_some_and(|used| used.input_sequence > state.next_input_sequence)
-                    || window
-                        .reset
-                        .as_ref()
-                        .is_some_and(|reset| reset.input_sequence > state.next_input_sequence)
+                !observed_window_is_valid(window, state.next_input_sequence, state.last_now_epoch)
             })
         {
             return Err(store_unavailable());

@@ -19,7 +19,7 @@ use nix::sys::stat::{Mode, fchmod, mkdirat};
 use nix::unistd::{UnlinkatFlags, fsync, geteuid, unlinkat};
 
 use super::super::{BROKER_DIR, secure_run_directory};
-use super::StoreState;
+use super::{StatuslineResetWatermark, StoreState};
 
 const STORE_FILE: &str = "state.json";
 const STORE_DIR: &str = "monitor";
@@ -89,10 +89,14 @@ pub(super) fn load(dir: &File) -> Result<Option<StoreState>, MonitorIssue> {
         .and_then(|value| value.get("schema_version")?.as_u64())
         .and_then(|version| u16::try_from(version).ok())
         .ok_or_else(unavailable)?;
+    if (2..USAGE_MONITOR_SCHEMA_VERSION).contains(&version) {
+        reject_v6_reset_metadata_in_legacy_snapshot(&bytes)?;
+    }
     let state = match version {
         1 => super::legacy::migrate_v1(&bytes)?,
         2 | 3 => migrate_v2_or_v3(&bytes, version)?,
         4 => migrate_v4(&bytes)?,
+        5 => migrate_v5(&bytes)?,
         USAGE_MONITOR_SCHEMA_VERSION => {
             serde_json::from_slice(&bytes).map_err(|_| unavailable())?
         }
@@ -107,6 +111,27 @@ pub(super) fn load(dir: &File) -> Result<Option<StoreState>, MonitorIssue> {
     Ok(Some(state))
 }
 
+/// A later schema's provenance cannot be trusted after a snapshot is
+/// downgraded to an older envelope. Legacy snapshots must not supply this
+/// metadata themselves; the migration derives only `KnownNone` or `Unknown` from
+/// the old global reset fence.
+fn reject_v6_reset_metadata_in_legacy_snapshot(bytes: &[u8]) -> Result<(), MonitorIssue> {
+    let document: serde_json::Value = serde_json::from_slice(bytes).map_err(|_| unavailable())?;
+    let accounts = document
+        .get("accounts")
+        .and_then(serde_json::Value::as_object)
+        .ok_or_else(unavailable)?;
+    if accounts.values().any(|account| {
+        account.as_object().is_none_or(|fields| {
+            fields.contains_key("statusline_reset_watermarks")
+                || fields.contains_key("legacy_reset_admission_after_epochs")
+        })
+    }) {
+        return Err(unavailable());
+    }
+    Ok(())
+}
+
 /// V4 predates provider-refresh diagnostics and local/source attribution.
 /// Preserve goal and event history, restamp nested status schemas, and fail
 /// closed by dropping broker quota values that lack source-bound ownership.
@@ -115,6 +140,7 @@ fn migrate_v4(bytes: &[u8]) -> Result<StoreState, MonitorIssue> {
     if state.schema_version != 4 {
         return Err(unavailable());
     }
+    initialize_legacy_reset_metadata(&mut state);
     state.schema_version = USAGE_MONITOR_SCHEMA_VERSION;
     for monitor in state.monitors.values_mut() {
         for event in &mut monitor.events {
@@ -135,13 +161,52 @@ fn migrate_v4(bytes: &[u8]) -> Result<StoreState, MonitorIssue> {
     Ok(state)
 }
 
+/// V5 had an account-wide reset high-water mark but no source provenance.
+/// Preserve quota and goal history, while recording that nonempty legacy
+/// marks are ambiguous and therefore cannot be lowered by a provider rebind.
+fn migrate_v5(bytes: &[u8]) -> Result<StoreState, MonitorIssue> {
+    let mut state: StoreState = serde_json::from_slice(bytes).map_err(|_| unavailable())?;
+    if state.schema_version != 5 {
+        return Err(unavailable());
+    }
+    initialize_legacy_reset_metadata(&mut state);
+    state.schema_version = USAGE_MONITOR_SCHEMA_VERSION;
+    for monitor in state.monitors.values_mut() {
+        for event in &mut monitor.events {
+            if event.status.schema_version != 5 {
+                return Err(unavailable());
+            }
+            event.status.schema_version = USAGE_MONITOR_SCHEMA_VERSION;
+        }
+    }
+    // V5 already writes source-qualified fingerprints. Only V4 and older use
+    // the legacy unqualified format handled by the pre-fingerprint validator.
+    super::validate_store_state(&state)?;
+    Ok(state)
+}
+
+fn initialize_legacy_reset_metadata(state: &mut StoreState) {
+    let legacy_reset_cutoff_epoch = state.last_now_epoch;
+    for account in state.accounts.values_mut() {
+        account.statusline_reset_watermarks =
+            account.latest_reset_epochs.map(|reset| match reset {
+                Some(_) => StatuslineResetWatermark::Unknown,
+                None => StatuslineResetWatermark::KnownNone,
+            });
+        account.legacy_reset_admission_after_epochs = account
+            .latest_reset_epochs
+            .map(|reset| reset.map(|_| legacy_reset_cutoff_epoch));
+    }
+}
+
 /// Upgrade pre-V4 snapshots that already use the current durable state shape.
-/// New fields are serde-defaulted. V3 migration preserves known estimates,
-/// baselines, and counters while latching uncertainty for rolled strict goals.
-/// Event status values carry the monitor schema version too, so restamp those
-/// envelopes after upgrading the enclosing store.
+/// Derive only fail-closed reset metadata from the legacy global mark. V3
+/// migration preserves known estimates, baselines, and counters while latching
+/// uncertainty for rolled strict goals. Event statuses are restamped after the
+/// enclosing store version has been upgraded.
 fn migrate_v2_or_v3(bytes: &[u8], version: u16) -> Result<StoreState, MonitorIssue> {
     let mut state: StoreState = serde_json::from_slice(bytes).map_err(|_| unavailable())?;
+    initialize_legacy_reset_metadata(&mut state);
     state.schema_version = USAGE_MONITOR_SCHEMA_VERSION;
     for monitor in state.monitors.values_mut() {
         for event in &mut monitor.events {

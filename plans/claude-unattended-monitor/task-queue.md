@@ -1085,15 +1085,26 @@ preserves an Unknown high-water mark/cutoff and recomputes only when source
 provenance is known. New regression cases cover v5 migration, downgrade-field
 rejection, rebind clear behavior, validation, and session pruning. The
 source-aware projection repair is still under review; the independent review
-found the former proof could be lost by TTL pruning. The latest coordinated
-MBX library attempt failed during test compilation before tests ran; indexed
-`BTreeMap` fixture writes have since been changed to `get_mut`, with a rerun
-pending. The expanded five-scenario CLI/provider flow has run 3/5 successfully;
-two failures remain under diagnosis (migration/service readiness and main
-completion). The format check and protocol suite (135 tests) passed. No full
-library-test or strict-Clippy result exists for this schema-6 tree. Do not
-install or treat the patch as ready until all source owners freeze, the
-post-prune path is proven, and the shared MBX gates pass.
+found the former proof could be lost by TTL pruning. The expanded five-scenario
+CLI/provider flow previously passed 3/5; the v5 restart failure is now localized
+to migration validation. Schema 5 at source commit `f5163e98` already persisted
+source-qualified quota fingerprint keys and validated them with the current
+fingerprint validator. The new `migrate_v5` path incorrectly called the older
+pre-fingerprint validator, which accepts only the unqualified V4 `used:` and
+`reset:` keys; this caused `MonitorStore::open` to reject the v5 snapshot and
+left it unchanged while the broker reported `broker_unavailable`. The working
+fix keeps V4 normalization unchanged and validates v5 fingerprints with the
+current validator; a v5 migration unit fixture now carries a namespaced quota
+fingerprint. These changes have not yet passed the coordinated MBX rerun. The
+whole-library run before the ID correction reported 752/759 tests passing.
+A later run reported 756/759; its three failures were sticky reset-barrier
+readiness expectations, and those assertions have since been corrected to
+check retained field freshness while the barrier remains active. The focused
+five-scenario CLI/provider flow now passes 5/5 after the v5 fix. Final MBX
+format, full-library, offline CLI, strict-Clippy, and independent-review gates
+are still pending. The format check and protocol suite (135 tests) passed. Do
+not install or treat this patch as ready until the final rerun, source review,
+and shared MBX gates pass.
 
 Earlier checks are preliminary only. A targeted provider-diagnostics run
 reported 8 passed and 739 filtered, but it used direct Cargo and raw
@@ -1106,7 +1117,8 @@ After the durable cutoff repair and tests are complete, freeze all changed
 Rust files and rerun the current tree through MBX 1.22.0 / Rust 1.97.1:
 
 - [ ] Scoped formatting and diff checks for the changed files.
-- [ ] Full `jackin-usage` library suite (expected current count: 747).
+- [ ] Full `jackin-usage` library suite (latest observed count: 759; rerun
+  required after the migration-validator and fixture corrections).
 - [ ] Full CLI/provider flow target (5 scenarios).
 - [ ] Default offline CLI regressions (9 tests).
 - [ ] Strict feature Clippy for both affected packages/all targets.
@@ -1278,3 +1290,39 @@ Remaining real-account acceptance gates:
   from the verified commands and monitor ID. If blocked by an external action,
   record the precise action needed and stop; do not endlessly poll or claim
   automatic reactivation.
+
+## Schema-6 persisted-window validation follow-up
+
+The most recent complete MBX gate report before this validation follow-up was
+759/759 `jackin-usage` library tests, 135/135 protocol tests, 9/9 default
+offline CLI tests, 5/5 CLI-to-provider flow scenarios, and strict feature
+Clippy for both affected packages. Those results predate the nested-window
+validation and migration-corruption cases below; rerun the full current tree
+before treating them as final.
+
+Review found that current-store validation only bounded persisted window input
+sequences. It did not apply the V1-equivalent checks to each session or account
+broker `ObservedWindow`: percentage and reset values, nonzero input sequence,
+local receipt in `[0, last_now_epoch]`, and source evidence no later than
+`last_now_epoch + MAX_FUTURE_SKEW_SECS`. Because V5 migration invokes current
+validation, malformed retained window data could otherwise be accepted while
+the V5 reset watermark/cutoff is initialized. The current patch applies those
+bounds to account sessions, broker windows, and unbound sessions, including
+paired quota observations. The V5 migration fixture accepts evidence exactly at
+the supported future-skew boundary and rejects a session reset receipt beyond
+`last_now_epoch`, evidence beyond the skew limit, and a corrupt broker-window
+receipt. Each rejected migration asserts the original source bytes are
+unchanged.
+
+The earlier V5 startup failure had a separate confirmed cause: V5 stores
+source-qualified fingerprint keys, but migration called the V4-and-earlier
+pre-fingerprint validator, which accepts only unqualified keys. V5 now uses
+strict current-schema validation directly; the existing V5 fingerprint test
+asserts that its qualified key survives migration.
+
+Current status: the validation and rejection tests are edited and diff-check
+clean, but no MBX command has run after these latest edits. The source and
+fixture must remain uncommitted until the driver reruns the current full gate
+set and independent review clears migration preservation and live parity.
+Real-account acceptance remains blocked on both quota windows updating through
+the monitor after the source-aware repair is installed.

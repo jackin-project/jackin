@@ -16,7 +16,7 @@ use jackin_usage::host::{UsageBrokerConfig, UsageDiscoveryScope, ensure_usage_br
 #[test]
 fn broker_service_lifecycle() {
     assert_eq!(USAGE_BROKER_PROTOCOL_VERSION, "v9");
-    assert_eq!(USAGE_MONITOR_SCHEMA_VERSION, 5);
+    assert_eq!(USAGE_MONITOR_SCHEMA_VERSION, 6);
 
     let root = workspace_state_dir();
     let _ignored = fs::remove_dir_all(&root);
