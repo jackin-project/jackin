@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn observation(session: u64, state: AgentState) -> SessionObservation {
+fn observation(session: u64, state: AgentState) -> SessionObservation {
     let now = Instant::now();
     SessionObservation {
         session,
@@ -14,9 +14,10 @@ pub(super) fn observation(session: u64, state: AgentState) -> SessionObservation
     }
 }
 
-pub(super) fn record(msg: ServerMsg) -> SessionEventRecord {
+fn record(msg: ServerMsg) -> SessionEventRecord {
     match msg {
         ServerMsg::SessionEvent { event } => *event,
         other => panic!("expected a session event, got {}", other.kind()),
     }
 }
+

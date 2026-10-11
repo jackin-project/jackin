@@ -232,3 +232,4 @@ fn reconcile_registers_new_and_drops_exited_sessions() {
         "new session must be registered"
     );
 }
+

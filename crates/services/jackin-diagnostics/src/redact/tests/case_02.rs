@@ -124,3 +124,4 @@ fn stream_preserves_benign_text_and_redacts_open_pem_at_eof() {
         vec!["next build output"]
     );
 }
+

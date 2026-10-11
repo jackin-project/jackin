@@ -124,3 +124,4 @@ fn disabling_account_prunes_bindings_at_all_scopes() {
     .unwrap();
     assert_eq!(resolved.name, "Work 2");
 }
+

@@ -274,3 +274,4 @@ async fn resolve_role_single_match_returns_name() {
     let name = resolve_role_to_container(&selector, &docker).await.unwrap();
     assert_eq!(name, "jk-k7p9m2xq-agentsmith");
 }
+

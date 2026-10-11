@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn api_key_account(provider: AiProvider, model: Option<&str>) -> AccountConfig {
+fn api_key_account(provider: AiProvider, model: Option<&str>) -> AccountConfig {
     AccountConfig {
         enabled: true,
         name: "Test".into(),
@@ -15,11 +15,7 @@ pub(super) fn api_key_account(provider: AiProvider, model: Option<&str>) -> Acco
     }
 }
 
-pub(super) fn instance(
-    config_id: &str,
-    agent: Agent,
-    account_id: &str,
-) -> jackin_config::ResolvedInstance {
+fn instance(config_id: &str, agent: Agent, account_id: &str) -> jackin_config::ResolvedInstance {
     jackin_config::ResolvedInstance {
         config_id: config_id.into(),
         agent,
@@ -32,10 +28,7 @@ pub(super) fn instance(
     }
 }
 
-pub(super) fn manifest_with(
-    temp: &tempfile::TempDir,
-    agents: &[&str],
-) -> jackin_manifest::RoleManifest {
+fn manifest_with(temp: &tempfile::TempDir, agents: &[&str]) -> jackin_manifest::RoleManifest {
     let mut role = format!(
         "version = \"v1alpha5\"\ndockerfile = \"Dockerfile\"\nagents = [{}]\n",
         agents
@@ -58,3 +51,4 @@ pub(super) fn manifest_with(
     .unwrap();
     jackin_manifest::load_role_manifest(temp.path()).unwrap()
 }
+

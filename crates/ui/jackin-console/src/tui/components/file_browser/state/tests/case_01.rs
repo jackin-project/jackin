@@ -213,3 +213,4 @@ fn symlink_to_inside_root_still_appears() {
         "symlink whose target stays inside root should still list; got {names:?}",
     );
 }
+

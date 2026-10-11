@@ -11,7 +11,7 @@ async fn load_agent_builds_local_role_base_then_derives_overlay_from_it() {
     // labels so it can be reused across overlay rebuilds.
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
@@ -101,7 +101,7 @@ plugins = []
 async fn load_agent_omits_pull_flag_in_normal_workspace_build() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
@@ -167,7 +167,7 @@ plugins = []
 async fn load_agent_cleans_up_sidecar_when_derived_build_fails() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let mut runner = FakeRunner::for_load_agent([String::new()]);
@@ -327,3 +327,4 @@ async fn load_agent_reuses_valid_local_image_and_skips_build_work() {
         "valid local image must still be inspected for recipe labels"
     );
 }
+

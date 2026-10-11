@@ -32,3 +32,4 @@ fn skips_prompt_when_manifest_is_missing_or_unreadable() {
     // No manifest written — load_role will fetch and validate later.
     assert!(supported_agents_requiring_prompt(&paths, &selector, None).is_none());
 }
+

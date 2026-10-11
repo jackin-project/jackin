@@ -224,3 +224,4 @@ fn manager_list_names_content_width_uses_visual_rows() {
         instance_row_width("instance-123", "role", InstanceStatus::Running, true)
     );
 }
+

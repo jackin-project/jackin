@@ -24,7 +24,7 @@ fn editor_delete_env_var_save_diff_preserves_role_github_token() {
     let mut editor = TestEditor::new_edit("alpha".into(), original.clone());
 
     editor
-        .delete_env_var(&SecretsScopeTag::Role("dev".into()), "TOKEN")
+        .delete_env_var(&super::SecretsScopeTag::Role("dev".into()), "TOKEN")
         .unwrap();
 
     assert_eq!(
@@ -71,8 +71,8 @@ fn editor_secret_text_editability_rejects_op_refs() {
         }),
     );
 
-    assert!(editor.secret_is_text_editable(&SecretsScopeTag::Workspace, "PLAIN"));
-    assert!(!editor.secret_is_text_editable(&SecretsScopeTag::Workspace, "OP_REF"));
+    assert!(editor.secret_is_text_editable(&super::SecretsScopeTag::Workspace, "PLAIN"));
+    assert!(!editor.secret_is_text_editable(&super::SecretsScopeTag::Workspace, "OP_REF"));
 }
 
 #[test]
@@ -119,7 +119,7 @@ fn editor_focused_unmask_key_skips_op_refs() {
     editor.active_field = FieldFocus::Row(0);
     assert_eq!(
         editor.focused_unmask_key(),
-        Some((SecretsScopeTag::Workspace, "A_TOKEN".into()))
+        Some((super::SecretsScopeTag::Workspace, "A_TOKEN".into()))
     );
 
     editor.active_field = FieldFocus::Row(1);
@@ -136,19 +136,22 @@ fn editor_focused_secret_enter_plan_reads_current_row() {
 
     assert_eq!(
         editor.focused_secret_enter_plan(),
-        SecretsEnterPlan::EditValue {
-            scope: SecretsScopeTag::Workspace,
+        super::SecretsEnterPlan::EditValue {
+            scope: super::SecretsScopeTag::Workspace,
             key: "TOKEN".into()
         }
     );
 
     editor.active_field = FieldFocus::Row(1);
-    assert_eq!(editor.focused_secret_enter_plan(), SecretsEnterPlan::Noop);
+    assert_eq!(
+        editor.focused_secret_enter_plan(),
+        super::SecretsEnterPlan::Noop
+    );
 
     editor.active_field = FieldFocus::Row(2);
     assert_eq!(
         editor.focused_secret_enter_plan(),
-        SecretsEnterPlan::OpenScopePicker
+        super::SecretsEnterPlan::OpenScopePicker
     );
 }
 
@@ -199,11 +202,11 @@ fn editor_focused_secret_targets_read_current_row() {
 
     assert_eq!(
         editor.focused_secret_delete_target(),
-        Some((SecretsScopeTag::Workspace, "TOKEN".into()))
+        Some((super::SecretsScopeTag::Workspace, "TOKEN".into()))
     );
     assert_eq!(
         editor.focused_secret_add_target(),
-        Some(SecretsScopeTag::Workspace)
+        Some(super::SecretsScopeTag::Workspace)
     );
 
     editor.active_field = FieldFocus::Row(1);
@@ -386,3 +389,4 @@ fn trparity_editor_focus_owner_survives_modal_commit() {
         ConsoleFocusTarget::Content(EditorFocusTarget::WorkspaceMounts)
     );
 }
+

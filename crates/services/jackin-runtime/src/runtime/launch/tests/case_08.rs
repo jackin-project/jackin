@@ -37,7 +37,7 @@ async fn restore_role_source_override_uses_manifest_source_without_mutating_conf
 async fn load_namespaced_agent_registers_source_and_trusts_on_accept() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     paths.ensure_base_dirs().unwrap();
     std::fs::write(
         &paths.config_file,
@@ -166,7 +166,7 @@ plugins = ["code-review@claude-plugins-official"]
 async fn role_container_never_mounts_host_docker_socket() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     paths.ensure_base_dirs().unwrap();
     std::fs::write(
         &paths.config_file,
@@ -247,7 +247,7 @@ model = "sonnet"
 async fn load_namespaced_agent_aborts_when_trust_declined() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(Some("evil-org"), "backdoor");
     let mut runner = FakeRunner::for_load_agent([String::new(), String::new()]);
@@ -305,7 +305,7 @@ plugins = []
 async fn load_agent_injects_configured_mounts() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let selector = RoleSelector::new(Some("chainargos"), "agent-brown");
     let mut runner =
         FakeRunner::for_load_agent(["false 0 false".to_owned(), "false 0 false".to_owned()]);
@@ -382,3 +382,4 @@ plugins = []
         .unwrap();
     assert!(run_cmd.contains(&format!("{}:/test-data:ro", mount_src.display())));
 }
+

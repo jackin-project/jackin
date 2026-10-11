@@ -370,3 +370,4 @@ fn failed_commit_restores_originals_and_clears_journal() {
     assert_eq!(std::fs::read_to_string(&workspace).unwrap(), "ws-old");
     assert!(!journal.exists(), "journal must be removed after abort");
 }
+

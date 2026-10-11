@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn account(
+fn account(
     provider: &str,
     status: &str,
     source: &str,
@@ -26,6 +26,7 @@ pub(super) fn account(
     }
 }
 
-pub(super) fn short_socket_path(tmp: &TempDir, file_name: &str) -> PathBuf {
+fn short_socket_path(tmp: &TempDir, file_name: &str) -> PathBuf {
     tmp.path().join(file_name)
 }
+

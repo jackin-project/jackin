@@ -2,11 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn record(
-    session: u64,
-    state: AgentState,
-    kind: SessionEventKind,
-) -> SessionEventRecord {
+fn record(session: u64, state: AgentState, kind: SessionEventKind) -> SessionEventRecord {
     SessionEventRecord {
         seq: 0,
         session,
@@ -19,7 +15,7 @@ pub(super) fn record(
     }
 }
 
-pub(super) fn events_from(
+fn events_from(
     records: Vec<Result<SessionEventRecord>>,
 ) -> (SessionEvents, mpsc::Sender<Result<SessionEventRecord>>) {
     let (tx, rx) = mpsc::channel();
@@ -36,3 +32,4 @@ pub(super) fn events_from(
         tx,
     )
 }
+

@@ -262,3 +262,4 @@ async fn s2_relay_dispatch_admits_exactly_abc() {
     }
     assert_eq!(executor.calls.load(Ordering::SeqCst), 3);
 }
+

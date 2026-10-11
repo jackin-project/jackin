@@ -1,7 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-pub(super) fn window_fixture(status: &str, body: serde_json::Value) -> serde_json::Value {
+use super::*;
+fn window_fixture(status: &str, body: serde_json::Value) -> serde_json::Value {
     let mut window = serde_json::Map::new();
     window.insert(
         "status".to_owned(),
@@ -13,7 +14,7 @@ pub(super) fn window_fixture(status: &str, body: serde_json::Value) -> serde_jso
     serde_json::Value::Object(window)
 }
 
-pub(super) fn usage_fixture(
+fn usage_fixture(
     rolling: serde_json::Value,
     weekly: serde_json::Value,
     monthly: serde_json::Value,
@@ -22,3 +23,4 @@ pub(super) fn usage_fixture(
         "usage": {"rolling": rolling, "weekly": weekly, "monthly": monthly}
     })
 }
+

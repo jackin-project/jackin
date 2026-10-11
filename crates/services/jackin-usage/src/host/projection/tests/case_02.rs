@@ -347,3 +347,4 @@ fn parity_exhausted_zero_is_not_unknown() {
         view.tabs[0].status_label
     );
 }
+

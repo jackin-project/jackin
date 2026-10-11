@@ -154,3 +154,4 @@ fn projection_state_v1_is_quarantined_without_catalog_migration() {
             .any(|entry| entry.file_name().to_string_lossy().contains("corrupt"))
     );
 }
+

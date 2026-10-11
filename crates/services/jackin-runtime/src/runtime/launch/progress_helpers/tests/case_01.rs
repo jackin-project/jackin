@@ -197,3 +197,4 @@ fn conformance_wire_representative_launch_exports_complete_private_pipeline() ->
     jackin_diagnostics::shutdown_capsule_tracing();
     Ok(())
 }
+

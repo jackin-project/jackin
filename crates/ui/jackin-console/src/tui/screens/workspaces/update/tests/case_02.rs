@@ -377,3 +377,4 @@ fn workspace_list_mouse_plan_routes_seam_drag_and_row_selection() {
         WorkspaceListMousePlan::Continue
     );
 }
+

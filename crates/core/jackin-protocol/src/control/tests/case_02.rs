@@ -70,3 +70,4 @@ fn state_changed_carries_the_working_transition_the_host_waits_on() {
         }
     ));
 }
+

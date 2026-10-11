@@ -8,7 +8,7 @@ fn load_args_parses_agent_flag() {
     let cli = Cli::try_parse_from(["jackin", "load", "agent-smith", "--agent", "codex"]).unwrap();
     assert!(matches!(
         cli.command,
-        Some(Command::Load(LoadArgs {
+        Some(Command::Load(super::LoadArgs {
             agent: Some(jackin_core::Agent::Codex),
             ..
         }))
@@ -20,7 +20,7 @@ fn load_args_parses_amp_agent_flag() {
     let cli = Cli::try_parse_from(["jackin", "load", "agent-smith", "--agent", "amp"]).unwrap();
     assert!(matches!(
         cli.command,
-        Some(Command::Load(LoadArgs {
+        Some(Command::Load(super::LoadArgs {
             agent: Some(jackin_core::Agent::Amp),
             ..
         }))
@@ -38,7 +38,7 @@ fn load_args_agent_optional() {
     let cli = Cli::try_parse_from(["jackin", "load", "agent-smith"]).unwrap();
     assert!(matches!(
         cli.command,
-        Some(Command::Load(LoadArgs {
+        Some(Command::Load(super::LoadArgs {
             agent: None,
             model: None,
             effort: None,
@@ -63,7 +63,7 @@ fn load_args_parses_task_scoped_model_and_effort() {
     .unwrap();
     assert!(matches!(
         cli.command,
-        Some(Command::Load(LoadArgs {
+        Some(Command::Load(super::LoadArgs {
             model: Some(ref model),
             effort: Some(jackin_core::ReasoningEffort::Max),
             ..
@@ -95,7 +95,7 @@ fn load_args_parses_model_and_effort_overrides() {
     .unwrap();
     assert!(matches!(
         cli.command,
-        Some(Command::Load(LoadArgs {
+        Some(Command::Load(super::LoadArgs {
             model: Some(ref model),
             effort: Some(jackin_core::ReasoningEffort::High),
             ..
@@ -125,7 +125,7 @@ fn load_args_parses_branch_flag() {
     .unwrap();
     assert!(matches!(
         cli.command,
-        Some(Command::Load(LoadArgs {
+        Some(Command::Load(super::LoadArgs {
             role_branch: Some(ref b),
             ..
         })) if b == "feat/my-pr"
@@ -137,7 +137,7 @@ fn load_args_branch_optional() {
     let cli = Cli::try_parse_from(["jackin", "load", "the-architect"]).unwrap();
     assert!(matches!(
         cli.command,
-        Some(Command::Load(LoadArgs {
+        Some(Command::Load(super::LoadArgs {
             role_branch: None,
             ..
         }))
@@ -152,7 +152,7 @@ fn parses_load_command() {
     // `tests/cli_debug_env.rs` covers the env-driven behavior.
     assert!(matches!(
         cli.command,
-        Some(Command::Load(LoadArgs {
+        Some(Command::Load(super::LoadArgs {
             selector: Some(ref s),
             target: None,
             ..
@@ -165,7 +165,7 @@ fn parses_load_without_selector() {
     let cli = Cli::try_parse_from(["jackin", "load"]).unwrap();
     assert!(matches!(
         cli.command,
-        Some(Command::Load(LoadArgs {
+        Some(Command::Load(super::LoadArgs {
             selector: None,
             target: None,
             ..
@@ -178,7 +178,7 @@ fn parses_load_rebuild_without_selector() {
     let cli = Cli::try_parse_from(["jackin", "load", "--rebuild"]).unwrap();
     assert!(matches!(
         cli.command,
-        Some(Command::Load(LoadArgs {
+        Some(Command::Load(super::LoadArgs {
             selector: None,
             rebuild: true,
             ..
@@ -191,7 +191,7 @@ fn parses_load_with_target_path() {
     let cli = Cli::try_parse_from(["jackin", "load", "agent-smith", "~/Projects/my-app"]).unwrap();
     assert!(matches!(
         cli.command,
-        Some(Command::Load(LoadArgs {
+        Some(Command::Load(super::LoadArgs {
             target: Some(ref t),
             ..
         })) if t == "~/Projects/my-app"
@@ -212,7 +212,7 @@ fn parses_load_with_target_and_mount() {
 
     assert!(matches!(
         cli.command,
-        Some(Command::Load(LoadArgs {
+        Some(Command::Load(super::LoadArgs {
             target: Some(ref t),
             ref mounts,
             ..
@@ -235,7 +235,7 @@ fn parses_load_with_mount_only() {
 
     assert!(matches!(
         cli.command,
-        Some(Command::Load(LoadArgs {
+        Some(Command::Load(super::LoadArgs {
             target: None,
             ref mounts,
             ..
@@ -248,7 +248,7 @@ fn parses_console_command() {
     let cli = Cli::try_parse_from(["jackin", "console"]).unwrap();
     assert!(matches!(
         cli.command,
-        Some(Command::Console(ConsoleArgs { .. }))
+        Some(Command::Console(super::ConsoleArgs { .. }))
     ));
 }
 
@@ -257,7 +257,7 @@ fn parses_console_with_debug() {
     let cli = Cli::try_parse_from(["jackin", "console", "--debug"]).unwrap();
     assert!(matches!(
         cli.command,
-        Some(Command::Console(ConsoleArgs { .. }))
+        Some(Command::Console(super::ConsoleArgs { .. }))
     ));
     // --debug is global on Cli, not on ConsoleArgs.
     assert!(cli.debug);
@@ -372,7 +372,7 @@ fn parses_hardline_without_selector() {
     let cli = Cli::try_parse_from(["jackin", "hardline"]).unwrap();
     assert!(matches!(
         cli.command,
-        Some(Command::Hardline(HardlineArgs {
+        Some(Command::Hardline(super::HardlineArgs {
             selector: None,
             inspect: false,
             new: false,
@@ -387,7 +387,7 @@ fn parses_hardline_with_selector() {
     let cli = Cli::try_parse_from(["jackin", "hardline", "agent-smith"]).unwrap();
     assert!(matches!(
         cli.command,
-        Some(Command::Hardline(HardlineArgs {
+        Some(Command::Hardline(super::HardlineArgs {
             selector: Some(ref s),
             inspect: false,
             new: false,
@@ -396,3 +396,4 @@ fn parses_hardline_with_selector() {
         })) if s == "agent-smith"
     ));
 }
+

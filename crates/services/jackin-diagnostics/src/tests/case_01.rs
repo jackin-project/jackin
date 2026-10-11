@@ -34,11 +34,7 @@ fn conformance_no_local_artifacts() -> anyhow::Result<()> {
     let testbed = runtime.block_on(async { jackin_otlp_testbed::Testbed::start() })?;
     for identity in ["host", "daemon", "capsule"] {
         let output = std::process::Command::new(std::env::current_exe()?)
-            .args([
-                "--exact",
-                "tests::case_01::artifact_lifecycle_child",
-                "--nocapture",
-            ])
+            .args(["--exact", "tests::case_01::artifact_lifecycle_child", "--nocapture"])
             .env_clear()
             .env("HOME", &home)
             .env("JACKIN_HOME_DIR", &data)
@@ -397,3 +393,4 @@ fn conformance_has_no_screen_lifetime_spans() {
         )
     }));
 }
+

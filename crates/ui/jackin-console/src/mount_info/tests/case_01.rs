@@ -384,3 +384,4 @@ fn remote_to_web_returns_none_for_self_hosted() {
     assert_eq!(remote_to_web("git@git.example.com:owner/repo.git"), None);
     assert_eq!(remote_to_web("ssh://git@forge.internal/owner/repo"), None);
 }
+

@@ -395,3 +395,4 @@ fn set_secret_value_creates_and_expands_role_scope() {
     assert_eq!(roles["alpha"].env.get("TOKEN"), Some(&"secret"));
     assert!(expanded.contains("alpha"));
 }
+

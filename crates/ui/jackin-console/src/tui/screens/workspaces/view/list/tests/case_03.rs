@@ -333,7 +333,7 @@ fn preview_omits_environments_block_when_workspace_has_no_env_vars() {
     let mut term = Terminal::new(backend).unwrap();
     let state = ManagerState::from_config(&cfg, std::path::Path::new("/tmp"));
     term.draw(|f| {
-        render_details_pane(f, Rect::new(0, 0, 60, 24), &summary, &cfg, &state);
+        super::render_details_pane(f, Rect::new(0, 0, 60, 24), &summary, &cfg, &state);
     })
     .unwrap();
 
@@ -355,3 +355,4 @@ fn preview_omits_environments_block_when_workspace_has_no_env_vars() {
         "the placeholder line must NOT appear (block is omitted entirely); got {joined}"
     );
 }
+

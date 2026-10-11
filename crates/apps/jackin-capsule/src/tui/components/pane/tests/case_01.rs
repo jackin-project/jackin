@@ -211,3 +211,4 @@ fn pane_buffer_property_rejects_skip_cells() {
 
     debug_assert_pane_area_well_formed(area, &buf);
 }
+

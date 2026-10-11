@@ -369,3 +369,4 @@ fn historical_symlink_source_cannot_redirect_recovery() {
     );
     assert_eq!(std::fs::read(&canary).unwrap(), original);
 }
+

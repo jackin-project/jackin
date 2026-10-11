@@ -291,3 +291,4 @@ fn detail_presentation_rides_the_snapshot_dto() {
     assert_eq!(detail.len(), 1);
     assert_eq!(detail[0].display_label, "upstream 503");
 }
+

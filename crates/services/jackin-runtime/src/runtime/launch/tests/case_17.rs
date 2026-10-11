@@ -207,7 +207,7 @@ async fn load_agent_recreates_missing_current_instance_from_valid_image_without_
 async fn load_agent_passes_pull_flag_when_rebuild() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
@@ -270,7 +270,7 @@ async fn load_agent_rebuild_does_not_attach_running_current_instance() {
     // launch attaches and records no `docker build`, failing this test.
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
@@ -348,3 +348,4 @@ plugins = []
          (must not take the attach/start fast path); recorded:\n{recorded}"
     );
 }
+

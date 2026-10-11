@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn account_snapshot_view(
+fn account_snapshot_view(
     provider_label: &str,
     account_label: &str,
     plan_label: Option<&str>,
@@ -16,7 +16,7 @@ pub(super) fn account_snapshot_view(
     view
 }
 
-pub(super) fn codex_cached_usage_view() -> FocusedUsageView {
+fn codex_cached_usage_view() -> FocusedUsageView {
     usage_view(UsageViewInput {
         agent: "codex",
         provider: Some("OpenAI"),
@@ -47,7 +47,7 @@ pub(super) fn codex_cached_usage_view() -> FocusedUsageView {
     })
 }
 
-pub(super) fn codex_minimal_limits_value() -> serde_json::Value {
+fn codex_minimal_limits_value() -> serde_json::Value {
     serde_json::json!({
         "rateLimits": {
             "primary": {
@@ -59,23 +59,23 @@ pub(super) fn codex_minimal_limits_value() -> serde_json::Value {
     })
 }
 
-pub(super) fn test_jwt(payload: serde_json::Value) -> String {
+fn test_jwt(payload: serde_json::Value) -> String {
     let header = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode("{}");
     let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(payload.to_string());
     format!("{header}.{payload}.signature")
 }
 
-pub(super) const AMP_DAILY_FIXTURE: &str = "Signed in as user@example.com (example)\n\
+const AMP_DAILY_FIXTURE: &str = "Signed in as user@example.com (example)\n\
      Amp Free: 61% remaining today (resets daily)\n\
      Individual credits: $9.86 remaining\n\
      Workspace example: $5.33 remaining";
 
-pub(super) const AMP_TWO_WORKSPACE_FIXTURE: &str = "Amp Free: 61% remaining today (resets daily)\n\
+const AMP_TWO_WORKSPACE_FIXTURE: &str = "Amp Free: 61% remaining today (resets daily)\n\
      Individual credits: $9.86 remaining\n\
      Workspace alpha: $5.33 remaining\n\
      Workspace beta: $2.25 remaining";
 
-pub(super) fn keychain_test_scope(is_default: bool) -> jackin_core::ClaudeKeychainScope {
+fn keychain_test_scope(is_default: bool) -> jackin_core::ClaudeKeychainScope {
     jackin_core::ClaudeKeychainScope {
         normalized_config_dir: PathBuf::from(if is_default {
             "/home/u/.claude"
@@ -91,9 +91,9 @@ pub(super) fn keychain_test_scope(is_default: bool) -> jackin_core::ClaudeKeycha
     }
 }
 
-pub(super) const KEYCHAIN_PAYLOAD: &str = r#"{"claudeAiOauth":{"accessToken":"kc-token","subscriptionType":"max","refreshToken":"rt-1"}}"#;
+const KEYCHAIN_PAYLOAD: &str = r#"{"claudeAiOauth":{"accessToken":"kc-token","subscriptionType":"max","refreshToken":"rt-1"}}"#;
 
-pub(super) fn empty_file_probe() -> ClaudeFileProbe {
+fn empty_file_probe() -> ClaudeFileProbe {
     ClaudeFileProbe {
         credential: None,
         origin: None,
@@ -102,7 +102,7 @@ pub(super) fn empty_file_probe() -> ClaudeFileProbe {
     }
 }
 
-pub(super) fn presentation_bucket(
+fn presentation_bucket(
     label: &str,
     remaining: Option<u8>,
     slot: Option<StatusSlot>,
@@ -124,7 +124,7 @@ pub(super) fn presentation_bucket(
     }
 }
 
-pub(super) fn detail_view(
+fn detail_view(
     buckets: Vec<QuotaBucketView>,
     last_error: Option<&str>,
     status: UsageSnapshotStatus,
@@ -147,7 +147,8 @@ pub(super) fn detail_view(
     }
 }
 
-pub(super) const AMP_TIER_FIXTURE: &str = "Signed in as user@example.com (example)\n\
+const AMP_TIER_FIXTURE: &str = "Signed in as user@example.com (example)\n\
      Amp Free: 61% remaining today (resets daily)\n\
      Amp Pro Tier: agent usage $80.00 of $100.00 remaining, orb usage 7.5h of 10h a1.small orb hours remaining, period 2026-09-01 to 2026-10-01, resets upon renewal in 12 days\n\
      Individual credits: $9.86 remaining";
+

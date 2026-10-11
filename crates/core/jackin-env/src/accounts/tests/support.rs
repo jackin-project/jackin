@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) struct NoSecrets;
+struct NoSecrets;
 
 impl OpRunner for NoSecrets {
     fn read(&self, _: &str) -> anyhow::Result<String> {
@@ -10,7 +10,7 @@ impl OpRunner for NoSecrets {
     }
 }
 
-pub(super) fn account_with_model(value: EnvValue, model: Option<&str>) -> AccountConfig {
+fn account_with_model(value: EnvValue, model: Option<&str>) -> AccountConfig {
     AccountConfig {
         enabled: true,
         name: "Test".into(),
@@ -23,11 +23,11 @@ pub(super) fn account_with_model(value: EnvValue, model: Option<&str>) -> Accoun
     }
 }
 
-pub(super) fn account(value: &str) -> AccountConfig {
+fn account(value: &str) -> AccountConfig {
     account_with_model(EnvValue::from(value), None)
 }
 
-pub(super) fn configuration(agent: Agent, account: &str) -> AgentConfiguration {
+fn configuration(agent: Agent, account: &str) -> AgentConfiguration {
     AgentConfiguration {
         agent,
         account: account.into(),
@@ -38,7 +38,7 @@ pub(super) fn configuration(agent: Agent, account: &str) -> AgentConfiguration {
     }
 }
 
-pub(super) fn configuration_with_endpoint(
+fn configuration_with_endpoint(
     agent: Agent,
     account: &str,
     model: Option<&str>,
@@ -54,7 +54,8 @@ pub(super) fn configuration_with_endpoint(
     }
 }
 
-pub(super) fn launch(cfg: &AppConfig, ids: &[&str]) -> Vec<jackin_config::ResolvedInstance> {
+fn launch(cfg: &AppConfig, ids: &[&str]) -> Vec<jackin_config::ResolvedInstance> {
     let ids: Vec<String> = ids.iter().map(ToString::to_string).collect();
     jackin_config::resolve_launch(cfg, None, "role", Some(&ids), None).unwrap()
 }
+

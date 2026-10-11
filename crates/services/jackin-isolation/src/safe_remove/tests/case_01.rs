@@ -379,3 +379,4 @@ fn admitted_absence_refuses_replaced_root() {
         "keep"
     );
 }
+

@@ -395,3 +395,4 @@ fn trust_tab_space_toggles_trusted_state() {
     };
     assert!(settings.trust.pending[0].trusted);
 }
+

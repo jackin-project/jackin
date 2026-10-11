@@ -303,3 +303,4 @@ fn focused_usage_view_sorts_provider_buckets_canonically() {
         vec!["5-hour", "Tokens", "MCP"]
     );
 }
+

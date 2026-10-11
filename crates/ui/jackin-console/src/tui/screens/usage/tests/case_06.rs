@@ -193,7 +193,7 @@ fn filtered_accounts_cannot_hide_provider_publication_diagnostics() {
     projection.issues.clear();
     projection.providers[0].issues[0].message = "independent hidden-provider diagnostic".to_owned();
     let mut state = UsageScreenState::from_projection(&projection);
-    state.filter = UsageFilter::Stale;
+    state.filter = super::UsageFilter::Stale;
     assert!(state.visible_order().is_empty());
     let rendered = render_detail_text(state);
     assert!(
@@ -215,3 +215,4 @@ fn manual_refresh_join_after_error_keeps_periodic_request_non_forced() {
         assert_manual_refresh_join_preserves_periodic_cadence(true, claim_before_completion);
     }
 }
+

@@ -332,7 +332,7 @@ fn manual_refresh_key_marks_refresh_due() {
         kind: KeyEventKind::Press,
         state: KeyEventState::empty(),
     };
-    handle_key(&mut manager, key);
+    super::handle_key(&mut manager, key);
     let screen = manager.usage.screen.as_ref().unwrap();
     assert!(screen.refresh_due);
     assert!(screen.force_refresh_pending);
@@ -366,3 +366,4 @@ fn freshness_age_label_covers_phases_and_ages() {
     account.freshness_phase = UsageFreshnessPhaseV1::Stale;
     assert_eq!(freshness_age_label(now, &account), "stale · updated 5m ago");
 }
+

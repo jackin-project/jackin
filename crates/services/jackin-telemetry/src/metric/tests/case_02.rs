@@ -114,3 +114,4 @@ fn agent_state_metrics_require_the_governed_dimensions() {
         Err(Rejection::InvalidValue)
     );
 }
+

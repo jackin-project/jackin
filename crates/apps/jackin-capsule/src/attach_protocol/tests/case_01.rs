@@ -42,7 +42,7 @@ async fn control_socket_exports_client_parent_server_and_completes_after_reply_w
         .acquire_owned()
         .await
         .expect("control permit");
-    let handshake = tokio::spawn(perform_control_handshake(
+    let handshake = tokio::spawn(super::perform_control_handshake(
         server,
         first_tag,
         permit,
@@ -55,11 +55,11 @@ async fn control_socket_exports_client_parent_server_and_completes_after_reply_w
     let server_operation =
         crate::daemon::control_server_operation(&dispatched.ctx, &dispatched.msg)
             .expect("valid correlation");
-    let ControlReply::Once(reply_tx) = dispatched.reply else {
+    let super::ControlReply::Once(reply_tx) = dispatched.reply else {
         panic!("a one-shot control request must be answered on a oneshot channel");
     };
     reply_tx
-        .send(ControlResponse {
+        .send(super::ControlResponse {
             msg: jackin_protocol::control::ServerMsg::SessionList {
                 sessions: Vec::new(),
             },
@@ -123,7 +123,7 @@ async fn control_socket_marks_server_failure_when_peer_closes_before_reply() {
         .acquire_owned()
         .await
         .expect("control permit");
-    let handshake = tokio::spawn(perform_control_handshake(
+    let handshake = tokio::spawn(super::perform_control_handshake(
         server,
         first_tag,
         permit,
@@ -136,11 +136,11 @@ async fn control_socket_marks_server_failure_when_peer_closes_before_reply() {
         crate::daemon::control_server_operation(&dispatched.ctx, &dispatched.msg)
             .expect("valid correlation");
     drop(client);
-    let ControlReply::Once(reply_tx) = dispatched.reply else {
+    let super::ControlReply::Once(reply_tx) = dispatched.reply else {
         panic!("a one-shot control request must be answered on a oneshot channel");
     };
     reply_tx
-        .send(ControlResponse {
+        .send(super::ControlResponse {
             msg: jackin_protocol::control::ServerMsg::SessionList {
                 sessions: Vec::new(),
             },
@@ -173,7 +173,7 @@ fn control_server_operation_completes_from_socket_write_result() {
         ],
     )
     .ok();
-    ControlResponse {
+    super::ControlResponse {
         msg: jackin_protocol::control::ServerMsg::Ack,
         operation,
         outcome: jackin_telemetry::schema::enums::OutcomeValue::Success,
@@ -326,3 +326,4 @@ fn boot_spawns_single_tab_for_solo_and_shell_launches() {
         vec![SpawnRequest::Shell]
     );
 }
+

@@ -124,7 +124,7 @@ fn model_projection_matches_launch_for_mixed_providers_and_trimmed_override() {
 fn model_projection_matches_single_account_selection_and_trims_override() {
     let (mut config, workspace) = mixed_model_projection_config();
     config.default_launch = Some(vec!["codex-main".to_owned(), "opencode-openai".to_owned()]);
-    let scoped = programmatic::with_account_selection(
+    let scoped = super::super::programmatic::with_account_selection(
         &config,
         Agent::Opencode,
         Some(&workspace),
@@ -162,3 +162,4 @@ fn model_projection_matches_single_account_selection_and_trims_override() {
     assert_eq!(projection.model.as_deref(), Some("openai/gpt-6-luna"));
     assert_eq!(projection.instances["opencode-openai"], "openai/gpt-6-luna");
 }
+

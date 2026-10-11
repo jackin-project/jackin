@@ -32,8 +32,9 @@ use crate::tui::model::{CursorVisibilityState, cursor_visible_for_state};
 
 use termpane::Cell;
 
+
 mod support_01;
-pub(crate) use support_01::*;
+use support_01::*;
 mod support_02;
 use support_02::*;
 mod support_03;

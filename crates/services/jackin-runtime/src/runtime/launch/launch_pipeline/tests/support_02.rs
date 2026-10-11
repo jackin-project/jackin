@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn breadcrumb_config() -> (AppConfig, WorkspaceName) {
+fn breadcrumb_config() -> (AppConfig, WorkspaceName) {
     use jackin_config::{AccountConfig, AccountCredential, AgentConfiguration, AiProvider};
     let mut config = AppConfig::default();
     for (id, display, provider) in [
@@ -53,3 +53,4 @@ pub(super) fn breadcrumb_config() -> (AppConfig, WorkspaceName) {
     );
     (config, ws)
 }
+

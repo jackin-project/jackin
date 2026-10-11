@@ -376,3 +376,4 @@ fn golden_walk_3_same_path_full_rewind_cancels() {
         CreatePreludeCompletionStatus::Cancelled
     );
 }
+

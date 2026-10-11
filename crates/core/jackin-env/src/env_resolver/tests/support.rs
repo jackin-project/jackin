@@ -2,14 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) struct MockPrompter {
+struct MockPrompter {
     responses: std::cell::RefCell<Vec<PromptResult>>,
-    pub(super) captured_titles: std::cell::RefCell<Vec<String>>,
-    pub(super) captured_defaults: std::cell::RefCell<Vec<Option<String>>>,
+    captured_titles: std::cell::RefCell<Vec<String>>,
+    captured_defaults: std::cell::RefCell<Vec<Option<String>>>,
 }
 
 impl MockPrompter {
-    pub(super) fn new(responses: Vec<PromptResult>) -> Self {
+    fn new(responses: Vec<PromptResult>) -> Self {
         Self {
             responses: std::cell::RefCell::new(responses),
             captured_titles: std::cell::RefCell::new(vec![]),
@@ -47,7 +47,7 @@ impl EnvPrompter for MockPrompter {
     }
 }
 
-pub(super) struct ErrorPrompter;
+struct ErrorPrompter;
 
 impl EnvPrompter for ErrorPrompter {
     fn prompt_text(
@@ -70,7 +70,7 @@ impl EnvPrompter for ErrorPrompter {
     }
 }
 
-pub(super) fn static_var(default: &str) -> EnvVarDecl {
+fn static_var(default: &str) -> EnvVarDecl {
     EnvVarDecl {
         default_value: Some(default.to_owned()),
         interactive: false,
@@ -81,7 +81,7 @@ pub(super) fn static_var(default: &str) -> EnvVarDecl {
     }
 }
 
-pub(super) fn interactive_text(prompt: &str) -> EnvVarDecl {
+fn interactive_text(prompt: &str) -> EnvVarDecl {
     EnvVarDecl {
         default_value: None,
         interactive: true,
@@ -92,7 +92,7 @@ pub(super) fn interactive_text(prompt: &str) -> EnvVarDecl {
     }
 }
 
-pub(super) fn interactive_select(prompt: &str, options: Vec<&str>) -> EnvVarDecl {
+fn interactive_select(prompt: &str, options: Vec<&str>) -> EnvVarDecl {
     EnvVarDecl {
         default_value: None,
         interactive: true,
@@ -102,3 +102,4 @@ pub(super) fn interactive_select(prompt: &str, options: Vec<&str>) -> EnvVarDecl
         depends_on: vec![],
     }
 }
+

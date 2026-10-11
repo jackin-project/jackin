@@ -381,3 +381,4 @@ fn rejects_symlink_at_claude_json() {
     // Decoy file must be untouched
     assert_eq!(std::fs::read_to_string(&decoy).unwrap(), "original");
 }
+

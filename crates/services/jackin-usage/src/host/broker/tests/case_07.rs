@@ -259,3 +259,4 @@ fn sequential_reconcile_after_fresh_read_still_accepts_last_writer() {
         .unwrap();
     assert_eq!(overwritten.discovery_revision, "catalog-stale");
 }
+

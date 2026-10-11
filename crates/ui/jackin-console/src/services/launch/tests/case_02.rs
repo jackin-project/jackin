@@ -72,3 +72,4 @@ fn unconfigured_picker_selection_preserves_account() {
         jackin_core::LaunchSelection::Account("shared-account".into())
     );
 }
+

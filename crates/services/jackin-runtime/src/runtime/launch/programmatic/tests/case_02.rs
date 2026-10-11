@@ -163,3 +163,4 @@ fn selected_launch_keeps_only_authorized_global_siblings() {
     assert!(config.workspaces["work"].roles.is_empty());
     assert_eq!(config.default_launch.as_ref().unwrap().len(), 4);
 }
+

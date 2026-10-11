@@ -158,3 +158,4 @@ fn format_key_glyph_ctrl_e() {
     // Acceptance criterion from roadmap item C
     assert_eq!(format_key_glyph(0x05), "Ctrl-E");
 }
+

@@ -395,3 +395,4 @@ fn supported_modes_kimi_excludes_oauth_token() {
     assert!(!modes.contains(&AuthForwardMode::OAuthToken));
     assert!(modes.contains(&AuthForwardMode::Ignore));
 }
+

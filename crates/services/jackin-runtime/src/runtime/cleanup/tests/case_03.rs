@@ -380,3 +380,4 @@ async fn gc_does_not_panic_when_network_ls_fails() {
 
     gc_orphaned_resources(&gc_test_paths(), &docker).await; // must not panic
 }
+

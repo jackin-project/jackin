@@ -212,7 +212,7 @@ fn explicit_pick_without_ambient_list_reports_single_account() {
     // Case F shape: `--account c-work` with no ambient list synthesizes an
     // ephemeral one-entry default; the plan still names the pick.
     let (config, workspace) = matrix_config();
-    let scoped = programmatic::with_account_selection(
+    let scoped = super::super::programmatic::with_account_selection(
         &config,
         Agent::Claude,
         Some(&workspace),
@@ -231,7 +231,7 @@ fn explicit_pick_without_ambient_list_reports_single_account() {
 fn explicit_pick_with_ambient_list_reports_single_account() {
     let (mut config, workspace) = matrix_config();
     set_role_list(&mut config, &["cfg-r", "cfg-r2"]);
-    let scoped = programmatic::with_account_selection(
+    let scoped = super::super::programmatic::with_account_selection(
         &config,
         Agent::Claude,
         Some(&workspace),
@@ -258,7 +258,7 @@ fn unadmitted_explicit_pick_errors_before_identity() {
     // Case H4: the pick never reaches identity resolution.
     let (mut config, workspace) = matrix_config();
     set_role_list(&mut config, &["cfg-r"]);
-    let error = programmatic::with_account_selection(
+    let error = super::super::programmatic::with_account_selection(
         &config,
         Agent::Claude,
         Some(&workspace),
@@ -383,3 +383,4 @@ fn plan_matches_admission_across_binding_list_combinations() {
         }
     }
 }
+

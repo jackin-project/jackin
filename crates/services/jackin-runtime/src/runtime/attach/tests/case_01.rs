@@ -356,3 +356,4 @@ async fn reconnect_rejects_rotation_after_capsule_exec() {
         runner.recorded
     );
 }
+

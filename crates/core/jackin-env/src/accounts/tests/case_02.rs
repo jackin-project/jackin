@@ -290,3 +290,4 @@ fn account_provider_cannot_authenticate_an_incompatible_agent() {
         "{error:#}"
     );
 }
+

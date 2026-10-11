@@ -262,17 +262,20 @@ fn editor_secret_value_reads_workspace_and_role_env() {
         );
 
     assert_eq!(
-        editor.secret_value(&SecretsScopeTag::Workspace, "TOKEN"),
+        editor.secret_value(&super::SecretsScopeTag::Workspace, "TOKEN"),
         Some(&jackin_config::EnvValue::Plain("one".into()))
     );
     assert!(
         editor
-            .secret_value(&SecretsScopeTag::Role("dev".into()), "ROLE_TOKEN")
+            .secret_value(&super::SecretsScopeTag::Role("dev".into()), "ROLE_TOKEN")
             .is_some_and(|value| matches!(value, jackin_config::EnvValue::OpRef(_)))
     );
     assert!(
         editor
-            .secret_value(&SecretsScopeTag::Role("missing".into()), "ROLE_TOKEN")
+            .secret_value(
+                &super::SecretsScopeTag::Role("missing".into()),
+                "ROLE_TOKEN"
+            )
             .is_none()
     );
 }
@@ -286,7 +289,7 @@ fn editor_delete_env_var_removes_workspace_key() {
         .insert("TOKEN".into(), jackin_config::EnvValue::Plain("one".into()));
 
     editor
-        .delete_env_var(&SecretsScopeTag::Workspace, "TOKEN")
+        .delete_env_var(&super::SecretsScopeTag::Workspace, "TOKEN")
         .unwrap();
 
     assert!(!editor.pending.env.contains_key("TOKEN"));
@@ -304,7 +307,7 @@ fn editor_delete_env_var_removes_empty_role_override() {
         .insert("TOKEN".into(), jackin_config::EnvValue::Plain("one".into()));
 
     editor
-        .delete_env_var(&SecretsScopeTag::Role("dev".into()), "TOKEN")
+        .delete_env_var(&super::SecretsScopeTag::Role("dev".into()), "TOKEN")
         .unwrap();
 
     assert!(!editor.pending.roles.contains_key("dev"));
@@ -320,7 +323,7 @@ fn editor_delete_env_var_preserves_explicit_empty_github_override() {
     editor.pending.roles.insert("dev".into(), role);
 
     editor
-        .delete_env_var(&SecretsScopeTag::Role("dev".into()), "TOKEN")
+        .delete_env_var(&super::SecretsScopeTag::Role("dev".into()), "TOKEN")
         .unwrap();
 
     assert_eq!(
@@ -345,7 +348,7 @@ fn editor_delete_env_var_preserves_configured_github_override() {
     editor.pending.roles.insert("dev".into(), role);
 
     editor
-        .delete_env_var(&SecretsScopeTag::Role("dev".into()), "TOKEN")
+        .delete_env_var(&super::SecretsScopeTag::Role("dev".into()), "TOKEN")
         .unwrap();
 
     assert_eq!(
@@ -370,7 +373,7 @@ fn editor_delete_env_var_preserves_explicit_empty_default_launch() {
     editor.pending.roles.insert("dev".into(), role);
 
     editor
-        .delete_env_var(&SecretsScopeTag::Role("dev".into()), "TOKEN")
+        .delete_env_var(&super::SecretsScopeTag::Role("dev".into()), "TOKEN")
         .unwrap();
 
     assert_eq!(editor.pending.roles["dev"].default_launch, Some(Vec::new()));
@@ -386,7 +389,7 @@ fn editor_delete_env_var_preserves_configured_default_launch() {
     editor.pending.roles.insert("dev".into(), role);
 
     editor
-        .delete_env_var(&SecretsScopeTag::Role("dev".into()), "TOKEN")
+        .delete_env_var(&super::SecretsScopeTag::Role("dev".into()), "TOKEN")
         .unwrap();
 
     assert_eq!(
@@ -394,3 +397,4 @@ fn editor_delete_env_var_preserves_configured_default_launch() {
         Some(vec!["codex-main".into()])
     );
 }
+

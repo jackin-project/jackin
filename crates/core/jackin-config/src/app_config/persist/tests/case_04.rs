@@ -143,3 +143,4 @@ fn disc_read_only_pending_publication_reports_transient_without_mutation() {
     );
     assert!(!paths.config_file.with_file_name("config.lock").exists());
 }
+

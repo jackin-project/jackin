@@ -3,9 +3,9 @@
 
 use super::*;
 #[derive(Default)]
-pub(super) struct TestPreviewFocus {
-    pub(super) focused: bool,
-    pub(super) cursor: Option<(String, usize)>,
+struct TestPreviewFocus {
+    focused: bool,
+    cursor: Option<(String, usize)>,
 }
 
 impl PreviewFocusState for TestPreviewFocus {
@@ -21,10 +21,10 @@ impl PreviewPaneCursorState for TestPreviewFocus {
 }
 
 #[derive(Default)]
-pub(super) struct TestWorkspaceListScroll {
-    pub(super) list_names_x: u16,
-    pub(super) workspace_x: u16,
-    pub(super) workspace_y: u16,
+struct TestWorkspaceListScroll {
+    list_names_x: u16,
+    workspace_x: u16,
+    workspace_y: u16,
 }
 
 impl WorkspaceListScrollState for TestWorkspaceListScroll {
@@ -64,8 +64,8 @@ impl WorkspaceListScrollState for TestWorkspaceListScroll {
 }
 
 #[derive(Default)]
-pub(super) struct TestTreeDisclosure {
-    pub(super) calls: Vec<String>,
+struct TestTreeDisclosure {
+    calls: Vec<String>,
 }
 
 impl WorkspaceTreeDisclosureState for TestTreeDisclosure {
@@ -94,19 +94,19 @@ impl WorkspaceTreeDisclosureState for TestTreeDisclosure {
               trait-method names this struct records."
 )]
 #[derive(Debug, Default, PartialEq, Eq)]
-pub(super) struct ClearedPickers {
-    pub(super) role: bool,
-    pub(super) agent: bool,
-    pub(super) new_session: bool,
-    pub(super) provider: bool,
-    pub(super) launch_account: bool,
+struct ClearedPickers {
+    role: bool,
+    agent: bool,
+    new_session: bool,
+    provider: bool,
+    launch_account: bool,
 }
 
 #[derive(Default)]
-pub(super) struct TestListSelection {
-    pub(super) cleared: ClearedPickers,
-    pub(super) reset_scroll: bool,
-    pub(super) selected: Option<usize>,
+struct TestListSelection {
+    cleared: ClearedPickers,
+    reset_scroll: bool,
+    selected: Option<usize>,
 }
 
 impl WorkspaceListSelectionState for TestListSelection {
@@ -140,8 +140,8 @@ impl WorkspaceListSelectionState for TestListSelection {
 }
 
 #[derive(Default)]
-pub(super) struct TestListHover {
-    pub(super) target: Option<ManagerHoverTarget>,
+struct TestListHover {
+    target: Option<ManagerHoverTarget>,
 }
 
 impl WorkspaceListHoverState for TestListHover {
@@ -150,7 +150,7 @@ impl WorkspaceListHoverState for TestListHover {
     }
 }
 
-pub(super) fn mount(src: &str) -> MountConfig {
+fn mount(src: &str) -> MountConfig {
     MountConfig {
         src: src.to_owned(),
         dst: "/work".to_owned(),
@@ -159,7 +159,7 @@ pub(super) fn mount(src: &str) -> MountConfig {
     }
 }
 
-pub(super) fn workspace_with_mounts(mounts: Vec<MountConfig>) -> WorkspaceConfig {
+fn workspace_with_mounts(mounts: Vec<MountConfig>) -> WorkspaceConfig {
     WorkspaceConfig {
         workdir: "/work".to_owned(),
         mounts,
@@ -167,7 +167,7 @@ pub(super) fn workspace_with_mounts(mounts: Vec<MountConfig>) -> WorkspaceConfig
     }
 }
 
-pub(super) fn mouse(kind: crossterm::event::MouseEventKind, column: u16, row: u16) -> MouseEvent {
+fn mouse(kind: crossterm::event::MouseEventKind, column: u16, row: u16) -> MouseEvent {
     MouseEvent {
         kind,
         column,
@@ -175,3 +175,4 @@ pub(super) fn mouse(kind: crossterm::event::MouseEventKind, column: u16, row: u1
         modifiers: crossterm::event::KeyModifiers::empty(),
     }
 }
+

@@ -76,7 +76,7 @@ fn projection_operations_and_publication_response_round_trip() {
         );
     }
     let projection: UsageProjectionV1 = serde_json::from_str(include_str!(
-        "../../../../../services/jackin-usage/tests/fixtures/contracts/usage-projection-v1-current.json"
+        "../../../../services/jackin-usage/tests/fixtures/contracts/usage-projection-v1-current.json"
     ))
     .unwrap();
     let response = UsageBrokerResponse::Projection {
@@ -172,7 +172,7 @@ fn stdio_tunnel_envelope_round_trips_without_account_metadata() {
 #[test]
 fn canonical_projection_v1_round_trips_frozen_fixture() {
     let fixture = include_str!(
-        "../../../../../services/jackin-usage/tests/fixtures/contracts/usage-projection-v1-current.json"
+        "../../../../services/jackin-usage/tests/fixtures/contracts/usage-projection-v1-current.json"
     );
     let projection: UsageProjectionV1 = serde_json::from_str(fixture).unwrap();
     projection.validate().unwrap();
@@ -198,7 +198,7 @@ fn canonical_projection_v1_rejects_unknown_major() {
 fn canonical_projection_v1_rejects_invalid_percent_and_cross_field_shape() {
     serde_json::from_str::<UsagePercent>("101").unwrap_err();
     let mut projection: UsageProjectionV1 = serde_json::from_str(include_str!(
-        "../../../../../services/jackin-usage/tests/fixtures/contracts/usage-projection-v1-current.json"
+        "../../../../services/jackin-usage/tests/fixtures/contracts/usage-projection-v1-current.json"
     ))
     .unwrap();
     let window = &mut projection.providers[0].accounts[0].windows[0];
@@ -223,7 +223,7 @@ fn usage_percent_clamp_never_wraps_or_underflows() {
 #[test]
 fn window_preserves_overage_raw_beside_clamped_geometry() {
     let mut projection: UsageProjectionV1 = serde_json::from_str(include_str!(
-        "../../../../../services/jackin-usage/tests/fixtures/contracts/usage-projection-v1-current.json"
+        "../../../../services/jackin-usage/tests/fixtures/contracts/usage-projection-v1-current.json"
     ))
     .unwrap();
     {
@@ -389,3 +389,4 @@ fn metric_group_validate_keeps_reset_renewal_and_issue_scope_separate() {
     group.rank = 3;
     group.validate(0).unwrap_err();
 }
+

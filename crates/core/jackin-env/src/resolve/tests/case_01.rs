@@ -394,3 +394,4 @@ fn disc_env_per_key_preserves_success_when_another_source_fails() {
     assert_eq!(minimax.status(), OperatorEnvKeyStatus::DeniedOrUnavailable);
     assert_eq!(minimax.resolved_value(), None);
 }
+

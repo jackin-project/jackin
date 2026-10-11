@@ -393,3 +393,4 @@ fn exit_dirty_down_arrow_advances_selection_via_handle_input() {
     mux.handle_input(InputEvent::Data(vec![0x1b, 0x5b, 0x41]));
     assert_eq!(exit_dirty_selected_value(&mux), 1);
 }
+

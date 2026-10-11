@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn measured_bare(pairs: &[(&str, usize)]) -> Measured {
+fn measured_bare(pairs: &[(&str, usize)]) -> Measured {
     let mut m = Measured::default();
     for &(name, n) in pairs {
         m.bare_by_crate.insert(name.to_owned(), n);
@@ -10,7 +10,7 @@ pub(super) fn measured_bare(pairs: &[(&str, usize)]) -> Measured {
     m
 }
 
-pub(super) fn measured_full(bare: &[(&str, usize)], expects: &[(&str, &str, usize)]) -> Measured {
+fn measured_full(bare: &[(&str, usize)], expects: &[(&str, &str, usize)]) -> Measured {
     let mut m = measured_bare(bare);
     for &(lint, crate_name, n) in expects {
         m.expect_by_lint_crate
@@ -19,7 +19,7 @@ pub(super) fn measured_full(bare: &[(&str, usize)], expects: &[(&str, &str, usiz
     m
 }
 
-pub(super) fn budget_from(crates: &[(&str, usize)], expects: &[(&str, &str, usize)]) -> Budget {
+fn budget_from(crates: &[(&str, usize)], expects: &[(&str, &str, usize)]) -> Budget {
     Budget {
         crates: crates
             .iter()
@@ -38,3 +38,4 @@ pub(super) fn budget_from(crates: &[(&str, usize)], expects: &[(&str, &str, usiz
             .collect(),
     }
 }
+

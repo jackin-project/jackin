@@ -389,3 +389,4 @@ fn clipboard_image_roundtrips() {
         ClientFrame::ClipboardImage(image)
     );
 }
+

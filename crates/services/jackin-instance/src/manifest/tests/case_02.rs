@@ -147,3 +147,4 @@ fn index_mark_purged_retains_tombstone_after_state_removal() {
     assert_eq!(index.instances[0].container_base, manifest.container_base);
     assert_eq!(index.instances[0].status, InstanceStatus::Purged);
 }
+

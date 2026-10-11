@@ -4,40 +4,40 @@
 use super::*;
 #[expect(dead_code, reason = "test DTO mirrors op account payload fields")]
 #[derive(Clone)]
-pub(super) struct Account {
-    pub(super) id: String,
+struct Account {
+    id: String,
     email: String,
     url: String,
 }
 
 #[expect(dead_code, reason = "test DTO mirrors op vault payload fields")]
 #[derive(Clone)]
-pub(super) struct Vault {
+struct Vault {
     id: String,
-    pub(super) name: String,
+    name: String,
 }
 
 #[expect(dead_code, reason = "test DTO mirrors op item payload fields")]
 #[derive(Clone)]
-pub(super) struct Item {
+struct Item {
     id: String,
-    pub(super) name: String,
+    name: String,
     subtitle: String,
 }
 
 #[expect(dead_code, reason = "test DTO mirrors op field payload fields")]
 #[derive(Clone)]
-pub(super) struct Field {
-    pub(super) id: String,
-    pub(super) label: String,
-    pub(super) field_type: String,
-    pub(super) concealed: bool,
-    pub(super) reference: String,
+struct Field {
+    id: String,
+    label: String,
+    field_type: String,
+    concealed: bool,
+    reference: String,
 }
 
-pub(super) type TestCache = OpCache<Account, Vault, Item, Field>;
+type TestCache = OpCache<Account, Vault, Item, Field>;
 
-pub(super) fn account(id: &str) -> Account {
+fn account(id: &str) -> Account {
     Account {
         id: id.to_owned(),
         email: format!("{id}@example.com"),
@@ -45,14 +45,14 @@ pub(super) fn account(id: &str) -> Account {
     }
 }
 
-pub(super) fn vault(name: &str) -> Vault {
+fn vault(name: &str) -> Vault {
     Vault {
         id: format!("v-{name}"),
         name: name.to_owned(),
     }
 }
 
-pub(super) fn item(name: &str) -> Item {
+fn item(name: &str) -> Item {
     Item {
         id: format!("i-{name}"),
         name: name.to_owned(),
@@ -60,7 +60,7 @@ pub(super) fn item(name: &str) -> Item {
     }
 }
 
-pub(super) fn field(label: &str) -> Field {
+fn field(label: &str) -> Field {
     Field {
         id: label.to_owned(),
         label: label.to_owned(),
@@ -69,3 +69,4 @@ pub(super) fn field(label: &str) -> Field {
         reference: String::new(),
     }
 }
+

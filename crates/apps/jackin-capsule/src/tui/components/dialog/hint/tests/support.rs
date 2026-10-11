@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn labels(spans: &[HintSpan<'_>]) -> String {
+fn labels(spans: &[HintSpan<'_>]) -> String {
     spans
         .iter()
         .filter_map(|span| match span {
@@ -14,3 +14,4 @@ pub(super) fn labels(spans: &[HintSpan<'_>]) -> String {
         .collect::<Vec<_>>()
         .join(" ")
 }
+

@@ -2,13 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn wn(name: &str) -> WorkspaceName {
+fn wn(name: &str) -> WorkspaceName {
     WorkspaceName::parse(name).unwrap()
 }
 
-pub(super) fn sample_record() -> IsolationRecord {
+fn sample_record() -> IsolationRecord {
     IsolationRecord {
-        workspace_name: Some(WorkspaceName::parse("jackin").unwrap()),
+        workspace_name: Some(jackin_core::WorkspaceName::parse("jackin").unwrap()),
         mount_dst: "/workspace/jackin".into(),
         original_src: "/home/u/projects/jackin".into(),
         isolation: MountIsolation::Worktree,
@@ -21,11 +21,7 @@ pub(super) fn sample_record() -> IsolationRecord {
     }
 }
 
-pub(super) fn write_v1_fixture(
-    state_dir: &Path,
-    workspace_name: Option<&str>,
-    label: &str,
-) -> Vec<u8> {
+fn write_v1_fixture(state_dir: &Path, workspace_name: Option<&str>, label: &str) -> Vec<u8> {
     use jackin_instance::manifest::{DockerResources, InstanceManifest, NewInstanceManifest};
     let container = state_dir.file_name().unwrap().to_str().unwrap();
     let manifest = InstanceManifest::new(NewInstanceManifest {
@@ -56,3 +52,4 @@ pub(super) fn write_v1_fixture(
     std::fs::write(isolation_file_path(state_dir), &bytes).unwrap();
     bytes
 }
+

@@ -120,3 +120,4 @@ fn contract_baseline_provider_calls_detect_injected_route() {
             .collect()
     );
 }
+

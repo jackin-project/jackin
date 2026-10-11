@@ -2,43 +2,39 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) const MAX_DEBUG_LOGS: usize = 64;
+const MAX_DEBUG_LOGS: usize = 64;
 
-pub(super) const MAX_SPANS: usize = 48;
+const MAX_SPANS: usize = 48;
 
-pub(super) const CONFORMANCE_ARGV_CANARY: &str = "--password=conformance-argv-secret";
+const CONFORMANCE_ARGV_CANARY: &str = "--password=conformance-argv-secret";
 
-pub(super) const CONFORMANCE_URL_CANARY: &str =
-    "https://example.invalid/api?token=conformance-query-secret";
+const CONFORMANCE_URL_CANARY: &str = "https://example.invalid/api?token=conformance-query-secret";
 
-pub(super) const CONFORMANCE_INSPECT_CANARY: &str =
+const CONFORMANCE_INSPECT_CANARY: &str =
     r#"{"Config":{"Env":["TOKEN=conformance-inspect-secret"]}}"#;
 
-pub(super) const CONFORMANCE_TERMINAL_CANARY: &str =
-    "\u{1b}[31mconformance-terminal-bytes\u{1b}[0m";
+const CONFORMANCE_TERMINAL_CANARY: &str = "\u{1b}[31mconformance-terminal-bytes\u{1b}[0m";
 
-pub(super) struct ConformanceExport {
+struct ConformanceExport {
     host: crate::observability::TestExport,
-    pub(super) capsule: crate::observability::TestExport,
+    capsule: crate::observability::TestExport,
 }
 
 impl ConformanceExport {
-    pub(super) fn all_logs(
-        &self,
-    ) -> Vec<opentelemetry_sdk::logs::in_memory_exporter::LogDataWithResource> {
+    fn all_logs(&self) -> Vec<opentelemetry_sdk::logs::in_memory_exporter::LogDataWithResource> {
         let mut logs = self.host.logs.get_emitted_logs().unwrap_or_default();
         logs.extend(self.capsule.logs.get_emitted_logs().unwrap_or_default());
         logs
     }
 
-    pub(super) fn all_spans(&self) -> Vec<opentelemetry_sdk::trace::SpanData> {
+    fn all_spans(&self) -> Vec<opentelemetry_sdk::trace::SpanData> {
         let mut spans = self.host.spans.get_finished_spans().unwrap_or_default();
         spans.extend(self.capsule.spans.get_finished_spans().unwrap_or_default());
         spans
     }
 }
 
-pub(super) fn collect_files(root: &std::path::Path, files: &mut Vec<std::path::PathBuf>) {
+fn collect_files(root: &std::path::Path, files: &mut Vec<std::path::PathBuf>) {
     let Ok(entries) = fs::read_dir(root) else {
         return;
     };
@@ -52,7 +48,7 @@ pub(super) fn collect_files(root: &std::path::Path, files: &mut Vec<std::path::P
     }
 }
 
-pub(super) fn telemetry_volume_artifact_path() -> std::path::PathBuf {
+fn telemetry_volume_artifact_path() -> std::path::PathBuf {
     if let Some(path) = std::env::var_os("JACKIN_TELEMETRY_VOLUME_PATH") {
         return path.into();
     }
@@ -61,7 +57,7 @@ pub(super) fn telemetry_volume_artifact_path() -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../target/telemetry-volume.json")
 }
 
-pub(super) fn conformance_operation_log(body: &str) {
+fn conformance_operation_log(body: &str) {
     let attrs = [jackin_telemetry::Attr {
         key: jackin_telemetry::schema::attrs::OUTCOME,
         value: jackin_telemetry::Value::Str("success"),
@@ -73,7 +69,7 @@ pub(super) fn conformance_operation_log(body: &str) {
     .expect("registered conformance event");
 }
 
-pub(super) fn conformance_operation_warning(body: &str) {
+fn conformance_operation_warning(body: &str) {
     let attrs = [
         jackin_telemetry::Attr {
             key: jackin_telemetry::schema::attrs::OUTCOME,
@@ -95,7 +91,7 @@ pub(super) fn conformance_operation_warning(body: &str) {
     .expect("registered conformance warning");
 }
 
-pub(super) fn conformance_operation_error(body: &str) {
+fn conformance_operation_error(body: &str) {
     let attrs = [
         jackin_telemetry::Attr {
             key: jackin_telemetry::schema::attrs::OUTCOME,
@@ -117,7 +113,7 @@ pub(super) fn conformance_operation_error(body: &str) {
     .expect("registered conformance error");
 }
 
-pub(super) fn drive_standard_conformance_scenario() -> ConformanceExport {
+fn drive_standard_conformance_scenario() -> ConformanceExport {
     const RUN_ID: &str = "conformance-run";
     const SESSION_ID: &str = "conformance-session";
 
@@ -243,9 +239,7 @@ pub(super) fn drive_standard_conformance_scenario() -> ConformanceExport {
     ConformanceExport { host, capsule }
 }
 
-pub(super) fn conformance_log_body(
-    record: &opentelemetry_sdk::logs::SdkLogRecord,
-) -> Option<String> {
+fn conformance_log_body(record: &opentelemetry_sdk::logs::SdkLogRecord) -> Option<String> {
     use opentelemetry::logs::AnyValue;
 
     record.body().map(|value| match value {
@@ -254,7 +248,7 @@ pub(super) fn conformance_log_body(
     })
 }
 
-pub(super) fn conformance_log_attr(
+fn conformance_log_attr(
     record: &opentelemetry_sdk::logs::SdkLogRecord,
     key: &str,
 ) -> Option<String> {
@@ -268,3 +262,4 @@ pub(super) fn conformance_log_attr(
             other => format!("{other:?}"),
         })
 }
+

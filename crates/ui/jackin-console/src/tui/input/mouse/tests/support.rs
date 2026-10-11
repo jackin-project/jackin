@@ -2,13 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn list_state() -> ManagerState<'static> {
+fn list_state() -> ManagerState<'static> {
     let config = jackin_config::AppConfig::default();
     let tmp = tempfile::tempdir().unwrap();
     ManagerState::from_config(&config, tmp.path())
 }
 
-pub(super) fn file_browser_with_dirs(
+fn file_browser_with_dirs(
     root: &std::path::Path,
     count: usize,
 ) -> crate::tui::components::file_browser::FileBrowserState {
@@ -20,7 +20,7 @@ pub(super) fn file_browser_with_dirs(
     )
 }
 
-pub(super) fn key(code: KeyCode) -> KeyEvent {
+fn key(code: KeyCode) -> KeyEvent {
     KeyEvent {
         code,
         modifiers: KeyModifiers::NONE,
@@ -29,7 +29,7 @@ pub(super) fn key(code: KeyCode) -> KeyEvent {
     }
 }
 
-pub(super) const fn mouse(kind: MouseEventKind, col: u16) -> MouseEvent {
+const fn mouse(kind: MouseEventKind, col: u16) -> MouseEvent {
     MouseEvent {
         kind,
         column: col,
@@ -38,7 +38,7 @@ pub(super) const fn mouse(kind: MouseEventKind, col: u16) -> MouseEvent {
     }
 }
 
-pub(super) const fn term(width: u16) -> Rect {
+const fn term(width: u16) -> Rect {
     Rect {
         x: 0,
         y: 0,
@@ -47,7 +47,7 @@ pub(super) const fn term(width: u16) -> Rect {
     }
 }
 
-pub(super) fn term_120x40() -> Rect {
+fn term_120x40() -> Rect {
     Rect {
         x: 0,
         y: 0,
@@ -56,7 +56,7 @@ pub(super) fn term_120x40() -> Rect {
     }
 }
 
-pub(super) const fn mouse_down_at(col: u16, row: u16) -> MouseEvent {
+const fn mouse_down_at(col: u16, row: u16) -> MouseEvent {
     MouseEvent {
         kind: MouseEventKind::Down(MouseButton::Left),
         column: col,
@@ -65,7 +65,7 @@ pub(super) const fn mouse_down_at(col: u16, row: u16) -> MouseEvent {
     }
 }
 
-pub(super) const fn mouse_at(col: u16, row: u16) -> MouseEvent {
+const fn mouse_at(col: u16, row: u16) -> MouseEvent {
     MouseEvent {
         kind: MouseEventKind::Down(MouseButton::Left),
         column: col,
@@ -74,7 +74,7 @@ pub(super) const fn mouse_at(col: u16, row: u16) -> MouseEvent {
     }
 }
 
-pub(super) const fn mouse_kind_at(kind: MouseEventKind, col: u16, row: u16) -> MouseEvent {
+const fn mouse_kind_at(kind: MouseEventKind, col: u16, row: u16) -> MouseEvent {
     MouseEvent {
         kind,
         column: col,
@@ -83,7 +83,7 @@ pub(super) const fn mouse_kind_at(kind: MouseEventKind, col: u16, row: u16) -> M
     }
 }
 
-pub(super) fn list_state_with_saved(n: usize) -> ManagerState<'static> {
+fn list_state_with_saved(n: usize) -> ManagerState<'static> {
     let mut config = jackin_config::AppConfig::default();
     for i in 0..n {
         config.workspaces.insert(
@@ -99,7 +99,7 @@ pub(super) fn list_state_with_saved(n: usize) -> ManagerState<'static> {
     ManagerState::from_config(&config, tmp.path())
 }
 
-pub(super) fn config_with_scrollable_workspace_and_global_mounts() -> jackin_config::AppConfig {
+fn config_with_scrollable_workspace_and_global_mounts() -> jackin_config::AppConfig {
     let mut config = jackin_config::AppConfig::default();
     config.workspaces.insert(
             "demo".into(),
@@ -130,21 +130,19 @@ pub(super) fn config_with_scrollable_workspace_and_global_mounts() -> jackin_con
     config
 }
 
-pub(super) fn selected_demo_state(config: &jackin_config::AppConfig) -> ManagerState<'static> {
+fn selected_demo_state(config: &jackin_config::AppConfig) -> ManagerState<'static> {
     let tmp = tempfile::tempdir().unwrap();
     let mut state = ManagerState::from_config(config, tmp.path());
     state.selected = 1;
     state
 }
 
-pub(super) fn current_dir_state_at(path: &std::path::Path) -> ManagerState<'static> {
+fn current_dir_state_at(path: &std::path::Path) -> ManagerState<'static> {
     let config = jackin_config::AppConfig::default();
     ManagerState::from_config(&config, path)
 }
 
-pub(super) fn config_with_long_git_type_mount(
-    source: &std::path::Path,
-) -> jackin_config::AppConfig {
+fn config_with_long_git_type_mount(source: &std::path::Path) -> jackin_config::AppConfig {
     let mut config = jackin_config::AppConfig::default();
     config.workspaces.insert(
         "demo".into(),
@@ -161,3 +159,4 @@ pub(super) fn config_with_long_git_type_mount(
     );
     config
 }
+

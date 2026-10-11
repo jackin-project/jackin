@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn programmatic_role_fixture(
+fn programmatic_role_fixture(
     paths: &JackinPaths,
     selector: &RoleSelector,
 ) -> jackin_config::ResolvedWorkspace {
@@ -20,3 +20,4 @@ pub(super) fn programmatic_role_fixture(
     .unwrap();
     repo_workspace(&repo_dir)
 }
+

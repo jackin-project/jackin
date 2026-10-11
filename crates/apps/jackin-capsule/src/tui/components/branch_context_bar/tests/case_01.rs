@@ -381,3 +381,4 @@ fn snapshot_branch_context_bar_no_pr_80x24() {
     );
     insta::assert_snapshot!("branch_context_bar_no_pr_80x24", text);
 }
+

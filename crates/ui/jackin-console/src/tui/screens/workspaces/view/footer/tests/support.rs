@@ -2,19 +2,19 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn file_browser_state_at(path: PathBuf) -> FileBrowserState {
+fn file_browser_state_at(path: PathBuf) -> FileBrowserState {
     FileBrowserState::from_listing(crate::services::file_browser::listing_at(
         path.clone(),
         path,
     ))
 }
 
-pub(super) fn file_browser_state() -> FileBrowserState {
+fn file_browser_state() -> FileBrowserState {
     let dir = tempfile::tempdir().unwrap();
     file_browser_state_at(dir.keep())
 }
 
-pub(super) fn labels(items: Vec<HintSpan<'static>>) -> Vec<String> {
+fn labels(items: Vec<HintSpan<'static>>) -> Vec<String> {
     items
         .into_iter()
         .filter_map(|span| match span {
@@ -25,7 +25,7 @@ pub(super) fn labels(items: Vec<HintSpan<'static>>) -> Vec<String> {
         .collect()
 }
 
-pub(super) fn assert_file_browser_hints(items: Vec<HintSpan<'static>>) {
+fn assert_file_browser_hints(items: Vec<HintSpan<'static>>) {
     let labels = labels(items);
     for expected in [
         "\u{2191}\u{2193}/j/k",
@@ -41,3 +41,4 @@ pub(super) fn assert_file_browser_hints(items: Vec<HintSpan<'static>>) {
         );
     }
 }
+

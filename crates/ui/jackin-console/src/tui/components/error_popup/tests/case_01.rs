@@ -185,3 +185,4 @@ fn instance_action_failed_title_names_in_place_actions() {
         "docker failed"
     );
 }
+

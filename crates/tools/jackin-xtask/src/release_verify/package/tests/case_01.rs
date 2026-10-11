@@ -393,3 +393,4 @@ fn rejects_release_archive_non_executable_binary_member() {
     .expect_err("non-executable binaries must fail closed");
     assert!(error.to_string().contains("is not executable: jackin"));
 }
+

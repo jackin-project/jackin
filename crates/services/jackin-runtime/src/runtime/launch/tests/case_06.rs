@@ -365,3 +365,4 @@ fn build_workspace_mounts_rejects_worktree_file_overlays() {
     assert!(message.contains("single-file bind mounts"));
     assert!(message.contains("docker backend"));
 }
+

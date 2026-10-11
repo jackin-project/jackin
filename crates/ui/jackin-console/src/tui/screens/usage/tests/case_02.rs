@@ -16,7 +16,7 @@ fn relative_labels_hold_at_fixed_epoch_boundaries() {
         (86_399, "in 23h"),
         (86_400, "in 1d"),
     ] {
-        assert_eq!(relative_time_label(now, now + offset), expected);
+        assert_eq!(super::relative_time_label(now, now + offset), expected);
     }
     for (offset, expected) in [
         (1, "just now"),
@@ -27,14 +27,17 @@ fn relative_labels_hold_at_fixed_epoch_boundaries() {
         (86_399, "23h ago"),
         (86_400, "1d ago"),
     ] {
-        assert_eq!(relative_time_label(now, now - offset), expected);
+        assert_eq!(super::relative_time_label(now, now - offset), expected);
     }
 
     assert_eq!(
-        credential_expiry_label(now, now),
+        super::credential_expiry_label(now, now),
         "expires in under a minute"
     );
-    assert_eq!(credential_expiry_label(now, now - 1), "expired just now");
+    assert_eq!(
+        super::credential_expiry_label(now, now - 1),
+        "expired just now"
+    );
 }
 
 #[test]
@@ -57,7 +60,7 @@ fn render_at_shares_one_epoch_between_list_and_detail() {
     let backend = TestBackend::new(200, 40);
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
-        .draw(|frame| render_at(frame, frame.area(), &manager, now))
+        .draw(|frame| super::render_at(frame, frame.area(), &manager, now))
         .unwrap();
     let text = backend_text(&terminal);
 
@@ -343,3 +346,4 @@ fn projection_includes_unresolved_accounts_and_groups_by_provider() {
         Some("2 configured capability(s) unresolved".to_owned())
     );
 }
+

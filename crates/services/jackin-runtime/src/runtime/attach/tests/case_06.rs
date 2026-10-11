@@ -9,8 +9,8 @@ async fn restored_start_activates_only_its_entry_before_foreground() {
     let container_name = "jk-restore-entry";
     provision_account_admission(&paths, container_name);
     let claim_docker = FakeDockerClient::default();
-    let claim = universe::claim_entry(&paths, &claim_docker).await;
-    let other_claim = universe::claim_entry(&paths, &claim_docker).await;
+    let claim = super::super::universe::claim_entry(&paths, &claim_docker).await;
+    let other_claim = super::super::universe::claim_entry(&paths, &claim_docker).await;
     assert_eq!(pending_entry_count(&paths), 2);
     let container = ContainerHandle::new(container_name, container_name).unwrap();
     let docker = FakeDockerClient {
@@ -36,7 +36,7 @@ async fn restored_start_activates_only_its_entry_before_foreground() {
         )],
         ..Default::default()
     };
-    let admission = launch::AccountConfigRevision::acquire(&paths).unwrap();
+    let admission = super::super::launch::AccountConfigRevision::acquire(&paths).unwrap();
 
     start_or_reconnect_capsule_client_with_handle_with_lease(
         &paths,
@@ -82,7 +82,7 @@ async fn restored_start_failure_keeps_entry_pending_until_owner_drops() {
     let (_tmp, paths) = test_paths();
     let container_name = "jk-restore-entry-start-failure";
     provision_account_admission(&paths, container_name);
-    let claim = universe::claim_entry(&paths, &FakeDockerClient::default()).await;
+    let claim = super::super::universe::claim_entry(&paths, &FakeDockerClient::default()).await;
     let container = ContainerHandle::new(container_name, container_name).unwrap();
     let docker = FakeDockerClient {
         inspect_state_by_name: std::cell::RefCell::new(HashMap::from([(
@@ -99,7 +99,7 @@ async fn restored_start_failure_keeps_entry_pending_until_owner_drops() {
         ..Default::default()
     };
     let mut runner = FakeRunner::default();
-    let admission = launch::AccountConfigRevision::acquire(&paths).unwrap();
+    let admission = super::super::launch::AccountConfigRevision::acquire(&paths).unwrap();
 
     let error = start_or_reconnect_capsule_client_with_handle_with_lease(
         &paths,
@@ -127,3 +127,4 @@ async fn restored_start_failure_keeps_entry_pending_until_owner_drops() {
     drop(claim);
     assert_eq!(pending_entry_count(&paths), 0);
 }
+

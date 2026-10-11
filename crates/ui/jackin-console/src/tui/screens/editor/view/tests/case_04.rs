@@ -397,3 +397,4 @@ fn renderer_op_ref_with_malformed_path_renders_repick_placeholder_no_panic() {
         "UUID URI must NOT leak; dump:\n{dump}"
     );
 }
+

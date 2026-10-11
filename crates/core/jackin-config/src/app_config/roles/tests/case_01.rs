@@ -346,3 +346,4 @@ fn build_github_env_layers_empty_when_no_layers_set() {
     let merged = build_github_env_layers(&cfg, Some(&wn("proj")), "smith");
     assert!(merged.is_empty());
 }
+

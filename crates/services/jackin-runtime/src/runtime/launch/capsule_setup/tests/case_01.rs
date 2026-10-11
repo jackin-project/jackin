@@ -382,3 +382,4 @@ fn omp_profile_binding_carries_immutable_store_selector() {
         })
     );
 }
+

@@ -359,3 +359,4 @@ fn protected_credentials_bind_claude_oauth_to_its_auth_family() {
     assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
     assert!(!error.to_string().contains("foreign-codex-sentinel"));
 }
+

@@ -382,3 +382,4 @@ fn zshrc_provider_accepts_only_canonical_catalog_slugs() {
     assert_eq!(zshrc_provider("kimi"), None);
     assert_eq!(zshrc_provider("gemini"), None);
 }
+

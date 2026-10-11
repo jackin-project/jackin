@@ -9,12 +9,10 @@ use tokio::{
     sync::{Semaphore, mpsc},
 };
 
-use super::{
-    ClientFrame, ControlReply, ControlResponse, handle_attach_client, initial_spawn_requests,
-    perform_control_handshake,
-};
+use super::{ClientFrame, handle_attach_client, initial_spawn_requests};
 
 use crate::protocol::attach::SpawnRequest;
+
 
 mod support;
 use support::*;

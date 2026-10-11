@@ -2,16 +2,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn write_singleton_claude_admission(paths: &JackinPaths) {
+fn write_singleton_claude_admission(paths: &JackinPaths) {
     paths.ensure_base_dirs().unwrap();
     std::fs::write(&paths.config_file, SINGLETON_CLAUDE_TOML).unwrap();
 }
 
-pub(super) fn persist_test_config(paths: &JackinPaths, config: &AppConfig) {
+fn persist_test_config(paths: &JackinPaths, config: &AppConfig) {
     std::fs::write(&paths.config_file, toml::to_string(config).unwrap()).unwrap();
 }
 
-pub(super) const SINGLETON_CLAUDE_TOML: &str = r#"default_launch = ["claude-main"]
+const SINGLETON_CLAUDE_TOML: &str = r#"default_launch = ["claude-main"]
 
 [accounts.test]
 name = "Test"
@@ -26,7 +26,7 @@ account = "test"
 
 "#;
 
-pub(super) const CODEX_ADMISSION_TOML: &str = r#"default_launch = ["codex-main"]
+const CODEX_ADMISSION_TOML: &str = r#"default_launch = ["codex-main"]
 
 [accounts.test]
 name = "Test"
@@ -40,7 +40,7 @@ agent = "codex"
 account = "test"
 "#;
 
-pub(super) fn workspace_manifest(
+fn workspace_manifest(
     container_name: &str,
     role_key: &str,
     role_display_name: &str,
@@ -68,14 +68,14 @@ pub(super) fn workspace_manifest(
     })
 }
 
-pub(super) fn write_indexed_manifest(paths: &JackinPaths, manifest: &InstanceManifest) {
+fn write_indexed_manifest(paths: &JackinPaths, manifest: &InstanceManifest) {
     manifest
         .write(&paths.data_dir.join(&manifest.container_base))
         .unwrap();
     InstanceIndex::update_manifest(&paths.data_dir, manifest).unwrap();
 }
 
-pub(super) fn provision_restore_account_policy(
+fn provision_restore_account_policy(
     paths: &JackinPaths,
     config: &AppConfig,
     manifest: &InstanceManifest,
@@ -103,11 +103,11 @@ pub(super) fn provision_restore_account_policy(
     .unwrap();
 }
 
-pub(super) fn local_role_base_for_test(selector: &RoleSelector, head_sha: Option<&str>) -> String {
+fn local_role_base_for_test(selector: &RoleSelector, head_sha: Option<&str>) -> String {
     crate::runtime::naming::role_base_image_name(selector, None, head_sha)
 }
 
-pub(super) async fn resolve_workspace_restore(
+async fn resolve_workspace_restore(
     paths: &JackinPaths,
     role_key: &str,
     docker: &impl DockerApi,
@@ -125,11 +125,11 @@ pub(super) async fn resolve_workspace_restore(
     .await
 }
 
-pub(super) fn home_mounts_for(agent_slug: &str, agent: jackin_core::Agent) -> Vec<String> {
+fn home_mounts_for(agent_slug: &str, agent: jackin_core::Agent) -> Vec<String> {
     use crate::instance::{PrepareResolvers, RoleState};
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let manifest_temp = tempdir().unwrap();
     std::fs::write(
         manifest_temp.path().join("jackin.role.toml"),
@@ -160,7 +160,7 @@ pub(super) fn home_mounts_for(agent_slug: &str, agent: jackin_core::Agent) -> Ve
     agent_mounts(&state).unwrap()
 }
 
-pub(super) fn codex_trust_slot(
+fn codex_trust_slot(
     account_id: &str,
     container_home_rel: &str,
 ) -> crate::instance::ProvisionedInstanceAuth {
@@ -180,7 +180,7 @@ pub(super) fn codex_trust_slot(
     }
 }
 
-pub(super) fn codex_trust_fixture(root: &Path) -> (RoleState, jackin_config::ResolvedWorkspace) {
+fn codex_trust_fixture(root: &Path) -> (RoleState, jackin_config::ResolvedWorkspace) {
     let state = RoleState {
         root: root.to_path_buf(),
         gh_config_dir: root.join("gh"),
@@ -218,7 +218,7 @@ pub(super) fn codex_trust_fixture(root: &Path) -> (RoleState, jackin_config::Res
     (state, workspace)
 }
 
-pub(super) fn repo_workspace(repo_dir: &Path) -> jackin_config::ResolvedWorkspace {
+fn repo_workspace(repo_dir: &Path) -> jackin_config::ResolvedWorkspace {
     jackin_config::ResolvedWorkspace {
         name: String::new(),
         label: repo_dir.display().to_string(),
@@ -236,7 +236,7 @@ pub(super) fn repo_workspace(repo_dir: &Path) -> jackin_config::ResolvedWorkspac
     }
 }
 
-pub(super) fn fake_docker_for_clean_attached_exit() -> jackin_test_support::FakeDockerClient {
+fn fake_docker_for_clean_attached_exit() -> jackin_test_support::FakeDockerClient {
     jackin_test_support::FakeDockerClient {
         inspect_by_id_queue: std::cell::RefCell::new(VecDeque::from([
             ContainerState::Running,
@@ -263,7 +263,7 @@ pub(super) fn fake_docker_for_clean_attached_exit() -> jackin_test_support::Fake
     }
 }
 
-pub(super) fn arg_after(command: &str, flag: &str) -> String {
+fn arg_after(command: &str, flag: &str) -> String {
     let mut args = command.split_whitespace();
     while let Some(arg) = args.next() {
         if arg == flag {
@@ -274,14 +274,14 @@ pub(super) fn arg_after(command: &str, flag: &str) -> String {
 }
 
 #[derive(Clone, Debug)]
-pub(super) struct ObservedHostEnvFile {
-    pub(super) path: std::path::PathBuf,
-    pub(super) contents: String,
+struct ObservedHostEnvFile {
+    path: std::path::PathBuf,
+    contents: String,
     #[cfg(unix)]
-    pub(super) mode: u32,
+    mode: u32,
 }
 
-pub(super) fn observe_host_env_file(
+fn observe_host_env_file(
     runner: &mut FakeRunner,
     paths: &JackinPaths,
 ) -> std::sync::Arc<std::sync::Mutex<Option<ObservedHostEnvFile>>> {
@@ -315,7 +315,7 @@ pub(super) fn observe_host_env_file(
     observed
 }
 
-pub(super) fn assert_host_env_file_outside_mounts(command: &str, env_file: &Path) {
+fn assert_host_env_file_outside_mounts(command: &str, env_file: &Path) {
     let mut arguments = command.split_whitespace();
     while let Some(argument) = arguments.next() {
         if argument != "-v" {
@@ -330,7 +330,7 @@ pub(super) fn assert_host_env_file_outside_mounts(command: &str, env_file: &Path
     }
 }
 
-pub(super) fn launched_role_container_name(runner: &FakeRunner) -> String {
+fn launched_role_container_name(runner: &FakeRunner) -> String {
     let command = runner
         .recorded
         .iter()
@@ -339,7 +339,7 @@ pub(super) fn launched_role_container_name(runner: &FakeRunner) -> String {
     arg_after(command, "--name")
 }
 
-pub(super) fn launched_dind_container(
+fn launched_dind_container(
     docker: &jackin_test_support::FakeDockerClient,
 ) -> (String, jackin_core::ContainerSpec) {
     docker
@@ -355,7 +355,7 @@ pub(super) fn launched_dind_container(
         .expect("expected DinD container")
 }
 
-pub(super) fn dind_env_from_run_cmd(run_cmd: &str) -> String {
+fn dind_env_from_run_cmd(run_cmd: &str) -> String {
     run_cmd
         .split_whitespace()
         .find_map(|arg| arg.strip_prefix("JACKIN_DIND_HOSTNAME="))
@@ -363,7 +363,7 @@ pub(super) fn dind_env_from_run_cmd(run_cmd: &str) -> String {
         .to_owned()
 }
 
-pub(super) fn compat_dind_load_options() -> LoadOptions {
+fn compat_dind_load_options() -> LoadOptions {
     LoadOptions {
         docker_profile: Some(crate::runtime::docker_profile::DockerSecurityProfile::Compat),
         ..LoadOptions::default()
@@ -374,20 +374,21 @@ pub(super) fn compat_dind_load_options() -> LoadOptions {
     clippy::unnecessary_wraps,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
-pub(super) fn auto_trust(_: &RoleSelector, _: &jackin_config::RoleSource) -> anyhow::Result<()> {
+fn auto_trust(_: &RoleSelector, _: &jackin_config::RoleSource) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub(super) fn deny_trust(_: &RoleSelector, _: &jackin_config::RoleSource) -> anyhow::Result<()> {
+fn deny_trust(_: &RoleSelector, _: &jackin_config::RoleSource) -> anyhow::Result<()> {
     anyhow::bail!("role source not trusted — aborting")
 }
 
-pub(super) struct LoadAgentFixture {
-    pub(super) _temp: tempfile::TempDir,
-    pub(super) paths: JackinPaths,
-    pub(super) config: AppConfig,
-    pub(super) selector: RoleSelector,
-    pub(super) runner: FakeRunner,
-    pub(super) workspace: jackin_config::ResolvedWorkspace,
-    pub(super) docker: jackin_test_support::FakeDockerClient,
+struct LoadAgentFixture {
+    _temp: tempfile::TempDir,
+    paths: JackinPaths,
+    config: AppConfig,
+    selector: RoleSelector,
+    runner: FakeRunner,
+    workspace: jackin_config::ResolvedWorkspace,
+    docker: jackin_test_support::FakeDockerClient,
 }
+

@@ -3,7 +3,7 @@
 
 use super::*;
 #[cfg(unix)]
-pub(super) async fn fixture_bare_repository(runner: &mut ShellRunner, path: &Path) -> String {
+async fn fixture_bare_repository(runner: &mut ShellRunner, path: &Path) -> String {
     let quiet = RunOptions {
         quiet: true,
         null_stdin: true,
@@ -56,3 +56,4 @@ pub(super) async fn fixture_bare_repository(runner: &mut ShellRunner, path: &Pat
         .unwrap();
     tip
 }
+

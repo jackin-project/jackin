@@ -386,3 +386,4 @@ fn stage_label_transition_slides_between_centers() {
         "label viewport should not snap to the target"
     );
 }
+

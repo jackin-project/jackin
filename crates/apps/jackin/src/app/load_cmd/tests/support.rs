@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn dry_run_workspace() -> crate::workspace::ResolvedWorkspace {
+fn dry_run_workspace() -> crate::workspace::ResolvedWorkspace {
     crate::workspace::ResolvedWorkspace {
         name: "big-monorepo".to_owned(),
         label: "big-monorepo".to_owned(),
@@ -20,7 +20,7 @@ pub(super) fn dry_run_workspace() -> crate::workspace::ResolvedWorkspace {
     }
 }
 
-pub(super) fn dry_run_image_plan() -> jackin_runtime::runtime::LaunchImagePlan {
+fn dry_run_image_plan() -> jackin_runtime::runtime::LaunchImagePlan {
     jackin_runtime::runtime::LaunchImagePlan {
         decision: "build_from_published",
         reason: Some("role_git_sha_changed"),
@@ -32,7 +32,7 @@ pub(super) fn dry_run_image_plan() -> jackin_runtime::runtime::LaunchImagePlan {
     }
 }
 
-pub(super) fn dry_run_identity_config() -> (AppConfig, jackin_core::WorkspaceName) {
+fn dry_run_identity_config() -> (AppConfig, jackin_core::WorkspaceName) {
     use jackin_config::{AccountConfig, AccountCredential, AgentConfiguration, AiProvider};
     let mut config = AppConfig::default();
     for (id, display, provider) in [
@@ -87,3 +87,4 @@ pub(super) fn dry_run_identity_config() -> (AppConfig, jackin_core::WorkspaceNam
     );
     (config, ws)
 }
+

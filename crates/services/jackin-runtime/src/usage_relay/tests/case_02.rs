@@ -323,3 +323,4 @@ fn hermetic_layout_never_starts_host_usage_discovery() {
     assert!(!paths.data_dir.exists());
     assert_eq!(fs::read_to_string(&paths.config_file).unwrap(), config);
 }
+

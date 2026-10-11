@@ -365,3 +365,4 @@ fn modal_overlay_state_counts_list_modal_only_on_list_route() {
     assert_eq!(list, ModalOverlayState::List);
     assert_eq!(editor, ModalOverlayState::None);
 }
+

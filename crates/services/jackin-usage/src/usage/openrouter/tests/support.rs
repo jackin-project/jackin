@@ -1,7 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-pub(super) fn key_fixture() -> serde_json::Value {
+use super::*;
+fn key_fixture() -> serde_json::Value {
     serde_json::json!({
         "data": {
             "label": "test-key",
@@ -16,10 +17,7 @@ pub(super) fn key_fixture() -> serde_json::Value {
     })
 }
 
-pub(super) fn one_shot_key_server(
-    status: u16,
-    body: &str,
-) -> (String, std::thread::JoinHandle<()>) {
+fn one_shot_key_server(status: u16, body: &str) -> (String, std::thread::JoinHandle<()>) {
     use std::io::{Read as _, Write as _};
 
     let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
@@ -44,3 +42,4 @@ pub(super) fn one_shot_key_server(
     });
     (format!("http://{address}"), server)
 }
+

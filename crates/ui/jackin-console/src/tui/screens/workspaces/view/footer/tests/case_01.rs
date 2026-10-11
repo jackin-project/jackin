@@ -98,3 +98,4 @@ fn settings_auth_file_browser_hints_reach_footer() {
         Rect::new(0, 0, 120, 40),
     ));
 }
+

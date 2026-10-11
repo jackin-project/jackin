@@ -1,19 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use super::launch_prompt::LaunchAccountPickerManagerState;
-use super::launch_prompt::LaunchAgentPromptManagerState;
-use super::launch_prompt::LaunchRolePromptManagerState;
-use super::stage::ConsoleEditorFooterHeight;
-use super::stage::ConsoleEditorModalPresence;
-use super::stage::ConsoleManagerModalBlockPresence;
-use super::stage::ConsolePendingDriftCheck;
-use super::stage::ConsolePendingIsolationCleanup;
-use super::stage::ConsolePendingOpCommit;
-use super::stage::ConsolePendingOpCommitOrigin;
-use super::stage::ConsolePendingRoleLoad;
-use super::stage::ConsoleSettingsFooterHeight;
-use super::stage::ConsoleSettingsModalPresence;
 use std::path::PathBuf;
 
 use jackin_config::MountIsolation;
@@ -50,6 +37,7 @@ use super::{
     open_launch_account_picker_plan, open_launch_agent_prompt_plan, open_launch_role_prompt_plan,
     store_pending_launch_plan, take_pending_launch_and_role_plan, take_pending_launch_plan,
 };
+
 
 mod support;
 use support::*;

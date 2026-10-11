@@ -6,12 +6,12 @@ use super::*;
 #[test]
 fn tls_client_key_errors_expose_only_the_bounded_signal_and_asset() {
     let certificate = tempfile::NamedTempFile::new().expect("temporary certificate");
-    let config = config::TlsConfig {
+    let config = super::super::config::TlsConfig {
         certificate: None,
         client_key: Some("/secret/tenant-client.key".to_owned()),
         client_certificate: Some(certificate.path().to_string_lossy().into_owned()),
     };
-    let error = otlp_channel::validate_transport("https://collector:4317", &config)
+    let error = super::otlp_channel::validate_transport("https://collector:4317", &config)
         .expect_err("missing client key must fail")
         .to_string();
     assert_eq!(error, "OTLP client key is unavailable");
@@ -39,15 +39,16 @@ fn conformance_wire_tls_paths_are_consumed_without_export() -> anyhow::Result<()
     std::fs::write(&ca_path, ca_pem)?;
     std::fs::write(&certificate_path, certificate_pem)?;
     std::fs::write(&key_path, key_pem)?;
-    let config = config::TlsConfig {
+    let config = super::super::config::TlsConfig {
         certificate: Some(ca_path.to_string_lossy().into_owned()),
         client_key: Some(key_path.to_string_lossy().into_owned()),
         client_certificate: Some(certificate_path.to_string_lossy().into_owned()),
     };
 
-    let tls_error = otlp_channel::validate_transport("https://collector.invalid:4317", &config)
-        .expect_err("invalid private TLS material must be consumed and rejected")
-        .to_string();
+    let tls_error =
+        super::otlp_channel::validate_transport("https://collector.invalid:4317", &config)
+            .expect_err("invalid private TLS material must be consumed and rejected")
+            .to_string();
     assert!(!tls_error.contains("wire-private"));
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -55,7 +56,7 @@ fn conformance_wire_tls_paths_are_consumed_without_export() -> anyhow::Result<()
         .enable_all()
         .build()?;
     let testbed = runtime.block_on(async { jackin_otlp_testbed::Testbed::start() })?;
-    super::super::super::init_wire_test_export(
+    super::super::init_wire_test_export(
         &testbed.endpoint(),
         super::super::ServiceIdentity::HOST_ONE_SHOT,
     )?;
@@ -71,7 +72,7 @@ fn conformance_wire_tls_paths_are_consumed_without_export() -> anyhow::Result<()
         .add(1, &[])
         .map_err(|reason| anyhow::anyhow!("validation metric rejected: {reason:?}"))?;
     operation.complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None);
-    super::super::super::flush_wire_test_export()?;
+    super::super::flush_wire_test_export()?;
     assert!(
         runtime.block_on(testbed.wait_for_all_signals(std::time::Duration::from_secs(2))),
         "TLS privacy fixture did not deliver all three signals"
@@ -92,13 +93,13 @@ fn conformance_wire_tls_paths_are_consumed_without_export() -> anyhow::Result<()
         Vec::<String>::new(),
         "private TLS path or credential material escaped onto the OTLP wire"
     );
-    super::super::super::shutdown_capsule_tracing();
+    super::super::shutdown_capsule_tracing();
     Ok(())
 }
 
 #[test]
 fn facade_event_exports_native_event_name_once() {
-    let (export, subscriber) = test_layers(false, "unused");
+    let (export, subscriber) = super::test_layers(false, "unused");
     tracing::subscriber::with_default(subscriber, || {
         let attrs = [jackin_telemetry::Attr {
             key: jackin_telemetry::schema::attrs::std_attrs::SESSION_ID,
@@ -120,7 +121,7 @@ fn facade_event_exports_native_event_name_once() {
 fn crash_event_exports_complete_bounded_private_shape() {
     use opentelemetry::logs::AnyValue;
 
-    let (export, subscriber) = test_layers(false, "unused");
+    let (export, subscriber) = super::test_layers(false, "unused");
     let session = jackin_telemetry::identity::SessionGuard::claim(
         jackin_telemetry::identity::SessionKind::Console,
     )
@@ -171,7 +172,7 @@ fn crash_event_exports_complete_bounded_private_shape() {
 fn facade_redacts_then_utf8_truncates_body_and_exception_fields() {
     use opentelemetry::logs::AnyValue;
 
-    let (export, subscriber) = test_layers(false, "unused");
+    let (export, subscriber) = super::test_layers(false, "unused");
     let sensitive = format!("token=supersecret {}", "🦀".repeat(2_000));
     let attrs = [
         jackin_telemetry::Attr {
@@ -233,7 +234,7 @@ fn facade_redacts_then_utf8_truncates_body_and_exception_fields() {
 fn jank_event_exports_once_per_active_crossing() {
     use opentelemetry::logs::AnyValue;
 
-    let (export, subscriber) = test_layers(false, "unused");
+    let (export, subscriber) = super::test_layers(false, "unused");
     tracing::subscriber::with_default(subscriber, || {
         let mut monitor = jackin_telemetry::ui::JankMonitor::default();
         monitor.record_frame(
@@ -270,7 +271,7 @@ fn jank_event_exports_once_per_active_crossing() {
 fn screen_transition_correlates_old_and_new_lifecycle_logs() {
     use opentelemetry::logs::AnyValue;
 
-    let (export, subscriber) = test_layers(false, "unused");
+    let (export, subscriber) = super::test_layers(false, "unused");
     tracing::subscriber::with_default(subscriber, || {
         let action_attrs = [jackin_telemetry::Attr {
             key: jackin_telemetry::schema::attrs::UI_ACTION_NAME,
@@ -392,3 +393,4 @@ fn screen_transition_correlates_old_and_new_lifecycle_logs() {
         assert_eq!(context.trace_id, transition.span_context.trace_id());
     }
 }
+

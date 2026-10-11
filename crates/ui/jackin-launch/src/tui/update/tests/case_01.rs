@@ -226,3 +226,4 @@ fn container_info_messages_open_copy_and_close_overlay() {
     assert_eq!(view.container_info_copied, None);
     assert!(!view.footer_hover.right);
 }
+

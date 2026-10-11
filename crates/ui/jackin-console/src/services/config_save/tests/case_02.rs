@@ -51,9 +51,9 @@ fn s1_settings_account_draft_cancel_discards_apply_persists() {
             },
         },
     );
-    let saved = save_settings(
+    let saved = super::save_settings(
         &paths,
-        SettingsSaveInput {
+        super::SettingsSaveInput {
             mounts_original: &settings.mounts.original,
             mounts_pending: &settings.mounts.pending,
             env_original: &settings.env.original,
@@ -77,3 +77,4 @@ fn s1_settings_account_draft_cancel_discards_apply_persists() {
         .unwrap();
     assert!(persisted.accounts.contains_key("drafted"));
 }
+

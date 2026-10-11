@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use super::super::discovery;
 use std::collections::{BTreeMap, BTreeSet};
 
 use std::os::unix::fs::symlink;
@@ -34,6 +33,7 @@ use jackin_protocol::usage_broker::{
 use super::*;
 
 use crate::host::{ForwardedUsageAccount, ProviderCredentialEnvResolution};
+
 
 mod support;
 use support::*;

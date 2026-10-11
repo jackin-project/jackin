@@ -365,3 +365,4 @@ fn prune_account_bindings_removes_bindings_across_all_scopes() {
     );
     assert!(config.accounts["work"].enabled);
 }
+

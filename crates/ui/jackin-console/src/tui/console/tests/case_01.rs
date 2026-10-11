@@ -268,3 +268,4 @@ fn launch_with_committed_agent_restores_pending_plans_on_resolve_error() {
         "pending launch and role plans must be restored after a resolve error"
     );
 }
+

@@ -305,9 +305,11 @@ fn mixed_profile_and_env_group_fails_closed_without_changing_pure_profile() {
         capability_id: "capability".to_owned(),
         credential_revision: "profile-revision".to_owned(),
         provenance: BTreeSet::from(["account shared".to_owned()]),
-        source: ValidatedCredentialSource::Profile(discovery::ProfileCredentialMaterial::Amp {
-            key: "profile-secret".to_owned(),
-        }),
+        source: ValidatedCredentialSource::Profile(
+            super::super::discovery::ProfileCredentialMaterial::Amp {
+                key: "profile-secret".to_owned(),
+            },
+        ),
     };
     let env = ValidatedCredentialBinding {
         surface: HostSurfaceId::Amp,
@@ -383,3 +385,4 @@ fn capability_identity_keeps_distinct_and_anonymous_sources_separate() {
         "anonymous bindings remain source-specific"
     );
 }
+

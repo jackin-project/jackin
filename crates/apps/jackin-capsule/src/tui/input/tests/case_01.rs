@@ -389,3 +389,4 @@ fn unterminated_csi_does_not_grow_unbounded() {
     let events = parser.parse(b"\x1b[A");
     assert_eq!(events, vec![InputEvent::Data(b"\x1b[A".to_vec())]);
 }
+

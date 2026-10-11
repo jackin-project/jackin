@@ -346,9 +346,9 @@ fn settings_save_round_trips_multiple_accounts_and_github_independently() {
         .env
         .insert("GH_TOKEN".into(), EnvValue::Plain("github-secret".into()));
     let save = |settings: &crate::tui::state::SettingsState<'_>| {
-        save_settings(
+        super::save_settings(
             &paths,
-            SettingsSaveInput {
+            super::SettingsSaveInput {
                 mounts_original: &settings.mounts.original,
                 mounts_pending: &settings.mounts.pending,
                 env_original: &settings.env.original,
@@ -377,3 +377,4 @@ fn settings_save_round_trips_multiple_accounts_and_github_independently() {
     assert_eq!(saved.accounts["personal"].name, "Renamed personal");
     assert_eq!(saved.github.as_ref(), Some(&settings.auth.github));
 }
+

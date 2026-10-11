@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn frame_sgr_output(metadata: SgrMetadata, span: Span<'_>) -> Vec<u8> {
+fn frame_sgr_output(metadata: SgrMetadata, span: Span<'_>) -> Vec<u8> {
     let backend = SocketBackend::new(10, 1);
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
@@ -15,3 +15,4 @@ pub(super) fn frame_sgr_output(metadata: SgrMetadata, span: Span<'_>) -> Vec<u8>
         .unwrap();
     terminal.backend_mut().take_output()
 }
+

@@ -250,3 +250,4 @@ async fn isolation_reuse_rejects_another_saved_workspace_before_git() {
         assert!(runner.run_recorded.is_empty());
     }
 }
+

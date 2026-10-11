@@ -2,14 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) type ResolverCall = (Option<String>, Option<String>, Vec<String>);
+type ResolverCall = (Option<String>, Option<String>, Vec<String>);
 
 #[derive(Default)]
-pub(super) struct FakeEnvResolver {
-    pub(super) calls: Mutex<Vec<ResolverCall>>,
+struct FakeEnvResolver {
+    calls: Mutex<Vec<ResolverCall>>,
 }
 
-pub(super) struct NoEnvResolver;
+struct NoEnvResolver;
 
 impl ProviderCredentialEnvResolver for NoEnvResolver {
     fn resolve_provider_credentials(
@@ -23,7 +23,7 @@ impl ProviderCredentialEnvResolver for NoEnvResolver {
     }
 }
 
-pub(super) struct ConsentKeychainReader;
+struct ConsentKeychainReader;
 
 impl ProfileCredentialReader for ConsentKeychainReader {
     fn read(&self, _path: &Path) -> ProfileReadOutcome {
@@ -47,8 +47,8 @@ impl ProfileCredentialReader for ConsentKeychainReader {
 }
 
 #[derive(Default)]
-pub(super) struct RecordingProfileReader {
-    pub(super) reads: Mutex<BTreeMap<PathBuf, usize>>,
+struct RecordingProfileReader {
+    reads: Mutex<BTreeMap<PathBuf, usize>>,
 }
 
 impl ProfileCredentialReader for RecordingProfileReader {
@@ -84,7 +84,7 @@ impl ProfileCredentialReader for RecordingProfileReader {
     }
 }
 
-pub(super) struct SyntheticDatabaseOnlyReader;
+struct SyntheticDatabaseOnlyReader;
 
 impl ProfileCredentialReader for SyntheticDatabaseOnlyReader {
     fn read(&self, _path: &Path) -> ProfileReadOutcome {
@@ -148,7 +148,7 @@ impl ProviderCredentialEnvResolver for FakeEnvResolver {
     }
 }
 
-pub(super) fn write_registry(config_root: &Path, entries: &[(&str, Agent, &Path)]) {
+fn write_registry(config_root: &Path, entries: &[(&str, Agent, &Path)]) {
     let mut config = AppConfig::default();
     for (id, agent, directory) in entries {
         config.accounts.insert(
@@ -175,11 +175,11 @@ pub(super) fn write_registry(config_root: &Path, entries: &[(&str, Agent, &Path)
     .unwrap();
 }
 
-pub(super) fn write_codex_only_global(config_root: &Path, codex_root: &Path) {
+fn write_codex_only_global(config_root: &Path, codex_root: &Path) {
     write_registry(config_root, &[("codex", Agent::Codex, codex_root)]);
 }
 
-pub(super) fn write_codex_workspace(path: &Path, root: &Path) {
+fn write_codex_workspace(path: &Path, root: &Path) {
     let id = path.file_stem().unwrap().to_str().unwrap();
     let config_root = path.parent().unwrap().parent().unwrap();
     let global = config_root.join("config.toml");
@@ -215,7 +215,7 @@ dst = "/workspace/project"
     .unwrap();
 }
 
-pub(super) fn write_codex_auth(root: &Path, account_id: &str, email_payload: &str, token: &str) {
+fn write_codex_auth(root: &Path, account_id: &str, email_payload: &str, token: &str) {
     std::fs::create_dir_all(root).unwrap();
     std::fs::write(
         root.join("auth.json"),
@@ -226,8 +226,8 @@ pub(super) fn write_codex_auth(root: &Path, account_id: &str, email_payload: &st
     .unwrap();
 }
 
-pub(super) struct AntigravityGrantReader {
-    pub(super) grant: ProfileReadOutcome,
+struct AntigravityGrantReader {
+    grant: ProfileReadOutcome,
 }
 
 impl ProfileCredentialReader for AntigravityGrantReader {
@@ -251,7 +251,7 @@ impl ProfileCredentialReader for AntigravityGrantReader {
     }
 }
 
-pub(super) fn test_binding(
+fn test_binding(
     surface: HostSurfaceId,
     source: ValidatedCredentialSource,
 ) -> ValidatedCredentialBinding {
@@ -267,8 +267,8 @@ pub(super) fn test_binding(
 }
 
 #[derive(Default)]
-pub(super) struct SecretDedupFakeResolver {
-    pub(super) calls: Mutex<Vec<Vec<String>>>,
+struct SecretDedupFakeResolver {
+    calls: Mutex<Vec<Vec<String>>>,
     handles: Mutex<BTreeMap<String, OpaqueCredentialHandle>>,
 }
 
@@ -305,7 +305,7 @@ impl ProviderCredentialEnvResolver for SecretDedupFakeResolver {
     }
 }
 
-pub(super) fn write_accounts_config(
+fn write_accounts_config(
     config_root: &Path,
     profiles: &[(&str, Agent, &Path)],
     keys: &[(&str, AiProvider, &str)],
@@ -350,7 +350,7 @@ pub(super) fn write_accounts_config(
     .unwrap();
 }
 
-pub(super) fn discover_with(
+fn discover_with(
     config_root: &Path,
     home: &Path,
     resolver: &dyn ProviderCredentialEnvResolver,
@@ -364,3 +364,4 @@ pub(super) fn discover_with(
     )
     .unwrap()
 }
+

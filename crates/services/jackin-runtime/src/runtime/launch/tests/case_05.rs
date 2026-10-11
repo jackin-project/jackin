@@ -10,7 +10,7 @@ async fn codex_launch_preflight_rejects_empty_host_auth_without_mounting_it() {
 
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let manifest_temp = tempdir().unwrap();
     std::fs::write(
         manifest_temp.path().join("jackin.role.toml"),
@@ -68,7 +68,7 @@ async fn agent_mounts_for_amp_synced_includes_secrets_json() {
 
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let manifest_temp = tempdir().unwrap();
     std::fs::write(
         manifest_temp.path().join("jackin.role.toml"),
@@ -131,7 +131,7 @@ async fn agent_mounts_for_amp_ignore_mounts_state_but_no_auth_handoff() {
 
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let manifest_temp = tempdir().unwrap();
     std::fs::write(
         manifest_temp.path().join("jackin.role.toml"),
@@ -378,3 +378,4 @@ fn env_file_is_private_host_only_and_removed_on_success_and_error_drop() {
     assert!(result.is_err());
     assert!(!error_path.exists());
 }
+

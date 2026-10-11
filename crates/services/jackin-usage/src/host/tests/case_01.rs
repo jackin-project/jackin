@@ -397,3 +397,4 @@ fn selected_account_routes_remain_scoped_to_their_provider() {
             .all(|account| !account.selected)
     );
 }
+

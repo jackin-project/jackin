@@ -2,14 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn capability(account_id: &str) -> UsageAccountCapability {
+fn capability(account_id: &str) -> UsageAccountCapability {
     UsageAccountCapability {
         account_id: account_id.to_owned(),
         surface_id: "claude".to_owned(),
     }
 }
 
-pub(super) async fn send_request(
+async fn send_request(
     socket: std::path::PathBuf,
     operation: UsageBrokerOperation,
 ) -> UsageBrokerResponse {
@@ -29,14 +29,14 @@ pub(super) async fn send_request(
     serde_json::from_str(line.trim()).unwrap()
 }
 
-pub(super) fn error_message(response: UsageBrokerResponse) -> String {
+fn error_message(response: UsageBrokerResponse) -> String {
     let UsageBrokerResponse::Error { error } = response else {
         panic!("expected error response");
     };
     error.message
 }
 
-pub(super) async fn wait_for_socket(socket: &Path) {
+async fn wait_for_socket(socket: &Path) {
     for _ in 0..100 {
         if socket.exists() {
             return;
@@ -46,7 +46,7 @@ pub(super) async fn wait_for_socket(socket: &Path) {
     panic!("usage proxy socket was not created");
 }
 
-pub(super) fn single_session_authorization(
+fn single_session_authorization(
     uid: u32,
     gid: u32,
     account_id: &str,
@@ -67,7 +67,7 @@ pub(super) fn single_session_authorization(
     )
 }
 
-pub(super) async fn denied_relay_response(
+async fn denied_relay_response(
     authorization: UsageRelayAuthorization,
     supervisor: SupervisorIdentity,
     peer: PeerIdentity,
@@ -95,16 +95,16 @@ pub(super) async fn denied_relay_response(
     response
 }
 
-pub(super) const SUPERVISOR_START_TIME: u64 = 123_456;
+const SUPERVISOR_START_TIME: u64 = 123_456;
 
-pub(super) fn supervisor(pid: u32) -> SupervisorIdentity {
+fn supervisor(pid: u32) -> SupervisorIdentity {
     SupervisorIdentity {
         pid,
         start_time: Some(SUPERVISOR_START_TIME),
     }
 }
 
-pub(super) fn root_peer(pid: u32, start_time: Option<u64>) -> PeerIdentity {
+fn root_peer(pid: u32, start_time: Option<u64>) -> PeerIdentity {
     PeerIdentity {
         pid: Some(pid),
         start_time,
@@ -112,3 +112,4 @@ pub(super) fn root_peer(pid: u32, start_time: Option<u64>) -> PeerIdentity {
         gid: 0,
     }
 }
+

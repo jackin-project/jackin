@@ -3,12 +3,12 @@
 
 //! Tests for `update`.
 
-use super::super::model;
 use super::super::model::{SettingsPanelDirty, SettingsPanelDiscard};
 
 use super::*;
 
 use ratatui::layout::Rect;
+
 
 mod support;
 use support::*;

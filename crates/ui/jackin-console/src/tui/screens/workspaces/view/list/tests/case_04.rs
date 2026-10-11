@@ -37,7 +37,7 @@ fn preview_shows_unscoped_global_mounts_without_role_ambiguity_text() {
     let mut term = Terminal::new(backend).unwrap();
     let state = ManagerState::from_config(&cfg, std::path::Path::new("/tmp"));
     term.draw(|f| {
-        render_details_pane(f, Rect::new(0, 0, 72, 24), &summary(), &cfg, &state);
+        super::render_details_pane(f, Rect::new(0, 0, 72, 24), &summary(), &cfg, &state);
     })
     .unwrap();
 
@@ -73,7 +73,7 @@ fn preview_includes_environments_block_when_only_workspace_env_set() {
     let mut term = Terminal::new(backend).unwrap();
     let state = ManagerState::from_config(&cfg, std::path::Path::new("/tmp"));
     term.draw(|f| {
-        render_details_pane(f, Rect::new(0, 0, 60, 24), &summary, &cfg, &state);
+        super::render_details_pane(f, Rect::new(0, 0, 60, 24), &summary, &cfg, &state);
     })
     .unwrap();
 
@@ -143,7 +143,7 @@ fn preview_shows_compact_running_badge_for_active_instances() {
     let backend = TestBackend::new(72, 24);
     let mut term = Terminal::new(backend).unwrap();
     term.draw(|f| {
-        render_details_pane(f, Rect::new(0, 0, 72, 24), &summary, &cfg, &state);
+        super::render_details_pane(f, Rect::new(0, 0, 72, 24), &summary, &cfg, &state);
     })
     .unwrap();
 
@@ -186,7 +186,7 @@ fn preview_includes_environments_block_when_only_per_agent_overrides_set() {
     let mut term = Terminal::new(backend).unwrap();
     let state = ManagerState::from_config(&cfg, std::path::Path::new("/tmp"));
     term.draw(|f| {
-        render_details_pane(f, Rect::new(0, 0, 60, 24), &summary, &cfg, &state);
+        super::render_details_pane(f, Rect::new(0, 0, 60, 24), &summary, &cfg, &state);
     })
     .unwrap();
 
@@ -242,7 +242,7 @@ fn preview_block_order_is_general_mounts_environments_agents() {
     let mut term = Terminal::new(backend).unwrap();
     let state = ManagerState::from_config(&cfg, std::path::Path::new("/tmp"));
     term.draw(|f| {
-        render_details_pane(f, Rect::new(0, 0, 60, 24), &summary, &cfg, &state);
+        super::render_details_pane(f, Rect::new(0, 0, 60, 24), &summary, &cfg, &state);
     })
     .unwrap();
 
@@ -282,3 +282,4 @@ fn preview_block_order_is_general_mounts_environments_agents() {
         "block order must be General < Mounts < Environments < Roles; got y=({g},{m},{e},{a})"
     );
 }
+

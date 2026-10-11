@@ -103,7 +103,7 @@ fn reduce_account_scan_message_arms_dedupes_and_ignores_foreign() {
     );
     assert!(!auth.scan.in_flight);
     // The orphaned completion (stale generation) is ignored.
-    let outcome = model::AccountScanOutcome::default();
+    let outcome = super::super::model::AccountScanOutcome::default();
     assert_eq!(
         reduce_account_scan_message(
             &mut auth,
@@ -120,7 +120,7 @@ fn reduce_account_scan_message_arms_dedupes_and_ignores_foreign() {
 
 #[test]
 fn reduce_account_scan_completion_joins_candidates_and_committed() {
-    use super::model::AccountScanOutcome;
+    use super::super::model::AccountScanOutcome;
     let mut auth = scan_test_auth();
     let effect = reduce_account_scan_message(&mut auth, &SettingsMessage::RequestAccountScan);
     assert_eq!(
@@ -169,7 +169,7 @@ fn reduce_account_scan_completion_joins_candidates_and_committed() {
 
 #[test]
 fn scan_merge_never_touches_present_or_deleted_ids() {
-    use super::model::AccountScanOutcome;
+    use super::super::model::AccountScanOutcome;
     let mut auth = scan_test_auth();
     // Operator deleted "gone" from pending and hand-edited nothing else.
     auth.original
@@ -233,9 +233,9 @@ fn discard_orphans_in_flight_scan() {
     assert!(!auth.scan.in_flight);
     assert!(auth.scan.scanned_ids.is_empty());
     // A stale completion after discard joins nothing.
-    let outcome = model::AccountScanOutcome {
+    let outcome = super::super::model::AccountScanOutcome {
         candidates: vec![("cand".to_owned(), scan_key_account("CAND_KEY"))],
-        ..model::AccountScanOutcome::default()
+        ..super::super::model::AccountScanOutcome::default()
     };
     auth.complete_account_scan(1, &Ok(outcome));
     assert!(!auth.pending.contains_key("cand"));
@@ -276,3 +276,4 @@ fn scanned_source_in_draft_mirrors_upsert_rule() {
     other_provider.provider = jackin_config::AiProvider::OpenAi;
     assert!(!scanned_source_in_draft(&pending, &other_provider));
 }
+

@@ -352,3 +352,4 @@ async fn attach_protocol_forwards_unresolved_image_path_paste_as_text() {
     // never silently eaten.
     assert_eq!(server_task.await.unwrap(), ClientFrame::Input(raw_input));
 }
+

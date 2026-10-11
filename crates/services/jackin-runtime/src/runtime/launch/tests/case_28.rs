@@ -7,7 +7,7 @@ use super::*;
 async fn programmatic_launch_without_an_agent_fails_before_docker() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     paths.ensure_base_dirs().unwrap();
     std::fs::write(
         &paths.config_file,
@@ -66,7 +66,7 @@ account = "test"
 async fn programmatic_launch_refuses_a_role_branch_before_docker() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     paths.ensure_base_dirs().unwrap();
     std::fs::write(
         &paths.config_file,
@@ -225,3 +225,4 @@ async fn related_restore_load_options_share_the_entry_lease_until_activation() {
             .exists()
     );
 }
+

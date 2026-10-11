@@ -390,3 +390,4 @@ fn pointer_shape_updates_for_usage_dialog_tabs() {
     let shape = rx.try_recv().expect("usage tab pointer-shape update");
     assert!(shape.ends_with(b"\x1b]22;pointer\x1b\\"));
 }
+

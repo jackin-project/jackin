@@ -396,3 +396,4 @@ fn list_o_with_zero_github_mounts_is_silent_noop() {
 
     assert!(state.list_modal.is_none(), "no modal when no GitHub URLs");
 }
+

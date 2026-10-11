@@ -14,6 +14,7 @@ use ratatui::{
 
 use super::{CellStyle, SgrMetadata, SocketBackend};
 
+
 mod support;
 use support::*;
 mod case_01;

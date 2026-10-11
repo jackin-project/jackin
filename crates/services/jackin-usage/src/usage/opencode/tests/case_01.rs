@@ -157,3 +157,4 @@ fn opencode_over_cap_keeps_raw_percent_without_failing_siblings() {
     assert_eq!(quota.buckets[1].remaining_percent, Some(70));
     assert_eq!(quota.buckets[1].used_label, None);
 }
+

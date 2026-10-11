@@ -397,3 +397,4 @@ fn journal_rewrite_failure_preserves_valid_record_for_recovery() {
         "retry must remove all transaction sidecars"
     );
 }
+

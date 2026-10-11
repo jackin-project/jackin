@@ -7,7 +7,7 @@ use super::*;
 async fn load_agent_sets_claude_env_to_jackin() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
@@ -79,7 +79,7 @@ plugins = []
 async fn load_agent_writes_instance_manifest() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
@@ -145,7 +145,7 @@ plugins = []
 async fn load_agent_forwards_telemetry_without_debug_alias() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
@@ -206,7 +206,7 @@ plugins = []
 async fn load_agent_injects_coauthor_trailer_env_when_enabled() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     config.git.coauthor_trailer = true;
@@ -261,7 +261,7 @@ plugins = []
 async fn load_agent_omits_coauthor_trailer_env_when_disabled() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
@@ -314,7 +314,7 @@ plugins = []
 async fn load_agent_injects_dco_env_when_enabled() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     config.git.dco = true;
@@ -375,9 +375,10 @@ async fn load_options_for_launch_carries_debug() {
 async fn render_exit_clears_universe_marker_only_when_no_instances_remain() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     paths.ensure_base_dirs().unwrap();
-    super::universe::mark_start(&paths, super::universe::StartKind::FreshConstruct).await;
+    super::super::universe::mark_start(&paths, super::super::universe::StartKind::FreshConstruct)
+        .await;
     let marker = crate::runtime::coordination::universe_dir(&paths)
         .unwrap()
         .join("universe-since");
@@ -389,3 +390,4 @@ async fn render_exit_clears_universe_marker_only_when_no_instances_remain() {
 
     assert!(!marker.exists(), "last-instance exit clears the marker");
 }
+

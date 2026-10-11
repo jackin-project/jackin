@@ -212,3 +212,4 @@ fn lock_and_manifest_splits_match_git_backed_originals() {
     let changed = changed_workspace_dependencies_from_contents(base, restructured).expect("diff");
     assert_eq!(changed, None);
 }
+

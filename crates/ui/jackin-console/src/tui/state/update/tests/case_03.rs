@@ -165,3 +165,4 @@ fn dismiss_list_modal_clears_modal() {
     update_manager(&mut state, ManagerMessage::DismissListModal);
     assert!(state.list_modal.is_none());
 }
+

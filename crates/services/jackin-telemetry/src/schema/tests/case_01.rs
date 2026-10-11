@@ -188,6 +188,8 @@ fn facade_definitions_exactly_cover_every_generated_signal() {
 
 #[test]
 fn config_version_sets_are_scope_and_direction_specific() {
+    use super::{ConfigVersionDirection, valid_config_schema_version};
+
     assert!(valid_config_schema_version(
         "global",
         ConfigVersionDirection::From,
@@ -214,3 +216,4 @@ fn config_version_sets_are_scope_and_direction_specific() {
         "v1alpha9"
     ));
 }
+

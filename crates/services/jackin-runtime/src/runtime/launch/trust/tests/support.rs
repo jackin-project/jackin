@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn workspace(workdir: &str, dsts: &[&str]) -> ResolvedWorkspace {
+fn workspace(workdir: &str, dsts: &[&str]) -> ResolvedWorkspace {
     ResolvedWorkspace {
         name: "fixture".to_owned(),
         label: "fixture".to_owned(),
@@ -23,7 +23,7 @@ pub(super) fn workspace(workdir: &str, dsts: &[&str]) -> ResolvedWorkspace {
     }
 }
 
-pub(super) fn codex_state(root: &std::path::Path) -> RoleState {
+fn codex_state(root: &std::path::Path) -> RoleState {
     RoleState {
         root: root.to_owned(),
         gh_config_dir: root.join("gh"),
@@ -57,3 +57,4 @@ pub(super) fn codex_state(root: &std::path::Path) -> RoleState {
         provider_config_mounts: Vec::new(),
     }
 }
+

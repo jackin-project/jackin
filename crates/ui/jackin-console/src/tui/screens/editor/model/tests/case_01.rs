@@ -9,7 +9,7 @@ fn editor_apply_tab_move_plan_resets_departed_tab_state() {
     editor.active_tab = EditorTab::Secrets;
     editor
         .unmasked_rows
-        .insert((SecretsScopeTag::Workspace, "API_KEY".to_owned()));
+        .insert((super::SecretsScopeTag::Workspace, "API_KEY".to_owned()));
     editor.secrets_expanded.insert("builder".to_owned());
     editor.set_tab_content_scroll_focused(true);
 
@@ -49,7 +49,7 @@ fn editor_apply_selection_and_scroll_plans_update_focus() {
     editor.select_row(5);
     assert_eq!(editor.active_field, FieldFocus::Row(5));
 
-    editor.set_hover_target(Some(EditorHoverTarget::MountRow(2)));
+    editor.set_hover_target(Some(super::EditorHoverTarget::MountRow(2)));
     assert_eq!(editor.hovered_mount_row(), Some(2));
 
     editor.apply_tab_horizontal_scroll_plan(
@@ -121,14 +121,14 @@ fn editor_sets_role_expansion_state() {
 fn editor_toggles_secret_mask_state() {
     let mut editor = TestEditor::new_edit("alpha".into(), WorkspaceConfig::default());
 
-    editor.toggle_secret_mask(SecretsScopeTag::Workspace, String::from("API_KEY"));
+    editor.toggle_secret_mask(super::SecretsScopeTag::Workspace, String::from("API_KEY"));
     assert!(
         editor
             .unmasked_rows
-            .contains(&(SecretsScopeTag::Workspace, String::from("API_KEY")))
+            .contains(&(super::SecretsScopeTag::Workspace, String::from("API_KEY")))
     );
 
-    editor.toggle_secret_mask(SecretsScopeTag::Workspace, String::from("API_KEY"));
+    editor.toggle_secret_mask(super::SecretsScopeTag::Workspace, String::from("API_KEY"));
     assert!(editor.unmasked_rows.is_empty());
 }
 
@@ -387,3 +387,4 @@ fn editor_secrets_flat_rows_reads_pending_workspace_env() {
         SecretsRow::WorkspaceKeyRow(key) if key == "TOKEN"
     )));
 }
+

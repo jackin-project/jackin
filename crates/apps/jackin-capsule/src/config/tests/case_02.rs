@@ -299,3 +299,4 @@ fn unknown_instances_are_rejected() {
     }));
     validate_agent_credentials(&config, &credentials).unwrap_err();
 }
+

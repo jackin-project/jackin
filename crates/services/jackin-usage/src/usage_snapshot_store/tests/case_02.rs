@@ -194,3 +194,4 @@ fn usage_snapshot_store_records_schema_version() {
         Some("4")
     );
 }
+

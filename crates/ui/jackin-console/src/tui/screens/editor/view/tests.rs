@@ -6,7 +6,7 @@
 use super::*;
 
 #[cfg(any(test, feature = "test-support"))]
-use jackin_config::fixtures::config_with_agents;
+use jackin_config::test_support::config_with_agents;
 
 use std::collections::BTreeMap;
 
@@ -42,7 +42,6 @@ use super::render_secrets_tab;
 
 use jackin_config::WorkspaceRoleOverride;
 
-mod frame_regression;
 
 mod support;
 use support::*;

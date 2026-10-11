@@ -3,7 +3,7 @@
 
 use super::*;
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct TestRole(String);
+struct TestRole(String);
 
 impl RoleChoice for TestRole {
     fn key(&self) -> String {
@@ -11,7 +11,7 @@ impl RoleChoice for TestRole {
     }
 }
 
-pub(super) fn key(code: KeyCode) -> KeyEvent {
+fn key(code: KeyCode) -> KeyEvent {
     KeyEvent {
         code,
         modifiers: KeyModifiers::NONE,
@@ -20,11 +20,11 @@ pub(super) fn key(code: KeyCode) -> KeyEvent {
     }
 }
 
-pub(super) fn roles(keys: &[&str]) -> Vec<TestRole> {
+fn roles(keys: &[&str]) -> Vec<TestRole> {
     keys.iter().map(|k| TestRole((*k).to_owned())).collect()
 }
 
-pub(super) fn dump(state: &RolePickerState<TestRole>, w: u16, h: u16) -> String {
+fn dump(state: &RolePickerState<TestRole>, w: u16, h: u16) -> String {
     use ratatui::{Terminal, backend::TestBackend, layout::Rect};
     let backend = TestBackend::new(w, h);
     let mut term = Terminal::new(backend).unwrap();
@@ -43,3 +43,4 @@ pub(super) fn dump(state: &RolePickerState<TestRole>, w: u16, h: u16) -> String 
     }
     out
 }
+

@@ -5,7 +5,7 @@ use super::*;
 
 #[test]
 fn auth_state_lines_appends_scan_status_and_issues() {
-    use super::model::AccountScanSummary;
+    use super::super::model::AccountScanSummary;
     let mut auth = scan_view_auth();
     auth.scan.last_summary = Some(AccountScanSummary {
         joined: vec!["a".to_owned()],
@@ -73,3 +73,4 @@ fn settings_header_does_not_duplicate_active_tab_label() {
         );
     }
 }
+

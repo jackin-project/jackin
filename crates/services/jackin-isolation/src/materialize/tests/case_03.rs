@@ -377,3 +377,4 @@ async fn stale_scratch_branch_is_adopted_when_record_absent() {
         "jackin/scratch/jackin-the-architect",
     );
 }
+

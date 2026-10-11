@@ -1,7 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-pub(super) fn run_telemetry_shutdown_scenario() {
+use super::*;
+fn run_telemetry_shutdown_scenario() {
     use opentelemetry::metrics::MeterProvider as _;
     use opentelemetry_sdk::metrics::{InMemoryMetricExporter, PeriodicReader, SdkMeterProvider};
 
@@ -80,7 +81,7 @@ pub(super) fn run_telemetry_shutdown_scenario() {
             .add(1, &[])
             .expect("late write after detach is a no-op");
     });
-    let shutdown = std::thread::spawn(super::super::super::shutdown_capsule_tracing);
+    let shutdown = std::thread::spawn(super::super::shutdown_capsule_tracing);
     let order_deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
     while super::SHUTDOWN_ORDER.lock().expect("order lock").first() != Some(&"detach.meter") {
         assert!(
@@ -116,7 +117,7 @@ pub(super) fn run_telemetry_shutdown_scenario() {
     );
 }
 
-pub(super) fn log_attribute<'a>(
+fn log_attribute<'a>(
     record: &'a opentelemetry_sdk::logs::SdkLogRecord,
     name: &str,
 ) -> Option<&'a opentelemetry::logs::AnyValue> {
@@ -125,7 +126,7 @@ pub(super) fn log_attribute<'a>(
         .find_map(|(key, value)| (key.as_str() == name).then_some(value))
 }
 
-pub(super) fn span_attribute<'a>(
+fn span_attribute<'a>(
     span: &'a opentelemetry_sdk::trace::SpanData,
     name: &str,
 ) -> Option<std::borrow::Cow<'a, str>> {
@@ -135,7 +136,7 @@ pub(super) fn span_attribute<'a>(
         .map(|attribute| attribute.value.as_str())
 }
 
-pub(super) fn cli_command_test_attrs() -> [jackin_telemetry::Attr<'static>; 2] {
+fn cli_command_test_attrs() -> [jackin_telemetry::Attr<'static>; 2] {
     [
         jackin_telemetry::Attr {
             key: jackin_telemetry::schema::attrs::CLI_COMMAND_NAME,
@@ -148,7 +149,7 @@ pub(super) fn cli_command_test_attrs() -> [jackin_telemetry::Attr<'static>; 2] {
     ]
 }
 
-pub(super) fn emit_severity_matrix() {
+fn emit_severity_matrix() {
     let outcome = [jackin_telemetry::Attr {
         key: jackin_telemetry::schema::attrs::OUTCOME,
         value: jackin_telemetry::Value::Str("success"),
@@ -182,7 +183,7 @@ pub(super) fn emit_severity_matrix() {
     }
 }
 
-pub(super) fn assert_raw_metric_batch_rejected(
+fn assert_raw_metric_batch_rejected(
     reason: jackin_telemetry::Rejection,
     record: impl FnOnce(&opentelemetry::metrics::Meter),
 ) {
@@ -214,3 +215,4 @@ pub(super) fn assert_raw_metric_batch_rejected(
         "raw batch did not move the exact metric rejection cell"
     );
 }
+

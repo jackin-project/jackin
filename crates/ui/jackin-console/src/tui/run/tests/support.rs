@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn key(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
+fn key(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
     KeyEvent {
         code,
         modifiers,
@@ -11,7 +11,7 @@ pub(super) fn key(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
     }
 }
 
-pub(super) const fn mouse(kind: MouseEventKind) -> MouseEvent {
+const fn mouse(kind: MouseEventKind) -> MouseEvent {
     MouseEvent {
         kind,
         column: 0,
@@ -20,7 +20,7 @@ pub(super) const fn mouse(kind: MouseEventKind) -> MouseEvent {
     }
 }
 
-pub(super) const fn mouse_at(kind: MouseEventKind, column: u16, row: u16) -> MouseEvent {
+const fn mouse_at(kind: MouseEventKind, column: u16, row: u16) -> MouseEvent {
     MouseEvent {
         kind,
         column,
@@ -28,3 +28,4 @@ pub(super) const fn mouse_at(kind: MouseEventKind, column: u16, row: u16) -> Mou
         modifiers: KeyModifiers::NONE,
     }
 }
+

@@ -2,11 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn members(names: &[&str]) -> BTreeSet<String> {
+fn members(names: &[&str]) -> BTreeSet<String> {
     names.iter().map(|s| (*s).to_owned()).collect()
 }
 
-pub(super) fn edges(pairs: &[(&str, &[&str])]) -> BTreeMap<String, BTreeSet<String>> {
+fn edges(pairs: &[(&str, &[&str])]) -> BTreeMap<String, BTreeSet<String>> {
     pairs
         .iter()
         .map(|(from, tos)| {
@@ -18,6 +18,7 @@ pub(super) fn edges(pairs: &[(&str, &[&str])]) -> BTreeMap<String, BTreeSet<Stri
         .collect()
 }
 
-pub(super) fn tiers<'a>(pairs: &'a [(&'a str, u8)]) -> BTreeMap<&'a str, u8> {
+fn tiers<'a>(pairs: &'a [(&'a str, u8)]) -> BTreeMap<&'a str, u8> {
     pairs.iter().copied().collect()
 }
+

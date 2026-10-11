@@ -74,3 +74,4 @@ fn v2_state_reads_succeed_without_write_permission() {
     assert_eq!(result.unwrap(), vec![sample_record()]);
     assert_eq!(std::fs::read_dir(directory).unwrap().count(), 1);
 }
+

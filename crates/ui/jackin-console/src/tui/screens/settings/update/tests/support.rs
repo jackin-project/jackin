@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn env_config() -> SettingsEnvConfig<&'static str> {
+fn env_config() -> SettingsEnvConfig<&'static str> {
     SettingsEnvConfig {
         env: BTreeMap::from([("GLOBAL".to_owned(), "x")]),
         roles: BTreeMap::from([
@@ -15,7 +15,7 @@ pub(super) fn env_config() -> SettingsEnvConfig<&'static str> {
     }
 }
 
-pub(super) fn scan_profile_account(directory: &str) -> jackin_config::AccountConfig {
+fn scan_profile_account(directory: &str) -> jackin_config::AccountConfig {
     jackin_config::AccountConfig {
         enabled: true,
         name: "Claude default".into(),
@@ -29,7 +29,7 @@ pub(super) fn scan_profile_account(directory: &str) -> jackin_config::AccountCon
     }
 }
 
-pub(super) fn scan_key_account(variable: &str) -> jackin_config::AccountConfig {
+fn scan_key_account(variable: &str) -> jackin_config::AccountConfig {
     jackin_config::AccountConfig {
         enabled: true,
         name: "anthropic API key".into(),
@@ -42,9 +42,10 @@ pub(super) fn scan_key_account(variable: &str) -> jackin_config::AccountConfig {
     }
 }
 
-pub(super) fn scan_test_auth() -> SettingsAuthState<(), (), ()> {
+fn scan_test_auth() -> SettingsAuthState<(), (), ()> {
     SettingsAuthState::from_accounts(BTreeMap::from([(
         "keep".to_owned(),
         scan_key_account("KEEP_KEY"),
     )]))
 }
+

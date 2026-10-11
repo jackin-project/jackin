@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) const ROLE: &str = "the-architect";
+const ROLE: &str = "the-architect";
 
-pub(super) fn api_key_account(name: &str, provider: AiProvider) -> AccountConfig {
+fn api_key_account(name: &str, provider: AiProvider) -> AccountConfig {
     AccountConfig {
         enabled: true,
         name: name.into(),
@@ -17,7 +17,7 @@ pub(super) fn api_key_account(name: &str, provider: AiProvider) -> AccountConfig
     }
 }
 
-pub(super) fn test_config() -> (AppConfig, WorkspaceName) {
+fn test_config() -> (AppConfig, WorkspaceName) {
     let mut config = AppConfig::default();
     config.accounts.insert(
         "a-claude".into(),
@@ -46,13 +46,7 @@ pub(super) fn test_config() -> (AppConfig, WorkspaceName) {
     (config, ws)
 }
 
-pub(super) fn set_role_binding(
-    config: &mut AppConfig,
-    ws: &str,
-    role: &str,
-    agent: Agent,
-    id: &str,
-) {
+fn set_role_binding(config: &mut AppConfig, ws: &str, role: &str, agent: Agent, id: &str) {
     config.workspaces.get_mut(ws).unwrap().roles.insert(
         role.into(),
         WorkspaceRoleOverride {
@@ -62,13 +56,7 @@ pub(super) fn set_role_binding(
     );
 }
 
-pub(super) fn update_role_binding(
-    config: &mut AppConfig,
-    ws: &str,
-    role: &str,
-    agent: Agent,
-    id: &str,
-) {
+fn update_role_binding(config: &mut AppConfig, ws: &str, role: &str, agent: Agent, id: &str) {
     config
         .workspaces
         .get_mut(ws)
@@ -80,14 +68,14 @@ pub(super) fn update_role_binding(
         .insert(agent, id.to_owned());
 }
 
-pub(super) fn eligible_ids(selection: &LaunchAccountSelection) -> Vec<&str> {
+fn eligible_ids(selection: &LaunchAccountSelection) -> Vec<&str> {
     let LaunchAccountSelection::Pick(accounts) = selection else {
         panic!("expected picker selection; got {selection:?}");
     };
     accounts.iter().map(|account| account.id.as_str()).collect()
 }
 
-pub(super) fn agent_configuration(agent: Agent, account: &str) -> AgentConfiguration {
+fn agent_configuration(agent: Agent, account: &str) -> AgentConfiguration {
     AgentConfiguration {
         agent,
         account: account.to_owned(),
@@ -98,7 +86,7 @@ pub(super) fn agent_configuration(agent: Agent, account: &str) -> AgentConfigura
     }
 }
 
-pub(super) fn launch_config() -> (AppConfig, WorkspaceName) {
+fn launch_config() -> (AppConfig, WorkspaceName) {
     let (mut config, ws) = test_config();
     for (id, agent, account) in [
         ("claude-a", Agent::Claude, "a-claude"),
@@ -113,12 +101,12 @@ pub(super) fn launch_config() -> (AppConfig, WorkspaceName) {
     (config, ws)
 }
 
-pub(super) fn set_workspace_default(config: &mut AppConfig, ws: &str, ids: &[&str]) {
+fn set_workspace_default(config: &mut AppConfig, ws: &str, ids: &[&str]) {
     config.workspaces.get_mut(ws).unwrap().default_launch =
         Some(ids.iter().map(ToString::to_string).collect());
 }
 
-pub(super) fn set_role_default(config: &mut AppConfig, ws: &str, role: &str, ids: &[&str]) {
+fn set_role_default(config: &mut AppConfig, ws: &str, role: &str, ids: &[&str]) {
     config
         .workspaces
         .get_mut(ws)
@@ -128,3 +116,4 @@ pub(super) fn set_role_default(config: &mut AppConfig, ws: &str, role: &str, ids
         .or_default()
         .default_launch = Some(ids.iter().map(ToString::to_string).collect());
 }
+

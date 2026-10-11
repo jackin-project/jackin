@@ -366,3 +366,4 @@ fn settings_confirm_plan_routes_confirm_cancel_and_continue() {
         SettingsConfirmPlan::Continue
     );
 }
+

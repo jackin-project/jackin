@@ -366,3 +366,4 @@ fn create_mode_field_refresh_stays_on_field_and_keeps_section() {
     assert_eq!(rows.len(), 2, "one auth field + new-field sentinel");
     assert!(matches!(rows[1], FieldDisplayRow::NewFieldSentinel));
 }
+

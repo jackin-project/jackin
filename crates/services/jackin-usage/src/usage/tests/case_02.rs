@@ -373,3 +373,4 @@ fn account_snapshot_rows_carry_reset_epoch() {
         .expect("session row");
     assert_eq!(session.resets_at, Some(reset_at));
 }
+

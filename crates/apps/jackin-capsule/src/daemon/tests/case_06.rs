@@ -377,3 +377,4 @@ fn scroll_region_ops_do_not_emit_decstbm_optimization() {
         "scroll op optimization bytes must stay disabled: {text:?}"
     );
 }
+

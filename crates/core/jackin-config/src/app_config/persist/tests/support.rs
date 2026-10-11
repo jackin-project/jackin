@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn wait_for_mtime_tick() {
+fn wait_for_mtime_tick() {
     #[expect(
         clippy::disallowed_methods,
         reason = "mtime idempotency test needs a wall-clock boundary before checking no rewrite"
@@ -10,7 +10,7 @@ pub(super) fn wait_for_mtime_tick() {
     std::thread::sleep(std::time::Duration::from_millis(50));
 }
 
-pub(super) fn workspace_tree_bytes(paths: &JackinPaths) -> Option<Vec<(String, Vec<u8>)>> {
+fn workspace_tree_bytes(paths: &JackinPaths) -> Option<Vec<(String, Vec<u8>)>> {
     let entries = match std::fs::read_dir(&paths.workspaces_dir) {
         Ok(entries) => entries,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return None,
@@ -29,7 +29,7 @@ pub(super) fn workspace_tree_bytes(paths: &JackinPaths) -> Option<Vec<(String, V
     Some(files)
 }
 
-pub(super) fn assert_no_staged_writes(paths: &JackinPaths) {
+fn assert_no_staged_writes(paths: &JackinPaths) {
     for directory in [&paths.config_dir, &paths.workspaces_dir] {
         let entries = std::fs::read_dir(directory).unwrap();
         for entry in entries {
@@ -43,13 +43,13 @@ pub(super) fn assert_no_staged_writes(paths: &JackinPaths) {
     }
 }
 
-pub(super) fn disc_workspace_toml(version: &str, workdir: &str) -> String {
+fn disc_workspace_toml(version: &str, workdir: &str) -> String {
     format!(
         "version = \"{version}\"\nworkdir = \"{workdir}\"\n\n[[mounts]]\nsrc = \"/host/source\"\ndst = \"{workdir}\"\n"
     )
 }
 
-pub(super) fn disc_write_tree(paths: &JackinPaths) {
+fn disc_write_tree(paths: &JackinPaths) {
     std::fs::create_dir_all(&paths.workspaces_dir).unwrap();
     std::fs::write(
         &paths.config_file,
@@ -64,7 +64,7 @@ pub(super) fn disc_write_tree(paths: &JackinPaths) {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub(super) struct DiscFileStamp {
+struct DiscFileStamp {
     bytes: Vec<u8>,
     len: u64,
     modified: std::time::SystemTime,
@@ -72,7 +72,7 @@ pub(super) struct DiscFileStamp {
     mode: u32,
 }
 
-pub(super) fn disc_file_stamp(path: &Path) -> DiscFileStamp {
+fn disc_file_stamp(path: &Path) -> DiscFileStamp {
     let metadata = std::fs::metadata(path).unwrap();
     DiscFileStamp {
         bytes: std::fs::read(path).unwrap(),
@@ -86,7 +86,7 @@ pub(super) fn disc_file_stamp(path: &Path) -> DiscFileStamp {
     }
 }
 
-pub(super) fn disc_dir_entries(path: &Path) -> Vec<String> {
+fn disc_dir_entries(path: &Path) -> Vec<String> {
     let mut entries = std::fs::read_dir(path)
         .unwrap()
         .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
@@ -94,3 +94,4 @@ pub(super) fn disc_dir_entries(path: &Path) -> Vec<String> {
     entries.sort();
     entries
 }
+

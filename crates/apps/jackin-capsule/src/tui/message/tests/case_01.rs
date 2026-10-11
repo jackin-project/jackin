@@ -372,3 +372,4 @@ fn branch_context_bar_click_action_routes_context_and_container() {
     );
     assert_eq!(branch_context_bar_click_action(None), None);
 }
+

@@ -358,3 +358,4 @@ fn coordinator_failure_shares_retry_deadline_and_last_good() {
     assert_eq!(suppressed.generation, 2);
     assert_eq!(executor.calls.load(Ordering::SeqCst), 2);
 }
+

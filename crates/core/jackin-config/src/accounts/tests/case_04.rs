@@ -231,3 +231,4 @@ fn provider_wire_spelling_matches_canonical_slug() {
         );
     }
 }
+

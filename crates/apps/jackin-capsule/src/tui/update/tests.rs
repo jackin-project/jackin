@@ -25,6 +25,7 @@ use crate::tui::message::{Action, PaletteCommandRoute};
 
 use crate::tui::update::FullRedrawReason;
 
+
 mod support;
 use support::*;
 mod case_01;

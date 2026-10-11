@@ -2,36 +2,36 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) const FIXTURES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/contracts");
+const FIXTURES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/contracts");
 
 #[derive(Debug, Deserialize)]
-pub(super) struct SurfaceMatrix {
-    pub(super) schema_version: u64,
-    pub(super) cases: Vec<SurfaceCase>,
+struct SurfaceMatrix {
+    schema_version: u64,
+    cases: Vec<SurfaceCase>,
 }
 
 #[derive(Debug, Deserialize)]
-pub(super) struct SurfaceCase {
-    pub(super) id: String,
-    pub(super) surfaces: Vec<String>,
-    pub(super) state: String,
-    pub(super) dimensions: Vec<String>,
+struct SurfaceCase {
+    id: String,
+    surfaces: Vec<String>,
+    state: String,
+    dimensions: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
-pub(super) struct BypassAllowlist {
-    pub(super) schema_version: u64,
-    pub(super) calls: Vec<AllowedCall>,
+struct BypassAllowlist {
+    schema_version: u64,
+    calls: Vec<AllowedCall>,
 }
 
 #[derive(Debug, Deserialize)]
-pub(super) struct AllowedCall {
-    pub(super) path: String,
-    pub(super) symbol: String,
-    pub(super) classification: String,
+struct AllowedCall {
+    path: String,
+    symbol: String,
+    classification: String,
 }
 
-pub(super) fn validate_projection_v1(value: &Value) -> Result<(), String> {
+fn validate_projection_v1(value: &Value) -> Result<(), String> {
     let object = value
         .as_object()
         .ok_or_else(|| "projection must be an object".to_owned())?;
@@ -58,7 +58,7 @@ pub(super) fn validate_projection_v1(value: &Value) -> Result<(), String> {
     Ok(())
 }
 
-pub(super) fn validate_provider(provider: &Value) -> Result<(), String> {
+fn validate_provider(provider: &Value) -> Result<(), String> {
     required_string(provider, "provider_id")?;
     required_string(provider, "display_name")?;
     required_u64(provider, "rank")?;
@@ -74,7 +74,7 @@ pub(super) fn validate_provider(provider: &Value) -> Result<(), String> {
     Ok(())
 }
 
-pub(super) fn validate_account(account: &Value) -> Result<(), String> {
+fn validate_account(account: &Value) -> Result<(), String> {
     required_string(account, "canonical_account_id")?;
     required_u64(account, "rank")?;
     required_string(account, "display_label")?;
@@ -107,7 +107,7 @@ pub(super) fn validate_account(account: &Value) -> Result<(), String> {
     Ok(())
 }
 
-pub(super) fn validate_window(window: &Value) -> Result<(), String> {
+fn validate_window(window: &Value) -> Result<(), String> {
     required_string(window, "window_id")?;
     required_u64(window, "rank")?;
     required_string(window, "label")?;
@@ -134,7 +134,7 @@ pub(super) fn validate_window(window: &Value) -> Result<(), String> {
     Ok(())
 }
 
-pub(super) fn validate_freshness(value: Option<&Value>) -> Result<(), String> {
+fn validate_freshness(value: Option<&Value>) -> Result<(), String> {
     let value = value.ok_or_else(|| "freshness is required".to_owned())?;
     required_u64(value, "generation")?;
     required_enum(
@@ -148,7 +148,7 @@ pub(super) fn validate_freshness(value: Option<&Value>) -> Result<(), String> {
     Ok(())
 }
 
-pub(super) fn optional_percent(value: &Value, key: &str) -> Result<Option<u64>, String> {
+fn optional_percent(value: &Value, key: &str) -> Result<Option<u64>, String> {
     match value.get(key) {
         None => Ok(None),
         Some(Value::Null) => Err(format!("{key} must be omitted, not null")),
@@ -164,7 +164,7 @@ pub(super) fn optional_percent(value: &Value, key: &str) -> Result<Option<u64>, 
     }
 }
 
-pub(super) fn required_enum(value: &Value, key: &str, allowed: &[&str]) -> Result<(), String> {
+fn required_enum(value: &Value, key: &str, allowed: &[&str]) -> Result<(), String> {
     let found = required_string(value, key)?;
     if allowed.contains(&found) {
         Ok(())
@@ -173,7 +173,7 @@ pub(super) fn required_enum(value: &Value, key: &str, allowed: &[&str]) -> Resul
     }
 }
 
-pub(super) fn required_string<'a>(value: &'a Value, key: &str) -> Result<&'a str, String> {
+fn required_string<'a>(value: &'a Value, key: &str) -> Result<&'a str, String> {
     value
         .get(key)
         .and_then(Value::as_str)
@@ -181,27 +181,27 @@ pub(super) fn required_string<'a>(value: &'a Value, key: &str) -> Result<&'a str
         .ok_or_else(|| format!("{key} must be a non-empty string"))
 }
 
-pub(super) fn required_u64(value: &Value, key: &str) -> Result<u64, String> {
+fn required_u64(value: &Value, key: &str) -> Result<u64, String> {
     value
         .get(key)
         .and_then(Value::as_u64)
         .ok_or_else(|| format!("{key} must be an unsigned integer"))
 }
 
-pub(super) fn required_i64(value: &Value, key: &str) -> Result<i64, String> {
+fn required_i64(value: &Value, key: &str) -> Result<i64, String> {
     value
         .get(key)
         .and_then(Value::as_i64)
         .ok_or_else(|| format!("{key} must be an integer"))
 }
 
-pub(super) fn read_json(name: &str) -> Value {
+fn read_json(name: &str) -> Value {
     let path = Path::new(FIXTURES).join(name);
     serde_json::from_str(&fs::read_to_string(&path).expect("contract fixture must exist"))
         .unwrap_or_else(|error| panic!("{}: {error}", path.display()))
 }
 
-pub(super) fn scan_production_calls(root: &Path, symbols: &BTreeSet<&str>) -> BTreeSet<String> {
+fn scan_production_calls(root: &Path, symbols: &BTreeSet<&str>) -> BTreeSet<String> {
     let mut files = Vec::new();
     collect_rust_files(&root.join("crates"), &mut files);
     let mut calls = BTreeSet::new();
@@ -235,7 +235,7 @@ pub(super) fn scan_production_calls(root: &Path, symbols: &BTreeSet<&str>) -> BT
     calls
 }
 
-pub(super) fn collect_rust_files(directory: &Path, files: &mut Vec<PathBuf>) {
+fn collect_rust_files(directory: &Path, files: &mut Vec<PathBuf>) {
     let Ok(entries) = fs::read_dir(directory) else {
         return;
     };
@@ -248,3 +248,4 @@ pub(super) fn collect_rust_files(directory: &Path, files: &mut Vec<PathBuf>) {
         }
     }
 }
+

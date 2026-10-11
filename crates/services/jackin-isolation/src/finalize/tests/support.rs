@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) struct NoPrompt;
+struct NoPrompt;
 
 impl FinalizerPrompt for NoPrompt {
     fn ask_exit_dialog(
@@ -14,7 +14,7 @@ impl FinalizerPrompt for NoPrompt {
     }
 }
 
-pub(super) fn cleanup_fallback_cycles() -> Vec<String> {
+fn cleanup_fallback_cycles() -> Vec<String> {
     ["", "files", "sha1", "", "", "", ""]
         .into_iter()
         .cycle()
@@ -23,7 +23,7 @@ pub(super) fn cleanup_fallback_cycles() -> Vec<String> {
         .collect()
 }
 
-pub(super) fn fake_with_outputs(outputs: &[&str]) -> FakeRunner {
+fn fake_with_outputs(outputs: &[&str]) -> FakeRunner {
     FakeRunner {
         capture_queue: outputs
             .iter()
@@ -34,7 +34,7 @@ pub(super) fn fake_with_outputs(outputs: &[&str]) -> FakeRunner {
     }
 }
 
-pub(super) fn register_fixture(container_dir: &Path, wt: &Path, name: &str, branch: &str) {
+fn register_fixture(container_dir: &Path, wt: &Path, name: &str, branch: &str) {
     let admin = container_dir.join("repo/.git/worktrees").join(name);
     std::fs::create_dir_all(&admin).unwrap();
     std::fs::write(
@@ -52,7 +52,7 @@ pub(super) fn register_fixture(container_dir: &Path, wt: &Path, name: &str, bran
     std::fs::write(admin.join("HEAD"), format!("ref: refs/heads/{branch}\n")).unwrap();
 }
 
-pub(super) fn rec(container_dir: &Path) -> IsolationRecord {
+fn rec(container_dir: &Path) -> IsolationRecord {
     let wt = crate::materialize::worktree_path_for(container_dir, "/workspace/jackin", "jackin-x");
     std::fs::create_dir_all(&wt).unwrap();
     register_fixture(container_dir, &wt, "jackin-x", "jackin/scratch/jackin-x");
@@ -70,11 +70,11 @@ pub(super) fn rec(container_dir: &Path) -> IsolationRecord {
     }
 }
 
-pub(super) fn ferow(name: &str, tip: &str, upstream: &str, track: &str) -> String {
+fn ferow(name: &str, tip: &str, upstream: &str, track: &str) -> String {
     format!("{name}\t{tip}\t{upstream}\t{track}\tEND")
 }
 
-pub(super) struct ScriptedPrompt(pub(super) VecDeque<ExitDialogChoice>);
+struct ScriptedPrompt(VecDeque<ExitDialogChoice>);
 
 impl FinalizerPrompt for ScriptedPrompt {
     fn ask_exit_dialog(
@@ -86,13 +86,13 @@ impl FinalizerPrompt for ScriptedPrompt {
     }
 }
 
-pub(super) struct RecordingPrompt {
+struct RecordingPrompt {
     answer: ExitDialogChoice,
-    pub(super) seen: Vec<PreservedReason>,
+    seen: Vec<PreservedReason>,
 }
 
 impl RecordingPrompt {
-    pub(super) fn new(answer: ExitDialogChoice) -> Self {
+    fn new(answer: ExitDialogChoice) -> Self {
         Self {
             answer,
             seen: Vec::new(),
@@ -113,7 +113,7 @@ impl FinalizerPrompt for RecordingPrompt {
     }
 }
 
-pub(super) fn fake_failing_capture(outputs: &[&str], fail_pattern: &str) -> FakeRunner {
+fn fake_failing_capture(outputs: &[&str], fail_pattern: &str) -> FakeRunner {
     FakeRunner {
         capture_queue: outputs
             .iter()
@@ -125,11 +125,7 @@ pub(super) fn fake_failing_capture(outputs: &[&str], fail_pattern: &str) -> Fake
     }
 }
 
-pub(super) fn rec_at(
-    container_dir: &Path,
-    mount_dst: &str,
-    scratch_branch: &str,
-) -> IsolationRecord {
+fn rec_at(container_dir: &Path, mount_dst: &str, scratch_branch: &str) -> IsolationRecord {
     let container_name = scratch_branch.strip_prefix("jackin/scratch/").unwrap();
     let wt = crate::materialize::worktree_path_for(container_dir, mount_dst, container_name);
     std::fs::create_dir_all(&wt).unwrap();
@@ -147,3 +143,4 @@ pub(super) fn rec_at(
         cleanup_status: CleanupStatus::Active,
     }
 }
+

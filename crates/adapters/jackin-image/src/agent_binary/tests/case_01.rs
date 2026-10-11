@@ -388,3 +388,4 @@ async fn ensure_binary_or_cached_fallback_surfaces_error_when_no_cache_exists() 
     let msg = format!("{error:#}");
     assert!(msg.contains("not-a-valid-url"), "{msg}");
 }
+

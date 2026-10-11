@@ -394,3 +394,4 @@ fn scanner_skips_path_like_attributes() {
     assert!(!inputs.unknown);
     assert!(inputs.members.is_empty());
 }
+

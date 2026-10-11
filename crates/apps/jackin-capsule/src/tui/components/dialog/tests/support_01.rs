@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn picker(agents: Vec<&str>) -> Dialog {
+fn picker(agents: Vec<&str>) -> Dialog {
     // Mirror the daemon's construction site: `Dialog::new_agent_picker`
     // computes the initial `selected` past the leading `"agents"`
     // section row. Tests that explicitly want a different starting
@@ -13,7 +13,7 @@ pub(super) fn picker(agents: Vec<&str>) -> Dialog {
     )
 }
 
-pub(super) fn palette_with(selected: usize, filter: impl Into<String>) -> Dialog {
+fn palette_with(selected: usize, filter: impl Into<String>) -> Dialog {
     Dialog::CommandPalette {
         selected,
         filter: filter.into(),
@@ -21,11 +21,11 @@ pub(super) fn palette_with(selected: usize, filter: impl Into<String>) -> Dialog
     }
 }
 
-pub(super) fn palette() -> Dialog {
+fn palette() -> Dialog {
     palette_with(0, String::new())
 }
 
-pub(super) fn container_info_fixture() -> Dialog {
+fn container_info_fixture() -> Dialog {
     Dialog::ContainerInfo {
         container_name: "jk-abc123-thearchitect".to_owned(),
         role: "the-architect".to_owned(),
@@ -38,7 +38,7 @@ pub(super) fn container_info_fixture() -> Dialog {
     }
 }
 
-pub(super) fn container_info_with_diagnostics_fixture() -> Dialog {
+fn container_info_with_diagnostics_fixture() -> Dialog {
     Dialog::ContainerInfo {
         container_name: "jk-abc123-thearchitect".to_owned(),
         role: "the-architect".to_owned(),
@@ -54,7 +54,7 @@ pub(super) fn container_info_with_diagnostics_fixture() -> Dialog {
     }
 }
 
-pub(super) fn visible_cell_for_value(
+fn visible_cell_for_value(
     state: &crate::tui::components::container_info_surface::ContainerInfoState,
     term_rows: u16,
     term_cols: u16,
@@ -98,7 +98,7 @@ pub(super) fn visible_cell_for_value(
     );
 }
 
-pub(super) fn pull_request_fixture() -> PullRequestInfo {
+fn pull_request_fixture() -> PullRequestInfo {
     PullRequestInfo {
         number: 123,
         title: "Surface PR context in Capsule".to_owned(),
@@ -108,16 +108,16 @@ pub(super) fn pull_request_fixture() -> PullRequestInfo {
     }
 }
 
-pub(super) const GITHUB_FIXTURE_BRANCH: &str = "feature/container-info";
+const GITHUB_FIXTURE_BRANCH: &str = "feature/container-info";
 
-pub(super) fn github_view_for_fixture(pr: &PullRequestInfo) -> GithubContextView<'_> {
+fn github_view_for_fixture(pr: &PullRequestInfo) -> GithubContextView<'_> {
     GithubContextView {
         branch: Some(GITHUB_FIXTURE_BRANCH),
         status: PullRequestStatus::Loaded(pr),
     }
 }
 
-pub(super) fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
+fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
     jackin_protocol::control::FocusedUsageView {
         focused_agent: Some("codex".to_owned()),
         focused_provider: Some("OpenAI".to_owned()),
@@ -233,7 +233,7 @@ pub(super) fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView
     }
 }
 
-pub(super) fn usage_status_bucket(
+fn usage_status_bucket(
     label: &str,
     status: jackin_protocol::control::UsageSnapshotStatus,
 ) -> jackin_protocol::control::QuotaBucketView {
@@ -253,7 +253,7 @@ pub(super) fn usage_status_bucket(
     }
 }
 
-pub(super) fn quota_bucket(
+fn quota_bucket(
     label: &str,
     remaining_percent: u8,
     reset_label: Option<&str>,
@@ -275,7 +275,7 @@ pub(super) fn quota_bucket(
     }
 }
 
-pub(super) fn text_bucket(label: &str, value: &str) -> jackin_protocol::control::QuotaBucketView {
+fn text_bucket(label: &str, value: &str) -> jackin_protocol::control::QuotaBucketView {
     jackin_protocol::control::QuotaBucketView {
         used_money: None,
         limit_money: None,
@@ -292,7 +292,7 @@ pub(super) fn text_bucket(label: &str, value: &str) -> jackin_protocol::control:
     }
 }
 
-pub(super) fn provider_usage_view_fixture(
+fn provider_usage_view_fixture(
     tab_label: &str,
     provider_label: &str,
     account_label: &str,
@@ -317,7 +317,7 @@ pub(super) fn provider_usage_view_fixture(
     view
 }
 
-pub(super) fn openai_usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
+fn openai_usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
     let mut credits = quota_bucket("Credits", 0, None, None);
     credits.used_label = None;
     credits.limit_label = Some("1K tokens".to_owned());
@@ -351,7 +351,7 @@ pub(super) fn openai_usage_view_fixture() -> jackin_protocol::control::FocusedUs
     )
 }
 
-pub(super) fn anthropic_usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
+fn anthropic_usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
     provider_usage_view_fixture(
         "Claude",
         "Anthropic",
@@ -378,3 +378,4 @@ pub(super) fn anthropic_usage_view_fixture() -> jackin_protocol::control::Focuse
         ],
     )
 }
+

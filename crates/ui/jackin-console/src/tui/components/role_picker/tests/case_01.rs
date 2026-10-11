@@ -179,3 +179,4 @@ fn agent_picker_renders_no_empty_state_placeholder_when_filter_excludes_all() {
     );
     assert!(frame.contains("Filter: zzzz"));
 }
+

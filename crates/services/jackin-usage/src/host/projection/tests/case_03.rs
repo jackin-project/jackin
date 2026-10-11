@@ -388,3 +388,4 @@ fn parity_s5_stale_and_partial_failure() {
         "Update delayed · Updated 25h ago"
     );
 }
+

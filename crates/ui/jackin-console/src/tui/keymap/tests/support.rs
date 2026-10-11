@@ -2,11 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn assert_bridged_matches_direct<A>(
-    name: &str,
-    map: &TermrockKeymap<A>,
-    extra_chords: &[KeyChord],
-) where
+fn assert_bridged_matches_direct<A>(name: &str, map: &TermrockKeymap<A>, extra_chords: &[KeyChord])
+where
     A: Clone + Copy + PartialEq + std::fmt::Debug + 'static,
 {
     let chords: Vec<KeyChord> = map
@@ -25,7 +22,7 @@ pub(super) fn assert_bridged_matches_direct<A>(
     }
 }
 
-pub(super) fn hint_keys(spans: Vec<termrock::widgets::HintSpan<'static>>) -> Vec<String> {
+fn hint_keys(spans: Vec<termrock::widgets::HintSpan<'static>>) -> Vec<String> {
     spans
         .iter()
         .filter_map(|span| match span {
@@ -35,3 +32,4 @@ pub(super) fn hint_keys(spans: Vec<termrock::widgets::HintSpan<'static>>) -> Vec
         })
         .collect()
 }
+

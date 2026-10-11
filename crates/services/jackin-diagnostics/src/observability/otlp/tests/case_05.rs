@@ -7,7 +7,7 @@ use super::*;
 fn conformance_no_lifetime_spans() {
     use std::time::Duration;
 
-    let (export, subscriber) = test_layers(false, "unused");
+    let (export, subscriber) = super::test_layers(false, "unused");
     let idle = Duration::from_millis(80);
     tracing::subscriber::with_default(subscriber, || {
         for (definition, emit_session_start) in [
@@ -112,11 +112,11 @@ fn metric_export_contract_rejects_names_shapes_and_dimensions() {
     use jackin_telemetry::Rejection;
 
     assert_eq!(
-        metric_contract_fields("unknown.metric", "unknown", "1"),
+        super::metric_contract_fields("unknown.metric", "unknown", "1"),
         Err(Rejection::UnknownName)
     );
     assert_eq!(
-        metric_contract_fields(
+        super::metric_contract_fields(
             jackin_telemetry::schema::metrics::UI_JANK,
             "forged description",
             "{crossing}",
@@ -130,17 +130,17 @@ fn metric_export_contract_rejects_names_shapes_and_dimensions() {
         "workspace.list",
     )];
     assert_eq!(
-        validate_metric_attributes(requirements, valid.iter()),
+        super::validate_metric_attributes(requirements, valid.iter()),
         Ok(())
     );
     let wrong_type = [opentelemetry::KeyValue::new("app.screen.id", true)];
     assert_eq!(
-        validate_metric_attributes(requirements, wrong_type.iter()),
+        super::validate_metric_attributes(requirements, wrong_type.iter()),
         Err(Rejection::InvalidValue)
     );
     let unknown = [opentelemetry::KeyValue::new("bogus.secret", "secret")];
     assert_eq!(
-        validate_metric_attributes(requirements, unknown.iter()),
+        super::validate_metric_attributes(requirements, unknown.iter()),
         Err(Rejection::UnknownAttribute)
     );
     let sensitive = [opentelemetry::KeyValue::new(
@@ -148,7 +148,7 @@ fn metric_export_contract_rejects_names_shapes_and_dimensions() {
         "/private/workspace",
     )];
     assert_eq!(
-        validate_metric_attributes(requirements, sensitive.iter()),
+        super::validate_metric_attributes(requirements, sensitive.iter()),
         Err(Rejection::Privacy)
     );
     let duplicate = [
@@ -156,18 +156,18 @@ fn metric_export_contract_rejects_names_shapes_and_dimensions() {
         opentelemetry::KeyValue::new("app.screen.id", "workspace.list"),
     ];
     assert_eq!(
-        validate_metric_attributes(requirements, duplicate.iter()),
+        super::validate_metric_attributes(requirements, duplicate.iter()),
         Err(Rejection::InvalidValue)
     );
     assert_eq!(
-        validate_metric_attributes(requirements, std::iter::empty()),
+        super::validate_metric_attributes(requirements, std::iter::empty()),
         Err(Rejection::InvalidValue)
     );
     let excessive = (0..=jackin_telemetry::limits::MAX_METRIC_ATTRIBUTES)
         .map(|_| opentelemetry::KeyValue::new("app.screen.id", "workspace.list"))
         .collect::<Vec<_>>();
     assert_eq!(
-        validate_metric_attributes(requirements, excessive.iter()),
+        super::validate_metric_attributes(requirements, excessive.iter()),
         Err(Rejection::SizeLimit)
     );
     let oversized = [opentelemetry::KeyValue::new(
@@ -175,11 +175,11 @@ fn metric_export_contract_rejects_names_shapes_and_dimensions() {
         "x".repeat(jackin_telemetry::limits::MAX_STRING_ATTRIBUTE_BYTES + 1),
     )];
     assert_eq!(
-        validate_metric_attributes(requirements, oversized.iter()),
+        super::validate_metric_attributes(requirements, oversized.iter()),
         Err(Rejection::SizeLimit)
     );
     assert_eq!(
-        validate_metric_points(
+        super::validate_metric_points(
             0..=jackin_telemetry::limits::MAX_CARDINALITY,
             |_| Vec::new(),
             &[],
@@ -272,7 +272,8 @@ fn rejected_metric_collection_is_not_reported_as_exported() {
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let facade_before = jackin_telemetry::facade_health();
     let export_before = crate::telemetry_health_snapshot();
-    let result = governed_metric_export_result(Err(jackin_telemetry::Rejection::UnknownName));
+    let result =
+        super::governed_metric_export_result(Err(jackin_telemetry::Rejection::UnknownName));
 
     assert!(matches!(
         result,
@@ -301,3 +302,4 @@ fn rejected_metric_collection_is_not_reported_as_exported() {
         export_before.metrics.failures + 1
     );
 }
+

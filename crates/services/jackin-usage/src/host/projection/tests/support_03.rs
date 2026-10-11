@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn parity_partial_account() -> ParityAccount {
+fn parity_partial_account() -> ParityAccount {
     ParityAccount {
         surface: HostSurfaceId::Grok,
         provider_id: "xai",
@@ -69,7 +69,7 @@ pub(super) fn parity_partial_account() -> ParityAccount {
     }
 }
 
-pub(super) fn parity_unsupported_account() -> ParityAccount {
+fn parity_unsupported_account() -> ParityAccount {
     ParityAccount {
         surface: HostSurfaceId::Minimax,
         provider_id: "minimax",
@@ -107,7 +107,7 @@ pub(super) fn parity_unsupported_account() -> ParityAccount {
     }
 }
 
-pub(super) fn parity_auth_account() -> ParityAccount {
+fn parity_auth_account() -> ParityAccount {
     ParityAccount {
         surface: HostSurfaceId::Zai,
         provider_id: "zai",
@@ -139,7 +139,7 @@ pub(super) fn parity_auth_account() -> ParityAccount {
     }
 }
 
-pub(super) fn parity_error_account() -> ParityAccount {
+fn parity_error_account() -> ParityAccount {
     ParityAccount {
         surface: HostSurfaceId::Kimi,
         provider_id: "kimi",
@@ -180,7 +180,7 @@ pub(super) fn parity_error_account() -> ParityAccount {
     }
 }
 
-pub(super) fn parity_zero_account() -> ParityAccount {
+fn parity_zero_account() -> ParityAccount {
     ParityAccount {
         surface: HostSurfaceId::OpenCode,
         provider_id: "opencode",
@@ -218,7 +218,7 @@ pub(super) fn parity_zero_account() -> ParityAccount {
     }
 }
 
-pub(super) fn parity_old_stale_account() -> ParityAccount {
+fn parity_old_stale_account() -> ParityAccount {
     ParityAccount {
         surface: HostSurfaceId::Claude,
         provider_id: "anthropic",
@@ -251,7 +251,7 @@ pub(super) fn parity_old_stale_account() -> ParityAccount {
     }
 }
 
-pub(super) fn parity_mega_providers() -> Vec<ParityProvider> {
+fn parity_mega_providers() -> Vec<ParityProvider> {
     vec![
         ParityProvider {
             provider_id: "antigravity",
@@ -319,7 +319,7 @@ pub(super) fn parity_mega_providers() -> Vec<ParityProvider> {
     ]
 }
 
-pub(super) fn parity_unresolved_entries() -> Vec<UsageUnresolvedV1> {
+fn parity_unresolved_entries() -> Vec<UsageUnresolvedV1> {
     vec![
         UsageUnresolvedV1 {
             provider_id: "anthropic".to_owned(),
@@ -344,7 +344,7 @@ pub(super) fn parity_unresolved_entries() -> Vec<UsageUnresolvedV1> {
     ]
 }
 
-pub(super) fn parity_projection_issue() -> UsageIssueV1 {
+fn parity_projection_issue() -> UsageIssueV1 {
     parity_issue(
         "broker_degraded",
         UsageIssueScopeV1::Projection,
@@ -354,14 +354,12 @@ pub(super) fn parity_projection_issue() -> UsageIssueV1 {
     )
 }
 
-pub(super) fn parity_single_provider(
-    provider: ParityProvider,
-) -> (UsageProjectionV1, Vec<FocusedUsageView>) {
+fn parity_single_provider(provider: ParityProvider) -> (UsageProjectionV1, Vec<FocusedUsageView>) {
     let (projection, views) = parity_projection(&[provider], Vec::new(), Vec::new());
     (projection, views.into_iter().next().unwrap())
 }
 
-pub(super) fn parity_render_text(
+fn parity_render_text(
     screen_state: UsageScreenState,
     width: u16,
     height: u16,
@@ -395,3 +393,4 @@ pub(super) fn parity_render_text(
         .collect::<Vec<_>>()
         .join("\n")
 }
+

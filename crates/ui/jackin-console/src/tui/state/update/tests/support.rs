@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn settings_github_row(state: &ManagerState<'_>) -> usize {
+fn settings_github_row(state: &ManagerState<'_>) -> usize {
     let ManagerStage::Settings(settings) = &state.stage else {
         panic!("expected settings stage");
     };
@@ -10,7 +10,7 @@ pub(super) fn settings_github_row(state: &ManagerState<'_>) -> usize {
     settings.auth.row_count() - 2
 }
 
-pub(super) fn state_with_saved_count(count: usize) -> ManagerState<'static> {
+fn state_with_saved_count(count: usize) -> ManagerState<'static> {
     let tmp = tempfile::tempdir().unwrap();
     let cwd = tmp.path();
     let mut config = jackin_config::AppConfig::default();
@@ -25,3 +25,4 @@ pub(super) fn state_with_saved_count(count: usize) -> ManagerState<'static> {
     }
     ManagerState::from_config(&config, cwd)
 }
+

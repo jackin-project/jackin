@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn test_manifest(container: &str) -> InstanceManifest {
+fn test_manifest(container: &str) -> InstanceManifest {
     let role_source_git = "https://example.invalid/agent-smith.git";
     InstanceManifest::new(NewInstanceManifest {
         container_base: container,
@@ -23,3 +23,4 @@ pub(super) fn test_manifest(container: &str) -> InstanceManifest {
         supported_agents: vec![],
     })
 }
+

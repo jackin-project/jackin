@@ -268,3 +268,4 @@ fn fake_git_commit_identity_is_rejected() {
     .unwrap_err();
     assert!(error.to_string().contains("Git commit object"));
 }
+

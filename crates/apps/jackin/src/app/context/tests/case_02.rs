@@ -392,3 +392,4 @@ plugins = []
         "explicit workspace default_agent must short-circuit the prompt"
     );
 }
+

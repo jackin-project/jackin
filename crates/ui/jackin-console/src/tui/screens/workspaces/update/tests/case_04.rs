@@ -271,3 +271,4 @@ fn selected_instance_purge_confirm_plan_builds_confirm_payload() {
         SelectedInstancePurgeConfirmPlan::OpenError
     );
 }
+

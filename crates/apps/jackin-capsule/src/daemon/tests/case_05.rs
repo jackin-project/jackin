@@ -381,3 +381,4 @@ fn split_metadata_inherits_focused_provider() {
     assert_eq!(provider.as_deref(), Some("Z.AI"));
     assert_eq!(env, expected_env);
 }
+

@@ -279,3 +279,4 @@ fn late_startup_completion_cannot_replace_newer_route_publication_or_failure() -
     assert!(manager.usage_snapshot.canonical_projection.is_none());
     Ok(())
 }
+

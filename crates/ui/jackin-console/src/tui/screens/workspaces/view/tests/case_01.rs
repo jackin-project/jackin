@@ -379,3 +379,4 @@ fn workspace_list_display_row_for_row_routes_all_row_kinds() {
         Some(new_workspace_display_row(false, false))
     );
 }
+

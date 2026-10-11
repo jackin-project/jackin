@@ -396,3 +396,4 @@ fn classify_mount_diffs_distinguishes_modified_from_remove_add() {
         diffs[0]
     );
 }
+

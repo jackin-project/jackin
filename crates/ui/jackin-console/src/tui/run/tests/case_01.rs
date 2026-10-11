@@ -394,3 +394,4 @@ fn modal_mouse_layer_policy_routes_container_info_wheel_to_base() {
         ConsoleModalMouseFacts::default(),
     ));
 }
+

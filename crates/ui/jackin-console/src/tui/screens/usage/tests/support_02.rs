@@ -2,16 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn window_metric_group(
-    label: &str,
-    remaining: Option<u8>,
-    now: i64,
-) -> UsageMetricGroup {
+fn window_metric_group(label: &str, remaining: Option<u8>, now: i64) -> super::UsageMetricGroup {
     use jackin_protocol::usage_broker::{
         UsageMetricGroupKindV1, UsageMetricPeriodV1, UsageMetricScopeV1, UsageMetricValueV1,
         UsagePercent, UsageQuotaStateV1,
     };
-    UsageMetricGroup {
+    super::UsageMetricGroup {
         group_id: format!("{label}-id"),
         rank: 0,
         kind: UsageMetricGroupKindV1::Window,
@@ -37,7 +33,7 @@ pub(super) fn window_metric_group(
     }
 }
 
-pub(super) fn backend_text(terminal: &ratatui::Terminal<ratatui::backend::TestBackend>) -> String {
+fn backend_text(terminal: &ratatui::Terminal<ratatui::backend::TestBackend>) -> String {
     let buffer = terminal.backend().buffer().clone();
     (0..buffer.area.height)
         .map(|y| {
@@ -49,11 +45,8 @@ pub(super) fn backend_text(terminal: &ratatui::Terminal<ratatui::backend::TestBa
         .join("\n")
 }
 
-pub(super) fn s8_press(
-    state: &mut crate::tui::state::ManagerState<'_>,
-    code: crossterm::event::KeyCode,
-) {
-    handle_key(
+fn s8_press(state: &mut crate::tui::state::ManagerState<'_>, code: crossterm::event::KeyCode) {
+    super::handle_key(
         state,
         crossterm::event::KeyEvent {
             code,
@@ -64,7 +57,7 @@ pub(super) fn s8_press(
     );
 }
 
-pub(super) fn s8_manager(screen: UsageScreenState) -> crate::tui::state::ManagerState<'static> {
+fn s8_manager(screen: UsageScreenState) -> crate::tui::state::ManagerState<'static> {
     // `ManagerState::from_config` borrows nothing `'static`-blocking here: the
     // config outlives the call via the leaked box, matching how the console
     // owns config for the whole run.
@@ -77,7 +70,7 @@ pub(super) fn s8_manager(screen: UsageScreenState) -> crate::tui::state::Manager
     manager
 }
 
-pub(super) fn s8_render_full(
+fn s8_render_full(
     manager: &crate::tui::state::ManagerState<'_>,
     width: u16,
     height: u16,
@@ -85,12 +78,12 @@ pub(super) fn s8_render_full(
     let backend = ratatui::backend::TestBackend::new(width, height);
     let mut terminal = ratatui::Terminal::new(backend).unwrap();
     terminal
-        .draw(|f| render_at(f, f.area(), manager, TEST_NOW_EPOCH))
+        .draw(|f| super::render_at(f, f.area(), manager, TEST_NOW_EPOCH))
         .unwrap();
     backend_text(&terminal)
 }
 
-pub(super) fn snapshot(accounts: Vec<UsageAccount>, notice: Option<String>) -> UsageScreenState {
+fn snapshot(accounts: Vec<UsageAccount>, notice: Option<String>) -> UsageScreenState {
     UsageScreenState {
         accounts,
         notice,
@@ -98,7 +91,7 @@ pub(super) fn snapshot(accounts: Vec<UsageAccount>, notice: Option<String>) -> U
     }
 }
 
-pub(super) fn assert_manual_refresh_join_preserves_periodic_cadence(
+fn assert_manual_refresh_join_preserves_periodic_cadence(
     failed: bool,
     claim_before_completion: bool,
 ) {
@@ -173,3 +166,4 @@ pub(super) fn assert_manual_refresh_join_preserves_periodic_cadence(
     assert_eq!(periodic.generation, active.generation + 1);
     assert!(!screen.refresh_due && !screen.force_refresh_pending);
 }
+

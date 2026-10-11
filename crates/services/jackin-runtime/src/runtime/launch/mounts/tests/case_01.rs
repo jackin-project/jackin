@@ -375,3 +375,4 @@ fn apple_provider_authority_audit_rejects_sibling_sources_without_overlays() {
 
     assert!(ensure_apple_provider_authority_not_exposed(&state, &mounts, &[]).is_err());
 }
+

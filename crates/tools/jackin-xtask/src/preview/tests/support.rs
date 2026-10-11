@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn known_legacy_snapshot() -> RollingReleaseSnapshot {
+fn known_legacy_snapshot() -> RollingReleaseSnapshot {
     RollingReleaseSnapshot {
         source_repository: LEGACY_SOURCE_REPOSITORY.to_owned(),
         tag_name: LEGACY_TAG.to_owned(),
@@ -15,3 +15,4 @@ pub(super) fn known_legacy_snapshot() -> RollingReleaseSnapshot {
         assets: known_legacy_assets(),
     }
 }
+

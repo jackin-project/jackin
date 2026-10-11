@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) struct TestWorkspace {
+struct TestWorkspace {
     allowed_roles: Vec<String>,
 }
 
@@ -12,24 +12,21 @@ impl WorkspaceRoleAccess for TestWorkspace {
     }
 }
 
-pub(super) fn ws_with_allowed(allowed: Vec<String>) -> TestWorkspace {
+fn ws_with_allowed(allowed: Vec<String>) -> TestWorkspace {
     TestWorkspace {
         allowed_roles: allowed,
     }
 }
 
-pub(super) fn role(key: &str) -> RoleSelector {
+fn role(key: &str) -> RoleSelector {
     RoleSelector::parse(key).unwrap()
 }
 
-pub(super) fn role_keys(roles: &[RoleSelector]) -> Vec<String> {
+fn role_keys(roles: &[RoleSelector]) -> Vec<String> {
     roles.iter().map(RoleSelector::key).collect()
 }
 
-pub(super) fn ws_with_role_overrides(
-    allowed: &[&str],
-    override_agents: &[&str],
-) -> WorkspaceConfig {
+fn ws_with_role_overrides(allowed: &[&str], override_agents: &[&str]) -> WorkspaceConfig {
     let mut roles = std::collections::BTreeMap::new();
     for a in override_agents {
         roles.insert((*a).into(), WorkspaceRoleOverride::default());
@@ -40,3 +37,4 @@ pub(super) fn ws_with_role_overrides(
         ..WorkspaceConfig::default()
     }
 }
+

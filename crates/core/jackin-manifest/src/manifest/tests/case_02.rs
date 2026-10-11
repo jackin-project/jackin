@@ -376,3 +376,4 @@ options = ["project1", "project2"]
     assert_eq!(var.prompt.as_deref(), Some("Select a project:"));
     assert_eq!(var.options, vec!["project1", "project2"]);
 }
+

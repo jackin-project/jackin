@@ -189,3 +189,4 @@ fn openrouter_account_pin_lands_byte_exact_in_capsule_models() {
         "the account pin must replace the role default without rewriting"
     );
 }
+

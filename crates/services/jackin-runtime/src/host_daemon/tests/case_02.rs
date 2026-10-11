@@ -284,3 +284,4 @@ fn unit_files_target_explicit_daemon_serve() {
     assert!(units.systemd_unit.contains("StandardOutput=null"));
     assert!(!units.systemd_unit.contains("jackin-daemon.log"));
 }
+

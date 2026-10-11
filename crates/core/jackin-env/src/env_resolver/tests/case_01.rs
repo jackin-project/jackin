@@ -389,3 +389,4 @@ fn required_prompt_skip_is_typed_source() {
         ResolveEnvError::Cycle(_) => panic!("expected PromptRequired, got Cycle"),
     }
 }
+

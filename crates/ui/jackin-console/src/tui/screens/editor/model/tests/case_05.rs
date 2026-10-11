@@ -126,7 +126,10 @@ fn role_binding_uses_assigned_account_and_survives_environment_removal() {
         .env
         .insert("TOKEN".into(), jackin_core::EnvValue::Plain("value".into()));
     editor
-        .delete_env_var(&SecretsScopeTag::Role("dev".into()), "TOKEN")
+        .delete_env_var(
+            &crate::tui::screens::editor::model::SecretsScopeTag::Role("dev".into()),
+            "TOKEN",
+        )
         .unwrap();
     assert_eq!(
         editor.pending.roles["dev"].account_bindings[&jackin_core::Agent::Claude],
@@ -134,3 +137,4 @@ fn role_binding_uses_assigned_account_and_survives_environment_removal() {
     );
     assert!(editor.pending.account_bindings.is_empty());
 }
+

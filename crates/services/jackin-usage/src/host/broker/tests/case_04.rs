@@ -378,3 +378,4 @@ fn broker_client_scoped_operation_requires_relay_and_never_probes() {
     assert_eq!(error.kind, UsageCoordinationErrorKind::Unauthorized);
     assert_eq!(executor.calls.load(Ordering::SeqCst), 0);
 }
+

@@ -377,3 +377,4 @@ fn image_recipe_is_agent_independent() {
     // launching Codex — one image, reused across agents.
     assert_eq!(classify_image_labels(&labels_claude, &expected_codex), None);
 }
+

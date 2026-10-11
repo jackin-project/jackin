@@ -10,7 +10,7 @@ async fn load_agent_injects_op_cli_resolved_value() {
 
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     paths.ensure_base_dirs().unwrap();
 
     let bin_dir = temp.path().join("fake-bin");
@@ -122,7 +122,7 @@ plugins = []
 async fn claim_container_name_not_found_claims_unique_ad_hoc_name() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let selector = RoleSelector::new(None, "agent-smith");
     // inspect returns NotFound (empty queue)
     let docker = jackin_test_support::FakeDockerClient::default();
@@ -158,7 +158,7 @@ async fn claim_container_name_not_found_claims_unique_ad_hoc_name() {
 async fn claim_container_name_docker_unavailable_errors() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let selector = RoleSelector::new(None, "agent-smith");
     let docker = jackin_test_support::FakeDockerClient {
         fail_with: vec![(
@@ -179,7 +179,7 @@ async fn claim_container_name_docker_unavailable_errors() {
 async fn claim_container_name_running_collision_tries_another_unique_name() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let selector = RoleSelector::new(None, "agent-smith");
     // First inspect → Running (occupied), second → NotFound (claimed)
     let docker = jackin_test_support::FakeDockerClient {
@@ -218,7 +218,7 @@ async fn claim_container_name_running_collision_tries_another_unique_name() {
 async fn claim_container_name_clean_exit_removes_and_reclaims() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let selector = RoleSelector::new(None, "agent-smith");
     // Stopped with exit_code=0, oom_killed=false → remove and reclaim
     let docker = jackin_test_support::FakeDockerClient {
@@ -247,7 +247,7 @@ async fn claim_container_name_clean_exit_removes_and_reclaims() {
 async fn claim_container_name_crashed_collision_tries_another_unique_name() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let selector = RoleSelector::new(None, "agent-smith");
     // Stopped with exit_code=1 → skip (no rm), then NotFound → claim
     let docker = jackin_test_support::FakeDockerClient {
@@ -280,7 +280,7 @@ async fn claim_container_name_crashed_collision_tries_another_unique_name() {
 async fn claim_container_name_saved_workspace_includes_workspace_component() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let selector = RoleSelector::new(None, "agent-smith");
     let docker = jackin_test_support::FakeDockerClient::default();
     let (name, _lock) = claim_container_name(
@@ -304,7 +304,7 @@ async fn claim_container_name_saved_workspace_includes_workspace_component() {
 async fn missing_matching_instance_recreates_current_role() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let container_name = "jk-k7p9m2xq-workspace-agentsmith";
     let manifest = workspace_manifest(
         container_name,
@@ -336,7 +336,7 @@ async fn running_matching_instance_is_skipped_by_launch_path() {
     // StartFresh (let launch proceed to create a new container).
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let container_name = "jk-k7p9m2xq-workspace-agentsmith";
     let manifest = workspace_manifest(
         container_name,
@@ -361,7 +361,7 @@ async fn running_matching_instance_is_skipped_by_launch_path() {
 async fn stopped_matching_instance_starts_current_role() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let container_name = "jk-k7p9m2xq-workspace-agentsmith";
     let manifest = workspace_manifest(
         container_name,
@@ -397,3 +397,4 @@ async fn stopped_matching_instance_starts_current_role() {
         )
     );
 }
+

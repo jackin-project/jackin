@@ -216,3 +216,4 @@ async fn real_git_descendant_ref_directory_symlink_preserves_external_canary() {
     assert!(Path::new(&rec.worktree_path).exists());
     assert_eq!(read_records(container.path()).unwrap().len(), 1);
 }
+

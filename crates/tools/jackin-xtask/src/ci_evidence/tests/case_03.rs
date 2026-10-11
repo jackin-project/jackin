@@ -397,3 +397,4 @@ fn missing_push_head_ledger_proof_is_rejected() {
     let error = validate_denominator("example/repo", &proof, &[], &[], &window).unwrap_err();
     assert!(error.to_string().contains("durable source proof"));
 }
+

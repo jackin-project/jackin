@@ -356,3 +356,4 @@ fn usage_cache_adopts_broker_generations_by_account_capability() {
         Some(UsageSnapshotStatus::Fresh)
     );
 }
+

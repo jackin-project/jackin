@@ -2,11 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn workspace_file_contents(paths: &JackinPaths, name: &str) -> String {
+fn workspace_file_contents(paths: &JackinPaths, name: &str) -> String {
     std::fs::read_to_string(paths.workspaces_dir.join(format!("{name}.toml"))).unwrap()
 }
 
-pub(super) fn cursor_credentials_fixture(home: &std::path::Path) {
+fn cursor_credentials_fixture(home: &std::path::Path) {
     std::fs::create_dir_all(home.join(".cursor")).unwrap();
     std::fs::write(
         home.join(".cursor/auth.json"),
@@ -15,7 +15,7 @@ pub(super) fn cursor_credentials_fixture(home: &std::path::Path) {
     .unwrap();
 }
 
-pub(super) fn poll_scan_to_ready(
+fn poll_scan_to_ready(
     rx: &mut BlockingSubscription<(u64, Result<AccountScanOutcome, String>)>,
 ) -> (u64, Result<AccountScanOutcome, String>) {
     // Spin (no thread sleep: banned repo-wide): the worker is local
@@ -29,3 +29,4 @@ pub(super) fn poll_scan_to_ready(
     }
     panic!("scan worker timed out");
 }
+

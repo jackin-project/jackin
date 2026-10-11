@@ -11,3 +11,4 @@ fn resolve_env_error_prompt_required_message_parity() {
         "env var FOO: required prompt cannot be skipped"
     );
 }
+

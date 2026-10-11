@@ -392,3 +392,4 @@ fn amp_binding_provisions_credentials_from_selected_xdg_roots() {
         r#"{"theme":"fixture"}"#
     );
 }
+

@@ -333,3 +333,4 @@ fn dead_process_returns_none() {
     let info = read_process_info(99999999);
     assert!(info.is_none());
 }
+

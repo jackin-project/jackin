@@ -357,3 +357,4 @@ fn image_ref_validator_rejects_injection_vectors() {
     assert!(!looks_like_valid_image_ref("foo|sh"));
     assert!(!looks_like_valid_image_ref(&"x".repeat(257)));
 }
+

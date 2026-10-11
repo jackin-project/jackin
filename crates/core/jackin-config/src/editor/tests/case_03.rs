@@ -383,3 +383,4 @@ creds = { src = "/run/secrets/x", dst = "/secrets/x" }
         "empty scope table should be gone: {out}"
     );
 }
+

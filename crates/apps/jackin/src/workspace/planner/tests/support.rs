@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn mount(src: &str, dst: &str) -> MountConfig {
+fn mount(src: &str, dst: &str) -> MountConfig {
     MountConfig {
         src: src.to_owned(),
         dst: dst.to_owned(),
@@ -11,7 +11,7 @@ pub(super) fn mount(src: &str, dst: &str) -> MountConfig {
     }
 }
 
-pub(super) fn workspace(workdir: &str, mounts: Vec<MountConfig>) -> WorkspaceConfig {
+fn workspace(workdir: &str, mounts: Vec<MountConfig>) -> WorkspaceConfig {
     WorkspaceConfig {
         workdir: workdir.to_owned(),
         mounts,
@@ -19,7 +19,7 @@ pub(super) fn workspace(workdir: &str, mounts: Vec<MountConfig>) -> WorkspaceCon
     }
 }
 
-pub(super) fn mk(src: &str, dst: &str, ro: bool) -> MountConfig {
+fn mk(src: &str, dst: &str, ro: bool) -> MountConfig {
     MountConfig {
         src: src.into(),
         dst: dst.into(),
@@ -27,3 +27,4 @@ pub(super) fn mk(src: &str, dst: &str, ro: bool) -> MountConfig {
         isolation: jackin_core::MountIsolation::Shared,
     }
 }
+

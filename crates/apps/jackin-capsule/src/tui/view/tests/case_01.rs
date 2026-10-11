@@ -364,3 +364,4 @@ fn debug_dialog_keeps_status_bar_visible() {
         "footer right group must be usage, container, run ID: {footer:?}"
     );
 }
+

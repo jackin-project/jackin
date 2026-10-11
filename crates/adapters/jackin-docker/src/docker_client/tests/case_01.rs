@@ -384,3 +384,4 @@ fn tls_material_present_treats_populated_values_as_present() {
     assert!(tls_material_present(&Value::Bool(true)));
     assert!(tls_material_present(&serde_json::json!(1)));
 }
+

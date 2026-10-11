@@ -71,14 +71,14 @@ fn grpc_endpoint_is_normalized_without_http_signal_paths() {
 #[test]
 fn endpoint_diagnostics_show_only_sanitized_authority() {
     assert_eq!(
-        sanitized_authority("https://collector.example:4317/private/tenant"),
+        super::sanitized_authority("https://collector.example:4317/private/tenant"),
         Some("https://collector.example:4317".to_owned())
     );
 }
 
 #[test]
 fn ordinary_https_enables_tls_without_custom_certificates() {
-    assert!(otlp_channel::uses_tls("https://collector:4317"));
+    assert!(super::otlp_channel::uses_tls("https://collector:4317"));
 }
 
 #[test]
@@ -98,7 +98,7 @@ fn flush_timeout_returns_without_joining_hung_worker() {
     let (release_tx, release_rx) = std::sync::mpsc::sync_channel(0);
     let completed = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let worker_completed = std::sync::Arc::clone(&completed);
-    let task = FlushTask::spawn(
+    let task = super::FlushTask::spawn(
         move || {
             release_rx.recv().expect("release flush worker");
             worker_completed.store(true, std::sync::atomic::Ordering::Release);
@@ -110,7 +110,7 @@ fn flush_timeout_returns_without_joining_hung_worker() {
     assert_eq!(result, Err("telemetry flush budget exhausted".to_owned()));
     assert!(!completed.load(std::sync::atomic::Ordering::Acquire));
     release_tx.send(()).expect("release flush worker");
-    reap_flush_workers();
+    super::reap_flush_workers();
 }
 
 #[test]
@@ -119,12 +119,12 @@ fn validation_distinguishes_timeout_from_signal_failure() {
     let timeout = Err("telemetry flush budget exhausted".to_owned());
     let failure = Err("telemetry flush failed".to_owned());
     assert_eq!(
-        validate_flush_results(&timeout, &success, &success),
-        Err(ValidationFailure::Timeout)
+        super::validate_flush_results(&timeout, &success, &success),
+        Err(super::super::ValidationFailure::Timeout)
     );
     assert_eq!(
-        validate_flush_results(&success, &failure, &success),
-        Err(ValidationFailure::Export("logs"))
+        super::validate_flush_results(&success, &failure, &success),
+        Err(super::super::ValidationFailure::Export("logs"))
     );
 }
 
@@ -328,21 +328,21 @@ fn target_os_names_map_to_exact_semantic_convention_values() {
 #[test]
 fn container_id_accepts_only_hex_runtime_ids() {
     assert_eq!(
-        verified_container_id("abcdef123456"),
+        super::verified_container_id("abcdef123456"),
         Some("abcdef123456".to_owned())
     );
     assert_eq!(
-        verified_container_id("ABCDEF123456"),
+        super::verified_container_id("ABCDEF123456"),
         Some("abcdef123456".to_owned())
     );
-    assert_eq!(verified_container_id("named-capsule"), None);
-    assert_eq!(verified_container_id("abc123"), None);
+    assert_eq!(super::verified_container_id("named-capsule"), None);
+    assert_eq!(super::verified_container_id("abc123"), None);
     assert_eq!(
-        container_id_from_cgroup("0::/kubepods.slice/docker-ABCDEF1234567890.scope\n"),
+        super::container_id_from_cgroup("0::/kubepods.slice/docker-ABCDEF1234567890.scope\n"),
         Some("abcdef1234567890".to_owned())
     );
     assert_eq!(
-        container_id_from_cgroup("0::/user.slice/named-capsule.scope\n"),
+        super::container_id_from_cgroup("0::/user.slice/named-capsule.scope\n"),
         None
     );
 }
@@ -371,7 +371,7 @@ fn disabled_configuration_creates_no_runtime_and_shutdown_is_idempotent() {
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let before = runtime_creation_count();
     let env = |_key: &str| None;
-    assert_eq!(config::resolve_otlp_config(&env), Ok(None));
+    assert_eq!(super::super::config::resolve_otlp_config(&env), Ok(None));
     shutdown();
     shutdown();
     assert_eq!(runtime_creation_count(), before);
@@ -379,15 +379,16 @@ fn disabled_configuration_creates_no_runtime_and_shutdown_is_idempotent() {
 
 #[test]
 fn tls_file_errors_do_not_expose_configured_paths() {
-    let config = config::TlsConfig {
+    let config = super::super::config::TlsConfig {
         certificate: Some("/secret/tenant-ca.pem".to_owned()),
         client_key: None,
         client_certificate: None,
     };
-    let error = otlp_channel::validate_transport("https://collector:4317", &config)
+    let error = super::otlp_channel::validate_transport("https://collector:4317", &config)
         .expect_err("missing certificate must fail");
     let error = error.to_string();
     assert_eq!(error, "OTLP CA certificate is unavailable");
     assert!(!error.contains("/secret/tenant-ca.pem"));
     assert!(!error.contains("No such file"));
 }
+

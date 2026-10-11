@@ -332,3 +332,4 @@ fn migration_preserves_installer_fresh_install_marker() {
     assert_eq!(parsed["version"].as_str().unwrap(), CURRENT_CONFIG_VERSION);
     assert_eq!(parsed["bootstrap"]["fresh_install"].as_bool(), Some(true));
 }
+

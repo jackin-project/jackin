@@ -96,3 +96,4 @@ fn repo_lock_paths_are_independent() {
     let held_two = acquire_repo_lock_blocking(&two).expect("second role");
     assert!(!Arc::ptr_eq(&held_one.0, &held_two.0));
 }
+

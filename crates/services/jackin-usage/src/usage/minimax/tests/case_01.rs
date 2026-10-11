@@ -194,3 +194,4 @@ fn minimax_operation_path_covers_balance_endpoint() {
         "/account/query_balance"
     );
 }
+

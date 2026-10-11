@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) struct CompletionDrop(pub(super) Option<oneshot::Sender<()>>);
+struct CompletionDrop(Option<oneshot::Sender<()>>);
 
 impl Drop for CompletionDrop {
     fn drop(&mut self) {
@@ -15,7 +15,7 @@ impl Drop for CompletionDrop {
     }
 }
 
-pub(super) async fn cancelled_before_poll(close_before_spawn: bool) {
+async fn cancelled_before_poll(close_before_spawn: bool) {
     let (reply_tx, reply_rx) = oneshot::channel();
     let mut reply_rx = Some(reply_rx);
     let polled = Arc::new(AtomicBool::new(false));
@@ -41,3 +41,4 @@ pub(super) async fn cancelled_before_poll(close_before_spawn: bool) {
         "cancelled command must never be polled"
     );
 }
+

@@ -218,3 +218,4 @@ fn read_only_dismiss_keymap_accepts_historical_dismiss_set() {
         );
     }
 }
+

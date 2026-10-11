@@ -154,3 +154,4 @@ fn image_label_classifier_reports_precise_invalidation_reasons() {
         );
     }
 }
+

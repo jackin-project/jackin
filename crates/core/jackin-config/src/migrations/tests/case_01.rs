@@ -382,3 +382,4 @@ fn applies_multi_step_chain_in_order() {
     assert_eq!(doc["alpha2_to_alpha3"].as_bool(), Some(true));
     assert_eq!(doc["version"].as_str(), Some("v1alpha4"));
 }
+

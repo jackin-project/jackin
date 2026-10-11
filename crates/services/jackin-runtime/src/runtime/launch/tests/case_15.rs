@@ -15,7 +15,7 @@ async fn load_agent_skips_unused_github_env_resolution() {
 
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let mut github_env = std::collections::BTreeMap::new();
@@ -125,7 +125,7 @@ async fn load_agent_rebuild_token_preflight_failure_tears_down_adopted_dind() {
     // those resources down rather than orphan a live privileged container.
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     // Token mode with an empty env => GH_TOKEN resolves to None =>
     // `verify_github_token_present` fails, after adoption.
@@ -258,7 +258,7 @@ async fn load_agent_dind_free_launch_preserves_available_prewarm() {
     // those resources down rather than orphan a live privileged container.
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     // Token mode with an empty env => GH_TOKEN resolves to None =>
     // `verify_github_token_present` fails, after adoption.
@@ -376,3 +376,4 @@ async fn load_agent_dind_free_launch_preserves_available_prewarm() {
     );
     assert!(paths.data_dir.join("prewarm-dind.json").exists());
 }
+

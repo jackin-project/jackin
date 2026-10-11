@@ -382,3 +382,4 @@ async fn attach_protocol_preserves_bracketed_paste_and_mouse_bytes() {
 
     assert_eq!(server_task.await.unwrap(), ClientFrame::Input(raw_input));
 }
+

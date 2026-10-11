@@ -2,13 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) const ROLE: &str = "donbeave/the-architect";
+const ROLE: &str = "donbeave/the-architect";
 
-pub(super) fn selector() -> RoleSelector {
+fn selector() -> RoleSelector {
     RoleSelector::parse(ROLE).expect("role selector must parse")
 }
 
-pub(super) fn trusted_config() -> AppConfig {
+fn trusted_config() -> AppConfig {
     let mut config = AppConfig::default();
     config.roles.insert(
         selector().key(),
@@ -21,7 +21,7 @@ pub(super) fn trusted_config() -> AppConfig {
     config
 }
 
-pub(super) fn untrusted_config() -> AppConfig {
+fn untrusted_config() -> AppConfig {
     let mut config = trusted_config();
     if let Some(source) = config.roles.get_mut(&selector().key()) {
         source.trusted = false;
@@ -29,11 +29,11 @@ pub(super) fn untrusted_config() -> AppConfig {
     config
 }
 
-pub(super) fn opts() -> LoadOptions {
+fn opts() -> LoadOptions {
     LoadOptions::programmatic(Agent::Claude)
 }
 
-pub(super) fn codex_profile_account(name: &str) -> jackin_config::AccountConfig {
+fn codex_profile_account(name: &str) -> jackin_config::AccountConfig {
     jackin_config::AccountConfig {
         enabled: true,
         name: name.to_owned(),
@@ -47,7 +47,7 @@ pub(super) fn codex_profile_account(name: &str) -> jackin_config::AccountConfig 
     }
 }
 
-pub(super) fn two_account_config() -> (AppConfig, jackin_core::WorkspaceName) {
+fn two_account_config() -> (AppConfig, jackin_core::WorkspaceName) {
     use jackin_config::WorkspaceConfig;
     let mut config = trusted_config();
     for (id, name) in [("private", "Private"), ("shared", "Shared")] {
@@ -76,3 +76,4 @@ pub(super) fn two_account_config() -> (AppConfig, jackin_core::WorkspaceName) {
     let workspace = jackin_core::WorkspaceName::parse("work").unwrap();
     (config, workspace)
 }
+

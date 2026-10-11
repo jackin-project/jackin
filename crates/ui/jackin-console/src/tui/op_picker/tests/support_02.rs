@@ -3,7 +3,7 @@
 
 use super::*;
 impl ParityStub {
-    pub(super) fn new() -> Self {
+    fn new() -> Self {
         Self {
             vaults: Vec::new(),
             items: std::collections::HashMap::new(),
@@ -12,7 +12,7 @@ impl ParityStub {
         }
     }
 
-    pub(super) fn with_vault(mut self, name: &str, id: &str) -> Self {
+    fn with_vault(mut self, name: &str, id: &str) -> Self {
         self.vaults.push(OpVault {
             id: id.to_owned(),
             name: name.to_owned(),
@@ -20,13 +20,7 @@ impl ParityStub {
         self
     }
 
-    pub(super) fn with_item(
-        mut self,
-        vault_id: &str,
-        name: &str,
-        id: &str,
-        subtitle: &str,
-    ) -> Self {
+    fn with_item(mut self, vault_id: &str, name: &str, id: &str, subtitle: &str) -> Self {
         self.items
             .entry(vault_id.to_owned())
             .or_default()
@@ -38,7 +32,7 @@ impl ParityStub {
         self
     }
 
-    pub(super) fn with_field_with_reference(
+    fn with_field_with_reference(
         mut self,
         item_id: &str,
         label: &str,
@@ -64,7 +58,7 @@ impl ParityStub {
         self
     }
 
-    pub(super) fn with_section_field_with_reference(
+    fn with_section_field_with_reference(
         self,
         item_id: &str,
         label: &str,
@@ -84,7 +78,7 @@ impl ParityStub {
         stub
     }
 
-    pub(super) fn with_section(mut self, item_id: &str, section: OpSection) -> Self {
+    fn with_section(mut self, item_id: &str, section: OpSection) -> Self {
         self.sections
             .entry(item_id.to_owned())
             .or_default()
@@ -116,7 +110,7 @@ impl OpStructRunner for ParityStub {
     }
 }
 
-pub(super) fn render_picker_text(s: &OpPickerState, w: u16, h: u16) -> String {
+fn render_picker_text(s: &OpPickerState, w: u16, h: u16) -> String {
     use ratatui::{Terminal, backend::TestBackend, layout::Rect};
     let backend = TestBackend::new(w, h);
     let mut term = Terminal::new(backend).unwrap();
@@ -135,10 +129,11 @@ pub(super) fn render_picker_text(s: &OpPickerState, w: u16, h: u16) -> String {
         .join("\n")
 }
 
-pub(super) fn assert_modal_title(s: &OpPickerState, expected: &str) {
+fn assert_modal_title(s: &OpPickerState, expected: &str) {
     let text = render_picker_text(s, 120, 30);
     assert!(
         text.contains(expected),
         "modal title must paint {expected:?}; buffer:\n{text}"
     );
 }
+

@@ -74,3 +74,4 @@ fn dismissible_modal_plan_dismisses_commit_and_cancel() {
         DismissibleModalPlan::Continue
     );
 }
+

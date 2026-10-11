@@ -7,12 +7,12 @@
 //! each scope, lists at each scope, coexistence, ambiguity, unknown entries,
 //! explicit picks) plus the F7 byte-exact model round-trip.
 
-use super::super::programmatic;
 use super::*;
 
 use jackin_config::{
     AccountConfig, AccountCredential, AgentConfiguration, AiProvider, WorkspaceConfig,
 };
+
 
 mod support;
 use support::*;

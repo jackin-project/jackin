@@ -9,7 +9,7 @@ use super::super::InputOutcome;
 
 use super::*;
 
-use crate::tui::input::fixtures::{key, mount};
+use crate::tui::input::test_support::{key, mount};
 
 use crate::tui::message::ConsoleInstanceAction;
 
@@ -31,7 +31,7 @@ use ratatui::layout::Rect;
 
 use tempfile::TempDir;
 
-use support::ManagerEffect;
+
 mod support;
 use support::*;
 mod case_01;

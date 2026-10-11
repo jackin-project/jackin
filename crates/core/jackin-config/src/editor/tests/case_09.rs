@@ -396,3 +396,4 @@ fn apply_zshrc_plan_rejects_opencode_xdg_root_before_amp_persistence() {
             .any(|account| account.provider == crate::AiProvider::Opencode)
     );
 }
+

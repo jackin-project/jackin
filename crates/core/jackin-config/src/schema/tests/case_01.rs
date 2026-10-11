@@ -286,3 +286,4 @@ fn launch_cache_roots_cover_dot_cache_and_platform_dir() {
         "platform cache dir must heal: {roots:?}"
     );
 }
+

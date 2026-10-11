@@ -2,20 +2,20 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) struct TestConfirm;
+struct TestConfirm;
 
-pub(super) struct TestEditor {
-    pub(super) modal_open: bool,
-    pub(super) footer_height: u16,
+struct TestEditor {
+    modal_open: bool,
+    footer_height: u16,
 }
 
-impl ConsoleEditorModalPresence for TestEditor {
+impl super::ConsoleEditorModalPresence for TestEditor {
     fn editor_modal_open(&self) -> bool {
         self.modal_open
     }
 }
 
-impl ConsoleEditorFooterHeight for TestEditor {
+impl super::ConsoleEditorFooterHeight for TestEditor {
     fn editor_cached_footer_height(&self) -> u16 {
         self.footer_height
     }
@@ -32,18 +32,18 @@ impl ConsoleEditorDebugFacts for TestEditor {
     }
 }
 
-pub(super) struct TestSettings {
-    pub(super) facts: ConsoleStageModalFacts,
-    pub(super) footer_height: u16,
+struct TestSettings {
+    facts: ConsoleStageModalFacts,
+    footer_height: u16,
 }
 
-impl ConsoleSettingsModalPresence for TestSettings {
+impl super::ConsoleSettingsModalPresence for TestSettings {
     fn settings_modal_facts(&self) -> ConsoleStageModalFacts {
         self.facts
     }
 }
 
-impl ConsoleSettingsFooterHeight for TestSettings {
+impl super::ConsoleSettingsFooterHeight for TestSettings {
     fn settings_cached_footer_height(&self) -> u16 {
         self.footer_height
     }
@@ -59,11 +59,11 @@ impl ConsoleSettingsDebugFacts for TestSettings {
     }
 }
 
-pub(super) struct TestRoleLoad {
-    pub(super) pending: Option<u8>,
+struct TestRoleLoad {
+    pending: Option<u8>,
 }
 
-impl ConsolePendingRoleLoad for TestRoleLoad {
+impl super::ConsolePendingRoleLoad for TestRoleLoad {
     type PendingRoleLoad = u8;
 
     fn poll_pending_role_load(&mut self) -> Option<(Self::PendingRoleLoad, anyhow::Result<()>)> {
@@ -71,11 +71,11 @@ impl ConsolePendingRoleLoad for TestRoleLoad {
     }
 }
 
-pub(super) struct TestDriftCheck {
-    pub(super) pending: Option<(u8, &'static str)>,
+struct TestDriftCheck {
+    pending: Option<(u8, &'static str)>,
 }
 
-impl ConsolePendingDriftCheck for TestDriftCheck {
+impl super::ConsolePendingDriftCheck for TestDriftCheck {
     type PendingDriftCheck = u8;
     type DriftDetection = &'static str;
 
@@ -91,11 +91,11 @@ impl ConsolePendingDriftCheck for TestDriftCheck {
     }
 }
 
-pub(super) struct TestIsolationCleanup {
-    pub(super) pending: Option<u8>,
+struct TestIsolationCleanup {
+    pending: Option<u8>,
 }
 
-impl ConsolePendingIsolationCleanup for TestIsolationCleanup {
+impl super::ConsolePendingIsolationCleanup for TestIsolationCleanup {
     type PendingIsolationCleanup = u8;
 
     fn poll_pending_isolation_cleanup(
@@ -105,11 +105,11 @@ impl ConsolePendingIsolationCleanup for TestIsolationCleanup {
     }
 }
 
-pub(super) struct TestOpCommit {
-    pub(super) pending: Option<(u8, anyhow::Result<()>)>,
+struct TestOpCommit {
+    pending: Option<(u8, anyhow::Result<()>)>,
 }
 
-impl ConsolePendingOpCommit for TestOpCommit {
+impl super::ConsolePendingOpCommit for TestOpCommit {
     type OpRef = u8;
 
     fn poll_pending_op_commit(&mut self) -> Option<(Self::OpRef, anyhow::Result<()>)> {
@@ -117,7 +117,7 @@ impl ConsolePendingOpCommit for TestOpCommit {
     }
 }
 
-pub(super) struct TestDebugModal;
+struct TestDebugModal;
 
 impl ConsoleModalDebugKind for TestDebugModal {
     fn modal_debug_kind(&self) -> ModalDebugKind {
@@ -126,12 +126,12 @@ impl ConsoleModalDebugKind for TestDebugModal {
 }
 
 #[derive(Debug)]
-pub(super) struct TestManager {
-    pub(super) list_modal_open: bool,
-    pub(super) editor_modal_open: bool,
+struct TestManager {
+    list_modal_open: bool,
+    editor_modal_open: bool,
 }
 
-impl ConsoleManagerModalBlockPresence for TestManager {
+impl super::ConsoleManagerModalBlockPresence for TestManager {
     fn list_modal_open(&self) -> bool {
         self.list_modal_open
     }
@@ -142,20 +142,20 @@ impl ConsoleManagerModalBlockPresence for TestManager {
 }
 
 #[derive(Debug, Default)]
-pub(super) struct TestLaunchPromptManager {
-    pub(super) opened_role: Option<&'static str>,
-    pub(super) picker_choices: Vec<jackin_core::Agent>,
-    pub(super) role_prompt_cleared: bool,
-    pub(super) role_picker_keys: Vec<&'static str>,
-    pub(super) role_picker_selected: Option<usize>,
-    pub(super) role_picker_confirm_label: String,
-    pub(super) account_picker_role: Option<TestPromptRole>,
-    pub(super) account_picker_agent: Option<jackin_core::Agent>,
-    pub(super) account_picker_providers: Vec<&'static str>,
+struct TestLaunchPromptManager {
+    opened_role: Option<&'static str>,
+    picker_choices: Vec<jackin_core::Agent>,
+    role_prompt_cleared: bool,
+    role_picker_keys: Vec<&'static str>,
+    role_picker_selected: Option<usize>,
+    role_picker_confirm_label: String,
+    account_picker_role: Option<TestPromptRole>,
+    account_picker_agent: Option<jackin_core::Agent>,
+    account_picker_providers: Vec<&'static str>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct TestPromptRole(pub(super) &'static str);
+struct TestPromptRole(&'static str);
 
 impl crate::tui::components::role_picker::RoleChoice for TestPromptRole {
     fn key(&self) -> String {
@@ -163,7 +163,9 @@ impl crate::tui::components::role_picker::RoleChoice for TestPromptRole {
     }
 }
 
-impl LaunchAgentPromptManagerState<&'static str, jackin_core::Agent> for TestLaunchPromptManager {
+impl super::LaunchAgentPromptManagerState<&'static str, jackin_core::Agent>
+    for TestLaunchPromptManager
+{
     fn open_launch_agent_prompt(
         &mut self,
         role: &'static str,
@@ -178,7 +180,7 @@ impl LaunchAgentPromptManagerState<&'static str, jackin_core::Agent> for TestLau
     }
 }
 
-impl LaunchRolePromptManagerState<TestPromptRole> for TestLaunchPromptManager {
+impl super::LaunchRolePromptManagerState<TestPromptRole> for TestLaunchPromptManager {
     fn open_launch_role_prompt(
         &mut self,
         picker: crate::tui::components::role_picker::RolePickerState<TestPromptRole>,
@@ -189,7 +191,7 @@ impl LaunchRolePromptManagerState<TestPromptRole> for TestLaunchPromptManager {
     }
 }
 
-impl LaunchAccountPickerManagerState<TestPromptRole, jackin_core::Agent, &'static str>
+impl super::LaunchAccountPickerManagerState<TestPromptRole, jackin_core::Agent, &'static str>
     for TestLaunchPromptManager
 {
     fn open_launch_account_picker(
@@ -218,8 +220,8 @@ impl ModalConfirmState for TestConfirm {
 }
 
 #[derive(Default)]
-pub(super) struct TestStageState {
-    pub(super) stage: Option<ConsoleManagerStage<(), (), ()>>,
+struct TestStageState {
+    stage: Option<ConsoleManagerStage<(), (), ()>>,
 }
 
 impl ConsoleManagerStageState<ConsoleManagerStage<(), (), ()>> for TestStageState {
@@ -228,7 +230,7 @@ impl ConsoleManagerStageState<ConsoleManagerStage<(), (), ()>> for TestStageStat
     }
 }
 
-pub(super) struct TestGithubPicker(pub(super) usize);
+struct TestGithubPicker(usize);
 
 impl ModalGithubPickerState for TestGithubPicker {
     fn choice_len(&self) -> usize {
@@ -236,7 +238,7 @@ impl ModalGithubPickerState for TestGithubPicker {
     }
 }
 
-pub(super) struct TestConfirmSave;
+struct TestConfirmSave;
 
 impl ModalConfirmSaveState for TestConfirmSave {
     fn required_height(&self) -> u16 {
@@ -252,7 +254,7 @@ impl ModalConfirmSaveFooterState for TestConfirmSave {
     }
 }
 
-pub(super) struct TestError;
+struct TestError;
 
 impl ModalErrorPopupState for TestError {
     fn required_height(&self, _inner_width: u16, _max_rows: u16) -> u16 {
@@ -260,7 +262,7 @@ impl ModalErrorPopupState for TestError {
     }
 }
 
-pub(super) struct TestContainerInfo;
+struct TestContainerInfo;
 
 impl ModalContainerInfoState for TestContainerInfo {
     fn required_height(&self) -> u16 {
@@ -278,7 +280,7 @@ impl ModalContainerInfoFooterState for TestContainerInfo {
     }
 }
 
-pub(super) struct TestOpPicker(pub(super) bool);
+struct TestOpPicker(bool);
 
 impl ModalOpPickerState for TestOpPicker {
     fn has_naming_stage_input(&self) -> bool {
@@ -301,7 +303,7 @@ impl ModalOpPickerFooterState for TestOpPicker {
     }
 }
 
-pub(super) struct TestRolePicker(pub(super) usize);
+struct TestRolePicker(usize);
 
 impl ModalRolePickerState for TestRolePicker {
     fn filtered_len(&self) -> usize {
@@ -309,7 +311,7 @@ impl ModalRolePickerState for TestRolePicker {
     }
 }
 
-pub(super) struct TestAuthForm;
+struct TestAuthForm;
 
 impl ModalAuthFormState for TestAuthForm {
     fn required_height(&self) -> u16 {
@@ -328,7 +330,7 @@ impl ModalAuthFormFooterState<()> for TestAuthForm {
     }
 }
 
-pub(super) struct TestFileBrowser;
+struct TestFileBrowser;
 
 impl ModalFileBrowserFooterState for TestFileBrowser {
     fn footer_items(&self) -> Vec<termrock::widgets::HintSpan<'static>> {
@@ -336,7 +338,7 @@ impl ModalFileBrowserFooterState for TestFileBrowser {
     }
 }
 
-pub(super) type RectTestModal = ConsoleModal<
+type RectTestModal = ConsoleModal<
     (),
     (),
     (),
@@ -361,10 +363,11 @@ pub(super) type RectTestModal = ConsoleModal<
     (),
 >;
 
-pub(super) struct TestAnimationTick(pub(super) bool);
+struct TestAnimationTick(bool);
 
 impl ConsoleAnimationTick for TestAnimationTick {
     fn tick_active_animation(&mut self) -> bool {
         self.0
     }
 }
+

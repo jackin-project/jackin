@@ -13,7 +13,6 @@ use std::path::PathBuf;
 
 use tempfile::tempdir;
 
-mod selected_source;
 
 mod support;
 use support::*;

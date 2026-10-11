@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn usage_view() -> FocusedUsageView {
+fn usage_view() -> FocusedUsageView {
     FocusedUsageView {
         focused_agent: Some("codex".to_owned()),
         focused_provider: Some("OpenAI".to_owned()),
@@ -54,7 +54,7 @@ pub(super) fn usage_view() -> FocusedUsageView {
     }
 }
 
-pub(super) fn provider_usage_view(
+fn provider_usage_view(
     provider: &str,
     account: &str,
     plan: Option<&str>,
@@ -96,3 +96,4 @@ pub(super) fn provider_usage_view(
         last_error: None,
     }
 }
+

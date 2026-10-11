@@ -327,3 +327,4 @@ fn authority_path_resolution_resolves_relative_parent_after_symlink() {
         std::fs::canonicalize(&outside).unwrap().join("future/lock")
     );
 }
+

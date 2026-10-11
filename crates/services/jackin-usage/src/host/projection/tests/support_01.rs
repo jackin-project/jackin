@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn sorted(locale: &str, labels: &[&str]) -> Vec<String> {
+fn sorted(locale: &str, labels: &[&str]) -> Vec<String> {
     let locale = locale.parse::<Locale>().expect("test locale");
     let mut options = CollatorOptions::default();
     options.strength = Some(Strength::Secondary);
@@ -12,7 +12,7 @@ pub(super) fn sorted(locale: &str, labels: &[&str]) -> Vec<String> {
     labels
 }
 
-pub(super) fn bucket(label: &str) -> QuotaBucketView {
+fn bucket(label: &str) -> QuotaBucketView {
     QuotaBucketView {
         label: label.into(),
         used_label: None,
@@ -29,7 +29,7 @@ pub(super) fn bucket(label: &str) -> QuotaBucketView {
     }
 }
 
-pub(super) fn view_with_buckets(
+fn view_with_buckets(
     status: UsageSnapshotStatus,
     buckets: Vec<QuotaBucketView>,
 ) -> FocusedUsageView {
@@ -55,10 +55,7 @@ pub(super) fn view_with_buckets(
     }
 }
 
-pub(super) fn catalog_entry(
-    view: FocusedUsageView,
-    plan_label: Option<&str>,
-) -> AccountCatalogEntry {
+fn catalog_entry(view: FocusedUsageView, plan_label: Option<&str>) -> AccountCatalogEntry {
     AccountCatalogEntry {
         identity: CanonicalAccountIdentity {
             surface: HostSurfaceId::Codex,
@@ -76,35 +73,35 @@ pub(super) fn catalog_entry(
     }
 }
 
-pub(super) fn status_bucket(label: &str, status: UsageSnapshotStatus) -> QuotaBucketView {
+fn status_bucket(label: &str, status: UsageSnapshotStatus) -> QuotaBucketView {
     let mut bucket = bucket(label);
     bucket.remaining_percent = Some(57);
     bucket.status = status;
     bucket
 }
 
-pub(super) const PARITY_NOW: i64 = 1_800_000_000;
+const PARITY_NOW: i64 = 1_800_000_000;
 
-pub(super) const PARITY_GENERATION: u64 = 7;
+const PARITY_GENERATION: u64 = 7;
 
 #[derive(Debug, Clone)]
-pub(super) struct ParityBucket {
-    pub(super) label: &'static str,
-    pub(super) slot: Option<StatusSlot>,
-    pub(super) used_label: Option<&'static str>,
-    pub(super) limit_label: Option<&'static str>,
-    pub(super) remaining: Option<u8>,
-    pub(super) reset_at: Option<i64>,
-    pub(super) pace: Option<&'static str>,
-    pub(super) status: UsageSnapshotStatus,
-    pub(super) severity: UsageSeverity,
-    pub(super) used_money: Option<Money>,
-    pub(super) limit_money: Option<Money>,
+struct ParityBucket {
+    label: &'static str,
+    slot: Option<StatusSlot>,
+    used_label: Option<&'static str>,
+    limit_label: Option<&'static str>,
+    remaining: Option<u8>,
+    reset_at: Option<i64>,
+    pace: Option<&'static str>,
+    status: UsageSnapshotStatus,
+    severity: UsageSeverity,
+    used_money: Option<Money>,
+    limit_money: Option<Money>,
 }
 
 impl ParityBucket {
     /// Minimal fresh bucket with a remaining percent and no reset/money.
-    pub(super) fn metered(label: &'static str, remaining: u8) -> Self {
+    fn metered(label: &'static str, remaining: u8) -> Self {
         Self {
             label,
             slot: None,
@@ -122,51 +119,51 @@ impl ParityBucket {
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct ParityAccount {
-    pub(super) surface: HostSurfaceId,
-    pub(super) provider_id: &'static str,
-    pub(super) provider_label: &'static str,
-    pub(super) subject: CanonicalAccountSubject,
-    pub(super) account_key: &'static str,
-    pub(super) account_label: &'static str,
-    pub(super) username: Option<&'static str>,
-    pub(super) plan_label: Option<&'static str>,
-    pub(super) credential_origin: Option<&'static str>,
+struct ParityAccount {
+    surface: HostSurfaceId,
+    provider_id: &'static str,
+    provider_label: &'static str,
+    subject: CanonicalAccountSubject,
+    account_key: &'static str,
+    account_label: &'static str,
+    username: Option<&'static str>,
+    plan_label: Option<&'static str>,
+    credential_origin: Option<&'static str>,
     /// Capsule provider label override for surfaces without a `UsageSurface`
     /// variant (Cursor, Antigravity); mirrors the adapter pattern of building
     /// with `Unsupported` and then stamping the label.
-    pub(super) capsule_provider_label: Option<&'static str>,
-    pub(super) agent: &'static str,
-    pub(super) focused_provider: Option<&'static str>,
-    pub(super) status: UsageSnapshotStatus,
-    pub(super) source: UsageSource,
-    pub(super) confidence: UsageConfidence,
-    pub(super) fetched_at: i64,
-    pub(super) buckets: Vec<ParityBucket>,
-    pub(super) last_error: Option<&'static str>,
+    capsule_provider_label: Option<&'static str>,
+    agent: &'static str,
+    focused_provider: Option<&'static str>,
+    status: UsageSnapshotStatus,
+    source: UsageSource,
+    confidence: UsageConfidence,
+    fetched_at: i64,
+    buckets: Vec<ParityBucket>,
+    last_error: Option<&'static str>,
     /// Broker-owned overlays (populated post-projection, as the broker does).
-    pub(super) account_issues: Vec<UsageIssueV1>,
-    pub(super) credential_expires_at: Option<i64>,
-    pub(super) extra_groups: Vec<ParityExtraGroup>,
+    account_issues: Vec<UsageIssueV1>,
+    credential_expires_at: Option<i64>,
+    extra_groups: Vec<ParityExtraGroup>,
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct ParityExtraGroup {
-    pub(super) kind: UsageMetricGroupKindV1,
-    pub(super) label: &'static str,
-    pub(super) scope: UsageMetricScopeV1,
-    pub(super) value: UsageMetricValueV1,
-    pub(super) quota_state: UsageQuotaStateV1,
-    pub(super) phase: UsageFreshnessPhaseV1,
-    pub(super) is_stale: bool,
-    pub(super) observed_at: Option<i64>,
-    pub(super) fetched_at: i64,
-    pub(super) last_success_at: Option<i64>,
-    pub(super) reset_at: Option<i64>,
-    pub(super) renews_at: Option<i64>,
+struct ParityExtraGroup {
+    kind: UsageMetricGroupKindV1,
+    label: &'static str,
+    scope: UsageMetricScopeV1,
+    value: UsageMetricValueV1,
+    quota_state: UsageQuotaStateV1,
+    phase: UsageFreshnessPhaseV1,
+    is_stale: bool,
+    observed_at: Option<i64>,
+    fetched_at: i64,
+    last_success_at: Option<i64>,
+    reset_at: Option<i64>,
+    renews_at: Option<i64>,
 }
 
-pub(super) fn parity_issue(
+fn parity_issue(
     code: &'static str,
     scope: UsageIssueScopeV1,
     recoverability: UsageIssueRecoverabilityV1,
@@ -182,7 +179,7 @@ pub(super) fn parity_issue(
     }
 }
 
-pub(super) fn parity_bucket_view_at(def: &ParityBucket, now: i64) -> QuotaBucketView {
+fn parity_bucket_view_at(def: &ParityBucket, now: i64) -> QuotaBucketView {
     let mut view = timed_bucket(
         def.label,
         def.used_label.map(str::to_owned),
@@ -200,7 +197,7 @@ pub(super) fn parity_bucket_view_at(def: &ParityBucket, now: i64) -> QuotaBucket
     view
 }
 
-pub(super) fn parity_surface(provider_id: &str) -> UsageSurface {
+fn parity_surface(provider_id: &str) -> UsageSurface {
     match provider_id {
         "anthropic" => UsageSurface::Claude,
         "openai" => UsageSurface::Codex,
@@ -213,11 +210,11 @@ pub(super) fn parity_surface(provider_id: &str) -> UsageSurface {
     }
 }
 
-pub(super) fn parity_view(account: &ParityAccount) -> FocusedUsageView {
+fn parity_view(account: &ParityAccount) -> FocusedUsageView {
     parity_view_at(account, PARITY_NOW)
 }
 
-pub(super) fn parity_view_at(account: &ParityAccount, now: i64) -> FocusedUsageView {
+fn parity_view_at(account: &ParityAccount, now: i64) -> FocusedUsageView {
     let buckets = account
         .buckets
         .iter()
@@ -247,7 +244,7 @@ pub(super) fn parity_view_at(account: &ParityAccount, now: i64) -> FocusedUsageV
     view
 }
 
-pub(super) fn parity_entry(account: &ParityAccount, view: FocusedUsageView) -> AccountCatalogEntry {
+fn parity_entry(account: &ParityAccount, view: FocusedUsageView) -> AccountCatalogEntry {
     AccountCatalogEntry {
         identity: CanonicalAccountIdentity {
             surface: account.surface,
@@ -265,11 +262,7 @@ pub(super) fn parity_entry(account: &ParityAccount, view: FocusedUsageView) -> A
     }
 }
 
-pub(super) fn parity_extra_group(
-    canonical_id: &str,
-    rank: u32,
-    def: &ParityExtraGroup,
-) -> UsageMetricGroupV1 {
+fn parity_extra_group(canonical_id: &str, rank: u32, def: &ParityExtraGroup) -> UsageMetricGroupV1 {
     UsageMetricGroupV1 {
         group_id: format!("parity-extra:{canonical_id}:{rank}"),
         rank,
@@ -289,7 +282,7 @@ pub(super) fn parity_extra_group(
     }
 }
 
-pub(super) fn parity_project_account(
+fn parity_project_account(
     account: &ParityAccount,
     view: &FocusedUsageView,
     rank: usize,
@@ -309,14 +302,14 @@ pub(super) fn parity_project_account(
     projected
 }
 
-pub(super) struct ParityProvider {
-    pub(super) provider_id: &'static str,
-    pub(super) display_name: &'static str,
-    pub(super) accounts: Vec<ParityAccount>,
-    pub(super) provider_issues: Vec<UsageIssueV1>,
+struct ParityProvider {
+    provider_id: &'static str,
+    display_name: &'static str,
+    accounts: Vec<ParityAccount>,
+    provider_issues: Vec<UsageIssueV1>,
 }
 
-pub(super) fn parity_projection(
+fn parity_projection(
     providers: &[ParityProvider],
     unresolved: Vec<UsageUnresolvedV1>,
     projection_issues: Vec<UsageIssueV1>,
@@ -324,7 +317,7 @@ pub(super) fn parity_projection(
     parity_projection_at(PARITY_NOW, providers, unresolved, projection_issues)
 }
 
-pub(super) fn parity_projection_at(
+fn parity_projection_at(
     now: i64,
     providers: &[ParityProvider],
     unresolved: Vec<UsageUnresolvedV1>,
@@ -372,7 +365,7 @@ pub(super) fn parity_projection_at(
     (projection, views_by_provider)
 }
 
-pub(super) fn parity_tabs(views: &[FocusedUsageView]) -> Vec<FocusedUsageView> {
+fn parity_tabs(views: &[FocusedUsageView]) -> Vec<FocusedUsageView> {
     let snapshots: HashMap<String, CachedUsage> = views
         .iter()
         .enumerate()
@@ -394,6 +387,7 @@ pub(super) fn parity_tabs(views: &[FocusedUsageView]) -> Vec<FocusedUsageView> {
         .collect()
 }
 
-pub(super) fn usd(cents: i64) -> Money {
+fn usd(cents: i64) -> Money {
     Money::new(cents, "USD", 2)
 }
+

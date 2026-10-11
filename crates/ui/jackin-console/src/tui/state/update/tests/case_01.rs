@@ -383,3 +383,4 @@ fn settings_auth_selection_and_kind_entry_update_state() {
     assert_eq!(settings.auth.selected, 0);
     assert!(settings.auth.selected_kind.is_none());
 }
+

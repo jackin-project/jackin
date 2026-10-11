@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn empty_hook_error(field: &str, path: &str) -> String {
+fn empty_hook_error(field: &str, path: &str) -> String {
     let temp = tempdir().unwrap();
     std::fs::create_dir_all(temp.path().join("hooks")).unwrap();
     std::fs::write(temp.path().join(path), "").unwrap();
@@ -29,3 +29,4 @@ plugins = []
 
     validate_role_repo(temp.path()).unwrap_err().to_string()
 }
+

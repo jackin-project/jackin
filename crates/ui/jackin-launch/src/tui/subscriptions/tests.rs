@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use super::CockpitOutcome;
 use std::sync::Mutex;
 
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseEventKind};
@@ -24,6 +23,7 @@ use crate::tui::components::container_info_dialog::{
 use crate::tui::components::failure_dialog::failure_popup_block_rect;
 
 use crate::{LaunchFailure, LaunchStage};
+
 
 mod support;
 use support::*;

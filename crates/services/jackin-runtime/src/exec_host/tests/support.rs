@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn test_caller_auth() -> CallerAuth {
+fn test_caller_auth() -> CallerAuth {
     #[cfg(target_os = "linux")]
     {
         CallerAuth::PeerPid(std::process::id())
@@ -13,7 +13,7 @@ pub(super) fn test_caller_auth() -> CallerAuth {
     }
 }
 
-pub(super) async fn roundtrip(
+async fn roundtrip(
     allowed: Vec<ExecBinding>,
     request_refs: serde_json::Value,
 ) -> serde_json::Value {
@@ -24,7 +24,7 @@ pub(super) async fn roundtrip(
         .expect("authenticated roundtrip should return a reply")
 }
 
-pub(super) async fn roundtrip_with_auth(
+async fn roundtrip_with_auth(
     allowed: Vec<ExecBinding>,
     request_refs: serde_json::Value,
     caller_auth: CallerAuth,
@@ -61,7 +61,7 @@ pub(super) async fn roundtrip_with_auth(
     Some(serde_json::from_slice(&reply).unwrap())
 }
 
-pub(super) async fn exported_exec_roundtrip(
+async fn exported_exec_roundtrip(
     context: jackin_protocol::TelemetryContext,
 ) -> (
     serde_json::Value,
@@ -96,3 +96,4 @@ pub(super) async fn exported_exec_roundtrip(
     let errors = export.typed_error_count("error.typed", "rpc_error");
     (reply, spans, errors)
 }
+

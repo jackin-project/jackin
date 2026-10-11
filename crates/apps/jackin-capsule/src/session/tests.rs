@@ -3,8 +3,6 @@
 
 //! Tests for `session`.
 
-use super::SessionProvider;
-use super::apply_account_env;
 use super::{
     AgentSpawnSpec, AgentState, EXPLICIT_CAPABILITY_ENV_NAMES, OscPolicy, SESSION_ENV_PASSTHROUGH,
     Session, SessionEvent, SessionSpawnSpec, SessionTerminal, agent_model_args,
@@ -34,6 +32,7 @@ use jackin_protocol::agent_status::{AgentStatusConfidence, AgentStatusSource};
 use portable_pty::{ChildKiller, CommandBuilder, MasterPty, PtySize};
 
 use tokio::sync::mpsc;
+
 
 mod support_01;
 use support_01::*;

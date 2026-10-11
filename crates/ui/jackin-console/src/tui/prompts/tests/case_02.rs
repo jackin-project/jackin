@@ -233,3 +233,4 @@ fn ad_hoc_default_launch_resolves_without_workspace() {
         ))
     );
 }
+

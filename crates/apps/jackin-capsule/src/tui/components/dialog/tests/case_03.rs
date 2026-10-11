@@ -385,3 +385,4 @@ fn usage_dialog_renders_shared_provider_tab_strip_labels() {
     assert!(rendered.contains("Anthropic"), "{rendered}");
     assert!(rendered.contains("Amp"), "{rendered}");
 }
+

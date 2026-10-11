@@ -367,3 +367,4 @@ fn remove_env_var_returns_false_when_absent() {
 
     assert!(!removed);
 }
+

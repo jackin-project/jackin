@@ -125,7 +125,7 @@ fn control_reply_exposes_typed_telemetry_health() {
         assert!(status.success(), "isolated telemetry health test failed");
         return;
     }
-    let _telemetry_guard = crate::support::telemetry_test_guard();
+    let _telemetry_guard = crate::test_support::telemetry_test_guard();
     let mut mux = single_pane_tab_mux();
     let reply = control_reply_for_request(&mut mux, ClientMsg::TelemetryHealth);
     let ServerMsg::TelemetryHealth { report } = reply else {
@@ -359,3 +359,4 @@ fn apply_dialog_action_switch_usage_provider_updates_focused_provider() {
         })
     );
 }
+

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn extract_block<'a>(haystack: &'a str, start: &str, end: &str) -> &'a str {
+fn extract_block<'a>(haystack: &'a str, start: &str, end: &str) -> &'a str {
     haystack
         .split_once(start)
         .unwrap_or_else(|| panic!("missing block start: {start}"))
@@ -12,7 +12,7 @@ pub(super) fn extract_block<'a>(haystack: &'a str, start: &str, end: &str) -> &'
         .0
 }
 
-pub(super) fn minimal_role_repo(repo: &Path) {
+fn minimal_role_repo(repo: &Path) {
     std::fs::write(
         repo.join("Dockerfile"),
         "FROM projectjackin/construct:0.1-trixie\n",
@@ -29,3 +29,4 @@ plugins = []
     )
     .unwrap();
 }
+

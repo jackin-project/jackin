@@ -11,6 +11,7 @@ use jackin_core::InstanceStatus;
 
 use ratatui::{Terminal, backend::TestBackend, layout::Rect};
 
+
 mod support;
 use support::*;
 mod case_01;

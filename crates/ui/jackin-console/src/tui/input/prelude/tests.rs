@@ -6,7 +6,7 @@
 //! (`FileBrowserSrc` → `MountDstChoice` → `TextInputDst` → `WorkdirPick` →
 //! `TextInputName`) and its step-back / Esc semantics.
 
-use super::super::fixtures::key;
+use super::super::test_support::key;
 
 use super::{
     PreludeModalOutcome, create_prelude_mount_dst_choice_state, create_prelude_workdir_pick_state,
@@ -26,6 +26,7 @@ use crossterm::event::KeyCode;
 use ratatui::layout::Rect;
 
 use termrock::widgets::{WizardPhase, WizardProgress};
+
 
 mod support;
 use support::*;

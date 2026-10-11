@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn authenticated<T>(message: T) -> Request<T> {
+fn authenticated<T>(message: T) -> Request<T> {
     let mut request = Request::new(message);
     request.metadata_mut().insert(
         "authorization",
@@ -10,3 +10,4 @@ pub(super) fn authenticated<T>(message: T) -> Request<T> {
     );
     request
 }
+

@@ -154,3 +154,4 @@ fn view_without_observation_is_unavailable() {
     assert_eq!(view.status_bar_label, "usage unavailable");
     assert!(view.last_error.is_some());
 }
+

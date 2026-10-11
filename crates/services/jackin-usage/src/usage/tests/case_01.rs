@@ -357,3 +357,4 @@ fn enrich_provider_tabs_rebuilds_strip_from_snapshots() {
     enrich_provider_tabs(&mut view, &HashMap::new());
     assert!(view.tabs.is_empty());
 }
+

@@ -62,3 +62,4 @@ fn select_entry_secret_covers_shared_shapes() {
         assert_eq!(select_entry_secret(&value), None, "raw: {raw}");
     }
 }
+

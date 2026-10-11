@@ -385,3 +385,4 @@ fn rollup_priority_matches_contract() {
     let states = [AgentState::Idle, AgentState::Working, AgentState::Done];
     assert_eq!(roll_up_states(states.iter()), AgentState::Done);
 }
+

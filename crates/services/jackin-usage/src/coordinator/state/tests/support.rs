@@ -2,14 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn capability() -> UsageAccountCapability {
+fn capability() -> UsageAccountCapability {
     UsageAccountCapability {
         account_id: "account-123".into(),
         surface_id: "claude".into(),
     }
 }
 
-pub(super) fn quota_view(epoch: i64, label: &str) -> FocusedUsageView {
+fn quota_view(epoch: i64, label: &str) -> FocusedUsageView {
     let mut view = FocusedUsageView::unavailable("fixture", epoch);
     view.status = UsageSnapshotStatus::Fresh;
     view.source = UsageSource::ProviderApi;
@@ -34,7 +34,7 @@ pub(super) fn quota_view(epoch: i64, label: &str) -> FocusedUsageView {
     view
 }
 
-pub(super) fn completed(epoch: i64, label: &str) -> AccountStateEnvelope {
+fn completed(epoch: i64, label: &str) -> AccountStateEnvelope {
     let view = quota_view(epoch, label);
     AccountStateEnvelope {
         schema_version: ACCOUNT_STATE_SCHEMA_VERSION,
@@ -53,7 +53,7 @@ pub(super) fn completed(epoch: i64, label: &str) -> AccountStateEnvelope {
     }
 }
 
-pub(super) fn empty_projection() -> UsageProjectionV1 {
+fn empty_projection() -> UsageProjectionV1 {
     UsageProjectionV1 {
         schema_version: UsageProjectionSchemaV1,
         projection_id: "projection-1".into(),
@@ -67,3 +67,4 @@ pub(super) fn empty_projection() -> UsageProjectionV1 {
         issues: Vec::new(),
     }
 }
+

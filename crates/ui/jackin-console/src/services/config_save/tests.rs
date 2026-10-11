@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use super::SettingsSaveInput;
-use super::save_settings;
 use std::collections::BTreeMap;
 
 use jackin_config::{
@@ -21,6 +19,7 @@ use super::{
 use crate::services::config_save::validate_settings_env;
 
 use crate::tui::screens::settings::model::{SettingsEnvConfig, SettingsTrustRow};
+
 
 mod support;
 use support::*;

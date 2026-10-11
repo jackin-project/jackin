@@ -374,3 +374,4 @@ fn double_click_on_scrolled_back_row_copies_the_history_word() {
         "word selection must not move the scrollback view"
     );
 }
+

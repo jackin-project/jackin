@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn marker_row_on_screen(grid: &DamageGrid, rows: u16, cols: u16) -> Option<u16> {
+fn marker_row_on_screen(grid: &DamageGrid, rows: u16, cols: u16) -> Option<u16> {
     for row in 0..rows {
         for col in 0..cols {
             if grid
@@ -16,7 +16,7 @@ pub(super) fn marker_row_on_screen(grid: &DamageGrid, rows: u16, cols: u16) -> O
     None
 }
 
-pub(super) fn subscribe_events(
+fn subscribe_events(
     mux: &mut Multiplexer,
     session: Option<u64>,
 ) -> mpsc::UnboundedReceiver<ServerMsg> {
@@ -34,7 +34,7 @@ pub(super) fn subscribe_events(
     rx
 }
 
-pub(super) fn next_event(
+fn next_event(
     rx: &mut mpsc::UnboundedReceiver<ServerMsg>,
 ) -> jackin_protocol::control::SessionEventRecord {
     match rx.try_recv().expect("an event was published") {
@@ -43,7 +43,7 @@ pub(super) fn next_event(
     }
 }
 
-pub(super) fn two_claude_mux() -> Multiplexer {
+fn two_claude_mux() -> Multiplexer {
     let mut mux = test_mux(24, 80);
     mux.launch_env.launch_config.instances = vec!["claude-work".into(), "claude-personal".into()];
     mux.launch_env.launch_config.agents = BTreeMap::from([
@@ -122,7 +122,7 @@ pub(super) fn two_claude_mux() -> Multiplexer {
     mux
 }
 
-pub(super) fn two_codex_mux() -> Multiplexer {
+fn two_codex_mux() -> Multiplexer {
     let mut mux = test_mux(24, 80);
     mux.launch_env.launch_config.instances = vec!["codex-work".into(), "codex-personal".into()];
     mux.launch_env.launch_config.agents = BTreeMap::from([
@@ -180,3 +180,4 @@ pub(super) fn two_codex_mux() -> Multiplexer {
     ];
     mux
 }
+

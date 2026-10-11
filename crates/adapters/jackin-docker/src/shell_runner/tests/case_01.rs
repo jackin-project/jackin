@@ -376,3 +376,4 @@ async fn capture_secret_suppresses_stdout_debug_echo() {
         );
     }
 }
+

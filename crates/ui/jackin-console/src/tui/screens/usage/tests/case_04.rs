@@ -5,6 +5,7 @@ use super::*;
 
 #[test]
 fn meter_color_grades_by_canonical_quota_state_not_percent() {
+    use super::meter_style;
     use ratatui::style::Color;
 
     // Exhaustion and failure read red, warnings amber, everything else the
@@ -42,7 +43,7 @@ fn window_group_summary_uses_left_like_windows_and_capsule() {
     // "73% left" matches the principal-window value labels and the Capsule
     // bucket presentation; a third word ("remaining") for the same meaning
     // would break cross-surface label parity (S4/S5).
-    let group = UsageMetricGroup {
+    let group = super::UsageMetricGroup {
         group_id: "g".to_owned(),
         rank: 0,
         kind: jackin_protocol::usage_broker::UsageMetricGroupKindV1::Window,
@@ -71,7 +72,7 @@ fn window_group_summary_uses_left_like_windows_and_capsule() {
         issues: Vec::new(),
     };
     assert_eq!(
-        metric_group_value_summary(&group).as_deref(),
+        super::metric_group_value_summary(&group).as_deref(),
         Some("73% left · weekly")
     );
 }
@@ -334,3 +335,4 @@ fn capacity_finder_key_jumps_selection() {
     assert_eq!(screen.selected, 2);
     assert_eq!(screen.selected_id, Some("openai:a".to_owned()));
 }
+

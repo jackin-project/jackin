@@ -395,3 +395,4 @@ fn selected_snapshot_pins_claude_bytes_and_descriptor_revision() {
         r#"{"account":"old"}"#
     );
 }
+

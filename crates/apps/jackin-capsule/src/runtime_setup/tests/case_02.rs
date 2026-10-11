@@ -202,3 +202,4 @@ fn enforced_claude_config_keeps_mutable_metadata_inside_directory_mount() {
     fs::rename(&replacement, &metadata).unwrap();
     assert_eq!(fs::read(&metadata).unwrap(), b"new-account");
 }
+

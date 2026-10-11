@@ -233,3 +233,4 @@ fn cursor_movement_encodes_four_digit_coords() {
 
     assert_eq!(backend.take_output(), b"\x1b[1000;1001H");
 }
+

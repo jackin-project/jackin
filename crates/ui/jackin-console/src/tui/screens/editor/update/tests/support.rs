@@ -3,12 +3,13 @@
 
 use super::*;
 #[derive(Default)]
-pub(super) struct RoleEnv {
-    pub(super) env: BTreeMap<String, &'static str>,
+struct RoleEnv {
+    env: BTreeMap<String, &'static str>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum TestAuthKind {
+enum TestAuthKind {
     Claude,
     Github,
 }
+

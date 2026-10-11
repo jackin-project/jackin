@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) const TIP: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const TIP: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
-pub(super) fn rec_for(repo: &Path, container_dir: &Path) -> IsolationRecord {
+fn rec_for(repo: &Path, container_dir: &Path) -> IsolationRecord {
     let wt = crate::materialize::worktree_path_for(container_dir, "/workspace/jackin", "jackin-x");
     std::fs::create_dir_all(&wt).unwrap();
     let admin = repo.join(".git/worktrees/registered-with-git-suffix1");
@@ -36,11 +36,11 @@ pub(super) fn rec_for(repo: &Path, container_dir: &Path) -> IsolationRecord {
     }
 }
 
-pub(super) fn save(rec: &IsolationRecord, container: &Path) {
+fn save(rec: &IsolationRecord, container: &Path) {
     write_records(container, std::slice::from_ref(rec)).unwrap();
 }
 
-pub(super) fn tip_row(rec: &IsolationRecord) -> String {
+fn tip_row(rec: &IsolationRecord) -> String {
     let reference = Path::new(&rec.original_src)
         .join(".git/refs/heads")
         .join(&rec.scratch_branch);
@@ -50,9 +50,9 @@ pub(super) fn tip_row(rec: &IsolationRecord) -> String {
 }
 
 #[derive(Default)]
-pub(super) struct VerifyFailureRunner {
-    pub(super) inner: FakeRunner,
-    pub(super) captures: usize,
+struct VerifyFailureRunner {
+    inner: FakeRunner,
+    captures: usize,
 }
 
 impl CommandRunner for VerifyFailureRunner {
@@ -103,7 +103,7 @@ impl CommandRunner for VerifyFailureRunner {
     }
 }
 
-pub(super) async fn fixture_git(repo: &Path, args: &[&str]) -> String {
+async fn fixture_git(repo: &Path, args: &[&str]) -> String {
     let output = tokio::process::Command::new("git")
         .arg("-C")
         .arg(repo)
@@ -119,7 +119,7 @@ pub(super) async fn fixture_git(repo: &Path, args: &[&str]) -> String {
     String::from_utf8(output.stdout).unwrap().trim().to_owned()
 }
 
-pub(super) async fn real_record(repo: &Path, container: &Path) -> IsolationRecord {
+async fn real_record(repo: &Path, container: &Path) -> IsolationRecord {
     fixture_git(repo, &["init", "--initial-branch=main"]).await;
     fixture_git(
         repo,
@@ -162,3 +162,4 @@ pub(super) async fn real_record(repo: &Path, container: &Path) -> IsolationRecor
         cleanup_status: CleanupStatus::Active,
     }
 }
+

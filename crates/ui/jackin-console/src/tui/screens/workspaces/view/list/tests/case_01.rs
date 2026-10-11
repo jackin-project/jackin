@@ -383,3 +383,4 @@ fn subpanel_content_column_alignment() {
         "Roles (any) first char at col {agents_any_col}, expected {SUBPANEL_CONTENT_INDENT}"
     );
 }
+

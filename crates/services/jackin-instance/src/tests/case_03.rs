@@ -216,3 +216,4 @@ fn prewarm_auth_for_bindings_provisions_each_binding_once() {
 
     assert_eq!(count, 2);
 }
+

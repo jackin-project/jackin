@@ -2,10 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn create_params<'a>(
-    field_label: &'a str,
-    section: Option<&'a str>,
-) -> OpItemCreateParams<'a> {
+fn create_params<'a>(field_label: &'a str, section: Option<&'a str>) -> OpItemCreateParams<'a> {
     OpItemCreateParams {
         vault_id: "vault-id",
         title: "Build token",
@@ -18,7 +15,7 @@ pub(super) fn create_params<'a>(
     }
 }
 
-pub(super) fn created_item_with_fields(
+fn created_item_with_fields(
     fields: Vec<RawCreatedItemField>,
     sections: Vec<RawCreatedItemSection>,
 ) -> RawCreatedItem {
@@ -34,7 +31,7 @@ pub(super) fn created_item_with_fields(
     }
 }
 
-pub(super) fn created_field(id: &str, label: &str, section: Option<&str>) -> RawCreatedItemField {
+fn created_field(id: &str, label: &str, section: Option<&str>) -> RawCreatedItemField {
     RawCreatedItemField {
         id: id.to_owned(),
         label: label.to_owned(),
@@ -42,9 +39,10 @@ pub(super) fn created_field(id: &str, label: &str, section: Option<&str>) -> Raw
     }
 }
 
-pub(super) fn created_section(id: &str, label: &str) -> RawCreatedItemSection {
+fn created_section(id: &str, label: &str) -> RawCreatedItemSection {
     RawCreatedItemSection {
         id: id.to_owned(),
         label: label.to_owned(),
     }
 }
+

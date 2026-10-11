@@ -29,3 +29,4 @@ pub(super) fn word_at_col(text: &str, col: u16) -> Option<String> {
     let (start, end) = word_bounds_in_row(&snapshot, col)?;
     Some(snapshot.text_range(start, end))
 }
+

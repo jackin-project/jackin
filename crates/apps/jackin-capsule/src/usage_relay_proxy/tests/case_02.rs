@@ -211,3 +211,4 @@ fn parse_proc_stat_start_time_skips_comm_with_parens_and_spaces() {
     assert_eq!(parse_proc_stat_start_time(&stat), Some(987_654));
     assert_eq!(parse_proc_stat_start_time("bogus"), None);
 }
+

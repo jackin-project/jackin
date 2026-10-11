@@ -393,3 +393,4 @@ fn settings_general_tab_actions() {
         Some(SettingsGeneralTabAction::Back)
     );
 }
+

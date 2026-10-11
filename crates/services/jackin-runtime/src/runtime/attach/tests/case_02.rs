@@ -159,7 +159,7 @@ async fn handle_aware_restore_refuses_same_name_replacement_before_start() {
     let error = start_or_hardline_agent_with_container_handle(
         &paths,
         container_name,
-        &launch::AccountConfigRevision::acquire(&paths).unwrap(),
+        &super::super::launch::AccountConfigRevision::acquire(&paths).unwrap(),
         &docker,
         &mut runner,
         true,
@@ -347,3 +347,4 @@ async fn hardline_new_session_execs_entrypoint_in_running_container() {
         runner.recorded
     );
 }
+

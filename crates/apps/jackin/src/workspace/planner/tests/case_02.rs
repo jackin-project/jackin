@@ -104,3 +104,4 @@ fn plan_collapse_result_satisfies_invariant() {
         }
     }
 }
+

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn hint_labels(items: Vec<HintSpan<'static>>) -> Vec<String> {
+fn hint_labels(items: Vec<HintSpan<'static>>) -> Vec<String> {
     items
         .into_iter()
         .filter_map(|span| match span {
@@ -13,14 +13,14 @@ pub(super) fn hint_labels(items: Vec<HintSpan<'static>>) -> Vec<String> {
         .collect()
 }
 
-pub(super) fn ws_with_allowed(names: &[&str]) -> WorkspaceConfig {
+fn ws_with_allowed(names: &[&str]) -> WorkspaceConfig {
     WorkspaceConfig {
         allowed_roles: names.iter().map(|s| (*s).into()).collect(),
         ..WorkspaceConfig::default()
     }
 }
 
-pub(super) fn render_roles_to_dump(ws: WorkspaceConfig, config: &AppConfig) -> String {
+fn render_roles_to_dump(ws: WorkspaceConfig, config: &AppConfig) -> String {
     let mut editor = EditorState::new_edit("ws".into(), ws);
     editor.active_tab = EditorTab::Roles;
     editor.active_field = FieldFocus::Row(0);
@@ -43,7 +43,7 @@ pub(super) fn render_roles_to_dump(ws: WorkspaceConfig, config: &AppConfig) -> S
     out
 }
 
-pub(super) fn text_labels<'a>(items: &'a [HintSpan<'a>]) -> Vec<&'a str> {
+fn text_labels<'a>(items: &'a [HintSpan<'a>]) -> Vec<&'a str> {
     items
         .iter()
         .filter_map(|it| {
@@ -56,7 +56,7 @@ pub(super) fn text_labels<'a>(items: &'a [HintSpan<'a>]) -> Vec<&'a str> {
         .collect()
 }
 
-pub(super) fn key_glyphs<'a>(items: &'a [HintSpan<'a>]) -> Vec<&'a str> {
+fn key_glyphs<'a>(items: &'a [HintSpan<'a>]) -> Vec<&'a str> {
     items
         .iter()
         .filter_map(|it| {
@@ -69,7 +69,7 @@ pub(super) fn key_glyphs<'a>(items: &'a [HintSpan<'a>]) -> Vec<&'a str> {
         .collect()
 }
 
-pub(super) fn editor_at_mounts_row0(src: &str) -> EditorState<'static> {
+fn editor_at_mounts_row0(src: &str) -> EditorState<'static> {
     let ws = WorkspaceConfig {
         mounts: vec![MountConfig {
             src: src.to_owned(),
@@ -85,11 +85,11 @@ pub(super) fn editor_at_mounts_row0(src: &str) -> EditorState<'static> {
     editor
 }
 
-pub(super) fn body_area() -> Rect {
+fn body_area() -> Rect {
     Rect::new(0, 0, 120, 40)
 }
 
-pub(super) fn assert_hint_hotkeys_uppercase(hint: &[HintSpan<'_>], context: &str) {
+fn assert_hint_hotkeys_uppercase(hint: &[HintSpan<'_>], context: &str) {
     for item in hint {
         if let HintSpan::Key(k) = item {
             let chars: Vec<char> = k.chars().collect();
@@ -106,7 +106,7 @@ pub(super) fn assert_hint_hotkeys_uppercase(hint: &[HintSpan<'_>], context: &str
     }
 }
 
-pub(super) fn editor_with_workspace_env() -> EditorState<'static> {
+fn editor_with_workspace_env() -> EditorState<'static> {
     let mut env = BTreeMap::new();
     env.insert("DB_URL".into(), "postgres://localhost/db".into());
     let ws = WorkspaceConfig {
@@ -119,7 +119,7 @@ pub(super) fn editor_with_workspace_env() -> EditorState<'static> {
     editor
 }
 
-pub(super) fn editor_with_agent_override() -> EditorState<'static> {
+fn editor_with_agent_override() -> EditorState<'static> {
     let mut role_env = BTreeMap::new();
     role_env.insert("LOG_LEVEL".into(), "debug".into());
     let mut roles = BTreeMap::new();
@@ -142,7 +142,7 @@ pub(super) fn editor_with_agent_override() -> EditorState<'static> {
     editor
 }
 
-pub(super) fn render_to_dump(editor: &EditorState<'_>) -> String {
+fn render_to_dump(editor: &EditorState<'_>) -> String {
     let config = AppConfig::default();
     let backend = TestBackend::new(80, 15);
     let mut term = Terminal::new(backend).unwrap();
@@ -161,7 +161,7 @@ pub(super) fn render_to_dump(editor: &EditorState<'_>) -> String {
     out
 }
 
-pub(super) fn render_to_dump_wide(editor: &EditorState<'_>) -> String {
+fn render_to_dump_wide(editor: &EditorState<'_>) -> String {
     let config = AppConfig::default();
     let backend = TestBackend::new(120, 15);
     let mut term = Terminal::new(backend).unwrap();
@@ -179,3 +179,4 @@ pub(super) fn render_to_dump_wide(editor: &EditorState<'_>) -> String {
     }
     out
 }
+

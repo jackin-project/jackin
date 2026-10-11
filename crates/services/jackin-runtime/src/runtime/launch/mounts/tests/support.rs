@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn role_state(root: &Path, slots: Vec<(&str, ProvisionedInstanceAuth)>) -> RoleState {
+fn role_state(root: &Path, slots: Vec<(&str, ProvisionedInstanceAuth)>) -> RoleState {
     std::fs::create_dir_all(root.join("state")).unwrap();
     let slots: BTreeMap<_, _> = slots
         .into_iter()
@@ -35,7 +35,7 @@ pub(super) fn role_state(root: &Path, slots: Vec<(&str, ProvisionedInstanceAuth)
     }
 }
 
-pub(super) fn slot(agent: Agent, store_rel: &str) -> ProvisionedInstanceAuth {
+fn slot(agent: Agent, store_rel: &str) -> ProvisionedInstanceAuth {
     ProvisionedInstanceAuth {
         agent,
         account_id: "fixture".to_owned(),
@@ -52,7 +52,7 @@ pub(super) fn slot(agent: Agent, store_rel: &str) -> ProvisionedInstanceAuth {
     }
 }
 
-pub(super) fn assert_coordinator_source_rejected(state: &RoleState, root: &Path, source: &Path) {
+fn assert_coordinator_source_rejected(state: &RoleState, root: &Path, source: &Path) {
     for readonly in [false, true] {
         for target in ["/home/agent", "/resources", "/archive"] {
             let docker = format!(
@@ -73,3 +73,4 @@ pub(super) fn assert_coordinator_source_rejected(state: &RoleState, root: &Path,
         }
     }
 }
+

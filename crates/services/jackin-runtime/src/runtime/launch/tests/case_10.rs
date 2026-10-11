@@ -7,7 +7,7 @@ use super::*;
 async fn load_agent_launches_codex_without_openai_key() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     paths.ensure_base_dirs().unwrap();
     // Profile admission preserves the test's intent: Codex launches with no
     // API key anywhere (sync mode stages a home, never an env secret).
@@ -351,3 +351,4 @@ async fn console_agent_resolution_propagates_git_failure() {
         "wrapped error must preserve git failure cause: {rendered}"
     );
 }
+

@@ -347,3 +347,4 @@ async fn resolve_running_container_from_context_uses_indexed_unique_instance() {
 
     assert_eq!(container, "jk-k7p9m2xq-myapp-agentsmith");
 }
+

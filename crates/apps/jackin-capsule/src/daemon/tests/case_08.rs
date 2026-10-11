@@ -382,3 +382,4 @@ fn open_github_context_dialog_bypasses_fresh_no_pr_cache() {
         "dialog should show resolving while the forced refresh is in flight"
     );
 }
+

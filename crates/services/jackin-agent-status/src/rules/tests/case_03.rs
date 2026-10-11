@@ -114,3 +114,4 @@ fn gate_rejects_excessive_nesting_depth() {
     }
     validate_gate(&gate).expect_err("over-nested gate must fail at load");
 }
+

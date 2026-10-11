@@ -381,3 +381,4 @@ plugins = []
     assert!(message.contains("agent \"codex\""));
     assert!(message.contains("supported: [claude]"));
 }
+

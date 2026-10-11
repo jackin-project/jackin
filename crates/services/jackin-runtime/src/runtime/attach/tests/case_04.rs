@@ -379,3 +379,4 @@ async fn wait_for_dind_times_out_when_all_attempts_fail() {
 
     assert!(err.to_string().contains("timed out"), "got: {err}");
 }
+

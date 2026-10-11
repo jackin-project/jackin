@@ -394,3 +394,4 @@ fn console_manager_stage_polls_pending_role_load_from_editor_only() {
         .is_none()
     );
 }
+

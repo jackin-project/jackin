@@ -152,3 +152,4 @@ fn spawn_session_shell_leaves_identity_empty() {
     assert_eq!(record.agent, None);
     assert_eq!(record.account_id, None);
 }
+

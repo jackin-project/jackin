@@ -382,3 +382,4 @@ fn plan_carries_no_secret_values() {
     );
     assert!(rendered.contains("/srv/claude"), "{rendered}");
 }
+

@@ -351,14 +351,15 @@ fn rust_names_preserve_version_boundaries() {
 #[test]
 fn ownership_census_extracts_static_and_dynamic_types() {
     assert_eq!(
-        ownership_census::ownership_type(&[
+        super::ownership_census::ownership_type(&[
             ".record_telemetry_error(",
             "schema::enums::ErrorType::DependencyCancelled,",
         ]),
         "DependencyCancelled"
     );
     assert_eq!(
-        ownership_census::ownership_type(&["record_error(error_type)"]),
+        super::ownership_census::ownership_type(&["record_error(error_type)"]),
         "dynamic"
     );
 }
+

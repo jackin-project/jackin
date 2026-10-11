@@ -248,3 +248,4 @@ fn canonical_runtime_projects_coordination_failure_and_retains_last_good() {
     );
     assert!(recovered.providers[0].accounts[0].issues.is_empty());
 }
+

@@ -196,7 +196,7 @@ async fn stale_agent_version_cache_does_not_force_foreground_update_probe() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     paths.ensure_base_dirs().unwrap();
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
@@ -273,7 +273,7 @@ async fn stale_agent_version_cache_does_not_force_foreground_update_probe() {
 async fn load_agent_cleans_up_when_parallel_sidecar_start_fails() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
@@ -360,3 +360,4 @@ async fn load_agent_cleans_up_when_parallel_sidecar_start_fails() {
         "network cleanup missing after sidecar failure: {docker_recorded:?}"
     );
 }
+

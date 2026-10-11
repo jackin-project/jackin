@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn wait_for_worker_poll() {
+fn wait_for_worker_poll() {
     #[expect(
         clippy::disallowed_methods,
         reason = "op-picker tests poll owned worker threads"
@@ -11,13 +11,13 @@ pub(super) fn wait_for_worker_poll() {
 }
 
 #[derive(Default)]
-pub(super) struct StubRunner {
-    pub(super) accounts: Mutex<Vec<OpAccount>>,
+struct StubRunner {
+    accounts: Mutex<Vec<OpAccount>>,
     #[expect(
         clippy::option_option,
         reason = "documented residual allow; prefer expect when site is lint-true"
     )]
-    pub(super) last_vault_list_account: Mutex<Option<Option<String>>>,
+    last_vault_list_account: Mutex<Option<Option<String>>>,
 }
 
 impl OpStructRunner for StubRunner {
@@ -44,7 +44,7 @@ impl OpStructRunner for StubRunner {
     }
 }
 
-pub(super) fn account(id: &str, email: &str, url: &str) -> OpAccount {
+fn account(id: &str, email: &str, url: &str) -> OpAccount {
     OpAccount {
         id: id.to_owned(),
         email: email.to_owned(),
@@ -52,7 +52,7 @@ pub(super) fn account(id: &str, email: &str, url: &str) -> OpAccount {
     }
 }
 
-pub(super) fn key(code: KeyCode) -> KeyEvent {
+fn key(code: KeyCode) -> KeyEvent {
     KeyEvent {
         code,
         modifiers: KeyModifiers::NONE,
@@ -61,7 +61,7 @@ pub(super) fn key(code: KeyCode) -> KeyEvent {
     }
 }
 
-pub(super) fn drain_initial_account_load(s: &mut OpPickerState) {
+fn drain_initial_account_load(s: &mut OpPickerState) {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
     while (s.rx.is_some() || s.pending_load.is_some()) && std::time::Instant::now() < deadline {
         poll_load_for_test(s);
@@ -72,14 +72,14 @@ pub(super) fn drain_initial_account_load(s: &mut OpPickerState) {
     }
 }
 
-pub(super) fn poll_load_for_test(s: &mut OpPickerState) -> bool {
+fn poll_load_for_test(s: &mut OpPickerState) -> bool {
     let mut dirty = execute_pending_load_for_test(s);
     dirty |= s.poll_load();
     dirty |= execute_pending_load_for_test(s);
     dirty
 }
 
-pub(super) fn execute_pending_load_for_test(s: &mut OpPickerState) -> bool {
+fn execute_pending_load_for_test(s: &mut OpPickerState) -> bool {
     let Some(pending) = s.take_pending_load() else {
         return false;
     };
@@ -93,7 +93,7 @@ pub(super) fn execute_pending_load_for_test(s: &mut OpPickerState) -> bool {
     true
 }
 
-pub(super) fn picker_ready() -> OpPickerState {
+fn picker_ready() -> OpPickerState {
     let runner = Arc::new(StubRunner {
         accounts: Mutex::new(vec![account(
             "acct1",
@@ -111,14 +111,14 @@ pub(super) fn picker_ready() -> OpPickerState {
     s
 }
 
-pub(super) fn vault(name: &str) -> OpVault {
+fn vault(name: &str) -> OpVault {
     OpVault {
         id: format!("v-{name}"),
         name: name.to_owned(),
     }
 }
 
-pub(super) fn item(name: &str) -> OpItem {
+fn item(name: &str) -> OpItem {
     OpItem {
         id: format!("i-{name}"),
         name: name.to_owned(),
@@ -126,7 +126,7 @@ pub(super) fn item(name: &str) -> OpItem {
     }
 }
 
-pub(super) fn item_with_subtitle(name: &str, subtitle: &str) -> OpItem {
+fn item_with_subtitle(name: &str, subtitle: &str) -> OpItem {
     OpItem {
         id: format!("i-{name}-{subtitle}"),
         name: name.to_owned(),
@@ -134,7 +134,7 @@ pub(super) fn item_with_subtitle(name: &str, subtitle: &str) -> OpItem {
     }
 }
 
-pub(super) fn field(label: &str, ty: &str, concealed: bool) -> OpField {
+fn field(label: &str, ty: &str, concealed: bool) -> OpField {
     OpField {
         id: label.to_owned(),
         section_id: None,
@@ -145,7 +145,7 @@ pub(super) fn field(label: &str, ty: &str, concealed: bool) -> OpField {
     }
 }
 
-pub(super) fn field_with_reference(label: &str, reference: &str) -> OpField {
+fn field_with_reference(label: &str, reference: &str) -> OpField {
     OpField {
         id: label.to_owned(),
         section_id: None,
@@ -156,17 +156,13 @@ pub(super) fn field_with_reference(label: &str, reference: &str) -> OpField {
     }
 }
 
-pub(super) fn field_with_section_reference(
-    label: &str,
-    reference: &str,
-    section_id: &str,
-) -> OpField {
+fn field_with_section_reference(label: &str, reference: &str, section_id: &str) -> OpField {
     let mut field = field_with_reference(label, reference);
     field.section_id = Some(section_id.to_owned());
     field
 }
 
-pub(super) fn create_ready() -> OpPickerState {
+fn create_ready() -> OpPickerState {
     let runner = Arc::new(StubRunner {
         accounts: Mutex::new(vec![account(
             "acct1",
@@ -189,11 +185,11 @@ pub(super) fn create_ready() -> OpPickerState {
     s
 }
 
-pub(super) fn create_at_section(fields: Vec<OpField>) -> OpPickerState {
+fn create_at_section(fields: Vec<OpField>) -> OpPickerState {
     create_at_section_with_sections(fields, Vec::new())
 }
 
-pub(super) fn create_at_section_with_sections(
+fn create_at_section_with_sections(
     fields: Vec<OpField>,
     sections: Vec<OpSection>,
 ) -> OpPickerState {
@@ -208,9 +204,9 @@ pub(super) fn create_at_section_with_sections(
     s
 }
 
-pub(super) struct CounterRunner {
-    pub(super) accounts: Vec<OpAccount>,
-    pub(super) counter: Arc<Mutex<usize>>,
+struct CounterRunner {
+    accounts: Vec<OpAccount>,
+    counter: Arc<Mutex<usize>>,
 }
 
 impl OpStructRunner for CounterRunner {
@@ -237,17 +233,17 @@ impl OpStructRunner for CounterRunner {
     }
 }
 
-pub(super) struct BlockingRunner {
+struct BlockingRunner {
     gate: Arc<(Mutex<bool>, std::sync::Condvar)>,
 }
 
 impl BlockingRunner {
-    pub(super) fn new() -> Self {
+    fn new() -> Self {
         Self {
             gate: Arc::new((Mutex::new(false), std::sync::Condvar::new())),
         }
     }
-    pub(super) fn release(&self) {
+    fn release(&self) {
         let (lock, cv) = &*self.gate;
         *lock.lock().unwrap() = true;
         cv.notify_all();
@@ -287,11 +283,7 @@ impl OpStructRunner for BlockingRunner {
     }
 }
 
-pub(super) fn render_picker_dump(
-    state: &OpPickerState,
-    width: u16,
-    height: u16,
-) -> (String, String) {
+fn render_picker_dump(state: &OpPickerState, width: u16, height: u16) -> (String, String) {
     use ratatui::{Terminal, backend::TestBackend, layout::Rect};
     let backend = TestBackend::new(width, height);
     let mut term = Terminal::new(backend).unwrap();
@@ -318,14 +310,14 @@ pub(super) fn render_picker_dump(
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
 #[derive(Default)]
-pub(super) struct RecorderRunner {
-    pub(super) accounts: Mutex<Vec<OpAccount>>,
-    pub(super) vault_list_calls: Mutex<usize>,
-    pub(super) last_vault_list_account: Mutex<Option<Option<String>>>,
-    pub(super) item_list_calls: Mutex<usize>,
-    pub(super) last_item_list_args: Mutex<Option<(String, Option<String>)>>,
-    pub(super) item_get_calls: Mutex<usize>,
-    pub(super) last_item_get_args: Mutex<Option<(String, String, Option<String>)>>,
+struct RecorderRunner {
+    accounts: Mutex<Vec<OpAccount>>,
+    vault_list_calls: Mutex<usize>,
+    last_vault_list_account: Mutex<Option<Option<String>>>,
+    item_list_calls: Mutex<usize>,
+    last_item_list_args: Mutex<Option<(String, Option<String>)>>,
+    item_get_calls: Mutex<usize>,
+    last_item_get_args: Mutex<Option<(String, String, Option<String>)>>,
 }
 
 impl OpStructRunner for RecorderRunner {
@@ -362,7 +354,7 @@ impl OpStructRunner for RecorderRunner {
     }
 }
 
-pub(super) fn drain_worker_load(s: &mut OpPickerState) {
+fn drain_worker_load(s: &mut OpPickerState) {
     let deadline = std::time::Instant::now() + std::time::Duration::from_millis(500);
     while (s.rx.is_some() || s.pending_load.is_some()) && std::time::Instant::now() < deadline {
         poll_load_for_test(s);
@@ -378,7 +370,7 @@ pub(super) fn drain_worker_load(s: &mut OpPickerState) {
     );
 }
 
-pub(super) fn test_state_picked(
+fn test_state_picked(
     vault: OpVault,
     items_in_vault: Vec<OpItem>,
     selected_item: OpItem,
@@ -395,9 +387,10 @@ pub(super) fn test_state_picked(
     s
 }
 
-pub(super) struct ParityStub {
-    pub(super) vaults: Vec<OpVault>,
-    pub(super) items: std::collections::HashMap<String, Vec<OpItem>>,
-    pub(super) fields: std::collections::HashMap<String, Vec<OpField>>,
-    pub(super) sections: std::collections::HashMap<String, Vec<OpSection>>,
+struct ParityStub {
+    vaults: Vec<OpVault>,
+    items: std::collections::HashMap<String, Vec<OpItem>>,
+    fields: std::collections::HashMap<String, Vec<OpField>>,
+    sections: std::collections::HashMap<String, Vec<OpSection>>,
 }
+

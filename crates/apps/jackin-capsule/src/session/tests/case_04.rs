@@ -94,7 +94,7 @@ async fn spawn_keeps_provider_route_with_same_agent_instance_and_account() {
                 agent: Some(instance_id.to_owned()),
                 account_id: Some(account_id.to_owned()),
                 identity: jackin_protocol::SessionIdentity { uid, gid: uid },
-                provider: Some(SessionProvider {
+                provider: Some(super::SessionProvider {
                     label: "OpenAI".to_owned(),
                     env_overrides: vec![("OPENAI_BASE_URL".to_owned(), endpoint.to_owned())],
                 }),
@@ -140,7 +140,7 @@ async fn conformance_wire_real_pty_spawn_stream_and_exit_exclude_private_content
     {
         return;
     }
-    let _telemetry_guard = crate::support::telemetry_test_guard_async().await;
+    let _telemetry_guard = crate::test_support::telemetry_test_guard_async().await;
     let testbed = jackin_otlp_testbed::Testbed::start().expect("start OTLP testbed");
     jackin_diagnostics::init_wire_test_export(
         &testbed.endpoint(),
@@ -381,3 +381,4 @@ fn bare_claude_notification_payload_authors_authority() {
     assert!(a.pending_permission);
     assert_eq!(a.grade, AuthorityGrade::Partial);
 }
+

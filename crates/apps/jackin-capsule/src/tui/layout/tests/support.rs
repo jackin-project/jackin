@@ -2,4 +2,5 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn _direction_referenced(_: Direction) {}
+fn _direction_referenced(_: Direction) {}
+

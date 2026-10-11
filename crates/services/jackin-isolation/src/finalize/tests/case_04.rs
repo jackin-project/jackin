@@ -377,3 +377,4 @@ async fn exit_action_discard_cleans_via_finalize() {
     assert_eq!(dec, FinalizeDecision::Cleaned);
     assert!(read_records(dir.path()).unwrap().is_empty());
 }
+

@@ -384,3 +384,4 @@ fn tab_leave_resets_unmasked_rows() {
         e.unmasked_rows
     );
 }
+

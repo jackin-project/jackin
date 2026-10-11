@@ -151,3 +151,4 @@ async fn execute_command_redacts_plain_secret() {
     assert!(stdout.contains("[redacted by jackin']"));
     assert_eq!(redacted, 1);
 }
+

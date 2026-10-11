@@ -321,3 +321,4 @@ fn client_clone_forks_subscription_set() {
     client.unsubscribe_all();
     assert!(client.subscriptions().is_empty());
 }
+

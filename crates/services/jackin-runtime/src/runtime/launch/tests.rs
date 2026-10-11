@@ -7,7 +7,6 @@
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
 
-use super::super::universe;
 use super::mounts::AppleContainerMountError;
 
 use super::*;
@@ -43,6 +42,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use tempfile::tempdir;
+
 
 mod support_01;
 use support_01::*;

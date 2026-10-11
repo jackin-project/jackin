@@ -2,13 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn fresh_state() -> ConsoleState {
+fn fresh_state() -> ConsoleState {
     let cwd = std::env::temp_dir();
     let config = AppConfig::default();
     new_console_state(&config, &cwd).unwrap()
 }
 
-pub(super) fn key(code: crossterm::event::KeyCode) -> crossterm::event::KeyEvent {
+fn key(code: crossterm::event::KeyCode) -> crossterm::event::KeyEvent {
     crossterm::event::KeyEvent {
         code,
         modifiers: crossterm::event::KeyModifiers::NONE,
@@ -17,7 +17,7 @@ pub(super) fn key(code: crossterm::event::KeyCode) -> crossterm::event::KeyEvent
     }
 }
 
-pub(super) fn unresolved_workspace() -> ResolvedWorkspace {
+fn unresolved_workspace() -> ResolvedWorkspace {
     ResolvedWorkspace {
         name: String::new(),
         label: "scratch".to_owned(),
@@ -30,9 +30,7 @@ pub(super) fn unresolved_workspace() -> ResolvedWorkspace {
     }
 }
 
-pub(super) fn run_prompt_for_unknown_role(
-    on_failure: OnPromptFailure,
-) -> (ConsoleState, PromptOutcome) {
+fn run_prompt_for_unknown_role(on_failure: OnPromptFailure) -> (ConsoleState, PromptOutcome) {
     let cwd = std::env::temp_dir();
     let config = AppConfig::default();
     let mut state = new_console_state(&config, &cwd).unwrap();
@@ -50,7 +48,7 @@ pub(super) fn run_prompt_for_unknown_role(
     (state, outcome)
 }
 
-pub(super) fn unresolvable_mount_config() -> (tempfile::TempDir, AppConfig) {
+fn unresolvable_mount_config() -> (tempfile::TempDir, AppConfig) {
     let temp = tempfile::tempdir().unwrap();
     let mut config = AppConfig::default();
     config.roles.insert(
@@ -76,3 +74,4 @@ pub(super) fn unresolvable_mount_config() -> (tempfile::TempDir, AppConfig) {
     );
     (temp, config)
 }
+

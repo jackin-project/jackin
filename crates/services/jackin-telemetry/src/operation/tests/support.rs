@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn exported_span(
+fn exported_span(
     outcome: Option<schema::enums::OutcomeValue>,
     error_type: Option<schema::enums::ErrorType>,
 ) -> opentelemetry_sdk::trace::SpanData {
@@ -28,9 +28,10 @@ pub(super) fn exported_span(
         .expect("span")
 }
 
-pub(super) fn exported_status(
+fn exported_status(
     outcome: Option<schema::enums::OutcomeValue>,
     error_type: Option<schema::enums::ErrorType>,
 ) -> Status {
     exported_span(outcome, error_type).status
 }
+

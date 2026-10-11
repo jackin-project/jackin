@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn render_launch_frame(
+fn render_launch_frame(
     frame: &mut Frame<'_>,
     view: &LaunchView,
     run_id: &str,
@@ -20,7 +20,7 @@ pub(super) fn render_launch_frame(
     );
 }
 
-pub(super) fn launch_failure() -> LaunchFailure {
+fn launch_failure() -> LaunchFailure {
     LaunchFailure {
         title: "Docker build failed".to_owned(),
         summary: "Building the Docker container failed.".to_owned(),
@@ -29,3 +29,4 @@ pub(super) fn launch_failure() -> LaunchFailure {
         stage: LaunchStage::DerivedImage,
     }
 }
+

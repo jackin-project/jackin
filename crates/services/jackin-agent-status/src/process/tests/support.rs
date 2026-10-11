@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn proc_info(
+fn proc_info(
     pid: u32,
     pgid: u32,
     tpgid: i32,
@@ -19,3 +19,4 @@ pub(super) fn proc_info(
         comm: comm.to_owned(),
     }
 }
+

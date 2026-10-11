@@ -361,3 +361,4 @@ fn events_request_omits_absent_filter_and_declares_itself_a_subscription() {
         ClientMsg::Events { session: Some(4) }
     ));
 }
+

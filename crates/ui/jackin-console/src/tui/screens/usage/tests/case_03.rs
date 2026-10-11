@@ -66,7 +66,7 @@ fn render_detail_overview_renders_all_windows_and_scrolling() {
     let backend = TestBackend::new(80, 25);
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
-        .draw(|f| render_detail(f, f.area(), &manager, TEST_NOW_EPOCH))
+        .draw(|f| super::render_detail(f, f.area(), &manager, TEST_NOW_EPOCH))
         .unwrap();
 
     let text = backend_text(&terminal);
@@ -102,7 +102,7 @@ fn render_full_route_narrow_and_wide() {
         let backend = TestBackend::new(width, height);
         let mut terminal = Terminal::new(backend).unwrap();
         terminal
-            .draw(|f| render_at(f, f.area(), &manager, TEST_NOW_EPOCH))
+            .draw(|f| super::render_at(f, f.area(), &manager, TEST_NOW_EPOCH))
             .unwrap();
 
         let text = backend_text(&terminal);
@@ -154,7 +154,7 @@ fn render_detail_account_shows_freshness_and_refreshing_indicator() {
     let backend = TestBackend::new(80, 25);
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
-        .draw(|f| render_detail(f, f.area(), &manager, TEST_NOW_EPOCH))
+        .draw(|f| super::render_detail(f, f.area(), &manager, TEST_NOW_EPOCH))
         .unwrap();
 
     let text = backend_text(&terminal);
@@ -197,7 +197,7 @@ fn render_unknown_window_shows_value_without_fabricated_bar() {
     let backend = TestBackend::new(80, 25);
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
-        .draw(|f| render_detail(f, f.area(), &manager, TEST_NOW_EPOCH))
+        .draw(|f| super::render_detail(f, f.area(), &manager, TEST_NOW_EPOCH))
         .unwrap();
 
     let text = backend_text(&terminal);
@@ -293,7 +293,7 @@ fn projection_round_trips_balance_spendcap_plan_groups_without_invented_values()
     let backend = TestBackend::new(120, 60);
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
-        .draw(|f| render_detail(f, f.area(), &manager, TEST_NOW_EPOCH))
+        .draw(|f| super::render_detail(f, f.area(), &manager, TEST_NOW_EPOCH))
         .unwrap();
     let detail = backend_text(&terminal);
     assert_detail_group_rows(&detail);
@@ -308,7 +308,7 @@ fn projection_round_trips_balance_spendcap_plan_groups_without_invented_values()
     let backend = TestBackend::new(120, 60);
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
-        .draw(|f| render_detail(f, f.area(), &manager, TEST_NOW_EPOCH))
+        .draw(|f| super::render_detail(f, f.area(), &manager, TEST_NOW_EPOCH))
         .unwrap();
     let overview = backend_text(&terminal);
     assert_overview_group_rows(&overview);
@@ -370,3 +370,4 @@ fn metric_group_meter_only_for_window_kind() {
     );
     assert_eq!(unknown.meter_percent(), None);
 }
+

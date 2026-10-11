@@ -377,3 +377,4 @@ sparse = ["plugins", ".claude-plugin"]
         }
     );
 }
+

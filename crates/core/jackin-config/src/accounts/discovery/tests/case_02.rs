@@ -321,3 +321,4 @@ fn oauth_discovery_keeps_only_nonempty_subscription_reference() {
         }
     }
 }
+

@@ -384,3 +384,4 @@ fn research_scaffold_in_creates_dossier_and_registers() {
     let parent = read_meta(&r.join("agents/meta.json")).unwrap();
     assert_eq!(parent["pages"].as_array().unwrap()[0], "my-study");
 }
+

@@ -203,3 +203,4 @@ fn unions_widen_when_either_pair_is_unparseable() {
     assert_eq!(union_lock_changes(b"[[[broken", lock, lock), None);
     assert_eq!(union_lock_changes(lock, lock, b"[[[broken"), None);
 }
+

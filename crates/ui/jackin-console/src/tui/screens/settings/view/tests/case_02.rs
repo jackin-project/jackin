@@ -338,7 +338,10 @@ fn shared_auth_rows_render_settings_and_editor_rows_identically() {
 fn accounts_height_includes_registry_add_actions_github_and_scan() {
     let config = jackin_config::AppConfig::default();
     let settings = crate::tui::state::SettingsAuthState::from_config(&config);
-    assert_eq!(settings.row_count(), model::ACCOUNT_KINDS.len() + 2);
+    assert_eq!(
+        settings.row_count(),
+        super::super::model::ACCOUNT_KINDS.len() + 2
+    );
 }
 
 #[test]
@@ -368,3 +371,4 @@ fn auth_state_lines_renders_scan_row_and_scanned_badges() {
         "{texts:?}"
     );
 }
+

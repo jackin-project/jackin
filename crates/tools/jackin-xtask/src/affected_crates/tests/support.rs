@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn graph() -> WorkspaceGraph {
+fn graph() -> WorkspaceGraph {
     WorkspaceGraph {
         names: BTreeMap::from([
             ("core-id".into(), "core".into()),
@@ -38,3 +38,4 @@ pub(super) fn graph() -> WorkspaceGraph {
         )]),
     }
 }
+

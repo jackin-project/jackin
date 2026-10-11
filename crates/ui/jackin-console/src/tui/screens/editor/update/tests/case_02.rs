@@ -225,3 +225,4 @@ fn account_rows_are_focusable_and_github_rows_open_forms() {
         Some(AuthFormTarget::WorkspaceRole { .. })
     ));
 }
+

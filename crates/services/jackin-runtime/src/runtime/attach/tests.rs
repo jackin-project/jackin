@@ -3,10 +3,6 @@
 
 //! Tests for `attach`.
 
-use super::super::backend;
-use super::super::launch;
-use super::super::snapshot;
-use super::super::universe;
 use std::collections::{HashMap, VecDeque};
 
 use std::path::PathBuf;
@@ -18,6 +14,7 @@ use super::*;
 use jackin_test_support::{FakeDockerClient, FakeRunner};
 
 use tempfile::TempDir;
+
 
 mod support;
 use support::*;

@@ -2,11 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn wn(name: &str) -> WorkspaceName {
+fn wn(name: &str) -> WorkspaceName {
     WorkspaceName::parse(name).unwrap()
 }
 
-pub(super) fn agent_source_stub() -> RoleSource {
+fn agent_source_stub() -> RoleSource {
     RoleSource {
         git: "https://example.invalid/org/repo.git".to_owned(),
         trusted: true,
@@ -14,10 +14,7 @@ pub(super) fn agent_source_stub() -> RoleSource {
     }
 }
 
-pub(super) fn launch_workspace(
-    workdir: &std::path::Path,
-    allowed_roles: Vec<&str>,
-) -> WorkspaceConfig {
+fn launch_workspace(workdir: &std::path::Path, allowed_roles: Vec<&str>) -> WorkspaceConfig {
     WorkspaceConfig {
         version: CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: workdir.display().to_string(),
@@ -45,7 +42,7 @@ pub(super) fn launch_workspace(
     }
 }
 
-pub(super) fn api_key_account(name: &str, provider: AiProvider) -> AccountConfig {
+fn api_key_account(name: &str, provider: AiProvider) -> AccountConfig {
     AccountConfig {
         enabled: true,
         name: name.into(),
@@ -58,7 +55,7 @@ pub(super) fn api_key_account(name: &str, provider: AiProvider) -> AccountConfig
     }
 }
 
-pub(super) fn agent_configuration(agent: Agent, account: &str) -> AgentConfiguration {
+fn agent_configuration(agent: Agent, account: &str) -> AgentConfiguration {
     AgentConfiguration {
         agent,
         account: account.into(),
@@ -69,7 +66,7 @@ pub(super) fn agent_configuration(agent: Agent, account: &str) -> AgentConfigura
     }
 }
 
-pub(super) fn admission_config(project_dir: &std::path::Path) -> AppConfig {
+fn admission_config(project_dir: &std::path::Path) -> AppConfig {
     let mut config = AppConfig::default();
     config.roles.insert("smith".to_owned(), agent_source_stub());
     for (id, display) in [("a-claude", "A"), ("z-claude", "Z")] {
@@ -87,3 +84,4 @@ pub(super) fn admission_config(project_dir: &std::path::Path) -> AppConfig {
     config.workspaces.insert("demo".to_owned(), saved);
     config
 }
+

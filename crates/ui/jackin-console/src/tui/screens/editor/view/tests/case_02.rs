@@ -371,3 +371,4 @@ fn general_tab_clamps_horizontal_scroll_with_shared_scrollable_block() {
     );
     assert!(editor.tab_scroll.offset_x() > 0);
 }
+

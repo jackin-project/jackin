@@ -19,7 +19,7 @@ async fn load_agent_skips_operator_env_resolution_when_no_env_layers_apply() {
 
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
@@ -87,7 +87,7 @@ async fn load_agent_skips_unselected_account_credential_refs() {
 
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     config.accounts.insert(
@@ -162,7 +162,7 @@ async fn load_agent_skips_unselected_account_credential_refs() {
 async fn load_agent_skips_non_required_manifest_credential_prompts() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
@@ -256,7 +256,7 @@ async fn load_agent_skips_github_env_resolution_when_github_auth_ignored() {
 
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let mut github_env = std::collections::BTreeMap::new();
@@ -322,3 +322,4 @@ async fn load_agent_skips_github_env_resolution_when_github_auth_ignored() {
     .await
     .unwrap();
 }
+

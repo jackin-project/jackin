@@ -178,3 +178,4 @@ fn credential_provider_surface_is_independent_from_usage_authority() {
     );
     assert_eq!(config.usage_capability_for_instance("claude-work"), None);
 }
+

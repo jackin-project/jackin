@@ -395,3 +395,4 @@ fn host_uid_changes_recipe_hash() {
         "host UID must participate in the derived image recipe hash"
     );
 }
+

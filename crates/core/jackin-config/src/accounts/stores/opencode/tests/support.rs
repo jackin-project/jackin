@@ -2,13 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) const SCHEMA: &str = "CREATE TABLE credential (id INTEGER PRIMARY KEY, integration_id TEXT, label TEXT, value TEXT, connector_id TEXT, method_id TEXT, active INTEGER)";
+const SCHEMA: &str = "CREATE TABLE credential (id INTEGER PRIMARY KEY, integration_id TEXT, label TEXT, value TEXT, connector_id TEXT, method_id TEXT, active INTEGER)";
 
-pub(super) fn credential(cells: &[Cell], wal_mode: bool) -> Vec<u8> {
+fn credential(cells: &[Cell], wal_mode: bool) -> Vec<u8> {
     database(SCHEMA, 2, cells, wal_mode)
 }
 
-pub(super) fn row(
+fn row(
     rowid: u64,
     integration: &str,
     label: &str,
@@ -29,3 +29,4 @@ pub(super) fn row(
         ],
     )
 }
+

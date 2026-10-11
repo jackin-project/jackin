@@ -81,3 +81,4 @@ fn namespace_scan_handles_rust_literal_forms_and_macro_construction() {
         "let _ = \"jackin.multiline\\\n.field\";"
     ));
 }
+

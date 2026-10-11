@@ -364,3 +364,4 @@ fn codex_rpc_tolerates_missing_windows_credits_and_counts() {
     let empty = decode_codex_rpc_usage(serde_json::json!({}), None).expect("empty decodes");
     assert!(empty.response.buckets(1_781_185_560).is_empty());
 }
+

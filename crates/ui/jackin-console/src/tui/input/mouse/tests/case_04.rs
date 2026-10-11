@@ -389,3 +389,4 @@ fn editor_vertical_scrollbar_drag_ignores_background_when_modal_open() {
     };
     assert_eq!(editor.tab_scroll.offset_y(), 0);
 }
+

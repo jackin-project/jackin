@@ -361,3 +361,4 @@ async fn clean_tree_passes() {
     let mut runner = fake_with_repo_and_status(repo.path(), ignored_only_porcelain());
     preflight_worktree(&m, &ctx(), &mut runner).await.unwrap();
 }
+

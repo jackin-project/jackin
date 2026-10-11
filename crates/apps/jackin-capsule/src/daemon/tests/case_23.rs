@@ -336,7 +336,7 @@ async fn last_session_exit_defers_when_dialog_already_open_inv_d19() {
     let mut mux = single_pane_tab_mux();
     mux.dialog_push(Dialog::new_exit_dirty(
         vec!["repo   1 changed".to_owned()],
-        Arc::from([]),
+        std::sync::Arc::from([]),
     ));
     assert!(mux.dialog_open(), "precondition: dialog open");
 
@@ -383,3 +383,4 @@ fn session_send_writes_the_payload_verbatim_into_the_addressed_pty() {
         "exactly one write"
     );
 }
+

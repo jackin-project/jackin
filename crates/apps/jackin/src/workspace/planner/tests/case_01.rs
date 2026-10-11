@@ -393,3 +393,4 @@ fn plan_collapse_allows_new_child_when_new_parent_is_also_in_same_edit() {
     assert_eq!(plan.kept, vec![mk("/a", "/a", false)]);
     assert_eq!(plan.removed.len(), 1);
 }
+

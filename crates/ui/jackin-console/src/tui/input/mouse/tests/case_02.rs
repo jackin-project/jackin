@@ -61,7 +61,7 @@ fn container_info_copy_click_queues_typed_effect() {
     for y in 0..term.height {
         for x in 0..term.width {
             let mouse = mouse_down_at(x, y);
-            if container_info_copyable_row_at(&state, mouse, term) {
+            if super::container_info_copyable_row_at(&state, mouse, term) {
                 hit = Some(mouse);
                 break;
             }
@@ -315,7 +315,7 @@ fn mouse_down_on_url_row_in_prelude_with_url_does_not_drag() {
     for y in 0..term.height {
         for x in 0..term.width {
             let mouse = mouse_down_at(x, y);
-            if file_browser_url_row_at(&state, mouse, term) {
+            if super::file_browser_url_row_at(&state, mouse, term) {
                 hit = Some(mouse);
                 break;
             }
@@ -327,7 +327,7 @@ fn mouse_down_on_url_row_in_prelude_with_url_does_not_drag() {
     let hit = hit.expect("URL row should have a clickable hitbox");
 
     let outcome = handle_mouse(&mut state, hit, term);
-    assert!(matches!(outcome, InputOutcome::Continue));
+    assert!(matches!(outcome, super::super::InputOutcome::Continue));
     let effects = state.drain_effects();
     match effects.as_slice() {
         [ManagerEffect::OpenUrl(url)] => {
@@ -394,3 +394,4 @@ fn click_on_fifth_row_sets_selected_to_four() {
     handle_mouse(&mut state, mouse_at(10, 7), term(100));
     assert_eq!(state.selected, 4);
 }
+

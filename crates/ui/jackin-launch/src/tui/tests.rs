@@ -36,6 +36,7 @@ use ratatui::backend::TestBackend;
 
 use ratatui::{Frame, layout::Rect, style::Color};
 
+
 mod support;
 use support::*;
 mod case_01;

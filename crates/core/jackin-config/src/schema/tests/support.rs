@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn mount(src: &str, dst: &str) -> MountConfig {
+fn mount(src: &str, dst: &str) -> MountConfig {
     MountConfig {
         src: src.to_owned(),
         dst: dst.to_owned(),
@@ -11,11 +11,11 @@ pub(super) fn mount(src: &str, dst: &str) -> MountConfig {
     }
 }
 
-pub(super) fn named_mount(name: &str, src: &str, dst: &str) -> (Option<String>, MountConfig) {
+fn named_mount(name: &str, src: &str, dst: &str) -> (Option<String>, MountConfig) {
     (Some(name.to_owned()), mount(src, dst))
 }
 
-pub(super) fn launch_configurations() -> BTreeMap<String, AgentConfiguration> {
+fn launch_configurations() -> BTreeMap<String, AgentConfiguration> {
     BTreeMap::from([
         (
             "claude-a".to_owned(),
@@ -52,3 +52,4 @@ pub(super) fn launch_configurations() -> BTreeMap<String, AgentConfiguration> {
         ),
     ])
 }
+

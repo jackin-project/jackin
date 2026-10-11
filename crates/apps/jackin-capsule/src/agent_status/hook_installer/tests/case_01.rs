@@ -383,3 +383,4 @@ fn claude_install_bails_on_malformed_settings_and_preserves_it() {
     // And verify keeps reporting drift, so the failure stays visible.
     assert!(!installer().verify(&home, &home.join(".claude")));
 }
+

@@ -351,3 +351,4 @@ async fn descriptor_cwd_rejects_pathname_cwd_and_non_directory_without_fallback(
         .unwrap_err();
     assert!(error.to_string().contains("not a directory"));
 }
+

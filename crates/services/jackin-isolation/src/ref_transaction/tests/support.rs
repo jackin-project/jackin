@@ -2,15 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) const OLD: &str = "1111111111111111111111111111111111111111";
+const OLD: &str = "1111111111111111111111111111111111111111";
 
-pub(super) const NEW: &str = "2222222222222222222222222222222222222222";
+const NEW: &str = "2222222222222222222222222222222222222222";
 
-pub(super) const OTHER: &str = "3333333333333333333333333333333333333333";
+const OTHER: &str = "3333333333333333333333333333333333333333";
 
-pub(super) const NAME: &str = "refs/heads/jackin/scratch";
+const NAME: &str = "refs/heads/jackin/scratch";
 
-pub(super) fn fixture() -> (tempfile::TempDir, OwnedFd) {
+fn fixture() -> (tempfile::TempDir, OwnedFd) {
     let dir = tempfile::tempdir().expect("tempdir");
     std::fs::create_dir_all(dir.path().join("refs/heads/jackin")).expect("refs");
     let fd = nix::fcntl::open(
@@ -21,3 +21,4 @@ pub(super) fn fixture() -> (tempfile::TempDir, OwnedFd) {
     .expect("pin");
     (dir, fd)
 }
+

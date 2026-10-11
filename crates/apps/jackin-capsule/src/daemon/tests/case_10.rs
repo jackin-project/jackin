@@ -390,3 +390,4 @@ fn wheel_back_to_live_repaints_body_and_footer() {
         "returning to live must repaint in place, not wipe"
     );
 }
+

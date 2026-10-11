@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn amp_usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
+fn amp_usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
     provider_usage_view_fixture(
         "Amp",
         "Amp",
@@ -42,7 +42,7 @@ pub(super) fn amp_usage_view_fixture() -> jackin_protocol::control::FocusedUsage
     )
 }
 
-pub(super) fn xai_usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
+fn xai_usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
     provider_usage_view_fixture(
         "Grok Build",
         "xAI",
@@ -58,7 +58,7 @@ pub(super) fn xai_usage_view_fixture() -> jackin_protocol::control::FocusedUsage
     )
 }
 
-pub(super) fn zai_usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
+fn zai_usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
     provider_usage_view_fixture(
         "GLM / Z.AI",
         "Z.AI",
@@ -78,7 +78,7 @@ pub(super) fn zai_usage_view_fixture() -> jackin_protocol::control::FocusedUsage
     )
 }
 
-pub(super) fn kimi_usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
+fn kimi_usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
     provider_usage_view_fixture(
         "Kimi",
         "Kimi",
@@ -97,7 +97,7 @@ pub(super) fn kimi_usage_view_fixture() -> jackin_protocol::control::FocusedUsag
     )
 }
 
-pub(super) fn minimax_usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
+fn minimax_usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
     provider_usage_view_fixture(
         "MiniMax",
         "MiniMax",
@@ -122,7 +122,7 @@ pub(super) fn minimax_usage_view_fixture() -> jackin_protocol::control::FocusedU
     )
 }
 
-pub(super) fn antigravity_usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
+fn antigravity_usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
     provider_usage_view_fixture(
         "Antigravity",
         "Antigravity",
@@ -145,11 +145,11 @@ pub(super) fn antigravity_usage_view_fixture() -> jackin_protocol::control::Focu
     )
 }
 
-pub(super) fn render_usage_dialog_snapshot(width: u16, height: u16, tab: UsageDialogTab) -> String {
+fn render_usage_dialog_snapshot(width: u16, height: u16, tab: UsageDialogTab) -> String {
     render_usage_dialog_snapshot_for_view(width, height, tab, usage_view_fixture())
 }
 
-pub(super) fn render_usage_dialog_snapshot_for_view(
+fn render_usage_dialog_snapshot_for_view(
     width: u16,
     height: u16,
     tab: UsageDialogTab,
@@ -180,12 +180,7 @@ pub(super) fn render_usage_dialog_snapshot_for_view(
         .join("\n")
 }
 
-pub(super) fn usage_tab_text_position(
-    d: &Dialog,
-    height: u16,
-    width: u16,
-    label: &str,
-) -> (u16, u16) {
+fn usage_tab_text_position(d: &Dialog, height: u16, width: u16, label: &str) -> (u16, u16) {
     let snapshot = d.to_ratatui_snapshot(None);
     let rect = d.box_rect(height, width);
     let backend = TestBackend::new(width, height);
@@ -207,14 +202,14 @@ pub(super) fn usage_tab_text_position(
     panic!("usage tab label {label:?} not rendered");
 }
 
-pub(super) fn s8_usage_scroll(d: &Dialog) -> (u16, u16) {
+fn s8_usage_scroll(d: &Dialog) -> (u16, u16) {
     let Dialog::Usage { scroll, .. } = d else {
         panic!("usage dialog");
     };
     (scroll.scroll_x, scroll.scroll_y)
 }
 
-pub(super) fn s8_usage_tab_bar_focused(d: &Dialog) -> bool {
+fn s8_usage_tab_bar_focused(d: &Dialog) -> bool {
     let Dialog::Usage {
         tab_bar_focused, ..
     } = d
@@ -223,3 +218,4 @@ pub(super) fn s8_usage_tab_bar_focused(d: &Dialog) -> bool {
     };
     *tab_bar_focused
 }
+

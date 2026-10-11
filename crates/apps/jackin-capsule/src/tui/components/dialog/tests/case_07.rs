@@ -28,3 +28,4 @@ fn s8_usage_extreme_scroll_still_renders_chrome() {
         .join("\n");
     assert!(rendered.contains("Usage"), "{rendered}");
 }
+

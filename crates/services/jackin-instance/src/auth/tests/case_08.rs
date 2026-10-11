@@ -386,3 +386,4 @@ fn sync_copies_host_auth_json_when_present() {
     assert_eq!(outcome, AuthProvisionOutcome::Synced);
     assert_eq!(std::fs::read_to_string(&auth_json).unwrap(), expected);
 }
+

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn test_repo_root() -> PathBuf {
+fn test_repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .and_then(Path::parent)
@@ -11,7 +11,7 @@ pub(super) fn test_repo_root() -> PathBuf {
         .to_owned()
 }
 
-pub(super) fn git_repo_with_commit() -> tempfile::TempDir {
+fn git_repo_with_commit() -> tempfile::TempDir {
     let temp = tempfile::tempdir().unwrap();
     run_git(temp.path(), ["init", "-b", "main"]);
     run_git(
@@ -25,7 +25,7 @@ pub(super) fn git_repo_with_commit() -> tempfile::TempDir {
     temp
 }
 
-pub(super) fn run_git<I, S>(dir: &Path, args: I)
+fn run_git<I, S>(dir: &Path, args: I)
 where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
@@ -37,3 +37,4 @@ where
         .unwrap();
     assert!(status.success(), "git command failed with {status}");
 }
+

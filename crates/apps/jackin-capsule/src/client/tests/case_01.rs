@@ -156,3 +156,4 @@ async fn attach_proxy_exits_when_socket_closes_before_stdin() {
     assert_eq!(received, server_frame);
     server.await.unwrap();
 }
+

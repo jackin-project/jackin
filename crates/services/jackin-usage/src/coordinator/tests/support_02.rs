@@ -3,7 +3,7 @@
 
 use super::*;
 impl CadenceGateExecutor {
-    pub(super) fn new(outcome: ProviderProbeOutcome) -> Self {
+    fn new(outcome: ProviderProbeOutcome) -> Self {
         Self {
             calls: AtomicUsize::new(0),
             started: (Mutex::new(0), Condvar::new()),
@@ -12,7 +12,7 @@ impl CadenceGateExecutor {
         }
     }
 
-    pub(super) fn wait_started(&self) {
+    fn wait_started(&self) {
         let deadline = Instant::now() + Duration::from_secs(2);
         let (lock, changed) = &self.started;
         let mut started = lock.lock().unwrap();
@@ -25,7 +25,7 @@ impl CadenceGateExecutor {
         }
     }
 
-    pub(super) fn release(&self) {
+    fn release(&self) {
         let (lock, changed) = &self.permits;
         *lock.lock().unwrap() += 1;
         changed.notify_all();
@@ -52,7 +52,7 @@ impl UsageProviderExecutor for CadenceGateExecutor {
     }
 }
 
-pub(super) fn cadence_quota_view(epoch: i64) -> FocusedUsageView {
+fn cadence_quota_view(epoch: i64) -> FocusedUsageView {
     let mut view = FocusedUsageView::unavailable("fixture", epoch);
     view.status = UsageSnapshotStatus::Fresh;
     view.source = UsageSource::ProviderApi;
@@ -75,10 +75,7 @@ pub(super) fn cadence_quota_view(epoch: i64) -> FocusedUsageView {
     view
 }
 
-pub(super) fn cadence_coordinator<E>(
-    executor: Arc<E>,
-    config: UsageCoordinatorConfig,
-) -> UsageCoordinator
+fn cadence_coordinator<E>(executor: Arc<E>, config: UsageCoordinatorConfig) -> UsageCoordinator
 where
     E: UsageProviderExecutor + 'static,
 {
@@ -90,3 +87,4 @@ where
         config,
     )
 }
+

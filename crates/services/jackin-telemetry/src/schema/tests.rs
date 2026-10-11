@@ -3,8 +3,7 @@
 
 use std::collections::BTreeSet;
 
-use super::{
-    ALL_KEYS, ConfigVersionDirection, attrs, enums, events, metrics, spans,
-    valid_config_schema_version,
-};
+use super::{ALL_KEYS, attrs, enums, events, metrics, spans};
+
+
 mod case_01;

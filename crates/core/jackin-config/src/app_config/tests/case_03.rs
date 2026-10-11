@@ -209,3 +209,4 @@ claude = "work"
     assert!(config.validate_accounts().is_err());
     crate::resolve_account(&config, Agent::Claude, Some(&wn("project")), "smith").unwrap_err();
 }
+

@@ -2,21 +2,21 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn envelope() -> jackin_protocol::AgentCredentialEnv {
+fn envelope() -> jackin_protocol::AgentCredentialEnv {
     serde_json::from_str(
         r#"{"schema_version":2,"instances":{"work@claude":{"agent":"claude","account_id":"work","env":{"ANTHROPIC_API_KEY":"test-key"}}}}"#,
     )
     .unwrap()
 }
 
-pub(super) fn replacement_envelope() -> jackin_protocol::AgentCredentialEnv {
+fn replacement_envelope() -> jackin_protocol::AgentCredentialEnv {
     serde_json::from_str(
         r#"{"schema_version":2,"instances":{"new-a@claude":{"agent":"claude","account_id":"new-a","env":{"ANTHROPIC_API_KEY":"new-a-key"}},"new-b@claude":{"agent":"claude","account_id":"new-b","env":{"ANTHROPIC_API_KEY":"new-b-key"}}}}"#,
     )
     .unwrap()
 }
 
-pub(super) fn credential_snapshot(root: &Path) -> std::collections::BTreeMap<String, Vec<u8>> {
+fn credential_snapshot(root: &Path) -> std::collections::BTreeMap<String, Vec<u8>> {
     std::fs::read_dir(root.join("credentials"))
         .unwrap()
         .map(|entry| {
@@ -29,7 +29,7 @@ pub(super) fn credential_snapshot(root: &Path) -> std::collections::BTreeMap<Str
         .collect()
 }
 
-pub(super) fn assert_no_swap_artifacts(root: &Path) {
+fn assert_no_swap_artifacts(root: &Path) {
     let artifacts: Vec<_> = std::fs::read_dir(root)
         .unwrap()
         .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
@@ -41,7 +41,7 @@ pub(super) fn assert_no_swap_artifacts(root: &Path) {
     );
 }
 
-pub(super) fn api_key_account(id: &str) -> AccountConfig {
+fn api_key_account(id: &str) -> AccountConfig {
     AccountConfig {
         enabled: true,
         name: id.into(),
@@ -54,7 +54,7 @@ pub(super) fn api_key_account(id: &str) -> AccountConfig {
     }
 }
 
-pub(super) fn admitted_fingerprint_fixture() -> (AppConfig, Vec<AdmittedInstance>) {
+fn admitted_fingerprint_fixture() -> (AppConfig, Vec<AdmittedInstance>) {
     let mut config = AppConfig::default();
     for account_id in ["a", "b", "c"] {
         config
@@ -89,8 +89,9 @@ pub(super) fn admitted_fingerprint_fixture() -> (AppConfig, Vec<AdmittedInstance
     (config, admitted)
 }
 
-pub(super) fn write_generation_fixture(paths: &jackin_core::JackinPaths, config: &AppConfig) {
+fn write_generation_fixture(paths: &jackin_core::JackinPaths, config: &AppConfig) {
     paths.ensure_base_dirs().unwrap();
     std::fs::write(&paths.config_file, toml::to_string(config).unwrap()).unwrap();
     std::fs::File::create(paths.config_file.with_file_name("config.lock")).unwrap();
 }
+

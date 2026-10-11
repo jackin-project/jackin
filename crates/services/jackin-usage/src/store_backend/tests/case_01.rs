@@ -156,3 +156,4 @@ fn conformance_wire_sql_operations_are_bounded_and_private() -> anyhow::Result<(
     jackin_diagnostics::shutdown_capsule_tracing();
     Ok(())
 }
+

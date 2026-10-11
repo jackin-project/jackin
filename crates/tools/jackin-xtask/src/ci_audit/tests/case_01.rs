@@ -195,3 +195,4 @@ fn ansi_stripping_and_duration_are_stable() {
     assert_eq!(strip_ansi("a\u{1b}[31mred\u{1b}[0mz"), "aredz");
     assert_eq!(duration(128), "2m 08s");
 }
+

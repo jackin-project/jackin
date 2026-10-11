@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn start_fault_pty_tasks(
+fn start_fault_pty_tasks(
     fault: FaultMasterPty,
 ) -> (
     mpsc::UnboundedSender<Vec<u8>>,
@@ -62,7 +62,7 @@ pub(super) fn start_fault_pty_tasks(
     (input_tx, event_rx)
 }
 
-pub(super) fn v2_credentials_fixture() -> jackin_protocol::AgentCredentialEnv {
+fn v2_credentials_fixture() -> jackin_protocol::AgentCredentialEnv {
     serde_json::from_value(serde_json::json!({
         "schema_version": 2,
         "instances": {
@@ -85,3 +85,4 @@ pub(super) fn v2_credentials_fixture() -> jackin_protocol::AgentCredentialEnv {
     }))
     .expect("v2 fixture must decode")
 }
+

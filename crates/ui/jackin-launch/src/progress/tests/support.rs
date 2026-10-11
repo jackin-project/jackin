@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) struct TestDiagnostics;
+struct TestDiagnostics;
 
 impl LaunchDiagnostics for TestDiagnostics {
     fn run_id(&self) -> &'static str {
@@ -14,8 +14,8 @@ impl LaunchDiagnostics for TestDiagnostics {
 }
 
 #[derive(Default)]
-pub(super) struct RecordingDiagnostics {
-    pub(super) stage: std::sync::Mutex<Option<(String, String, Option<String>)>>,
+struct RecordingDiagnostics {
+    stage: std::sync::Mutex<Option<(String, String, Option<String>)>>,
 }
 
 impl LaunchDiagnostics for RecordingDiagnostics {
@@ -33,11 +33,11 @@ impl LaunchDiagnostics for RecordingDiagnostics {
     }
 }
 
-pub(super) fn test_progress() -> LaunchProgress {
+fn test_progress() -> LaunchProgress {
     LaunchProgress::for_test(Arc::new(TestDiagnostics))
 }
 
-pub(super) fn test_diagnostics() -> Arc<RunDiagnostics> {
+fn test_diagnostics() -> Arc<RunDiagnostics> {
     let tmp = tempfile::tempdir().unwrap();
     let paths = jackin_core::JackinPaths::for_tests(tmp.path());
     RunDiagnostics::start(
@@ -49,7 +49,7 @@ pub(super) fn test_diagnostics() -> Arc<RunDiagnostics> {
     .unwrap()
 }
 
-pub(super) fn dummy_failure() -> LaunchFailure {
+fn dummy_failure() -> LaunchFailure {
     LaunchFailure {
         title: "boom".to_owned(),
         summary: "it failed".to_owned(),
@@ -58,3 +58,4 @@ pub(super) fn dummy_failure() -> LaunchFailure {
         stage: LaunchStage::Network,
     }
 }
+

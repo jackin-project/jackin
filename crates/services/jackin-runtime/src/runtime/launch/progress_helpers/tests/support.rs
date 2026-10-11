@@ -2,18 +2,18 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) const LAUNCH_WIRE_CHILD: &str = "JACKIN_LAUNCH_WIRE_CHILD";
+const LAUNCH_WIRE_CHILD: &str = "JACKIN_LAUNCH_WIRE_CHILD";
 
-pub(super) const PRIVATE_ROLE_OWNER: &str = "wire-private-role-owner";
+const PRIVATE_ROLE_OWNER: &str = "wire-private-role-owner";
 
-pub(super) const PRIVATE_ROLE: &str = "wire-private-launch-role";
+const PRIVATE_ROLE: &str = "wire-private-launch-role";
 
-pub(super) const PRIVATE_ROLE_ID: &str = "wire-private-role-owner/wire-private-launch-role";
+const PRIVATE_ROLE_ID: &str = "wire-private-role-owner/wire-private-launch-role";
 
-pub(super) const PRIVATE_ROLE_URL: &str =
+const PRIVATE_ROLE_URL: &str =
     "https://wire-private-role-source.invalid/roles.git?token=wire-private-role-token";
 
-pub(super) struct TestDiagnostics;
+struct TestDiagnostics;
 
 impl LaunchDiagnostics for TestDiagnostics {
     fn run_id(&self) -> &'static str {
@@ -31,7 +31,7 @@ impl LaunchDiagnostics for TestDiagnostics {
     }
 }
 
-pub(super) fn steps_with_progress(cancelled: bool) -> StepCounter {
+fn steps_with_progress(cancelled: bool) -> StepCounter {
     let progress = LaunchProgress::for_test(Arc::new(TestDiagnostics));
     if cancelled {
         progress.cancel_token().cancel();
@@ -44,7 +44,7 @@ pub(super) fn steps_with_progress(cancelled: bool) -> StepCounter {
     steps
 }
 
-pub(super) fn resolve_private_role_source() -> anyhow::Result<()> {
+fn resolve_private_role_source() -> anyhow::Result<()> {
     let selector = RoleSelector::new(Some(PRIVATE_ROLE_OWNER), PRIVATE_ROLE);
     assert_eq!(selector.key(), PRIVATE_ROLE_ID);
     let mut config = AppConfig::default();
@@ -57,14 +57,14 @@ pub(super) fn resolve_private_role_source() -> anyhow::Result<()> {
         },
     );
     let (source, is_new, restore_override) =
-        super::super::super::resolve_launch_role_source(&mut config, &selector, None)?;
+        super::super::resolve_launch_role_source(&mut config, &selector, None)?;
     assert_eq!(source.git, PRIVATE_ROLE_URL);
     assert!(!is_new);
     assert!(!restore_override);
     Ok(())
 }
 
-pub(super) fn assert_private_launch_values_absent(testbed: &jackin_otlp_testbed::Testbed) {
+fn assert_private_launch_values_absent(testbed: &jackin_otlp_testbed::Testbed) {
     let prohibited = [
         PRIVATE_ROLE_OWNER,
         PRIVATE_ROLE,
@@ -84,3 +84,4 @@ pub(super) fn assert_private_launch_values_absent(testbed: &jackin_otlp_testbed:
         Vec::<String>::new()
     );
 }
+

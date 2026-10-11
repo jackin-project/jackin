@@ -1,8 +1,9 @@
 //! Self-tests for the [`FakeProcessHarness`](super::FakeProcessHarness).
 
-use super::{FakeBinary, FakeProcessHarness, Invocation, ProcessScript};
+use super::{FakeProcessHarness, Invocation, ProcessScript};
 
 use std::io::Result;
+
 
 mod support;
 use support::*;

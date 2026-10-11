@@ -109,3 +109,4 @@ async fn exec_requester_departure_kills_running_command_and_descendant() {
     .await
     .expect("command and descendant killed and reaped after requester cancellation");
 }
+

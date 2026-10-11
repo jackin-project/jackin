@@ -201,3 +201,4 @@ fn parse_porcelain_skips_blank_lines() {
     assert_eq!(files[0].status, 'M');
     assert_eq!(files[1].status, 'A');
 }
+

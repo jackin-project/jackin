@@ -205,3 +205,4 @@ fn orphan_sweep_without_transaction_removes_all_stage_directories() {
     sweep_orphan_credential_staging(root, None).unwrap();
     assert!(!root.join(".credentials-stage-Aa11Bb").exists());
 }
+

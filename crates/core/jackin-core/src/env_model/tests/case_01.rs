@@ -168,3 +168,4 @@ fn env_cycle_error_message_parity() {
     assert_eq!(err.to_string(), "env var dependency cycle detected");
     let _: EnvCycleError = err;
 }
+

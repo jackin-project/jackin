@@ -391,3 +391,4 @@ fn cycle_isolation_on_sentinel_is_noop() {
     );
     assert_eq!(e.change_count(), 0);
 }
+

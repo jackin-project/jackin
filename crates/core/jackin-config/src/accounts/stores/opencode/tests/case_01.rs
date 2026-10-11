@@ -13,7 +13,7 @@ fn selects_usable_entries_sorted_by_provider() {
         "zai": {"type": "oauth", "refresh": "fixture-refresh-002"}
     }"#;
     let source = Path::new("/data/opencode/auth.json");
-    let candidates = parse_opencode_bytes(raw.as_bytes(), source).unwrap();
+    let candidates = super::parse_opencode_bytes(raw.as_bytes(), source).unwrap();
     let expected = vec![
         StoreCandidate::new(
             StoreKind::Opencode,
@@ -86,7 +86,7 @@ fn selects_credential_rows_skipping_inactive() {
         false,
     );
     let source = Path::new("opencode.db");
-    let candidates = parse_opencode_database(&db, None, source).unwrap();
+    let candidates = super::parse_opencode_database(&db, None, source).unwrap();
     let expected = vec![
         StoreCandidate::new(
             StoreKind::Opencode,
@@ -191,7 +191,7 @@ fn auth_layout_rejects_single_foreign_entry_without_usage_materialization() {
 #[test]
 fn rejects_non_object_and_invalid_json() {
     for raw in [r"[]", r"null", r#""str""#, r#"{"a": "#] {
-        let result = parse_opencode_bytes(raw.as_bytes(), Path::new("auth.json"));
+        let result = super::parse_opencode_bytes(raw.as_bytes(), Path::new("auth.json"));
         assert_eq!(result.unwrap_err(), StoreError::Malformed, "raw: {raw}");
     }
 }
@@ -208,7 +208,7 @@ fn missing_inputs_yield_no_candidates() {
     );
     let no_table = database("CREATE TABLE other (id TEXT)", 2, &[], false);
     assert!(
-        parse_opencode_database(&no_table, None, Path::new("opencode.db"))
+        super::parse_opencode_database(&no_table, None, Path::new("opencode.db"))
             .unwrap()
             .is_empty()
     );
@@ -223,7 +223,8 @@ fn unrecognized_secret_column_is_unsupported() {
         false,
     );
     assert_eq!(
-        parse_opencode_database(&db, None, Path::new("opencode.db")).unwrap_err(),
+        super::parse_opencode_database(&db, None, Path::new("opencode.db")).unwrap_err(),
         StoreError::Unsupported("credential table has no recognized secret column")
     );
 }
+

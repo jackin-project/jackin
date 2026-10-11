@@ -386,3 +386,4 @@ fn opencode_auth_and_usage_contract_is_typed_without_secret_identity() {
     assert!(error.contains("opencode-go credential is missing"));
     assert!(!error.contains("unrelated-sentinel"));
 }
+

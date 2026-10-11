@@ -144,7 +144,7 @@ fn pane_sgr_regions_clamps_run_to_inner_width() {
 
 #[test]
 fn status_tick_select_arm_stays_above_pty_output() {
-    let source = include_str!("../../daemon.rs");
+    let source = include_str!("../daemon.rs");
     let tick_arm = source
         .find("_ = state_ticker.tick()")
         .unwrap_or_else(|| panic!("state ticker select arm missing"));
@@ -275,7 +275,7 @@ fn conformance_wire_generated_codename_reaches_child_without_export() -> Result<
         return Ok(());
     }
 
-    let _telemetry_guard = crate::support::telemetry_test_guard();
+    let _telemetry_guard = crate::test_support::telemetry_test_guard();
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
@@ -345,3 +345,4 @@ fn conformance_wire_generated_codename_reaches_child_without_export() -> Result<
     jackin_diagnostics::shutdown_capsule_tracing();
     Ok(())
 }
+

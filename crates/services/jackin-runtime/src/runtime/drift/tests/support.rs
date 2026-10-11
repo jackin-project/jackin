@@ -2,16 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn wn(name: &str) -> WorkspaceName {
+fn wn(name: &str) -> WorkspaceName {
     WorkspaceName::parse(name).unwrap()
 }
 
-pub(super) fn record_for(
-    workspace: &str,
-    container: &str,
-    dst: &str,
-    src: &str,
-) -> IsolationRecord {
+fn record_for(workspace: &str, container: &str, dst: &str, src: &str) -> IsolationRecord {
     IsolationRecord {
         workspace_name: Some(wn(workspace)),
         mount_dst: dst.into(),
@@ -28,7 +23,7 @@ pub(super) fn record_for(
     }
 }
 
-pub(super) fn paths_for(data: &std::path::Path) -> JackinPaths {
+fn paths_for(data: &std::path::Path) -> JackinPaths {
     JackinPaths {
         test_layout: true,
         home_dir: data.into(),
@@ -42,7 +37,7 @@ pub(super) fn paths_for(data: &std::path::Path) -> JackinPaths {
     }
 }
 
-pub(super) fn mount(src: &str, dst: &str, iso: MountIsolation) -> jackin_config::MountConfig {
+fn mount(src: &str, dst: &str, iso: MountIsolation) -> jackin_config::MountConfig {
     jackin_config::MountConfig {
         src: src.into(),
         dst: dst.into(),
@@ -50,3 +45,4 @@ pub(super) fn mount(src: &str, dst: &str, iso: MountIsolation) -> jackin_config:
         isolation: iso,
     }
 }
+

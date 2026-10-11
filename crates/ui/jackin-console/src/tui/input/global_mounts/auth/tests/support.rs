@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn modal_key(
+fn modal_key(
     auth: &mut crate::tui::state::SettingsAuthState,
     env: &mut crate::tui::state::SettingsEnvState<'_>,
     code: KeyCode,
@@ -18,7 +18,7 @@ pub(super) fn modal_key(
     )
 }
 
-pub(super) fn state() -> (
+fn state() -> (
     crate::tui::state::SettingsAuthState,
     crate::tui::state::SettingsEnvState<'static>,
 ) {
@@ -28,3 +28,4 @@ pub(super) fn state() -> (
         crate::tui::state::SettingsEnvState::from_config(&config),
     )
 }
+

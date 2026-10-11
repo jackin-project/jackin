@@ -251,19 +251,20 @@ fn tab_hover_index_at_position_tracks_full_tab_cells() {
     let labels = ["General", "Mounts", "Auth"];
 
     assert_eq!(
-        tab_hover_index_at_position(SCREEN_HEADER_HEIGHT, 1, &labels),
+        super::tab_hover_index_at_position(SCREEN_HEADER_HEIGHT, 1, &labels),
         Some(0)
     );
     assert_eq!(
-        tab_hover_index_at_position(SCREEN_HEADER_HEIGHT + 1, 11, &labels),
+        super::tab_hover_index_at_position(SCREEN_HEADER_HEIGHT + 1, 11, &labels),
         Some(1)
     );
     assert_eq!(
-        tab_hover_index_at_position(SCREEN_HEADER_HEIGHT - 1, 1, &labels),
+        super::tab_hover_index_at_position(SCREEN_HEADER_HEIGHT - 1, 1, &labels),
         None
     );
     assert_eq!(
-        tab_hover_index_at_position(SCREEN_HEADER_HEIGHT + TAB_STRIP_HEIGHT, 1, &labels),
+        super::tab_hover_index_at_position(SCREEN_HEADER_HEIGHT + TAB_STRIP_HEIGHT, 1, &labels),
         None
     );
 }
+

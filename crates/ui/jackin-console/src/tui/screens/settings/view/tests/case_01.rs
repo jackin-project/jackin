@@ -355,3 +355,4 @@ fn settings_env_key_input_state_marks_scope_duplicates() {
     );
     assert!(duplicate.is_duplicate());
 }
+

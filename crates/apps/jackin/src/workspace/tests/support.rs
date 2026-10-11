@@ -2,14 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn ws_with_allowed(allowed: Vec<String>) -> WorkspaceConfig {
+fn ws_with_allowed(allowed: Vec<String>) -> WorkspaceConfig {
     WorkspaceConfig {
         allowed_roles: allowed,
         ..WorkspaceConfig::default()
     }
 }
 
-pub(super) fn workspace_with_workdir_and_dst(workdir: &str, dst: &str) -> WorkspaceConfig {
+fn workspace_with_workdir_and_dst(workdir: &str, dst: &str) -> WorkspaceConfig {
     WorkspaceConfig {
         version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: workdir.to_owned(),
@@ -17,13 +17,13 @@ pub(super) fn workspace_with_workdir_and_dst(workdir: &str, dst: &str) -> Worksp
             src: "/tmp/src".to_owned(),
             dst: dst.to_owned(),
             readonly: false,
-            isolation: MountIsolation::Shared,
+            isolation: jackin_core::MountIsolation::Shared,
         }],
         ..Default::default()
     }
 }
 
-pub(super) fn worktree_mount(src: &str, dst: &str) -> MountConfig {
+fn worktree_mount(src: &str, dst: &str) -> MountConfig {
     MountConfig {
         src: src.into(),
         dst: dst.into(),
@@ -32,7 +32,7 @@ pub(super) fn worktree_mount(src: &str, dst: &str) -> MountConfig {
     }
 }
 
-pub(super) fn clone_mount(src: &str, dst: &str) -> MountConfig {
+fn clone_mount(src: &str, dst: &str) -> MountConfig {
     MountConfig {
         src: src.into(),
         dst: dst.into(),
@@ -41,7 +41,7 @@ pub(super) fn clone_mount(src: &str, dst: &str) -> MountConfig {
     }
 }
 
-pub(super) fn shared_mount(src: &str, dst: &str) -> MountConfig {
+fn shared_mount(src: &str, dst: &str) -> MountConfig {
     MountConfig {
         src: src.into(),
         dst: dst.into(),
@@ -49,3 +49,4 @@ pub(super) fn shared_mount(src: &str, dst: &str) -> MountConfig {
         isolation: MountIsolation::Shared,
     }
 }
+

@@ -83,3 +83,4 @@ fn docker_http_routes_are_static_bounded_templates() {
         }
     }
 }
+

@@ -344,3 +344,4 @@ async fn timeout_owns_descendants_after_direct_child_exits() {
         "owned descendant {descendant} must be killed"
     );
 }
+

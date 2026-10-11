@@ -1,7 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-pub(super) const SUMMARY_FIXTURE: &str = r#"{
+use super::*;
+const SUMMARY_FIXTURE: &str = r#"{
     "email": "operator@example.com",
     "userTier": {"id": "google_ai_pro", "name": "Google AI Pro"},
     "planInfo": {"planName": "Pro"},
@@ -17,7 +18,7 @@ pub(super) const SUMMARY_FIXTURE: &str = r#"{
     ]
 }"#;
 
-pub(super) const LEGACY_FIXTURE: &str = r#"{
+const LEGACY_FIXTURE: &str = r#"{
     "models": {
         "gemini-3-pro": {"displayName": "Gemini 3 Pro", "quotaInfo": {"remainingFraction": 0.7, "resetTime": "2026-09-17T14:00:00Z"}},
         "gemini-3-flash": {"displayName": "Gemini 3 Flash", "quotaInfo": {"remainingFraction": 0.2, "resetTime": "2026-09-17T14:00:00Z"}},
@@ -27,3 +28,4 @@ pub(super) const LEGACY_FIXTURE: &str = r#"{
         "available-only": {"displayName": "Available Only", "isAvailable": true}
     }
 }"#;
+

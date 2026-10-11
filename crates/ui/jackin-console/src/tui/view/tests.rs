@@ -19,11 +19,10 @@ use crate::tui::{
 
 use jackin_config::{AppConfig, WorkspaceConfig};
 
-mod support_01;
-use support_01::*;
-mod support_02;
-use support_02::*;
-mod support_03;
-use support_03::*;
+
+mod support;
+use support::*;
 mod case_01;
 mod case_02;
+mod case_03;
+mod case_04;

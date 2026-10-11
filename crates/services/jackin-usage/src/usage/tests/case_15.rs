@@ -147,3 +147,4 @@ fn amp_tier_wins_over_legacy_and_bold_markers_strip() {
         "tier kind kept"
     );
 }
+

@@ -387,3 +387,4 @@ agents = ["kimi"]
         "fallback-only context should not reopen agent-binaries in .dockerignore: {dockerignore}"
     );
 }
+

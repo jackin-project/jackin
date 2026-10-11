@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use super::*;
 pub(crate) const PAGE_SIZE: usize = 512;
 
 #[derive(Clone, Debug)]
@@ -66,7 +67,7 @@ pub(crate) fn encode_varint(value: u64) -> Vec<u8> {
     groups
 }
 
-pub(super) fn int_serial(value: i64) -> (u64, Vec<u8>) {
+fn int_serial(value: i64) -> (u64, Vec<u8>) {
     if value == 0 {
         return (8, Vec::new());
     }
@@ -132,12 +133,12 @@ pub(crate) fn encode_record(values: &[Value]) -> Vec<u8> {
     out
 }
 
-pub(super) struct OverflowAlloc {
+struct OverflowAlloc {
     next_page: u32,
     pages: Vec<Vec<u8>>,
 }
 
-pub(super) fn leaf_cell_bytes(cell: &Cell, alloc: Option<&mut OverflowAlloc>) -> Vec<u8> {
+fn leaf_cell_bytes(cell: &Cell, alloc: Option<&mut OverflowAlloc>) -> Vec<u8> {
     let payload = encode_record(&cell.values);
     let mut out = encode_varint(payload.len() as u64);
     out.extend(encode_varint(cell.rowid));
@@ -171,7 +172,7 @@ pub(super) fn leaf_cell_bytes(cell: &Cell, alloc: Option<&mut OverflowAlloc>) ->
     out
 }
 
-pub(super) fn write_btree_header(
+fn write_btree_header(
     page: &mut [u8],
     prefix: usize,
     kind: u8,
@@ -193,7 +194,7 @@ pub(super) fn write_btree_header(
     }
 }
 
-pub(super) fn leaf_page_inner(
+fn leaf_page_inner(
     cells: &[Cell],
     prefix: usize,
     mut alloc: Option<&mut OverflowAlloc>,
@@ -287,7 +288,7 @@ pub(crate) fn database(sql: &str, root: u32, cells: &[Cell], wal_mode: bool) -> 
     db
 }
 
-pub(super) fn table_name(sql: &str) -> String {
+fn table_name(sql: &str) -> String {
     let upper = sql.to_uppercase();
     let at = upper.find("TABLE").unwrap() + 5;
     let mut tokens = sql.get(at..).unwrap().split_whitespace();
@@ -323,3 +324,4 @@ pub(crate) fn wal_image(frames: &[(u32, u32, Vec<u8>)]) -> Vec<u8> {
     }
     wal
 }
+

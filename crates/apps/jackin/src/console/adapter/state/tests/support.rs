@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn refresh_instances(state: &mut ManagerState<'_>, paths: &JackinPaths) {
+fn refresh_instances(state: &mut ManagerState<'_>, paths: &JackinPaths) {
     const REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
     let now = std::time::Instant::now();
     if let Some(last) = state.instances_last_refresh
@@ -17,7 +17,7 @@ pub(super) fn refresh_instances(state: &mut ManagerState<'_>, paths: &JackinPath
     }
 }
 
-pub(super) fn empty_ws(workdir: &str) -> WorkspaceConfig {
+fn empty_ws(workdir: &str) -> WorkspaceConfig {
     WorkspaceConfig {
         version: CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: workdir.into(),
@@ -25,7 +25,7 @@ pub(super) fn empty_ws(workdir: &str) -> WorkspaceConfig {
     }
 }
 
-pub(super) fn editor_with_one_shared_mount() -> EditorState<'static> {
+fn editor_with_one_shared_mount() -> EditorState<'static> {
     use std::collections::BTreeMap;
     let ws = WorkspaceConfig {
         version: CURRENT_WORKSPACE_VERSION.to_owned(),
@@ -57,3 +57,4 @@ pub(super) fn editor_with_one_shared_mount() -> EditorState<'static> {
     e.active_field = FieldFocus::Row(0);
     e
 }
+

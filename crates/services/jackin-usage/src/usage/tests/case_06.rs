@@ -383,3 +383,4 @@ fn over_cap_window_surfaces_true_used_percent() {
     );
     assert_eq!(weekly.used_label.as_deref(), Some("150% used"));
 }
+

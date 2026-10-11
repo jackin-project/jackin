@@ -333,3 +333,4 @@ fn resolved_cache_path_matches_the_path_the_resolver_reads() {
     );
     assert_eq!(resolved_cache_path(Path::new("/cache")), expected);
 }
+

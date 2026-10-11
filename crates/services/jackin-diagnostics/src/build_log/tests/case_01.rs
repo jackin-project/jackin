@@ -164,3 +164,4 @@ fn snapshots_suppress_nested_and_mismatched_pem_contexts() {
     );
     end();
 }
+

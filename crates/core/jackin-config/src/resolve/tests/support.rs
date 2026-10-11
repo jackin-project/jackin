@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn launch_config() -> (AppConfig, WorkspaceName) {
+fn launch_config() -> (AppConfig, WorkspaceName) {
     use crate::{AccountConfig, AccountCredential, AgentConfiguration, AiProvider};
     use jackin_core::EnvValue;
     let mut config = AppConfig::default();
@@ -46,7 +46,7 @@ pub(super) fn launch_config() -> (AppConfig, WorkspaceName) {
     (config, ws)
 }
 
-pub(super) fn effective_ids(
+fn effective_ids(
     config: &AppConfig,
     ws: Option<&WorkspaceName>,
     role: &str,
@@ -55,3 +55,4 @@ pub(super) fn effective_ids(
         .effective_default_launch(ws, role)
         .map(<[String]>::to_vec)
 }
+

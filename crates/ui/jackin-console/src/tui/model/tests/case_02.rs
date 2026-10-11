@@ -97,7 +97,10 @@ fn console_manager_stage_polls_pending_op_commit_with_origin() {
     };
     assert_eq!(resolution.op_ref, 3);
     resolution.result.unwrap();
-    assert_eq!(resolution.origin, ConsolePendingOpCommitOrigin::Editor);
+    assert_eq!(
+        resolution.origin,
+        super::ConsolePendingOpCommitOrigin::Editor
+    );
     assert!(editor.poll_pending_op_commit().is_none());
 
     let mut settings = Stage::Settings(TestOpCommit {
@@ -108,7 +111,10 @@ fn console_manager_stage_polls_pending_op_commit_with_origin() {
     };
     assert_eq!(resolution.op_ref, 5);
     resolution.result.unwrap();
-    assert_eq!(resolution.origin, ConsolePendingOpCommitOrigin::Settings);
+    assert_eq!(
+        resolution.origin,
+        super::ConsolePendingOpCommitOrigin::Settings
+    );
     assert!(settings.poll_pending_op_commit().is_none());
 
     assert!(Stage::List.poll_pending_op_commit().is_none());
@@ -373,3 +379,4 @@ fn create_prelude_workdir_cancel_plan_reopens_prior_dst_step() {
         CreatePreludeWorkdirCancelPlan::ReopenMountDstChoice
     );
 }
+

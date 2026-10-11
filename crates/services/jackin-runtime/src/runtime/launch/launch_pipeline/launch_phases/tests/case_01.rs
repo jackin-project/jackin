@@ -7,7 +7,7 @@ use super::*;
 fn grant_phase_rejects_root_sudo_without_docker_io() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     config.docker.grants = Some(DockerGrants {
         user: Some("root".to_owned()),
@@ -84,7 +84,7 @@ async fn captured_sidecar_cleanup_removes_owned_resources() {
 async fn mid_pipeline_failed_setup_still_runs_cleanup() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let container = "jk-failed-setup-suite-a";
     let container_state = paths.data_dir.join(container);
     std::fs::create_dir_all(&container_state).unwrap();
@@ -255,7 +255,7 @@ fn classify_image_phase_reuse_vs_build() {
 fn typestate_grants_validated_carries_dind_flag() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let manifest_temp = tempdir().unwrap();
@@ -285,3 +285,4 @@ fn typestate_grants_validated_carries_dind_flag() {
     let _dind = validated.dind_started;
     drop(validated.effective_grants);
 }
+

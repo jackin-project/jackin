@@ -15,10 +15,13 @@ fn authentication_detection_never_returns_material() {
 
 #[test]
 fn public_failure_class_is_typed_and_sanitized() {
-    let failure = TelemetryConfigFailure::from(OtlpConfigError::InvalidHeaders {
+    let failure = super::super::TelemetryConfigFailure::from(OtlpConfigError::InvalidHeaders {
         variable: "OTEL_EXPORTER_OTLP_HEADERS",
     });
-    assert_eq!(failure, TelemetryConfigFailure::InvalidHeaders);
+    assert_eq!(
+        failure,
+        super::super::TelemetryConfigFailure::InvalidHeaders
+    );
     assert_eq!(failure.to_string(), "invalid headers");
 }
 
@@ -50,7 +53,7 @@ fn signal_endpoints_override_base_and_all_are_required() {
     assert_eq!(config.traces_endpoint, "http://base:4317");
     assert_eq!(config.logs_endpoint, "http://logs:4317");
     assert_eq!(config.metrics_endpoint, "http://base:4317");
-    let fingerprint = OtlpConfigFingerprint::from_config(&config);
+    let fingerprint = super::super::OtlpConfigFingerprint::from_config(&config);
     assert_eq!(fingerprint.traces.authority, "base:4317");
     assert_eq!(fingerprint.logs.authority, "logs:4317");
     assert_eq!(fingerprint.metrics.authority, "base:4317");
@@ -202,3 +205,4 @@ fn invalid_resource_attributes_do_not_echo_values() {
     assert_eq!(error, OtlpConfigError::InvalidResourceAttribute);
     assert!(!error.to_string().contains("super-secret"));
 }
+

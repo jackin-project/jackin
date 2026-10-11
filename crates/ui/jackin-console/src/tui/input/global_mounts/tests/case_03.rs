@@ -77,3 +77,4 @@ fn after_settings_event_exit_requested_pops_to_list() {
         state.stage,
     );
 }
+

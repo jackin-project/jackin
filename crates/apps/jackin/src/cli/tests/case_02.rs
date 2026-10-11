@@ -366,3 +366,4 @@ fn parses_prewarm_image_role_git() {
                 && args.flags.image
     ));
 }
+

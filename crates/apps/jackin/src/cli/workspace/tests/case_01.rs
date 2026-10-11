@@ -397,3 +397,4 @@ fn parse_mount_isolation_accepts_worktree() {
     assert_eq!(dst, "/workspace/jackin");
     assert_eq!(mode, MountIsolation::Worktree);
 }
+

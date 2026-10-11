@@ -1,9 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-pub(super) fn assert_shown_glyphs_are_normalized<A: Copy + 'static>(
-    keymap: &termrock::keymap::Keymap<A>,
-) {
+use super::*;
+fn assert_shown_glyphs_are_normalized<A: Copy + 'static>(keymap: &termrock::keymap::Keymap<A>) {
     for span in keymap.hint_spans() {
         let termrock::widgets::HintSpan::Key(key) = span else {
             continue;
@@ -17,3 +16,4 @@ pub(super) fn assert_shown_glyphs_are_normalized<A: Copy + 'static>(
         assert!(!key.contains(concat!("Ctrl", "+")));
     }
 }
+

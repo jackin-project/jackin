@@ -43,7 +43,7 @@ TOKEN = { op = "op://v/i/f", path = "Work/Claude/token" }
 
 #[test]
 fn embedded_workspace_runs_supported_migrations_before_deserialization() {
-    let raw = include_str!("../../../fixtures/config.embedded_workspace_legacy.toml");
+    let raw = include_str!("../../fixtures/config.embedded_workspace_legacy.toml");
     let (config, embedded) = parse_global_config(raw.as_bytes()).unwrap();
 
     assert_eq!(config.version, CURRENT_CONFIG_VERSION);
@@ -61,7 +61,7 @@ fn split_embedded_workspace_migration_preserves_global_fields_and_is_idempotent(
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     paths.ensure_base_dirs().unwrap();
-    let raw = include_str!("../../../fixtures/config.embedded_workspace_legacy.toml");
+    let raw = include_str!("../../fixtures/config.embedded_workspace_legacy.toml");
 
     let config = load_split_config(&paths, Some(raw.to_owned())).unwrap();
     assert_eq!(config.version, CURRENT_CONFIG_VERSION);
@@ -382,3 +382,4 @@ fn load_split_config_leaves_semantically_invalid_migration_unchanged() {
     assert_eq!(workspace_tree_bytes(&paths), workspace_tree_before);
     assert_no_staged_writes(&paths);
 }
+

@@ -375,3 +375,4 @@ async fn hardline_errors_when_docker_inspect_is_unavailable() {
             .any(|c| c.contains("docker start") || c.contains("jackin-capsule new"))
     );
 }
+

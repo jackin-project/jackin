@@ -381,3 +381,4 @@ fn discovery_provider_failures_without_reason_keep_generic_fallback() {
         }
     }
 }
+

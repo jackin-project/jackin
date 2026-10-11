@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) const BASE: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const BASE: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
-pub(super) fn block_on<F: Future>(fut: F) -> F::Output {
+fn block_on<F: Future>(fut: F) -> F::Output {
     let waker = std::task::Waker::noop();
     let mut cx = Context::from_waker(waker);
     let mut fut = std::pin::pin!(fut);
@@ -16,14 +16,14 @@ pub(super) fn block_on<F: Future>(fut: F) -> F::Output {
 }
 
 #[derive(Default)]
-pub(super) struct MockGit {
-    pub(super) porcelain: String,
-    pub(super) for_each_ref: String,
-    pub(super) rev_list: String,
-    pub(super) symbolic_ref_ok: bool,
-    pub(super) rev_parse_head: String,
-    pub(super) log_output: String,
-    pub(super) fail_subcommand: Option<&'static str>,
+struct MockGit {
+    porcelain: String,
+    for_each_ref: String,
+    rev_list: String,
+    symbolic_ref_ok: bool,
+    rev_parse_head: String,
+    log_output: String,
+    fail_subcommand: Option<&'static str>,
 }
 
 impl CommandRunner for MockGit {
@@ -77,6 +77,7 @@ impl CommandRunner for MockGit {
     }
 }
 
-pub(super) fn assess(mock: &mut MockGit) -> WorktreeState {
+fn assess(mock: &mut MockGit) -> WorktreeState {
     block_on(assess_worktree("/wt", BASE, mock, |_| {})).expect("assess never errs")
 }
+

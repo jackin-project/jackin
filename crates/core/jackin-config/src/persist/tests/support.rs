@@ -2,20 +2,20 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn journal_workspace_toml(workdir: &str) -> String {
+fn journal_workspace_toml(workdir: &str) -> String {
     format!(
         "version = \"{}\"\nworkdir = \"{workdir}\"\n\n[[mounts]]\nsrc = \"/host/source\"\ndst = \"{workdir}\"\n",
         crate::CURRENT_WORKSPACE_VERSION
     )
 }
 
-pub(super) fn journal_global_with_marker(global_before: &str) -> String {
+fn journal_global_with_marker(global_before: &str) -> String {
     let mut doc: toml_edit::DocumentMut = global_before.parse().unwrap();
     doc["env"]["JOURNAL_RECOVERED"] = toml_edit::value("yes");
     doc.to_string()
 }
 
-pub(super) fn assert_no_staged_files(paths: &JackinPaths) {
+fn assert_no_staged_files(paths: &JackinPaths) {
     for dir in [&paths.config_dir, &paths.workspaces_dir] {
         let Ok(entries) = std::fs::read_dir(dir) else {
             continue;
@@ -30,7 +30,7 @@ pub(super) fn assert_no_staged_files(paths: &JackinPaths) {
     }
 }
 
-pub(super) fn staged_config_tree() -> (tempfile::TempDir, PathBuf, PathBuf) {
+fn staged_config_tree() -> (tempfile::TempDir, PathBuf, PathBuf) {
     let temp = tempfile::tempdir().unwrap();
     let config = temp.path().join("config.toml");
     let workspace = temp.path().join("workspaces").join("ws.toml");
@@ -40,7 +40,7 @@ pub(super) fn staged_config_tree() -> (tempfile::TempDir, PathBuf, PathBuf) {
     (temp, config, workspace)
 }
 
-pub(super) fn staged_leftovers(dir: &Path) -> Vec<PathBuf> {
+fn staged_leftovers(dir: &Path) -> Vec<PathBuf> {
     let mut leftovers = Vec::new();
     for entry in std::fs::read_dir(dir).unwrap() {
         let path = entry.unwrap().path();
@@ -55,11 +55,11 @@ pub(super) fn staged_leftovers(dir: &Path) -> Vec<PathBuf> {
     leftovers
 }
 
-pub(super) fn injected_failure() -> crate::ConfigError {
+fn injected_failure() -> crate::ConfigError {
     crate::ConfigError::msg(format_args!("injected transaction failure"))
 }
 
-pub(super) fn assert_recovered_generation(config: &Path, workspace: &Path, expected: [&str; 2]) {
+fn assert_recovered_generation(config: &Path, workspace: &Path, expected: [&str; 2]) {
     let _guard = acquire_config_write_lock(config).unwrap();
     assert_eq!(std::fs::read_to_string(config).unwrap(), expected[0]);
     assert_eq!(std::fs::read_to_string(workspace).unwrap(), expected[1]);
@@ -70,3 +70,4 @@ pub(super) fn assert_recovered_generation(config: &Path, workspace: &Path, expec
         }
     }
 }
+

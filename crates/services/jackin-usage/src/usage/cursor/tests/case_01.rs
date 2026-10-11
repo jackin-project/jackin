@@ -396,3 +396,4 @@ fn snapshot_with_auth_serves_personal_quota_from_canned_rpc() {
     );
     assert!(view.last_error.is_none());
 }
+

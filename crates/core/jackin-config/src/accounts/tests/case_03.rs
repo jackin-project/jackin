@@ -372,3 +372,4 @@ fn resolve_launch_invalid_binding_fails_without_silent_fallback() {
     let err = resolve_launch(&cfg, None, "smith", None, Some(Agent::Claude)).unwrap_err();
     assert!(err.to_string().contains("does not support"), "{err}");
 }
+

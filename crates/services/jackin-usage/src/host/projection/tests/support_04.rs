@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn parity_mega_screen(render_at: i64) -> UsageScreenState {
+fn parity_mega_screen(render_at: i64) -> UsageScreenState {
     // The fixture and renderer share one explicit epoch. This keeps relative
     // labels stable without mutating fixture timestamps to wall time.
     let providers = parity_mega_providers();
@@ -15,8 +15,8 @@ pub(super) fn parity_mega_screen(render_at: i64) -> UsageScreenState {
     UsageScreenState::from_projection(&projection)
 }
 
-pub(super) fn production_projection_runtime()
--> (tempfile::TempDir, HostUsageRuntime, UsageAccountCapability) {
+fn production_projection_runtime() -> (tempfile::TempDir, HostUsageRuntime, UsageAccountCapability)
+{
     use crate::host::discovery::{ValidatedCredentialBinding, ValidatedCredentialSource};
     use crate::host::{DiscoveredAccountDescriptor, HostRuntimeConfig};
     let temp = tempfile::tempdir().unwrap();
@@ -55,3 +55,4 @@ pub(super) fn production_projection_runtime()
         .unwrap();
     (temp, runtime, capability)
 }
+

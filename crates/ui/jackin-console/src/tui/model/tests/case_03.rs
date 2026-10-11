@@ -364,3 +364,4 @@ fn create_prelude_reopens_mount_dst_choice_from_source() {
 
     assert_eq!(prelude.modal.as_deref(), Some("/host/proj"));
 }
+

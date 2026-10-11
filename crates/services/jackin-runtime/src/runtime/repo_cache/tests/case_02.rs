@@ -376,3 +376,4 @@ async fn register_agent_repo_installs_valid_repo_into_cache() {
         "cache must be populated after successful registration",
     );
 }
+

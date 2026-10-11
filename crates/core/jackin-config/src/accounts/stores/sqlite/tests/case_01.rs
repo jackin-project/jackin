@@ -69,16 +69,16 @@ fn varint_codec_round_trips_boundaries() {
         u64::MAX,
     ] {
         let encoded = encode_varint(value);
-        let (decoded, used) = read_varint(&encoded, 0).unwrap();
+        let (decoded, used) = super::read_varint(&encoded, 0).unwrap();
         assert_eq!(decoded, value, "value: {value}");
         assert_eq!(used, encoded.len(), "value: {value}");
         let padded = [vec![0xAA_u8; 3], encoded.clone()].concat();
-        let (shifted, _) = read_varint(&padded, 3).unwrap();
+        let (shifted, _) = super::read_varint(&padded, 3).unwrap();
         assert_eq!(shifted, value, "value: {value}");
     }
     assert_eq!(encode_varint(u64::MAX).len(), 9);
     assert_eq!(
-        read_varint(&[0x80_u8; 8], 0).unwrap_err(),
+        super::read_varint(&[0x80_u8; 8], 0).unwrap_err(),
         StoreError::Malformed
     );
 }
@@ -280,3 +280,4 @@ fn text_value_trims_and_skips() {
         assert_eq!(text_value(&value), None);
     }
 }
+

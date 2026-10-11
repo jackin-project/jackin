@@ -6,7 +6,7 @@ use super::*;
 #[test]
 fn account_rejects_duplicate_group_ids_and_bad_group_rank() {
     let mut projection: UsageProjectionV1 = serde_json::from_str(include_str!(
-        "../../../../../services/jackin-usage/tests/fixtures/contracts/usage-projection-v1-current.json"
+        "../../../../services/jackin-usage/tests/fixtures/contracts/usage-projection-v1-current.json"
     ))
     .unwrap();
     projection.providers[0].accounts[0]
@@ -26,7 +26,7 @@ fn account_rejects_duplicate_group_ids_and_bad_group_rank() {
 #[test]
 fn account_without_metric_groups_stays_wire_compatible() {
     let fixture = include_str!(
-        "../../../../../services/jackin-usage/tests/fixtures/contracts/usage-projection-v1-current.json"
+        "../../../../services/jackin-usage/tests/fixtures/contracts/usage-projection-v1-current.json"
     );
     let projection: UsageProjectionV1 = serde_json::from_str(fixture).unwrap();
     assert!(projection.providers[0].accounts[0].metric_groups.is_empty());
@@ -70,7 +70,7 @@ fn quota_states_serialize_distinctly() {
 #[test]
 fn reset_credential_expiry_and_renewal_are_independent_fields() {
     let mut projection: UsageProjectionV1 = serde_json::from_str(include_str!(
-        "../../../../../services/jackin-usage/tests/fixtures/contracts/usage-projection-v1-current.json"
+        "../../../../services/jackin-usage/tests/fixtures/contracts/usage-projection-v1-current.json"
     ))
     .unwrap();
     let account = &mut projection.providers[0].accounts[0];
@@ -147,7 +147,7 @@ fn independent_key_caps_never_merge() {
 #[test]
 fn canonical_projection_v1_forty_account_fixture_stays_below_transport_margin() {
     let mut projection: UsageProjectionV1 = serde_json::from_str(include_str!(
-        "../../../../../services/jackin-usage/tests/fixtures/contracts/usage-projection-v1-current.json"
+        "../../../../services/jackin-usage/tests/fixtures/contracts/usage-projection-v1-current.json"
     ))
     .unwrap();
     let seed = projection.providers[0].accounts[0].clone();
@@ -168,3 +168,4 @@ fn canonical_projection_v1_forty_account_fixture_stays_below_transport_margin() 
         encoded.len()
     );
 }
+

@@ -14,7 +14,7 @@ fn account_credentials_are_scoped_to_selected_instance_and_mode() {
             Some(mode),
             &hostile_passthrough,
         ));
-        apply_account_env(&mut cmd, "claude-work", Some(mode), None, &credentials);
+        super::apply_account_env(&mut cmd, "claude-work", Some(mode), None, &credentials);
         assert!(cmd.get_env("ANTHROPIC_API_KEY").is_none());
     }
     let mut cmd = build_agent_command(&spawn_spec(
@@ -23,7 +23,7 @@ fn account_credentials_are_scoped_to_selected_instance_and_mode() {
         Some("api_key"),
         &hostile_passthrough,
     ));
-    apply_account_env(
+    super::apply_account_env(
         &mut cmd,
         "claude-work",
         Some("api_key"),
@@ -43,7 +43,7 @@ fn account_credentials_are_scoped_to_selected_instance_and_mode() {
         Some("api_key"),
         &hostile_passthrough,
     ));
-    apply_account_env(
+    super::apply_account_env(
         &mut cmd,
         "claude-personal",
         Some("api_key"),
@@ -119,7 +119,7 @@ fn account_env_injection_is_bounded_by_agent_provider_and_auth_family() {
         Some("api_key"),
         &empty,
     ));
-    apply_account_env(
+    super::apply_account_env(
         &mut codex,
         "codex-routed",
         Some("api_key"),
@@ -147,7 +147,7 @@ fn account_env_injection_is_bounded_by_agent_provider_and_auth_family() {
         Some("api_key"),
         &empty,
     ));
-    apply_account_env(
+    super::apply_account_env(
         &mut opencode,
         "opencode-routed",
         Some("api_key"),
@@ -169,7 +169,7 @@ fn account_env_injection_is_bounded_by_agent_provider_and_auth_family() {
         Some("oauth_token"),
         &empty,
     ));
-    apply_account_env(
+    super::apply_account_env(
         &mut claude,
         "claude-oauth",
         Some("oauth_token"),
@@ -196,7 +196,7 @@ fn account_env_injection_is_bounded_by_agent_provider_and_auth_family() {
         Some("api_key"),
         &empty,
     ));
-    apply_account_env(
+    super::apply_account_env(
         &mut routed_claude,
         "claude-routed",
         Some("api_key"),
@@ -243,7 +243,7 @@ fn moonshot_opencode_credential_requires_selected_surface_and_rejects_foreign_ke
         Some("api_key"),
         &empty,
     ));
-    apply_account_env(
+    super::apply_account_env(
         &mut selected,
         "opencode-kimi",
         Some("api_key"),
@@ -264,7 +264,7 @@ fn moonshot_opencode_credential_requires_selected_surface_and_rejects_foreign_ke
         Some("api_key"),
         &empty,
     ));
-    apply_account_env(
+    super::apply_account_env(
         &mut unselected,
         "opencode-kimi",
         Some("api_key"),
@@ -298,7 +298,7 @@ fn routed_claude_credentials_require_selected_surface() {
         Some("api_key"),
         &empty,
     ));
-    apply_account_env(
+    super::apply_account_env(
         &mut selected,
         "claude-routed",
         Some("api_key"),
@@ -318,7 +318,7 @@ fn routed_claude_credentials_require_selected_surface() {
         Some("api_key"),
         &empty,
     ));
-    apply_account_env(
+    super::apply_account_env(
         &mut unselected,
         "claude-routed",
         Some("api_key"),
@@ -330,3 +330,4 @@ fn routed_claude_credentials_require_selected_surface() {
         "routed Claude credentials must not inject without a selected provider surface"
     );
 }
+

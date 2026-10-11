@@ -375,3 +375,4 @@ fn set_settings_env_value_expands_role_scope() {
     );
     assert!(expanded.contains("alpha"));
 }
+

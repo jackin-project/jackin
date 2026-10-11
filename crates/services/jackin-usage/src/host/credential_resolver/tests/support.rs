@@ -3,8 +3,8 @@
 
 use super::*;
 #[derive(Default)]
-pub(super) struct CountingSecretSource {
-    pub(super) resolutions: AtomicUsize,
+struct CountingSecretSource {
+    resolutions: AtomicUsize,
 }
 
 impl ProviderCredentialSecretSource for CountingSecretSource {
@@ -32,3 +32,4 @@ impl ProviderCredentialSecretSource for CountingSecretSource {
         })
     }
 }
+

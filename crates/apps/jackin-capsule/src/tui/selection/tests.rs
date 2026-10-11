@@ -16,6 +16,7 @@ use crate::tui::selection::word_bounds_in_row;
 
 use unicode_width::UnicodeWidthChar;
 
+
 mod support;
 use support::*;
 mod case_01;

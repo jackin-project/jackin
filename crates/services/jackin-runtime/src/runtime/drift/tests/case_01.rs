@@ -224,3 +224,4 @@ async fn drift_selects_saved_stem_and_excludes_label_and_ad_hoc_records() {
     assert_eq!(detected.stopped_records, vec![stem_record]);
     assert!(detected.running_containers.is_empty());
 }
+

@@ -356,3 +356,4 @@ fn edit_workspace_accepts_pre_collapsed_upsert_that_replaces_children() {
     assert_eq!(ws.mounts.len(), 1);
     assert_eq!(ws.mounts[0].src, "/a");
 }
+

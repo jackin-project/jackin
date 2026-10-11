@@ -359,3 +359,4 @@ async fn hardline_restore_candidate_marks_missing_manifest_available() {
         instance::InstanceStatus::RestoreAvailable
     );
 }
+

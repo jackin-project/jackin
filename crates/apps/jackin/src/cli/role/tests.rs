@@ -3,16 +3,10 @@
 
 //! Tests for `role`.
 
-use super::ConsoleArgs;
-use super::HardlineArgs;
-use super::LoadArgs;
-use super::RoleCommand;
-use super::RoleCreateArgs;
-use super::RolePublishLabelsArgs;
-use super::RoleRepoPathArgs;
 use crate::cli::{Cli, Command};
 
 use clap::Parser;
+
 
 mod support;
 use support::*;

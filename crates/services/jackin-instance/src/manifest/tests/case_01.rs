@@ -390,3 +390,4 @@ fn remove_many_empty_slice_is_noop() {
     InstanceIndex::remove_many(data_dir.path(), &[]).unwrap();
     assert!(!data_dir.path().join("instances.json").exists());
 }
+

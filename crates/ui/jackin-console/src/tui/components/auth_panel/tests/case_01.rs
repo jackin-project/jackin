@@ -344,3 +344,4 @@ fn credential_input_redacts_debug_and_paint() {
     assert!(text.contains('*'));
     assert_eq!(input.value(), "never-render-this-token");
 }
+

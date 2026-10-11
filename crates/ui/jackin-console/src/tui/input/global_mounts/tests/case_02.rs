@@ -373,3 +373,4 @@ fn settings_env_rows_hide_roles_without_env_entries() {
         "roles with env entries should remain visible: {rows:?}"
     );
 }
+

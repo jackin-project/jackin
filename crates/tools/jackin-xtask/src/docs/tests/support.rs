@@ -2,21 +2,21 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn write(path: &Path, body: &str) {
+fn write(path: &Path, body: &str) {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).unwrap();
     }
     fs::write(path, body).unwrap();
 }
 
-pub(super) fn write_meta_mk(path: &Path, value: &Value) {
+fn write_meta_mk(path: &Path, value: &Value) {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).unwrap();
     }
     write_meta(path, value).unwrap();
 }
 
-pub(super) fn repo_link_fixture(page_body: &str) -> tempfile::TempDir {
+fn repo_link_fixture(page_body: &str) -> tempfile::TempDir {
     let repo = tempfile::tempdir().unwrap();
     let root = repo.path();
     write(
@@ -28,7 +28,7 @@ pub(super) fn repo_link_fixture(page_body: &str) -> tempfile::TempDir {
     repo
 }
 
-pub(super) fn roadmap_fixture(extra: &[(&str, &str)]) -> tempfile::TempDir {
+fn roadmap_fixture(extra: &[(&str, &str)]) -> tempfile::TempDir {
     let docs = tempfile::tempdir().unwrap();
     let d = docs.path();
     write_meta_mk(
@@ -44,3 +44,4 @@ pub(super) fn roadmap_fixture(extra: &[(&str, &str)]) -> tempfile::TempDir {
     }
     docs
 }
+

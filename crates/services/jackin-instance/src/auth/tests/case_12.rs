@@ -269,3 +269,4 @@ fn claude_metadata_persists_inside_directory_and_supports_atomic_replacement() {
         );
     }
 }
+

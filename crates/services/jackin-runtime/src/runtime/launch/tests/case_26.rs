@@ -7,7 +7,7 @@ use super::*;
 async fn record_instance_attach_outcome_updates_manifest() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let container_name = "jk-k7p9m2xq-workspace-agentsmith";
     let manifest = workspace_manifest(
         container_name,
@@ -34,7 +34,7 @@ async fn record_instance_attach_outcome_updates_manifest() {
 async fn record_running_attach_outcome_restores_running_status() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let container_name = "jk-k7p9m2xq-workspace-agentsmith";
     let mut manifest = workspace_manifest(
         container_name,
@@ -370,3 +370,4 @@ async fn resolve_github_env_map_aggregates_failures() {
     assert!(s.contains("GH_TOKEN"), "got: {s}");
     assert!(s.contains("GH_HOST"), "got: {s}");
 }
+

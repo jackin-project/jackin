@@ -250,3 +250,4 @@ fn selected_entity_label_or_empty_derives_or_falls_back_empty() {
         ""
     );
 }
+

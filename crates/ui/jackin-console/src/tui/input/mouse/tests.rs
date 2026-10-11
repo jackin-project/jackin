@@ -8,12 +8,7 @@
 //! event loop — enough to pin the seam hit-test + drag math without a
 //! real terminal.
 
-use super::super::InputOutcome;
-use super::{
-    ConsoleHoverTarget, ConsoleScrollBlock, ScrollBlockRegion, container_info_copyable_row_at,
-    file_browser_url_row_at, global_mounts_content_width, handle_mouse, handle_mouse_with_config,
-    hit, list_scroll_areas, max_scroll_offset, workspace_mounts_content_width,
-};
+use super::{handle_mouse, handle_mouse_with_config, list_scroll_areas};
 
 use crate::tui::components::save_discard::editor_exit_save_discard_state;
 
@@ -39,7 +34,7 @@ use jackin_config::{MountConfig, WorkspaceConfig};
 
 use ratatui::layout::Rect;
 
-use super::{SCREEN_HEADER_HEIGHT, TAB_STRIP_HEIGHT};
+
 mod support;
 use support::*;
 mod case_01;

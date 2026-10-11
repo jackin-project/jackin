@@ -179,7 +179,7 @@ fn selected_snapshot_rejects_invalid_utf8_and_oversized_credentials() {
 
     std::fs::write(
         source.join("auth.json"),
-        vec![b'x'; MAX_AUTH_SOURCE_FILE_BYTES + 1],
+        vec![b'x'; super::MAX_AUTH_SOURCE_FILE_BYTES + 1],
     )
     .unwrap();
     let error = capture_selected_source(
@@ -316,3 +316,4 @@ fn validate_single_file_agents() {
         validate_sync_source_dir(agent, &bad, temp.path()).unwrap_err();
     }
 }
+

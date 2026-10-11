@@ -24,3 +24,4 @@ fn snapshot_with_auth_refused_base_is_stale_never_fabricated() {
     assert_eq!(view.account.provider_label, "Cursor");
     assert!(view.last_error.is_some());
 }
+

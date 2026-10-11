@@ -342,3 +342,4 @@ fn removed_amp_xdg_account_stays_excluded_after_symlinked_shell_scan() {
     assert!(report.unapplied_zshrc_xdg_roots.is_empty(), "{report:?}");
     assert!(!editor.save().unwrap().accounts.contains_key("custom-amp"));
 }
+

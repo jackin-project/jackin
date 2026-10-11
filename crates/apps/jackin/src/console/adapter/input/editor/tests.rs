@@ -5,7 +5,7 @@
 //! Editor-stage tests: tab cycling, modal dispatch, role allow/default
 //! bindings, and mount-row readonly toggle.
 
-use super::super::fixtures::{key, mount};
+use super::super::test_support::{key, mount};
 
 use super::{
     EditorModalOutcome, apply_file_browser_to_editor, apply_text_input_to_pending,
@@ -39,6 +39,7 @@ use jackin_test_support::{FakeRunner, first_temp_role_repo, seed_valid_role_repo
 use ratatui::layout::Rect;
 
 use tempfile::TempDir;
+
 
 mod support;
 use support::*;

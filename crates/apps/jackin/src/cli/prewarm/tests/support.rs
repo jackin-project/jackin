@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn config_with_workspace_default(agent: Option<Agent>) -> AppConfig {
+fn config_with_workspace_default(agent: Option<Agent>) -> AppConfig {
     let mut config = AppConfig::default();
     config.roles.insert(
         "agent-smith".to_owned(),
@@ -24,7 +24,7 @@ pub(super) fn config_with_workspace_default(agent: Option<Agent>) -> AppConfig {
     config
 }
 
-pub(super) fn prewarm_args(flags: PrewarmFlags) -> PrewarmArgs {
+fn prewarm_args(flags: PrewarmFlags) -> PrewarmArgs {
     PrewarmArgs {
         agents: Vec::new(),
         flags,
@@ -34,3 +34,4 @@ pub(super) fn prewarm_args(flags: PrewarmFlags) -> PrewarmArgs {
         role_branch: None,
     }
 }
+

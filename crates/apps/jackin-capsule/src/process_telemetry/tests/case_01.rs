@@ -67,7 +67,7 @@ async fn conformance_wire_exec_spawn_failure_is_owned_once_without_command_mater
     {
         return;
     }
-    let _telemetry_guard = crate::support::telemetry_test_guard_async().await;
+    let _telemetry_guard = crate::test_support::telemetry_test_guard_async().await;
     let testbed = jackin_otlp_testbed::Testbed::start().expect("start OTLP testbed");
     jackin_diagnostics::init_wire_test_export(
         &testbed.endpoint(),
@@ -163,3 +163,4 @@ fn child_owner_exports_exit_timeout_spawn_and_abandonment() {
     assert!(!export.contains_span_text("/operator-secret/missing-child"));
     assert!(!export.contains_span_text("operator-secret-child-argument"));
 }
+

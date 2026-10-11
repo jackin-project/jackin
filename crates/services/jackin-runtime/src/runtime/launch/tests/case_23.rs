@@ -7,7 +7,7 @@ use super::*;
 async fn load_agent_injects_mise_trusted_paths_for_any_workspace() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     paths.ensure_base_dirs().unwrap();
 
     std::fs::write(
@@ -127,7 +127,7 @@ async fn load_agent_operator_env_overrides_manifest_env() {
     // manifest-default not present) are unchanged.
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     paths.ensure_base_dirs().unwrap();
 
     std::fs::write(
@@ -215,7 +215,7 @@ plugins = []
 async fn load_agent_injects_host_ref_operator_env() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     paths.ensure_base_dirs().unwrap();
 
     // No process-env mutation anywhere — the host env for the
@@ -310,3 +310,4 @@ plugins = []
     );
     assert!(!observed.path.exists());
 }
+

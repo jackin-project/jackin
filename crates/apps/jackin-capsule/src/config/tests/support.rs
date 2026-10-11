@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn instance_config(instances: &[(&str, &str, &str)]) -> CapsuleConfig {
+fn instance_config(instances: &[(&str, &str, &str)]) -> CapsuleConfig {
     let mut config = CapsuleConfig {
         workdir: "/workspace".to_owned(),
         instances: instances
@@ -83,6 +83,7 @@ pub(super) fn instance_config(instances: &[(&str, &str, &str)]) -> CapsuleConfig
     config
 }
 
-pub(super) fn v2_credentials(value: serde_json::Value) -> jackin_protocol::AgentCredentialEnv {
+fn v2_credentials(value: serde_json::Value) -> jackin_protocol::AgentCredentialEnv {
     serde_json::from_value(value).expect("v2 fixture must decode")
 }
+

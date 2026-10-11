@@ -2,11 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) const ROLE: &str = "agent-smith";
+const ROLE: &str = "agent-smith";
 
-pub(super) const WS: &str = "myapp";
+const WS: &str = "myapp";
 
-pub(super) fn claude_profile_account(name: &str) -> AccountConfig {
+fn claude_profile_account(name: &str) -> AccountConfig {
     AccountConfig {
         enabled: true,
         name: name.to_owned(),
@@ -20,7 +20,7 @@ pub(super) fn claude_profile_account(name: &str) -> AccountConfig {
     }
 }
 
-pub(super) fn configuration(agent: Agent, account: &str) -> AgentConfiguration {
+fn configuration(agent: Agent, account: &str) -> AgentConfiguration {
     AgentConfiguration {
         agent,
         account: account.to_owned(),
@@ -31,7 +31,7 @@ pub(super) fn configuration(agent: Agent, account: &str) -> AgentConfiguration {
     }
 }
 
-pub(super) fn matrix_config() -> (AppConfig, WorkspaceName) {
+fn matrix_config() -> (AppConfig, WorkspaceName) {
     let mut config = AppConfig::default();
     for id in ["c-lab", "c-home", "c-work"] {
         config
@@ -60,7 +60,7 @@ pub(super) fn matrix_config() -> (AppConfig, WorkspaceName) {
     (config, workspace)
 }
 
-pub(super) fn set_role_list(config: &mut AppConfig, ids: &[&str]) {
+fn set_role_list(config: &mut AppConfig, ids: &[&str]) {
     config
         .workspaces
         .get_mut(WS)
@@ -71,14 +71,11 @@ pub(super) fn set_role_list(config: &mut AppConfig, ids: &[&str]) {
         .default_launch = Some(ids.iter().map(ToString::to_string).collect());
 }
 
-pub(super) fn identity(
-    config: &AppConfig,
-    workspace: &WorkspaceName,
-) -> anyhow::Result<DryRunIdentity> {
+fn identity(config: &AppConfig, workspace: &WorkspaceName) -> anyhow::Result<DryRunIdentity> {
     resolve_dry_run_identity(config, Agent::Claude, Some(workspace), ROLE, false)
 }
 
-pub(super) fn admission(
+fn admission(
     config: &AppConfig,
     workspace: &WorkspaceName,
 ) -> anyhow::Result<Vec<ResolvedInstance>> {
@@ -91,14 +88,14 @@ pub(super) fn admission(
     )?)
 }
 
-pub(super) fn admitted_pairs(instances: &[ResolvedInstance]) -> Vec<(&str, &str)> {
+fn admitted_pairs(instances: &[ResolvedInstance]) -> Vec<(&str, &str)> {
     instances
         .iter()
         .map(|instance| (instance.config_id.as_str(), instance.account_id.as_str()))
         .collect()
 }
 
-pub(super) fn mixed_model_projection_config() -> (AppConfig, WorkspaceName) {
+fn mixed_model_projection_config() -> (AppConfig, WorkspaceName) {
     let mut config = AppConfig::default();
     for (id, provider, model) in [
         ("openai", AiProvider::OpenAi, None),
@@ -147,9 +144,10 @@ pub(super) fn mixed_model_projection_config() -> (AppConfig, WorkspaceName) {
     (config, WorkspaceName::parse(WS).unwrap())
 }
 
-pub(super) fn mixed_role_model_defaults() -> std::collections::BTreeMap<Agent, String> {
+fn mixed_role_model_defaults() -> std::collections::BTreeMap<Agent, String> {
     std::collections::BTreeMap::from([
         (Agent::Codex, "codex-role-default".to_owned()),
         (Agent::Opencode, "opencode-role-default".to_owned()),
     ])
 }
+

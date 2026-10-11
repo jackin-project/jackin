@@ -394,3 +394,4 @@ fn disc_source_kimi_profile_requires_credentials_in_selected_root() {
     assert_eq!(validated.accounts[0].account_label, "kimi");
     assert_eq!(validated.bindings.len(), 1);
 }
+

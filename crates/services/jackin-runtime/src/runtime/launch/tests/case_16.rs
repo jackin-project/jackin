@@ -7,7 +7,7 @@ use super::*;
 async fn load_agent_grant_validation_failure_preserves_unadopted_dind() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     config.docker.grants = Some(jackin_core::DockerGrants {
         user: Some("root".to_owned()),
@@ -134,7 +134,7 @@ async fn load_agent_does_not_short_circuit_on_running_instance() {
     // in-pipeline probe both see Running and both reject it.
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
@@ -357,3 +357,4 @@ async fn load_agent_attaches_explicit_restore_container_with_stored_agent_before
         );
     }
 }
+

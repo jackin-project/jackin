@@ -389,3 +389,4 @@ fn redraw_soak_produces_zero_state_transitions() {
     );
     assert_eq!(session.state, start);
 }
+

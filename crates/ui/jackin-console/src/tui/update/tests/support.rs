@@ -2,13 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn key(code: KeyCode) -> KeyEvent {
+fn key(code: KeyCode) -> KeyEvent {
     KeyEvent::new(code, KeyModifiers::NONE)
 }
 
 #[derive(Default)]
-pub(super) struct TestStatusOverlay {
-    pub(super) overlay: Option<crate::tui::components::StatusPopupState>,
+struct TestStatusOverlay {
+    overlay: Option<crate::tui::components::StatusPopupState>,
 }
 
 impl StatusOverlayState for TestStatusOverlay {
@@ -18,8 +18,8 @@ impl StatusOverlayState for TestStatusOverlay {
 }
 
 #[derive(Default)]
-pub(super) struct TestListModal {
-    pub(super) opened: Option<&'static str>,
+struct TestListModal {
+    opened: Option<&'static str>,
 }
 
 impl ListModalState for TestListModal {
@@ -47,8 +47,8 @@ impl ListModalState for TestListModal {
 }
 
 #[derive(Default)]
-pub(super) struct TestInlinePickers {
-    pub(super) cleared: Vec<&'static str>,
+struct TestInlinePickers {
+    cleared: Vec<&'static str>,
 }
 
 impl InlinePickerDismissalState for TestInlinePickers {
@@ -74,9 +74,9 @@ impl InlinePickerDismissalState for TestInlinePickers {
 }
 
 #[derive(Default)]
-pub(super) struct TestListShell {
-    pub(super) drag: Option<crate::tui::split::DragState>,
-    pub(super) split_pct: u16,
+struct TestListShell {
+    drag: Option<crate::tui::split::DragState>,
+    split_pct: u16,
 }
 
 impl ListShellState for TestListShell {
@@ -89,8 +89,8 @@ impl ListShellState for TestListShell {
     }
 }
 
-pub(super) struct TestInlineNewSessionPicker<C, A: AgentChoice, P> {
-    pub(super) picker: Option<(C, AgentChoiceState<A>, Vec<P>)>,
+struct TestInlineNewSessionPicker<C, A: AgentChoice, P> {
+    picker: Option<(C, AgentChoiceState<A>, Vec<P>)>,
 }
 
 impl<C, A: AgentChoice, P> Default for TestInlineNewSessionPicker<C, A, P> {
@@ -113,8 +113,8 @@ impl<C, A: AgentChoice, P> InlineNewSessionPickerState<C, A, P>
 }
 
 #[derive(Default)]
-pub(super) struct TestInlineAccountPicker<C, A, P> {
-    pub(super) picker: Option<AccountPickerState<C, A, P>>,
+struct TestInlineAccountPicker<C, A, P> {
+    picker: Option<AccountPickerState<C, A, P>>,
 }
 
 impl<C, A, P> InlineAccountPickerState<C, A, P> for TestInlineAccountPicker<C, A, P> {
@@ -122,3 +122,4 @@ impl<C, A, P> InlineAccountPickerState<C, A, P> for TestInlineAccountPicker<C, A
         self.picker = Some(picker);
     }
 }
+

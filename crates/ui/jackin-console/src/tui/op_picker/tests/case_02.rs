@@ -393,3 +393,4 @@ fn picker_starts_at_vault_when_single_account() {
         "single-account setup leaves the accounts vec empty so render/Esc paths skip multi-account branches"
     );
 }
+

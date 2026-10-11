@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn serialized_control_spans(
+fn serialized_control_spans(
     context: jackin_protocol::TelemetryContext,
 ) -> (bool, Vec<jackin_diagnostics::TestSpanSnapshot>) {
     let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
@@ -24,10 +24,7 @@ pub(super) fn serialized_control_spans(
     (accepted, export.finished_spans())
 }
 
-pub(super) fn sgr_regions_for_inner(
-    bytes: &[u8],
-    inner: Rect,
-) -> Vec<(ratatui::layout::Rect, SgrMetadata)> {
+fn sgr_regions_for_inner(bytes: &[u8], inner: Rect) -> Vec<(ratatui::layout::Rect, SgrMetadata)> {
     let mut grid = DamageGrid::new(2, 10, 100);
     grid.process(bytes);
     let view = grid.scrollback_view(0, 2);
@@ -41,12 +38,12 @@ pub(super) fn sgr_regions_for_inner(
     compositor::pane_sgr_regions(&panes, &pane_screens)
 }
 
-pub(super) fn sgr_regions_for(bytes: &[u8]) -> Vec<(ratatui::layout::Rect, SgrMetadata)> {
+fn sgr_regions_for(bytes: &[u8]) -> Vec<(ratatui::layout::Rect, SgrMetadata)> {
     sgr_regions_for_inner(bytes, Rect::new(2, 3, 5, 10))
 }
 
 #[derive(Debug)]
-pub(super) struct NullChildKiller;
+struct NullChildKiller;
 
 impl ChildKiller for NullChildKiller {
     fn kill(&mut self) -> io::Result<()> {
@@ -58,7 +55,7 @@ impl ChildKiller for NullChildKiller {
     }
 }
 
-pub(super) struct NullMasterPty;
+struct NullMasterPty;
 
 impl MasterPty for NullMasterPty {
     fn resize(&self, _size: PtySize) -> Result<()> {
@@ -98,7 +95,7 @@ impl MasterPty for NullMasterPty {
     }
 }
 
-pub(super) fn test_mux(rows: u16, cols: u16) -> Multiplexer {
+fn test_mux(rows: u16, cols: u16) -> Multiplexer {
     Multiplexer::new(
         rows,
         cols,
@@ -136,16 +133,16 @@ pub(super) fn test_mux(rows: u16, cols: u16) -> Multiplexer {
     .unwrap_or_else(|error| panic!("test multiplexer construction failed: {error}"))
 }
 
-pub(super) fn append_lifecycle_output(output: &mut Vec<u8>, bytes: Vec<u8>) -> bool {
+fn append_lifecycle_output(output: &mut Vec<u8>, bytes: Vec<u8>) -> bool {
     output.extend(bytes);
     contains_lifecycle_sentinel(output)
 }
 
-pub(super) fn record_lifecycle_output(output: &mut Vec<u8>, bytes: Vec<u8>) {
+fn record_lifecycle_output(output: &mut Vec<u8>, bytes: Vec<u8>) {
     output.extend(bytes);
 }
 
-pub(super) fn lifecycle_output_frame(frame: ServerFrame, output: &mut Vec<u8>) -> Result<bool> {
+fn lifecycle_output_frame(frame: ServerFrame, output: &mut Vec<u8>) -> Result<bool> {
     match frame {
         ServerFrame::Output(bytes) => Ok(append_lifecycle_output(output, bytes)),
         ServerFrame::Shutdown { reason } => shutdown_before_sentinel(reason),
@@ -153,7 +150,7 @@ pub(super) fn lifecycle_output_frame(frame: ServerFrame, output: &mut Vec<u8>) -
     }
 }
 
-pub(super) fn lifecycle_shutdown_frame(frame: ServerFrame, output: &mut Vec<u8>) -> Result<bool> {
+fn lifecycle_shutdown_frame(frame: ServerFrame, output: &mut Vec<u8>) -> Result<bool> {
     match frame {
         ServerFrame::Output(bytes) => {
             record_lifecycle_output(output, bytes);
@@ -164,42 +161,42 @@ pub(super) fn lifecycle_shutdown_frame(frame: ServerFrame, output: &mut Vec<u8>)
     }
 }
 
-pub(super) fn contains_lifecycle_sentinel(output: &[u8]) -> bool {
+fn contains_lifecycle_sentinel(output: &[u8]) -> bool {
     output
         .windows(b"CAPSULE_LIFECYCLE_SENTINEL".len())
         .any(|window| window == b"CAPSULE_LIFECYCLE_SENTINEL")
 }
 
-pub(super) fn shutdown_before_sentinel(reason: Option<String>) -> Result<bool> {
+fn shutdown_before_sentinel(reason: Option<String>) -> Result<bool> {
     clean_shutdown(reason)?;
     anyhow::bail!("daemon shut down before shell output")
 }
 
-pub(super) fn clean_shutdown(reason: Option<String>) -> Result<bool> {
+fn clean_shutdown(reason: Option<String>) -> Result<bool> {
     if let Some(reason) = reason {
         anyhow::bail!("clean shell exit carried reason: {reason:?}");
     }
     Ok(true)
 }
 
-pub(super) fn compose_after(mux: &mut Multiplexer, reason: FullRedrawReason) -> Vec<u8> {
+fn compose_after(mux: &mut Multiplexer, reason: FullRedrawReason) -> Vec<u8> {
     mux.invalidate(reason);
     mux.compose_pending_frame()
 }
 
-pub(super) fn handle_input_frame(mux: &mut Multiplexer, event: InputEvent) -> Option<Vec<u8>> {
+fn handle_input_frame(mux: &mut Multiplexer, event: InputEvent) -> Option<Vec<u8>> {
     mux.handle_input(event);
     let frame = mux.compose_pending_frame();
     (!frame.is_empty()).then_some(frame)
 }
 
-pub(super) fn apply_action_frame(mux: &mut Multiplexer, action: Action) -> Option<Vec<u8>> {
+fn apply_action_frame(mux: &mut Multiplexer, action: Action) -> Option<Vec<u8>> {
     mux.apply_action(action);
     let frame = mux.compose_pending_frame();
     (!frame.is_empty()).then_some(frame)
 }
 
-pub(super) fn seed_usage_dialog_for_refresh_test(mux: &mut Multiplexer) {
+fn seed_usage_dialog_for_refresh_test(mux: &mut Multiplexer) {
     let (mut session, _session_rx) = test_session_with_agent(24, 80, Some("codex".to_owned()));
     session.provider = Some(crate::session::SessionProvider {
         label: "OpenAI".to_owned(),
@@ -213,23 +210,23 @@ pub(super) fn seed_usage_dialog_for_refresh_test(mux: &mut Multiplexer) {
     mux.dialog_push(Dialog::new_usage(stale));
 }
 
-pub(super) fn palette_command_frame(mux: &mut Multiplexer, cmd: PaletteCommand) -> Option<Vec<u8>> {
+fn palette_command_frame(mux: &mut Multiplexer, cmd: PaletteCommand) -> Option<Vec<u8>> {
     mux.handle_palette_command(cmd);
     let frame = mux.compose_pending_frame();
     (!frame.is_empty()).then_some(frame)
 }
 
-pub(super) fn prefix_command_frame(mux: &mut Multiplexer, cmd: PrefixCommand) -> Option<Vec<u8>> {
+fn prefix_command_frame(mux: &mut Multiplexer, cmd: PrefixCommand) -> Option<Vec<u8>> {
     mux.handle_prefix_command(cmd);
     let frame = mux.compose_pending_frame();
     (!frame.is_empty()).then_some(frame)
 }
 
-pub(crate) fn single_pane_tab_mux() -> Multiplexer {
+pub(super) fn single_pane_tab_mux() -> Multiplexer {
     single_pane_tab_mux_with_size(24, 80)
 }
 
-pub(super) fn single_pane_tab_mux_with_size(rows: u16, cols: u16) -> Multiplexer {
+fn single_pane_tab_mux_with_size(rows: u16, cols: u16) -> Multiplexer {
     let mut mux = test_mux(24, 80);
     mux.resize(rows, cols);
     mux.session_supervisor
@@ -241,7 +238,7 @@ pub(super) fn single_pane_tab_mux_with_size(rows: u16, cols: u16) -> Multiplexer
     mux
 }
 
-pub(super) fn assert_session_peer_authorization(
+fn assert_session_peer_authorization(
     mux: &Multiplexer,
     own: jackin_protocol::SessionIdentity,
     own_capability: &str,
@@ -342,7 +339,7 @@ pub(super) fn assert_session_peer_authorization(
     ));
 }
 
-pub(super) fn assert_operator_and_unknown_peer_authorization(mux: &Multiplexer) {
+fn assert_operator_and_unknown_peer_authorization(mux: &Multiplexer) {
     assert!(control_request_allowed(
         mux,
         Some(0),
@@ -375,11 +372,11 @@ pub(super) fn assert_operator_and_unknown_peer_authorization(mux: &Multiplexer) 
     ));
 }
 
-pub(super) fn frame_contains_screen_erase(frame: &[u8]) -> bool {
+fn frame_contains_screen_erase(frame: &[u8]) -> bool {
     frame.windows(b"\x1b[2J".len()).any(|w| w == b"\x1b[2J")
 }
 
-pub(super) fn pull_request_fixture(number: u64) -> PullRequestInfo {
+fn pull_request_fixture(number: u64) -> PullRequestInfo {
     PullRequestInfo {
         number,
         title: "Surface PR context in Capsule".to_owned(),
@@ -389,11 +386,12 @@ pub(super) fn pull_request_fixture(number: u64) -> PullRequestInfo {
     }
 }
 
-pub(super) fn oid(nibble: char) -> Oid {
+fn oid(nibble: char) -> Oid {
     assert!(nibble.is_ascii_hexdigit(), "nibble must be 0-9/a-f");
     Oid::parse(&nibble.to_string().repeat(40)).expect("40 hex chars is a valid Oid")
 }
 
-pub(super) fn branch(name: &str) -> BranchName {
+fn branch(name: &str) -> BranchName {
     BranchName::parse(name).expect("test branch names must parse")
 }
+

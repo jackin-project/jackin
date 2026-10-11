@@ -194,3 +194,4 @@ fn provider_account_modes_never_allow_ignore() {
         assert!(!kind.supported_modes().contains(&AuthMode::Ignore));
     }
 }
+

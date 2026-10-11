@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) type TestEditor = EditorState<(), (), (), jackin_config::EnvValue, (), (), (), ()>;
+type TestEditor = EditorState<(), (), (), jackin_config::EnvValue, (), (), (), ()>;
 
 #[derive(Debug)]
-pub(super) enum TestStatusModal {
+enum TestStatusModal {
     Status,
     Other,
 }
@@ -16,13 +16,13 @@ impl EditorStatusPopupModal for TestStatusModal {
     }
 }
 
-impl EditorRoleOverridePickerModal for TestStatusModal {
+impl super::EditorRoleOverridePickerModal for TestStatusModal {
     fn is_role_override_picker(&self) -> bool {
         matches!(self, Self::Other)
     }
 }
 
-impl EditorSaveDiscardModal<u8> for TestStatusModal {
+impl super::EditorSaveDiscardModal<u8> for TestStatusModal {
     fn save_discard_cancel_modal(state: u8) -> Self {
         if state == 0 {
             Self::Status
@@ -32,7 +32,7 @@ impl EditorSaveDiscardModal<u8> for TestStatusModal {
     }
 }
 
-impl EditorErrorPopupModal<u8> for TestStatusModal {
+impl super::EditorErrorPopupModal<u8> for TestStatusModal {
     fn error_popup_modal(state: u8) -> Self {
         if state == 0 {
             Self::Status
@@ -42,11 +42,11 @@ impl EditorErrorPopupModal<u8> for TestStatusModal {
     }
 }
 
-pub(super) type TestEditorWithStatusModal =
+type TestEditorWithStatusModal =
     EditorState<(), TestStatusModal, (), jackin_config::EnvValue, (), (), (), ()>;
 
 #[derive(Debug)]
-pub(super) enum TestAuthModal {
+enum TestAuthModal {
     Auth {
         focus: crate::tui::screens::settings::model::AuthFormFocus,
     },
@@ -74,10 +74,10 @@ impl crate::tui::auth_config::ModalAuthFormParentInspect for TestAuthModal {
     }
 }
 
-pub(super) type TestEditorWithAuthModal =
+type TestEditorWithAuthModal =
     EditorState<(), TestAuthModal, (), jackin_config::EnvValue, (), (), (), ()>;
 
-pub(super) type TestEditorWithMountCache = EditorState<
+type TestEditorWithMountCache = EditorState<
     crate::mount_info_cache::MountInfoCache,
     (),
     (),
@@ -87,3 +87,4 @@ pub(super) type TestEditorWithMountCache = EditorState<
     (),
     (),
 >;
+

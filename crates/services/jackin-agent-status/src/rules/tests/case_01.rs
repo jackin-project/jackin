@@ -382,3 +382,4 @@ requires_all = ["cleared"]
         rule.id == "progress-cleared" && rule.matched && rule.preview == "cleared"
     }));
 }
+

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn chrome_frame(
+fn chrome_frame(
     hover: Option<HoverTarget>,
     debug_run_id: Option<&str>,
     clipboard_image_notice: Option<&str>,
@@ -55,13 +55,14 @@ pub(super) fn chrome_frame(
     terminal.backend().buffer().clone()
 }
 
-pub(super) fn chip_start_col(row: &str) -> u16 {
+fn chip_start_col(row: &str) -> u16 {
     let byte = row.find("jk-run-test").expect("chip start");
     u16::try_from(row[..byte].chars().count()).unwrap_or(u16::MAX)
 }
 
-pub(super) fn row_text(buf: &ratatui::buffer::Buffer, y: u16) -> String {
+fn row_text(buf: &ratatui::buffer::Buffer, y: u16) -> String {
     (0..buf.area.width)
         .map(|x| buf[(x, y)].symbol().to_owned())
         .collect()
 }
+

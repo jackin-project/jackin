@@ -395,3 +395,4 @@ fn settings_top_level_key_plan_applies_shell_before_header_and_delegates() {
         SettingsTopLevelKeyPlan::Delegate(SettingsTab::Trust)
     );
 }
+

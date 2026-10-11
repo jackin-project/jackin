@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn strip_ansi(s: &str) -> String {
+fn strip_ansi(s: &str) -> String {
     let mut result = String::with_capacity(s.len());
     let mut chars = s.chars();
     while let Some(ch) = chars.next() {
@@ -20,7 +20,8 @@ pub(super) fn strip_ansi(s: &str) -> String {
     result
 }
 
-pub(super) fn help_text(args: &[&str]) -> String {
+fn help_text(args: &[&str]) -> String {
     let err = Cli::try_parse_from(args).unwrap_err();
     strip_ansi(&err.to_string())
 }
+

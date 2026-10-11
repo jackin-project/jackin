@@ -393,3 +393,4 @@ fn forward_auth_false_for_ignore() {
     assert_eq!(outcome, AuthProvisionOutcome::Skipped);
     assert!(!forward_auth, "forward_auth must be false for Skipped");
 }
+

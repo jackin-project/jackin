@@ -360,3 +360,4 @@ fn disc_registry_openrouter_api_key_maps_to_usage_surface_and_governed_env() {
     assert_eq!(capabilities.len(), 1);
     assert_eq!(capabilities[0].surface_id, "openrouter");
 }
+

@@ -21,3 +21,4 @@ fn parse_mount_isolation_rejects_empty_dst() {
     let err = parse_mount_isolation("=worktree").unwrap_err();
     assert!(err.to_string().contains("destination cannot be empty"));
 }
+

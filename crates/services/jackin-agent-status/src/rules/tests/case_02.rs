@@ -384,3 +384,4 @@ fn gate_leaf_count_counts_toward_matcher_cap() {
     // 33 gate leaves exceed the 32-matcher pathological-pack cap.
     pack.validate().unwrap_err();
 }
+

@@ -33,3 +33,4 @@ fn supported_modes_new_agents_are_sync_api_key_ignore() {
         );
     }
 }
+

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn spawn_spec<'a>(
+fn spawn_spec<'a>(
     agent: &'a str,
     instance: &'a str,
     auth_mode: Option<&'a str>,
@@ -35,7 +35,7 @@ pub(super) fn spawn_spec<'a>(
 }
 
 #[derive(Debug)]
-pub(super) struct NullChildKiller;
+struct NullChildKiller;
 
 impl ChildKiller for NullChildKiller {
     fn kill(&mut self) -> std::io::Result<()> {
@@ -46,7 +46,7 @@ impl ChildKiller for NullChildKiller {
     }
 }
 
-pub(super) struct NullMasterPty;
+struct NullMasterPty;
 
 impl MasterPty for NullMasterPty {
     fn resize(&self, _size: PtySize) -> Result<()> {
@@ -80,9 +80,9 @@ impl MasterPty for NullMasterPty {
     }
 }
 
-pub(super) struct RecordingMasterPty {
-    pub(super) inner: NullMasterPty,
-    pub(super) last_size: Arc<Mutex<Option<PtySize>>>,
+struct RecordingMasterPty {
+    inner: NullMasterPty,
+    last_size: Arc<Mutex<Option<PtySize>>>,
 }
 
 impl MasterPty for RecordingMasterPty {
@@ -115,7 +115,7 @@ impl MasterPty for RecordingMasterPty {
     }
 }
 
-pub(super) fn test_session_with_policy(policy: OscPolicy) -> Session {
+fn test_session_with_policy(policy: OscPolicy) -> Session {
     let (input_tx, _input_rx) = mpsc::unbounded_channel();
     let mut session = Session::new_for_test(
         "Test".to_owned(),
@@ -131,7 +131,7 @@ pub(super) fn test_session_with_policy(policy: OscPolicy) -> Session {
     session
 }
 
-pub(super) fn test_process_info(pid: u32, agent: Agent) -> ProcessInfo {
+fn test_process_info(pid: u32, agent: Agent) -> ProcessInfo {
     ProcessInfo {
         pid,
         pgid: pid,
@@ -146,16 +146,16 @@ pub(super) fn test_process_info(pid: u32, agent: Agent) -> ProcessInfo {
 }
 
 #[derive(Debug)]
-pub(super) struct StaticProcessSampler {
+struct StaticProcessSampler {
     physics_available: bool,
     root: Option<ProcessInfo>,
     foreground: ForegroundGroup,
-    pub(super) descendants: u32,
-    pub(super) cpu_delta: u64,
+    descendants: u32,
+    cpu_delta: u64,
 }
 
 impl StaticProcessSampler {
-    pub(super) fn foreground_agent(pid: u32, agent: Agent) -> Self {
+    fn foreground_agent(pid: u32, agent: Agent) -> Self {
         Self {
             physics_available: true,
             root: Some(test_process_info(pid, agent)),
@@ -193,7 +193,7 @@ impl ProcessSampler for StaticProcessSampler {
     }
 }
 
-pub(super) fn status_test_registry() -> RulePackRegistry {
+fn status_test_registry() -> RulePackRegistry {
     let pack = toml::from_str::<RulePack>(
         "schema_version = 1\n\
          agent = \"codex\"\n\
@@ -219,25 +219,25 @@ pub(super) fn status_test_registry() -> RulePackRegistry {
     RulePackRegistry::from_packs([pack])
 }
 
-pub(super) fn drained(bytes: &[u8]) -> Vec<Vec<u8>> {
+fn drained(bytes: &[u8]) -> Vec<Vec<u8>> {
     let mut session = test_session_with_policy(OscPolicy::default());
     session.feed_pty(bytes);
     session.drain_passthrough()
 }
 
-pub(super) fn drained_with_policy(bytes: &[u8], policy: OscPolicy) -> Vec<Vec<u8>> {
+fn drained_with_policy(bytes: &[u8], policy: OscPolicy) -> Vec<Vec<u8>> {
     let mut session = test_session_with_policy(policy);
     session.feed_pty(bytes);
     session.drain_passthrough()
 }
 
-pub(super) struct FaultMasterPty {
-    pub(super) take_writer_err: Option<std::io::ErrorKind>,
-    pub(super) clone_reader_err: Option<std::io::ErrorKind>,
-    pub(super) writer_fails_after: Option<usize>,
-    pub(super) reader_yields: Vec<Result<Vec<u8>, std::io::ErrorKind>>,
-    pub(super) write_count: Arc<std::sync::atomic::AtomicUsize>,
-    pub(super) reader_idx: Arc<std::sync::atomic::AtomicUsize>,
+struct FaultMasterPty {
+    take_writer_err: Option<std::io::ErrorKind>,
+    clone_reader_err: Option<std::io::ErrorKind>,
+    writer_fails_after: Option<usize>,
+    reader_yields: Vec<Result<Vec<u8>, std::io::ErrorKind>>,
+    write_count: Arc<std::sync::atomic::AtomicUsize>,
+    reader_idx: Arc<std::sync::atomic::AtomicUsize>,
 }
 
 impl Default for FaultMasterPty {
@@ -253,7 +253,7 @@ impl Default for FaultMasterPty {
     }
 }
 
-pub(super) struct FaultWriter {
+struct FaultWriter {
     fails_after: Option<usize>,
     count: Arc<std::sync::atomic::AtomicUsize>,
 }
@@ -272,7 +272,7 @@ impl std::io::Write for FaultWriter {
     }
 }
 
-pub(super) struct FaultReader {
+struct FaultReader {
     yields: Vec<Result<Vec<u8>, std::io::ErrorKind>>,
     idx: Arc<std::sync::atomic::AtomicUsize>,
 }
@@ -338,3 +338,4 @@ impl MasterPty for FaultMasterPty {
         None
     }
 }
+

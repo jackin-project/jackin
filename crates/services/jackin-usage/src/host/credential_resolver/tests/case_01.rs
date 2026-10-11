@@ -250,3 +250,4 @@ fn source_cache_does_not_reuse_handle_across_repointed_declarations() {
         }
     );
 }
+

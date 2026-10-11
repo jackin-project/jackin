@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn write_isolated_config(config_root: &std::path::Path) {
+fn write_isolated_config(config_root: &std::path::Path) {
     std::fs::create_dir_all(config_root).expect("config root");
     std::fs::write(
         config_root.join("config.toml"),
@@ -28,14 +28,11 @@ auth_forward = "ignore"
     .expect("global config");
 }
 
-pub(super) fn open_bridge(dir: &std::path::Path) -> UsageMenuBarBridge {
+fn open_bridge(dir: &std::path::Path) -> UsageMenuBarBridge {
     open_bridge_with_live(dir, false)
 }
 
-pub(super) fn open_bridge_with_live(
-    dir: &std::path::Path,
-    allow_live_probes: bool,
-) -> UsageMenuBarBridge {
+fn open_bridge_with_live(dir: &std::path::Path, allow_live_probes: bool) -> UsageMenuBarBridge {
     let config_root = dir.join("config");
     if !config_root.join("config.toml").exists() {
         write_isolated_config(&config_root);
@@ -53,11 +50,7 @@ pub(super) fn open_bridge_with_live(
     bridge
 }
 
-pub(super) fn write_account_config(
-    config_root: &std::path::Path,
-    account_id: &str,
-    provider: &str,
-) {
+fn write_account_config(config_root: &std::path::Path, account_id: &str, provider: &str) {
     std::fs::create_dir_all(config_root).expect("config root");
     std::fs::write(
         config_root.join("config.toml"),
@@ -78,14 +71,14 @@ value = "fixture-{account_id}-secret"
     .expect("account config");
 }
 
-pub(super) struct BlockingBrokerExecutor {
-    pub(super) calls: AtomicUsize,
+struct BlockingBrokerExecutor {
+    calls: AtomicUsize,
     started: (Mutex<bool>, Condvar),
     released: (Mutex<bool>, Condvar),
 }
 
 impl BlockingBrokerExecutor {
-    pub(super) fn new() -> Self {
+    fn new() -> Self {
         Self {
             calls: AtomicUsize::new(0),
             started: (Mutex::new(false), Condvar::new()),
@@ -93,7 +86,7 @@ impl BlockingBrokerExecutor {
         }
     }
 
-    pub(super) fn wait_started(&self) {
+    fn wait_started(&self) {
         let (lock, changed) = &self.started;
         let started = lock.lock().unwrap();
         let (started, wait) = changed
@@ -102,7 +95,7 @@ impl BlockingBrokerExecutor {
         assert!(*started && !wait.timed_out());
     }
 
-    pub(super) fn release(&self) {
+    fn release(&self) {
         let (lock, changed) = &self.released;
         *lock.lock().unwrap() = true;
         changed.notify_all();
@@ -112,7 +105,7 @@ impl BlockingBrokerExecutor {
 impl UsageProviderExecutor for BlockingBrokerExecutor {
     fn probe(
         &self,
-        _capability: &UsageAccountCapability,
+        _capability: &jackin_protocol::usage_broker::UsageAccountCapability,
         _generation: u64,
     ) -> ProviderProbeOutcome {
         self.calls.fetch_add(1, Ordering::SeqCst);
@@ -145,3 +138,4 @@ impl UsageProviderExecutor for BlockingBrokerExecutor {
         ProviderProbeOutcome::success(view)
     }
 }
+

@@ -358,3 +358,4 @@ fn derived_image_snapshots_only_selected_agent_home_defaults() {
         );
     }
 }
+

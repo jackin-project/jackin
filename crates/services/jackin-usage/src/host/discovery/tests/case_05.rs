@@ -145,3 +145,4 @@ fn refresh_gemini_binding_dispatches_to_collector() {
         other => panic!("deleted gemini creds must need secret: {other:?}"),
     }
 }
+

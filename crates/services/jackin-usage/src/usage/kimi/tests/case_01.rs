@@ -274,3 +274,4 @@ fn kimi_usages_url_normalizes_coding_base_variants() {
         "https://proxy.test/kimi/coding/v1/usages"
     );
 }
+

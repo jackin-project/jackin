@@ -336,3 +336,4 @@ fn clipboard_image_error_from_message_classifies_known_shapes() {
         "offset-mismatch"
     );
 }
+

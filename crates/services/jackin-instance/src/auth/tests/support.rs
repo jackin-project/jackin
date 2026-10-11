@@ -2,37 +2,35 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) const TEST_CREDENTIALS: &str =
-    r#"{"claudeAiOauth":{"accessToken":"test","refreshToken":"test"}}"#;
+const TEST_CREDENTIALS: &str = r#"{"claudeAiOauth":{"accessToken":"test","refreshToken":"test"}}"#;
 
 #[cfg(unix)]
-pub(super) const OMP_TEST_FILE_LIMIT: usize = 8 * 1024 * 1024;
+const OMP_TEST_FILE_LIMIT: usize = 8 * 1024 * 1024;
 
 #[cfg(unix)]
-pub(super) const OMP_CURRENT_DB: &[u8] = include_bytes!("../tests/fixtures/omp-real-current.db");
+const OMP_CURRENT_DB: &[u8] = include_bytes!("tests/fixtures/omp-real-current.db");
 
 #[cfg(unix)]
-pub(super) const OMP_CURRENT_WAL: &[u8] =
-    include_bytes!("../tests/fixtures/omp-real-current.db-wal");
+const OMP_CURRENT_WAL: &[u8] = include_bytes!("tests/fixtures/omp-real-current.db-wal");
 
 #[cfg(unix)]
-pub(super) const OMP_REUSED_STALE_SUFFIX_DB: &[u8] =
-    include_bytes!("../tests/fixtures/omp-reused-stale-suffix.db");
+const OMP_REUSED_STALE_SUFFIX_DB: &[u8] =
+    include_bytes!("tests/fixtures/omp-reused-stale-suffix.db");
 
 #[cfg(unix)]
-pub(super) const OMP_REUSED_STALE_SUFFIX_WAL: &[u8] =
-    include_bytes!("../tests/fixtures/omp-reused-stale-suffix.db-wal");
+const OMP_REUSED_STALE_SUFFIX_WAL: &[u8] =
+    include_bytes!("tests/fixtures/omp-reused-stale-suffix.db-wal");
 
 #[cfg(unix)]
-pub(super) const OMP_REUSED_UNCOMMITTED_STALE_SUFFIX_DB: &[u8] =
-    include_bytes!("../tests/fixtures/omp-reused-uncommitted-stale-suffix.db");
+const OMP_REUSED_UNCOMMITTED_STALE_SUFFIX_DB: &[u8] =
+    include_bytes!("tests/fixtures/omp-reused-uncommitted-stale-suffix.db");
 
 #[cfg(unix)]
-pub(super) const OMP_REUSED_UNCOMMITTED_STALE_SUFFIX_WAL: &[u8] =
-    include_bytes!("../tests/fixtures/omp-reused-uncommitted-stale-suffix.db-wal");
+const OMP_REUSED_UNCOMMITTED_STALE_SUFFIX_WAL: &[u8] =
+    include_bytes!("tests/fixtures/omp-reused-uncommitted-stale-suffix.db-wal");
 
 #[cfg(unix)]
-pub(super) fn omp_test_selector() -> ProfileSelector {
+fn omp_test_selector() -> ProfileSelector {
     ProfileSelector {
         entry: "openai".to_owned(),
         profile: Some("work".to_owned()),
@@ -40,7 +38,7 @@ pub(super) fn omp_test_selector() -> ProfileSelector {
 }
 
 #[cfg(unix)]
-pub(super) fn write_omp_source(source: &Path, database: &[u8], wal: &[u8]) {
+fn write_omp_source(source: &Path, database: &[u8], wal: &[u8]) {
     let agent = source.join("agent");
     std::fs::create_dir_all(&agent).unwrap();
     std::fs::write(agent.join("agent.db"), database).unwrap();
@@ -48,7 +46,7 @@ pub(super) fn write_omp_source(source: &Path, database: &[u8], wal: &[u8]) {
 }
 
 #[cfg(unix)]
-pub(super) const OMP_V7_SCHEMA: &str = r"
+const OMP_V7_SCHEMA: &str = r"
 CREATE TABLE auth_schema_version (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     version INTEGER NOT NULL
@@ -67,7 +65,7 @@ CREATE TABLE auth_credentials (
 ";
 
 #[cfg(unix)]
-pub(super) fn write_v7_omp_source(source: &Path, setup: &str) -> rusqlite::Connection {
+fn write_v7_omp_source(source: &Path, setup: &str) -> rusqlite::Connection {
     let agent = source.join("agent");
     std::fs::create_dir_all(&agent).unwrap();
     let connection = rusqlite::Connection::open(agent.join("agent.db")).unwrap();
@@ -80,7 +78,7 @@ pub(super) fn write_v7_omp_source(source: &Path, setup: &str) -> rusqlite::Conne
 }
 
 #[cfg(unix)]
-pub(super) fn omp_row_selector(entry: &str, id: i64) -> ProfileSelector {
+fn omp_row_selector(entry: &str, id: i64) -> ProfileSelector {
     ProfileSelector {
         entry: entry.to_owned(),
         profile: Some(format!("row:{id}")),
@@ -88,21 +86,17 @@ pub(super) fn omp_row_selector(entry: &str, id: i64) -> ProfileSelector {
 }
 
 #[cfg(unix)]
-pub(super) fn contains_bytes(bytes: &[u8], needle: &[u8]) -> bool {
+fn contains_bytes(bytes: &[u8], needle: &[u8]) -> bool {
     bytes.windows(needle.len()).any(|window| window == needle)
 }
 
 #[cfg(unix)]
-pub(super) fn read_fixture_u32(bytes: &[u8], offset: usize) -> u32 {
+fn read_fixture_u32(bytes: &[u8], offset: usize) -> u32 {
     u32::from_be_bytes(bytes[offset..offset + 4].try_into().unwrap())
 }
 
 #[cfg(unix)]
-pub(super) fn omp_test_checksum(
-    bytes: &[u8],
-    mut checksum: (u32, u32),
-    little_endian: bool,
-) -> (u32, u32) {
+fn omp_test_checksum(bytes: &[u8], mut checksum: (u32, u32), little_endian: bool) -> (u32, u32) {
     assert!(bytes.len().is_multiple_of(8));
     for words in bytes.as_chunks::<8>().0 {
         let first: [u8; 4] = words[..4].try_into().unwrap();
@@ -119,7 +113,7 @@ pub(super) fn omp_test_checksum(
 }
 
 #[cfg(unix)]
-pub(super) fn append_omp_uncommitted_frame(wal: &mut Vec<u8>) {
+fn append_omp_uncommitted_frame(wal: &mut Vec<u8>) {
     let page_size = read_fixture_u32(wal, 8) as usize;
     let frame_size = page_size + 24;
     let frame_count = (wal.len() - 32) / frame_size;
@@ -142,7 +136,7 @@ pub(super) fn append_omp_uncommitted_frame(wal: &mut Vec<u8>) {
 }
 
 #[cfg(unix)]
-pub(super) fn assert_omp_sync_rejected(source: &Path, target: &Path, database: &[u8], wal: &[u8]) {
+fn assert_omp_sync_rejected(source: &Path, target: &Path, database: &[u8], wal: &[u8]) {
     write_omp_source(source, database, wal);
     std::fs::create_dir_all(target.parent().unwrap()).unwrap();
     let error = RoleState::provision_omp_auth_from_source_dir(
@@ -158,11 +152,11 @@ pub(super) fn assert_omp_sync_rejected(source: &Path, target: &Path, database: &
 }
 
 #[cfg(unix)]
-pub(super) fn sync_omp_source(source: &Path, home: &Path) -> (PathBuf, Vec<u8>) {
+fn sync_omp_source(source: &Path, home: &Path) -> (PathBuf, Vec<u8>) {
     sync_omp_source_as(source, home, &omp_row_selector("openai", 41))
 }
 
-pub(super) fn sync_omp_source_as(
+fn sync_omp_source_as(
     source: &Path,
     home: &Path,
     selector: &ProfileSelector,
@@ -183,7 +177,7 @@ pub(super) fn sync_omp_source_as(
 }
 
 #[cfg(unix)]
-pub(super) fn private_snapshot_parent(temp: &tempfile::TempDir) -> PathBuf {
+fn private_snapshot_parent(temp: &tempfile::TempDir) -> PathBuf {
     use std::os::unix::fs::PermissionsExt;
 
     let parent = temp.path().join("private-snapshot-parent");
@@ -193,7 +187,7 @@ pub(super) fn private_snapshot_parent(temp: &tempfile::TempDir) -> PathBuf {
 }
 
 #[cfg(unix)]
-pub(super) fn assert_kimi_snapshot_credentials(kimi_target: &Path) {
+fn assert_kimi_snapshot_credentials(kimi_target: &Path) {
     assert_eq!(
         std::fs::read_to_string(kimi_target.join("config.toml")).unwrap(),
         "version = \"old\"\n"
@@ -204,7 +198,7 @@ pub(super) fn assert_kimi_snapshot_credentials(kimi_target: &Path) {
     );
 }
 
-pub(super) fn seed_host_auth(temp: &tempfile::TempDir) {
+fn seed_host_auth(temp: &tempfile::TempDir) {
     std::fs::write(
         temp.path().join(".claude.json"),
         r#"{"oauthAccount":{"emailAddress":"test@example.com"}}"#,
@@ -215,7 +209,7 @@ pub(super) fn seed_host_auth(temp: &tempfile::TempDir) {
     std::fs::write(creds_dir.join(".credentials.json"), TEST_CREDENTIALS).unwrap();
 }
 
-pub(super) fn simple_manifest(temp: &tempfile::TempDir) -> jackin_manifest::RoleManifest {
+fn simple_manifest(temp: &tempfile::TempDir) -> jackin_manifest::RoleManifest {
     std::fs::write(
         temp.path().join("jackin.role.toml"),
         r#"version = "v1alpha3"
@@ -234,7 +228,7 @@ plugins = []
     jackin_manifest::load_role_manifest(temp.path()).unwrap()
 }
 
-pub(super) fn stage_host_secrets(temp: &tempfile::TempDir, content: &str) -> PathBuf {
+fn stage_host_secrets(temp: &tempfile::TempDir, content: &str) -> PathBuf {
     let host_home = temp.path().join("host_home");
     let amp_dir = host_home.join(".local/share/amp");
     std::fs::create_dir_all(&amp_dir).unwrap();
@@ -242,7 +236,7 @@ pub(super) fn stage_host_secrets(temp: &tempfile::TempDir, content: &str) -> Pat
     host_home
 }
 
-pub(super) fn stage_host_auth_json(temp: &tempfile::TempDir, tail: &str) -> (PathBuf, String) {
+fn stage_host_auth_json(temp: &tempfile::TempDir, tail: &str) -> (PathBuf, String) {
     let host_home = temp.path().join("host_home");
     let codex_dir = host_home.join(".codex");
     std::fs::create_dir_all(&codex_dir).unwrap();
@@ -253,7 +247,7 @@ pub(super) fn stage_host_auth_json(temp: &tempfile::TempDir, tail: &str) -> (Pat
     (host_home, content)
 }
 
-pub(super) fn stage_host_hosts_yml(temp: &tempfile::TempDir, token: &str) -> PathBuf {
+fn stage_host_hosts_yml(temp: &tempfile::TempDir, token: &str) -> PathBuf {
     let host_home = temp.path().join("host_home");
     let gh_dir = host_home.join(".config/gh");
     std::fs::create_dir_all(&gh_dir).unwrap();
@@ -267,14 +261,14 @@ pub(super) fn stage_host_hosts_yml(temp: &tempfile::TempDir, token: &str) -> Pat
     host_home
 }
 
-pub(super) fn ctx(mode: GithubAuthMode, token: Option<&str>) -> GithubAuthContext {
+fn ctx(mode: GithubAuthMode, token: Option<&str>) -> GithubAuthContext {
     GithubAuthContext {
         mode,
         token: token.map(str::to_owned),
     }
 }
 
-pub(super) fn stage_host_kimi_dir(
+fn stage_host_kimi_dir(
     temp: &tempfile::TempDir,
     config_content: Option<&str>,
     cred_files: &[(&str, &str)],
@@ -302,3 +296,4 @@ pub(super) fn stage_host_kimi_dir(
     }
     host_home
 }
+

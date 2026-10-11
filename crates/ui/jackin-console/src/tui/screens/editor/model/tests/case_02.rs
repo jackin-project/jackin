@@ -159,7 +159,7 @@ fn editor_immediate_action_key_plan_routes_tab_actions() {
     assert_eq!(
         editor.immediate_action_key_plan(&config, KeyCode::Char('m'), KeyModifiers::empty()),
         EditorImmediateActionKeyPlan::ToggleSecretMask {
-            scope: SecretsScopeTag::Workspace,
+            scope: super::SecretsScopeTag::Workspace,
             key: "TOKEN".into(),
         }
     );
@@ -367,3 +367,4 @@ fn editor_tab_action_key_plan_delegates_enter_after_actions() {
         EditorTabActionKeyPlan::Enter(EditorEnterKeyPlan::Auth(AuthEnterPlan::Noop))
     );
 }
+

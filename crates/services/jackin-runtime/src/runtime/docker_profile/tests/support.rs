@@ -1,7 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-pub(super) fn tmpfs_paths_from_flags(flags: &[String]) -> Vec<&str> {
+use super::*;
+fn tmpfs_paths_from_flags(flags: &[String]) -> Vec<&str> {
     flags
         .iter()
         .enumerate()
@@ -9,3 +10,4 @@ pub(super) fn tmpfs_paths_from_flags(flags: &[String]) -> Vec<&str> {
         .map(|(_, v)| v.split(':').next().unwrap_or(""))
         .collect()
 }
+

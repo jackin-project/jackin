@@ -376,3 +376,4 @@ fn agents_tab_star_sets_default_on_allowed_agent() {
         e.pending.allowed_roles,
     );
 }
+

@@ -397,3 +397,4 @@ fn profile_meets_floor_respects_ascending_capability() {
     assert!(profile_meets_floor(Hardened, Hardened));
     assert!(profile_meets_floor(Compat, Hardened));
 }
+

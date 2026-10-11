@@ -381,3 +381,4 @@ fn amp_daily_parser_preserves_workspace_balances_in_order() {
             .all(|bucket| bucket.status_slot.is_none())
     );
 }
+

@@ -2,13 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn row_text(buf: &Buffer, row: u16, width: u16) -> String {
+fn row_text(buf: &Buffer, row: u16, width: u16) -> String {
     (0..width)
         .map(|x| buf[(x, row)].symbol().to_owned())
         .collect()
 }
 
-pub(super) fn view_with_identity() -> LaunchView {
+fn view_with_identity() -> LaunchView {
     let mut view = initial_view();
     view.frame = 30;
     view.status = "building docker image".to_owned();
@@ -23,3 +23,4 @@ pub(super) fn view_with_identity() -> LaunchView {
     });
     view
 }
+

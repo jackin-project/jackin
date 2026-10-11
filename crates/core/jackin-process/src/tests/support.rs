@@ -3,7 +3,7 @@
 
 use super::*;
 #[cfg(unix)]
-pub(super) fn process_exists(pid: u32) -> bool {
+fn process_exists(pid: u32) -> bool {
     std::process::Command::new("kill")
         .args(["-0", &pid.to_string()])
         .stdout(Stdio::null())
@@ -12,3 +12,4 @@ pub(super) fn process_exists(pid: u32) -> bool {
         .expect("check fixture process")
         .success()
 }
+

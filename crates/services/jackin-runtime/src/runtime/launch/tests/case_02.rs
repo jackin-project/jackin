@@ -369,3 +369,4 @@ async fn diagnose_premature_exit_reports_empty_docker_logs() {
         "empty-log detail missing: {msg}"
     );
 }
+

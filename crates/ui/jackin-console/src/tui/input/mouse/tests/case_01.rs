@@ -37,7 +37,7 @@ fn conformance_wire_mouse_coordinates_become_only_semantic_action() -> anyhow::R
     let coordinate = MouseEvent {
         kind: MouseEventKind::Down(MouseButton::Left),
         column: 11,
-        row: SCREEN_HEADER_HEIGHT,
+        row: crate::tui::layout::SCREEN_HEADER_HEIGHT,
         modifiers: KeyModifiers::NONE,
     };
     handle_mouse_with_config(&mut state, coordinate, term(100), None);
@@ -124,6 +124,7 @@ fn conformance_wire_mouse_coordinates_become_only_semantic_action() -> anyhow::R
 
 #[test]
 fn content_areas_exclude_the_cached_footer() {
+    use super::{SCREEN_HEADER_HEIGHT, TAB_STRIP_HEIGHT};
     let term = Rect::new(0, 0, 80, 24);
 
     let mut settings = SettingsState::from_config(&jackin_config::AppConfig::default());
@@ -394,3 +395,4 @@ fn settings_role_picker_wheel_scrolls_modal_selection_not_background() {
     };
     assert_eq!(picker.list_state.selected().copied(), Some(1));
 }
+

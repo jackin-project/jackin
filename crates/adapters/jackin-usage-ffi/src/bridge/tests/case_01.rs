@@ -352,3 +352,4 @@ fn fixture_snapshot_round_trip_via_bridge() {
         UsageBridgeError::RuntimeUnavailable | UsageBridgeError::Rejected { .. }
     ));
 }
+

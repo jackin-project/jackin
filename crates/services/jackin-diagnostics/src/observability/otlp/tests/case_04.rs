@@ -19,7 +19,7 @@ fn result_error_helper_exports_one_typed_error_without_raw_value() {
 
     impl std::error::Error for PrivateError {}
 
-    let (export, subscriber) = test_layers(false, "unused");
+    let (export, subscriber) = super::test_layers(false, "unused");
     tracing::subscriber::with_default(subscriber, || {
         let ok: Result<(), PrivateError> = Ok(());
         assert!(matches!(
@@ -64,7 +64,7 @@ fn result_error_helper_exports_one_typed_error_without_raw_value() {
 fn recovered_error_helper_exports_one_typed_warning_without_raw_value() {
     use opentelemetry::logs::{AnyValue, Severity};
 
-    let (export, subscriber) = test_layers(false, "unused");
+    let (export, subscriber) = super::test_layers(false, "unused");
     tracing::subscriber::with_default(subscriber, || {
         jackin_telemetry::record_recovered_degradation().expect("recovered warning");
     });
@@ -85,7 +85,7 @@ fn recovered_error_helper_exports_one_typed_warning_without_raw_value() {
 fn detached_failure_automatically_exports_one_typed_error() {
     use opentelemetry::logs::AnyValue;
 
-    let (export, subscriber) = test_layers(false, "unused");
+    let (export, subscriber) = super::test_layers(false, "unused");
     let default = tracing::subscriber::set_default(subscriber);
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -137,7 +137,7 @@ fn governed_event_level_gates_are_exact_and_do_not_infer_span_state() {
         ("debug", 4usize, 1usize),
         ("trace", 5usize, 1usize),
     ] {
-        let (export, subscriber) = test_layers_at(level, "unused");
+        let (export, subscriber) = super::test_layers_at(level, "unused");
         tracing::subscriber::with_default(subscriber, || {
             let operation = jackin_telemetry::operation(
                 &jackin_telemetry::operation::CLI_COMMAND,
@@ -167,7 +167,7 @@ fn in_memory_layers_hold_global_telemetry_lock_until_export_drop() {
     use std::sync::{TryLockError, mpsc};
     use std::time::Duration;
 
-    let (export, subscriber) = test_layers(false, "first");
+    let (export, subscriber) = super::test_layers(false, "first");
     let (contended_tx, contended_rx) = mpsc::channel();
     let (attempt_tx, attempt_rx) = mpsc::channel();
     let (acquired_tx, acquired_rx) = mpsc::channel();
@@ -187,7 +187,7 @@ fn in_memory_layers_hold_global_telemetry_lock_until_export_drop() {
         contended_tx
             .send(())
             .expect("announce exporter lifetime contention");
-        let (next_export, next_subscriber) = test_layers(false, "second");
+        let (next_export, next_subscriber) = super::test_layers(false, "second");
         acquired_tx.send(()).expect("announce exporter admission");
         drop(next_subscriber);
         drop(next_export);
@@ -219,7 +219,7 @@ fn in_memory_layers_hold_global_telemetry_lock_until_export_drop() {
 
 #[test]
 fn governed_unknown_names_and_forged_severity_are_rejected() {
-    let (export, subscriber) = test_layers_at("trace", "unused");
+    let (export, subscriber) = super::test_layers_at("trace", "unused");
     let before = jackin_telemetry::facade_health();
     tracing::subscriber::with_default(subscriber, || {
         tracing::event!(
@@ -263,7 +263,7 @@ fn governed_unknown_names_and_forged_severity_are_rejected() {
 
 #[test]
 fn governed_unknown_attribute_is_dropped() {
-    let (export, subscriber) = test_layers(false, "unused");
+    let (export, subscriber) = super::test_layers(false, "unused");
     let before = jackin_telemetry::facade_health().unknown_attribute;
     tracing::subscriber::with_default(subscriber, || {
         tracing::event!(
@@ -283,7 +283,7 @@ fn governed_unknown_attribute_is_dropped() {
 
 #[test]
 fn governed_second_line_drops_private_and_oversized_raw_records() {
-    let (export, subscriber) = test_layers_at("trace", "unused");
+    let (export, subscriber) = super::test_layers_at("trace", "unused");
     let before = jackin_telemetry::facade_health();
     let oversized = "x".repeat(jackin_telemetry::limits::MAX_STRING_ATTRIBUTE_BYTES + 1);
     tracing::subscriber::with_default(subscriber, || {
@@ -360,3 +360,4 @@ fn governed_second_line_drops_private_and_oversized_raw_records() {
         );
     }
 }
+

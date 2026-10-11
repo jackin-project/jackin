@@ -205,3 +205,4 @@ async fn clipboard_image_error_writer_bounds_empty_and_overlong_message() {
     };
     assert_eq!(error.message(), "Host action failed");
 }
+

@@ -391,3 +391,4 @@ fn canon_sel_stale_persisted_key_remains_explicitly_unavailable() {
     let persisted = accounts::load_selected_accounts(&accounts::selected_accounts_path(dir.path()));
     assert_eq!(persisted.get("codex"), Some(&"sha256:unknown".to_owned()));
 }
+

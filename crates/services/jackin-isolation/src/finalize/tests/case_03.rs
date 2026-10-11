@@ -373,3 +373,4 @@ async fn unpushed_worktree_non_interactive_prints_warning_and_preserves() {
     let recs = read_records(dir.path()).unwrap();
     assert_eq!(recs[0].cleanup_status, CleanupStatus::PreservedUnpushed);
 }
+

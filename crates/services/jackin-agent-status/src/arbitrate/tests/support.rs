@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn base_snapshot() -> EvidenceSnapshot {
+fn base_snapshot() -> EvidenceSnapshot {
     EvidenceSnapshot {
         authority: None,
         osc: OscEvidence::default(),
@@ -17,7 +17,7 @@ pub(super) fn base_snapshot() -> EvidenceSnapshot {
     }
 }
 
-pub(super) fn authority(
+fn authority(
     state: RawAgentState,
     pending_permission: bool,
     last_event: Instant,
@@ -31,3 +31,4 @@ pub(super) fn authority(
         notes: Vec::new(),
     }
 }
+

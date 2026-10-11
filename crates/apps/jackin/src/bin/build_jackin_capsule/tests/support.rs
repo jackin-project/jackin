@@ -3,7 +3,7 @@
 
 use super::*;
 #[cfg(unix)]
-pub(super) fn fake_mise(root: &Path) -> PathBuf {
+fn fake_mise(root: &Path) -> PathBuf {
     use std::os::unix::fs::PermissionsExt;
 
     let path = root.join("fake mise");
@@ -23,7 +23,7 @@ pub(super) fn fake_mise(root: &Path) -> PathBuf {
     clippy::disallowed_methods,
     reason = "test helper reads fixture ulimits via a shell probe"
 )]
-pub(super) fn expected_fd_limit_after_best_effort_raise() -> String {
+fn expected_fd_limit_after_best_effort_raise() -> String {
     let output = process::Command::new("sh")
         .args(["-c", "ulimit -S -n; ulimit -H -n"])
         .output()
@@ -41,3 +41,4 @@ pub(super) fn expected_fd_limit_after_best_effort_raise() -> String {
         soft.clone()
     }
 }
+

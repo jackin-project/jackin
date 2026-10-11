@@ -26,14 +26,13 @@ use std::path::{Path, PathBuf};
 
 use tempfile::tempdir;
 
-use super::{
-    GithubAuthMode, MAX_AUTH_SOURCE_FILE_BYTES, copy_host_claude_json, parse_gh_hosts_yml,
-};
+use super::{GithubAuthMode, parse_gh_hosts_yml};
 
 use crate::{
     GithubAuthContext, GithubProvisionKind, GithubProvisionOutcome, GithubTokenSource,
     HostMissingReason,
 };
+
 
 mod support;
 use support::*;

@@ -309,3 +309,4 @@ fn privacy_detector_scans_links_scopes_and_metric_exemplars() {
 
     assert_eq!(violations, prohibited);
 }
+

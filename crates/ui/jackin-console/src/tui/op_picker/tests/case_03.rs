@@ -381,3 +381,4 @@ fn op_cache_picker_does_not_store_field_values() {
         reference: _,
     } = f;
 }
+

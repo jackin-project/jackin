@@ -389,3 +389,4 @@ fn provider_glance_rows_reject_negative_credential_placeholders() {
     let rows = runtime.provider_glance_rows().expect("rows");
     assert!(rows.is_empty());
 }
+

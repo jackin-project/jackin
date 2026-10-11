@@ -396,3 +396,4 @@ fn commit_accepts_symlink_resolving_to_normal_in_root_folder() {
     }
     assert!(fb.rejected_reason.is_none());
 }
+

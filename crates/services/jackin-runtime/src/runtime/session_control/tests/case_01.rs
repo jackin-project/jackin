@@ -240,3 +240,4 @@ fn ndjson_reader_decodes_the_records_the_capsule_cli_prints() {
         }
     );
 }
+

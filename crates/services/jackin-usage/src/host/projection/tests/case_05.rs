@@ -356,3 +356,4 @@ fn parity_s5_render_smoke() {
         );
     }
 }
+

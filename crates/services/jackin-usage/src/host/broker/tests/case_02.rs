@@ -169,7 +169,7 @@ fn forwarded_scope_selects_only_accounts_backed_by_forwarded_sources() {
                     "account account-profile".to_owned(),
                 ]),
                 source: ValidatedCredentialSource::Profile(
-                    discovery::ProfileCredentialMaterial::Amp {
+                    super::super::discovery::ProfileCredentialMaterial::Amp {
                         key: "profile-secret".to_owned(),
                     },
                 ),
@@ -332,3 +332,4 @@ fn forwarded_scope_selects_only_accounts_backed_by_forwarded_sources() {
     );
     assert_eq!(publication[&profile_capability].provenance_count, 2);
 }
+

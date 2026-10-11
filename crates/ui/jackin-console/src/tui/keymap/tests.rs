@@ -23,6 +23,7 @@ use termrock::input::{KeyEvent, KeyModifiers};
 
 use termrock::keymap::Keymap as TermrockKeymap;
 
+
 mod support;
 use support::*;
 mod case_01;

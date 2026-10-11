@@ -262,3 +262,4 @@ fn cadence_two_clients_single_flight_exactly_one_provider_call() {
     assert_eq!(terminal.phase, UsageRefreshPhase::Completed);
     assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
 }
+

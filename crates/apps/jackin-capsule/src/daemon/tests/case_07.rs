@@ -380,3 +380,4 @@ fn apply_pull_request_context_loaded_refreshes_open_github_dialog() {
     );
     assert!(!mux.pull_request_context_loading());
 }
+

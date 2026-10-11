@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn pull_request_fixture(number: u64) -> PullRequestInfo {
+fn pull_request_fixture(number: u64) -> PullRequestInfo {
     PullRequestInfo {
         number,
         title: "Surface PR context in Capsule".to_owned(),
@@ -12,7 +12,7 @@ pub(super) fn pull_request_fixture(number: u64) -> PullRequestInfo {
     }
 }
 
-pub(super) fn widget_bar(
+fn widget_bar(
     cols: u16,
     branch: Option<&str>,
     usage_status_label: Option<&str>,
@@ -43,3 +43,4 @@ pub(super) fn widget_bar(
         .collect();
     (text, buf)
 }
+

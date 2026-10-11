@@ -339,3 +339,4 @@ fn legacy_archive_rejects_unexpected_files_before_publishing() {
     assert!(error.to_string().contains("unexpected asset"));
     assert!(!transaction.path().join("legacy-preview").exists());
 }
+

@@ -383,3 +383,4 @@ fn naming_stage_input_routes_by_naming_stage() {
     );
     assert!(naming_stage_input_for_stage(OpPickerStage::Field, &item, &field, &section).is_none());
 }
+

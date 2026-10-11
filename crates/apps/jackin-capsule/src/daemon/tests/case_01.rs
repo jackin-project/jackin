@@ -179,7 +179,7 @@ async fn conformance_wire_real_capsule_control_status_preserves_parent_and_deliv
     {
         return;
     }
-    let _telemetry_guard = crate::support::telemetry_test_guard_async().await;
+    let _telemetry_guard = crate::test_support::telemetry_test_guard_async().await;
     let testbed = jackin_otlp_testbed::Testbed::start().expect("start OTLP testbed");
     jackin_diagnostics::init_wire_test_export(
         &testbed.endpoint(),
@@ -358,3 +358,4 @@ async fn conformance_invalid_attach_handshake_has_one_typed_write_owner() {
     assert!(spans[0].error);
     assert_eq!(export.typed_error_count("error.typed", "rpc_error"), 1);
 }
+

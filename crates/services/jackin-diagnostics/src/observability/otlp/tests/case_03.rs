@@ -7,7 +7,7 @@ use super::*;
 fn widget_lifecycle_exports_exact_stable_identity_pair() {
     use opentelemetry::logs::AnyValue;
 
-    let (export, subscriber) = test_layers(true, "unused");
+    let (export, subscriber) = super::test_layers(true, "unused");
     tracing::subscriber::with_default(subscriber, || {
         let mut tracker = jackin_telemetry::ui::WidgetFocusTracker::default();
         tracker.focus("capsule.pane").unwrap();
@@ -38,7 +38,7 @@ fn widget_lifecycle_exports_exact_stable_identity_pair() {
 fn isolation_events_export_exact_private_shape() {
     use jackin_telemetry::schema::enums::{DindMode, NetworkMode, WorkspaceIsolationMode};
 
-    let (export, subscriber) = test_layers(false, "unused");
+    let (export, subscriber) = super::test_layers(false, "unused");
     tracing::subscriber::with_default(subscriber, || {
         crate::operation::isolation_decision(
             WorkspaceIsolationMode::Worktree,
@@ -99,7 +99,7 @@ fn conformance_single_delivery_preserves_native_shape() {
     use opentelemetry::logs::{AnyValue, Severity};
     use opentelemetry::trace::Status;
 
-    let (export, subscriber) = test_layers(false, "unused");
+    let (export, subscriber) = super::test_layers(false, "unused");
     tracing::subscriber::with_default(subscriber, || {
         let operation = jackin_telemetry::operation(
             &jackin_telemetry::operation::CLI_COMMAND,
@@ -198,7 +198,7 @@ fn conformance_single_delivery_preserves_native_shape() {
 fn registered_scalar_types_round_trip() {
     use opentelemetry::logs::AnyValue;
 
-    let (export, subscriber) = test_layers(false, "unused");
+    let (export, subscriber) = super::test_layers(false, "unused");
     tracing::subscriber::with_default(subscriber, || {
         let jank = [
             jackin_telemetry::Attr {
@@ -274,7 +274,7 @@ fn every_registered_event_round_trips_once_with_canonical_severity() {
     use opentelemetry::logs::Severity;
 
     static ARRAY_VALUE: &[&str] = &["proof"];
-    let (export, subscriber) = test_layers_at("trace", "unused");
+    let (export, subscriber) = super::test_layers_at("trace", "unused");
     tracing::subscriber::with_default(subscriber, || {
         for name in jackin_telemetry::schema::events::ALL {
             let definition = jackin_telemetry::event::definition(name)
@@ -328,7 +328,7 @@ fn every_registered_event_round_trips_once_with_canonical_severity() {
 
 #[test]
 fn governed_operation_line_does_not_duplicate_active_run_log() {
-    let (export, subscriber) = test_layers(false, "unused");
+    let (export, subscriber) = super::test_layers(false, "unused");
     tracing::subscriber::with_default(subscriber, || {
         let directory = tempfile::tempdir().expect("temporary diagnostics directory");
         let paths = jackin_core::JackinPaths::for_tests(directory.path());
@@ -356,3 +356,4 @@ fn governed_operation_line_does_not_duplicate_active_run_log() {
     assert_eq!(logs.len(), 1);
     assert_eq!(logs[0].record.event_name(), Some("operation.log"));
 }
+

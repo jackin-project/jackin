@@ -3,8 +3,8 @@
 
 use super::*;
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct TestOpRef {
-    pub(super) path: String,
+struct TestOpRef {
+    path: String,
 }
 
 impl AuthCredentialRef for TestOpRef {
@@ -14,7 +14,7 @@ impl AuthCredentialRef for TestOpRef {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum TestCredential {
+enum TestCredential {
     Plain(String),
     OpRef(TestOpRef),
 }
@@ -38,9 +38,9 @@ impl AuthCredential for TestCredential {
     }
 }
 
-pub(super) type TestForm = AuthForm<TestCredential>;
+type TestForm = AuthForm<TestCredential>;
 
-pub(super) fn dump_form(form: &TestForm) -> String {
+fn dump_form(form: &TestForm) -> String {
     let backend = TestBackend::new(100, 20);
     let mut term = Terminal::new(backend).unwrap();
     term.draw(|frame| {
@@ -58,3 +58,4 @@ pub(super) fn dump_form(form: &TestForm) -> String {
     }
     output
 }
+

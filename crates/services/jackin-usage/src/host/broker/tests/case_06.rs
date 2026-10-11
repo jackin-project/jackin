@@ -386,3 +386,4 @@ fn catalog_conflict_retries_with_rediscovery_then_succeeds() {
     assert_eq!(final_projection.discovery_revision, "generation-fresh");
     assert_eq!(handle.catalog_lease, final_projection.projection_id);
 }
+

@@ -227,3 +227,4 @@ fn confirm_save_hint_spans_include_scroll_when_vertical_overflows() {
     assert!(spans.contains(&HintSpan::Key("↑↓/j/k")));
     assert!(spans.contains(&HintSpan::Text("scroll")));
 }
+

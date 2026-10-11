@@ -357,3 +357,4 @@ fn frame_plans_keep_diff_tier_reasons_out_of_full_redraws() {
         assert_dialog_frame_plan_avoids_full_diff_tier(dialog_action_frame_plan(&action));
     }
 }
+

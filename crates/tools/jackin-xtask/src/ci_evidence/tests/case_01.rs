@@ -393,3 +393,4 @@ fn bootstrap_boundary_starts_window_at_first_verified_push() {
         validate_denominator("example/repo", &proof, &history, &push_heads, &proof.window).is_err()
     );
 }
+

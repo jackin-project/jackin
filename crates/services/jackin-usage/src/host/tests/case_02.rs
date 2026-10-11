@@ -385,3 +385,4 @@ fn dual_bucket_snapshot_exposes_session_and_weekly_remainings() {
         "pace present for Desktop two-column caption"
     );
 }
+

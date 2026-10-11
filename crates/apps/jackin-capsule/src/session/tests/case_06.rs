@@ -33,7 +33,7 @@ fn google_alias_is_scrubbed_from_siblings_while_selected_credential_is_injected(
         Some("ignore"),
         &ambient,
     ));
-    apply_account_env(
+    super::apply_account_env(
         &mut unselected,
         "gemini-unselected",
         Some("ignore"),
@@ -57,7 +57,7 @@ fn google_alias_is_scrubbed_from_siblings_while_selected_credential_is_injected(
         Some("api_key"),
         &ambient,
     ));
-    apply_account_env(
+    super::apply_account_env(
         &mut work,
         "gemini-work",
         Some("api_key"),
@@ -77,7 +77,7 @@ fn google_alias_is_scrubbed_from_siblings_while_selected_credential_is_injected(
         Some("api_key"),
         &ambient,
     ));
-    apply_account_env(
+    super::apply_account_env(
         &mut personal,
         "gemini-personal",
         Some("api_key"),
@@ -113,7 +113,7 @@ fn unassigned_instance_cannot_inherit_another_instances_provider_key() {
         .expect("v2 fixture must decode");
     let empty: Vec<(String, String)> = Vec::new();
     let mut cmd = build_agent_command(&spawn_spec("codex", "codex-work", Some("ignore"), &empty));
-    apply_account_env(&mut cmd, "codex-work", Some("ignore"), None, &credentials);
+    super::apply_account_env(&mut cmd, "codex-work", Some("ignore"), None, &credentials);
     assert!(cmd.get_env("OPENAI_API_KEY").is_none());
     assert!(!format!("{credentials:?}").contains("opencode-secret"));
 }
@@ -315,7 +315,7 @@ fn same_agent_instances_keep_model_home_endpoint_and_credential_bound_to_config_
             },
         };
         let mut command = build_agent_command(&spec);
-        apply_account_env(
+        super::apply_account_env(
             &mut command,
             instance_id,
             Some("api_key"),
@@ -357,3 +357,4 @@ fn same_agent_instances_keep_model_home_endpoint_and_credential_bound_to_config_
         );
     }
 }
+

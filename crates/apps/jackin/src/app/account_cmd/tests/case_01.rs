@@ -332,3 +332,4 @@ fn account_commands_persist_and_revoke_workspace_access() {
     config = AppConfig::load_or_init(&paths).unwrap();
     assert!(!config.accounts.contains_key("work"));
 }
+

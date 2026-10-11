@@ -387,3 +387,4 @@ command: docker build .
         ]
     );
 }
+

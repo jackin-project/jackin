@@ -4,9 +4,6 @@
 //! `FakeRunner` + real grant/profile/config fixtures and drives the real
 //! pipeline boundary (not helper-only substitutes).
 
-use super::super::Backend;
-use super::super::StepCounter;
-use super::super::account_identity;
 use super::launch_core::{self, LaunchCore};
 
 use super::*;
@@ -39,7 +36,6 @@ use std::sync::{Mutex, OnceLock};
 
 use tempfile::TempDir;
 
-mod restore_reuse_intent;
 
 mod support_01;
 use support_01::*;

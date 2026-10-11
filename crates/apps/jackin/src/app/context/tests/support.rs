@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn config_with_workspace(
+fn config_with_workspace(
     project_dir: &Path,
     allowed_roles: Vec<String>,
     last_role: Option<String>,
@@ -55,9 +55,7 @@ pub(super) fn config_with_workspace(
     config
 }
 
-pub(super) fn fake_docker_with_running_agents(
-    names: &[&str],
-) -> jackin_test_support::FakeDockerClient {
+fn fake_docker_with_running_agents(names: &[&str]) -> jackin_test_support::FakeDockerClient {
     use jackin_docker::docker_client::ContainerRow;
     let rows: Vec<ContainerRow> = names
         .iter()
@@ -73,7 +71,7 @@ pub(super) fn fake_docker_with_running_agents(
     }
 }
 
-pub(super) fn persisted_config_with_workspace(paths: &JackinPaths, temp_path: &Path) -> AppConfig {
+fn persisted_config_with_workspace(paths: &JackinPaths, temp_path: &Path) -> AppConfig {
     paths.ensure_base_dirs().unwrap();
     let mut config = AppConfig::default();
     config.workspaces.insert(
@@ -95,7 +93,8 @@ pub(super) fn persisted_config_with_workspace(paths: &JackinPaths, temp_path: &P
     config
 }
 
-pub(super) fn write_role_manifest(role_dir: &Path, body: &str) {
+fn write_role_manifest(role_dir: &Path, body: &str) {
     std::fs::create_dir_all(role_dir).unwrap();
     std::fs::write(role_dir.join("jackin.role.toml"), body).unwrap();
 }
+

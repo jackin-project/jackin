@@ -103,3 +103,4 @@ fn spawn_capacity_messages_report_visible_limits() {
         "pane limit reached (64); close some panes before opening more"
     );
 }
+

@@ -396,3 +396,4 @@ fn picker_typing_cla_filters_to_claude() {
         other => panic!("expected SpawnAgent(claude), got {other:?}"),
     }
 }
+

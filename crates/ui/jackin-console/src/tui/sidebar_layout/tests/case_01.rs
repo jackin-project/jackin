@@ -351,3 +351,4 @@ fn focused_scrollability_requires_area_and_overflow() {
         Some(&areas)
     ));
 }
+

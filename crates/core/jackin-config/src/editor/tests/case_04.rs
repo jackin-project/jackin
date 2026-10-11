@@ -375,3 +375,4 @@ fn set_env_var_writes_inline_table_for_op_ref() {
             "expected inline-table emit, got:\n{serialized}"
         );
 }
+

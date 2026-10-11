@@ -177,8 +177,8 @@ fn wheel_shift_fallback_retries_vertical_at_horizontal_edge() {
         .filter(|row| row.scope.is_none())
         .map(|row| row.mount)
         .collect();
-    let max_x = max_scroll_offset(
-        global_mounts_content_width(global_mounts.as_slice()),
+    let max_x = super::max_scroll_offset(
+        super::global_mounts_content_width(global_mounts.as_slice()),
         crate::tui::layout::scroll_viewport_width(areas.global.area),
     );
     crate::tui::scroll_block::scroll_area_set_x(&mut state.list_global_mounts_scroll, max_x);
@@ -212,25 +212,25 @@ fn scroll_block_registry_hit_test_prefers_later_registration() {
         height: 6,
     };
     let blocks = [
-        ScrollBlockRegion {
-            id: ConsoleScrollBlock::EditorTabContent,
+        super::ScrollBlockRegion {
+            id: super::ConsoleScrollBlock::EditorTabContent,
             rect: area,
             content_w: 40,
             content_h: 20,
         },
-        ScrollBlockRegion {
-            id: ConsoleScrollBlock::EditorWorkspaceMounts,
+        super::ScrollBlockRegion {
+            id: super::ConsoleScrollBlock::EditorWorkspaceMounts,
             rect: area,
             content_w: 30,
             content_h: 20,
         },
     ];
     assert_eq!(
-        hit(&blocks, 15, 6),
-        Some(ConsoleScrollBlock::EditorWorkspaceMounts),
+        super::hit(&blocks, 15, 6),
+        Some(super::ConsoleScrollBlock::EditorWorkspaceMounts),
         "the later-registered (paint-topmost) block must win an overlap"
     );
-    assert_eq!(hit(&blocks, 0, 0), None);
+    assert_eq!(super::hit(&blocks, 0, 0), None);
 }
 
 #[test]
@@ -281,13 +281,13 @@ fn hover_regions_topmost_first_matches_hit_test() {
     use termrock::interaction::{HitRegion, HoverState};
 
     let top = HitRegion {
-        id: ConsoleHoverTarget::Workspace(ManagerHoverTarget::ListRow(
+        id: super::ConsoleHoverTarget::Workspace(ManagerHoverTarget::ListRow(
             ManagerListRow::NewWorkspace,
         )),
         area: Rect::new(0, 0, 10, 2),
     };
     let under = HitRegion {
-        id: ConsoleHoverTarget::Editor(EditorHoverTarget::Tab(0)),
+        id: super::ConsoleHoverTarget::Editor(EditorHoverTarget::Tab(0)),
         area: Rect::new(0, 1, 10, 2),
     };
     let regions = [top.clone(), under];
@@ -306,3 +306,4 @@ fn hover_regions_topmost_first_matches_hit_test() {
     );
     assert_eq!(hover.hovered(), None);
 }
+

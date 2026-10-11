@@ -368,3 +368,4 @@ fn claude_usage_diagnostic_preserves_cli_failure_output() {
     assert_eq!(diagnostic.exit_code, Some(1));
     assert_eq!(diagnostic.stderr, "not logged in");
 }
+

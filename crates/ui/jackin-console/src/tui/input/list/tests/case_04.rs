@@ -191,3 +191,4 @@ fn configured_launch_picker_dispatches_exact_configuration_only() {
     }
     assert!(state.launch_account_picker.is_none());
 }
+

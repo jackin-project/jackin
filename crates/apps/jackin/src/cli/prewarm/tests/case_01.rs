@@ -266,3 +266,4 @@ fn roles_prewarm_can_use_role_git_override_without_image() {
     assert_eq!(targets.len(), 1);
     assert_eq!(targets[0].role_git, "https://example.invalid/custom.git");
 }
+

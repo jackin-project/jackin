@@ -2,13 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn load_agent_fixture(
-    manifest_body: &str,
-    admission_toml: Option<&str>,
-) -> LoadAgentFixture {
+fn load_agent_fixture(manifest_body: &str, admission_toml: Option<&str>) -> LoadAgentFixture {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     paths.ensure_base_dirs().unwrap();
     std::fs::write(
         &paths.config_file,
@@ -44,16 +41,16 @@ trusted = true
     }
 }
 
-pub(super) struct ConsoleResolutionFixture {
+struct ConsoleResolutionFixture {
     _temp: tempfile::TempDir,
-    pub(super) paths: JackinPaths,
-    pub(super) selector: RoleSelector,
-    pub(super) repo_dir: PathBuf,
-    pub(super) config: AppConfig,
-    pub(super) runner: FakeRunner,
+    paths: JackinPaths,
+    selector: RoleSelector,
+    repo_dir: PathBuf,
+    config: AppConfig,
+    runner: FakeRunner,
 }
 
-pub(super) const MULTI_AGENT_MANIFEST: &str = r#"version = "v1alpha3"
+const MULTI_AGENT_MANIFEST: &str = r#"version = "v1alpha3"
 dockerfile = "Dockerfile"
 agents = ["claude", "codex"]
 
@@ -63,17 +60,17 @@ plugins = []
 [codex]
 "#;
 
-pub(super) const CODEX_ONLY_MANIFEST: &str = r#"version = "v1alpha3"
+const CODEX_ONLY_MANIFEST: &str = r#"version = "v1alpha3"
 dockerfile = "Dockerfile"
 agents = ["codex"]
 
 [codex]
 "#;
 
-pub(super) fn console_resolution_fixture() -> ConsoleResolutionFixture {
+fn console_resolution_fixture() -> ConsoleResolutionFixture {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     paths.ensure_base_dirs().unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let repo_dir = jackin_manifest::repo::CachedRepo::new(&paths, &selector).repo_dir;
@@ -96,7 +93,7 @@ pub(super) fn console_resolution_fixture() -> ConsoleResolutionFixture {
     }
 }
 
-pub(super) fn write_role_repo(repo_dir: &Path, manifest: &str) {
+fn write_role_repo(repo_dir: &Path, manifest: &str) {
     std::fs::create_dir_all(repo_dir).unwrap();
     std::fs::write(
         repo_dir.join("Dockerfile"),
@@ -106,12 +103,12 @@ pub(super) fn write_role_repo(repo_dir: &Path, manifest: &str) {
     std::fs::write(repo_dir.join("jackin.role.toml"), manifest).unwrap();
 }
 
-pub(super) fn seed_cached_repo(repo_dir: &Path, manifest: &str) {
+fn seed_cached_repo(repo_dir: &Path, manifest: &str) {
     write_role_repo(repo_dir, manifest);
     std::fs::create_dir_all(repo_dir.join(".git")).unwrap();
 }
 
-pub(super) fn materialize_on_clone(runner: &mut FakeRunner, repo_dir: PathBuf, manifest: String) {
+fn materialize_on_clone(runner: &mut FakeRunner, repo_dir: PathBuf, manifest: String) {
     runner.side_effects.push((
         "clone".to_owned(),
         Box::new(move || {
@@ -121,7 +118,7 @@ pub(super) fn materialize_on_clone(runner: &mut FakeRunner, repo_dir: PathBuf, m
     ));
 }
 
-pub(super) fn task_override_current_role_fixture(
+fn task_override_current_role_fixture(
     state: ContainerState,
 ) -> (
     tempfile::TempDir,
@@ -135,7 +132,7 @@ pub(super) fn task_override_current_role_fixture(
 ) {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     paths.ensure_base_dirs().unwrap();
     std::fs::write(&paths.config_file, CODEX_ADMISSION_TOML).unwrap();
     let mut config = AppConfig::load_or_init(&paths).unwrap();
@@ -209,7 +206,7 @@ pub(super) fn task_override_current_role_fixture(
     )
 }
 
-pub(super) async fn task_overrides_launch_fresh_codex_for_current_state(state: ContainerState) {
+async fn task_overrides_launch_fresh_codex_for_current_state(state: ContainerState) {
     let preserve_existing = matches!(&state, ContainerState::Running);
     let (_temp, paths, mut config, selector, workspace, docker, mut runner, current_container) =
         task_override_current_role_fixture(state);
@@ -284,13 +281,11 @@ pub(super) async fn task_overrides_launch_fresh_codex_for_current_state(state: C
     assert_eq!(capsule_config.efforts["codex-main"], "max");
 }
 
-pub(super) async fn run_load_with_env(
-    entries: &[(&str, &str)],
-) -> (String, String, tempfile::TempDir) {
+async fn run_load_with_env(entries: &[(&str, &str)]) -> (String, String, tempfile::TempDir) {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     for (k, v) in entries {
@@ -353,16 +348,16 @@ plugins = []
     (run_cmd, observed.contents, temp)
 }
 
-pub(super) fn inspect_docker(state: ContainerState) -> jackin_test_support::FakeDockerClient {
+fn inspect_docker(state: ContainerState) -> jackin_test_support::FakeDockerClient {
     jackin_test_support::FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([state])),
         ..Default::default()
     }
 }
 
-pub(super) struct ConcurrentGithubOpRunner {
-    pub(super) active: Arc<AtomicUsize>,
-    pub(super) max_active: Arc<AtomicUsize>,
+struct ConcurrentGithubOpRunner {
+    active: Arc<AtomicUsize>,
+    max_active: Arc<AtomicUsize>,
 }
 
 impl ConcurrentGithubOpRunner {
@@ -395,3 +390,4 @@ impl jackin_env::OpRunner for ConcurrentGithubOpRunner {
         Ok(format!("secret-for-{reference}"))
     }
 }
+

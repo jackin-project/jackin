@@ -226,3 +226,4 @@ fn row0_tabs_follow_the_upstream_theme_without_compensation() {
     assert_eq!(cell.bg, Color::Reset);
     assert_ne!(cell.fg, Color::Rgb(255, 255, 255));
 }
+

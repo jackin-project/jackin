@@ -3,7 +3,7 @@
 
 //! Tests for `global_mounts`.
 
-use super::super::fixtures::key;
+use super::super::test_support::key;
 
 use super::*;
 
@@ -22,8 +22,9 @@ use ratatui::layout::Rect;
 
 use std::collections::BTreeMap;
 
-use support::confirm_modal;
+
+mod support;
+use support::*;
 mod case_01;
 mod case_02;
 mod case_03;
-mod support;

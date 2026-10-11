@@ -4,7 +4,7 @@
 use super::*;
 const _: fn() -> Result<Docker, bollard::errors::Error> = Docker::connect_with_ssl_defaults;
 
-pub(super) fn content_length(headers: &str) -> anyhow::Result<usize> {
+fn content_length(headers: &str) -> anyhow::Result<usize> {
     headers
         .lines()
         .find(|line| {
@@ -17,7 +17,7 @@ pub(super) fn content_length(headers: &str) -> anyhow::Result<usize> {
         .ok_or_else(|| anyhow::anyhow!("Docker request omitted content-length"))
 }
 
-pub(super) fn capture_docker_create_request(
+fn capture_docker_create_request(
     listener: std::net::TcpListener,
 ) -> std::thread::JoinHandle<anyhow::Result<Vec<u8>>> {
     std::thread::spawn(move || {
@@ -52,7 +52,7 @@ pub(super) fn capture_docker_create_request(
     })
 }
 
-pub(super) async fn exercise_private_container_create() -> anyhow::Result<Vec<String>> {
+async fn exercise_private_container_create() -> anyhow::Result<Vec<String>> {
     let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))?;
     let address = listener.local_addr()?;
     let request = capture_docker_create_request(listener);
@@ -107,6 +107,7 @@ pub(super) async fn exercise_private_container_create() -> anyhow::Result<Vec<St
     Ok(private)
 }
 
-pub(super) fn context_endpoint(host: &str) -> DockerContextEndpoint {
+fn context_endpoint(host: &str) -> DockerContextEndpoint {
     DockerContextEndpoint::new(host, false, false)
 }
+

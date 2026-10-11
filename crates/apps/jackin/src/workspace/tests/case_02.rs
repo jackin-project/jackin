@@ -158,3 +158,4 @@ codex = "work"
         toml::from_str(&toml::to_string(&workspace).unwrap()).unwrap();
     assert_eq!(workspace, round_trip);
 }
+

@@ -387,3 +387,4 @@ async fn unknown_name_is_rejected() {
     assert!(reply.get("values").is_none());
     assert!(reply.get("error").is_some());
 }
+

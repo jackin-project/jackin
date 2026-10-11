@@ -333,12 +333,12 @@ async fn agent_session_rejects_account_overrides_before_container_access() {
 
 #[tokio::test]
 async fn apple_backend_reconnect_rejects_unverified_account_admission() {
-    use super::backend::ContainerBackend as _;
+    use super::super::backend::ContainerBackend as _;
     let (_tmp, paths) = test_paths();
     std::fs::create_dir_all(&paths.config_dir).unwrap();
     std::fs::File::create(paths.config_file.with_file_name("config.lock")).unwrap();
     let mut runner = FakeRunner::default();
-    let error = backend::AppleContainerBackend::production()
+    let error = super::super::backend::AppleContainerBackend::production()
         .reconnect(&paths, "jk-unverified", Some(9), &mut runner)
         .await
         .unwrap_err();
@@ -378,3 +378,4 @@ async fn start_stopped_container_errors_clearly_when_network_missing() {
             .contains("run `jackin load` to recreate the instance")
     );
 }
+

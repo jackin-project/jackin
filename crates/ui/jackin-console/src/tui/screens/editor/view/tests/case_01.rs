@@ -385,3 +385,4 @@ fn secret_lines_render_workspace_and_role_rows() {
         padded_width("       + Add alpha environment variable")
     );
 }
+

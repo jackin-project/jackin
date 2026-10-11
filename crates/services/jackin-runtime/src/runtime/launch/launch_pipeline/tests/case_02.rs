@@ -43,3 +43,4 @@ fn breadcrumb_auth_mode_ignores_agents_with_no_admitted_instance() {
     let mode = breadcrumb_auth_mode(&config, Agent::Claude, Some(&ws), "smith").unwrap();
     assert_eq!(mode, AuthForwardMode::Ignore);
 }
+

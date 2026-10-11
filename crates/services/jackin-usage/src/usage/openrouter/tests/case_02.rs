@@ -88,3 +88,4 @@ fn openrouter_malformed_key_payload_is_error() {
         "malformed payload must retain decode failure"
     );
 }
+

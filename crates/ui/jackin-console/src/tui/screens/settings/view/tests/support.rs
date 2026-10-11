@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn scan_view_account() -> jackin_config::AccountConfig {
+fn scan_view_account() -> jackin_config::AccountConfig {
     jackin_config::AccountConfig {
         enabled: true,
         name: "Claude default".into(),
@@ -16,18 +16,18 @@ pub(super) fn scan_view_account() -> jackin_config::AccountConfig {
     }
 }
 
-pub(super) fn scan_view_auth() -> crate::tui::state::SettingsAuthState {
+fn scan_view_auth() -> crate::tui::state::SettingsAuthState {
     crate::tui::state::SettingsAuthState::from_accounts(BTreeMap::from([(
         "default-claude".to_owned(),
         scan_view_account(),
     )]))
 }
 
-pub(super) fn scan_view_env() -> crate::tui::state::SettingsEnvState<'static> {
+fn scan_view_env() -> crate::tui::state::SettingsEnvState<'static> {
     crate::tui::state::SettingsEnvState::from_config(&jackin_config::AppConfig::default())
 }
 
-pub(super) fn line_texts(lines: &[Line<'_>]) -> Vec<String> {
+fn line_texts(lines: &[Line<'_>]) -> Vec<String> {
     lines
         .iter()
         .map(|line| {
@@ -38,3 +38,4 @@ pub(super) fn line_texts(lines: &[Line<'_>]) -> Vec<String> {
         })
         .collect()
 }
+

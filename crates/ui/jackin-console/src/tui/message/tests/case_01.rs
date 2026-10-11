@@ -147,3 +147,4 @@ fn mount_info_refresh_source_plan_keeps_screen_target() {
     assert_eq!(settings.target, MountInfoRefreshTarget::SettingsMounts);
     assert_eq!(settings.sources, vec!["/settings"]);
 }
+

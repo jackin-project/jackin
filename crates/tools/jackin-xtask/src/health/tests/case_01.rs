@@ -240,3 +240,4 @@ fn bare_allow_vs_expect_with_reason_policy() {
         "expect with reason is not bare allow"
     );
 }
+

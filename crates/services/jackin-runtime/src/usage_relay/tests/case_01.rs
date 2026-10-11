@@ -396,3 +396,4 @@ fn launch_discovery_relay_uses_distinct_canonical_ids_for_same_surface() -> Resu
     ));
     Ok(())
 }
+

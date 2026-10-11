@@ -387,3 +387,4 @@ fn usage_cache_key_canonicalizes_provider_aliases() {
         canonical_usage_cache_key("claude", Some("Z.AI"))
     );
 }
+

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn identity() -> crate::LaunchIdentity {
+fn identity() -> crate::LaunchIdentity {
     crate::LaunchIdentity {
         role: "architect".into(),
         agent: "claude".into(),
@@ -13,3 +13,4 @@ pub(super) fn identity() -> crate::LaunchIdentity {
         container: None,
     }
 }
+

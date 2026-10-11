@@ -2,15 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn wn(name: &str) -> WorkspaceName {
+fn wn(name: &str) -> WorkspaceName {
     WorkspaceName::parse(name).unwrap()
 }
 
-pub(super) fn workspace_file_contents(paths: &JackinPaths, name: &str) -> String {
+fn workspace_file_contents(paths: &JackinPaths, name: &str) -> String {
     std::fs::read_to_string(paths.workspaces_dir.join(format!("{name}.toml"))).unwrap()
 }
 
-pub(super) fn workspace_tree_bytes(paths: &JackinPaths) -> Option<Vec<(String, Vec<u8>)>> {
+fn workspace_tree_bytes(paths: &JackinPaths) -> Option<Vec<(String, Vec<u8>)>> {
     let entries = match std::fs::read_dir(&paths.workspaces_dir) {
         Ok(entries) => entries,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return None,
@@ -29,7 +29,7 @@ pub(super) fn workspace_tree_bytes(paths: &JackinPaths) -> Option<Vec<(String, V
     Some(files)
 }
 
-pub(super) fn assert_no_staged_writes(paths: &JackinPaths) {
+fn assert_no_staged_writes(paths: &JackinPaths) {
     for directory in [&paths.config_dir, &paths.workspaces_dir] {
         let entries = std::fs::read_dir(directory).unwrap();
         for entry in entries {
@@ -43,7 +43,7 @@ pub(super) fn assert_no_staged_writes(paths: &JackinPaths) {
     }
 }
 
-pub(super) fn profile_account() -> crate::AccountConfig {
+fn profile_account() -> crate::AccountConfig {
     crate::AccountConfig {
         enabled: true,
         name: "Work".into(),
@@ -57,7 +57,7 @@ pub(super) fn profile_account() -> crate::AccountConfig {
     }
 }
 
-pub(super) fn account_workspace(source: &Path) -> WorkspaceConfig {
+fn account_workspace(source: &Path) -> WorkspaceConfig {
     WorkspaceConfig {
         workdir: "/workspace/project".into(),
         mounts: vec![MountConfig {
@@ -70,7 +70,7 @@ pub(super) fn account_workspace(source: &Path) -> WorkspaceConfig {
     }
 }
 
-pub(super) fn minimal_config_file(paths: &JackinPaths) {
+fn minimal_config_file(paths: &JackinPaths) {
     paths.ensure_base_dirs().unwrap();
     std::fs::write(
         &paths.config_file,
@@ -79,7 +79,7 @@ pub(super) fn minimal_config_file(paths: &JackinPaths) {
     .unwrap();
 }
 
-pub(super) fn claude_credentials_fixture(home: &Path) {
+fn claude_credentials_fixture(home: &Path) {
     std::fs::create_dir_all(home.join(".claude")).unwrap();
     std::fs::write(
         home.join(".claude/.credentials.json"),
@@ -87,3 +87,4 @@ pub(super) fn claude_credentials_fixture(home: &Path) {
     )
     .unwrap();
 }
+

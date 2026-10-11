@@ -352,3 +352,4 @@ fn split_close_frame_repaints_in_place_without_screen_erase() {
         "SplitClose must repaint in place under the wipe policy (no 2J)"
     );
 }
+

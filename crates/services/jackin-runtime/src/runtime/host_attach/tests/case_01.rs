@@ -377,3 +377,4 @@ fn host_file_export_idle_cleanup_removes_stale_temp_file() {
         .expect_err("stale transfer cleanup should remove active export");
     assert!(format!("{err:#}").contains("has no active start"));
 }
+

@@ -328,11 +328,11 @@ fn recorded_pty_fixtures_keep_screen_equal_to_model() {
     for (label, bytes) in [
         (
             "codex version fixture",
-            include_bytes!("../../../tests/fixtures/pty/codex-version.bin").as_slice(),
+            include_bytes!("../../tests/fixtures/pty/codex-version.bin").as_slice(),
         ),
         (
             "vim alt-screen fixture",
-            include_bytes!("../../../tests/fixtures/pty/vim-tiny-open-edit-quit.bin").as_slice(),
+            include_bytes!("../../tests/fixtures/pty/vim-tiny-open-edit-quit.bin").as_slice(),
         ),
     ] {
         let (mut mux, mut client, sid) = attached_single_pane();
@@ -340,3 +340,4 @@ fn recorded_pty_fixtures_keep_screen_equal_to_model() {
         assert_frame_conformance(&mut mux, &client, label);
     }
 }
+

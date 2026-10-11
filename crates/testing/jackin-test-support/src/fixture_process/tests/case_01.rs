@@ -185,3 +185,4 @@ fn binary_name_with_separator_is_rejected() {
         let _binary = harness.binary("../escape", &ProcessScript::new());
     }
 }
+

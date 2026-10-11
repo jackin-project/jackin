@@ -1,7 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-pub(super) const PERIOD_FIXTURE: &str = r#"{
+use super::*;
+const PERIOD_FIXTURE: &str = r#"{
     "usage": {
         "enabled": true,
         "planUsage": {"limit": 20, "totalPercentUsed": 34, "totalSpend": 6.8},
@@ -9,7 +10,7 @@ pub(super) const PERIOD_FIXTURE: &str = r#"{
     }
 }"#;
 
-pub(super) const SUMMARY_FIXTURE: &str = r#"{
+const SUMMARY_FIXTURE: &str = r#"{
     "billingCycleStart": "2026-09-01T00:00:00Z",
     "billingCycleEnd": "2026-10-01T00:00:00Z",
     "membershipType": "pro",
@@ -21,7 +22,7 @@ pub(super) const SUMMARY_FIXTURE: &str = r#"{
     "teamUsage": {"onDemand": 1.5, "pooled": 9.75}
 }"#;
 
-pub(super) fn canned_dashboard_response(request: &[u8]) -> &'static str {
+fn canned_dashboard_response(request: &[u8]) -> &'static str {
     let text = String::from_utf8_lossy(request);
     if text.contains("GetCurrentPeriodUsage") {
         PERIOD_FIXTURE
@@ -34,3 +35,4 @@ pub(super) fn canned_dashboard_response(request: &[u8]) -> &'static str {
         "{}"
     }
 }
+

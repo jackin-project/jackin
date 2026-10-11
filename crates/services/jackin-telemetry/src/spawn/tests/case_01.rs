@@ -358,3 +358,4 @@ async fn detached_helpers_record_panic_and_abort() {
         span_attr(span, crate::schema::attrs::OUTCOME).as_deref() == Some("cancellation")
     }));
 }
+

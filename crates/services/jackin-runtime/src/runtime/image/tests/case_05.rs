@@ -36,3 +36,4 @@ fn custom_construct_identity_changes_recipe_hash() {
         "construct image identity must participate in the recipe hash"
     );
 }
+

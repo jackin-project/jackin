@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn key(code: KeyCode) -> KeyEvent {
+fn key(code: KeyCode) -> KeyEvent {
     KeyEvent {
         code,
         modifiers: KeyModifiers::NONE,
@@ -11,18 +11,18 @@ pub(super) fn key(code: KeyCode) -> KeyEvent {
     }
 }
 
-pub(super) fn make_state_at(path: PathBuf) -> FileBrowserState {
+fn make_state_at(path: PathBuf) -> FileBrowserState {
     FileBrowserState::from_listing(crate::services::file_browser::listing_at(
         path.clone(),
         path,
     ))
 }
 
-pub(super) fn state_rooted_at(root: PathBuf, cwd: PathBuf) -> FileBrowserState {
+fn state_rooted_at(root: PathBuf, cwd: PathBuf) -> FileBrowserState {
     FileBrowserState::from_listing(crate::services::file_browser::listing_at(root, cwd))
 }
 
-pub(super) fn apply_with_services(
+fn apply_with_services(
     state: &mut FileBrowserState,
     outcome: FileBrowserOutcome<PathBuf>,
 ) -> FileBrowserOutcome<PathBuf> {
@@ -53,7 +53,7 @@ pub(super) fn apply_with_services(
     }
 }
 
-pub(super) fn handle_with_services(
+fn handle_with_services(
     state: &mut FileBrowserState,
     key: KeyEvent,
 ) -> FileBrowserOutcome<PathBuf> {
@@ -61,7 +61,7 @@ pub(super) fn handle_with_services(
     apply_with_services(state, outcome)
 }
 
-pub(super) fn commit_with_services(
+fn commit_with_services(
     state: &mut FileBrowserState,
     target: PathBuf,
 ) -> FileBrowserOutcome<PathBuf> {
@@ -69,7 +69,7 @@ pub(super) fn commit_with_services(
     apply_with_services(state, outcome)
 }
 
-pub(super) fn manufactured_modal_area() -> Rect {
+fn manufactured_modal_area() -> Rect {
     // Mirrors the shared file-browser modal rect for a term of 120x40:
     //   w = 120 * 70 / 100 = 84; h = 22.
     //   x = 0 + (120 - 84)/2 = 18; y = 0 + (40 - 22)/2 = 9.
@@ -80,3 +80,4 @@ pub(super) fn manufactured_modal_area() -> Rect {
         height: 22,
     }
 }
+

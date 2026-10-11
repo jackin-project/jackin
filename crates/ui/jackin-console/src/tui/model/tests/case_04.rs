@@ -393,3 +393,4 @@ fn console_modal_restores_auth_form_modal() {
         }) if literal_buffer == "existing"
     ));
 }
+

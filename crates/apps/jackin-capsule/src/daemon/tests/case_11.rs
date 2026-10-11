@@ -349,3 +349,4 @@ fn scrolled_inline_history_preserves_color_and_selection_highlight() {
         "selection overlay should repaint scrolled inline history with reverse-video red styling: {selected:?}"
     );
 }
+

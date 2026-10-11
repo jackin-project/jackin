@@ -366,3 +366,4 @@ fn report_preserves_shell_integration_source() {
         AgentStatusSource::ShellIntegration
     );
 }
+

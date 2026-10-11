@@ -390,3 +390,4 @@ fn catalog_purge_prevents_restart_resurrection() {
         UsageCoordinationErrorKind::CatalogRevoked
     );
 }
+

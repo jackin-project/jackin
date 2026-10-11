@@ -302,3 +302,4 @@ async fn canceled_sibling_auth_prewarm_does_not_release_foreground_mount_lease()
     .await
     .unwrap();
 }
+

@@ -364,3 +364,4 @@ fn agent_picker_section_labels_are_bare_not_dash_padded() {
         panic!("expected FilterPicker snapshot");
     }
 }
+

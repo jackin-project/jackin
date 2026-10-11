@@ -262,3 +262,4 @@ fn kitty_word_characters_all_join() {
 fn apostrophes_survive_inside_prose_words() {
     assert_eq!(word_at_col("it don't break", 6).as_deref(), Some("don't"));
 }
+

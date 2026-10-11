@@ -375,3 +375,4 @@ fn plain_row_renders_without_op_marker() {
         "plain-text row must not render the `[op]` marker; dump:\n{dump}"
     );
 }
+

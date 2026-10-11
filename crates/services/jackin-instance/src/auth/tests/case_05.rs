@@ -49,7 +49,7 @@ fn copy_host_claude_json_copies_present_file() {
     )
     .unwrap();
 
-    copy_host_claude_json(&host, &dest).unwrap();
+    super::copy_host_claude_json(&host, &dest).unwrap();
 
     assert!(
         std::fs::read_to_string(dest)
@@ -66,7 +66,7 @@ fn copy_host_claude_json_writes_empty_object_when_absent() {
     let dest = dest_dir.join(".claude.json");
     std::fs::create_dir_all(&dest_dir).unwrap();
 
-    copy_host_claude_json(&host, &dest).unwrap();
+    super::copy_host_claude_json(&host, &dest).unwrap();
 
     assert_eq!(std::fs::read_to_string(dest).unwrap(), "{}");
 }
@@ -80,7 +80,7 @@ fn copy_host_claude_json_propagates_read_errors_without_writing_empty_object() {
     std::fs::create_dir_all(&host).unwrap();
     std::fs::create_dir_all(&dest_dir).unwrap();
 
-    let err = copy_host_claude_json(&host, &dest).unwrap_err();
+    let err = super::copy_host_claude_json(&host, &dest).unwrap_err();
 
     assert!(
         err.to_string().contains("reading Claude account metadata"),
@@ -376,3 +376,4 @@ fn opencode_valid_credentials_keep_private_file_inode() {
     assert_eq!(mounted, Some(auth_json.clone()));
     assert_eq!(std::fs::metadata(auth_json).unwrap().ino(), first_inode);
 }
+

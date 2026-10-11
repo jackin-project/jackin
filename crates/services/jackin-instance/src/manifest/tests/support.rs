@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn sample_manifest() -> InstanceManifest {
+fn sample_manifest() -> InstanceManifest {
     InstanceManifest::new(NewInstanceManifest {
         container_base: "jk-k7p9m2xq-workspace-agent",
         workspace_name: Some("workspace"),
@@ -27,3 +27,4 @@ pub(super) fn sample_manifest() -> InstanceManifest {
         supported_agents: vec![],
     })
 }
+

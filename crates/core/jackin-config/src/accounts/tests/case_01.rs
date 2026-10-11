@@ -376,3 +376,4 @@ fn profile_selector_uses_canonical_wire_fields_without_aliases() {
     );
     toml::from_str::<ProfileSelector>("provider = \"openai\"\nprofile = \"work\"\n").unwrap_err();
 }
+

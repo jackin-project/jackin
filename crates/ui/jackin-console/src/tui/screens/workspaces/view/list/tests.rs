@@ -13,7 +13,7 @@ use crate::tui::mount_display::format_config_mount_rows as format_mount_rows;
 
 use crate::tui::mount_display::mount_path_width;
 
-use super::{instance_details_pane, render_details_pane, render_list_body};
+use super::{instance_details_pane, render_list_body};
 
 use crate::tui::layout::list::clamp_list_scroll_for_area;
 
@@ -49,6 +49,7 @@ use crate::tui::state::{MountInfoCache, WorkspaceSummary};
 use ratatui::Frame;
 
 use ratatui::buffer::Buffer;
+
 
 mod support;
 use support::*;

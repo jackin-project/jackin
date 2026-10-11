@@ -364,3 +364,4 @@ fn disc_gemini_profile_mints_material_with_or_without_label() {
         ProfileValidation::Malformed
     ));
 }
+

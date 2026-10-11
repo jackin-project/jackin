@@ -393,3 +393,4 @@ async fn gc_removes_orphaned_dind_and_network() {
             .any(|c| c.contains("docker network rm jk-agent-smith-net"))
     );
 }
+

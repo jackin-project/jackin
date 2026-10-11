@@ -15,6 +15,7 @@ use ratatui::{Terminal, backend::TestBackend};
 
 use termrock::style::DesignSystem;
 
+
 mod support;
 use support::*;
 mod case_01;

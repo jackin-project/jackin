@@ -301,7 +301,7 @@ fn sensitive_mount_prompt_lists_every_hit_src_and_reason() {
 fn docker_build_failure_cli_error_contains_no_local_artifact_paths() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let run = jackin_diagnostics::RunDiagnostics::start(
         &paths,
         false,
@@ -334,7 +334,7 @@ fn docker_build_failure_cli_error_contains_no_local_artifact_paths() {
 fn derived_image_cli_error_preserves_original_without_docker_output() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let run = jackin_diagnostics::RunDiagnostics::start(
         &paths,
         false,
@@ -355,3 +355,4 @@ fn derived_image_cli_error_preserves_original_without_docker_output() {
     assert!(!rendered.contains("Docker build command failed"));
     assert!(!rendered.contains("docker output"));
 }
+

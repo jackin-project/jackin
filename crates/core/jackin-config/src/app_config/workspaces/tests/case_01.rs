@@ -382,3 +382,4 @@ fn edit_workspace_missing_workdir_mount_reports_path_and_preserves_original() {
     );
     assert_eq!(config.workspaces.get(name.as_str()).unwrap(), &original);
 }
+

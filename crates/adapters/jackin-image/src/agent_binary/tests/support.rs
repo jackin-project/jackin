@@ -2,11 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) const DOWNLOAD_WIRE_CHILD: &str = "JACKIN_DOWNLOAD_WIRE_CHILD";
+const DOWNLOAD_WIRE_CHILD: &str = "JACKIN_DOWNLOAD_WIRE_CHILD";
 
-pub(super) const DOWNLOAD_WIRE_TEST: &str = "agent_binary::tests::case_01::conformance_wire_download_cache_and_retry_are_bounded_and_private";
+const DOWNLOAD_WIRE_TEST: &str =
+    "agent_binary::tests::case_01::conformance_wire_download_cache_and_retry_are_bounded_and_private";
 
-pub(super) fn dispatch_download_wire_child() -> Result<bool> {
+fn dispatch_download_wire_child() -> Result<bool> {
     if std::env::var_os(DOWNLOAD_WIRE_CHILD).is_some() {
         return Ok(false);
     }
@@ -19,7 +20,7 @@ pub(super) fn dispatch_download_wire_child() -> Result<bool> {
 }
 
 #[derive(Clone)]
-pub(super) struct RetryCounter(Arc<AtomicUsize>);
+struct RetryCounter(Arc<AtomicUsize>);
 
 impl<S: tracing::Subscriber> Layer<S> for RetryCounter {
     fn on_event(&self, event: &tracing::Event<'_>, _context: Context<'_, S>) {
@@ -29,7 +30,7 @@ impl<S: tracing::Subscriber> Layer<S> for RetryCounter {
     }
 }
 
-pub(super) fn capture_retries() -> (Arc<AtomicUsize>, tracing::subscriber::DefaultGuard) {
+fn capture_retries() -> (Arc<AtomicUsize>, tracing::subscriber::DefaultGuard) {
     let count = Arc::new(AtomicUsize::new(0));
     let guard = tracing::subscriber::set_default(tracing_subscriber::layer::SubscriberExt::with(
         tracing_subscriber::registry(),
@@ -38,7 +39,7 @@ pub(super) fn capture_retries() -> (Arc<AtomicUsize>, tracing::subscriber::Defau
     (count, guard)
 }
 
-pub(super) fn exercise_private_cache(
+fn exercise_private_cache(
     runtime: &tokio::runtime::Runtime,
 ) -> Result<(tempfile::TempDir, String, String)> {
     let temp = tempfile::tempdir()?;
@@ -57,7 +58,7 @@ pub(super) fn exercise_private_cache(
     ))
 }
 
-pub(super) fn exercise_deceptive_host(runtime: &tokio::runtime::Runtime, url: &str) -> Result<()> {
+fn exercise_deceptive_host(runtime: &tokio::runtime::Runtime, url: &str) -> Result<()> {
     runtime.block_on(crate::telemetry_boundary::download_request(
         crate::telemetry_boundary::DownloadRoute::AgentMetadata,
         url,
@@ -65,7 +66,7 @@ pub(super) fn exercise_deceptive_host(runtime: &tokio::runtime::Runtime, url: &s
     ))
 }
 
-pub(super) fn emit_all_cache_decisions() {
+fn emit_all_cache_decisions() {
     for name in jackin_telemetry::schema::enums::CacheName::ALL
         .iter()
         .copied()
@@ -79,11 +80,11 @@ pub(super) fn emit_all_cache_decisions() {
     }
 }
 
-pub(super) fn release_fixture() -> AgentRelease {
+fn release_fixture() -> AgentRelease {
     release_fixture_for(Agent::Claude, "1.2.3")
 }
 
-pub(super) fn release_fixture_for(agent: Agent, version: &str) -> AgentRelease {
+fn release_fixture_for(agent: Agent, version: &str) -> AgentRelease {
     AgentRelease {
         agent,
         version: version.to_owned(),
@@ -92,3 +93,4 @@ pub(super) fn release_fixture_for(agent: Agent, version: &str) -> AgentRelease {
         archive_member: None,
     }
 }
+

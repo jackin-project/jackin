@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn field(id: &str, section_id: Option<&str>, reference: &str) -> OpPickerField {
+fn field(id: &str, section_id: Option<&str>, reference: &str) -> OpPickerField {
     OpPickerField {
         id: id.to_owned(),
         section_id: section_id.map(str::to_owned),
@@ -13,14 +13,14 @@ pub(super) fn field(id: &str, section_id: Option<&str>, reference: &str) -> OpPi
     }
 }
 
-pub(super) struct RenderStateFixture {
+struct RenderStateFixture {
     stage: OpPickerStage,
     selected: Option<usize>,
-    pub(super) load_state: OpLoadState,
+    load_state: OpLoadState,
 }
 
 impl RenderStateFixture {
-    pub(super) const fn new(stage: OpPickerStage, selected: Option<usize>) -> Self {
+    const fn new(stage: OpPickerStage, selected: Option<usize>) -> Self {
         Self {
             stage,
             selected,
@@ -142,11 +142,7 @@ impl OpPickerRenderState for RenderStateFixture {
     }
 }
 
-pub(super) fn render_picker_buffer(
-    state: &RenderStateFixture,
-    w: u16,
-    h: u16,
-) -> ratatui::buffer::Buffer {
+fn render_picker_buffer(state: &RenderStateFixture, w: u16, h: u16) -> ratatui::buffer::Buffer {
     use ratatui::{Terminal, backend::TestBackend, layout::Rect};
     let backend = TestBackend::new(w, h);
     let mut term = Terminal::new(backend).unwrap();
@@ -154,3 +150,4 @@ pub(super) fn render_picker_buffer(
         .unwrap();
     term.backend().buffer().clone()
 }
+

@@ -196,3 +196,4 @@ account = 1"#,
         assert_eq!(std::fs::read_to_string(path).unwrap(), original, "{name}");
     }
 }
+

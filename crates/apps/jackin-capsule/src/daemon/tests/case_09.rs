@@ -392,3 +392,4 @@ fn read_context_from_git_metadata_resolves_worktree_head_via_commondir() {
     assert_eq!(context.branch_name(), Some(&branch("feat/wt")));
     assert_eq!(context.head(), Some(&oid('1')));
 }
+

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn open_runtime(dir: &Path) -> HostUsageRuntime {
+fn open_runtime(dir: &Path) -> HostUsageRuntime {
     let mut runtime = HostUsageRuntime::new();
     runtime
         .open(HostRuntimeConfig::under_data_dir(dir))
@@ -10,7 +10,7 @@ pub(super) fn open_runtime(dir: &Path) -> HostUsageRuntime {
     runtime
 }
 
-pub(super) fn codex_fixture_view() -> FocusedUsageView {
+fn codex_fixture_view() -> FocusedUsageView {
     FocusedUsageView {
         focused_agent: Some("codex".to_owned()),
         focused_provider: Some("Codex".to_owned()),
@@ -62,7 +62,7 @@ pub(super) fn codex_fixture_view() -> FocusedUsageView {
     }
 }
 
-pub(super) fn canonical_discovered_account(
+fn canonical_discovered_account(
     surface: HostSurfaceId,
     account_label: &str,
 ) -> DiscoveredAccountDescriptor {
@@ -80,11 +80,11 @@ pub(super) fn canonical_discovered_account(
     }
 }
 
-pub(super) fn inject_remaining(runtime: &mut HostUsageRuntime, surface_id: &str, remaining: u8) {
+fn inject_remaining(runtime: &mut HostUsageRuntime, surface_id: &str, remaining: u8) {
     inject_remaining_at(runtime, surface_id, remaining, None);
 }
 
-pub(super) fn inject_remaining_at(
+fn inject_remaining_at(
     runtime: &mut HostUsageRuntime,
     surface_id: &str,
     remaining: u8,
@@ -123,7 +123,7 @@ pub(super) fn inject_remaining_at(
     runtime.inject_snapshot(surface_id, view).expect("inject");
 }
 
-pub(super) fn inject_dual_remaining(
+fn inject_dual_remaining(
     runtime: &mut HostUsageRuntime,
     surface_id: &str,
     session_remaining: u8,
@@ -169,7 +169,7 @@ pub(super) fn inject_dual_remaining(
         .expect("inject dual");
 }
 
-pub(super) fn seeded_personal_account() -> FocusedUsageView {
+fn seeded_personal_account() -> FocusedUsageView {
     let mut account = FocusedUsageView::unavailable("seed", 1);
     account.status = UsageSnapshotStatus::Fresh;
     account.source = UsageSource::ProviderApi;
@@ -195,7 +195,7 @@ pub(super) fn seeded_personal_account() -> FocusedUsageView {
     account
 }
 
-pub(super) fn glance_weekly_bucket(remaining: u8) -> QuotaBucketView {
+fn glance_weekly_bucket(remaining: u8) -> QuotaBucketView {
     QuotaBucketView {
         label: "Weekly".to_owned(),
         used_label: None,
@@ -212,7 +212,7 @@ pub(super) fn glance_weekly_bucket(remaining: u8) -> QuotaBucketView {
     }
 }
 
-pub(super) fn glance_daily_bucket(remaining: u8) -> QuotaBucketView {
+fn glance_daily_bucket(remaining: u8) -> QuotaBucketView {
     let mut bucket = glance_weekly_bucket(remaining);
     bucket.label = "Amp Free".to_owned();
     bucket.status_slot = Some(StatusSlot::Daily);
@@ -221,7 +221,7 @@ pub(super) fn glance_daily_bucket(remaining: u8) -> QuotaBucketView {
     bucket
 }
 
-pub(super) fn glance_view(
+fn glance_view(
     provider_label: &str,
     origin: Option<&str>,
     buckets: Vec<QuotaBucketView>,
@@ -249,8 +249,8 @@ pub(super) fn glance_view(
     }
 }
 
-pub(super) struct BatchCountingExecutor {
-    pub(super) calls: AtomicUsize,
+struct BatchCountingExecutor {
+    calls: AtomicUsize,
 }
 
 impl crate::coordinator::UsageProviderExecutor for BatchCountingExecutor {
@@ -264,14 +264,14 @@ impl crate::coordinator::UsageProviderExecutor for BatchCountingExecutor {
     }
 }
 
-pub(super) fn batch_capability(account_id: &str, surface_id: &str) -> UsageAccountCapability {
+fn batch_capability(account_id: &str, surface_id: &str) -> UsageAccountCapability {
     UsageAccountCapability {
         account_id: account_id.to_owned(),
         surface_id: surface_id.to_owned(),
     }
 }
 
-pub(super) fn batch_broker() -> (
+fn batch_broker() -> (
     tempfile::TempDir,
     UsageBrokerClient,
     Arc<BatchCountingExecutor>,
@@ -290,7 +290,7 @@ pub(super) fn batch_broker() -> (
     (temp, client, executor)
 }
 
-pub(super) fn join_batch(
+fn join_batch(
     client: &UsageBrokerClient,
     batch: &[(
         UsageAccountCapability,
@@ -309,8 +309,8 @@ pub(super) fn join_batch(
     }
 }
 
-pub(super) struct BatchRateLimitedExecutor {
-    pub(super) calls: AtomicUsize,
+struct BatchRateLimitedExecutor {
+    calls: AtomicUsize,
 }
 
 impl crate::coordinator::UsageProviderExecutor for BatchRateLimitedExecutor {
@@ -328,7 +328,7 @@ impl crate::coordinator::UsageProviderExecutor for BatchRateLimitedExecutor {
     }
 }
 
-pub(super) fn overlong_broker_data_dir(temp: &tempfile::TempDir) -> PathBuf {
+fn overlong_broker_data_dir(temp: &tempfile::TempDir) -> PathBuf {
     let suffix_len = Path::new("usage-broker/run/usage-broker.sock")
         .as_os_str()
         .len()
@@ -338,9 +338,10 @@ pub(super) fn overlong_broker_data_dir(temp: &tempfile::TempDir) -> PathBuf {
     temp.path().join(padding)
 }
 
-pub(super) fn full_broker_socket_path(data_dir: &Path) -> PathBuf {
+fn full_broker_socket_path(data_dir: &Path) -> PathBuf {
     data_dir
         .join("usage-broker")
         .join("run")
         .join("usage-broker.sock")
 }
+

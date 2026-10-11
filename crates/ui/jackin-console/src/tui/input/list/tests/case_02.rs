@@ -377,3 +377,4 @@ fn confirm_instance_purge_n_dismisses_without_dispatch() {
         "N must reset stage to List"
     );
 }
+

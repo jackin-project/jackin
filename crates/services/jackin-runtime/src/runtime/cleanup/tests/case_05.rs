@@ -225,3 +225,4 @@ async fn prune_boundaries_reject_coordination_namespace_overlap_before_mutation(
     );
     assert_eq!(std::fs::read(sentinel).unwrap(), b"retained");
 }
+

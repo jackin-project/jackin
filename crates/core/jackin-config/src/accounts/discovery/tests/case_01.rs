@@ -395,3 +395,4 @@ fn opencode_database_only_source_fails_closed_without_registering_account() {
     );
     assert!(!format!("{issue:?}").contains("database fixture"));
 }
+

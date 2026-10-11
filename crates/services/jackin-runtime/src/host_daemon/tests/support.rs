@@ -3,9 +3,9 @@
 
 use super::*;
 #[derive(Debug, Default)]
-pub(super) struct RecordingNotifier {
-    pub(super) notifications: Vec<AttentionNotification>,
-    pub(super) muted: bool,
+struct RecordingNotifier {
+    notifications: Vec<AttentionNotification>,
+    muted: bool,
 }
 
 impl AttentionNotifier for RecordingNotifier {
@@ -20,8 +20,8 @@ impl AttentionNotifier for RecordingNotifier {
 }
 
 #[derive(Debug, Default)]
-pub(super) struct RecordingDispatcher {
-    pub(super) commands: Vec<NotificationCommand>,
+struct RecordingDispatcher {
+    commands: Vec<NotificationCommand>,
 }
 
 impl NotificationDispatcher for RecordingDispatcher {
@@ -31,16 +31,14 @@ impl NotificationDispatcher for RecordingDispatcher {
     }
 }
 
-pub(super) fn layout() -> (tempfile::TempDir, JackinPaths, DaemonLayout) {
+fn layout() -> (tempfile::TempDir, JackinPaths, DaemonLayout) {
     let temp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     let layout = DaemonLayout::new(&paths);
     (temp, paths, layout)
 }
 
-pub(super) fn serialized_daemon_spans(
-    context: TelemetryContext,
-) -> Vec<jackin_diagnostics::TestSpanSnapshot> {
+fn serialized_daemon_spans(context: TelemetryContext) -> Vec<jackin_diagnostics::TestSpanSnapshot> {
     let (_temp, _paths, layout) = layout();
     let mut attention = AttentionAdapter::new(RecordingNotifier::default());
     let request = DaemonRequest {
@@ -66,7 +64,7 @@ pub(super) fn serialized_daemon_spans(
     export.finished_spans()
 }
 
-pub(super) fn snapshot(state: AgentState) -> InstanceSnapshot {
+fn snapshot(state: AgentState) -> InstanceSnapshot {
     InstanceSnapshot {
         active_tab: 0,
         tabs: vec![TabSnapshot {
@@ -86,7 +84,7 @@ pub(super) fn snapshot(state: AgentState) -> InstanceSnapshot {
     }
 }
 
-pub(super) fn pane(state: AgentState) -> AttentionPaneStatus {
+fn pane(state: AgentState) -> AttentionPaneStatus {
     AttentionPaneStatus {
         session_id: 7,
         label: "Codex".to_owned(),
@@ -94,3 +92,4 @@ pub(super) fn pane(state: AgentState) -> AttentionPaneStatus {
         state,
     }
 }
+

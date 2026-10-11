@@ -387,3 +387,4 @@ fn parse_hosts_yml_rejects_malformed_yaml() {
     let text = "github.com:\n    oauth_token: \'broken\"\n";
     assert!(parse_gh_hosts_yml(text).is_none());
 }
+

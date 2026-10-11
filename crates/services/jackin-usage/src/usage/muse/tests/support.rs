@@ -1,7 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-pub(super) const MUSE_USAGE_READ_FIXTURE: &str = r#"{
+use super::*;
+const MUSE_USAGE_READ_FIXTURE: &str = r#"{
     "usage": {
         "observedAtMs": 1780000000000,
         "tier": "Muse Pro",
@@ -14,7 +15,7 @@ pub(super) const MUSE_USAGE_READ_FIXTURE: &str = r#"{
     }
 }"#;
 
-pub(super) const MUSE_AUTH_JSON_FIXTURE: &str = r#"{
+const MUSE_AUTH_JSON_FIXTURE: &str = r#"{
     "schema_version": 2,
     "providers": {
         "meta": {
@@ -28,13 +29,14 @@ pub(super) const MUSE_AUTH_JSON_FIXTURE: &str = r#"{
     }
 }"#;
 
-pub(super) fn fixture_value(fixture: &str) -> serde_json::Value {
+fn fixture_value(fixture: &str) -> serde_json::Value {
     serde_json::from_str(fixture).expect("fixture parses")
 }
 
-pub(super) fn assert_near(actual: f64, expected: f64) {
+fn assert_near(actual: f64, expected: f64) {
     assert!(
         (actual - expected).abs() < f64::EPSILON,
         "expected {expected}, got {actual}"
     );
 }
+

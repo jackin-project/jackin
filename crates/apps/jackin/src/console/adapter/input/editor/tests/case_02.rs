@@ -379,3 +379,4 @@ async fn role_input_trust_decline_keeps_registered_role_untrusted() {
         "declined role must not be persisted as trusted:\n{persisted}"
     );
 }
+

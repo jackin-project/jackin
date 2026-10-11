@@ -393,3 +393,4 @@ fn all_subcommand_help_pages_show_banner() {
         );
     }
 }
+

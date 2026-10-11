@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn graph() -> WorkspaceGraph {
+fn graph() -> WorkspaceGraph {
     WorkspaceGraph {
         names: BTreeMap::from([
             ("image-id".into(), "jackin-image".into()),
@@ -36,7 +36,7 @@ pub(super) fn graph() -> WorkspaceGraph {
     }
 }
 
-pub(super) fn nested_fixtures() -> Vec<NestedPackage> {
+fn nested_fixtures() -> Vec<NestedPackage> {
     vec![
         NestedPackage {
             dir: PathBuf::from("crates/services/jackin-agent-status/fuzz"),
@@ -62,7 +62,7 @@ pub(super) fn nested_fixtures() -> Vec<NestedPackage> {
     ]
 }
 
-pub(super) fn inputs_fixture() -> InputOwners {
+fn inputs_fixture() -> InputOwners {
     InputOwners {
         members: BTreeMap::from([(
             PathBuf::from("docker/runtime/entrypoint.sh"),
@@ -74,7 +74,7 @@ pub(super) fn inputs_fixture() -> InputOwners {
     }
 }
 
-pub(super) fn workspace_root() -> PathBuf {
+fn workspace_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .and_then(|path| path.parent())
@@ -83,7 +83,7 @@ pub(super) fn workspace_root() -> PathBuf {
         .to_path_buf()
 }
 
-pub(super) fn rust_sources(root: &Path) -> Vec<PathBuf> {
+fn rust_sources(root: &Path) -> Vec<PathBuf> {
     let mut sources = Vec::new();
     let mut stack = vec![root.join("crates"), root.join("vendor")];
     while let Some(dir) = stack.pop() {
@@ -104,7 +104,7 @@ pub(super) fn rust_sources(root: &Path) -> Vec<PathBuf> {
     sources
 }
 
-pub(super) fn find_include_macros(source: &str) -> Vec<usize> {
+fn find_include_macros(source: &str) -> Vec<usize> {
     let mut hits = Vec::new();
     let mut index = 0;
     while index < source.len() {
@@ -125,7 +125,7 @@ pub(super) fn find_include_macros(source: &str) -> Vec<usize> {
     hits
 }
 
-pub(super) fn skip_ascii_trivia(mut source: &str) -> &str {
+fn skip_ascii_trivia(mut source: &str) -> &str {
     loop {
         let trimmed = source.trim_start_matches([' ', '\t', '\n', '\r']);
         if let Some(rest) = trimmed.strip_prefix("//") {
@@ -143,3 +143,4 @@ pub(super) fn skip_ascii_trivia(mut source: &str) -> &str {
         }
     }
 }
+

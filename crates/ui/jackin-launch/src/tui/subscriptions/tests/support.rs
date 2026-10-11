@@ -2,14 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) struct RecordingTerminal {
+struct RecordingTerminal {
     copied: Mutex<Vec<String>>,
     compact: Mutex<Vec<(String, String)>>,
     debug: Mutex<Vec<(String, String)>>,
 }
 
 impl RecordingTerminal {
-    pub(super) const fn new() -> Self {
+    const fn new() -> Self {
         Self {
             copied: Mutex::new(Vec::new()),
             compact: Mutex::new(Vec::new()),
@@ -17,15 +17,15 @@ impl RecordingTerminal {
         }
     }
 
-    pub(super) fn copied(&self) -> Vec<String> {
+    fn copied(&self) -> Vec<String> {
         self.copied.lock().expect("test clipboard lock").clone()
     }
 
-    pub(super) fn compact(&self) -> Vec<(String, String)> {
+    fn compact(&self) -> Vec<(String, String)> {
         self.compact.lock().expect("test compact lock").clone()
     }
 
-    pub(super) fn debug(&self) -> Vec<(String, String)> {
+    fn debug(&self) -> Vec<(String, String)> {
         self.debug.lock().expect("test debug lock").clone()
     }
 }
@@ -66,7 +66,7 @@ impl LaunchHostTerminal for RecordingTerminal {
     }
 }
 
-pub(super) fn hit_point_for_payload(
+fn hit_point_for_payload(
     area: Rect,
     state: &crate::tui::components::container_info::ContainerInfoState,
     payload: &str,
@@ -84,7 +84,7 @@ pub(super) fn hit_point_for_payload(
     panic!("copy target for {payload:?} not found");
 }
 
-pub(super) fn failure_failure() -> LaunchFailure {
+fn failure_failure() -> LaunchFailure {
     LaunchFailure {
         title: "Build failed".to_owned(),
         summary: "docker build failed".to_owned(),
@@ -94,9 +94,10 @@ pub(super) fn failure_failure() -> LaunchFailure {
     }
 }
 
-pub(super) fn quit_confirm_view() -> crate::LaunchView {
+fn quit_confirm_view() -> crate::LaunchView {
     let mut view = crate::initial_view();
     view.quit_confirm =
         Some(crate::tui::components::prompts::PromptConfirm::new("Exit jackin❯?").with_focus_yes());
     view
 }
+

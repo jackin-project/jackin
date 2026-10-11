@@ -3,7 +3,6 @@
 
 //! Tests for `view`.
 
-use super::super::model;
 use super::*;
 
 use crate::tui::components::editor_rows::AuthSourceDisplay;
@@ -11,6 +10,7 @@ use crate::tui::components::editor_rows::AuthSourceDisplay;
 use crate::tui::components::editor_rows::{AuthSourceFolderDisplay, AuthSourceFolderKind};
 
 use crate::tui::state::SettingsTab;
+
 
 mod support;
 use support::*;

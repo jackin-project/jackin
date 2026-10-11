@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn profile(name: &str) -> AccountConfig {
+fn profile(name: &str) -> AccountConfig {
     AccountConfig {
         enabled: true,
         name: name.into(),
@@ -16,7 +16,7 @@ pub(super) fn profile(name: &str) -> AccountConfig {
     }
 }
 
-pub(super) fn config() -> (AppConfig, WorkspaceName) {
+fn config() -> (AppConfig, WorkspaceName) {
     let mut cfg = AppConfig::default();
     cfg.accounts.insert("personal".into(), profile("Personal"));
     cfg.accounts.insert("work".into(), profile("Work"));
@@ -26,7 +26,7 @@ pub(super) fn config() -> (AppConfig, WorkspaceName) {
     (cfg, ws)
 }
 
-pub(super) fn api_key(provider: AiProvider, model: Option<&str>) -> AccountConfig {
+fn api_key(provider: AiProvider, model: Option<&str>) -> AccountConfig {
     AccountConfig {
         enabled: true,
         name: format!("{provider} key"),
@@ -39,7 +39,7 @@ pub(super) fn api_key(provider: AiProvider, model: Option<&str>) -> AccountConfi
     }
 }
 
-pub(super) fn launch_fixture() -> (AppConfig, WorkspaceName) {
+fn launch_fixture() -> (AppConfig, WorkspaceName) {
     let mut cfg = AppConfig::default();
     cfg.accounts.insert("claude-work".into(), profile("Work"));
     let mut personal = profile("Personal");
@@ -90,3 +90,4 @@ pub(super) fn launch_fixture() -> (AppConfig, WorkspaceName) {
     cfg.workspaces.insert(ws.as_str().into(), workspace);
     (cfg, ws)
 }
+

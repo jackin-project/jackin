@@ -370,3 +370,4 @@ fn list_pre_render_plan_combines_scroll_reset_and_focus() {
         }
     );
 }
+

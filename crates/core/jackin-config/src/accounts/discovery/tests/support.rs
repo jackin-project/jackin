@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn write_codex_fixture(directory: &Path, token: &str) {
+fn write_codex_fixture(directory: &Path, token: &str) {
     std::fs::create_dir_all(directory).unwrap();
     std::fs::write(
         directory.join("auth.json"),
@@ -11,10 +11,11 @@ pub(super) fn write_codex_fixture(directory: &Path, token: &str) {
     .unwrap();
 }
 
-pub(super) fn codex_accounts(report: &DiscoveryReport) -> Vec<&DiscoveredAccount> {
+fn codex_accounts(report: &DiscoveryReport) -> Vec<&DiscoveredAccount> {
     report
         .accounts
         .iter()
         .filter(|account| account.agent == Agent::Codex)
         .collect()
 }
+

@@ -151,3 +151,4 @@ fn launch_debug_info_hides_status_footer_when_debug_disabled() {
         "non-debug Debug info must not keep the status footer visible: {bottom:?}"
     );
 }
+

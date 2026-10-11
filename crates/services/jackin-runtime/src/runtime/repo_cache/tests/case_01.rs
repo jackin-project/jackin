@@ -362,3 +362,4 @@ plugins = []
         call.contains("git clone https://github.com/jackin-project/jackin-agent-smith.git")
     }));
 }
+

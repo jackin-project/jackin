@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) type TestEditorState = EditorState<MountInfoCache, (), (), EnvValue, (), (), (), ()>;
+type TestEditorState = EditorState<MountInfoCache, (), (), EnvValue, (), (), (), ()>;
 
-pub(super) fn empty_workspace_preview() -> WorkspaceSavePreview {
+fn empty_workspace_preview() -> WorkspaceSavePreview {
     WorkspaceSavePreview {
         mode: WorkspaceSaveMode::Edit {
             original_name: "demo".to_owned(),
@@ -28,7 +28,7 @@ pub(super) fn empty_workspace_preview() -> WorkspaceSavePreview {
     }
 }
 
-pub(super) fn empty_settings_preview() -> SettingsSavePreview {
+fn empty_settings_preview() -> SettingsSavePreview {
     SettingsSavePreview {
         general: SettingsGeneralPreview {
             original_toggles: SettingsGeneralToggles::default(),
@@ -49,7 +49,7 @@ pub(super) fn empty_settings_preview() -> SettingsSavePreview {
     }
 }
 
-pub(super) fn line_text(lines: &[ratatui::text::Line<'_>]) -> String {
+fn line_text(lines: &[ratatui::text::Line<'_>]) -> String {
     lines
         .iter()
         .map(|line| {
@@ -62,14 +62,14 @@ pub(super) fn line_text(lines: &[ratatui::text::Line<'_>]) -> String {
         .join("\n")
 }
 
-pub(super) fn edit_lines(original: WorkspaceConfig, pending: WorkspaceConfig) -> String {
+fn edit_lines(original: WorkspaceConfig, pending: WorkspaceConfig) -> String {
     let config = AppConfig::default();
     let mut editor = TestEditorState::new_edit("demo".to_owned(), original);
     editor.pending = pending;
     line_text(&build_workspace_save_lines(&editor, &config, &[]))
 }
 
-pub(super) fn account(secret: &str) -> AccountConfig {
+fn account(secret: &str) -> AccountConfig {
     AccountConfig {
         enabled: true,
         name: "Work".into(),
@@ -81,3 +81,4 @@ pub(super) fn account(secret: &str) -> AccountConfig {
         },
     }
 }
+

@@ -394,3 +394,4 @@ fn reporter_install_failure_message_names_agent_and_error() {
     assert!(message.contains("non-fatal"));
     assert!(message.contains("plugins.json is not valid JSON"));
 }
+

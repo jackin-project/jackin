@@ -390,3 +390,4 @@ fn s8_usage_resize_pair_keeps_identity() {
         );
     }
 }
+

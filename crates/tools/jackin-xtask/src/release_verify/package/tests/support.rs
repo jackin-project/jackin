@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) const CAPSULE_VERSION: &str = "0.6.4-preview.1+0123456";
+const CAPSULE_VERSION: &str = "0.6.4-preview.1+0123456";
 
-pub(super) fn git(directory: &Path, args: &[&str]) -> String {
+fn git(directory: &Path, args: &[&str]) -> String {
     let mut command = crate::cmd::command("git");
     command.arg("-C").arg(directory).args(args);
     String::from_utf8(crate::cmd::output(&mut command).unwrap())
@@ -13,7 +13,7 @@ pub(super) fn git(directory: &Path, args: &[&str]) -> String {
         .to_owned()
 }
 
-pub(super) fn source_manifest(source_commit: String) -> PackageManifest {
+fn source_manifest(source_commit: String) -> PackageManifest {
     PackageManifest {
         assets: Vec::new(),
         schema: MANIFEST_SCHEMA.to_owned(),
@@ -25,11 +25,11 @@ pub(super) fn source_manifest(source_commit: String) -> PackageManifest {
     }
 }
 
-pub(super) fn digest(bytes: &[u8]) -> String {
+fn digest(bytes: &[u8]) -> String {
     hex::encode(Sha256::digest(bytes))
 }
 
-pub(super) fn write_payloads(directory: &Path) -> BTreeMap<String, String> {
+fn write_payloads(directory: &Path) -> BTreeMap<String, String> {
     PAYLOADS
         .iter()
         .enumerate()
@@ -42,7 +42,7 @@ pub(super) fn write_payloads(directory: &Path) -> BTreeMap<String, String> {
         .collect()
 }
 
-pub(super) fn release_archive(path: &Path, members: &[(&str, &[u8], u32, EntryType)]) {
+fn release_archive(path: &Path, members: &[(&str, &[u8], u32, EntryType)]) {
     let encoder = GzEncoder::new(fs::File::create(path).unwrap(), Compression::default());
     let mut archive = TarBuilder::new(encoder);
     for (name, bytes, mode, entry_type) in members {
@@ -63,7 +63,7 @@ pub(super) fn release_archive(path: &Path, members: &[(&str, &[u8], u32, EntryTy
     archive.into_inner().unwrap().finish().unwrap();
 }
 
-pub(super) fn elf64_x86_64_version_binary(binary: &str, version: &str) -> Vec<u8> {
+fn elf64_x86_64_version_binary(binary: &str, version: &str) -> Vec<u8> {
     const ELF_HEADER_SIZE: usize = 64;
     const PROGRAM_HEADER_SIZE: usize = 56;
     const CODE_OFFSET: usize = ELF_HEADER_SIZE + PROGRAM_HEADER_SIZE;
@@ -136,3 +136,4 @@ pub(super) fn elf64_x86_64_version_binary(binary: &str, version: &str) -> Vec<u8
     bytes.extend_from_slice(&message);
     bytes
 }
+

@@ -385,3 +385,4 @@ async fn live_symbolic_scratch_and_sibling_checkout_refuse_before_deletion() {
         assert_eq!(read_records(container.path()).unwrap().len(), 1);
     }
 }
+

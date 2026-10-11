@@ -258,3 +258,4 @@ fn console_modal_footer_items_for_area_reflects_container_info_overflow() {
             .contains(&termrock::widgets::HintSpan::Text("scroll"))
     );
 }
+

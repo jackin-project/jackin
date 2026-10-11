@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) const TEST_NOW_EPOCH: i64 = 1_800_000_000;
+const TEST_NOW_EPOCH: i64 = 1_800_000_000;
 
-pub(super) fn test_window(label: &str, remaining: Option<u8>) -> UsageWindow {
+fn test_window(label: &str, remaining: Option<u8>) -> UsageWindow {
     UsageWindow {
         window_id: format!("{label}-id"),
         rank: 0,
@@ -22,7 +22,7 @@ pub(super) fn test_window(label: &str, remaining: Option<u8>) -> UsageWindow {
     }
 }
 
-pub(super) fn test_account(provider_id: &str, account_id: &str, label: &str) -> UsageAccount {
+fn test_account(provider_id: &str, account_id: &str, label: &str) -> UsageAccount {
     UsageAccount {
         provider_id: provider_id.to_owned(),
         canonical_account_id: account_id.to_owned(),
@@ -45,7 +45,7 @@ pub(super) fn test_account(provider_id: &str, account_id: &str, label: &str) -> 
     }
 }
 
-pub(super) fn metric_group_fixture(
+fn metric_group_fixture(
     group_id: &str,
     rank: u32,
     kind: jackin_protocol::usage_broker::UsageMetricGroupKindV1,
@@ -75,14 +75,14 @@ pub(super) fn metric_group_fixture(
     }
 }
 
-pub(super) struct MetricGroupEpochs {
-    pub(super) retry_at: i64,
-    pub(super) credential_expires_at: i64,
-    pub(super) reset_at: i64,
-    pub(super) renews_at: i64,
+struct MetricGroupEpochs {
+    retry_at: i64,
+    credential_expires_at: i64,
+    reset_at: i64,
+    renews_at: i64,
 }
 
-pub(super) fn metric_group_projection_fixture() -> (
+fn metric_group_projection_fixture() -> (
     jackin_protocol::usage_broker::UsageProjectionV1,
     MetricGroupEpochs,
 ) {
@@ -231,7 +231,7 @@ pub(super) fn metric_group_projection_fixture() -> (
     (projection, epochs)
 }
 
-pub(super) fn expect_rows(haystack: &str, context: &str, expected: &[&str]) {
+fn expect_rows(haystack: &str, context: &str, expected: &[&str]) {
     for row in expected {
         assert!(
             haystack.contains(row),
@@ -240,7 +240,7 @@ pub(super) fn expect_rows(haystack: &str, context: &str, expected: &[&str]) {
     }
 }
 
-pub(super) fn assert_detail_group_rows(detail: &str) {
+fn assert_detail_group_rows(detail: &str) {
     expect_rows(
         detail,
         "detail",
@@ -298,7 +298,7 @@ pub(super) fn assert_detail_group_rows(detail: &str) {
     );
 }
 
-pub(super) fn assert_overview_group_rows(overview: &str) {
+fn assert_overview_group_rows(overview: &str) {
     expect_rows(
         overview,
         "overview",
@@ -317,9 +317,7 @@ pub(super) fn assert_overview_group_rows(overview: &str) {
     );
 }
 
-pub(super) fn manager_with_usage(
-    state: UsageScreenState,
-) -> crate::tui::state::ManagerState<'static> {
+fn manager_with_usage(state: UsageScreenState) -> crate::tui::state::ManagerState<'static> {
     let config = jackin_config::AppConfig::default();
     let mut manager =
         crate::tui::state::ManagerState::from_config(&config, std::path::Path::new("/test"));
@@ -327,34 +325,31 @@ pub(super) fn manager_with_usage(
     manager
 }
 
-pub(super) fn render_detail_text(state: UsageScreenState) -> String {
+fn render_detail_text(state: UsageScreenState) -> String {
     use ratatui::{Terminal, backend::TestBackend};
     let manager = manager_with_usage(state);
     let backend = TestBackend::new(120, 60);
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
-        .draw(|f| render_detail(f, f.area(), &manager, TEST_NOW_EPOCH))
+        .draw(|f| super::render_detail(f, f.area(), &manager, TEST_NOW_EPOCH))
         .unwrap();
     backend_text(&terminal)
 }
 
-pub(super) fn render_list_text(state: UsageScreenState) -> String {
+fn render_list_text(state: UsageScreenState) -> String {
     use ratatui::{Terminal, backend::TestBackend};
     let manager = manager_with_usage(state);
     let backend = TestBackend::new(120, 60);
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
-        .draw(|f| render_account_list(f, f.area(), &manager, TEST_NOW_EPOCH))
+        .draw(|f| super::render_account_list(f, f.area(), &manager, TEST_NOW_EPOCH))
         .unwrap();
     backend_text(&terminal)
 }
 
-pub(super) fn press_key(
-    manager: &mut crate::tui::state::ManagerState<'_>,
-    code: crossterm::event::KeyCode,
-) {
+fn press_key(manager: &mut crate::tui::state::ManagerState<'_>, code: crossterm::event::KeyCode) {
     use crossterm::event::{KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
-    handle_key(
+    super::handle_key(
         manager,
         KeyEvent {
             code,
@@ -365,10 +360,7 @@ pub(super) fn press_key(
     );
 }
 
-pub(super) fn usage_issue(
-    code: &str,
-    message: &str,
-) -> jackin_protocol::usage_broker::UsageIssueV1 {
+fn usage_issue(code: &str, message: &str) -> jackin_protocol::usage_broker::UsageIssueV1 {
     use jackin_protocol::usage_broker::{
         UsageIssueRecoverabilityV1, UsageIssueScopeV1, UsageIssueV1,
     };
@@ -380,3 +372,4 @@ pub(super) fn usage_issue(
         retry_at_epoch: None,
     }
 }
+

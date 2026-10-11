@@ -8,13 +8,13 @@ fn dry_run_json_projects_resolved_models_and_effort_only_to_selected_agent() {
     use jackin_config::ResolvedInstance;
 
     let selector = jackin_core::RoleSelector::parse("donbeave/the-architect").unwrap();
-    let mut plan = dry_run_plan_json(
+    let mut plan = super::dry_run_plan_json(
         &selector,
         &dry_run_workspace(),
         "codex",
         None,
         false,
-        DryRunLaunchOverrides::default(),
+        super::DryRunLaunchOverrides::default(),
         &dry_run_image_plan(),
     );
     let identity = jackin_runtime::runtime::DryRunIdentity {
@@ -55,7 +55,7 @@ fn dry_run_json_projects_resolved_models_and_effort_only_to_selected_agent() {
         admitted_instances: Vec::new(),
     };
     apply_dry_run_identity_json(&mut plan, &identity);
-    apply_dry_run_load_overrides_json(
+    super::apply_dry_run_load_overrides_json(
         &mut plan,
         Agent::Codex,
         &jackin_runtime::runtime::DryRunModelProjection {
@@ -88,13 +88,13 @@ fn dry_run_json_projects_single_account_model_without_a_model_override() {
     use jackin_config::ResolvedInstance;
 
     let selector = jackin_core::RoleSelector::parse("donbeave/the-architect").unwrap();
-    let mut plan = dry_run_plan_json(
+    let mut plan = super::dry_run_plan_json(
         &selector,
         &dry_run_workspace(),
         "codex",
         None,
         false,
-        DryRunLaunchOverrides::default(),
+        super::DryRunLaunchOverrides::default(),
         &dry_run_image_plan(),
     );
     let identity = jackin_runtime::runtime::DryRunIdentity {
@@ -113,7 +113,7 @@ fn dry_run_json_projects_single_account_model_without_a_model_override() {
         }],
     };
     apply_dry_run_identity_json(&mut plan, &identity);
-    apply_dry_run_load_overrides_json(
+    super::apply_dry_run_load_overrides_json(
         &mut plan,
         Agent::Codex,
         &jackin_runtime::runtime::DryRunModelProjection {
@@ -137,13 +137,13 @@ fn dry_run_json_projects_effort_only_without_replacing_resolved_models() {
     use jackin_config::ResolvedInstance;
 
     let selector = jackin_core::RoleSelector::parse("donbeave/the-architect").unwrap();
-    let mut plan = dry_run_plan_json(
+    let mut plan = super::dry_run_plan_json(
         &selector,
         &dry_run_workspace(),
         "codex",
         None,
         false,
-        DryRunLaunchOverrides::default(),
+        super::DryRunLaunchOverrides::default(),
         &dry_run_image_plan(),
     );
     let instances = vec![
@@ -175,7 +175,7 @@ fn dry_run_json_projects_effort_only_without_replacing_resolved_models() {
         admitted_instances: instances,
     };
     apply_dry_run_identity_json(&mut plan, &identity);
-    apply_dry_run_load_overrides_json(
+    super::apply_dry_run_load_overrides_json(
         &mut plan,
         Agent::Codex,
         &jackin_runtime::runtime::DryRunModelProjection {
@@ -202,13 +202,13 @@ fn dry_run_json_projects_effort_only_without_replacing_resolved_models() {
 #[test]
 fn dry_run_json_reports_explicit_model_and_effort_overrides() {
     let selector = jackin_core::RoleSelector::parse("donbeave/the-architect").unwrap();
-    let plan = dry_run_plan_json(
+    let plan = super::dry_run_plan_json(
         &selector,
         &dry_run_workspace(),
         "codex",
         None,
         false,
-        DryRunLaunchOverrides {
+        super::DryRunLaunchOverrides {
             model: Some("provider/model-id"),
             effort: Some(jackin_core::ReasoningEffort::Max),
         },
@@ -221,7 +221,7 @@ fn dry_run_json_reports_explicit_model_and_effort_overrides() {
 #[test]
 fn normal_load_dispatch_preserves_absent_model_and_effort_defaults() {
     let mut options = jackin_runtime::runtime::LoadOptions::for_load(false, false);
-    apply_load_model_effort(&mut options, None, None);
+    super::apply_load_model_effort(&mut options, None, None);
     assert_eq!(options.model, None);
     assert_eq!(options.effort, None);
 }
@@ -229,7 +229,7 @@ fn normal_load_dispatch_preserves_absent_model_and_effort_defaults() {
 #[test]
 fn normal_load_dispatch_forwards_model_and_effort_overrides() {
     let mut options = jackin_runtime::runtime::LoadOptions::for_load(false, false);
-    apply_load_model_effort(
+    super::apply_load_model_effort(
         &mut options,
         Some("provider/model-id".to_owned()),
         Some(jackin_core::ReasoningEffort::High),
@@ -237,3 +237,4 @@ fn normal_load_dispatch_forwards_model_and_effort_overrides() {
     assert_eq!(options.model.as_deref(), Some("provider/model-id"));
     assert_eq!(options.effort, Some(jackin_core::ReasoningEffort::High));
 }
+

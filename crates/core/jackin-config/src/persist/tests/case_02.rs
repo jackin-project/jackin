@@ -386,3 +386,4 @@ fn journal_installation_error_before_publication_leaves_collectable_orphans() {
     assert!(tmps.iter().all(|tmp| tmp.is_file()));
     assert_recovered_generation(&config, &workspace, ["global-old", "ws-old"]);
 }
+

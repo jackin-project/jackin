@@ -10,3 +10,4 @@ fn visibility_editor_tab_bar_alias_stays_hidden() {
     // j/J FocusContent alias is HiddenAlias: no standalone glyph appears.
     assert!(!keys.iter().any(|key| key == "J"), "{keys:?}");
 }
+

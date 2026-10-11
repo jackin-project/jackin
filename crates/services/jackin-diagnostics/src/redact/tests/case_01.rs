@@ -388,3 +388,4 @@ fn buildkit_block_secret_stays_bound_to_its_step() {
         ]
     );
 }
+

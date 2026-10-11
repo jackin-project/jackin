@@ -139,8 +139,8 @@ fn yaml_subset_handles_quotes_escapes_and_keys() {
     .unwrap();
     assert_eq!(doc.len(), 6);
     let text = |key: &str| match doc.get(key).unwrap() {
-        YamlNode::Scalar(value) => value.clone(),
-        YamlNode::Map(_) => String::new(),
+        super::YamlNode::Scalar(value) => value.clone(),
+        super::YamlNode::Map(_) => String::new(),
     };
     assert_eq!(text("plain"), "http://host:8080/a");
     assert_eq!(text("single"), "it's");
@@ -148,10 +148,11 @@ fn yaml_subset_handles_quotes_escapes_and_keys() {
     assert_eq!(text("quoted key"), "v");
     assert!(matches!(
         doc.get("nested").unwrap(),
-        YamlNode::Map(children) if children.len() == 1
+        super::YamlNode::Map(children) if children.len() == 1
     ));
     assert!(matches!(
         doc.get("empty").unwrap(),
-        YamlNode::Map(children) if children.is_empty()
+        super::YamlNode::Map(children) if children.is_empty()
     ));
 }
+

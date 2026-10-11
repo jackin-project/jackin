@@ -328,3 +328,4 @@ fn multi_account_list_select_and_snapshot() {
     assert_eq!(snap_b.account.account_label, "work@company.com");
     assert_eq!(snap_b.buckets[0].remaining_percent, Some(20));
 }
+

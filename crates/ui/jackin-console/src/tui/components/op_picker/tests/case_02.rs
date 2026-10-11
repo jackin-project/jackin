@@ -382,3 +382,4 @@ fn build_op_picker_ref_uses_uuid_op_and_clean_path_for_unique_item() {
     assert_eq!(built.path, "Private/Stripe/api key");
     assert!(!built.empty_reference_with_sibling_refs);
 }
+

@@ -394,3 +394,4 @@ async fn export_file_under_cursor_palette_action_sends_file_export_frames() {
             .is_some_and(|notice| notice.contains("File export and reveal queued: report.txt"))
     );
 }
+

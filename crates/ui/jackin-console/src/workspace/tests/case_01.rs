@@ -152,3 +152,4 @@ fn eligible_agents_returns_empty_when_no_allowed_and_no_registered() {
     let eligible = eligible_role_keys_for_override(cfg.roles.keys(), &ws);
     assert!(eligible.is_empty());
 }
+

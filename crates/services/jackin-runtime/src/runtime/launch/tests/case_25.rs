@@ -7,7 +7,7 @@ use super::*;
 async fn stopped_matching_instance_with_missing_network_recreates_current_role() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let container_name = "jk-k7p9m2xq-workspace-agentsmith";
     let manifest = workspace_manifest(
         container_name,
@@ -156,7 +156,7 @@ async fn recreate_checks_recorded_sidecar_identity_before_mutation() {
 async fn related_restore_candidate_requires_rich_dialog_for_fresh_load() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let container_name = "jk-k7p9m2xq-workspace-thearchitect";
     let manifest = workspace_manifest(
         container_name,
@@ -187,7 +187,7 @@ async fn related_restore_candidate_requires_rich_dialog_for_fresh_load() {
 async fn running_related_instance_does_not_block_fresh_load() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let container_name = "jk-k7p9m2xq-workspace-thearchitect";
     let manifest = workspace_manifest(
         container_name,
@@ -213,7 +213,7 @@ async fn running_related_instance_does_not_block_fresh_load() {
 async fn stopped_related_instance_does_not_block_fresh_load() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let container_name = "jk-k7p9m2xq-workspace-thearchitect";
     let manifest = workspace_manifest(
         container_name,
@@ -242,7 +242,7 @@ async fn stopped_related_instance_does_not_block_fresh_load() {
 async fn related_restore_candidates_ignore_finished_instances() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let container_name = "jk-k7p9m2xq-workspace-thearchitect";
     let mut manifest = workspace_manifest(
         container_name,
@@ -335,7 +335,7 @@ async fn related_restore_load_options_use_manifest_source_ref_and_agent() {
 async fn supersede_restore_candidates_updates_manifest_and_index() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let container_name = "jk-k7p9m2xq-workspace-agentsmith";
     let manifest = workspace_manifest(
         container_name,
@@ -357,7 +357,7 @@ async fn supersede_restore_candidates_updates_manifest_and_index() {
 async fn restore_candidate_label_includes_manifest_and_mount_state() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     let container_name = "jk-k7p9m2xq-workspace-agentsmith";
     let mut manifest = workspace_manifest(
         container_name,
@@ -394,3 +394,4 @@ async fn restore_candidate_label_includes_manifest_and_mount_state() {
     assert!(label.contains("attach:exit:137"), "{label}");
     assert!(!label.contains(container_name), "{label}");
 }
+

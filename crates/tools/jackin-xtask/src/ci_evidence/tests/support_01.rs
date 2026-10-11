@@ -2,12 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) const CI_EVIDENCE_WORKFLOW_FIXTURE: &str = include_str!("../fixtures/ci-evidence.yml");
+const CI_EVIDENCE_WORKFLOW_FIXTURE: &str = include_str!("fixtures/ci-evidence.yml");
 
-pub(super) const CI_PUSH_HEAD_LEDGER_WORKFLOW_FIXTURE: &str =
-    include_str!("../fixtures/ci-push-head-ledger.yml");
+const CI_PUSH_HEAD_LEDGER_WORKFLOW_FIXTURE: &str = include_str!("fixtures/ci-push-head-ledger.yml");
 
-pub(super) fn commit_from_source(sha: &str, source: DenominatorSource) -> ExpectedCommit {
+fn commit_from_source(sha: &str, source: DenominatorSource) -> ExpectedCommit {
     ExpectedCommit {
         sha: sha.to_owned(),
         base_sha: Some("base".to_owned()),
@@ -17,18 +16,18 @@ pub(super) fn commit_from_source(sha: &str, source: DenominatorSource) -> Expect
     }
 }
 
-pub(super) fn obligation(sha: &str, cohort: Cohort) -> ExpectedObligation {
+fn obligation(sha: &str, cohort: Cohort) -> ExpectedObligation {
     obligation_from_source(sha, cohort, DenominatorSource::Fixture)
 }
 
-pub(super) fn expected_for_sha(sha: &str) -> Vec<ExpectedObligation> {
+fn expected_for_sha(sha: &str) -> Vec<ExpectedObligation> {
     Cohort::ALL
         .into_iter()
         .map(|cohort| obligation(sha, cohort))
         .collect()
 }
 
-pub(super) fn obligation_from_source(
+fn obligation_from_source(
     sha: &str,
     cohort: Cohort,
     source: DenominatorSource,
@@ -43,7 +42,7 @@ pub(super) fn obligation_from_source(
     }
 }
 
-pub(super) fn test_runtime() -> RuntimeIdentity {
+fn test_runtime() -> RuntimeIdentity {
     RuntimeIdentity {
         runtime_revision: Some("0123456789abcdef0123456789abcdef01234567".to_owned()),
         contract_digest: Some(
@@ -52,7 +51,7 @@ pub(super) fn test_runtime() -> RuntimeIdentity {
     }
 }
 
-pub(super) fn test_provenance() -> CollectionProvenance {
+fn test_provenance() -> CollectionProvenance {
     CollectionProvenance {
         repository: "example/repo".to_owned(),
         branch: "main".to_owned(),
@@ -67,14 +66,14 @@ pub(super) fn test_provenance() -> CollectionProvenance {
     }
 }
 
-pub(super) fn test_api_repository() -> ApiRunRepository {
+fn test_api_repository() -> ApiRunRepository {
     ApiRunRepository {
         id: TARGET_REPOSITORY_ID,
         full_name: TARGET_REPOSITORY.to_owned(),
     }
 }
 
-pub(super) fn attempt(
+fn attempt(
     run_id: u64,
     attempt_number: u32,
     cohort: Cohort,
@@ -153,10 +152,7 @@ pub(super) fn attempt(
     }
 }
 
-pub(super) fn evidence(
-    expected: Vec<ExpectedObligation>,
-    attempts: Vec<AttemptEvidence>,
-) -> EvidenceFile {
+fn evidence(expected: Vec<ExpectedObligation>, attempts: Vec<AttemptEvidence>) -> EvidenceFile {
     let history = expected
         .iter()
         .map(|obligation| {
@@ -217,7 +213,7 @@ pub(super) fn evidence(
     }
 }
 
-pub(super) fn update_denominator(
+fn update_denominator(
     expected: &[ExpectedObligation],
 ) -> (DenominatorProof, Vec<HistoryCommitObservation>) {
     let history = expected
@@ -252,11 +248,7 @@ pub(super) fn update_denominator(
     )
 }
 
-pub(super) fn push_head_observation(
-    head_sha: &str,
-    before_sha: &str,
-    run_id: u64,
-) -> PushHeadObservation {
+fn push_head_observation(head_sha: &str, before_sha: &str, run_id: u64) -> PushHeadObservation {
     let head_sha = fixture_sha(head_sha);
     let before_sha = fixture_sha(before_sha);
     let tree_sha = fixture_sha(&format!("tree-{head_sha}"));
@@ -289,7 +281,7 @@ pub(super) fn push_head_observation(
     observation
 }
 
-pub(super) fn refresh_push_head_artifact(observation: &mut PushHeadObservation) {
+fn refresh_push_head_artifact(observation: &mut PushHeadObservation) {
     let event_proof = serde_json::json!({
         "repository": observation.repository,
         "repository_id": TARGET_REPOSITORY_ID,
@@ -327,11 +319,11 @@ pub(super) fn refresh_push_head_artifact(observation: &mut PushHeadObservation) 
     };
 }
 
-pub(super) fn fixture_sha(label: &str) -> String {
+fn fixture_sha(label: &str) -> String {
     sha256_hex(label.as_bytes())[..40].to_owned()
 }
 
-pub(super) fn run_git(root: &Path, args: &[&str]) -> String {
+fn run_git(root: &Path, args: &[&str]) -> String {
     let output = cmd::output(Command::new("git").current_dir(root).args(args))
         .unwrap_or_else(|error| panic!("running git {args:?}: {error}"));
     String::from_utf8(output)
@@ -340,7 +332,7 @@ pub(super) fn run_git(root: &Path, args: &[&str]) -> String {
         .to_owned()
 }
 
-pub(super) fn commit_git(root: &Path, message: &str, date: &str) {
+fn commit_git(root: &Path, message: &str, date: &str) {
     cmd::run(
         Command::new("git")
             .current_dir(root)
@@ -354,3 +346,4 @@ pub(super) fn commit_git(root: &Path, message: &str, date: &str) {
     )
     .unwrap_or_else(|error| panic!("committing {message}: {error}"));
 }
+

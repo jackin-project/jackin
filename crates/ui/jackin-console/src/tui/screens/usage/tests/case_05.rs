@@ -5,6 +5,8 @@ use super::*;
 
 #[test]
 fn labels_align_with_capsule_tab_vocabulary() {
+    use super::{lifecycle_label, quota_state_label, well_known_provider_name};
+
     // Lifecycle words shared with Capsule `usage_tab_status_label` match
     // exactly; `available`/`not started` are console-owned (Capsule's healthy
     // word `fresh` belongs to the freshness axis, a different concept).
@@ -153,14 +155,14 @@ fn s8_sort_filter_constrained_keys_reanchor_by_stable_id() {
     // `s` sorts by remaining; the selected row follows its stable id.
     s8_press(&mut manager, KeyCode::Char('s'));
     let screen = manager.usage.screen.as_ref().unwrap();
-    assert_eq!(screen.sort, UsageSort::Remaining);
+    assert_eq!(screen.sort, super::UsageSort::Remaining);
     assert_eq!(screen.selected, 1);
     assert_eq!(screen.selected_id, Some("anthropic:b".to_owned()));
 
     // `f` filters to issues; the selected row (which has one) stays put.
     s8_press(&mut manager, KeyCode::Char('f'));
     let screen = manager.usage.screen.as_ref().unwrap();
-    assert_eq!(screen.filter, UsageFilter::Issues);
+    assert_eq!(screen.filter, super::UsageFilter::Issues);
     assert_eq!(screen.selected, 1);
 
     // Move to Overview, then filter to a set hiding nothing selected: the
@@ -168,11 +170,11 @@ fn s8_sort_filter_constrained_keys_reanchor_by_stable_id() {
     s8_press(&mut manager, KeyCode::Char('k'));
     s8_press(&mut manager, KeyCode::Char('f'));
     let screen = manager.usage.screen.as_ref().unwrap();
-    assert_eq!(screen.filter, UsageFilter::Stale);
+    assert_eq!(screen.filter, super::UsageFilter::Stale);
     assert_eq!(screen.selected, 0);
     s8_press(&mut manager, KeyCode::Char('f'));
     let screen = manager.usage.screen.as_ref().unwrap();
-    assert_eq!(screen.filter, UsageFilter::All);
+    assert_eq!(screen.filter, super::UsageFilter::All);
 }
 
 #[test]
@@ -392,3 +394,4 @@ fn s8_long_unicode_labels_render() {
     assert!(squeezed.contains("每周配额"), "{text}");
     assert!(squeezed.contains("很长的账户备注"), "{text}");
 }
+

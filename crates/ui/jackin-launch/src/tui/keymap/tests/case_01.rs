@@ -27,7 +27,7 @@ fn cockpit_global_keys_dispatch() {
 
 #[test]
 fn cockpit_global_hint_spans_advertise_both_keys() {
-    let text: String = cockpit_global_hint_spans()
+    let text: String = super::cockpit_global_hint_spans()
         .iter()
         .filter_map(|s| match s {
             termrock::widgets::HintSpan::Key(k) | termrock::widgets::HintSpan::Text(k) => Some(*k),
@@ -94,7 +94,7 @@ fn build_log_non_registered_keys_return_none() {
 
 #[test]
 fn build_log_hints_advertise_esc_and_scroll() {
-    let spans = build_log_hint_spans(true);
+    let spans = super::build_log_hint_spans(true);
     let text: String = spans
         .iter()
         .filter_map(|s| match s {
@@ -199,3 +199,4 @@ fn container_info_hints_advertise_copy_and_close() {
     assert!(text.contains("copy value"), "must advertise copy: {text}");
     assert!(text.contains("close"), "must advertise close: {text}");
 }
+

@@ -228,3 +228,4 @@ fn git_entry_renders_product_name_and_marker() {
         paren_cell.symbol()
     );
 }
+

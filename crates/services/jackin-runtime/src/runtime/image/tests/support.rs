@@ -3,29 +3,29 @@
 
 use super::*;
 #[cfg(unix)]
-pub(super) const BUILD_TOKEN_TEST_CHILD: &str = "JACKIN_BUILD_TOKEN_TEST_CHILD";
+const BUILD_TOKEN_TEST_CHILD: &str = "JACKIN_BUILD_TOKEN_TEST_CHILD";
 
 #[cfg(unix)]
-pub(super) const BUILD_TOKEN_TEST_MARKER: &str = "JACKIN_BUILD_TOKEN_TEST_MARKER";
+const BUILD_TOKEN_TEST_MARKER: &str = "JACKIN_BUILD_TOKEN_TEST_MARKER";
 
 #[cfg(unix)]
-pub(super) const BUILD_TOKEN_TEST_GITHUB_TOKEN: &str = "FAKE_GITHUB_TOKEN_CANARY";
+const BUILD_TOKEN_TEST_GITHUB_TOKEN: &str = "FAKE_GITHUB_TOKEN_CANARY";
 
 #[cfg(unix)]
-pub(super) const BUILD_TOKEN_TEST_GH_TOKEN: &str = "FAKE_GH_TOKEN_CANARY";
+const BUILD_TOKEN_TEST_GH_TOKEN: &str = "FAKE_GH_TOKEN_CANARY";
 
 #[cfg(unix)]
-pub(super) const BUILD_TOKEN_TEST_GH_CLI: &str = "FAKE_GH_CLI_TOKEN_CANARY";
+const BUILD_TOKEN_TEST_GH_CLI: &str = "FAKE_GH_CLI_TOKEN_CANARY";
 
 #[cfg(unix)]
 #[derive(Default)]
-pub(super) struct BuildSecurityRunner {
-    pub(super) commands: Vec<String>,
-    pub(super) secret_commands: Vec<String>,
-    pub(super) docker_build_options: Vec<RunOptions>,
-    pub(super) docker_build_count: usize,
-    pub(super) fail_docker_build_at: Option<usize>,
-    pub(super) execute_fake_gh: bool,
+struct BuildSecurityRunner {
+    commands: Vec<String>,
+    secret_commands: Vec<String>,
+    docker_build_options: Vec<RunOptions>,
+    docker_build_count: usize,
+    fail_docker_build_at: Option<usize>,
+    execute_fake_gh: bool,
 }
 
 #[cfg(unix)]
@@ -107,7 +107,7 @@ impl CommandRunner for BuildSecurityRunner {
 }
 
 #[cfg(unix)]
-pub(super) async fn build_test_agent_image(runner: &mut BuildSecurityRunner) -> anyhow::Result<()> {
+async fn build_test_agent_image(runner: &mut BuildSecurityRunner) -> anyhow::Result<()> {
     let temp = tempfile::tempdir()?;
     let paths = JackinPaths::for_tests(temp.path());
     let selector = RoleSelector::new(None, "agent-smith");
@@ -163,18 +163,18 @@ pub(super) async fn build_test_agent_image(runner: &mut BuildSecurityRunner) -> 
     Ok(())
 }
 
-pub(super) static RICH_SURFACE_TEST_LOCK: Mutex<()> = Mutex::new(());
+static RICH_SURFACE_TEST_LOCK: Mutex<()> = Mutex::new(());
 
-pub(super) const IMAGE_BUILD_SOURCE: &str = include_str!("../build.rs");
+const IMAGE_BUILD_SOURCE: &str = include_str!("build.rs");
 
-pub(super) const IMAGE_VERSION_SOURCE: &str = include_str!("../version.rs");
+const IMAGE_VERSION_SOURCE: &str = include_str!("version.rs");
 
-pub(super) const IMAGE_MODULE_SOURCE: &str = include_str!("../../image.rs");
+const IMAGE_MODULE_SOURCE: &str = include_str!("../image.rs");
 
-pub(super) const SHARED_IMAGE_BUILD_SOURCE: &str =
-    include_str!("../../../../../../adapters/jackin-image/src/image_build.rs");
+const SHARED_IMAGE_BUILD_SOURCE: &str =
+    include_str!("../../../../../adapters/jackin-image/src/image_build.rs");
 
-pub(super) struct RichSurfaceTestGuard {
+struct RichSurfaceTestGuard {
     _guard: MutexGuard<'static, ()>,
 }
 
@@ -185,7 +185,7 @@ impl Drop for RichSurfaceTestGuard {
     }
 }
 
-pub(super) fn rich_surface_test_guard() -> RichSurfaceTestGuard {
+fn rich_surface_test_guard() -> RichSurfaceTestGuard {
     let guard = RICH_SURFACE_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -194,7 +194,7 @@ pub(super) fn rich_surface_test_guard() -> RichSurfaceTestGuard {
     RichSurfaceTestGuard { _guard: guard }
 }
 
-pub(super) fn make_docker(labels: HashMap<String, String>) -> FakeDockerClient {
+fn make_docker(labels: HashMap<String, String>) -> FakeDockerClient {
     let docker = FakeDockerClient::default();
     docker
         .inspect_image_labels_queue
@@ -203,7 +203,7 @@ pub(super) fn make_docker(labels: HashMap<String, String>) -> FakeDockerClient {
     docker
 }
 
-pub(super) fn validated_test_repo(
+fn validated_test_repo(
     paths: &JackinPaths,
     selector: &RoleSelector,
 ) -> (CachedRepo, jackin_manifest::repo::ValidatedRoleRepo) {
@@ -213,7 +213,7 @@ pub(super) fn validated_test_repo(
     (cached_repo, validated_repo)
 }
 
-pub(super) fn recorded_docker_build(runner: &FakeRunner) -> &str {
+fn recorded_docker_build(runner: &FakeRunner) -> &str {
     runner
         .run_recorded
         .iter()
@@ -221,3 +221,4 @@ pub(super) fn recorded_docker_build(runner: &FakeRunner) -> &str {
         .map(String::as_str)
         .expect("expected docker build command")
 }
+

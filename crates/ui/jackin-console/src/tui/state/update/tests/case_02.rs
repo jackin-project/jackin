@@ -375,3 +375,4 @@ fn scroll_settings_trust_updates_offset() {
     };
     assert_eq!(settings.trust.scroll.offset_x(), 8);
 }
+

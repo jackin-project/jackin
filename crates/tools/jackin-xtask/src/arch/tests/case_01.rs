@@ -276,3 +276,4 @@ fn tui_ownership_gate_rejects_surface_local_host_color_handshake() {
     assert!(error.contains("host_colors.rs"), "{error}");
     assert!(error.contains("jackin-protocol"), "{error}");
 }
+

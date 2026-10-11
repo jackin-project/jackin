@@ -2,20 +2,20 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) const UI_CAUSALITY_CHILD: &str = "JACKIN_UI_CAUSALITY_WIRE_CHILD";
+const UI_CAUSALITY_CHILD: &str = "JACKIN_UI_CAUSALITY_WIRE_CHILD";
 
-pub(super) struct TestFrameContext<'a> {
-    pub(super) terminal: &'a mut ratatui::Terminal<ratatui::backend::TestBackend>,
-    pub(super) config: &'a AppConfig,
-    pub(super) cwd: &'a std::path::Path,
-    pub(super) screens: &'a mut jackin_telemetry::ui::ScreenVisitTracker,
-    pub(super) widgets: &'a mut jackin_telemetry::ui::WidgetFocusTracker,
-    pub(super) mouse: &'a mut ConsoleMouseState,
-    pub(super) jank: &'a mut jackin_telemetry::ui::JankMonitor,
+struct TestFrameContext<'a> {
+    terminal: &'a mut ratatui::Terminal<ratatui::backend::TestBackend>,
+    config: &'a AppConfig,
+    cwd: &'a std::path::Path,
+    screens: &'a mut jackin_telemetry::ui::ScreenVisitTracker,
+    widgets: &'a mut jackin_telemetry::ui::WidgetFocusTracker,
+    mouse: &'a mut ConsoleMouseState,
+    jank: &'a mut jackin_telemetry::ui::JankMonitor,
 }
 
 impl TestFrameContext<'_> {
-    pub(super) fn render_action(&mut self, state: &mut ConsoleState) -> anyhow::Result<()> {
+    fn render_action(&mut self, state: &mut ConsoleState) -> anyhow::Result<()> {
         let action = jackin_telemetry::ui::take_action_parent()
             .ok_or_else(|| anyhow::anyhow!("production reducer omitted action ownership"))?;
         sync_active_screen(state, self.screens, Some(&action));
@@ -38,7 +38,7 @@ impl TestFrameContext<'_> {
     }
 }
 
-pub(super) fn canonical_usage_publication() -> jackin_console::tui::state::UsageScreenState {
+fn canonical_usage_publication() -> jackin_console::tui::state::UsageScreenState {
     use jackin_protocol::usage_broker::{
         UsageIssueRecoverabilityV1, UsageIssueScopeV1, UsageIssueV1, UsageProjectionRefreshStateV1,
         UsageProjectionSchemaV1, UsageProjectionV1,
@@ -62,3 +62,4 @@ pub(super) fn canonical_usage_publication() -> jackin_console::tui::state::Usage
         }],
     })
 }
+

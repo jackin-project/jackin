@@ -387,3 +387,4 @@ fn github_context_c_opens_ci_url_when_available() {
         other => panic!("C must request host CI open, got {other:?}"),
     }
 }
+

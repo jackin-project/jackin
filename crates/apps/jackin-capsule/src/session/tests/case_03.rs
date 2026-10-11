@@ -391,3 +391,4 @@ fn child_exit_reason_wait_error_reports_failure() {
     assert!(reason.starts_with("session process wait failed:"));
     assert!(reason.contains("boom"));
 }
+

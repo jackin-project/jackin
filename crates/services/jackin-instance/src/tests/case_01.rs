@@ -387,3 +387,4 @@ fn agent_ignore_prepare_still_wipes_existing_state() {
     assert_eq!(std::fs::read_to_string(&stale_account).unwrap(), "{}");
     assert!(!stale_credentials.exists());
 }
+

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn push_head_artifact_fixture() -> (tempfile::TempDir, ApiRun, Vec<u8>, Vec<u8>) {
+fn push_head_artifact_fixture() -> (tempfile::TempDir, ApiRun, Vec<u8>, Vec<u8>) {
     let repository = tempfile::tempdir().unwrap();
     run_git(repository.path(), &["init", "--quiet"]);
     run_git(
@@ -86,7 +86,7 @@ pub(super) fn push_head_artifact_fixture() -> (tempfile::TempDir, ApiRun, Vec<u8
     )
 }
 
-pub(super) fn zip_fixture(files: &[(&str, &[u8])]) -> Vec<u8> {
+fn zip_fixture(files: &[(&str, &[u8])]) -> Vec<u8> {
     let mut writer = zip::ZipWriter::new(io::Cursor::new(Vec::new()));
     let options =
         zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
@@ -97,7 +97,7 @@ pub(super) fn zip_fixture(files: &[(&str, &[u8])]) -> Vec<u8> {
     writer.finish().unwrap().into_inner()
 }
 
-pub(super) fn push_head_denominator(
+fn push_head_denominator(
     history: Vec<HistoryCommitObservation>,
     push_heads: Vec<PushHeadObservation>,
 ) -> DenominatorProof {
@@ -127,7 +127,7 @@ pub(super) fn push_head_denominator(
     }
 }
 
-pub(super) fn completed_jobs(cohort: Cohort) -> Vec<JobEvidence> {
+fn completed_jobs(cohort: Cohort) -> Vec<JobEvidence> {
     cohort
         .expected_work()
         .iter()
@@ -143,3 +143,4 @@ pub(super) fn completed_jobs(cohort: Cohort) -> Vec<JobEvidence> {
         })
         .collect()
 }
+

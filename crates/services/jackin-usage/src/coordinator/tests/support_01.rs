@@ -3,12 +3,12 @@
 
 use super::*;
 #[derive(Default)]
-pub(super) struct MemoryStore {
-    pub(super) states: Mutex<BTreeMap<UsageAccountCapability, AccountStateEnvelope>>,
-    pub(super) purges: Mutex<Vec<UsageAccountCapability>>,
-    pub(super) load_error: Mutex<Option<StateStoreError>>,
+struct MemoryStore {
+    states: Mutex<BTreeMap<UsageAccountCapability, AccountStateEnvelope>>,
+    purges: Mutex<Vec<UsageAccountCapability>>,
+    load_error: Mutex<Option<StateStoreError>>,
     store_error: Mutex<Option<StateStoreError>>,
-    pub(super) purge_error: Mutex<Option<StateStoreError>>,
+    purge_error: Mutex<Option<StateStoreError>>,
 }
 
 impl AccountStateStore for MemoryStore {
@@ -48,17 +48,17 @@ impl AccountStateStore for MemoryStore {
     }
 }
 
-pub(super) struct GateExecutor {
-    pub(super) calls: AtomicUsize,
+struct GateExecutor {
+    calls: AtomicUsize,
     active: AtomicUsize,
-    pub(super) max_active: AtomicUsize,
+    max_active: AtomicUsize,
     started: (Mutex<usize>, Condvar),
     permits: (Mutex<usize>, Condvar),
     outcome: Mutex<ProviderProbeOutcome>,
 }
 
 impl GateExecutor {
-    pub(super) fn new(outcome: ProviderProbeOutcome) -> Self {
+    fn new(outcome: ProviderProbeOutcome) -> Self {
         Self {
             calls: AtomicUsize::new(0),
             active: AtomicUsize::new(0),
@@ -69,7 +69,7 @@ impl GateExecutor {
         }
     }
 
-    pub(super) fn wait_started(&self, expected: usize) {
+    fn wait_started(&self, expected: usize) {
         let deadline = Instant::now() + Duration::from_secs(2);
         let (lock, changed) = &self.started;
         let mut started = lock.lock().unwrap();
@@ -82,13 +82,13 @@ impl GateExecutor {
         }
     }
 
-    pub(super) fn release(&self, count: usize) {
+    fn release(&self, count: usize) {
         let (lock, changed) = &self.permits;
         *lock.lock().unwrap() += count;
         changed.notify_all();
     }
 
-    pub(super) fn wait_idle(&self) {
+    fn wait_idle(&self) {
         let deadline = Instant::now() + Duration::from_secs(2);
         while self.active.load(Ordering::SeqCst) != 0 {
             assert!(Instant::now() < deadline, "provider probe did not finish");
@@ -96,7 +96,7 @@ impl GateExecutor {
         }
     }
 
-    pub(super) fn set_outcome(&self, outcome: ProviderProbeOutcome) {
+    fn set_outcome(&self, outcome: ProviderProbeOutcome) {
         *self.outcome.lock().unwrap() = outcome;
     }
 }
@@ -129,14 +129,14 @@ impl UsageProviderExecutor for GateExecutor {
     }
 }
 
-pub(super) fn capability(id: &str) -> UsageAccountCapability {
+fn capability(id: &str) -> UsageAccountCapability {
     UsageAccountCapability {
         account_id: id.into(),
         surface_id: "claude".into(),
     }
 }
 
-pub(super) fn quota_view(epoch: i64, percent: u8) -> FocusedUsageView {
+fn quota_view(epoch: i64, percent: u8) -> FocusedUsageView {
     let mut view = FocusedUsageView::unavailable("fixture", epoch);
     view.status = UsageSnapshotStatus::Fresh;
     view.source = UsageSource::ProviderApi;
@@ -161,7 +161,7 @@ pub(super) fn quota_view(epoch: i64, percent: u8) -> FocusedUsageView {
     view
 }
 
-pub(super) fn coordinator(
+fn coordinator(
     executor: Arc<GateExecutor>,
     store: Arc<MemoryStore>,
     config: UsageCoordinatorConfig,
@@ -169,7 +169,7 @@ pub(super) fn coordinator(
     UsageCoordinator::new(executor, store, config)
 }
 
-pub(super) fn join_ok(
+fn join_ok(
     coordinator: &UsageCoordinator,
     capability: &UsageAccountCapability,
     generation: u64,
@@ -180,7 +180,7 @@ pub(super) fn join_ok(
         .unwrap()
 }
 
-pub(super) struct UpdatingFailureStore {
+struct UpdatingFailureStore {
     inner: FileAccountStateStore,
     accounts: std::path::PathBuf,
     saved_accounts: std::path::PathBuf,
@@ -229,7 +229,7 @@ impl AccountStateStore for UpdatingFailureStore {
     }
 }
 
-pub(super) fn assert_updating_store_failure_terminates(persistent: bool) {
+fn assert_updating_store_failure_terminates(persistent: bool) {
     let (completed, completion) = mpsc::channel();
     // Own the coordinator inside this thread: a broken worker's Drop must not
     // keep the test harness waiting beyond the regression's bounded deadline.
@@ -311,15 +311,15 @@ pub(super) fn assert_updating_store_failure_terminates(persistent: bool) {
     fixture.join().unwrap();
 }
 
-pub(super) fn catalog_entry(account: &UsageAccountCapability, revision: &str) -> UsageCatalogEntry {
+fn catalog_entry(account: &UsageAccountCapability, revision: &str) -> UsageCatalogEntry {
     UsageCatalogEntry {
         capability: account.clone(),
         revision: revision.to_owned(),
     }
 }
 
-pub(super) struct CadenceMemoryStore {
-    pub(super) states: Mutex<BTreeMap<UsageAccountCapability, AccountStateEnvelope>>,
+struct CadenceMemoryStore {
+    states: Mutex<BTreeMap<UsageAccountCapability, AccountStateEnvelope>>,
 }
 
 impl AccountStateStore for CadenceMemoryStore {
@@ -344,20 +344,20 @@ impl AccountStateStore for CadenceMemoryStore {
     }
 }
 
-pub(super) struct ImmediateExecutor {
-    pub(super) calls: AtomicUsize,
+struct ImmediateExecutor {
+    calls: AtomicUsize,
     outcome: Mutex<ProviderProbeOutcome>,
 }
 
 impl ImmediateExecutor {
-    pub(super) fn new(outcome: ProviderProbeOutcome) -> Self {
+    fn new(outcome: ProviderProbeOutcome) -> Self {
         Self {
             calls: AtomicUsize::new(0),
             outcome: Mutex::new(outcome),
         }
     }
 
-    pub(super) fn set_outcome(&self, outcome: ProviderProbeOutcome) {
+    fn set_outcome(&self, outcome: ProviderProbeOutcome) {
         *self.outcome.lock().unwrap() = outcome;
     }
 }
@@ -373,9 +373,10 @@ impl UsageProviderExecutor for ImmediateExecutor {
     }
 }
 
-pub(super) struct CadenceGateExecutor {
-    pub(super) calls: AtomicUsize,
-    pub(super) started: (Mutex<usize>, Condvar),
-    pub(super) permits: (Mutex<usize>, Condvar),
-    pub(super) outcome: Mutex<ProviderProbeOutcome>,
+struct CadenceGateExecutor {
+    calls: AtomicUsize,
+    started: (Mutex<usize>, Condvar),
+    permits: (Mutex<usize>, Condvar),
+    outcome: Mutex<ProviderProbeOutcome>,
 }
+

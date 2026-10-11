@@ -290,3 +290,4 @@ fn op_transport_faults_are_owned_once_without_sensitive_material() {
     assert!(!export.contains_span_text("injected stdout read failure"));
     assert!(!export.contains_span_text("injected stderr read failure"));
 }
+

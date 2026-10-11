@@ -395,3 +395,4 @@ fn visibility_shown_bindings_advertise_hidden_aliases_do_not() {
         "Ctrl-Q"
     );
 }
+

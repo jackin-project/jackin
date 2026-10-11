@@ -387,3 +387,4 @@ fn ignore_mode_skips_state_when_absent() {
     assert!(!state.claude_account_json().unwrap().exists());
     assert!(!state.claude_credentials_json().unwrap().exists());
 }
+

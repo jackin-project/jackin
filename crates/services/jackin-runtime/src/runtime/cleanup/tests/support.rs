@@ -2,16 +2,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn tempdir() -> std::io::Result<TempDir> {
+fn tempdir() -> std::io::Result<TempDir> {
     tempfile::tempdir_in(std::fs::canonicalize(std::env::temp_dir())?)
 }
 
-pub(super) fn gc_test_paths() -> JackinPaths {
+fn gc_test_paths() -> JackinPaths {
     let temp = tempdir().unwrap();
     JackinPaths::for_tests(temp.path())
 }
 
-pub(super) fn write_owned_cleanup_manifest(paths: &JackinPaths, role: &str, dind: &str) {
+fn write_owned_cleanup_manifest(paths: &JackinPaths, role: &str, dind: &str) {
     let mut manifest = InstanceManifest::new(crate::instance::NewInstanceManifest {
         container_base: role,
         workspace_name: None,
@@ -40,7 +40,7 @@ pub(super) fn write_owned_cleanup_manifest(paths: &JackinPaths, role: &str, dind
     manifest.write(&paths.data_dir.join(role)).unwrap();
 }
 
-pub(super) fn make_instance_at(paths: &JackinPaths, container: &str, status: InstanceStatus) {
+fn make_instance_at(paths: &JackinPaths, container: &str, status: InstanceStatus) {
     let mut manifest = InstanceManifest::new(crate::instance::NewInstanceManifest {
         container_base: container,
         workspace_name: Some("ws"),
@@ -70,3 +70,4 @@ pub(super) fn make_instance_at(paths: &JackinPaths, container: &str, status: Ins
     manifest.write(&state_dir).unwrap();
     InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
 }
+

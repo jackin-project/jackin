@@ -384,3 +384,4 @@ fn resolve_with_ad_hoc_mounts_merges_correctly() {
             .any(|m| m.dst == "/extra" && m.readonly)
     );
 }
+

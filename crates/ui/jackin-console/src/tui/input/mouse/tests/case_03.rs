@@ -241,8 +241,8 @@ fn horizontal_mouse_wheel_clamps_stored_offset_at_block_end() {
         width: 70,
         height: 5,
     };
-    let expected_max = max_scroll_offset(
-        global_mounts_content_width(global_mounts.as_slice()),
+    let expected_max = super::max_scroll_offset(
+        super::global_mounts_content_width(global_mounts.as_slice()),
         crate::tui::layout::scroll_viewport_width(global_area),
     );
     assert_eq!(state.list_global_mounts_scroll.offset_x(), expected_max);
@@ -297,8 +297,8 @@ fn horizontal_mouse_wheel_reaches_rendered_workspace_width() {
         width: 70,
         height: 4,
     };
-    let expected_max = max_scroll_offset(
-        workspace_mounts_content_width(workspace.mounts.as_slice()),
+    let expected_max = super::max_scroll_offset(
+        super::workspace_mounts_content_width(workspace.mounts.as_slice()),
         crate::tui::layout::scroll_viewport_width(workspace_area),
     );
 
@@ -327,8 +327,8 @@ fn horizontal_mouse_wheel_clamps_before_applying_left_delta() {
         width: 70,
         height: 5,
     };
-    let expected_max = max_scroll_offset(
-        global_mounts_content_width(global_mounts.as_slice()),
+    let expected_max = super::max_scroll_offset(
+        super::global_mounts_content_width(global_mounts.as_slice()),
         crate::tui::layout::scroll_viewport_width(global_area),
     );
 
@@ -395,3 +395,4 @@ fn editor_mounts_tab_horizontal_wheel_requires_mounts_tab() {
         MOUSE_HORIZONTAL_SCROLL_STEP
     );
 }
+

@@ -2,23 +2,18 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn wn(name: &str) -> WorkspaceName {
+fn wn(name: &str) -> WorkspaceName {
     WorkspaceName::parse(name).unwrap()
 }
 
 #[derive(Debug, Default)]
-pub(super) struct FakeOpRunner {
+struct FakeOpRunner {
     values: BTreeMap<(String, Option<String>), anyhow::Result<String>>,
     calls: Mutex<Vec<(String, Option<String>)>>,
 }
 
 impl FakeOpRunner {
-    pub(super) fn with_value(
-        mut self,
-        reference: &str,
-        account: Option<&str>,
-        value: &str,
-    ) -> Self {
+    fn with_value(mut self, reference: &str, account: Option<&str>, value: &str) -> Self {
         self.values.insert(
             (reference.to_owned(), account.map(str::to_owned)),
             Ok(value.to_owned()),
@@ -26,12 +21,7 @@ impl FakeOpRunner {
         self
     }
 
-    pub(super) fn with_error(
-        mut self,
-        reference: &str,
-        account: Option<&str>,
-        message: &str,
-    ) -> Self {
+    fn with_error(mut self, reference: &str, account: Option<&str>, message: &str) -> Self {
         self.values.insert(
             (reference.to_owned(), account.map(str::to_owned)),
             Err(anyhow::anyhow!(message.to_owned())),
@@ -39,7 +29,7 @@ impl FakeOpRunner {
         self
     }
 
-    pub(super) fn calls(&self) -> Vec<(String, Option<String>)> {
+    fn calls(&self) -> Vec<(String, Option<String>)> {
         self.calls.lock().expect("calls lock").clone()
     }
 }
@@ -63,7 +53,7 @@ impl OpRunner for FakeOpRunner {
     }
 }
 
-pub(super) struct UnusedOpStructRunner;
+struct UnusedOpStructRunner;
 
 impl OpStructRunner for UnusedOpStructRunner {
     fn account_list(&self) -> anyhow::Result<Vec<OpAccount>> {
@@ -88,7 +78,7 @@ impl OpStructRunner for UnusedOpStructRunner {
     }
 }
 
-pub(super) fn op_ref(name: &str, account: Option<&str>, on_demand: bool) -> EnvValue {
+fn op_ref(name: &str, account: Option<&str>, on_demand: bool) -> EnvValue {
     EnvValue::OpRef(OpRef {
         op: format!("op://vault/item/{name}"),
         path: format!("Vault/Item/{name}"),
@@ -97,6 +87,7 @@ pub(super) fn op_ref(name: &str, account: Option<&str>, on_demand: bool) -> EnvV
     })
 }
 
-pub(super) fn host_env(_name: &str) -> Result<String, std::env::VarError> {
+fn host_env(_name: &str) -> Result<String, std::env::VarError> {
     Err(std::env::VarError::NotPresent)
 }
+

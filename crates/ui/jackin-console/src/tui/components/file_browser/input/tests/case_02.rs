@@ -19,3 +19,4 @@ fn click_when_no_git_prompt_is_active_returns_false() {
         "click without active git prompt should be inert"
     );
 }
+

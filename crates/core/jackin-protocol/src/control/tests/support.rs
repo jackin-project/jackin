@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn placeholder_sample_bucket() -> QuotaBucketView {
+fn placeholder_sample_bucket() -> QuotaBucketView {
     QuotaBucketView {
         label: "Weekly".to_owned(),
         used_label: None,
@@ -18,3 +18,4 @@ pub(super) fn placeholder_sample_bucket() -> QuotaBucketView {
         severity: UsageSeverity::Normal,
     }
 }
+

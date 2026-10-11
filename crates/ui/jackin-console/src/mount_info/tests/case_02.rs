@@ -38,3 +38,4 @@ fn parse_origin_url_from_config() {
         Some("git@github.com:owner/repo.git".to_owned())
     );
 }
+

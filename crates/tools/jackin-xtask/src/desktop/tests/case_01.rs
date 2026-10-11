@@ -37,7 +37,7 @@ fn broker_version_probe_requires_matching_binary_and_release() {
 #[test]
 fn broker_requires_regular_executable_file() {
     use std::os::unix::fs::{PermissionsExt, symlink};
-    let temp = tempfile_dir("jackin-desktop-broker-file-test").unwrap();
+    let temp = super::tempfile_dir("jackin-desktop-broker-file-test").unwrap();
     let broker = temp.join("broker");
     assert!(assert_executable_file(&broker).is_err());
     assert!(assert_executable_file(&temp).is_err());
@@ -54,7 +54,7 @@ fn broker_requires_regular_executable_file() {
 
 #[test]
 fn desktop_build_packages_native_broker_before_bundle_signing() {
-    let source = include_str!("../../desktop.rs");
+    let source = include_str!("../desktop.rs");
     let build = source.split("fn build_app(").nth(1).unwrap();
     let build = build.split("pub(super) fn verify_app(").next().unwrap();
     assert_subsequence(
@@ -81,7 +81,7 @@ fn desktop_build_packages_native_broker_before_bundle_signing() {
 #[test]
 fn developer_id_signs_and_checks_broker_before_notarization() {
     assert_subsequence(
-        include_str!("../sign_notarize.rs"),
+        include_str!("sign_notarize.rs"),
         &[
             "verify_app(&app, None, &version, &build, false)?;",
             "sign_broker(&app, &identity, true)?;",
@@ -99,7 +99,7 @@ fn developer_id_signs_and_checks_broker_before_notarization() {
 fn xcframework_pack_generates_bindings_and_headers_for_clean_builds() {
     // The pack command must use Boltffi's default generation path: the clean
     // build needs generated headers before XCFramework assembly.
-    assert!(include_str!("../../desktop.rs").contains(".args([\"pack\", \"apple\"]);"));
+    assert!(include_str!("../desktop.rs").contains(".args([\"pack\", \"apple\"]);"));
 }
 
 #[test]
@@ -367,3 +367,4 @@ fn swift_testing_xunit_is_a_separate_required_counted_report() {
     assert_eq!(report.tests, 2);
     validate_test_totals("Swift Testing", &report).unwrap();
 }
+

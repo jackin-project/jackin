@@ -372,3 +372,4 @@ async fn purge_container_state_refuses_when_role_container_exists() {
     assert!(err.to_string().contains("jackin eject"), "got: {err}");
     assert!(paths.data_dir.join(container).exists());
 }
+

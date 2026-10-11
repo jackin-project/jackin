@@ -365,3 +365,4 @@ fn switching_from_sync_to_token_revokes_forwarded_credentials() {
     assert!(!state2.claude_credentials_json().unwrap().exists());
     assert_eq!(outcome, AuthProvisionOutcome::TokenMode);
 }
+

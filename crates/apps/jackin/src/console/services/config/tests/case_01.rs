@@ -202,3 +202,4 @@ fn settings_save_preserves_first_run_bootstrap_accounts() {
         Some(jackin_config::BootstrapState::initialized())
     );
 }
+

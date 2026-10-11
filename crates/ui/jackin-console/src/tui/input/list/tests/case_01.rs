@@ -381,3 +381,4 @@ fn right_on_current_directory_parent_expands_even_with_live_snapshot() {
         ))
     ));
 }
+

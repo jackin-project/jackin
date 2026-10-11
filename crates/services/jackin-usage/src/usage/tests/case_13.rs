@@ -366,3 +366,4 @@ fn usage_detail_presentation_keeps_duplicate_bucket_labels() {
     assert_eq!(by_id("bucket:0"), Some("80% left"));
     assert_eq!(by_id("bucket:1"), Some("20% left"));
 }
+

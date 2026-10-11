@@ -375,3 +375,4 @@ fn client_terminal_derives_attach_capabilities() {
     assert!(!caps.osc8_hyperlinks);
     assert_eq!(caps.image_protocol, ImageProtocolCapability::Unsupported);
 }
+

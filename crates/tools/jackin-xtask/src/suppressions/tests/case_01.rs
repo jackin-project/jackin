@@ -117,3 +117,4 @@ count = 5
     assert_eq!(budget.expects[0].crate_name, "jackin-runtime");
     assert_eq!(budget.expects[0].count, 5);
 }
+

@@ -2,9 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn prelude_with_browser_committed(
-    src: &str,
-) -> crate::tui::state::CreatePreludeState<'static> {
+fn prelude_with_browser_committed(src: &str) -> crate::tui::state::CreatePreludeState<'static> {
     let mut prelude = crate::tui::state::CreatePreludeState::new();
     prelude.accept_mount_src(std::path::PathBuf::from(src));
     prelude.wizard.next();
@@ -15,7 +13,7 @@ pub(super) fn prelude_with_browser_committed(
     prelude
 }
 
-pub(super) fn handle_prelude_modal_with_effects(
+fn handle_prelude_modal_with_effects(
     prelude: &mut crate::tui::state::CreatePreludeState<'_>,
     key: crossterm::event::KeyEvent,
 ) {
@@ -37,27 +35,27 @@ pub(super) fn handle_prelude_modal_with_effects(
     });
 }
 
-pub(super) fn handle_prelude_modal(
+fn handle_prelude_modal(
     prelude: &mut crate::tui::state::CreatePreludeState<'_>,
     key: crossterm::event::KeyEvent,
 ) -> PreludeModalOutcome {
     raw_handle_prelude_modal(prelude, key, Rect::new(0, 0, 120, 40))
 }
 
-pub(super) const GOLDEN_SRC: &str = "/home/user/project";
+const GOLDEN_SRC: &str = "/home/user/project";
 
-pub(super) fn observed_step(prelude: &crate::tui::state::CreatePreludeState<'_>) -> Option<usize> {
+fn observed_step(prelude: &crate::tui::state::CreatePreludeState<'_>) -> Option<usize> {
     prelude.modal.as_ref()?;
     Some(prelude.wizard.step())
 }
 
-pub(super) fn observed_completion(
+fn observed_completion(
     prelude: &crate::tui::state::CreatePreludeState<'_>,
 ) -> CreatePreludeCompletionStatus {
     create_prelude_completion_status(prelude.modal.is_some(), prelude.completed().is_some())
 }
 
-pub(super) fn progress(step_index: usize, completed: &[&str], skipped: &[&str]) -> WizardProgress {
+fn progress(step_index: usize, completed: &[&str], skipped: &[&str]) -> WizardProgress {
     WizardProgress {
         step_index,
         phase: WizardPhase::Step,
@@ -67,7 +65,7 @@ pub(super) fn progress(step_index: usize, completed: &[&str], skipped: &[&str]) 
     }
 }
 
-pub(super) fn file_browser_src_prelude() -> crate::tui::state::CreatePreludeState<'static> {
+fn file_browser_src_prelude() -> crate::tui::state::CreatePreludeState<'static> {
     let mut prelude = crate::tui::state::CreatePreludeState::new();
     let fb = crate::tui::components::file_browser::FileBrowserState::from_listing(
         crate::services::file_browser::listing_from_home()
@@ -79,3 +77,4 @@ pub(super) fn file_browser_src_prelude() -> crate::tui::state::CreatePreludeStat
     });
     prelude
 }
+

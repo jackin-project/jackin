@@ -11,7 +11,7 @@
 //! commit it via `handle_key`, then drive the save flow through the
 //! same `handle_key`).
 
-use super::super::fixtures::{key, mount};
+use super::super::test_support::{key, mount};
 
 use super::*;
 
@@ -24,5 +24,6 @@ use crossterm::event::KeyCode;
 use jackin_config::AppConfig;
 
 use jackin_core::JackinPaths;
+
 
 mod case_01;

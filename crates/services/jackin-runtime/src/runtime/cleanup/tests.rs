@@ -3,7 +3,6 @@
 
 //! Tests for `cleanup`.
 
-use super::super::coordination;
 use super::super::naming::matching_family;
 
 use super::*;
@@ -23,6 +22,7 @@ use jackin_test_support::{FakeDockerClient, FakeRunner};
 use std::collections::{HashMap, VecDeque};
 
 use tempfile::TempDir;
+
 
 mod support;
 use support::*;

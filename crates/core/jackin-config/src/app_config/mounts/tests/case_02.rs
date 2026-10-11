@@ -43,3 +43,4 @@ fn validate_global_mount_rows_rejects_non_shared_isolation() {
         "unexpected error: {err}"
     );
 }
+

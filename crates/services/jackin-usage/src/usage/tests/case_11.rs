@@ -392,3 +392,4 @@ fn provider_boundary_exports_only_bounded_request_fields() {
         assert!(!export.contains_log_text(prohibited));
     }
 }
+

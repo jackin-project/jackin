@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn key(code: KeyCode) -> KeyEvent {
+fn key(code: KeyCode) -> KeyEvent {
     KeyEvent {
         code,
         modifiers: KeyModifiers::NONE,
@@ -11,11 +11,11 @@ pub(super) fn key(code: KeyCode) -> KeyEvent {
     }
 }
 
-pub(super) fn state_rooted_at(root: PathBuf, cwd: PathBuf) -> FileBrowserState {
+fn state_rooted_at(root: PathBuf, cwd: PathBuf) -> FileBrowserState {
     FileBrowserState::from_listing(crate::services::file_browser::listing_at(root, cwd))
 }
 
-pub(super) fn apply_with_services(
+fn apply_with_services(
     state: &mut FileBrowserState,
     outcome: FileBrowserOutcome<PathBuf>,
 ) -> FileBrowserOutcome<PathBuf> {
@@ -46,7 +46,7 @@ pub(super) fn apply_with_services(
     }
 }
 
-pub(super) fn handle_with_services(
+fn handle_with_services(
     state: &mut FileBrowserState,
     key: KeyEvent,
 ) -> FileBrowserOutcome<PathBuf> {
@@ -54,7 +54,7 @@ pub(super) fn handle_with_services(
     apply_with_services(state, outcome)
 }
 
-pub(super) fn attach_git_url_resolution(state: &mut FileBrowserState, repo: PathBuf) {
+fn attach_git_url_resolution(state: &mut FileBrowserState, repo: PathBuf) {
     let rx = crate::tui::runtime::spawn_named_blocking_subscription(
         "jackin-file-browser-git-url-test",
         move || crate::services::file_browser::resolve_git_url(&repo),
@@ -62,7 +62,7 @@ pub(super) fn attach_git_url_resolution(state: &mut FileBrowserState, repo: Path
     state.attach_git_url_resolution(rx);
 }
 
-pub(super) fn wait_for_git_url_resolution(state: &mut FileBrowserState) {
+fn wait_for_git_url_resolution(state: &mut FileBrowserState) {
     for _ in 0..50 {
         if state.poll_git_url_resolution() {
             return;
@@ -76,7 +76,7 @@ pub(super) fn wait_for_git_url_resolution(state: &mut FileBrowserState) {
     panic!("git URL worker did not finish");
 }
 
-pub(super) fn seed_git_repo_with_origin(repo: &Path, remote: &str) {
+fn seed_git_repo_with_origin(repo: &Path, remote: &str) {
     let git = repo.join(".git");
     std::fs::create_dir_all(&git).unwrap();
     std::fs::write(git.join("HEAD"), "ref: refs/heads/main\n").unwrap();
@@ -86,3 +86,4 @@ pub(super) fn seed_git_repo_with_origin(repo: &Path, remote: &str) {
     )
     .unwrap();
 }
+

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn seed_valid_role_repo(repo_dir: &std::path::Path) {
+fn seed_valid_role_repo(repo_dir: &std::path::Path) {
     std::fs::create_dir_all(repo_dir.join(".git")).unwrap();
     std::fs::write(
         repo_dir.join("Dockerfile"),
@@ -21,7 +21,7 @@ plugins = []
     .unwrap();
 }
 
-pub(super) fn validated_test_repo(
+fn validated_test_repo(
     paths: &JackinPaths,
     selector: &RoleSelector,
 ) -> (CachedRepo, jackin_manifest::repo::ValidatedRoleRepo) {
@@ -31,7 +31,7 @@ pub(super) fn validated_test_repo(
     (cached_repo, validated_repo)
 }
 
-pub(super) fn classify_image_labels(
+fn classify_image_labels(
     labels: &HashMap<String, String>,
     expected_recipes: &[ExpectedImageRecipe],
 ) -> Option<ClassificationReason> {
@@ -58,7 +58,7 @@ pub(super) fn classify_image_labels(
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum ClassificationReason {
+enum ClassificationReason {
     MissingRecipeLabel,
     RecipeVersionChanged,
     RecipeHashChanged,
@@ -68,7 +68,7 @@ pub(super) enum ClassificationReason {
     CapsuleVersionChanged,
 }
 
-pub(super) fn recipe_label_mismatch(
+fn recipe_label_mismatch(
     labels: &HashMap<String, String>,
     recipe: &ImageRecipe,
 ) -> Option<ClassificationReason> {
@@ -88,3 +88,4 @@ pub(super) fn recipe_label_mismatch(
     }
     None
 }
+

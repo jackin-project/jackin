@@ -144,15 +144,15 @@ async fn prune_instances_preserves_held_and_idle_coordination_inodes() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     std::fs::create_dir_all(&paths.data_dir).unwrap();
-    let held = coordination::open_lock(&paths, "name-jk-held").unwrap();
-    let idle = coordination::open_lock(&paths, "name-jk-idle").unwrap();
+    let held = super::super::coordination::open_lock(&paths, "name-jk-held").unwrap();
+    let idle = super::super::coordination::open_lock(&paths, "name-jk-idle").unwrap();
     FileExt::try_lock(&held).unwrap();
     FileExt::try_lock(&idle).unwrap();
     FileExt::unlock(&idle).unwrap();
-    let idle_path = coordination::root(&paths)
+    let idle_path = super::super::coordination::root(&paths)
         .unwrap()
         .join("name-jk-idle.lock");
-    let held_path = coordination::root(&paths)
+    let held_path = super::super::coordination::root(&paths)
         .unwrap()
         .join("name-jk-held.lock");
     #[cfg(unix)]
@@ -389,3 +389,4 @@ async fn prune_instances_removes_all_four_prunable_statuses() {
         "crashed should be kept"
     );
 }
+

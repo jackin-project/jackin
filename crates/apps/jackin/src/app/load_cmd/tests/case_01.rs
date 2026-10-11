@@ -127,13 +127,13 @@ fn saved_console_config_feeds_post_console_launch_path() {
 #[test]
 fn dry_run_json_carries_the_resolved_image_decision_and_published_image() {
     let selector = jackin_core::RoleSelector::parse("donbeave/the-architect").unwrap();
-    let plan = dry_run_plan_json(
+    let plan = super::dry_run_plan_json(
         &selector,
         &dry_run_workspace(),
         "claude",
         None,
         false,
-        DryRunLaunchOverrides::default(),
+        super::DryRunLaunchOverrides::default(),
         &dry_run_image_plan(),
     );
     let data = &plan["data"];
@@ -155,13 +155,13 @@ fn dry_run_json_carries_the_resolved_image_decision_and_published_image() {
 #[test]
 fn dry_run_json_keeps_every_pre_existing_key() {
     let selector = jackin_core::RoleSelector::parse("donbeave/the-architect").unwrap();
-    let plan = dry_run_plan_json(
+    let plan = super::dry_run_plan_json(
         &selector,
         &dry_run_workspace(),
         "codex",
         Some("feat/my-pr"),
         true,
-        DryRunLaunchOverrides::default(),
+        super::DryRunLaunchOverrides::default(),
         &dry_run_image_plan(),
     );
     let data = &plan["data"];
@@ -201,13 +201,13 @@ fn a_role_without_a_published_image_reports_it_as_null_not_missing() {
     image_plan.published_image = None;
     image_plan.base_image = None;
     image_plan.decision = "build_from_workspace";
-    let plan = dry_run_plan_json(
+    let plan = super::dry_run_plan_json(
         &selector,
         &dry_run_workspace(),
         "claude",
         None,
         false,
-        DryRunLaunchOverrides::default(),
+        super::DryRunLaunchOverrides::default(),
         &image_plan,
     );
     let data = &plan["data"];
@@ -276,13 +276,13 @@ fn dry_run_identity_carries_the_account_model_pin() {
 fn dry_run_json_emits_the_model_pin_at_top_level_and_per_instance() {
     use jackin_config::ResolvedInstance;
     let selector = jackin_core::RoleSelector::parse("donbeave/the-architect").unwrap();
-    let mut plan = dry_run_plan_json(
+    let mut plan = super::dry_run_plan_json(
         &selector,
         &dry_run_workspace(),
         "claude",
         None,
         false,
-        DryRunLaunchOverrides::default(),
+        super::DryRunLaunchOverrides::default(),
         &dry_run_image_plan(),
     );
     let identity = jackin_runtime::runtime::DryRunIdentity {
@@ -314,13 +314,13 @@ fn dry_run_json_emits_the_model_pin_at_top_level_and_per_instance() {
 #[test]
 fn dry_run_json_reports_an_absent_model_pin_as_null_not_missing() {
     let selector = jackin_core::RoleSelector::parse("donbeave/the-architect").unwrap();
-    let mut plan = dry_run_plan_json(
+    let mut plan = super::dry_run_plan_json(
         &selector,
         &dry_run_workspace(),
         "codex",
         None,
         false,
-        DryRunLaunchOverrides::default(),
+        super::DryRunLaunchOverrides::default(),
         &dry_run_image_plan(),
     );
     let identity = jackin_runtime::runtime::DryRunIdentity {
@@ -334,3 +334,4 @@ fn dry_run_json_reports_an_absent_model_pin_as_null_not_missing() {
     assert!(data["model"].is_null());
     assert!(data["instances"].as_array().is_some_and(Vec::is_empty));
 }
+

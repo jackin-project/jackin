@@ -24,3 +24,4 @@ fn parse_prefix_forms() {
     assert_eq!(parse_prefix("Q"), Some(b'Q'));
     assert_eq!(parse_prefix("nope"), None);
 }
+

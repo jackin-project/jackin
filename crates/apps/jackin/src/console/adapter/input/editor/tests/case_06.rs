@@ -324,3 +324,4 @@ fn tui_text_entry_op_uri_always_commits_as_plain() {
         "text entry must never produce EnvValue::OpRef"
     );
 }
+

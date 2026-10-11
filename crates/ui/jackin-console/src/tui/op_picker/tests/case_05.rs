@@ -390,3 +390,4 @@ fn dropped_worker_reports_closed_and_clears_slot() {
         "dropped worker surfaces the disconnected-worker error"
     );
 }
+

@@ -12,7 +12,7 @@ impl std::fmt::Debug for MovedPathEntryStep {
     }
 }
 
-pub(super) fn ad_hoc_manifest_for_workdir(workdir: &std::path::Path) -> instance::InstanceManifest {
+fn ad_hoc_manifest_for_workdir(workdir: &std::path::Path) -> instance::InstanceManifest {
     let workdir = workdir.display().to_string();
     instance::InstanceManifest::new(instance::NewInstanceManifest {
         container_base: "jk-k7p9m2xq-agentsmith",
@@ -39,7 +39,7 @@ pub(super) fn ad_hoc_manifest_for_workdir(workdir: &std::path::Path) -> instance
     })
 }
 
-pub(super) fn write_stop_test_manifest(
+fn write_stop_test_manifest(
     paths: &JackinPaths,
     workdir: &std::path::Path,
     status: instance::InstanceStatus,
@@ -51,3 +51,4 @@ pub(super) fn write_stop_test_manifest(
     instance::InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
     container
 }
+

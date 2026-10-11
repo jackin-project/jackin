@@ -97,7 +97,7 @@ async fn early_empty_scan_avoids_second_current_role_inspect() {
 
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
 
     let container_name = "jk-early-empty-scan";
     let mut manifest =
@@ -162,7 +162,7 @@ async fn early_nonempty_scan_reuses_typed_current_without_reinspect() {
 
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
 
     let container_name = "jk-early-nonempty-reuse";
     let mut manifest =
@@ -227,7 +227,7 @@ async fn unselected_empty_early_scan_skips_later_agent_current_inspect() {
 
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
 
     // No indexed manifests → role-scope empty.
     let docker = FakeDockerClient {
@@ -280,7 +280,7 @@ async fn common_path_single_current_inspect_with_early_then_reuse() {
 
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
 
     let container_name = "jk-common-single-inspect";
     let mut manifest =
@@ -349,7 +349,7 @@ async fn common_path_single_current_inspect_with_early_then_reuse() {
 async fn programmatic_launch_without_a_trust_grant_fails_before_docker() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     paths.ensure_base_dirs().unwrap();
     std::fs::write(
         &paths.config_file,
@@ -397,3 +397,4 @@ account = "test"
         "the failure must be a typed validation error, got {error:#}"
     );
 }
+

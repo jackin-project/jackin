@@ -181,3 +181,4 @@ fn golden_walk_6_esc_at_file_browser_src_cancels() {
         CreatePreludeCompletionStatus::Cancelled
     );
 }
+

@@ -265,7 +265,7 @@ fn fixture_round_trip_is_byte_identical() {
     let paths = JackinPaths::for_tests(temp.path());
     paths.ensure_base_dirs().unwrap();
 
-    let original = include_str!("../../fixtures/config.round_trip.toml");
+    let original = include_str!("../fixtures/config.round_trip.toml");
     std::fs::write(&paths.config_file, original).unwrap();
 
     let editor = ConfigEditor::open(&paths).unwrap();
@@ -397,3 +397,4 @@ fn save_rejects_invalid_candidate_and_preserves_on_disk_config() {
         tmp_path.display()
     );
 }
+

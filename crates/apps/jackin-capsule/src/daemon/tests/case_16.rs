@@ -342,3 +342,4 @@ fn apply_action_selection_motion_updates_selection() {
         "selection motion must not clear the full screen"
     );
 }
+

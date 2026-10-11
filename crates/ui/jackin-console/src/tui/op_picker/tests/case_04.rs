@@ -344,3 +344,4 @@ fn parity_unique_item_3seg_field_cli_matches_picker() {
     assert_eq!(cli_ref.op, picker_ref.op, "op URI must match");
     assert_eq!(cli_ref.path, picker_ref.path, "display path must match");
 }
+

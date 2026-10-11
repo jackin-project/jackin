@@ -15,7 +15,7 @@ fn launch_trust_rejection_exports_typed_decision_without_source_identity() {
     };
     let mut config = AppConfig::default();
     config.roles.insert(selector.key(), source.clone());
-    let mut steps = StepCounter::new(
+    let mut steps = super::super::StepCounter::new(
         "private-role",
         jackin_telemetry::schema::enums::LaunchTargetKind::Directory,
     );
@@ -385,3 +385,4 @@ fn launch_core_builder_populates_required_fields() {
     assert_eq!(core.role_key, "agent-smith");
     drop(core);
 }
+

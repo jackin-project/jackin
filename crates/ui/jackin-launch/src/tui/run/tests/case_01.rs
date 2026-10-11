@@ -166,3 +166,4 @@ fn rich_dialog_requirement_message_is_tui_owned() {
         "launch choice requires the rich launch dialog"
     );
 }
+

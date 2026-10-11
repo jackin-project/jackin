@@ -345,3 +345,4 @@ fn visible_tab_pane_kind_uses_tui_agent_labeling() {
         VisibleTabPaneKind::Shell
     );
 }
+

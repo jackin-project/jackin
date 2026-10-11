@@ -161,3 +161,4 @@ fn source_checkout_accepts_admitted_old_sha_after_origin_main_advances() {
         .expect_err("HTTP GitHub remotes must fail closed");
     assert!(error.to_string().contains("GitHub repository URL"));
 }
+

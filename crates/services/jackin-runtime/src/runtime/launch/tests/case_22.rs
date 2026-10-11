@@ -7,9 +7,10 @@ use super::*;
 async fn render_exit_preserves_universe_marker_when_instances_remain() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     paths.ensure_base_dirs().unwrap();
-    super::universe::mark_start(&paths, super::universe::StartKind::FreshConstruct).await;
+    super::super::universe::mark_start(&paths, super::super::universe::StartKind::FreshConstruct)
+        .await;
     let marker = crate::runtime::coordination::universe_dir(&paths)
         .unwrap()
         .join("universe-since");
@@ -35,9 +36,10 @@ async fn render_exit_preserves_universe_marker_when_instances_remain() {
 async fn render_exit_preserves_universe_marker_when_running_list_fails() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     paths.ensure_base_dirs().unwrap();
-    super::universe::mark_start(&paths, super::universe::StartKind::FreshConstruct).await;
+    super::super::universe::mark_start(&paths, super::super::universe::StartKind::FreshConstruct)
+        .await;
     let marker = crate::runtime::coordination::universe_dir(&paths)
         .unwrap()
         .join("universe-since");
@@ -57,7 +59,7 @@ async fn render_exit_preserves_universe_marker_when_running_list_fails() {
 async fn load_agent_injects_global_operator_env_literal() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     paths.ensure_base_dirs().unwrap();
 
     // Seed a config.toml with a global operator env map.
@@ -158,7 +160,7 @@ plugins = []
 async fn load_agent_keeps_zai_secret_out_of_capsule_config() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::stubs::install_all_test_stubs(&paths);
+    crate::runtime::test_support::install_all_test_stubs(&paths);
     paths.ensure_base_dirs().unwrap();
 
     std::fs::write(
@@ -298,3 +300,4 @@ plugins = []
     assert_host_env_file_outside_mounts(run_cmd, &observed.path);
     assert!(!observed.path.exists());
 }
+

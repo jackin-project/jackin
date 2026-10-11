@@ -363,3 +363,4 @@ fn hello_reports_protocol_without_adapters() {
         }
     );
 }
+

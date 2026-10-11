@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn make_worktree_layout(temp: &Path, worktree_name: &str) -> (PathBuf, PathBuf) {
+fn make_worktree_layout(temp: &Path, worktree_name: &str) -> (PathBuf, PathBuf) {
     let workdir = temp.join("workdir");
     let common_git = temp.join("repo/.git");
     let wt_git = common_git.join(format!("worktrees/{worktree_name}"));
@@ -16,7 +16,7 @@ pub(super) fn make_worktree_layout(temp: &Path, worktree_name: &str) -> (PathBuf
     (workdir, common_git)
 }
 
-pub(super) fn arm_pending_pr_lookup(mux: &mut Multiplexer, branch_name: &str, request_id: u64) {
+fn arm_pending_pr_lookup(mux: &mut Multiplexer, branch_name: &str, request_id: u64) {
     mux.pr_watch.pull_request_lookup.request_id = request_id;
     mux.pr_watch.pull_request_lookup.in_flight = true;
     mux.pr_watch.pull_request_context_branch = Some(branch(branch_name));
@@ -27,18 +27,15 @@ pub(super) fn test_session(rows: u16, cols: u16) -> (Session, mpsc::UnboundedRec
     test_session_with_agent(rows, cols, Some("codex".to_owned()))
 }
 
-pub(super) fn test_shell_session(
-    rows: u16,
-    cols: u16,
-) -> (Session, mpsc::UnboundedReceiver<Vec<u8>>) {
+fn test_shell_session(rows: u16, cols: u16) -> (Session, mpsc::UnboundedReceiver<Vec<u8>>) {
     test_session_with_agent(rows, cols, None)
 }
 
-pub(super) fn pane_kind_cases() -> [(Option<&'static str>, &'static str); 2] {
+fn pane_kind_cases() -> [(Option<&'static str>, &'static str); 2] {
     [(Some("codex"), "agent"), (None, "shell")]
 }
 
-pub(super) fn test_pane_session(
+fn test_pane_session(
     rows: u16,
     cols: u16,
     agent: Option<&str>,
@@ -46,12 +43,7 @@ pub(super) fn test_pane_session(
     test_session_with_agent(rows, cols, agent.map(str::to_owned))
 }
 
-pub(super) fn assert_frame_stays_within_geometry(
-    frame: &[u8],
-    rows: u16,
-    cols: u16,
-    context: &str,
-) {
+fn assert_frame_stays_within_geometry(frame: &[u8], rows: u16, cols: u16, context: &str) {
     let metrics = scan_emitted_frame(frame);
     assert!(
         metrics.full_screen_erases > 0,
@@ -69,7 +61,7 @@ pub(super) fn assert_frame_stays_within_geometry(
     );
 }
 
-pub(super) fn assert_wheel_cursor_fallback_sent(
+fn assert_wheel_cursor_fallback_sent(
     input_rx: &mut mpsc::UnboundedReceiver<Vec<u8>>,
     expected_bytes: &[u8],
 ) {
@@ -84,11 +76,7 @@ pub(super) fn assert_wheel_cursor_fallback_sent(
         .expect_err("wheel should not produce extra PTY input");
 }
 
-pub(super) fn feed_top_anchored_inline_history(
-    session: &mut Session,
-    region_bottom: u16,
-    lines: usize,
-) {
+fn feed_top_anchored_inline_history(session: &mut Session, region_bottom: u16, lines: usize) {
     session.feed_pty(format!("\x1b[1;{region_bottom}r\x1b[{region_bottom};1H").as_bytes());
     for i in 0..lines {
         session.feed_pty(format!("\r\n\x1b[2Khistory {i}").as_bytes());
@@ -122,7 +110,7 @@ pub(super) fn test_session_with_agent(
     (session, input_rx)
 }
 
-pub(super) fn test_provider_session(
+fn test_provider_session(
     provider: jackin_protocol::Provider,
 ) -> (Session, mpsc::UnboundedReceiver<Vec<u8>>) {
     let (mut session, input_rx) = test_session_with_agent(24, 80, Some("claude".to_owned()));
@@ -142,7 +130,7 @@ pub(super) fn split_tab_mux() -> Multiplexer {
     mux
 }
 
-pub(super) fn view_row_text(session: &Session, row: u16) -> String {
+fn view_row_text(session: &Session, row: u16) -> String {
     let (grid_rows, _) = session.shadow_grid.size();
     let view = session
         .shadow_grid
@@ -157,7 +145,7 @@ pub(super) fn view_row_text(session: &Session, row: u16) -> String {
         .to_owned()
 }
 
-pub(super) fn attach_drained_client(mux: &mut Multiplexer) -> mpsc::UnboundedReceiver<Vec<u8>> {
+fn attach_drained_client(mux: &mut Multiplexer) -> mpsc::UnboundedReceiver<Vec<u8>> {
     let (tx, mut rx) = mpsc::unbounded_channel();
     mux.client_registry.client.attach(tx);
     mux.client_registry.client.flush_out_of_band();
@@ -165,7 +153,7 @@ pub(super) fn attach_drained_client(mux: &mut Multiplexer) -> mpsc::UnboundedRec
     rx
 }
 
-pub(super) fn osc52_payloads(rx: &mut mpsc::UnboundedReceiver<Vec<u8>>) -> Vec<Vec<u8>> {
+fn osc52_payloads(rx: &mut mpsc::UnboundedReceiver<Vec<u8>>) -> Vec<Vec<u8>> {
     let mut found = Vec::new();
     while let Ok(bytes) = rx.try_recv() {
         let mut rest = bytes.as_slice();
@@ -182,13 +170,13 @@ pub(super) fn osc52_payloads(rx: &mut mpsc::UnboundedReceiver<Vec<u8>>) -> Vec<V
     found
 }
 
-pub(super) fn expected_osc52_payload(text: &str) -> Vec<u8> {
+fn expected_osc52_payload(text: &str) -> Vec<u8> {
     let encoded = crate::tui::view::encode_osc52_clipboard_write(text);
     // strip "\x1b]52;c;" prefix and trailing BEL
     encoded[7..encoded.len() - 1].to_vec()
 }
 
-pub(super) fn assert_osc52_payloads(
+fn assert_osc52_payloads(
     mux: &mut Multiplexer,
     rx: &mut mpsc::UnboundedReceiver<Vec<u8>>,
     expected: &[&str],
@@ -201,24 +189,24 @@ pub(super) fn assert_osc52_payloads(
     }
 }
 
-pub(super) struct VirtualClient {
-    pub(super) grid: DamageGrid,
+struct VirtualClient {
+    grid: DamageGrid,
 }
 
 impl VirtualClient {
-    pub(super) fn new(rows: u16, cols: u16) -> Self {
+    fn new(rows: u16, cols: u16) -> Self {
         Self {
             grid: DamageGrid::new(rows, cols, 0),
         }
     }
 
-    pub(super) fn apply(&mut self, frame: &[u8]) {
+    fn apply(&mut self, frame: &[u8]) {
         self.grid.process(frame);
         drop(self.grid.drain_passthrough());
         drop(self.grid.dirty_spans());
     }
 
-    pub(super) fn resize(&mut self, rows: u16, cols: u16) {
+    fn resize(&mut self, rows: u16, cols: u16) {
         self.grid.set_size(rows, cols);
     }
 
@@ -230,7 +218,7 @@ impl VirtualClient {
     }
 }
 
-pub(super) fn feed_and_compose(
+fn feed_and_compose(
     mux: &mut Multiplexer,
     client: &mut VirtualClient,
     session_id: u64,
@@ -245,21 +233,13 @@ pub(super) fn feed_and_compose(
     client.apply(&frame);
 }
 
-pub(super) fn dispatch_and_compose(
-    mux: &mut Multiplexer,
-    client: &mut VirtualClient,
-    event: InputEvent,
-) {
+fn dispatch_and_compose(mux: &mut Multiplexer, client: &mut VirtualClient, event: InputEvent) {
     mux.handle_input(event);
     let frame = mux.compose_pending_frame();
     client.apply(&frame);
 }
 
-pub(super) fn assert_screen_matches_model(
-    mux: &mut Multiplexer,
-    client: &VirtualClient,
-    context: &str,
-) {
+fn assert_screen_matches_model(mux: &mut Multiplexer, client: &VirtualClient, context: &str) {
     assert!(
         !mux.dialog_open(),
         "{context}: I1 cell comparison requires no dialog over the panes"
@@ -312,7 +292,7 @@ pub(super) fn assert_screen_matches_model(
     }
 }
 
-pub(super) fn assert_cursor_contract(mux: &mut Multiplexer, client: &VirtualClient, context: &str) {
+fn assert_cursor_contract(mux: &mut Multiplexer, client: &VirtualClient, context: &str) {
     let dialog_open = mux.dialog_open();
     let focused = mux.active_focused_id();
     let pane = focused.and_then(|id| mux.visible_panes().into_iter().find(|p| p.id == id));
@@ -355,16 +335,12 @@ pub(super) fn assert_cursor_contract(mux: &mut Multiplexer, client: &VirtualClie
     }
 }
 
-pub(super) fn assert_frame_conformance(
-    mux: &mut Multiplexer,
-    client: &VirtualClient,
-    context: &str,
-) {
+fn assert_frame_conformance(mux: &mut Multiplexer, client: &VirtualClient, context: &str) {
     assert_screen_matches_model(mux, client, context);
     assert_cursor_contract(mux, client, context);
 }
 
-pub(super) fn attached_single_pane() -> (Multiplexer, VirtualClient, u64) {
+fn attached_single_pane() -> (Multiplexer, VirtualClient, u64) {
     let mut mux = single_pane_tab_mux();
     let pane = mux.visible_panes().into_iter().next().expect("one pane");
     let (session, rx) = test_session(pane.inner.rows, pane.inner.cols);
@@ -379,7 +355,7 @@ pub(super) fn attached_single_pane() -> (Multiplexer, VirtualClient, u64) {
     (mux, client, 1)
 }
 
-pub(super) fn codex_chunk(i: usize) -> Vec<u8> {
+fn codex_chunk(i: usize) -> Vec<u8> {
     format!(
         "\x1b[38;5;39mcodex\x1b[0m line {i}: \x1b[1mthinking\x1b[0m about \x1b[38;2;0;255;65mrendering\x1b[0m\r\n"
     )
@@ -387,7 +363,7 @@ pub(super) fn codex_chunk(i: usize) -> Vec<u8> {
 }
 
 #[must_use]
-pub(super) fn percentile_index(len: usize, q: f64) -> usize {
+fn percentile_index(len: usize, q: f64) -> usize {
     if len == 0 {
         return 0;
     }
@@ -405,9 +381,10 @@ pub(super) fn percentile_index(len: usize, q: f64) -> usize {
     index
 }
 
-pub(super) fn exit_dirty_selected_value(mux: &Multiplexer) -> usize {
+fn exit_dirty_selected_value(mux: &Multiplexer) -> usize {
     match mux.dialog_top() {
         Some(Dialog::ExitDirty { selected, .. }) => *selected,
         other => panic!("expected ExitDirty on top, got {other:?}"),
     }
 }
+

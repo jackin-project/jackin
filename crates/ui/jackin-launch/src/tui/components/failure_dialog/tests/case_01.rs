@@ -220,3 +220,4 @@ fn long_failure_body_is_reachable_by_scrolling() {
         "head of long body must scroll off once at the tail: {tail:?}"
     );
 }
+

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn parity_antigravity_account() -> ParityAccount {
+fn parity_antigravity_account() -> ParityAccount {
     ParityAccount {
         // No `HostSurfaceId::Antigravity` exists; the surface only feeds the
         // opaque canonical-id hash here (Antigravity is Google tooling).
@@ -86,7 +86,7 @@ pub(super) fn parity_antigravity_account() -> ParityAccount {
     }
 }
 
-pub(super) fn parity_claude_work_account() -> ParityAccount {
+fn parity_claude_work_account() -> ParityAccount {
     ParityAccount {
         surface: HostSurfaceId::Claude,
         provider_id: "anthropic",
@@ -152,7 +152,7 @@ pub(super) fn parity_claude_work_account() -> ParityAccount {
     }
 }
 
-pub(super) fn parity_claude_personal_account() -> ParityAccount {
+fn parity_claude_personal_account() -> ParityAccount {
     ParityAccount {
         surface: HostSurfaceId::Claude,
         provider_id: "anthropic",
@@ -208,7 +208,7 @@ pub(super) fn parity_claude_personal_account() -> ParityAccount {
     }
 }
 
-pub(super) fn parity_cursor_account() -> ParityAccount {
+fn parity_cursor_account() -> ParityAccount {
     ParityAccount {
         surface: HostSurfaceId::Cursor,
         provider_id: "cursor",
@@ -299,7 +299,7 @@ pub(super) fn parity_cursor_account() -> ParityAccount {
     }
 }
 
-pub(super) fn parity_exhausted_account() -> ParityAccount {
+fn parity_exhausted_account() -> ParityAccount {
     ParityAccount {
         surface: HostSurfaceId::Codex,
         provider_id: "openai",
@@ -331,3 +331,4 @@ pub(super) fn parity_exhausted_account() -> ParityAccount {
         extra_groups: Vec::new(),
     }
 }
+

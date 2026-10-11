@@ -276,3 +276,4 @@ fn keyboard_help_opens_on_question_mark_with_or_without_shift() {
         KeyModifiers::NONE
     )));
 }
+

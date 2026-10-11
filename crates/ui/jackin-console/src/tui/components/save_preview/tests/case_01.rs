@@ -248,3 +248,4 @@ fn settings_save_lines_pin_representative_output() {
         )
     );
 }
+

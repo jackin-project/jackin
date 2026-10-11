@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) const SUBPANEL_CONTENT_INDENT: usize = 2;
+const SUBPANEL_CONTENT_INDENT: usize = 2;
 
-pub(super) fn config_with_long_workspace_name() -> AppConfig {
+fn config_with_long_workspace_name() -> AppConfig {
     let mut config = AppConfig::default();
     config.workspaces.insert(
         "chainargos-blockchain-nodes".into(),
@@ -13,7 +13,7 @@ pub(super) fn config_with_long_workspace_name() -> AppConfig {
     config
 }
 
-pub(super) fn config_with_sidebar_names_that_fit_wide_pane() -> AppConfig {
+fn config_with_sidebar_names_that_fit_wide_pane() -> AppConfig {
     let mut config = AppConfig::default();
     for name in [
         "chainargos",
@@ -29,7 +29,7 @@ pub(super) fn config_with_sidebar_names_that_fit_wide_pane() -> AppConfig {
     config
 }
 
-pub(super) fn config_with_many_workspaces() -> AppConfig {
+fn config_with_many_workspaces() -> AppConfig {
     let mut config = AppConfig::default();
     for idx in 0..12 {
         config
@@ -39,7 +39,7 @@ pub(super) fn config_with_many_workspaces() -> AppConfig {
     config
 }
 
-pub(super) fn identity_test_instance_entry() -> jackin_core::InstanceIndexEntry {
+fn identity_test_instance_entry() -> jackin_core::InstanceIndexEntry {
     jackin_core::InstanceIndexEntry {
         instance_id: "instance-1".into(),
         container_base: "container-1".into(),
@@ -53,14 +53,14 @@ pub(super) fn identity_test_instance_entry() -> jackin_core::InstanceIndexEntry 
     }
 }
 
-pub(super) fn line_text(line: &ratatui::text::Line<'_>) -> String {
+fn line_text(line: &ratatui::text::Line<'_>) -> String {
     line.spans
         .iter()
         .map(|s| s.content.as_ref())
         .collect::<String>()
 }
 
-pub(super) fn mode_col_start(line: &ratatui::text::Line<'_>) -> usize {
+fn mode_col_start(line: &ratatui::text::Line<'_>) -> usize {
     let s = line_text(line);
     // The Mode column is the first two-letter "rw"/"ro" after the gap,
     // or the literal "Mode" for the header. Scan for the first non-space
@@ -89,7 +89,7 @@ pub(super) fn mode_col_start(line: &ratatui::text::Line<'_>) -> usize {
     panic!("mode column not found in line: {s:?}");
 }
 
-pub(super) fn mount_row(
+fn mount_row(
     destination: &str,
     mode: &'static str,
     isolation: &'static str,
@@ -104,7 +104,7 @@ pub(super) fn mount_row(
     }
 }
 
-pub(super) fn mount(path: &str) -> MountConfig {
+fn mount(path: &str) -> MountConfig {
     MountConfig {
         src: path.into(),
         dst: path.into(),
@@ -113,19 +113,19 @@ pub(super) fn mount(path: &str) -> MountConfig {
     }
 }
 
-pub(super) fn mount_block_height(mounts: &[MountConfig]) -> u16 {
+fn mount_block_height(mounts: &[MountConfig]) -> u16 {
     crate::tui::sidebar_layout::mount_block_height(
         mounts.iter().map(|mount| mount.src == mount.dst),
     )
 }
 
-pub(super) fn global_mounts_content_height(mounts: &[MountConfig]) -> usize {
+fn global_mounts_content_height(mounts: &[MountConfig]) -> usize {
     crate::tui::sidebar_layout::global_mounts_content_height(
         mounts.iter().map(|mount| mount.src == mount.dst),
     )
 }
 
-pub(super) fn render_agents_subpanel(
+fn render_agents_subpanel(
     frame: &mut Frame<'_>,
     area: Rect,
     ws_config: Option<&WorkspaceConfig>,
@@ -134,12 +134,12 @@ pub(super) fn render_agents_subpanel(
     render_config_roles_subpanel(frame, area, ws_config, config, 0, 0, false);
 }
 
-pub(super) fn panel_inner(area: Rect) -> Rect {
+fn panel_inner(area: Rect) -> Rect {
     let theme = termrock::style::DesignSystem::default();
     termrock::widgets::Panel::new(&theme).inner(area)
 }
 
-pub(super) fn first_content_indent(terminal: &Terminal<TestBackend>) -> Option<usize> {
+fn first_content_indent(terminal: &Terminal<TestBackend>) -> Option<usize> {
     let buf = terminal.backend().buffer();
     let inner = panel_inner(buf.area);
     for x in inner.x..inner.right() {
@@ -152,7 +152,7 @@ pub(super) fn first_content_indent(terminal: &Terminal<TestBackend>) -> Option<u
     None
 }
 
-pub(super) fn buffer_text(buf: &Buffer) -> String {
+fn buffer_text(buf: &Buffer) -> String {
     let area = buf.area;
     let mut joined = String::new();
     for y in 0..area.height {
@@ -164,7 +164,7 @@ pub(super) fn buffer_text(buf: &Buffer) -> String {
     joined
 }
 
-pub(super) fn summary() -> WorkspaceSummary {
+fn summary() -> WorkspaceSummary {
     WorkspaceSummary {
         name: "demo".into(),
         workdir: "/tmp/demo".into(),
@@ -176,7 +176,7 @@ pub(super) fn summary() -> WorkspaceSummary {
     }
 }
 
-pub(super) fn ws_config_with_allowed(names: &[&str], default: Option<&str>) -> WorkspaceConfig {
+fn ws_config_with_allowed(names: &[&str], default: Option<&str>) -> WorkspaceConfig {
     WorkspaceConfig {
         version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/tmp/demo".into(),
@@ -199,11 +199,7 @@ pub(super) fn ws_config_with_allowed(names: &[&str], default: Option<&str>) -> W
     }
 }
 
-pub(super) fn find_symbol_indent(
-    terminal: &Terminal<TestBackend>,
-    y: u16,
-    needle: &str,
-) -> Option<usize> {
+fn find_symbol_indent(terminal: &Terminal<TestBackend>, y: u16, needle: &str) -> Option<usize> {
     let buf = terminal.backend().buffer();
     let inner = panel_inner(buf.area);
     for x in inner.x..inner.right() {
@@ -214,7 +210,7 @@ pub(super) fn find_symbol_indent(
     None
 }
 
-pub(super) fn last_printable_indent(terminal: &Terminal<TestBackend>, y: u16) -> Option<usize> {
+fn last_printable_indent(terminal: &Terminal<TestBackend>, y: u16) -> Option<usize> {
     let buf = terminal.backend().buffer();
     let inner = panel_inner(buf.area);
     let mut last: Option<usize> = None;
@@ -227,7 +223,7 @@ pub(super) fn last_printable_indent(terminal: &Terminal<TestBackend>, y: u16) ->
     last
 }
 
-pub(super) fn render_agents_row(
+fn render_agents_row(
     ws: Option<&WorkspaceConfig>,
     cfg: &AppConfig,
     width: u16,
@@ -249,7 +245,7 @@ pub(super) fn render_agents_row(
     row
 }
 
-pub(super) fn render_env_to_string(ws: &WorkspaceConfig, width: u16, height: u16) -> String {
+fn render_env_to_string(ws: &WorkspaceConfig, width: u16, height: u16) -> String {
     let backend = TestBackend::new(width, height);
     let mut term = Terminal::new(backend).unwrap();
     term.draw(|f| {
@@ -271,3 +267,4 @@ pub(super) fn render_env_to_string(ws: &WorkspaceConfig, width: u16, height: u16
     }
     joined
 }
+

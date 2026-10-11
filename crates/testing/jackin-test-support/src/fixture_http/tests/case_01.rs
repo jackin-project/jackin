@@ -145,3 +145,4 @@ fn assert_no_secrets_panics_without_echoing_secret() {
     };
     request.assert_no_secrets(&["other", "hunter2-value"]);
 }
+

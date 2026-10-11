@@ -394,3 +394,4 @@ async fn assess_cleanup_empty_for_each_ref_preserves_unpushed() {
     let recs = read_records(dir.path()).unwrap();
     assert_eq!(recs[0].cleanup_status, CleanupStatus::PreservedUnpushed);
 }
+

@@ -324,3 +324,4 @@ fn typed_picker_sidebars_render_labels() {
     assert!(text.contains("agent-smith"));
     assert!(text.contains("Codex"));
 }
+

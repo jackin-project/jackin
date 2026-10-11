@@ -378,3 +378,4 @@ fn series_identity_is_order_independent_and_duplicates_reject() {
         Err(Rejection::InvalidValue)
     );
 }
+

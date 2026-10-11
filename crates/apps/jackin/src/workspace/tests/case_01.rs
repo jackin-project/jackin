@@ -230,13 +230,13 @@ fn validate_workdir_parent_of_any_mount_dst() {
                 src: "/tmp/a".to_owned(),
                 dst: "/other/path".to_owned(),
                 readonly: false,
-                isolation: MountIsolation::Shared,
+                isolation: jackin_core::MountIsolation::Shared,
             },
             MountConfig {
                 src: "/tmp/b".to_owned(),
                 dst: "/workspace/project".to_owned(),
                 readonly: false,
-                isolation: MountIsolation::Shared,
+                isolation: jackin_core::MountIsolation::Shared,
             },
         ],
         ..Default::default()
@@ -395,3 +395,4 @@ fn isolation_layout_allows_two_clone_mounts_on_same_repo() {
     ];
     validate_isolation_layout(&mounts).unwrap();
 }
+

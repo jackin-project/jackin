@@ -380,3 +380,4 @@ fn claude_keychain_consent_required_falls_back_like_missing() {
     }
     assert_eq!(state.read_count(), 1);
 }
+

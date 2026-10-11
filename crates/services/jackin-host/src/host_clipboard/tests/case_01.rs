@@ -394,3 +394,4 @@ fn image_mime_order_prefers_png_then_common_raster_formats() {
         ]
     );
 }
+

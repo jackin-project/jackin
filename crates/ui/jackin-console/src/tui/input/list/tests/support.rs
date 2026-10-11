@@ -2,15 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) type ManagerEffect = crate::tui::effect::ConsoleManagerEffect<
+type ManagerEffect = crate::tui::effect::ConsoleManagerEffect<
     jackin_core::RoleSelector,
     jackin_config::RoleSource,
     jackin_core::OpRef,
 >;
 
-pub(super) fn handle_key(
+fn handle_key(
     state: &mut ManagerState<'_>,
-    config: &mut AppConfig,
+    config: &mut jackin_config::AppConfig,
     paths: &JackinPaths,
     cwd: &std::path::Path,
     key: KeyEvent,
@@ -93,11 +93,7 @@ pub(super) fn handle_key(
     Ok(InputOutcome::Continue)
 }
 
-pub(super) fn make_github_repo(
-    root: &std::path::Path,
-    name: &str,
-    branch: &str,
-) -> std::path::PathBuf {
+fn make_github_repo(root: &std::path::Path, name: &str, branch: &str) -> std::path::PathBuf {
     let path = root.join(name);
     let git_dir = path.join(".git");
     std::fs::create_dir_all(&git_dir).unwrap();
@@ -110,7 +106,7 @@ pub(super) fn make_github_repo(
     path
 }
 
-pub(super) fn list_state_selecting_ws(
+fn list_state_selecting_ws(
     ws: WorkspaceConfig,
 ) -> (ManagerState<'static>, AppConfig, JackinPaths, TempDir) {
     let tmp = tempfile::tempdir().unwrap();
@@ -126,11 +122,7 @@ pub(super) fn list_state_selecting_ws(
     (state, config, paths, tmp)
 }
 
-pub(super) fn instance_entry(
-    container: &str,
-    status: InstanceStatus,
-    workdir: &str,
-) -> InstanceIndexEntry {
+fn instance_entry(container: &str, status: InstanceStatus, workdir: &str) -> InstanceIndexEntry {
     InstanceIndexEntry {
         instance_id: format!("{container}-id"),
         container_base: container.into(),
@@ -144,7 +136,7 @@ pub(super) fn instance_entry(
     }
 }
 
-pub(super) fn current_dir_instance_entry(
+fn current_dir_instance_entry(
     container: &str,
     status: InstanceStatus,
     workdir: &str,
@@ -162,21 +154,21 @@ pub(super) fn current_dir_instance_entry(
     }
 }
 
-pub(super) fn provider_choices() -> Vec<jackin_protocol::Provider> {
+fn provider_choices() -> Vec<jackin_protocol::Provider> {
     vec![
         jackin_protocol::Provider::Anthropic,
         jackin_protocol::Provider::Zai,
     ]
 }
 
-pub(super) fn codex_provider_choices() -> Vec<jackin_protocol::Provider> {
+fn codex_provider_choices() -> Vec<jackin_protocol::Provider> {
     vec![
         jackin_protocol::Provider::Openai,
         jackin_protocol::Provider::Minimax,
     ]
 }
 
-pub(super) fn commit_new_session_picker(
+fn commit_new_session_picker(
     state: &mut ManagerState<'_>,
     agent: jackin_core::Agent,
     providers: Vec<jackin_protocol::Provider>,
@@ -207,7 +199,7 @@ pub(super) fn commit_new_session_picker(
     handle_new_session_picker(state, key(KeyCode::Enter))
 }
 
-pub(super) fn api_key_account(
+fn api_key_account(
     name: &str,
     provider: jackin_config::AiProvider,
 ) -> jackin_config::AccountConfig {
@@ -223,7 +215,7 @@ pub(super) fn api_key_account(
     }
 }
 
-pub(super) fn running_session_state(
+fn running_session_state(
     configure: impl FnOnce(&mut AppConfig),
 ) -> (ManagerState<'static>, AppConfig, JackinPaths, TempDir) {
     let workdir = "/workspace/demo";
@@ -283,7 +275,7 @@ pub(super) fn running_session_state(
     (state, config, paths, tmp)
 }
 
-pub(super) fn open_and_commit_new_session(
+fn open_and_commit_new_session(
     state: &mut ManagerState<'_>,
     config: &mut AppConfig,
     paths: &JackinPaths,
@@ -302,7 +294,7 @@ pub(super) fn open_and_commit_new_session(
     handle_new_session_picker(state, key(KeyCode::Enter))
 }
 
-pub(super) fn assert_no_eligible_account_popup(state: &ManagerState<'_>, scope_needle: &str) {
+fn assert_no_eligible_account_popup(state: &ManagerState<'_>, scope_needle: &str) {
     let Some(Modal::ErrorPopup { state: popup }) = &state.list_modal else {
         panic!(
             "expected no-eligible-account ErrorPopup; got {:?}",
@@ -327,7 +319,7 @@ pub(super) fn assert_no_eligible_account_popup(state: &ManagerState<'_>, scope_n
     );
 }
 
-pub(super) fn live_snapshot() -> jackin_protocol::InstanceSnapshot {
+fn live_snapshot() -> jackin_protocol::InstanceSnapshot {
     jackin_protocol::InstanceSnapshot {
         tabs: vec![jackin_protocol::control::TabSnapshot {
             label: "Codex".into(),
@@ -346,3 +338,4 @@ pub(super) fn live_snapshot() -> jackin_protocol::InstanceSnapshot {
         active_tab: 0,
     }
 }
+

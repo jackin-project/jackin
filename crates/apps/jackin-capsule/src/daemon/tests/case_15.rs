@@ -392,3 +392,4 @@ fn typed_input_snaps_scrollback_to_live_without_screen_erase() {
         "typing scrollback snap must not clear the full screen"
     );
 }
+

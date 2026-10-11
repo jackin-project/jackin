@@ -9,7 +9,7 @@ async fn daemon_pty_lifecycle_reaches_shutdown_after_last_session_exit() -> Resu
     use tokio::net::UnixStream;
     use tokio::time::{Duration, timeout};
 
-    let _telemetry_guard = crate::support::telemetry_test_guard_async().await;
+    let _telemetry_guard = crate::test_support::telemetry_test_guard_async().await;
     let root = tempfile::tempdir()?;
     let workdir = root.path().join("workspace");
     std::fs::create_dir(&workdir)?;
@@ -376,3 +376,4 @@ fn socket_peer_credentials_scope_session_controls_and_attach() {
     assert_session_peer_authorization(&mux, own, &own_capability, &sibling_capability);
     assert_operator_and_unknown_peer_authorization(&mux);
 }
+

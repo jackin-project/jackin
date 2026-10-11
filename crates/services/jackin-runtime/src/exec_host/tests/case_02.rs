@@ -15,3 +15,4 @@ async fn start_bound_for_container_creates_host_sock_before_returning() {
     assert!(sock.exists());
     handle.abort();
 }
+

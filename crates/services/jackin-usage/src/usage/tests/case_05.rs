@@ -378,3 +378,4 @@ fn claude_oauth_limits_array_backfills_missing_legacy_windows() {
         .expect("legacy Sonnet backfill");
     assert_eq!(sonnet.remaining_percent, Some(45));
 }
+

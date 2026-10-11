@@ -396,3 +396,4 @@ fn apply_action_open_palette_closes_existing_dialog() {
         "close palette must not clear the full terminal screen"
     );
 }
+

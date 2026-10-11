@@ -236,3 +236,4 @@ fn default_input_rejects_incompatible_agent_without_losing_input() {
         Some(SettingsModal::AuthTextInput { .. })
     ));
 }
+

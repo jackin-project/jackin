@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn ownership_manifest() -> crate::instance::InstanceManifest {
+fn ownership_manifest() -> crate::instance::InstanceManifest {
     crate::instance::InstanceManifest::new(crate::instance::NewInstanceManifest {
         container_base: "ownership-role",
         workspace_name: None,
@@ -23,7 +23,7 @@ pub(super) fn ownership_manifest() -> crate::instance::InstanceManifest {
     })
 }
 
-pub(super) fn capsule_config_with(instances: &[(&str, &str)]) -> jackin_protocol::CapsuleConfig {
+fn capsule_config_with(instances: &[(&str, &str)]) -> jackin_protocol::CapsuleConfig {
     let mut config = jackin_protocol::CapsuleConfig::default();
     for (id, agent) in instances {
         config.instances.push((*id).to_owned());
@@ -32,7 +32,7 @@ pub(super) fn capsule_config_with(instances: &[(&str, &str)]) -> jackin_protocol
     config
 }
 
-pub(super) fn final_hook_state(paths: &JackinPaths) -> RoleState {
+fn final_hook_state(paths: &JackinPaths) -> RoleState {
     let root = paths.data_dir.join("instances/current");
     std::fs::create_dir_all(root.join("home/.codex")).unwrap();
     RoleState {
@@ -50,3 +50,4 @@ pub(super) fn final_hook_state(paths: &JackinPaths) -> RoleState {
         provider_config_mounts: Vec::new(),
     }
 }
+

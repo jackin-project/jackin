@@ -3,7 +3,6 @@
 
 //! Tests for `layout`.
 
-use super::tab_hover_index_at_position;
 use super::{
     MIN_DRAGGABLE_WIDTH, MOUSE_HORIZONTAL_SCROLL_STEP, MOUSE_VERTICAL_SCROLL_STEP,
     SCREEN_HEADER_HEIGHT, SEAM_HIT_SLACK, ScrollbarAxis, TAB_STRIP_HEIGHT, apply_scrollbar_drag,
@@ -15,5 +14,6 @@ use super::{
 };
 
 use ratatui::layout::Rect;
+
 
 mod case_01;

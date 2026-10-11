@@ -93,3 +93,4 @@ fn codex_trust_coerces_a_non_table_projects_value() {
         "{raw}"
     );
 }
+

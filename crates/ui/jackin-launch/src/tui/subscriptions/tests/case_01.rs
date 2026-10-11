@@ -163,7 +163,7 @@ fn build_log_body_click_is_swallowed() {
     view.build_log_open = true;
     view.build_log_lines = vec!["short".to_owned()];
     let area = Rect::new(0, 0, 80, 24);
-    let terminal = crate::fixtures::test_host_terminal();
+    let terminal = crate::test_support::test_host_terminal();
 
     handle_cockpit_mouse_down(
         &mut view,
@@ -235,7 +235,7 @@ fn quit_confirm_yes_confirms_and_closes() {
 fn confirmed_quit_maps_to_hard_exit() {
     assert_eq!(
         cockpit_outcome_for_quit_confirm(QuitConfirmOutcome::Confirmed),
-        CockpitOutcome::HardExit
+        super::CockpitOutcome::HardExit
     );
 }
 
@@ -300,3 +300,4 @@ fn build_log_actions_classify_close_only() {
         assert_eq!(build_log_action_name(action), None);
     }
 }
+

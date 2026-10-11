@@ -88,7 +88,7 @@ fn tab_bar_focus_mode_arrows_switch_tabs_then_esc_returns_to_agent() {
 
 #[test]
 fn capsule_widget_focus_lifecycle_is_exported_without_runtime_identity() {
-    let _telemetry_guard = crate::support::telemetry_test_guard();
+    let _telemetry_guard = crate::test_support::telemetry_test_guard();
     let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(true);
     tracing::subscriber::with_default(subscriber, || {
         let mut mux = test_mux(40, 80);
@@ -144,7 +144,7 @@ fn conformance_wire_capsule_mouse_dispatch_counts_once_without_coordinates() -> 
         return Ok(());
     }
 
-    let _telemetry_guard = crate::support::telemetry_test_guard();
+    let _telemetry_guard = crate::test_support::telemetry_test_guard();
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
@@ -383,3 +383,4 @@ fn prefix_new_tab_routes_through_action_picker() {
         "prefix new-tab must not clear the full terminal screen"
     );
 }
+

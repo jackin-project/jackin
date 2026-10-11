@@ -2,13 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn test_paths() -> (TempDir, JackinPaths) {
+fn test_paths() -> (TempDir, JackinPaths) {
     let dir = TempDir::new().unwrap();
     let paths = JackinPaths::for_tests(dir.path());
     (dir, paths)
 }
 
-pub(super) fn short_test_paths() -> (TempDir, JackinPaths) {
+fn short_test_paths() -> (TempDir, JackinPaths) {
     let dir = tempfile::Builder::new()
         .prefix("jk-attach-")
         .tempdir_in("/tmp")
@@ -17,11 +17,11 @@ pub(super) fn short_test_paths() -> (TempDir, JackinPaths) {
     (dir, paths)
 }
 
-pub(super) fn test_container_handle(name: &str) -> ContainerHandle {
+fn test_container_handle(name: &str) -> ContainerHandle {
     ContainerHandle::new(name, format!("{name}-id")).unwrap()
 }
 
-pub(super) fn spawn_capsule_preface_ack(
+fn spawn_capsule_preface_ack(
     listener: std::os::unix::net::UnixListener,
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
@@ -40,19 +40,19 @@ pub(super) fn spawn_capsule_preface_ack(
     })
 }
 
-pub(super) type ScheduledConfigRotation = (String, PathBuf, Vec<u8>);
+type ScheduledConfigRotation = (String, PathBuf, Vec<u8>);
 
-pub(super) fn config_rotation_slot() -> &'static Mutex<Vec<ScheduledConfigRotation>> {
+fn config_rotation_slot() -> &'static Mutex<Vec<ScheduledConfigRotation>> {
     static SLOT: OnceLock<Mutex<Vec<ScheduledConfigRotation>>> = OnceLock::new();
     SLOT.get_or_init(|| Mutex::new(Vec::new()))
 }
 
-pub(super) struct ConfigRotationGuard {
+struct ConfigRotationGuard {
     operation_prefix: String,
     path: PathBuf,
 }
 
-pub(super) fn schedule_config_rotation(
+fn schedule_config_rotation(
     paths: &JackinPaths,
     operation_prefix: impl Into<String>,
     config: &jackin_config::AppConfig,
@@ -70,7 +70,7 @@ pub(super) fn schedule_config_rotation(
     }
 }
 
-pub(super) fn rotate_config_on_operation(operation: &str) {
+fn rotate_config_on_operation(operation: &str) {
     let scheduled = {
         let mut slot = config_rotation_slot().lock().unwrap();
         let position = slot.iter().position(|(prefix, _, _)| {
@@ -92,16 +92,12 @@ impl Drop for ConfigRotationGuard {
     }
 }
 
-pub(super) fn provision_account_admission(paths: &JackinPaths, container_name: &str) {
+fn provision_account_admission(paths: &JackinPaths, container_name: &str) {
     let config = jackin_config::AppConfig::default();
     write_admission_fixture(paths, container_name, &config, None, &[]);
 }
 
-pub(super) fn provision_agent_admission(
-    paths: &JackinPaths,
-    container_name: &str,
-    agent: jackin_core::Agent,
-) {
+fn provision_agent_admission(paths: &JackinPaths, container_name: &str, agent: jackin_core::Agent) {
     use jackin_config::{AccountConfig, AccountCredential, AgentConfiguration, AiProvider};
 
     let account_id = "fixture-account";
@@ -137,7 +133,7 @@ pub(super) fn provision_agent_admission(
     write_admission_fixture(paths, container_name, &config, None, &admitted);
 }
 
-pub(super) fn write_admission_fixture(
+fn write_admission_fixture(
     paths: &JackinPaths,
     container_name: &str,
     config: &jackin_config::AppConfig,
@@ -192,7 +188,7 @@ pub(super) fn write_admission_fixture(
         .map(jackin_core::WorkspaceName::parse)
         .transpose()
         .unwrap();
-    let digest = launch::account_configuration_fingerprint(
+    let digest = super::super::launch::account_configuration_fingerprint(
         config,
         workspace.as_ref(),
         "agent-smith",
@@ -202,7 +198,7 @@ pub(super) fn write_admission_fixture(
     std::fs::write(root.join("account-admission.sha256"), digest).unwrap();
 }
 
-pub(super) fn provision_duplicate_agent_admission(
+fn provision_duplicate_agent_admission(
     paths: &JackinPaths,
     container_name: &str,
 ) -> jackin_config::AppConfig {
@@ -249,13 +245,13 @@ pub(super) fn provision_duplicate_agent_admission(
     config
 }
 
-pub(super) fn ensure_socket_parent(paths: &JackinPaths, container_name: &str) -> PathBuf {
-    let socket_path = snapshot::socket_path(paths, container_name);
+fn ensure_socket_parent(paths: &JackinPaths, container_name: &str) -> PathBuf {
+    let socket_path = super::super::snapshot::socket_path(paths, container_name);
     std::fs::create_dir_all(socket_path.parent().unwrap()).unwrap();
     socket_path
 }
 
-pub(super) fn pending_entry_count(paths: &JackinPaths) -> usize {
+fn pending_entry_count(paths: &JackinPaths) -> usize {
     std::fs::read_dir(
         crate::runtime::coordination::universe_dir(paths)
             .unwrap()
@@ -263,3 +259,4 @@ pub(super) fn pending_entry_count(paths: &JackinPaths) -> usize {
     )
     .map_or(0, Iterator::count)
 }
+

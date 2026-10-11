@@ -83,3 +83,4 @@ fn multiple_sessions_roll_up_reflects_most_urgent() {
     let rolled = roll_up_states(&session_states);
     assert_eq!(rolled, AgentState::Blocked);
 }
+

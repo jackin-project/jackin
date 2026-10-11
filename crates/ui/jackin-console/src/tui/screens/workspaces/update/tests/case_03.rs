@@ -377,3 +377,4 @@ fn preview_focus_plans_set_focus_state() {
         PreviewFocusPlan { focused: false }
     );
 }
+

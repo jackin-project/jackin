@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) fn confirm_modal(
+fn confirm_modal(
     settings: &mut SettingsState<'_>,
     config: &mut AppConfig,
     paths: &JackinPaths,
@@ -56,3 +56,4 @@ pub(super) fn confirm_modal(
         "test helper did not expect URL-open"
     );
 }
+

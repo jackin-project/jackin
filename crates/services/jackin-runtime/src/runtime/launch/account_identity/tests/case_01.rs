@@ -397,3 +397,4 @@ fn configuration_match_roundtrip() {
     assert!(!account_configuration_matches(temp.path(), &rotated, None, "role").unwrap());
     assert!(!account_admission_matches(temp.path(), &rotated, None, "role").unwrap());
 }
+

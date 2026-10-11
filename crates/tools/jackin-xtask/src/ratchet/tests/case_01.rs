@@ -81,7 +81,7 @@ fn curated_pub_mods_rejects_extra_root_mod() {
     let dir = tempfile::tempdir().expect("tempdir");
     // Valid curated siblings so the only failure is the intentional leak.
     for (crate_name, body) in [
-        ("jackin-config", "mod private;\npub mod fixtures;\n"),
+        ("jackin-config", "mod private;\npub mod test_support;\n"),
         (
             "jackin-core",
             "mod private;\npub mod container_paths;\npub mod tui_theme;\n",
@@ -108,7 +108,7 @@ fn curated_pub_mods_accepts_env_pilot_shape() {
     let dir = tempfile::tempdir().expect("tempdir");
     let shapes = [
         ("jackin-env", "mod env_layer;\npub mod test_support;\n"),
-        ("jackin-config", "mod private;\npub mod fixtures;\n"),
+        ("jackin-config", "mod private;\npub mod test_support;\n"),
         ("jackin-core", "mod private;\npub mod container_paths;\n"),
     ];
     for (crate_name, body) in shapes {
@@ -129,6 +129,7 @@ fn real_tree_curated_pub_mods_green() {
 
 #[test]
 fn suite_time_parses_fixture_junit_ms() {
+    use super::measure_suite_time;
     let dir = tempfile::tempdir().expect("tempdir");
     let junit_dir = dir.path().join("target/nextest/ci");
     fs::create_dir_all(&junit_dir).expect("mkdir");
@@ -179,6 +180,7 @@ fn suite_time_absent_junit_is_advisory_not_stale() {
 
 #[test]
 fn build_times_flattens_scheduled_artifact() {
+    use super::measure_build_times;
     let dir = tempfile::tempdir().expect("tempdir");
     fs::create_dir_all(dir.path().join("target")).expect("mkdir");
     fs::write(
@@ -257,6 +259,7 @@ fn only_checks_selected_ratchet_family() {
 
 #[test]
 fn function_complexity_reports_per_crate_max_and_ignores_tests() {
+    use super::measure_rust_function_complexity;
     let dir = tempfile::tempdir().expect("tempdir");
     let src = dir.path().join("crates/example/src");
     fs::create_dir_all(&src).expect("mkdir");
@@ -275,3 +278,4 @@ fn function_complexity_reports_per_crate_max_and_ignores_tests() {
     assert_eq!(measured.get("example"), Some(&2));
     assert_eq!(measured.len(), 1);
 }
+

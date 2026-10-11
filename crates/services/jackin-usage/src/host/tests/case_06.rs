@@ -339,3 +339,4 @@ fn broker_serves_through_socket_alias_for_overlong_data_dir() {
     join_batch(&client, &batch);
     assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
 }
+

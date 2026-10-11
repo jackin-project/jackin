@@ -160,3 +160,4 @@ fn settings_error_popup_unrelated_key_does_not_dismiss() {
         "unrelated key must not dismiss the error popup"
     );
 }
+

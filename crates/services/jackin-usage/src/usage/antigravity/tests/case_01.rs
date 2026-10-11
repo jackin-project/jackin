@@ -242,3 +242,4 @@ fn gated_snapshot_reports_unsupported_without_running_usage() {
             .is_some_and(|error| error.contains("1.1.11"))
     );
 }
+

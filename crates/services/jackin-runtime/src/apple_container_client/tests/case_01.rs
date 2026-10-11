@@ -153,3 +153,4 @@ async fn fake_client_lifecycle_contract() {
     client.remove_container("jk-a").await.unwrap();
     assert!(client.inspect_container("jk-a").await.unwrap().is_none());
 }
+

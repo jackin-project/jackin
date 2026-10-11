@@ -2,12 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) struct CountingExecutor {
-    pub(super) calls: AtomicUsize,
+struct CountingExecutor {
+    calls: AtomicUsize,
 }
 
-pub(super) struct RetryRecordingResolver {
-    pub(super) manual_retries: Arc<AtomicUsize>,
+struct RetryRecordingResolver {
+    manual_retries: Arc<AtomicUsize>,
 }
 
 impl Default for RetryRecordingResolver {
@@ -34,7 +34,7 @@ impl ProviderCredentialEnvResolver for RetryRecordingResolver {
     }
 }
 
-pub(super) struct NoopCredentialResolver;
+struct NoopCredentialResolver;
 
 impl ProviderCredentialEnvResolver for NoopCredentialResolver {
     fn resolve_provider_credentials(
@@ -59,21 +59,21 @@ impl UsageProviderExecutor for CountingExecutor {
     }
 }
 
-pub(super) fn capability() -> UsageAccountCapability {
+fn capability() -> UsageAccountCapability {
     UsageAccountCapability {
         account_id: "abc123".to_owned(),
         surface_id: "claude".to_owned(),
     }
 }
 
-pub(super) fn second_capability() -> UsageAccountCapability {
+fn second_capability() -> UsageAccountCapability {
     UsageAccountCapability {
         account_id: "def456".to_owned(),
         surface_id: "codex".to_owned(),
     }
 }
 
-pub(super) fn quota_view() -> FocusedUsageView {
+fn quota_view() -> FocusedUsageView {
     let mut view = FocusedUsageView::unavailable("claude", chrono::Utc::now().timestamp());
     view.status = UsageSnapshotStatus::Fresh;
     view.source = UsageSource::ProviderApi;
@@ -97,7 +97,7 @@ pub(super) fn quota_view() -> FocusedUsageView {
     view
 }
 
-pub(super) fn env_material(source_name: &str, material: &str) -> ProviderCredentialSourceMaterial {
+fn env_material(source_name: &str, material: &str) -> ProviderCredentialSourceMaterial {
     ProviderCredentialSourceMaterial {
         source: UsageCredentialSourceIdentity::HostEnv {
             name: source_name.to_owned(),
@@ -106,7 +106,7 @@ pub(super) fn env_material(source_name: &str, material: &str) -> ProviderCredent
     }
 }
 
-pub(super) fn env_scope(
+fn env_scope(
     account_id: &str,
     surface_id: &str,
     key: &str,
@@ -123,7 +123,7 @@ pub(super) fn env_scope(
     }
 }
 
-pub(super) struct TypedRateLimitResolver;
+struct TypedRateLimitResolver;
 
 impl ProviderCredentialEnvResolver for TypedRateLimitResolver {
     fn resolve_provider_credentials(
@@ -151,7 +151,7 @@ impl ProviderCredentialEnvResolver for TypedRateLimitResolver {
     }
 }
 
-pub(super) struct FixedHandleResolver;
+struct FixedHandleResolver;
 
 impl ProviderCredentialEnvResolver for FixedHandleResolver {
     fn resolve_provider_credentials(
@@ -173,7 +173,7 @@ impl ProviderCredentialEnvResolver for FixedHandleResolver {
     }
 }
 
-pub(super) fn failed_generation(
+fn failed_generation(
     capability: &UsageAccountCapability,
     kind: UsageCoordinationErrorKind,
     message: &str,
@@ -192,8 +192,8 @@ pub(super) fn failed_generation(
 }
 
 #[derive(Default)]
-pub(super) struct RecordingRefreshResolver {
-    pub(super) calls: Mutex<Vec<(String, OpaqueCredentialHandle)>>,
+struct RecordingRefreshResolver {
+    calls: Mutex<Vec<(String, OpaqueCredentialHandle)>>,
 }
 
 impl ProviderCredentialEnvResolver for RecordingRefreshResolver {
@@ -224,9 +224,9 @@ impl ProviderCredentialEnvResolver for RecordingRefreshResolver {
     }
 }
 
-pub(super) struct HeldExecutor {
-    pub(super) started: mpsc::SyncSender<()>,
-    pub(super) release: Mutex<mpsc::Receiver<()>>,
+struct HeldExecutor {
+    started: mpsc::SyncSender<()>,
+    release: Mutex<mpsc::Receiver<()>>,
 }
 
 impl UsageProviderExecutor for HeldExecutor {
@@ -241,9 +241,9 @@ impl UsageProviderExecutor for HeldExecutor {
     }
 }
 
-pub(super) struct StallOneExecutor {
-    pub(super) slow: UsageAccountCapability,
-    pub(super) release: Mutex<mpsc::Receiver<()>>,
+struct StallOneExecutor {
+    slow: UsageAccountCapability,
+    release: Mutex<mpsc::Receiver<()>>,
 }
 
 impl UsageProviderExecutor for StallOneExecutor {
@@ -259,9 +259,9 @@ impl UsageProviderExecutor for StallOneExecutor {
     }
 }
 
-pub(super) fn scripted_discovery(
+fn scripted_discovery(
     generation: Option<&str>,
-    members: &[(&str, HostSurfaceId)],
+    members: &[(&str, crate::host::HostSurfaceId)],
 ) -> ValidatedUsageDiscovery {
     use crate::host::{CanonicalAccountIdentity, CanonicalAccountSubject};
 
@@ -289,14 +289,14 @@ pub(super) fn scripted_discovery(
     }
 }
 
-pub(super) fn activation_scope(temp: &tempfile::TempDir) -> UsageDiscoveryScope {
+fn activation_scope(temp: &tempfile::TempDir) -> UsageDiscoveryScope {
     UsageDiscoveryScope::HostDesktop {
         config_root: temp.path().join("config"),
         operator_home: temp.path().join("home"),
     }
 }
 
-pub(super) fn counting_broker(data_dir: &Path) -> UsageBrokerClient {
+fn counting_broker(data_dir: &Path) -> UsageBrokerClient {
     ensure_usage_broker_with_executor(
         UsageBrokerConfig::for_data_dir(data_dir.to_owned()),
         Arc::new(CountingExecutor {
@@ -306,7 +306,7 @@ pub(super) fn counting_broker(data_dir: &Path) -> UsageBrokerClient {
     .unwrap()
 }
 
-pub(super) struct NoEnvResolver;
+struct NoEnvResolver;
 
 impl ProviderCredentialEnvResolver for NoEnvResolver {
     fn resolve_provider_credentials(
@@ -319,3 +319,4 @@ impl ProviderCredentialEnvResolver for NoEnvResolver {
         Vec::new()
     }
 }
+

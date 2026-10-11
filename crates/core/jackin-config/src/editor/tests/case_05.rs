@@ -389,3 +389,4 @@ fn set_git_coauthor_trailer_disable_when_absent_is_noop() {
     assert!(!out.contains("[git]"), "{out}");
     assert!(!out.contains("coauthor_trailer"), "{out}");
 }
+

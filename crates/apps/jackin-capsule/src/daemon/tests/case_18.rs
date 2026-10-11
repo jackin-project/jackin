@@ -363,3 +363,4 @@ async fn modified_click_prefers_osc8_target_over_visible_text() {
         ServerFrame::HostOpenUrl("https://example.com/osc8".to_owned())
     );
 }
+

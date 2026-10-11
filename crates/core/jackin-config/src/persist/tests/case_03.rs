@@ -237,3 +237,4 @@ fn restore_staged_parent_sync_failure_retains_forward_journal_and_cleans_local_r
     assert!(pending_tmp.is_file());
     assert_recovered_generation(&config, &workspace, ["global-new", "ws-new"]);
 }
+

@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) struct CountingExecutor {
-    pub(super) calls: AtomicUsize,
+struct CountingExecutor {
+    calls: AtomicUsize,
 }
 
 impl UsageProviderExecutor for CountingExecutor {
@@ -25,14 +25,14 @@ impl UsageProviderExecutor for CountingExecutor {
     }
 }
 
-pub(super) fn capability(account_id: &str) -> UsageAccountCapability {
+fn capability(account_id: &str) -> UsageAccountCapability {
     UsageAccountCapability {
         account_id: account_id.to_owned(),
         surface_id: "claude".to_owned(),
     }
 }
 
-pub(super) fn quota_view() -> FocusedUsageView {
+fn quota_view() -> FocusedUsageView {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
@@ -59,3 +59,4 @@ pub(super) fn quota_view() -> FocusedUsageView {
     }];
     view
 }
+

@@ -2,21 +2,21 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-pub(super) const INTEGRATED_LAUNCH_WIRE_CHILD: &str = "JACKIN_INTEGRATED_LAUNCH_WIRE_CHILD";
+const INTEGRATED_LAUNCH_WIRE_CHILD: &str = "JACKIN_INTEGRATED_LAUNCH_WIRE_CHILD";
 
-pub(super) type ScheduledConfigRotation = (String, PathBuf, Vec<u8>);
+type ScheduledConfigRotation = (String, PathBuf, Vec<u8>);
 
-pub(super) fn config_rotation_slot() -> &'static Mutex<Vec<ScheduledConfigRotation>> {
+fn config_rotation_slot() -> &'static Mutex<Vec<ScheduledConfigRotation>> {
     static SLOT: OnceLock<Mutex<Vec<ScheduledConfigRotation>>> = OnceLock::new();
     SLOT.get_or_init(|| Mutex::new(Vec::new()))
 }
 
-pub(super) struct ConfigRotationGuard {
+struct ConfigRotationGuard {
     operation_prefix: String,
     path: PathBuf,
 }
 
-pub(super) fn schedule_config_rotation(
+fn schedule_config_rotation(
     paths: &JackinPaths,
     operation_prefix: impl Into<String>,
     config: &AppConfig,
@@ -34,7 +34,7 @@ pub(super) fn schedule_config_rotation(
     }
 }
 
-pub(super) fn rotate_config_on_operation(operation: &str) {
+fn rotate_config_on_operation(operation: &str) {
     let scheduled = {
         let mut slot = config_rotation_slot().lock().unwrap();
         let position = slot.iter().position(|(prefix, _, _)| {
@@ -56,19 +56,19 @@ impl Drop for ConfigRotationGuard {
     }
 }
 
-pub(super) type ScheduledIsolationCorruption = (String, PathBuf);
+type ScheduledIsolationCorruption = (String, PathBuf);
 
-pub(super) fn isolation_corruption_slot() -> &'static Mutex<Vec<ScheduledIsolationCorruption>> {
+fn isolation_corruption_slot() -> &'static Mutex<Vec<ScheduledIsolationCorruption>> {
     static SLOT: OnceLock<Mutex<Vec<ScheduledIsolationCorruption>>> = OnceLock::new();
     SLOT.get_or_init(|| Mutex::new(Vec::new()))
 }
 
-pub(super) struct IsolationCorruptionGuard {
+struct IsolationCorruptionGuard {
     operation: String,
     path: PathBuf,
 }
 
-pub(super) fn schedule_isolation_corruption(
+fn schedule_isolation_corruption(
     operation: impl Into<String>,
     path: PathBuf,
 ) -> IsolationCorruptionGuard {
@@ -80,7 +80,7 @@ pub(super) fn schedule_isolation_corruption(
     IsolationCorruptionGuard { operation, path }
 }
 
-pub(super) fn corrupt_isolation_on_operation(operation: &str) {
+fn corrupt_isolation_on_operation(operation: &str) {
     let scheduled = {
         let mut slot = isolation_corruption_slot().lock().unwrap();
         let position = slot.iter().position(|(expected, _)| operation == expected);
@@ -100,7 +100,7 @@ impl Drop for IsolationCorruptionGuard {
     }
 }
 
-pub(super) fn observe_launch_process(command: &str) {
+fn observe_launch_process(command: &str) {
     let program = command.split_whitespace().next().unwrap_or("unknown");
     let operation = jackin_telemetry::operation_or_disabled(
         &jackin_telemetry::operation::PROCESS_COMMAND,
@@ -115,7 +115,7 @@ pub(super) fn observe_launch_process(command: &str) {
     operation.complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None);
 }
 
-pub(super) fn observe_launch_docker(operation_name: &str) {
+fn observe_launch_docker(operation_name: &str) {
     let (method, template) = if operation_name.starts_with("docker inspect image:") {
         ("GET", "/images/{name}/json")
     } else if operation_name.starts_with("docker inspect ") {
@@ -163,28 +163,28 @@ pub(super) fn observe_launch_docker(operation_name: &str) {
     operation.complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None);
 }
 
-pub(super) struct LaunchCoreFixture {
+struct LaunchCoreFixture {
     _temp: TempDir,
-    pub(super) paths: JackinPaths,
-    pub(super) config: AppConfig,
-    pub(super) selector: RoleSelector,
-    pub(super) workspace: jackin_config::ResolvedWorkspace,
-    pub(super) docker: FakeDockerClient,
-    pub(super) runner: FakeRunner,
-    steps: StepCounter,
-    pub(super) opts: super::super::super::LoadOptions,
+    paths: JackinPaths,
+    config: AppConfig,
+    selector: RoleSelector,
+    workspace: jackin_config::ResolvedWorkspace,
+    docker: FakeDockerClient,
+    runner: FakeRunner,
+    steps: super::super::StepCounter,
+    opts: super::super::LoadOptions,
     cached_repo: jackin_manifest::repo::CachedRepo,
     validated_repo: jackin_manifest::repo::ValidatedRoleRepo,
     source: jackin_config::RoleSource,
-    pub(super) container_name: String,
-    pub(super) image: String,
+    container_name: String,
+    image: String,
 }
 
 impl LaunchCoreFixture {
-    pub(super) fn new() -> Self {
+    fn new() -> Self {
         let temp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
-        crate::runtime::stubs::install_all_test_stubs(&paths);
+        crate::runtime::test_support::install_all_test_stubs(&paths);
         paths.ensure_base_dirs().unwrap();
 
         let selector = RoleSelector::new(None, "agent-smith");
@@ -271,11 +271,11 @@ agents = ["codex"]
             workspace,
             docker,
             runner: FakeRunner::default(),
-            steps: StepCounter::new(
+            steps: super::super::StepCounter::new(
                 "agent-smith",
                 jackin_telemetry::schema::enums::LaunchTargetKind::Directory,
             ),
-            opts: super::super::super::LoadOptions {
+            opts: super::super::LoadOptions {
                 agent: Some(Agent::Codex),
                 ..Default::default()
             },
@@ -291,7 +291,7 @@ agents = ["codex"]
         }
     }
 
-    pub(super) fn with_bad_grants(mut self) -> Self {
+    fn with_bad_grants(mut self) -> Self {
         self.config.docker.grants = Some(DockerGrants {
             user: Some("root".to_owned()),
             sudo: Some(true),
@@ -305,7 +305,7 @@ agents = ["codex"]
     /// migration, before `finalize_clean_exit` reads the envelope) so
     /// post-success finalization fails while cleanup is still armed (proves
     /// cleanup-before-error at the pipeline boundary).
-    pub(super) fn plant_valid_isolation_for_finalize_error(&self) -> PathBuf {
+    fn plant_valid_isolation_for_finalize_error(&self) -> PathBuf {
         let state = self.paths.data_dir.join(&self.container_name);
         let iso_dir = state.join(".jackin");
         std::fs::create_dir_all(&iso_dir).unwrap();
@@ -314,9 +314,9 @@ agents = ["codex"]
         path
     }
 
-    pub(super) fn as_core(&mut self) -> LaunchCore<'_, FakeDockerClient, FakeRunner> {
+    fn as_core(&mut self) -> LaunchCore<'_, FakeDockerClient, FakeRunner> {
         let account_revision =
-            account_identity::AccountConfigRevision::acquire(&self.paths).unwrap();
+            super::super::account_identity::AccountConfigRevision::acquire(&self.paths).unwrap();
         let admission_config = self.config.clone();
         LaunchCore {
             paths: &self.paths,
@@ -337,7 +337,7 @@ agents = ["codex"]
             validated_repo: self.validated_repo.clone(),
             source: self.source.clone(),
             auth_mode: jackin_core::AuthForwardMode::Ignore,
-            backend: Backend::Docker,
+            backend: super::super::Backend::Docker,
             image_decision: ImageDecision::Reuse {
                 image: self.image.clone(),
             },
@@ -357,3 +357,4 @@ agents = ["codex"]
         }
     }
 }
+

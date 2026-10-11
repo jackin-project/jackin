@@ -358,3 +358,4 @@ preflight = "hooks/preflight.sh"
 
     validate_role_repo(temp.path()).unwrap();
 }
+

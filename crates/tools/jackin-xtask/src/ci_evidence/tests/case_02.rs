@@ -367,3 +367,4 @@ fn same_class_terminal_change_remains_sticky_conflict() {
     assert_eq!(merged.attempts[0].conflicting_observations.len(), 2);
     validate_evidence(&merged).unwrap();
 }
+

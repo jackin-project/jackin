@@ -257,3 +257,4 @@ fn git_prompt_hint_includes_open_segment_when_url_is_present() {
     assert!(rendered.contains('P'));
     assert!(rendered.contains("C/Esc"));
 }
+
