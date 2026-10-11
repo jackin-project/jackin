@@ -110,55 +110,63 @@ live credential, account
 identity/status, provider endpoint, or settings was accessed or changed; the
 operator still needs to retry the attended account bootstrap.
 
-## Current delivery checkpoint
+## Current source and install checkpoint
 
-Signed source fix `9809c24400e9f24ad86e83e45dca7bf5d9bab278` is pushed. Its
-stale-lease scope passed 38/38, the seeded CLI/provider flow passed 4/4,
-default offline CLI regressions passed 9/9, and strict feature Clippy,
-formatting, diff-check, and independent review passed. The default-feature v10
-CLI/broker pair has now been rebuilt from that exact source tree and installed
-at `~/.local/share/jackin-claude-monitor-v10`. The isolated
-installed smoke passed; exact source/tree, hashes, and limits are recorded in
-[v10-installation.json](v10-installation.json). This smoke used only private
-synthetic state. It did not open the existing v7 account state, start its
-service, authenticate, or contact the provider. Since the smoke, two natural
-provider generations have succeeded against the real account, but full monitor
-acceptance remains pending because weekly monitor evidence is stale. The user
-explicitly confirmed attendance, and the foreground v10 service was reported
-ready; the native UI interaction itself is not recorded.
+Signed source checkpoint `62cefbbbb11ce8b6dc0634f490095d9838ebef9e` is
+pushed on `fix/claude-usage-live-repair` (tree
+`25386633c1dd4d4cdca6958546751145b76c53f1`). The final MBX gates passed on
+that source: `jackin-usage` library 759/759, CLI/provider flow 5/5, protocol
+135/135, default offline CLI regressions 9/9, strict feature Clippy for both
+affected packages, formatting, and diff-check. The schema-6 repair preserves
+broker protocol v9 and statusline input v2. Persisted session, broker, and
+unbound quota windows now receive V1-equivalent value, sequence, receipt, and
+source-evidence validation; migration regressions cover the accepted future
+skew boundary and rejected corrupt timestamps without rewriting their source.
 
-### Current schema-6 repair checkpoint
+The default-feature v11 CLI/broker pair was installed under the fresh prefix
+`~/.local/share/jackin-claude-monitor-v11` from that exact source commit/tree.
+Installation provenance is recorded at docs checkpoint `f90e63ea`; the full
+manifest is in [`v11-installation.json`](v11-installation.json). CLI SHA-256 is
+`a263ca22f9a7604a701dfc10998c8a5ce10d4a41cbdd834754b7da4cea6a66a5`; broker
+SHA-256 is `5b7661bb186b81e1f52ec50c3b034ed3477e37f86984568cdd4e331641e6a689`.
+The installed fixture smoke passed, asserting monitor schema 6, broker wire
+v9, and selection of the installed sibling broker. It observed zero fake
+broker launches for the headless-auth rejection, zero credential-shell
+tripwires, and zero local HTTP proxy requests. It used isolated synthetic
+state; it did not open the existing account state, successfully authenticate,
+make a provider request, or instrument native Security Framework calls or
+OS-level egress.
 
-The current uncommitted source keeps broker wire v9 and statusline input v2,
-and advances only the durable monitor store from schema 5 to schema 6. Each
-quota window now records a tri-state Statusline reset watermark: `KnownNone`
+This install is not yet the active account service. The previously attended
+v10 foreground service remains the current owner against the existing state;
+the exact operator approval to stop/replace it and the attendance confirmation
+for the next auth step are still pending. Do not launch v11 against that state,
+stop the current owner, repeat authentication, or force a refresh before those
+gates are explicitly answered. The historical v10 observations and current
+live acceptance gates remain below and in
+[`v10-live-verification.json`](v10-live-verification.json).
+
+### Schema-6 source repair
+
+Each quota window records a tri-state Statusline reset watermark: `KnownNone`
 for a new account with no accepted Statusline reset, `Known { reset_at_epoch,
 received_at_epoch }` after an accepted reset, or `Unknown` when older persisted
 state cannot prove which source established its account-wide reset high-water
 mark. V1–v5 migration maps an empty old high-water mark to `KnownNone`; a
-nonempty mark stays `Unknown` and gets a separate local ordering cutoff at the
-old store's `last_now_epoch`. That cutoff is not freshness evidence. A provider
-repair must be a current complete pair whose source observation and local
-receipt are both strictly later than the cutoff; migration/rebind does not
-lower ambiguous global reset marks or barriers. Old envelopes that inject
-either v6-only field are rejected before migration, nested event schemas are
-validated and restamped, and history is retained.
-
-The scoped MBX format check and protocol suite (135 tests) passed. The latest
-`jackin-usage` MBX library attempt failed during test compilation, before tests
-ran; indexed `BTreeMap` fixture mutations have since been changed to `get_mut`,
-and the owner of the reported unused test imports is correcting those. A rerun
-is pending. The expanded five-scenario CLI/provider flow has three passes and
-two failures under diagnosis: one migration/service-readiness case and one
-main-completion case. A separate review blocker remains for the source identity
-and window-label collision path. These are open findings; schema-6 source gates
-have not passed, no v11 pair is installed from this source, and there is no
-acceptance or handoff claim.
+nonempty mark stays `Unknown` and receives a separate local ordering cutoff at
+the old store's `last_now_epoch`. The cutoff is not freshness evidence. A
+provider repair must be a current complete pair whose source observation and
+local receipt are both strictly later than the cutoff; migration/rebind does
+not lower ambiguous global reset marks or barriers. Old envelopes that inject
+either v6-only field are rejected before migration; nested event schemas and
+fingerprints are validated, event schemas are restamped, and history is
+retained.
 
 The older `8abfa235` delivery and CI details below are historical records; they
 do not describe the current source or installed pair. The current real-account
 gate and operator confirmation requirements are tracked at the end of this
-queue and in [v10-live-verification.md](v10-live-verification.md).
+queue; [v10-live-verification.md](v10-live-verification.md) records the prior
+v10 live run.
 
 ### Historical 8abfa delivery record
 
@@ -1068,25 +1076,24 @@ unverified. The correction and evidence are committed/pushed as one checkpoint.
   natural collection cycles as separate pending acceptance boundaries. No real
   provider or account credentials were used by the offline fixture.
 
-## Current weekly-publication repair review (2026-10-11; not accepted)
+## Historical v10 weekly-publication failure (2026-10-11; not accepted)
 
-The live v10 source projection is fresh at account generation 86. Its weekly
+During the v10 run, the source projection was fresh at account generation 86. Its weekly
 usage is 86% by calculation, below 90%. The monitor still reports stale weekly
 quota evidence at 85% (age 795 seconds); its retained reset also differs from
 the current source reset by one second. The monitor is not runnable. This
 confirms the publication gap affects current evidence for both windows; it
 does not establish the final source fix or monitor acceptance.
 
-The working source change now models statusline reset provenance and a
+The committed source repair models statusline reset provenance and a
 per-window admission cutoff for ambiguous pre-v6 high-water marks. Schema 6
 migrates old nonempty marks as Unknown with a cutoff at the source snapshot's
 `last_now_epoch`, and old empty marks as KnownNone. Provider projection clear
 preserves an Unknown high-water mark/cutoff and recomputes only when source
 provenance is known. New regression cases cover v5 migration, downgrade-field
 rejection, rebind clear behavior, validation, and session pruning. The
-source-aware projection repair is still under review; the independent review
-found the former proof could be lost by TTL pruning. The expanded five-scenario
-CLI/provider flow previously passed 3/5; the v5 restart failure is now localized
+source-aware projection repair addresses the proof lost by TTL pruning. The expanded five-scenario
+CLI/provider flow previously passed 3/5; the v5 restart failure was localized
 to migration validation. Schema 5 at source commit `f5163e98` already persisted
 source-qualified quota fingerprint keys and validated them with the current
 fingerprint validator. The new `migrate_v5` path incorrectly called the older
@@ -1095,16 +1102,16 @@ pre-fingerprint validator, which accepts only the unqualified V4 `used:` and
 left it unchanged while the broker reported `broker_unavailable`. The working
 fix keeps V4 normalization unchanged and validates v5 fingerprints with the
 current validator; a v5 migration unit fixture now carries a namespaced quota
-fingerprint. These changes have not yet passed the coordinated MBX rerun. The
-whole-library run before the ID correction reported 752/759 tests passing.
+fingerprint. The whole-library run before the ID correction reported 752/759 tests passing.
 A later run reported 756/759; its three failures were sticky reset-barrier
 readiness expectations, and those assertions have since been corrected to
 check retained field freshness while the barrier remains active. The focused
-five-scenario CLI/provider flow now passes 5/5 after the v5 fix. Final MBX
-format, full-library, offline CLI, strict-Clippy, and independent-review gates
-are still pending. The format check and protocol suite (135 tests) passed. Do
-not install or treat this patch as ready until the final rerun, source review,
-and shared MBX gates pass.
+five-scenario CLI/provider flow passed 5/5 after the v5 fix. The final MBX
+gates passed on signed source commit `62cefbbbb11ce8b6dc0634f490095d9838ebef9e`:
+library 759/759, protocol 135/135, offline CLI 9/9, provider flow 5/5, strict
+feature Clippy, formatting, and diff-check. The default-feature v11 pair has
+since been installed and passed its isolated schema-6 / protocol-v9 smoke; this
+does not complete live acceptance.
 
 Earlier checks are preliminary only. A targeted provider-diagnostics run
 reported 8 passed and 739 filtered, but it used direct Cargo and raw
@@ -1113,22 +1120,21 @@ rule and are not authoritative acceptance. The earlier CLI/provider flow
 result of 4/4 also predates the latest partial-reset guard. Neither result
 proves the current working tree.
 
-After the durable cutoff repair and tests are complete, freeze all changed
-Rust files and rerun the current tree through MBX 1.22.0 / Rust 1.97.1:
+The final source-gate record for MBX 1.22.0 / Rust 1.97.1 is:
 
-- [ ] Scoped formatting and diff checks for the changed files.
-- [ ] Full `jackin-usage` library suite (latest observed count: 759; rerun
-  required after the migration-validator and fixture corrections).
-- [ ] Full CLI/provider flow target (5 scenarios).
-- [ ] Default offline CLI regressions (9 tests).
-- [ ] Strict feature Clippy for both affected packages/all targets.
-- [ ] Independent source review confirms the post-prune proof remains durable
-  and both monitor windows publish with original evidence timestamps.
+- [x] Scoped formatting and diff checks for the changed files.
+- [x] Full `jackin-usage` library suite: 759/759.
+- [x] Full CLI/provider flow target: 5/5 scenarios.
+- [x] Default offline CLI regressions: 9/9.
+- [x] Strict feature Clippy for both affected packages/all targets.
+- [x] Independent source review confirmed the post-prune proof remains durable
+  and both monitor windows publish with original evidence timestamps in the
+  fixture flow.
 
-The live v10 service and its existing state are outside this source gate. No
-live/auth/provider action is authorized by these offline checks; real-account
-acceptance remains pending until a corrected pair is installed and verified
-through natural collection.
+The existing v10 service and its state were outside these source gates. The
+v11 pair is installed, but the existing state has not been opened with v11 and
+real-account acceptance remains pending an explicitly approved cutover and
+natural collection verification.
 
 ## Active real-account acceptance task
 
@@ -1139,15 +1145,24 @@ monitor status/watch, retry deadlines, and typed auth outcomes described above.
 It does not prove native Keychain behavior, Anthropic HTTPS/TLS, or any real
 account value or provider request count.
 
-The latest installed-pair record is
-[`v10-installation.json`](v10-installation.json): it records the default-feature
-v10 CLI/broker pair at `/Users/donbeave/.local/share/jackin-claude-monitor-v10`,
-rebuilt from source checkpoint `9809c24400e9f24ad86e83e45dca7bf5d9bab278`,
-with the sibling-selection and synthetic installed smoke passing. The prior
-`019de448ef8a6590b0a847046cf6a71c03d2079b` installation is preserved in
-`installation_history[0]` in the manifest. The current smoke used private
-fixture state; it did not access the existing account data, start its service,
-authenticate, or collect. The older
+The current installed-pair record is
+[`v11-installation.json`](v11-installation.json): it records the default-feature
+v11 CLI/broker pair at `/Users/donbeave/.local/share/jackin-claude-monitor-v11`,
+installed from source checkpoint `62cefbbbb11ce8b6dc0634f490095d9838ebef9e`
+and tree `25386633c1dd4d4cdca6958546751145b76c53f1`. Installation provenance
+checkpoint `f90e63ea` records CLI SHA-256
+`a263ca22f9a7604a701dfc10998c8a5ce10d4a41cbdd834754b7da4cea6a66a5` and broker
+SHA-256 `5b7661bb186b81e1f52ec50c3b034ed3477e37f86984568cdd4e331641e6a689`.
+The isolated installed smoke passed, asserting monitor schema 6 and broker
+wire v9 and selecting the exact installed sibling. It used temporary
+synthetic state and recorded zero fake broker launches for headless auth,
+credential-shell trips, and local HTTP proxy requests. It did not access the
+existing account data, start v11 against it, successfully authenticate, make a
+provider request, instrument native Security Framework calls, or measure
+OS-level egress. The older
+[`v10-installation.json`](v10-installation.json) records the previous pair and
+is historical. The earlier `019de448ef8a6590b0a847046cf6a71c03d2079b`
+installation is preserved in that v10 manifest. The older
 [`v9-installation.json`](v9-installation.json) is historical. The
 [`v8-live-verification.json`](v8-live-verification.json) records an older v8
 CLI with the v7 state directory and monitor `monitor-00000001`; its source-side
@@ -1155,21 +1170,25 @@ collection succeeded while monitor evidence stayed empty. None of those older
 quota values or readiness results are current.
 
 The existing data directory is
-`~/.local/share/jackin-claude-monitor-v7/state`. The attended
-v10 service opened and migrated it to monitor schema 5 while preserving
+`~/.local/share/jackin-claude-monitor-v7/state`. The attended v10 service
+opened and migrated it to monitor schema 5 while preserving
 `binding-00000001` revision 1 and observe-only `monitor-00000001`. The account
 label `my-claude-subscription` remains a local label, not verified provider
-identity. Current binary paths and hashes are in `v10-installation.json`;
-root confirmed the running CLI and sibling broker images match that manifest;
-transient PID values are retained only in the owner-only local evidence copy.
-The source commit/tree is `9809c244` / `2af8f8b98c61c47a92b071e0d77072446aa965f1`.
+identity. The v11 install is fresh-prefix only; it has not opened this state or
+replaced the v10 owner. The v10 process identity matched its then-current
+manifest during the prior run; the v11 binary hashes are listed above and in
+its manifest. Do not infer that v11 is the running service.
 
-After the user's explicit affirmative response, the attended auth command was
-started in exec session 84850 and the foreground service was reported ready.
-The exact native Keychain UI observation was not recorded, so do not claim it
-was seen or approved. No credential material is in this record. Do not start
-another auth process, stop or replace the current owner, manually change the
-lease, or issue a forced refresh.
+The user previously confirmed attendance for the v10 startup, and that
+foreground service was reported ready. The exact native Keychain UI observation
+was not recorded. That earlier confirmation does not authorize stopping or
+replacing the v10 owner or a new v11 auth flow. The explicit stop/replacement
+approval and attendance confirmation for the next auth step are currently
+pending. No credential material is in this record. Do not start another auth
+process, stop or replace the current owner, manually change the lease, or issue
+a forced refresh.
+
+### Historical v10 live observations (not v11 acceptance)
 
 The first status after migration showed retained stale usage: 47% five-hour
 and 72% weekly, with source evidence epoch `1791699771`, received epoch
@@ -1192,8 +1211,8 @@ projection reports All models at 82% used. At event 18 the monitor reported
 provider current, quota stale, tracking waiting, dispatch unauthorized,
 `runnable=false`, lifecycle `needs_evidence`, and issue `quota_stale`; evidence
 ages were 97 and 8,760 seconds. Source and monitor weekly resets differ by one
-second. A lower source reset watermark may explain the mismatch; this is under
-investigation and is not a confirmed root cause. The 300-second watch in exec session 65330
+second. A lower source reset watermark was later addressed in the v11 source
+repair; these v10 values do not verify the repaired pair. The 300-second watch
 completed with exit code 0. A second natural coordinator generation 78
 succeeded after the saved floor: it started at `1791708735`, invoked the
 provider at `1791708736`, completed at `1791708737`, had no reported
@@ -1203,16 +1222,17 @@ at `1791708736`. Monitor watch event 29 and subsequent events through 32 show
 five-hour usage at 21% with fresh evidence, while weekly monitor usage remains
 stale at 72% with the original evidence/receipt times. Thus two natural source
 generations succeeded but neither completed the two-window monitor workflow.
-Both bounded watches, exec sessions 65330 and 78393, exited 0; session 78393
-ended through event 32 at `1791708826`. The foreground attended session 84850
-is still running, as reported by root; these session IDs are not OS PIDs. The
+Both bounded watches exited 0; the second ended through event 32 at
+`1791708826`. The v10 foreground owner was reported still running after those
+observations; current ownership must be checked read-only before any approved
+cutover. The
 installed CLI help lists `--timeout-secs` without printing its range, and the
 exact source parser allows 1..=300 seconds; the reported 900-second request
 was rejected. Provider request count is unmeasured. Current sanitized
 status/watch details are in
 [`v10-live-verification.json`](v10-live-verification.json).
 
-Checkpoint status:
+Historical v10 checkpoint status:
 
 - [x] Install the default-feature v10 pair from `019de448` and pass the
   synthetic sibling-selection/status/watch smoke; exact hashes and scope are
@@ -1255,17 +1275,27 @@ Remaining real-account acceptance gates:
   pair. The foreground service was reported ready, and the process hashes match
   the manifest. The account label remains local; provider identity is not
   independently verified. The native Keychain UI event was not recorded.
-- [ ] Resolve and install the source-aware publication fix, then through normal
-  collector scheduling obtain current monitor evidence for both quota windows.
-  Capture actual CLI status and bounded watch output, exit codes,
+- [x] Commit and install the source-aware schema-6 repair as v11. Final source
+  gates passed and the isolated installed schema-6/protocol-v9 smoke passed;
+  neither step touched the existing account state or active v10 owner.
+- [ ] Obtain explicit operator approval to stop/replace the current v10 owner
+  and fresh attendance confirmation for the next auth step. These approvals
+  are currently unanswered. Recheck the owner read-only immediately before any
+  authorized stop or replacement; never remove its lease manually.
+- [ ] After approval, perform the attended v11 startup against the existing
+  state and confirm schema-6 migration preserves binding revision 1 and
+  observe-only monitor identity. Record whether the native Keychain UI was
+  actually shown and approved; do not infer it from service readiness.
+- [ ] Through normal v11 collector scheduling, obtain current monitor evidence
+  for both quota windows. Capture actual CLI status and bounded watch output, exit codes,
   event sequence, percentages, reset epochs, evidence source and
   account/session scope, evidence and receipt timestamps, freshness,
   provider/readiness issue codes, and service state. Confirm observation-only
   `runnable=false` and dispatch unauthorized are expected and do not
   misclassify collection as failure.
-- [ ] After the corrected pair is installed, observe two naturally scheduled
-  successful collection cycles through the monitor. Respect current floor
-  `1791709037` and every Retry-After/backoff/circuit deadline. Verify both
+- [ ] After the attended v11 startup, observe two naturally scheduled
+  successful collection cycles through the monitor. Read the active coordinator
+  floor and every Retry-After/backoff/circuit deadline before waiting. Verify both
   monitor windows update appropriately. Do not force refresh, bypass cooldown,
   rotate tokens, or consume subscription capacity. Record provider request
   counts only where directly measured; label architectural expectations
@@ -1291,14 +1321,12 @@ Remaining real-account acceptance gates:
   record the precise action needed and stop; do not endlessly poll or claim
   automatic reactivation.
 
-## Schema-6 persisted-window validation follow-up
+## Schema-6 persisted-window validation (verified in 62cefbbb)
 
-The most recent complete MBX gate report before this validation follow-up was
-759/759 `jackin-usage` library tests, 135/135 protocol tests, 9/9 default
-offline CLI tests, 5/5 CLI-to-provider flow scenarios, and strict feature
-Clippy for both affected packages. Those results predate the nested-window
-validation and migration-corruption cases below; rerun the full current tree
-before treating them as final.
+The final MBX gate set was run after the nested-window validation and migration
+corruption cases landed: 759/759 `jackin-usage` library tests, 135/135 protocol
+tests, 9/9 default offline CLI tests, 5/5 CLI-to-provider flow scenarios,
+strict feature Clippy for both affected packages, formatting, and diff-check.
 
 Review found that current-store validation only bounded persisted window input
 sequences. It did not apply the V1-equivalent checks to each session or account
@@ -1314,15 +1342,15 @@ the supported future-skew boundary and rejects a session reset receipt beyond
 receipt. Each rejected migration asserts the original source bytes are
 unchanged.
 
-The earlier V5 startup failure had a separate confirmed cause: V5 stores
+The V5 startup failure had a separate confirmed cause: V5 stores
 source-qualified fingerprint keys, but migration called the V4-and-earlier
 pre-fingerprint validator, which accepts only unqualified keys. V5 now uses
 strict current-schema validation directly; the existing V5 fingerprint test
 asserts that its qualified key survives migration.
 
-Current status: the validation and rejection tests are edited and diff-check
-clean, but no MBX command has run after these latest edits. The source and
-fixture must remain uncommitted until the driver reruns the current full gate
-set and independent review clears migration preservation and live parity.
-Real-account acceptance remains blocked on both quota windows updating through
-the monitor after the source-aware repair is installed.
+These source changes are committed and pushed at `62cefbbbb11ce8b6dc0634f490095d9838ebef9e`.
+Installation as v11 and the isolated fixture smoke are recorded in
+`v11-installation.json`; the existing v10 service and account state were not
+used. Real-account acceptance remains blocked on attended cutover approval,
+successful v11 startup against the existing state, and both quota windows
+updating through the monitor over natural collection cycles.
