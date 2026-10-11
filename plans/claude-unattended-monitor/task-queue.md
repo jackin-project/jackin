@@ -19,12 +19,13 @@ CLI and broker hashes still match their recorded values. Exact source/tree IDs,
 build command, installed hashes, sentinel output, MBX cache-pruning notice, and
 review status are in [v7-installation.json](v7-installation.json).
 
-The next operator step is an attended `auth prepare` using the v7 CLI and a
-fresh v7 state directory, left running in its terminal. Then, from a second
-attended terminal, complete the already-approved local binding and
-experimental-observation workflow against that state. This installation did
-not run bootstrap, inspect Keychain, make a provider request, or test a live
-account; the observation remains pending, and no dispatch policy is approved.
+This v7 installation is historical. It did not run bootstrap, inspect
+Keychain, make a provider request, or test a live account. Do not use its path
+as the next operator command: first complete the current read-only inventory
+and identify the exact supported CLI/broker pair, its provenance, the owned
+service (if any), and the intended existing data directory and monitor. A
+separately attended authentication and real-usage check remains pending; no
+dispatch policy is approved.
 
 ## Bounded auth diagnostic follow-up on main
 
@@ -112,6 +113,25 @@ operator still needs to retry the attended account bootstrap.
 
 ## Current delivery checkpoint
 
+Signed source fix `9809c24400e9f24ad86e83e45dca7bf5d9bab278` is pushed. Its
+stale-lease scope passed 38/38, the seeded CLI/provider flow passed 4/4,
+default offline CLI regressions passed 9/9, and strict feature Clippy,
+formatting, diff-check, and independent review passed. The default-feature v10
+CLI/broker pair has now been rebuilt from that exact source tree and installed
+at `/Users/donbeave/.local/share/jackin-claude-monitor-v10`. The isolated
+installed smoke passed; exact source/tree, hashes, and limits are recorded in
+[v10-installation.json](v10-installation.json). This smoke used only private
+synthetic state. It did not open the existing v7 account state, start its
+service, authenticate, or contact the provider. Real-account acceptance and
+the attended-confirmation gate remain pending.
+
+The older `8abfa235` delivery and CI details below are historical records; they
+do not describe the current source or installed pair. The current real-account
+gate and operator confirmation requirements are tracked at the end of this
+queue and in [v10-live-verification.md](v10-live-verification.md).
+
+### Historical 8abfa delivery record
+
 Delivery branch: `feat/claude-usage-monitor-main`, isolated from the running Claude checkout. Signed source checkpoint `8abfa235cce150d5382d99a5679afab49e098525` is pushed. The final seven-gate MBX rerun, scoped regression matrix, 1.29-second offline pair build, and installed fixture smoke passed. Smoke exited 0, selected the sibling broker, recorded one JSONL watch event, zero proxy requests and credential-command trips, and left no fixture state or open binaries. CLI SHA-256 is `b57e60f2f13b026ae2ec47034b61ecddc69644b230157e621c5ddb5cf447007d`; broker SHA-256 is `30b6f3b1f0777dbe9181851f83fbc2efb3f0356d290e1896bf2ccaf434fbf550`; manifest SHA-256 is `64a0a101224ad5c38f4292a59c5191a44071fc54eab3cc95e8a57a13bc454601`. Source-head CI run [38044592706](https://github.com/jackin-project/jackin/actions/runs/38044592706) passed for 8abfa: Required, all Rust matrix jobs, and Actionlint succeeded; the baseline publication job was skipped by workflow rules. A later documentation/evidence commit requires its own exact-head checks. CI run `38042237548` and its three failed Rust jobs, and the 45a installed pair, are historical. P2 reply `4237302394` links the fixing commit and is resolved. P1 follow-up proof/reply `4237303703` is resolved; general comment `6096529404` has a linked disposition.
 
 Focused checks and the final seven-gate MBX rerun passed: seven-package fmt/check/strict Clippy; S6 rotation (1) and full scope (7); FFI rank fix (11); docs Commands (5); V1 storage (1); broker (184); capsule diagnostic dedup (1) and proxy scope (11 passed, 1 filtered). Capsule used a canonical parent directory with mode 0700, a socket with mode 0600, and a bounded accept deadline. P1's private one-way-migration rejection has fresh evidence; its follow-up proof is posted and the thread resolved. P2's FFI rank fix resets raw fields before capping; it is included in 8abfa, and its commit-linked reply and thread are resolved. The V1 end-to-end regression is included. See [verification.md](verification.md) for log paths. Source-head CI for 8abfa passed; a later documentation/evidence commit requires its own exact-head checks. The current direct-CLI contract is [bootstrap-contract.md](bootstrap-contract.md); statusline remains an optional credential-free source.
@@ -150,7 +170,7 @@ The pre-v8 cleanup removed dormant Claude CLI diagnostic/parser paths and streng
 - [x] Refresh and freeze historical checkpoint 22ac provenance, checks, installed smoke, and handoff evidence; see [verification.md](verification.md).
 - [x] Push the reviewed documentation/evidence checkpoint `56181d4d`; exact-head run `38045612792` passed. The correction in this commit requires its own checks, tracked in the landing item above.
 - [ ] Operator-controlled real credential/account/provider verification remains outside offline acceptance. Do not modify running Claude settings, credentials, environment or worktrees.
-- [ ] Add offline full-flow proof for the v9 foreground collector: actual CLI
+- [x] Add offline full-flow proof for the v9 foreground collector: actual CLI
   `auth prepare` through a feature-gated fixture broker, synthetic Keychain
   payload through the production validator/cache/lease, local-only HTTP through
   the production response parser and Claude mapper, natural ticker publication
@@ -163,7 +183,10 @@ The pre-v8 cleanup removed dormant Claude CLI diagnostic/parser paths and streng
   zeroizing cache, lease, collector authorization, request construction,
   response decode, mapper, and scheduler. Its HTTP endpoint is loopback-only,
   so it does not prove native Security.framework behavior or Anthropic
-  HTTPS/TLS; those remain operator verification boundaries.
+  HTTPS/TLS; those remain operator verification boundaries. The expanded flow
+  and eight scenarios were committed and pushed at
+  `019de448ef8a6590b0a847046cf6a71c03d2079b`; repeat runs and limits are
+  recorded under “Synthetic CLI-to-provider acceptance flow” below.
 
 Observation alone never creates a spend baseline or grants dispatch. Collection opt-in is separate from dispatch policy approval. Strict SGD remains fail-closed; quota-only requires explicit audited approval and discloses unknown spend/disabled SGD enforcement. External prerequisites mean checkpoint/report, not endless diagnostics or automatic resumption claims.
 
@@ -1007,6 +1030,139 @@ unverified. The correction and evidence are committed/pushed as one checkpoint.
   target also passed three times, and strict feature Clippy, scoped formatting,
   and `git diff --check` passed.
 - [ ] Keep native macOS Security Framework/UI behavior, Anthropic HTTPS/TLS,
-  OS-level egress, live quota values, and live installed-v9 status/watch as
+  OS-level egress, live quota values, and live installed-pair status/watch as
   separate unverified acceptance boundaries. No real provider or account
   credentials were used by this fixture.
+
+## Active real-account acceptance task
+
+The offline CLI-to-provider fixture is complete at signed/pushed checkpoint
+`019de448ef8a6590b0a847046cf6a71c03d2079b`. It proves the synthetic credential,
+loopback HTTP, production collector/parser, natural ticker publication, durable
+monitor status/watch, retry deadlines, and typed auth outcomes described above.
+It does not prove native Keychain behavior, Anthropic HTTPS/TLS, or any real
+account value or provider request count.
+
+The latest installed-pair record is
+[`v10-installation.json`](v10-installation.json): it records the default-feature
+v10 CLI/broker pair at `/Users/donbeave/.local/share/jackin-claude-monitor-v10`,
+rebuilt from source checkpoint `9809c24400e9f24ad86e83e45dca7bf5d9bab278`,
+with the sibling-selection and synthetic installed smoke passing. The prior
+`019de448ef8a6590b0a847046cf6a71c03d2079b` installation is preserved in
+`installation_history[0]` in the manifest. The current smoke used private
+fixture state; it did not access the existing account data, start its service,
+authenticate, or collect. The older
+[`v9-installation.json`](v9-installation.json) is historical. The
+[`v8-live-verification.json`](v8-live-verification.json) records an older v8
+CLI with the v7 state directory and monitor `monitor-00000001`; its source-side
+collection succeeded while monitor evidence stayed empty. None of those older
+quota values or readiness results are current.
+
+The existing data directory under review is
+`/Users/donbeave/.local/share/jackin-claude-monitor-v7/state`. Its recorded
+observer is `binding-00000001` revision 1 and `monitor-00000001`; the recorded
+account label `my-claude-subscription` is a local label, not authenticated
+identity. The last read-only state report, before the fixed v10 install, found
+monitor schema 4, sequence 1,
+`needs_evidence`, `tracking=waiting`, `quota=unknown`, `budget=unknown`,
+`dispatch=not_authorized`, `runnable=false`, and no five-hour or weekly usage
+or reset evidence. Recheck after v5 migration; the v10 fixture's schema-5
+assertion is not proof the real state has migrated. The most recent read-only
+startup investigation found the prior v8
+PID 25738 absent and a persisted lease about 6,206 seconds old whose protocol
+version 8 conflicts with the v10 broker protocol. That stale lease blocked
+startup before the recovery fix. A fresh ownership recheck after rebuilding
+found no PID 25738, broker process, or socket owner. The existing account
+service has not been started with the new pair; re-read its owner, lease, and
+state immediately before any attended authentication. The bounded recovery fix is signed and pushed at
+`9809c24400e9f24ad86e83e45dca7bf5d9bab278`; its stale-lease tests, full flow,
+offline CLI regressions, strict feature Clippy, and formatting passed, and
+independent source review is Ready. The installed v10 pair now comes from the
+fixed source. Its private smoke does not prove it can open this state. Do not
+manually delete or edit the lease, and do not infer that the state migrated;
+recheck the exact pair and current owner/process/lease/state read-only before
+authentication. No auth or real provider request has been performed for this
+task.
+
+Authentication and any live provider request require an attended confirmation
+first. The corrected pair is rebuilt, installed, and smoke-verified. After a
+fresh read-only review confirms the exact pair, current owner/lease, existing
+state, binding, and monitor, ask the user exactly:
+
+> I am ready to run the attended authentication and real-usage verification
+> using [exact binary] and [exact data directory]. Are you present and ready
+> to approve any Keychain prompt?
+
+Wait for explicit confirmation. Before it arrives, do not start an auth or
+broker command that performs authentication and do not make a live provider
+request. After confirmation, execute the supported attended `usage auth prepare`
+command yourself from the verified pair and tell the user when to approve the
+Keychain prompt. Never print, log, commit, or transmit credential
+contents. Do not alter Claude Code credentials, settings, environment,
+worktrees, Keychain ACLs, or an existing broker; establish service ownership
+before any proposed disruption and obtain specific approval before stopping or
+replacing it.
+
+Checkpoint status:
+
+- [x] Install the default-feature v10 pair from `019de448` and pass the
+  synthetic sibling-selection/status/watch smoke; exact hashes and scope are
+  preserved in `installation_history[0]` of `v10-installation.json`. This did
+  not open the existing v7 state or perform authentication/provider requests.
+- [x] Read-only investigation found prior v8 PID 25738 absent and a persisted
+  protocol-v8 lease that blocked startup before the recovery fix. A later
+  read-only ownership recheck found no PID, broker process, or socket owner.
+- [x] Commit and push the lease-recovery fix at
+  `9809c24400e9f24ad86e83e45dca7bf5d9bab278`. The stale-lease scope passed
+  38/38; the real-CLI fixture flow passed 4/4; offline CLI regressions passed
+  9/9; strict feature Clippy, scoped formatting, and diff-check passed.
+- [x] Build/install the corrected pair from `9809c244` and record/review its
+  manifest. The exact pair's private installed smoke passed; it did not access
+  or migrate the existing v7 state.
+- [ ] Recheck the corrected pair and existing state read-only before asking
+  for attended confirmation. No auth or real provider request has occurred.
+
+Remaining real-account acceptance gates:
+
+- [ ] Read-only identify the installed CLI and sibling broker, exact paths,
+  hashes, source/build provenance, supported command syntax, service process
+  owner/image/arguments, state directory, binding, and monitor schema. Compare
+  with the installation manifest and current CLI help. Reuse the existing
+  observation-only binding/monitor when valid; otherwise use supported commands
+  to create only an observation-only monitor after attended confirmation.
+- [ ] After attended authentication, verify the running broker is the intended
+  pair. Confirm `service_ready` selects the expected source. State whether the
+  binding account ID is a local label or an independently authenticated
+  identity; do not imply that a local label proves identity.
+- [ ] Through normal collector scheduling, obtain genuine five-hour and weekly
+  usage. Capture actual CLI status and bounded watch output, exit codes, event
+  sequence, percentages, reset epochs, evidence source and account/session
+  scope, evidence and receipt timestamps, freshness, provider/readiness issue
+  codes, and service state. Confirm observation-only `runnable=false` and
+  dispatch unauthorized are expected and do not misclassify collection as
+  failure.
+- [ ] Observe at least two naturally scheduled successful collections. Respect
+  the persisted minimum attempt interval and every Retry-After/backoff/circuit
+  deadline. Do not force refresh, bypass cooldown, rotate tokens, or consume
+  subscription capacity. Record provider request counts only where directly
+  measured; label architectural expectations separately from measurements.
+- [ ] Verify repeated passive status/watch reads do not cause credential access
+  or provider requests using available instrumentation, and distinguish those
+  measurements from fixture counts and source-code assertions. Verify a later
+  unattended collection needs no authentication dialog. If credentials are
+  unavailable, require a typed `interaction_required` result without a prompt
+  or retry loop.
+- [ ] Use offline fixtures for threshold, checkpoint, reset, restart, and
+  failure behavior when reproducing those states live could spend quota or
+  grant authority. Do not enable dispatch, loosen spending guards, select
+  quota-only policy, or authorize extra usage to reach a threshold.
+- [ ] Inspect extra-usage fields only if the provider genuinely returns them.
+  Do not interpret estimates, unknown credits, or USD values as verified SGD
+  billing. Preserve explicit limits for freshness gaps, native Keychain/TLS,
+  egress instrumentation, and any unmeasured request counts.
+- [ ] Only after every gate passes, record exact binary paths/provenance,
+  monitor ID, commands/schemas, timestamps, measured counts, integration gates,
+  and pushed fixes. Then prepare the requested short Claude Code instruction
+  from the verified commands and monitor ID. If blocked by an external action,
+  record the precise action needed and stop; do not endlessly poll or claim
+  automatic reactivation.

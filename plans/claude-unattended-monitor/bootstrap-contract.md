@@ -1,26 +1,29 @@
 # Foreground Claude bootstrap and explicit usage collection
 
-**Status: implemented in source. Signed, pushed source checkpoint `8abfa235`
-passed the clean, locked MBX build in 1.29 seconds, and its installed v3 fixture
-passed. The fixture exercised the actual installed v3 path with
-`JACKIN_USAGE_BROKER_BIN` unset and recorded zero HTTP-proxy requests and zero
-credential-command executions. Current fixture artifacts and provenance are
-published in [v3-installation.json](v3-installation.json),
-[v3-checks.json](v3-checks.json), and [v3-installed-smoke.log](v3-installed-smoke.log).
-GitHub Actions run [38044592706](https://github.com/jackin-project/jackin/actions/runs/38044592706)
-for this exact source commit completed successfully: Required, all Rust matrix
-jobs, and Actionlint passed; the baseline publication job was skipped by its
-workflow rules. This source-head result does not substitute for checks on the
-separate documentation/evidence PR head. Native Security Framework calls,
-successful attended Keychain authorization and foreground bootstrap,
-real-account binding, and live provider collection remain unverified. The
-initial attended Keychain
-read may prompt; later unattended reads run under a no-UI guard and fail with
-`interaction_required` if UI would be required. That guard does not guarantee
-credential availability or validity.**
-The `45a33093` checkpoint and its installed fixture are historical; its
-source-gate record is in [v3-checks.json](v3-checks.json), and its exact
-installation provenance and smoke transcript are in
+**Current status (2026-10-11):** The latest signed, pushed source checkpoint is
+`9809c24400e9f24ad86e83e45dca7bf5d9bab278`. It includes the bounded stale-lease
+recovery and integration coverage. Its focused lease tests passed 38/38, the
+seeded CLI/provider flow passed 4/4, default offline CLI regressions passed
+9/9, strict feature Clippy and formatting passed, and independent review is
+Ready. The current source contract is broker wire v9, normalized statusline
+input v2, and durable monitor schema v5.
+
+The installed default-feature v10 pair has been rebuilt from the fixed source
+checkpoint `9809c24400e9f24ad86e83e45dca7bf5d9bab278` and passed the private
+synthetic installed smoke. Exact source/tree, binary hashes, manifest digest,
+and scope are in [v10-installation.json](v10-installation.json) and the
+[v10-live-verification.md](v10-live-verification.md) runbook. The smoke did
+not access or open the existing v7 account state, migrate it, authenticate, or
+make a provider request. The latest read-only owner check found no prior v8
+PID, broker process, or socket owner, but the real-state owner/lease/status
+must be rechecked before authentication. No successful attended
+authentication or real provider request has occurred. See
+[v10-live-verification.md](v10-live-verification.md) for the gated live
+acceptance procedure.**
+
+The earlier `8abfa235`, `45a33093`, and 22ac install records below are
+historical. The `45a33093` source-gate record is in [v3-checks.json](v3-checks.json),
+and its exact installation provenance and smoke transcript are in
 [v3-installed-smoke-checkpoint-45a.log](v3-installed-smoke-checkpoint-45a.log).
 The earlier 22ac pair is also historical; its record is indexed in
 [v3-checks.json](v3-checks.json), with the exact fixture transcript in
@@ -79,19 +82,23 @@ projection labels this locally derived hash as
 `identity_kind: "local_source_handle"`; it is not a provider-issued account
 identity. The command stays attached to the foreground service until it exits,
 releasing the lease and cache. Do not background or detach it. Current source
-versions are broker wire v8, normalized statusline input v2, and durable
-monitor state v4. Wire v8 adds the explicit `LocalSourceHandle` identity kind;
-it does not change the statusline input or durable monitor schema.
+versions are broker wire v9, normalized statusline input v2, and durable
+monitor state v5. The v8/v4 wire and monitor versions shown in older install
+artifacts are historical; do not use that old pair against current v5 state.
 
-Sequence: run `auth prepare` in one attended terminal and leave it in the
-foreground after `service_ready`. From a second attended terminal using the
-same data directory, use the reported local source ID in the confirmed
-binding, then create the explicitly opted-in observer. Do not start another
-bootstrap process or stop an owner to make room. If a known or unrecognized
-service already owns the broker lease, bootstrap returns `broker_conflict`
-before Keychain access; resolve its owner without stopping or replacing it. If
-the foreground owner exits, its cache is gone and a new attended bootstrap is
-required.
+For real-account verification, first complete the read-only inventory and the
+explicit presence-confirmation gate in
+[v10-live-verification.md](v10-live-verification.md). Only after the user
+confirms can Codex run `auth prepare` in an attended terminal and leave it in
+the foreground after `service_ready`; the user approves only in the native
+Keychain UI and does not run shell commands. From a second attended terminal
+using the same data directory, use the reported local source ID in the
+confirmed binding, then create the explicitly opted-in observer. Do not start
+another bootstrap process or stop an owner to make room. If a known or
+unrecognized service already owns the broker lease, bootstrap returns
+`broker_conflict` before Keychain access; resolve its owner without stopping or
+replacing it. If the foreground owner exits, its cache is gone and a new
+attended bootstrap is required.
 
 ## Bootstrap lifetime and secret boundary
 
@@ -230,19 +237,22 @@ intentional overage.
 
 ## Durable-state migration
 
-The current source uses broker wire v8, normalized statusline input v2, and
-durable monitor schema v4. Migrate V1, V2, and V3 snapshots explicitly to V4.
-Preserve strict policy, baselines, spend and other history, action/event
-sequences, evidence ages, cooldowns, and existing unknown/latched state. V2
-preserves its known state. V3 has no persisted correction horizon (it defaults
-to `None`); for a strict goal with a baseline and a retained forward rollover
-signal in the account's current-period record or the goal-period anchor,
-migration preserves the known estimate while latching cumulative completeness
-false and rollover unknown. It synthesizes a horizon at the latest affected
-anchored period start, bounded by the store clock. Same-period goals remain
-unchanged; if no affected goal is found, the account horizon remains `None`. A
-closed-period anchor can indicate a rollover but
-cannot prove that older corrections were retained. The V4 durable field
+The current source uses broker wire v9, normalized statusline input v2, and
+durable monitor schema v5. Migrate V1, V2, V3, and V4 snapshots explicitly to
+V5, without a legacy alias or parallel old-schema write path. Preserve strict
+policy, baselines, spend and other history, action/event sequences, evidence
+ages, cooldowns, and existing unknown/latched state. The V5 migration drops
+provider snapshots that lack current binding/source provenance so they cannot
+be attributed to the wrong account; it does not make those values fresh.
+V2 preserves its known state. V3 has no persisted correction horizon (it
+defaults to `None`); for a strict goal with a baseline and a retained forward
+rollover signal in the account's current-period record or the goal-period
+anchor, migration preserves the known estimate while latching cumulative
+completeness false and rollover unknown. It synthesizes a horizon at the
+latest affected anchored period start, bounded by the store clock. Same-period
+goals remain unchanged; if no affected goal is found, the account horizon
+remains `None`. A closed-period anchor can indicate a rollover but cannot prove
+that older corrections were retained. The V4 durable field
 `historical_correction_horizon_epoch` records a period boundary after which
 goal-spend completeness cannot be asserted from retained receipts. In V3
 migration it represents conservative uncertainty, not proof that a correction
@@ -261,18 +271,32 @@ Keep strict history intact. Any migration incompatibility fails closed.
 
 ## Recorded implementation evidence and remaining limits
 
-The current source implements the foreground bootstrap, selected-service
-zeroizing cache, no-UI guard, explicit binding approval, and opt-in observer
-path. Signed, pushed checkpoint `8abfa235` passed the clean, locked MBX build
-in 1.29 seconds and its installed v3 fixture passed. That fixture exercised
-only the actual installed v3 path with `JACKIN_USAGE_BROKER_BIN` unset; it
-recorded zero HTTP-proxy requests and zero credential-command executions.
-Fixture artifacts and provenance are published in [v3-installation.json](v3-installation.json),
+At current source checkpoint `9809c24400e9f24ad86e83e45dca7bf5d9bab278`, the
+stale-lease scope passed 38/38, the seeded synthetic provider flow passed 4/4,
+and default offline CLI regressions passed 9/9. Strict feature Clippy, scoped
+formatting, and diff-check passed. The earlier expanded synthetic flow at
+`019de448` also passed three consecutive full-target runs. Exact results and
+limits are in [verification.md](verification.md). These checks do not prove
+native authentication or real account collection. The v10 pair in
+[v10-installation.json](v10-installation.json) now contains the default-feature
+build from source checkpoint `9809c244` and its private smoke result. The
+earlier protocol-v8 lease blocked startup before the fix; the new pair has not
+yet been run against the existing state, which remains a separate read-only
+and attended verification gate. The live gate and attended confirmation
+requirement are in [v10-live-verification.md](v10-live-verification.md).
+
+The following `8abfa235`, `45a33093`, and 22ac results are historical; they do
+not describe the current installed pair or close the live gate. Checkpoint
+`8abfa235` passed a clean, locked MBX build in 1.29 seconds and its installed
+v3 fixture passed. That fixture exercised only the actual installed v3 path
+with `JACKIN_USAGE_BROKER_BIN` unset; it recorded zero HTTP-proxy requests and
+zero credential-command executions. Fixture artifacts and provenance are
+published in [v3-installation.json](v3-installation.json),
 [v3-checks.json](v3-checks.json), and [v3-installed-smoke.log](v3-installed-smoke.log).
-The final local formatting, source-check, and strict-Clippy checks passed for
-all seven affected packages. Current focused checks passed: FFI (11 tests),
-scope verification (7 tests), docs (5 tests), the V1 migration proof, host
-broker (184 tests), and capsule (1 test).
+The historical final local formatting, source-check, and strict-Clippy checks
+passed for all seven affected packages. Focused checks at that checkpoint
+passed: FFI (11 tests), scope verification (7 tests), docs (5 tests), the V1
+migration proof, host broker (184 tests), and capsule (1 test).
 Source-head CI run [38044592706](https://github.com/jackin-project/jackin/actions/runs/38044592706)
 passed for `8abfa235`, including Required, the Rust matrix, and Actionlint. PR
 documentation/evidence head `56181d4d` then passed exact-head run
