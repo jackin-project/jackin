@@ -4,6 +4,7 @@
 use super::*;
 use clap::Parser as _;
 use jackin_core::JackinPaths;
+use std::time::{Duration, Instant};
 
 #[test]
 fn canonical_overview() {
@@ -420,6 +421,46 @@ fn watch_fresh_attach_uses_current_event_as_cursor_then_only_advances() {
     let live_cursor = advance_watch_cursor(fresh_attach_cursor, 19, [18, 19]);
     assert_eq!(live_cursor, 19);
     assert_eq!(advance_watch_cursor(live_cursor, 18, [16, 19]), 19);
+}
+
+#[test]
+fn watch_batch_timeout_does_not_end_the_absolute_cli_deadline() {
+    let started = Instant::now();
+    let deadline = started + Duration::from_secs(300);
+
+    assert_eq!(watch_timeout_ms(None, started), 30_000);
+    assert_eq!(watch_timeout_ms(Some(deadline), started), 30_000);
+    assert_eq!(
+        watch_timeout_ms(Some(deadline), started + Duration::from_secs(30)),
+        30_000
+    );
+    assert_eq!(
+        watch_timeout_ms(Some(deadline), deadline - Duration::from_secs(1)),
+        1_000
+    );
+    assert_eq!(watch_timeout_ms(Some(deadline), deadline), 0);
+    assert_eq!(
+        watch_timeout_ms(Some(deadline), deadline + Duration::from_secs(1)),
+        0
+    );
+
+    assert!(!watch_deadline_reached(
+        Some(deadline),
+        started + Duration::from_secs(30)
+    ));
+    assert!(!watch_deadline_reached(
+        Some(deadline),
+        deadline - Duration::from_nanos(1)
+    ));
+    assert!(watch_deadline_reached(Some(deadline), deadline));
+    assert!(watch_deadline_reached(
+        Some(deadline),
+        deadline + Duration::from_secs(1)
+    ));
+    assert!(!watch_deadline_reached(
+        None,
+        started + Duration::from_secs(300)
+    ));
 }
 
 #[test]
