@@ -560,6 +560,8 @@ fn connection_context(
     fenced: Arc<AtomicBool>,
 ) -> Arc<ConnectionContext> {
     let build_id: Arc<str> = Arc::from("serve-test");
+    let clock: Arc<dyn MonotonicClock> =
+        Arc::new(crate::coordinator::SystemMonotonicClock::default());
     let wait_pool = Arc::new(waits::WaitPool::new(
         Arc::clone(&harness.coordinator),
         Arc::clone(&build_id),
@@ -567,6 +569,7 @@ fn connection_context(
         Arc::clone(&harness.store),
         Arc::clone(&shutdown),
         None,
+        Arc::clone(&clock),
     ));
     Arc::new(ConnectionContext {
         coordinator: Arc::clone(&harness.coordinator),
@@ -578,6 +581,7 @@ fn connection_context(
         catalog_refresh: None,
         wait_pool,
         collector_liveness: None,
+        clock,
     })
 }
 

@@ -21,12 +21,14 @@ use super::{
     BROKER_CATALOG_ATTEMPTS, ForwardedUsageSources, forwarded_usage_capabilities, protocol_error,
     publish, unavailable, usage_capability_for_selected_account_with_sources,
 };
+use crate::coordinator::MonotonicClock;
 use crate::coordinator::UsageCoordinator;
 
 pub(super) struct DispatchControls<'a> {
     pub(super) shutdown: &'a AtomicBool,
     pub(super) catalog_refresh: Option<&'a BrokerCatalogRefresh>,
     pub(super) collector_liveness: Option<&'a crate::usage::ClaudeCollectorLiveness>,
+    pub(super) clock: &'a dyn MonotonicClock,
 }
 
 #[cfg(test)]
@@ -39,6 +41,7 @@ pub(super) fn dispatch(
     shutdown: &AtomicBool,
     catalog_refresh: Option<&BrokerCatalogRefresh>,
 ) -> UsageBrokerResponse {
+    let clock = crate::coordinator::SystemMonotonicClock::default();
     dispatch_with_liveness(
         coordinator,
         request,
@@ -49,6 +52,7 @@ pub(super) fn dispatch(
             shutdown,
             catalog_refresh,
             collector_liveness: None,
+            clock: &clock,
         },
     )
 }
@@ -87,8 +91,12 @@ pub(super) fn dispatch_with_liveness(
             },
         };
     }
+    let now = controls
+        .clock
+        .sample(chrono::Utc::now().timestamp())
+        .floor_epoch();
     if let Some(response) =
-        dispatch_monitor_operation(&operation, publisher, monitor_store, &controls)
+        dispatch_monitor_operation(&operation, publisher, monitor_store, &controls, now)
     {
         return response;
     }
@@ -98,10 +106,11 @@ pub(super) fn dispatch_with_liveness(
         publisher,
         monitor_store,
         controls.catalog_refresh,
+        now,
+        controls.clock,
     ) {
         return response;
     }
-    let now = chrono::Utc::now().timestamp();
     let result = dispatch_capability_operation(
         coordinator,
         operation,
@@ -123,11 +132,11 @@ fn dispatch_monitor_operation(
     publisher: &publish::ProjectionPublisher,
     monitor_store: &MonitorStore,
     controls: &DispatchControls<'_>,
+    now: i64,
 ) -> Option<UsageBrokerResponse> {
     let UsageBrokerOperation::Monitor { request } = operation else {
         return None;
     };
-    let now = chrono::Utc::now().timestamp();
     if let MonitorOperation::BindAccount { binding } = request
         && let Some(account_id) = binding.provider_account_id.as_deref()
         && (binding.provider != jackin_protocol::usage_monitor::MonitorProvider::Claude
@@ -166,6 +175,8 @@ fn dispatch_projection_operation(
     publisher: &publish::ProjectionPublisher,
     monitor_store: &MonitorStore,
     catalog_refresh: Option<&BrokerCatalogRefresh>,
+    now: i64,
+    clock: &dyn MonotonicClock,
 ) -> Option<UsageBrokerResponse> {
     match operation {
         UsageBrokerOperation::ResolveRelayCapabilities {
@@ -176,6 +187,7 @@ fn dispatch_projection_operation(
             catalog_refresh,
             scope_label,
             forwarded_sources,
+            now,
         )),
         UsageBrokerOperation::CurrentProjection => Some(read_projection(publisher)),
         UsageBrokerOperation::RequestRefresh { force, .. } => Some(refresh_projection(
@@ -183,11 +195,18 @@ fn dispatch_projection_operation(
             publisher,
             monitor_store,
             *force,
+            now,
         )),
         UsageBrokerOperation::JoinPublication {
             projection_id,
             timeout_ms,
-        } => Some(join_publication(publisher, projection_id, *timeout_ms)),
+        } => Some(join_publication(
+            publisher,
+            projection_id,
+            *timeout_ms,
+            now,
+            clock,
+        )),
         UsageBrokerOperation::CurrentProjectionForSurface
         | UsageBrokerOperation::RequestRefreshForSurface { .. }
         | UsageBrokerOperation::JoinPublicationForSurface { .. } => {
@@ -297,6 +316,7 @@ fn resolve_relay_capabilities(
     catalog_refresh: Option<&BrokerCatalogRefresh>,
     scope_label: &str,
     forwarded_sources: &UsageRelayForwardedSourcesV1,
+    now: i64,
 ) -> UsageBrokerResponse {
     if forwarded_sources.profile_surface_ids.is_empty()
         && forwarded_sources.env_keys.is_empty()
@@ -321,7 +341,6 @@ fn resolve_relay_capabilities(
                 .unwrap_or_else(|| "empty".to_owned());
             let entries = super::usage_catalog_entries(&discovery);
             let diagnostics = super::catalog_diagnostics::from_discovery(&discovery);
-            let now = chrono::Utc::now().timestamp();
             let current_projection = publisher.current_projection()?;
             publisher.reconcile_catalog_if_projection(
                 Some(&current_projection.projection_id),
@@ -422,8 +441,8 @@ pub(crate) fn refresh_projection(
     publisher: &publish::ProjectionPublisher,
     monitor_store: &MonitorStore,
     force: bool,
+    now: i64,
 ) -> UsageBrokerResponse {
-    let now = chrono::Utc::now().timestamp();
     let collection_accounts = monitor_store.collection_accounts();
     let known = publisher
         .known_capabilities()
@@ -461,6 +480,8 @@ pub(crate) fn join_publication(
     publisher: &publish::ProjectionPublisher,
     projection_id: &str,
     timeout_ms: u64,
+    now: i64,
+    clock: &dyn MonotonicClock,
 ) -> UsageBrokerResponse {
     let deadline = Instant::now() + Duration::from_millis(timeout_ms.min(30_000));
     loop {
@@ -475,7 +496,7 @@ pub(crate) fn join_publication(
                 projection: Box::new(current),
             };
         }
-        publisher.publish_due(chrono::Utc::now().timestamp());
+        publisher.publish_due(clock.sample(now).floor_epoch());
         if Instant::now() >= deadline {
             return UsageBrokerResponse::Error {
                 error: UsageCoordinationError {

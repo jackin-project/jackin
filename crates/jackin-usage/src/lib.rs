@@ -5,6 +5,9 @@
 //! Host menu-bar / CLI usage: [`host::UsageBrokerClient`] and the
 //! credential-free [`host::HostUsageProjectionRuntime`] (Capsule-free).
 
+#[cfg(all(feature = "test-support", not(debug_assertions)))]
+compile_error!("jackin-usage test-support is unavailable in release builds");
+
 pub mod coordinator;
 pub mod host;
 pub mod logging;

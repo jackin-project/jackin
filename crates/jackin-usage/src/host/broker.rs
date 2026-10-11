@@ -25,6 +25,8 @@ use sha2::{Digest as _, Sha256};
 
 use jackin_protocol::usage_broker::UsageIdentityKindV1;
 
+#[cfg(feature = "test-support")]
+use crate::coordinator::MonotonicClock;
 use crate::coordinator::{
     FileProjectionStateStore, ProjectionStateEnvelope, ProviderProbeOutcome,
     UsageCoordinatorConfig, UsageProviderExecutor,
@@ -399,6 +401,12 @@ fn load_projection(config: &UsageBrokerConfig) -> Result<LoadedProjection, Usage
 type TestClaudeCollector =
     dyn Fn(&UsageAccountCapability, &str) -> ProviderProbeOutcome + Send + Sync;
 
+#[cfg(feature = "test-support")]
+type ClaudeFixtureKeychainReader =
+    Arc<dyn Fn(&str) -> crate::usage::ClaudeKeychainRead + Send + Sync>;
+
+type ClaudeAuthorizedSource = Arc<dyn Fn(u64) -> bool + Send + Sync>;
+
 struct DiscoveryProviderExecutor {
     bindings: Mutex<BTreeMap<UsageAccountCapability, Vec<ValidatedCredentialBinding>>>,
     validated_catalog: Mutex<Option<StagedDiscoveryCatalog>>,
@@ -407,9 +415,30 @@ struct DiscoveryProviderExecutor {
     monitor_store: Option<Arc<monitor::MonitorStore>>,
     collector_service: Option<String>,
     collector_liveness: Option<Arc<crate::usage::ClaudeCollectorLiveness>>,
+    #[cfg(feature = "test-support")]
+    claude_fixture_endpoint: Option<String>,
+    #[cfg(feature = "test-support")]
+    claude_fixture_keychain_reader: Option<ClaudeFixtureKeychainReader>,
+    #[cfg(feature = "test-support")]
+    fixture_clock: Option<Arc<dyn MonotonicClock>>,
     #[cfg(test)]
     claude_collector: Option<Arc<TestClaudeCollector>>,
     probe_budget: Duration,
+}
+
+struct AuthorizedClaudeProbe {
+    service: String,
+    #[cfg(test)]
+    monitor_store: Arc<monitor::MonitorStore>,
+    liveness: Option<Arc<crate::usage::ClaudeCollectorLiveness>>,
+    authorized_source: ClaudeAuthorizedSource,
+}
+
+#[cfg(feature = "test-support")]
+struct ClaudeFixtureProbe {
+    endpoint: String,
+    keychain_reader: ClaudeFixtureKeychainReader,
+    clock: Arc<dyn MonotonicClock>,
 }
 
 struct EmptyProviderCredentialResolver;
@@ -493,15 +522,15 @@ fn probe_with_scope(
     }
 }
 
-fn probe_claude_with_scope(
+fn authorize_claude_probe(
     executor: &DiscoveryProviderExecutor,
     capability: &UsageAccountCapability,
-) -> ProviderProbeOutcome {
+) -> Result<AuthorizedClaudeProbe, ProviderProbeOutcome> {
     let Some(service) = executor.collector_service.as_deref() else {
-        return collector_auth_required();
+        return Err(collector_auth_required());
     };
     let Some(monitor_store) = executor.monitor_store.as_ref() else {
-        return collector_not_authorized();
+        return Err(collector_not_authorized());
     };
     if !monitor_store
         .collection_accounts()
@@ -509,14 +538,15 @@ fn probe_claude_with_scope(
         .any(|account_id| account_id == &capability.account_id)
         || claude_usage_capability_for_service(service) != *capability
     {
-        return collector_not_authorized();
+        return Err(collector_not_authorized());
     }
 
     let service = service.to_owned();
-    let consent_monitor_store = Arc::clone(monitor_store);
+    let monitor_store = Arc::clone(monitor_store);
+    let consent_monitor_store = Arc::clone(&monitor_store);
     let consent_service = service.clone();
     let consent_capability = capability.clone();
-    let authorized_source: Arc<dyn Fn(u64) -> bool + Send + Sync> = Arc::new(move |generation| {
+    let authorized_source: ClaudeAuthorizedSource = Arc::new(move |generation| {
         crate::usage::claude_credential_generation_is_current(&consent_service, generation)
             && claude_usage_capability_for_service(&consent_service) == consent_capability
             && consent_monitor_store
@@ -524,7 +554,45 @@ fn probe_claude_with_scope(
                 .iter()
                 .any(|account_id| account_id == &consent_capability.account_id)
     });
-    let consent_liveness = executor.collector_liveness.as_ref().map(Arc::clone);
+    Ok(AuthorizedClaudeProbe {
+        service,
+        #[cfg(test)]
+        monitor_store,
+        liveness: executor.collector_liveness.as_ref().map(Arc::clone),
+        authorized_source,
+    })
+}
+
+fn probe_claude_with_scope(
+    executor: &DiscoveryProviderExecutor,
+    capability: &UsageAccountCapability,
+) -> ProviderProbeOutcome {
+    let AuthorizedClaudeProbe {
+        service,
+        #[cfg(test)]
+        monitor_store,
+        liveness: consent_liveness,
+        authorized_source,
+    } = match authorize_claude_probe(executor, capability) {
+        Ok(scope) => scope,
+        Err(outcome) => return outcome,
+    };
+    #[cfg(feature = "test-support")]
+    let fixture_io = executor
+        .claude_fixture_endpoint
+        .clone()
+        .zip(
+            executor
+                .claude_fixture_keychain_reader
+                .as_ref()
+                .map(Arc::clone),
+        )
+        .zip(executor.fixture_clock.as_ref().map(Arc::clone))
+        .map(|((endpoint, keychain_reader), clock)| ClaudeFixtureProbe {
+            endpoint,
+            keychain_reader,
+            clock,
+        });
     #[cfg(test)]
     if let Some(collector) = executor.claude_collector.as_ref() {
         let lifecycle_is_current = executor
@@ -568,17 +636,64 @@ fn probe_claude_with_scope(
         let mut commit_if_probe_current = move |operation: &mut dyn FnMut() -> bool| {
             probe_for_commit.commit_if_current(operation)
         };
-        let result = crate::usage::experimental_claude_usage_snapshot_for_service(
-            "claude",
-            Some("Claude"),
-            chrono::Utc::now().timestamp(),
-            &service,
-            admit_operation,
-            admit_probe_operation,
-            consent_is_current,
-            || probe_liveness.is_current(),
-            &mut commit_if_probe_current,
+        #[cfg(feature = "test-support")]
+        let now = fixture_io.as_ref().map_or_else(
+            || chrono::Utc::now().timestamp(),
+            |fixture| fixture.clock.sample(0).floor_epoch(),
         );
+        #[cfg(not(feature = "test-support"))]
+        let now = chrono::Utc::now().timestamp();
+        let result = {
+            #[cfg(feature = "test-support")]
+            if let Some(fixture) = fixture_io {
+                let wall_clock = Arc::clone(&fixture.clock);
+                crate::usage::experimental_claude_usage_snapshot_for_service_with_fixture_io(
+                    "claude",
+                    Some("Claude"),
+                    now,
+                    &service,
+                    crate::usage::ClaudeFixtureIo {
+                        endpoint: fixture.endpoint,
+                        reread: {
+                            let reader = Arc::clone(&fixture.keychain_reader);
+                            move |requested: &str| reader(requested)
+                        },
+                        wall_clock: Arc::new(move || wall_clock.sample(0).floor_epoch()),
+                    },
+                    crate::usage::ClaudeCollectorGuards {
+                        admit_operation,
+                        admit_probe_operation,
+                        consent_is_current,
+                        probe_is_current: || probe_liveness.is_current(),
+                        commit_if_probe_current: &mut commit_if_probe_current,
+                    },
+                )
+            } else {
+                crate::usage::experimental_claude_usage_snapshot_for_service(
+                    "claude",
+                    Some("Claude"),
+                    now,
+                    &service,
+                    admit_operation,
+                    admit_probe_operation,
+                    consent_is_current,
+                    || probe_liveness.is_current(),
+                    &mut commit_if_probe_current,
+                )
+            }
+            #[cfg(not(feature = "test-support"))]
+            crate::usage::experimental_claude_usage_snapshot_for_service(
+                "claude",
+                Some("Claude"),
+                now,
+                &service,
+                admit_operation,
+                admit_probe_operation,
+                consent_is_current,
+                || probe_liveness.is_current(),
+                &mut commit_if_probe_current,
+            )
+        };
         match result {
             Ok(Some(snapshot)) => provider_probe_outcome_with_metadata(
                 snapshot.view,
@@ -591,28 +706,7 @@ fn probe_claude_with_scope(
             }) => collector_not_authorized(),
             Err(crate::usage::ClaudeCollectionError::ConsentRevoked {
                 provider_http_status: Some(http_status),
-            }) => {
-                let mut view = jackin_protocol::control::FocusedUsageView::unavailable(
-                    "claude",
-                    chrono::Utc::now().timestamp(),
-                );
-                view.status = if http_status == 401 {
-                    UsageSnapshotStatus::NeedsSecret
-                } else {
-                    UsageSnapshotStatus::Error
-                };
-                view.last_error = Some(format!(
-                    "Claude authorization changed after HTTP {http_status}; prepare the selected source again"
-                ));
-                provider_probe_outcome_with_metadata(
-                    view,
-                    None,
-                    Some(crate::usage::ProviderFailureMetadata {
-                        kind: crate::usage::ProviderErrorKind::HttpStatus,
-                        http_status: Some(http_status),
-                    }),
-                )
-            }
+            }) => collector_consent_revoked(http_status, now),
             Err(crate::usage::ClaudeCollectionError::ProbeExpired { .. }) => {
                 probe::probe_timeout_outcome()
             }
@@ -621,6 +715,26 @@ fn probe_claude_with_scope(
         Ok(outcome) => outcome,
         Err(_) => probe::probe_timeout_outcome(),
     }
+}
+
+fn collector_consent_revoked(http_status: u16, now: i64) -> ProviderProbeOutcome {
+    let mut view = jackin_protocol::control::FocusedUsageView::unavailable("claude", now);
+    view.status = if http_status == 401 {
+        UsageSnapshotStatus::NeedsSecret
+    } else {
+        UsageSnapshotStatus::Error
+    };
+    view.last_error = Some(format!(
+        "Claude authorization changed after HTTP {http_status}; prepare the selected source again"
+    ));
+    provider_probe_outcome_with_metadata(
+        view,
+        None,
+        Some(crate::usage::ProviderFailureMetadata {
+            kind: crate::usage::ProviderErrorKind::HttpStatus,
+            http_status: Some(http_status),
+        }),
+    )
 }
 
 fn collector_auth_required() -> ProviderProbeOutcome {
@@ -1057,6 +1171,8 @@ mod probe;
 pub(super) mod publish;
 mod serve_loop;
 mod service;
+#[cfg(feature = "test-support")]
+mod test_support;
 mod view;
 mod waits;
 
@@ -1076,6 +1192,8 @@ pub use service::{
     run_usage_broker_foreground_bootstrap, run_usage_broker_service,
     run_usage_broker_service_with_executor,
 };
+#[cfg(feature = "test-support")]
+pub use test_support::run_usage_broker_foreground_bootstrap_with_test_fixture;
 
 #[cfg(test)]
 fn write_with_deadline(stream: &mut UnixStream, bytes: &[u8], timeout: Duration) {

@@ -18,6 +18,9 @@ path = "src/lib.rs"
 
 [features]
 default = []
+# Explicitly opt-in hooks used only by the local provider-flow fixture binary
+# and integration tests. Default/release builds do not expose fixture inputs.
+test-support = []
 
 [dependencies]
 jackin-core = { workspace = true }

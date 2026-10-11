@@ -17,6 +17,9 @@
     reason = "primary CLI crate still carries state-machine invariants under the strict lint transition"
 )]
 
+#[cfg(all(feature = "test-support", not(debug_assertions)))]
+compile_error!("jackin test-support is unavailable in release builds");
+
 mod app;
 pub mod brand_output;
 

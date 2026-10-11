@@ -28,6 +28,11 @@ name = "jackin-usage-broker"
 path = "src/bin/usage-broker/main.rs"
 
 [[bin]]
+name = "jackin-usage-broker-fixture"
+path = "src/bin/usage-broker-fixture.rs"
+required-features = ["test-support"]
+
+[[bin]]
 name = "build-jackin-capsule"
 path = "src/bin/build_jackin_capsule/main.rs"
 
@@ -97,6 +102,8 @@ harness = false
 # OTLP is a baseline dependency and remains runtime-gated by standard OTEL
 # environment variables.
 default = []
+# Local-only provider-flow fixture. It is not part of default or release builds.
+test-support = ["jackin-usage/test-support"]
 # `e2e` compiles real-Docker smoke tests. The default nextest profile excludes
 # them; run the `docker-e2e` nextest profile on a prepared Docker host.
 e2e = []

@@ -24,14 +24,14 @@ use super::{
     BROKER_CONNECTION_QUEUE, BROKER_CONNECTION_WORKERS, BrokerStartupCleanup, PUBLISH_TICK,
     ServePolicy, protocol_error, publish, unavailable,
 };
-use crate::coordinator::UsageCoordinator;
 use crate::coordinator::policy::UsageActivity;
+use crate::coordinator::{MonotonicClock, UsageCoordinator};
 
 const CLOCK_WAKE_DETECTION_THRESHOLD_SECS: u64 = 2;
 const MONITOR_TICK_RETRY_DELAY: Duration = Duration::from_secs(1);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct ClockSample {
+pub(super) struct ClockSample {
     wall_epoch: i64,
     /// Monotonic elapsed time since the owning clock started.
     monotonic_elapsed: Duration,
@@ -40,28 +40,25 @@ struct ClockSample {
 trait TickerClock: Send {
     fn initial_sample(&self) -> ClockSample;
     fn next_sample(&mut self) -> Option<ClockSample>;
+    fn first_tick_completed(&self) {}
 }
 
-struct SystemTickerClock {
-    started: Instant,
+struct CoordinatorTickerClock {
+    clock: Arc<dyn MonotonicClock>,
+    first_step_completed: Option<Arc<AtomicBool>>,
 }
 
-impl SystemTickerClock {
-    fn new() -> Self {
-        Self {
-            started: Instant::now(),
-        }
-    }
-
+impl CoordinatorTickerClock {
     fn sample(&self) -> ClockSample {
+        let sample = self.clock.sample(0);
         ClockSample {
-            wall_epoch: chrono::Utc::now().timestamp(),
-            monotonic_elapsed: self.started.elapsed(),
+            wall_epoch: sample.floor_epoch(),
+            monotonic_elapsed: sample.monotonic,
         }
     }
 }
 
-impl TickerClock for SystemTickerClock {
+impl TickerClock for CoordinatorTickerClock {
     fn initial_sample(&self) -> ClockSample {
         self.sample()
     }
@@ -69,6 +66,12 @@ impl TickerClock for SystemTickerClock {
     fn next_sample(&mut self) -> Option<ClockSample> {
         std::thread::park_timeout(PUBLISH_TICK);
         Some(self.sample())
+    }
+
+    fn first_tick_completed(&self) {
+        if let Some(signal) = &self.first_step_completed {
+            signal.store(true, Ordering::Release);
+        }
     }
 }
 
@@ -98,6 +101,9 @@ pub(super) struct ServeConfig {
     pub(super) monitor_store: Arc<MonitorStore>,
     pub(super) catalog_refresh: Option<Arc<BrokerCatalogRefresh>>,
     pub(super) collector_liveness: Option<Arc<crate::usage::ClaudeCollectorLiveness>>,
+    pub(super) clock: Arc<dyn MonotonicClock>,
+    #[cfg(feature = "test-support")]
+    pub(super) ticker_first_step_completed: Option<Arc<AtomicBool>>,
 }
 
 struct ConnectionContext {
@@ -110,6 +116,7 @@ struct ConnectionContext {
     catalog_refresh: Option<Arc<BrokerCatalogRefresh>>,
     wait_pool: Arc<waits::WaitPool>,
     collector_liveness: Option<Arc<crate::usage::ClaudeCollectorLiveness>>,
+    clock: Arc<dyn MonotonicClock>,
 }
 
 impl ConnectionContext {
@@ -129,6 +136,9 @@ pub(super) fn serve(config: ServeConfig) {
         monitor_store,
         catalog_refresh,
         collector_liveness,
+        clock,
+        #[cfg(feature = "test-support")]
+        ticker_first_step_completed,
     } = config;
     let (connections, receiver) = mpsc::sync_channel(BROKER_CONNECTION_QUEUE);
     let receiver = Arc::new(Mutex::new(receiver));
@@ -145,6 +155,7 @@ pub(super) fn serve(config: ServeConfig) {
         Arc::clone(&monitor_store),
         Arc::clone(&shutdown),
         catalog_refresh.clone(),
+        Arc::clone(&clock),
     ));
     let context = Arc::new(ConnectionContext {
         coordinator: Arc::clone(&coordinator),
@@ -156,6 +167,7 @@ pub(super) fn serve(config: ServeConfig) {
         catalog_refresh,
         wait_pool,
         collector_liveness: collector_liveness.as_ref().map(Arc::clone),
+        clock: Arc::clone(&clock),
     });
     let workers = spawn_connection_workers(receiver, Arc::clone(&context));
     if workers.is_empty() {
@@ -180,6 +192,9 @@ pub(super) fn serve(config: ServeConfig) {
         Arc::clone(&coordinator),
         Arc::clone(&monitor_store),
         Arc::clone(&publisher_shutdown),
+        Arc::clone(&clock),
+        #[cfg(feature = "test-support")]
+        ticker_first_step_completed,
     );
     let started = Instant::now();
     let initial_sample = system_clock_sample(started);
@@ -332,6 +347,7 @@ fn handle_stream(mut stream: UnixStream, context: &ConnectionContext) {
             shutdown: &context.shutdown,
             catalog_refresh: context.catalog_refresh.as_deref(),
             collector_liveness: context.collector_liveness.as_deref(),
+            clock: context.clock.as_ref(),
         },
     );
     write_response(&mut stream, response);
@@ -342,13 +358,21 @@ fn spawn_publisher_ticker(
     coordinator: Arc<UsageCoordinator>,
     monitor_store: Arc<MonitorStore>,
     shutdown: Arc<AtomicBool>,
+    clock: Arc<dyn MonotonicClock>,
+    #[cfg(feature = "test-support")] ticker_first_step_completed: Option<Arc<AtomicBool>>,
 ) -> Option<std::thread::JoinHandle<()>> {
     spawn_publisher_ticker_with_clock(
         publisher,
         coordinator,
         monitor_store,
         shutdown,
-        Box::new(SystemTickerClock::new()),
+        Box::new(CoordinatorTickerClock {
+            clock,
+            #[cfg(feature = "test-support")]
+            first_step_completed: ticker_first_step_completed,
+            #[cfg(not(feature = "test-support"))]
+            first_step_completed: None,
+        }),
     )
 }
 
@@ -376,6 +400,7 @@ fn spawn_publisher_ticker_with_clock(
             last_publish_attempt: None,
             observation_retry_after: None,
         };
+        let mut first_step = true;
         while !shutdown.load(Ordering::Relaxed) {
             let Some(sample) = clock.next_sample() else {
                 break;
@@ -384,6 +409,10 @@ fn spawn_publisher_ticker_with_clock(
                 break;
             }
             publisher_tick_step(&publisher, &coordinator, &monitor_store, sample, &mut state);
+            if first_step {
+                clock.first_tick_completed();
+                first_step = false;
+            }
         }
     })
     .ok()

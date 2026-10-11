@@ -1261,3 +1261,86 @@ freshness across the five-hour and seven-day windows, still need a separately
 authorized attended operator check. The v8 live values are historical, the
 offline fixture is not live-account acceptance, and no live readiness,
 continuous-freshness, or zero-429 claim is made.
+
+## Test-only CLI, broker, credential, and provider flow
+
+The test-only `test-support` fixture exercises the ordinary `jackin` CLI and
+foreground broker bootstrap with an injected fake credential reader, a
+loopback HTTP server, and a paired controllable wall/monotonic clock. It runs
+the bootstrap, explicit account binding and observer setup, normal coordinator
+and ticker path, provider response parsing, durable quota publication, CLI
+watch/status reads, service restart, and a second due provider poll. The first
+watch attaches while the fake provider response is held; releasing that
+response must produce the expected quota event. After restart, persisted
+successful-attempt timing is checked and a second request is allowed only
+after the test clock passes the coordinator floor. These are simulated
+collection intervals; the fixture clock makes them short without changing
+production timing.
+
+The focused command is:
+
+```sh
+/Users/donbeave/.local/share/mise/installs/mr-boxington/1.22.0/mbx +1.97.1 test -p jackin --features test-support --test usage_provider_flow
+```
+
+The initial sleep-driven test version and its three repeats each passed the
+one integration test:
+
+| Run | Result | Elapsed |
+| --- | --- | ---: |
+| Initial | 1 passed, 0 failed | 13.51 s |
+| Repeat 1 | 1 passed, 0 failed | 13.44 s |
+| Repeat 2 | 1 passed, 0 failed | 13.59 s |
+| Repeat 3 | 1 passed, 0 failed | 13.58 s |
+
+Those four results are historical for the earlier driver. That version used
+fixed 250 ms delays after releasing each fake provider response. The current
+driver uses the durable, typed coordinator-completion state as its handshake
+instead of those publication sleeps. A separate callback-driven snapshot then
+passed one test in 13.90 seconds; that snapshot also predates the current
+counter instrumentation and is historical.
+
+A pre-instrumentation run failed without observing a loopback HTTP request.
+That failure remains unresolved and is not considered fixed by later passing
+runs: it recorded neither the typed terminal failure kind nor the TCP request
+phase, so the cause was not established.
+
+After adding credential and loopback request counters, the current
+instrumented driver passed ten executions, with one test passing in each run:
+
+| Runs | Result per run | Elapsed per run |
+| ---: | --- | ---: |
+| 10 | 1 passed, 0 failed | 13.07–13.73 s |
+
+Each passing instrumented run asserts one fake credential read per foreground
+service bootstrap and exactly two GETs at the loopback fixture endpoint, one
+per successful collection. Passive CLI status/watch reads do not increase
+those counters. These are fixture-local counts, not counts of requests to
+Anthropic or any real provider. In the latest run, the post-restart mock
+provider request and source sample were observed at fixture time +601. The
+valid evidence-received time is bounded by the request and publication times
+(+601 through +602); the assertion does not require exactly +602 on every run.
+
+This test uses a synthetic credential and local HTTP response. It does not
+exercise macOS Keychain or other native credential UI, a real OAuth flow, the
+provider's HTTPS/TLS endpoint, OS-level egress, or live account quotas. The
+fixture-only seams are not available in release builds. After explicit route
+classification and the fake HTTP byte-counter fix, the fresh default test run
+passed 736 tests with 0 failures; a focused 429 regression also passed (1/1).
+The immediately preceding feature-seams snapshot had 735 passed and 1 failed
+because the fake HTTP parser used the wrong timeout index for non-GET handling;
+that run is retained here as historical failure evidence, and the subsequent
+fix is covered by the new passing runs. The earlier 736-test default pass from
+pre-integration runtime snapshot `f5163e98` is also historical and does not
+verify the current fixture/seam changes. Final strict all-target Clippy passed
+for both packages with `test-support` enabled (7.46 seconds) and without that
+feature (19.78 seconds); both runs used `-Dwarnings`. Formatting also passed.
+Clean final-head checks remain outstanding.
+Separate attended live v9 acceptance is still required before claiming real
+credential-to-provider-to-projection behavior.
+
+The fake clock also avoids the time an operator may encounter during a real
+restart: production can still wait for the remaining or full 300-second
+attempt floor before another provider request becomes eligible. A production
+service stop may also spend up to 30 seconds draining already-admitted work.
+Neither timing is represented by the fixture's short elapsed durations.

@@ -31,6 +31,9 @@ pub use keychain::{
     ClaudeKeychainPolicyError, ClaudeKeychainRead, ClaudeUnattendedKeychainGuard,
     prepare_claude_keychain_auth, read_claude_keychain_item, unattended_keychain_guard,
 };
+#[cfg(feature = "test-support")]
+#[doc(hidden)]
+pub use lease::bootstrap_claude_credential_with_test_reader;
 pub(crate) use lease::bootstrapped_claude_service;
 pub(crate) use lease::claude_credential_generation_is_current;
 pub(crate) use lease::claude_service_is_bootstrapped;
@@ -535,6 +538,119 @@ where
     P: Fn() -> bool,
     M: FnMut(&mut dyn FnMut() -> bool) -> Option<bool>,
 {
+    experimental_claude_usage_snapshot_for_service_with_transport(
+        agent,
+        provider,
+        now,
+        service,
+        fetch_claude_oauth_usage,
+        keychain::read_claude_keychain_item_uncached,
+        Arc::new(|| chrono::Utc::now().timestamp()),
+        admit_operation,
+        admit_probe_operation,
+        consent_is_current,
+        probe_is_current,
+        commit_if_probe_current,
+    )
+}
+
+#[cfg(feature = "test-support")]
+pub(crate) struct ClaudeFixtureIo<R> {
+    pub(crate) endpoint: String,
+    pub(crate) reread: R,
+    pub(crate) wall_clock: Arc<dyn Fn() -> i64 + Send + Sync>,
+}
+
+#[cfg(feature = "test-support")]
+pub(crate) struct ClaudeCollectorGuards<C, A, PA, P, M> {
+    pub(crate) consent_is_current: C,
+    pub(crate) admit_operation: A,
+    pub(crate) admit_probe_operation: PA,
+    pub(crate) probe_is_current: P,
+    pub(crate) commit_if_probe_current: M,
+}
+
+#[cfg(feature = "test-support")]
+pub(crate) fn experimental_claude_usage_snapshot_for_service_with_fixture_io<C, A, PA, P, M, Q, R>(
+    agent: &str,
+    provider: Option<&str>,
+    now: i64,
+    service: &str,
+    fixture: ClaudeFixtureIo<R>,
+    guards: ClaudeCollectorGuards<C, A, PA, P, M>,
+) -> Result<Option<ClaudeServiceUsageSnapshot>, ClaudeCollectionError>
+where
+    C: Fn() -> bool,
+    A: Fn() -> Option<ClaudeCollectorOperationPermit>,
+    PA: FnMut() -> Option<Q>,
+    P: Fn() -> bool,
+    M: FnMut(&mut dyn FnMut() -> bool) -> Option<bool>,
+    R: FnOnce(&str) -> ClaudeKeychainRead,
+{
+    let ClaudeFixtureIo {
+        endpoint,
+        reread,
+        wall_clock,
+    } = fixture;
+    let ClaudeCollectorGuards {
+        consent_is_current,
+        admit_operation,
+        admit_probe_operation,
+        probe_is_current,
+        commit_if_probe_current,
+    } = guards;
+    experimental_claude_usage_snapshot_for_service_with_transport(
+        agent,
+        provider,
+        now,
+        service,
+        {
+            let wall_clock = Arc::clone(&wall_clock);
+            move |token| {
+                fetch_claude_oauth_usage_for_loopback_fixture(
+                    &endpoint,
+                    token,
+                    Arc::clone(&wall_clock),
+                )
+            }
+        },
+        reread,
+        wall_clock,
+        admit_operation,
+        admit_probe_operation,
+        consent_is_current,
+        probe_is_current,
+        commit_if_probe_current,
+    )
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Credential, HTTP, admission, liveness, and commit dependencies are explicit at this collector boundary."
+)]
+fn experimental_claude_usage_snapshot_for_service_with_transport<C, A, PA, P, M, Q, F, R>(
+    agent: &str,
+    provider: Option<&str>,
+    now: i64,
+    service: &str,
+    fetch: F,
+    reread: R,
+    wall_clock: Arc<dyn Fn() -> i64 + Send + Sync>,
+    admit_operation: A,
+    admit_probe_operation: PA,
+    consent_is_current: C,
+    probe_is_current: P,
+    commit_if_probe_current: M,
+) -> Result<Option<ClaudeServiceUsageSnapshot>, ClaudeCollectionError>
+where
+    C: Fn() -> bool,
+    A: Fn() -> Option<ClaudeCollectorOperationPermit>,
+    PA: FnMut() -> Option<Q>,
+    P: Fn() -> bool,
+    M: FnMut(&mut dyn FnMut() -> bool) -> Option<bool>,
+    F: FnMut(&str) -> Result<ClaudeOAuthUsageResponse, ProviderHttpError>,
+    R: FnOnce(&str) -> ClaudeKeychainRead,
+{
     if !probe_is_current() {
         return Err(ClaudeCollectionError::ProbeExpired {
             provider_http_status: None,
@@ -567,8 +683,8 @@ where
     let result = fetch_claude_with_one_401_reread_with_probe_liveness(
         service,
         &mut resolved,
-        fetch_claude_oauth_usage,
-        keychain::read_claude_keychain_item_uncached,
+        fetch,
+        reread,
         admit_operation,
         admit_probe_operation,
         consent_is_current,
@@ -593,11 +709,7 @@ where
             });
         }
     };
-    let observed_at = if result.is_ok() {
-        chrono::Utc::now().timestamp()
-    } else {
-        now
-    };
+    let observed_at = if result.is_ok() { wall_clock() } else { now };
     let (view, rate_limit, failure_metadata) =
         claude_result_view(agent, provider, observed_at, resolved, result);
     Ok(Some(ClaudeServiceUsageSnapshot {
@@ -2108,6 +2220,58 @@ pub(crate) fn fetch_claude_oauth_usage(
             (reqwest::header::USER_AGENT, &user_agent),
         ],
     )
+}
+
+#[cfg(feature = "test-support")]
+fn fetch_claude_oauth_usage_for_loopback_fixture(
+    endpoint: &str,
+    access_token: &str,
+    wall_clock: Arc<dyn Fn() -> i64 + Send + Sync>,
+) -> Result<ClaudeOAuthUsageResponse, ProviderHttpError> {
+    let endpoint = url::Url::parse(endpoint).map_err(|_| {
+        ProviderHttpError::Transport(
+            "fixture Claude endpoint must be a literal loopback HTTP URL".to_owned(),
+        )
+    })?;
+    if !valid_loopback_claude_fixture_endpoint(&endpoint) {
+        return Err(ProviderHttpError::Transport(
+            "fixture Claude endpoint must be a literal loopback HTTP URL".to_owned(),
+        ));
+    }
+    let user_agent = format!("jackin/{}", env!("CARGO_PKG_VERSION"));
+    get_json_bearer_for_loopback_fixture(
+        jackin_telemetry::schema::enums::ProviderName::Anthropic,
+        "/api/oauth/usage",
+        "Claude OAuth usage fixture",
+        endpoint.as_str(),
+        access_token,
+        &[
+            (reqwest::header::CONTENT_TYPE, "application/json"),
+            (
+                reqwest::header::HeaderName::from_static("anthropic-beta"),
+                "oauth-2025-04-20",
+            ),
+            (reqwest::header::USER_AGENT, &user_agent),
+        ],
+        move || wall_clock(),
+    )
+}
+
+#[cfg(feature = "test-support")]
+pub(crate) fn valid_loopback_claude_fixture_endpoint(endpoint: &url::Url) -> bool {
+    use std::net::IpAddr;
+
+    endpoint.scheme() == "http"
+        && endpoint.port().is_some()
+        && endpoint.username().is_empty()
+        && endpoint.password().is_none()
+        && endpoint.query().is_none()
+        && endpoint.fragment().is_none()
+        && endpoint.path() == "/api/oauth/usage"
+        && endpoint
+            .host_str()
+            .and_then(|host| host.parse::<IpAddr>().ok())
+            .is_some_and(|ip| ip.is_loopback())
 }
 
 #[cfg(test)]

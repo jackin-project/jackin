@@ -13,7 +13,7 @@ use super::dispatch_ops::{DispatchControls, dispatch_with_liveness};
 use super::monitor::{MONITOR_WATCH_TIMEOUT_CAP_MS, MonitorStore};
 use super::serve_loop::write_response;
 use super::unavailable;
-use crate::coordinator::UsageCoordinator;
+use crate::coordinator::{MonotonicClock, UsageCoordinator};
 use jackin_protocol::usage_broker::{
     UsageBrokerOperation, UsageBrokerRequest, UsageBrokerResponse,
 };
@@ -30,6 +30,7 @@ pub(super) struct WaitPool {
     monitor_store: Arc<MonitorStore>,
     shutdown: Arc<AtomicBool>,
     catalog_refresh: Option<Arc<BrokerCatalogRefresh>>,
+    clock: Arc<dyn MonotonicClock>,
     workers: Mutex<Vec<std::thread::JoinHandle<()>>>,
 }
 
@@ -41,6 +42,7 @@ impl WaitPool {
         monitor_store: Arc<MonitorStore>,
         shutdown: Arc<AtomicBool>,
         catalog_refresh: Option<Arc<BrokerCatalogRefresh>>,
+        clock: Arc<dyn MonotonicClock>,
     ) -> Self {
         Self {
             coordinator,
@@ -49,6 +51,7 @@ impl WaitPool {
             monitor_store,
             shutdown,
             catalog_refresh,
+            clock,
             workers: Mutex::new(Vec::new()),
         }
     }
@@ -83,6 +86,7 @@ impl WaitPool {
         let monitor_store = Arc::clone(&self.monitor_store);
         let shutdown = Arc::clone(&self.shutdown);
         let catalog_refresh = self.catalog_refresh.clone();
+        let clock = Arc::clone(&self.clock);
         if let Ok(worker) = jackin_telemetry::spawn::thread_joined_named(
             "usage-broker-wait".to_owned(),
             move || {
@@ -97,6 +101,7 @@ impl WaitPool {
                         shutdown: shutdown.as_ref(),
                         catalog_refresh: catalog_refresh.as_deref(),
                         collector_liveness: None,
+                        clock: clock.as_ref(),
                     },
                 );
                 write_response(&mut worker_stream, response);

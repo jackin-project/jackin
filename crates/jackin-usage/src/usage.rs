@@ -75,6 +75,9 @@ pub(crate) use self::antigravity::{
     antigravity_snapshot, fetch_antigravity_cli_credits, fetch_antigravity_cli_usage,
     parse_agy_version, parse_antigravity_credits_output, parse_antigravity_usage_output,
 };
+#[cfg(feature = "test-support")]
+#[doc(hidden)]
+pub use self::claude::bootstrap_claude_credential_with_test_reader;
 #[cfg(any(target_os = "macos", test))]
 pub use self::claude::classify_claude_keychain_status;
 #[expect(
@@ -95,6 +98,12 @@ pub(crate) use self::claude::{
     experimental_claude_usage_snapshot_for_service, fetch_claude_oauth_usage,
     load_claude_account_email, normalize_claude_spend, parse_claude_profile_payload,
     push_claude_dollar_windows, resolve_claude_wave,
+};
+#[cfg(feature = "test-support")]
+pub(crate) use self::claude::{
+    ClaudeCollectorGuards, ClaudeFixtureIo,
+    experimental_claude_usage_snapshot_for_service_with_fixture_io,
+    valid_loopback_claude_fixture_endpoint,
 };
 pub use self::claude::{
     ClaudeCredentialBootstrapOutcome, ClaudeCredentialLease, ClaudeCredentialPayloadDiagnostic,
@@ -1572,37 +1581,92 @@ pub(crate) fn get_json_bearer<T: serde::de::DeserializeOwned>(
     token: &str,
     extra_headers: &[(reqwest::header::HeaderName, &str)],
 ) -> Result<T, ProviderHttpError> {
-    provider_request(provider, "GET", template, || {
-        let client = provider_http_client().map_err(ProviderHttpError::Transport)?;
-        let mut request = client
-            .get(url)
-            .bearer_auth(token)
+    get_json_bearer_with_client_factory(
+        BearerJsonRequest {
+            provider,
+            template,
+            label,
+            url,
+            token,
+            extra_headers,
+        },
+        now_epoch,
+        provider_http_client,
+    )
+}
+
+#[cfg(feature = "test-support")]
+pub(crate) fn get_json_bearer_for_loopback_fixture<T: serde::de::DeserializeOwned>(
+    provider: jackin_telemetry::schema::enums::ProviderName,
+    template: &'static str,
+    label: &str,
+    url: &str,
+    token: &str,
+    extra_headers: &[(reqwest::header::HeaderName, &str)],
+    response_received_at: impl Fn() -> i64,
+) -> Result<T, ProviderHttpError> {
+    get_json_bearer_with_client_factory(
+        BearerJsonRequest {
+            provider,
+            template,
+            label,
+            url,
+            token,
+            extra_headers,
+        },
+        response_received_at,
+        || {
+            reqwest::blocking::Client::builder()
+                .timeout(PROVIDER_HTTP_TIMEOUT)
+                .connect_timeout(PROVIDER_HTTP_TIMEOUT)
+                .no_proxy()
+                .redirect(reqwest::redirect::Policy::none())
+                .build()
+                .map_err(|err| format!("fixture HTTP client unavailable: {err}"))
+        },
+    )
+}
+
+fn get_json_bearer_with_client_factory<T, C>(
+    spec: BearerJsonRequest<'_>,
+    response_received_at: impl Fn() -> i64,
+    client_factory: C,
+) -> Result<T, ProviderHttpError>
+where
+    T: serde::de::DeserializeOwned,
+    C: FnOnce() -> Result<reqwest::blocking::Client, String>,
+{
+    provider_request(spec.provider, "GET", spec.template, || {
+        let client = client_factory().map_err(ProviderHttpError::Transport)?;
+        let mut builder = client
+            .get(spec.url)
+            .bearer_auth(spec.token)
             .header(reqwest::header::ACCEPT, "application/json");
-        for (name, value) in extra_headers {
-            request = request.header(name.clone(), *value);
+        for (name, value) in spec.extra_headers {
+            builder = builder.header(name.clone(), *value);
         }
-        let response = request.send().map_err(|err| {
-            let message = format!("{label} request failed: {err}");
+        let response = builder.send().map_err(|err| {
+            let message = format!("{} request failed: {err}", spec.label);
             if err.is_timeout() {
                 ProviderHttpError::Timeout(message)
             } else {
                 ProviderHttpError::Transport(message)
             }
         })?;
-        let response_received_at_epoch = now_epoch();
+        let response_received_at_epoch = response_received_at();
         let status = response.status();
         let retry_after_seconds =
             retry_after_header_seconds(response.headers(), response_received_at_epoch);
         if !status.is_success() {
             return Err(ProviderHttpError::HttpStatus {
                 status: status.as_u16(),
-                message: format!("{label} HTTP {status}"),
+                message: format!("{} HTTP {status}", spec.label),
                 retry_after_seconds,
                 response_received_at_epoch: Some(response_received_at_epoch),
             });
         }
         response.json::<T>().map_err(|err| {
-            let message = format!("{label} decode failed: {err}");
+            let message = format!("{} decode failed: {err}", spec.label);
             if err.is_timeout() {
                 ProviderHttpError::Timeout(message)
             } else {
@@ -1610,6 +1674,15 @@ pub(crate) fn get_json_bearer<T: serde::de::DeserializeOwned>(
             }
         })
     })
+}
+
+struct BearerJsonRequest<'a> {
+    provider: jackin_telemetry::schema::enums::ProviderName,
+    template: &'static str,
+    label: &'a str,
+    url: &'a str,
+    token: &'a str,
+    extra_headers: &'a [(reqwest::header::HeaderName, &'a str)],
 }
 
 pub(crate) fn epoch_seconds_from_maybe_ms(value: i64) -> i64 {

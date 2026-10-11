@@ -9,6 +9,8 @@ use std::os::unix::fs::{FileTypeExt as _, MetadataExt as _, PermissionsExt as _}
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
+#[cfg(feature = "test-support")]
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 
 use jackin_protocol::usage_broker::{
@@ -17,7 +19,8 @@ use jackin_protocol::usage_broker::{
 };
 
 use crate::coordinator::{
-    FileAccountStateStore, FileProjectionStateStore, UsageCoordinator, UsageProviderExecutor,
+    FileAccountStateStore, FileProjectionStateStore, MonotonicClock, SystemMonotonicClock,
+    UsageCoordinator, UsageProviderExecutor,
 };
 use crate::host::discovery::ProviderCredentialEnvResolver;
 
@@ -116,6 +119,12 @@ pub fn run_usage_broker_service(
         monitor_store: Some(Arc::clone(&monitor_store)),
         collector_service: None,
         collector_liveness: None,
+        #[cfg(feature = "test-support")]
+        claude_fixture_endpoint: None,
+        #[cfg(feature = "test-support")]
+        claude_fixture_keychain_reader: None,
+        #[cfg(feature = "test-support")]
+        fixture_clock: None,
         #[cfg(test)]
         claude_collector: None,
         probe_budget: config.coordinator.provider_timeout,
@@ -129,6 +138,8 @@ pub fn run_usage_broker_service(
             catalog_refresh: Some(catalog_refresh),
             monitor_store: Some(monitor_store),
             collector_liveness: None,
+            #[cfg(feature = "test-support")]
+            ticker_first_step_completed: None,
             cleanup,
         },
         || {},
@@ -166,6 +177,7 @@ pub fn run_usage_broker_foreground_bootstrap(
         },
         || crate::usage::unattended_keychain_guard().map_err(|_| unavailable()),
         on_ready,
+        None,
     )?;
     Ok(match outcome {
         ForegroundBootstrapOutcome::Acquired(credential_lease) => {
@@ -211,6 +223,18 @@ impl ForegroundCredentialLease for crate::usage::ClaudeCredentialLease {
     }
 }
 
+#[derive(Clone)]
+pub(super) struct ForegroundFixtureRuntime {
+    #[cfg(feature = "test-support")]
+    pub(super) endpoint: String,
+    #[cfg(feature = "test-support")]
+    pub(super) keychain_reader: Arc<dyn Fn(&str) -> crate::usage::ClaudeKeychainRead + Send + Sync>,
+    #[cfg(feature = "test-support")]
+    pub(super) clock: Arc<dyn MonotonicClock>,
+    #[cfg(feature = "test-support")]
+    pub(super) ticker_first_step_completed: Arc<AtomicBool>,
+}
+
 fn foreground_bootstrap_outcome(
     outcome: crate::usage::ClaudeCredentialBootstrapOutcome,
 ) -> ForegroundBootstrapOutcome<crate::usage::ClaudeCredentialLease> {
@@ -240,6 +264,7 @@ fn run_usage_broker_foreground_bootstrap_core<L, G>(
     bootstrap: impl FnOnce(&str) -> Result<ForegroundBootstrapOutcome<L>, UsageCoordinationError>,
     establish_guard: impl FnOnce() -> Result<G, UsageCoordinationError>,
     on_ready: impl FnOnce(UsageBrokerForegroundReady),
+    fixture: Option<ForegroundFixtureRuntime>,
 ) -> Result<ForegroundBootstrapOutcome<L>, UsageCoordinationError>
 where
     L: ForegroundCredentialLease,
@@ -254,6 +279,20 @@ where
         return Ok(outcome);
     };
     let _credential_lease = &credential_lease;
+    #[cfg(feature = "test-support")]
+    let broker_clock: Arc<dyn MonotonicClock> = fixture.as_ref().map_or_else(
+        || -> Arc<dyn MonotonicClock> { Arc::new(SystemMonotonicClock::default()) },
+        |fixture| Arc::clone(&fixture.clock),
+    );
+    #[cfg(feature = "test-support")]
+    let ticker_first_step_completed = fixture
+        .as_ref()
+        .map(|fixture| Arc::clone(&fixture.ticker_first_step_completed));
+    #[cfg(not(feature = "test-support"))]
+    let broker_clock: Arc<dyn MonotonicClock> = {
+        let _fixture = fixture;
+        Arc::new(SystemMonotonicClock::default())
+    };
     let collector_liveness = Arc::new(crate::usage::ClaudeCollectorLiveness::new(
         establish_guard()?
     ));
@@ -287,6 +326,14 @@ where
         monitor_store: Some(Arc::clone(&monitor_store)),
         collector_service: Some(service.to_owned()),
         collector_liveness: Some(Arc::clone(&collector_liveness)),
+        #[cfg(feature = "test-support")]
+        claude_fixture_endpoint: fixture.as_ref().map(|fixture| fixture.endpoint.clone()),
+        #[cfg(feature = "test-support")]
+        claude_fixture_keychain_reader: fixture
+            .as_ref()
+            .map(|fixture| Arc::clone(&fixture.keychain_reader)),
+        #[cfg(feature = "test-support")]
+        fixture_clock: fixture.as_ref().map(|fixture| Arc::clone(&fixture.clock)),
         #[cfg(test)]
         claude_collector: None,
         probe_budget: config.coordinator.provider_timeout,
@@ -295,7 +342,7 @@ where
         capability,
         binding_scope: CLAUDE_KEYCHAIN_SOURCE_SCOPE.to_owned(),
     };
-    run_usage_broker_service_with_cleanup(
+    run_usage_broker_service_with_clock(
         config,
         executor,
         BrokerServiceRuntime {
@@ -308,11 +355,57 @@ where
             catalog_refresh: None,
             monitor_store: Some(monitor_store),
             collector_liveness: Some(Arc::clone(&collector_liveness)),
+            #[cfg(feature = "test-support")]
+            ticker_first_step_completed,
             cleanup,
         },
+        broker_clock,
         || on_ready(ready),
     )?;
     Ok(ForegroundBootstrapOutcome::Acquired(credential_lease))
+}
+
+#[cfg(feature = "test-support")]
+pub(super) fn run_usage_broker_foreground_bootstrap_with_fixture(
+    config: UsageBrokerConfig,
+    scope: UsageDiscoveryScope,
+    service: &str,
+    fixture: ForegroundFixtureRuntime,
+    on_ready: impl FnOnce(UsageBrokerForegroundReady),
+) -> Result<crate::usage::ClaudeCredentialBootstrapOutcome, UsageCoordinationError> {
+    let reader = Arc::clone(&fixture.keychain_reader);
+    let outcome = run_usage_broker_foreground_bootstrap_core(
+        config,
+        scope,
+        service,
+        move |service| {
+            crate::usage::bootstrap_claude_credential_with_test_reader(service, |requested| {
+                reader(requested)
+            })
+            .map(foreground_bootstrap_outcome)
+            .map_err(|_| unavailable())
+        },
+        || Ok(()),
+        on_ready,
+        Some(fixture),
+    )?;
+    Ok(match outcome {
+        ForegroundBootstrapOutcome::Acquired(credential_lease) => {
+            crate::usage::ClaudeCredentialBootstrapOutcome::Acquired(credential_lease)
+        }
+        ForegroundBootstrapOutcome::Missing => {
+            crate::usage::ClaudeCredentialBootstrapOutcome::Missing
+        }
+        ForegroundBootstrapOutcome::Denied => {
+            crate::usage::ClaudeCredentialBootstrapOutcome::Denied
+        }
+        ForegroundBootstrapOutcome::InteractionRequired => {
+            crate::usage::ClaudeCredentialBootstrapOutcome::InteractionRequired
+        }
+        ForegroundBootstrapOutcome::Malformed(diagnostic) => {
+            crate::usage::ClaudeCredentialBootstrapOutcome::Malformed(diagnostic)
+        }
+    })
 }
 
 struct ForegroundCollectorSourceGuard {
@@ -347,6 +440,7 @@ where
         bootstrap,
         establish_guard,
         on_ready,
+        None,
     )
 }
 
@@ -389,6 +483,8 @@ fn run_usage_broker_service_with_executor_and_metadata(
             catalog_refresh,
             monitor_store: None,
             collector_liveness: None,
+            #[cfg(feature = "test-support")]
+            ticker_first_step_completed: None,
             cleanup,
         },
         || {},
@@ -481,6 +577,8 @@ struct BrokerServiceRuntime {
     catalog_refresh: Option<Arc<catalog::BrokerCatalogRefresh>>,
     monitor_store: Option<Arc<monitor::MonitorStore>>,
     collector_liveness: Option<Arc<crate::usage::ClaudeCollectorLiveness>>,
+    #[cfg(feature = "test-support")]
+    ticker_first_step_completed: Option<Arc<AtomicBool>>,
     cleanup: BrokerStartupCleanup,
 }
 
@@ -490,12 +588,30 @@ fn run_usage_broker_service_with_cleanup(
     runtime: BrokerServiceRuntime,
     on_ready: impl FnOnce(),
 ) -> Result<(), UsageCoordinationError> {
+    run_usage_broker_service_with_clock(
+        config,
+        executor,
+        runtime,
+        Arc::new(SystemMonotonicClock::default()),
+        on_ready,
+    )
+}
+
+fn run_usage_broker_service_with_clock(
+    config: UsageBrokerConfig,
+    executor: Arc<dyn UsageProviderExecutor>,
+    runtime: BrokerServiceRuntime,
+    clock: Arc<dyn MonotonicClock>,
+    on_ready: impl FnOnce(),
+) -> Result<(), UsageCoordinationError> {
     let BrokerServiceRuntime {
         identity_metadata,
         initial_catalog,
         catalog_refresh,
         monitor_store,
         collector_liveness,
+        #[cfg(feature = "test-support")]
+        ticker_first_step_completed,
         cleanup,
     } = runtime;
     let socket_path = config.socket_path();
@@ -516,18 +632,22 @@ fn run_usage_broker_service_with_cleanup(
     } = load_projection(&config)?;
     let previous_catalog = persisted_catalog.clone().unwrap_or_default();
     let coordinator = match (persisted_catalog.is_some(), catalog_revision) {
-        (true, Some(catalog_revision)) => Arc::new(UsageCoordinator::with_catalog_revision(
+        (true, Some(catalog_revision)) => {
+            Arc::new(UsageCoordinator::with_catalog_revision_and_clock(
+                executor,
+                store,
+                config.coordinator,
+                previous_catalog.clone(),
+                catalog_revision,
+                Arc::clone(&clock),
+            ))
+        }
+        _ => Arc::new(UsageCoordinator::with_catalog_and_clock(
             executor,
             store,
             config.coordinator,
             previous_catalog.clone(),
-            catalog_revision,
-        )),
-        _ => Arc::new(UsageCoordinator::with_catalog(
-            executor,
-            store,
-            config.coordinator,
-            previous_catalog.clone(),
+            Arc::clone(&clock),
         )),
     };
     let projection_guard = projection.lock().map_err(|_| unavailable())?;
@@ -561,7 +681,7 @@ fn run_usage_broker_service_with_cleanup(
                 diagnostics: seed.diagnostics,
                 identity_metadata: None,
             },
-            chrono::Utc::now().timestamp(),
+            clock.sample(chrono::Utc::now().timestamp()).floor_epoch(),
         )?;
     }
     let monitor_store = match monitor_store {
@@ -569,7 +689,7 @@ fn run_usage_broker_service_with_cleanup(
         None => Arc::new(monitor::MonitorStore::open(&config.data_dir).map_err(|_| unavailable())?),
     };
     let initial_projection = publisher.current_projection().map_err(|_| unavailable())?;
-    let monitor_now = chrono::Utc::now().timestamp();
+    let monitor_now = clock.sample(chrono::Utc::now().timestamp()).floor_epoch();
     monitor_store
         .observe_projection(&initial_projection, monitor_now)
         .map_err(|_| unavailable())?;
@@ -589,6 +709,9 @@ fn run_usage_broker_service_with_cleanup(
         monitor_store,
         catalog_refresh,
         collector_liveness,
+        clock,
+        #[cfg(feature = "test-support")]
+        ticker_first_step_completed,
     });
     Ok(())
 }
@@ -627,23 +750,33 @@ pub fn ensure_usage_broker_with_executor(
         catalog: persisted_catalog,
         catalog_revision,
     } = load_projection(&config)?;
+    let clock: Arc<dyn MonotonicClock> = Arc::new(SystemMonotonicClock::default());
     let coordinator = match (persisted_catalog.clone(), catalog_revision) {
         (Some(catalog), Some(catalog_revision)) => {
-            Arc::new(UsageCoordinator::with_catalog_revision(
+            Arc::new(UsageCoordinator::with_catalog_revision_and_clock(
                 executor,
                 store,
                 config.coordinator,
                 catalog,
                 catalog_revision,
+                Arc::clone(&clock),
             ))
         }
-        (Some(catalog), None) => Arc::new(UsageCoordinator::with_catalog(
+        (Some(catalog), None) => Arc::new(UsageCoordinator::with_catalog_and_clock(
             executor,
             store,
             config.coordinator,
             catalog,
+            Arc::clone(&clock),
         )),
-        (None, _) => Arc::new(UsageCoordinator::new(executor, store, config.coordinator)),
+        (None, _) => Arc::new(UsageCoordinator::start_with_clock(
+            executor,
+            store,
+            config.coordinator,
+            None,
+            None,
+            Arc::clone(&clock),
+        )),
     };
     let build_id = config.build_id.clone();
     let idle_exit = config.idle_exit;
@@ -681,6 +814,9 @@ pub fn ensure_usage_broker_with_executor(
             monitor_store,
             catalog_refresh: None,
             collector_liveness: None,
+            clock,
+            #[cfg(feature = "test-support")]
+            ticker_first_step_completed: None,
         });
     })
     .map_err(|_| unavailable())?;

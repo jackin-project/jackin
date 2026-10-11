@@ -224,6 +224,25 @@ fn valid_claude_keychain_payload(json: &str) -> Result<(), ClaudeCredentialPaylo
 pub fn bootstrap_claude_credential(
     service: &str,
 ) -> Result<ClaudeCredentialBootstrapOutcome, ClaudeKeychainPolicyError> {
+    bootstrap_claude_credential_with_reader(service, prepare_claude_keychain_auth)
+}
+
+/// Test-only reader seam for the local provider-flow fixture. The supplied
+/// bytes still pass through the production service checks, payload validator,
+/// zeroizing cache, generation creation, and lease lifetime.
+#[cfg(feature = "test-support")]
+#[doc(hidden)]
+pub fn bootstrap_claude_credential_with_test_reader(
+    service: &str,
+    reader: impl FnOnce(&str) -> ClaudeKeychainRead,
+) -> Result<ClaudeCredentialBootstrapOutcome, ClaudeKeychainPolicyError> {
+    bootstrap_claude_credential_with_reader(service, reader)
+}
+
+fn bootstrap_claude_credential_with_reader(
+    service: &str,
+    reader: impl FnOnce(&str) -> ClaudeKeychainRead,
+) -> Result<ClaudeCredentialBootstrapOutcome, ClaudeKeychainPolicyError> {
     // Check all three streams before even inspecting or reusing the process
     // cache. Bootstrap always represents a deliberate attached-operator act.
     if !super::keychain::all_stdio_are_terminal() {
@@ -242,7 +261,7 @@ pub fn bootstrap_claude_credential(
         }
     }
 
-    match prepare_claude_keychain_auth(service) {
+    match reader(service) {
         ClaudeKeychainRead::Payload { mut json } => {
             if let Err(diagnostic) = valid_claude_keychain_payload(&json) {
                 json.zeroize();

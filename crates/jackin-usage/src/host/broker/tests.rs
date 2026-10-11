@@ -316,7 +316,8 @@ fn drain_http_request_headers(stream: &mut TcpStream, stop: &AtomicBool) -> Resu
     let deadline = Instant::now() + DEADLINE;
     let mut ending = [0_u8; 4];
     let mut request_line_prefix = [0_u8; 4];
-    for byte_count in 0..MAX_HEADER_BYTES {
+    let mut received_byte_count = 0;
+    while received_byte_count < MAX_HEADER_BYTES {
         if stop.load(Ordering::SeqCst) {
             return Err("fake provider stopped while reading request headers".to_owned());
         }
@@ -333,9 +334,10 @@ fn drain_http_request_headers(stream: &mut TcpStream, stop: &AtomicBool) -> Resu
                 return Err("peer closed before completing HTTP request headers".to_owned());
             }
             Ok(_) => {
-                if byte_count < request_line_prefix.len() {
-                    request_line_prefix[byte_count] = byte[0];
+                if received_byte_count < request_line_prefix.len() {
+                    request_line_prefix[received_byte_count] = byte[0];
                 }
+                received_byte_count += 1;
                 ending.rotate_left(1);
                 ending[3] = byte[0];
                 if ending == *b"\r\n\r\n" {
@@ -517,6 +519,12 @@ fn launch_scope_fails_closed_on_rotation_repoint_and_mixed_agent_source() {
         monitor_store: None,
         collector_service: None,
         collector_liveness: None,
+        #[cfg(feature = "test-support")]
+        claude_fixture_endpoint: None,
+        #[cfg(feature = "test-support")]
+        claude_fixture_keychain_reader: None,
+        #[cfg(feature = "test-support")]
+        fixture_clock: None,
         claude_collector: None,
         probe_budget: Duration::from_secs(1),
     };
@@ -615,6 +623,12 @@ fn launch_scope_accepts_provider_native_zhipu_alias_for_canonical_zai_binding() 
         monitor_store: None,
         collector_service: None,
         collector_liveness: None,
+        #[cfg(feature = "test-support")]
+        claude_fixture_endpoint: None,
+        #[cfg(feature = "test-support")]
+        claude_fixture_keychain_reader: None,
+        #[cfg(feature = "test-support")]
+        fixture_clock: None,
         claude_collector: None,
         probe_budget: Duration::from_secs(1),
     };
@@ -855,6 +869,12 @@ fn discovery_executor_rejects_catalog_that_does_not_match_current_scope() {
         monitor_store: None,
         collector_service: None,
         collector_liveness: None,
+        #[cfg(feature = "test-support")]
+        claude_fixture_endpoint: None,
+        #[cfg(feature = "test-support")]
+        claude_fixture_keychain_reader: None,
+        #[cfg(feature = "test-support")]
+        fixture_clock: None,
         claude_collector: None,
         probe_budget: Duration::from_secs(1),
     };
@@ -910,6 +930,12 @@ fn foreground_discovery_executor_rejects_non_claude_before_credentials_or_collec
         monitor_store: None,
         collector_service: Some("fixture-claude-service".to_owned()),
         collector_liveness: None,
+        #[cfg(feature = "test-support")]
+        claude_fixture_endpoint: None,
+        #[cfg(feature = "test-support")]
+        claude_fixture_keychain_reader: None,
+        #[cfg(feature = "test-support")]
+        fixture_clock: None,
         claude_collector: Some({
             let collector_calls = Arc::clone(&collector_calls);
             Arc::new(move |_, _| {
@@ -948,6 +974,12 @@ fn discovery_executor_rejects_unselected_catalog_rows_without_credential_or_prov
         monitor_store: None,
         collector_service: None,
         collector_liveness: None,
+        #[cfg(feature = "test-support")]
+        claude_fixture_endpoint: None,
+        #[cfg(feature = "test-support")]
+        claude_fixture_keychain_reader: None,
+        #[cfg(feature = "test-support")]
+        fixture_clock: None,
         claude_collector: Some({
             let fake_collector_calls = Arc::clone(&fake_collector_calls);
             Arc::new(move |_, _| {
@@ -2326,6 +2358,12 @@ fn scoped_probe_refreshes_exact_binding_selected_by_later_sibling_proof() {
         monitor_store: None,
         collector_service: None,
         collector_liveness: None,
+        #[cfg(feature = "test-support")]
+        claude_fixture_endpoint: None,
+        #[cfg(feature = "test-support")]
+        claude_fixture_keychain_reader: None,
+        #[cfg(feature = "test-support")]
+        fixture_clock: None,
         claude_collector: None,
         probe_budget: Duration::from_secs(1),
     };
@@ -4063,6 +4101,31 @@ impl UsageProviderExecutor for RecordingDiscoveryExecutor {
     }
 }
 
+fn fake_foreground_discovery_executor(
+    root: &Path,
+    monitor_store: Arc<monitor::MonitorStore>,
+    collector_service: &str,
+    collector: impl Fn(&UsageAccountCapability, &str) -> ProviderProbeOutcome + Send + Sync + 'static,
+) -> DiscoveryProviderExecutor {
+    DiscoveryProviderExecutor {
+        bindings: Mutex::new(BTreeMap::new()),
+        validated_catalog: Mutex::new(None),
+        scope: host_desktop_scope(root),
+        resolver: Arc::new(NoopCredentialResolver),
+        monitor_store: Some(monitor_store),
+        collector_service: Some(collector_service.to_owned()),
+        collector_liveness: Some(Arc::new(crate::usage::ClaudeCollectorLiveness::new(()))),
+        #[cfg(feature = "test-support")]
+        claude_fixture_endpoint: None,
+        #[cfg(feature = "test-support")]
+        claude_fixture_keychain_reader: None,
+        #[cfg(feature = "test-support")]
+        fixture_clock: None,
+        claude_collector: Some(Arc::new(collector)),
+        probe_budget: Duration::from_secs(1),
+    }
+}
+
 #[test]
 fn foreground_ticker_polls_only_current_selected_capability_from_approved_monitor_mappings() {
     use crate::coordinator::policy::UsageActivity;
@@ -4103,15 +4166,11 @@ fn foreground_ticker_polls_only_current_selected_capability_from_approved_monito
     let probe_attempts = Arc::new(Mutex::new(Vec::new()));
     let (collector_sender, collector_receiver) = mpsc::channel();
     let collector_calls = Arc::clone(&fake_collector_calls);
-    let executor = Arc::new(DiscoveryProviderExecutor {
-        bindings: Mutex::new(BTreeMap::new()),
-        validated_catalog: Mutex::new(None),
-        scope: host_desktop_scope(temp.path()),
-        resolver: Arc::new(NoopCredentialResolver),
-        monitor_store: Some(Arc::clone(&monitor_store)),
-        collector_service: Some(selected_service.to_owned()),
-        collector_liveness: Some(Arc::new(crate::usage::ClaudeCollectorLiveness::new(()))),
-        claude_collector: Some(Arc::new(move |capability, service| {
+    let executor = Arc::new(fake_foreground_discovery_executor(
+        temp.path(),
+        Arc::clone(&monitor_store),
+        selected_service,
+        move |capability, service| {
             collector_calls
                 .lock()
                 .expect("fake collector call mutex")
@@ -4120,9 +4179,8 @@ fn foreground_ticker_polls_only_current_selected_capability_from_approved_monito
                 .send((capability.clone(), service.to_owned()))
                 .expect("record authorized fake collection");
             ProviderProbeOutcome::success(quota_view())
-        })),
-        probe_budget: Duration::from_secs(1),
-    });
+        },
+    ));
     let selected_entry = UsageCatalogEntry {
         capability: selected.clone(),
         revision: "selected-foreground-source".to_owned(),
@@ -4195,23 +4253,11 @@ fn foreground_ticker_polls_only_current_selected_capability_from_approved_monito
             .phase,
         UsageRefreshPhase::Idle
     );
-    let unauthorized = probe_with_scope(
-        &DiscoveryProviderExecutor {
-            bindings: Mutex::new(BTreeMap::new()),
-            validated_catalog: Mutex::new(None),
-            scope: host_desktop_scope(temp.path()),
-            resolver: Arc::new(NoopCredentialResolver),
-            monitor_store: Some(monitor_store),
-            collector_service: Some(selected_service.to_owned()),
-            collector_liveness: Some(Arc::new(crate::usage::ClaudeCollectorLiveness::new(()))),
-            claude_collector: Some(Arc::new(|_, _| {
-                panic!("unselected canonical capability must not reach the fake collector")
-            })),
-            probe_budget: Duration::from_secs(1),
-        },
-        &stale,
-        None,
-    );
+    let unauthorized_executor =
+        fake_foreground_discovery_executor(temp.path(), monitor_store, selected_service, |_, _| {
+            panic!("unselected canonical capability must not reach the fake collector")
+        });
+    let unauthorized = probe_with_scope(&unauthorized_executor, &stale, None);
     let ProviderProbeOutcome::Failure { kind, .. } = unauthorized else {
         panic!("non-selected Claude capability must be unauthorized");
     };

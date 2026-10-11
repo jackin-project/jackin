@@ -20,6 +20,9 @@ pub use crate::usage::{
     prepare_claude_keychain_auth, read_claude_keychain_item, unattended_keychain_guard,
 };
 pub use accounts::{CanonicalAccountIdentity, CanonicalAccountSubject};
+#[cfg(feature = "test-support")]
+#[doc(hidden)]
+pub use broker::run_usage_broker_foreground_bootstrap_with_test_fixture;
 pub use broker::{
     ForwardedUsageSources, UsageBrokerClient, UsageBrokerConfig, UsageBrokerForegroundReady,
     ensure_usage_broker_process, ensure_usage_broker_with_executor, parse_statusline,

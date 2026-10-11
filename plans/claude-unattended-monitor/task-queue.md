@@ -150,6 +150,20 @@ The pre-v8 cleanup removed dormant Claude CLI diagnostic/parser paths and streng
 - [x] Refresh and freeze historical checkpoint 22ac provenance, checks, installed smoke, and handoff evidence; see [verification.md](verification.md).
 - [x] Push the reviewed documentation/evidence checkpoint `56181d4d`; exact-head run `38045612792` passed. The correction in this commit requires its own checks, tracked in the landing item above.
 - [ ] Operator-controlled real credential/account/provider verification remains outside offline acceptance. Do not modify running Claude settings, credentials, environment or worktrees.
+- [ ] Add offline full-flow proof for the v9 foreground collector: actual CLI
+  `auth prepare` through a feature-gated fixture broker, synthetic Keychain
+  payload through the production validator/cache/lease, local-only HTTP through
+  the production response parser and Claude mapper, natural ticker publication
+  to durable projection/monitor state, and CLI status/watch. The fixture must
+  use the real Unix broker protocol and approved local-to-source binding, with
+  a paired fake clock for a second due observation and retry-deadline checks.
+  The feature and fixture binary remain non-default and must fail to compile in
+  release mode. The fixture substitutes only the Keychain payload reader and
+  attended no-UI guard; it still exercises the production credential validator,
+  zeroizing cache, lease, collector authorization, request construction,
+  response decode, mapper, and scheduler. Its HTTP endpoint is loopback-only,
+  so it does not prove native Security.framework behavior or Anthropic
+  HTTPS/TLS; those remain operator verification boundaries.
 
 Observation alone never creates a spend baseline or grants dispatch. Collection opt-in is separate from dispatch policy approval. Strict SGD remains fail-closed; quota-only requires explicit audited approval and discloses unknown spend/disabled SGD enforcement. External prerequisites mean checkpoint/report, not endless diagnostics or automatic resumption claims.
 
@@ -949,3 +963,36 @@ unverified. The correction and evidence are committed/pushed as one checkpoint.
 - [ ] Keep real v9 `usage status`/`usage watch` acceptance pending until a
   separately authorized attended operator check; do not claim live readiness,
   continuous freshness, or zero 429s.
+
+## Synthetic CLI-to-provider acceptance flow
+
+- [x] Add an opt-in `test-support` fixture sibling that drives the ordinary
+  CLI, foreground broker, credential validator/cache/lease, production Claude
+  collector and response parser, coordinator ticker, projection store, and
+  CLI watch/status over a private Unix socket and loopback HTTP endpoint. Its
+  synthetic payload is service-pinned and private; no endpoint, credential, or
+  clock override is available in default/release builds.
+- [x] Exercise a provider source ID distinct from the local monitor account
+  ID, explicitly confirm the binding and experimental observer, hold the first
+  local HTTP 200 until watch attaches, and assert the published 37%/23% five-
+  hour/seven-day values, resets, evidence provenance, and current readiness.
+  After restart, the 300-second recovery floor stays closed through fixture
+  epoch +600 and admits exactly one second local request at +601; watch/status
+  then show 52%/41% with the later provider sample.
+- [x] Repeat the instrumented focused flow ten times: 10/10 passed, each in
+  13.07–13.73 seconds. One earlier pre-instrumentation run failed before any
+  fake HTTP request; its diagnostics omitted the typed terminal failure and
+  server accept/read counters. It did not reproduce in the ten current runs,
+  but remains unexplained and is not evidence of a production root cause.
+- [x] Run default `jackin-usage --lib`: 736 passed. One earlier run was 735/736
+  because the local 429 fake-server test advanced its request-line prefix
+  index on read timeouts. The fixture now counts only successful reads; its
+  focused restart/Retry-After test passes 1/1 and the full suite passes.
+- [x] Run strict Clippy on both packages, all targets, with `test-support` and
+  without it; both passed with `-Dwarnings`. Scoped MBX formatting passed.
+- [ ] Extend the CLI flow with numeric and HTTP-date `Retry-After`, preserved
+  last-good quota, restart recovery, and an exact post-deadline natural poll.
+- [ ] Keep native macOS Security Framework/UI behavior, Anthropic HTTPS/TLS,
+  OS-level egress, live quota values, and live installed-v9 status/watch as
+  separate unverified acceptance boundaries. No real provider or account
+  credentials were used by this fixture.
