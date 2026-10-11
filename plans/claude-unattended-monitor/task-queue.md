@@ -1404,9 +1404,37 @@ strict Clippy, formatting, and diff-check. The fixture flow includes a current
 resetless observation, restart recovery, delta and HTTP-date `Retry-After`,
 and auth failure outcomes; it does not exercise native Keychain UI or a live
 provider. Independent source/security review is Ready for this source diff but
-does not establish live readiness. The functional source change is not yet
-installed as a fresh pair.
+does not establish live readiness. The functional source change was not yet
+installed at this source-verification checkpoint; the later v12 install is
+recorded below.
 The v11 live service still has the partial observation described above; do not
 claim live readiness until a later authorized natural observation confirms
 both quota windows through the monitor. No live service, credentials, or
 provider state were changed for this diagnosis.
+
+## v12 isolated install checkpoint (2026-10-11; live cutover pending)
+
+The default-feature v12 CLI and broker were installed under the fresh prefix
+`/Users/donbeave/.local/share/jackin-claude-monitor-v12` from commit
+`db59c4015fb4715e1d39157aaa31f4a1497c823a` and source tree
+`c309fedb3a7f6b7469468a426e83ea35df766c8b`. Their SHA-256 values are recorded
+in `v12-installation.json`. The build used MBX 1.22.0 and Rust 1.97.1; the
+manifest records the exact install command and tool output.
+
+The isolated installed-pair smoke passed for broker protocol v9 and monitor
+schema 6. It selected the exact installed sibling, started and stopped a
+private fixture service, and observed one unchanged Watch event over the
+35.082-second deadline. Headless auth returned `interaction_required`; fake
+broker launches, credential shell tripwires, and local proxy requests were
+zero. The fixture did not exercise successful authentication, native
+Security.framework behavior, OS-level egress, or provider collection.
+
+The v11 live service remains running with its existing v7 state untouched; the
+v12 prefix created no user state. The earlier v11 monitor result still has a
+stale Weekly window, so there is no live acceptance or handoff. Before any
+v11-to-v12 cutover or auth operation, obtain explicit operator approval for
+that attended cutover and confirmation that the operator will be present for
+any interactive Keychain prompt. After approval, recheck the live broker
+owner and state before acting. Then verify two natural post-cutover collection
+cycles update both Session and Weekly monitor evidence; do not use manual
+refresh or claim success from the isolated smoke.
