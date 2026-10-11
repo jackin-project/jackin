@@ -21,11 +21,10 @@ review status are in [v7-installation.json](v7-installation.json).
 
 This v7 installation is historical. It did not run bootstrap, inspect
 Keychain, make a provider request, or test a live account. Do not use its path
-as the next operator command: first complete the current read-only inventory
-and identify the exact supported CLI/broker pair, its provenance, the owned
-service (if any), and the intended existing data directory and monitor. A
-separately attended authentication and real-usage check remains pending; no
-dispatch policy is approved.
+as an operator command. The later v10 real-account checkpoint is tracked at
+the end of this queue; a fresh provider generation has succeeded, but the
+monitor still retains stale weekly evidence and full acceptance is incomplete.
+No dispatch policy is approved.
 
 ## Bounded auth diagnostic follow-up on main
 
@@ -118,12 +117,15 @@ stale-lease scope passed 38/38, the seeded CLI/provider flow passed 4/4,
 default offline CLI regressions passed 9/9, and strict feature Clippy,
 formatting, diff-check, and independent review passed. The default-feature v10
 CLI/broker pair has now been rebuilt from that exact source tree and installed
-at `/Users/donbeave/.local/share/jackin-claude-monitor-v10`. The isolated
+at `~/.local/share/jackin-claude-monitor-v10`. The isolated
 installed smoke passed; exact source/tree, hashes, and limits are recorded in
 [v10-installation.json](v10-installation.json). This smoke used only private
 synthetic state. It did not open the existing v7 account state, start its
-service, authenticate, or contact the provider. Real-account acceptance and
-the attended-confirmation gate remain pending.
+service, authenticate, or contact the provider. Since the smoke, two natural
+provider generations have succeeded against the real account, but full monitor
+acceptance remains pending because weekly monitor evidence is stale. The user
+explicitly confirmed attendance, and the foreground v10 service was reported
+ready; the native UI interaction itself is not recorded.
 
 The older `8abfa235` delivery and CI details below are historical records; they
 do not describe the current source or installed pair. The current real-account
@@ -1029,10 +1031,14 @@ unverified. The correction and evidence are committed/pushed as one checkpoint.
   2/2, auth bootstrap 2/2, monitor CLI 5/5. The updated feature integration
   target also passed three times, and strict feature Clippy, scoped formatting,
   and `git diff --check` passed.
+- [x] Record the live installed-pair status/watch checkpoint in
+  `v10-live-verification.json`. Two natural provider generations succeeded,
+  but monitor publication refreshed only the five-hour field; the weekly field
+  remains stale despite current source-side evidence.
 - [ ] Keep native macOS Security Framework/UI behavior, Anthropic HTTPS/TLS,
-  OS-level egress, live quota values, and live installed-pair status/watch as
-  separate unverified acceptance boundaries. No real provider or account
-  credentials were used by this fixture.
+  OS-level egress, complete two-window monitor freshness, and two post-fix
+  natural collection cycles as separate pending acceptance boundaries. No real
+  provider or account credentials were used by the offline fixture.
 
 ## Active real-account acceptance task
 
@@ -1058,50 +1064,63 @@ CLI with the v7 state directory and monitor `monitor-00000001`; its source-side
 collection succeeded while monitor evidence stayed empty. None of those older
 quota values or readiness results are current.
 
-The existing data directory under review is
-`/Users/donbeave/.local/share/jackin-claude-monitor-v7/state`. Its recorded
-observer is `binding-00000001` revision 1 and `monitor-00000001`; the recorded
-account label `my-claude-subscription` is a local label, not authenticated
-identity. The last read-only state report, before the fixed v10 install, found
-monitor schema 4, sequence 1,
-`needs_evidence`, `tracking=waiting`, `quota=unknown`, `budget=unknown`,
-`dispatch=not_authorized`, `runnable=false`, and no five-hour or weekly usage
-or reset evidence. Recheck after v5 migration; the v10 fixture's schema-5
-assertion is not proof the real state has migrated. The most recent read-only
-startup investigation found the prior v8
-PID 25738 absent and a persisted lease about 6,206 seconds old whose protocol
-version 8 conflicts with the v10 broker protocol. That stale lease blocked
-startup before the recovery fix. A fresh ownership recheck after rebuilding
-found no PID 25738, broker process, or socket owner. The existing account
-service has not been started with the new pair; re-read its owner, lease, and
-state immediately before any attended authentication. The bounded recovery fix is signed and pushed at
-`9809c24400e9f24ad86e83e45dca7bf5d9bab278`; its stale-lease tests, full flow,
-offline CLI regressions, strict feature Clippy, and formatting passed, and
-independent source review is Ready. The installed v10 pair now comes from the
-fixed source. Its private smoke does not prove it can open this state. Do not
-manually delete or edit the lease, and do not infer that the state migrated;
-recheck the exact pair and current owner/process/lease/state read-only before
-authentication. No auth or real provider request has been performed for this
-task.
+The existing data directory is
+`~/.local/share/jackin-claude-monitor-v7/state`. The attended
+v10 service opened and migrated it to monitor schema 5 while preserving
+`binding-00000001` revision 1 and observe-only `monitor-00000001`. The account
+label `my-claude-subscription` remains a local label, not verified provider
+identity. Current binary paths and hashes are in `v10-installation.json`;
+root confirmed the running CLI and sibling broker images match that manifest;
+transient PID values are retained only in the owner-only local evidence copy.
+The source commit/tree is `9809c244` / `2af8f8b98c61c47a92b071e0d77072446aa965f1`.
 
-Authentication and any live provider request require an attended confirmation
-first. The corrected pair is rebuilt, installed, and smoke-verified. After a
-fresh read-only review confirms the exact pair, current owner/lease, existing
-state, binding, and monitor, ask the user exactly:
+After the user's explicit affirmative response, the attended auth command was
+started in exec session 84850 and the foreground service was reported ready.
+The exact native Keychain UI observation was not recorded, so do not claim it
+was seen or approved. No credential material is in this record. Do not start
+another auth process, stop or replace the current owner, manually change the
+lease, or issue a forced refresh.
 
-> I am ready to run the attended authentication and real-usage verification
-> using [exact binary] and [exact data directory]. Are you present and ready
-> to approve any Keychain prompt?
+The first status after migration showed retained stale usage: 47% five-hour
+and 72% weekly, with source evidence epoch `1791699771`, received epoch
+`1791708133`, reported evidence age 8,398 seconds, and issue codes
+`quota_stale` and `reset_due_unverified`. The five-hour reset at `1791705000`
+was past; the weekly reset at `1792134000` was future. Watch events 6, 7, and
+8 repeated stale evidence; latest decision sequence at that point was 2. The
+first natural collector result then completed coordinator generation 77
+successfully: started at `1791708434`, provider invoked/completed at
+`1791708435`, zero retry failures, with the next-attempt floor at
+`1791708735`. Source projection broker generation 150 reported all six
+normalized groups current at `1791708434`, including both quota windows; its
+weekly reset was `1792133999`.
 
-Wait for explicit confirmation. Before it arrives, do not start an auth or
-broker command that performs authentication and do not make a live provider
-request. After confirmation, execute the supported attended `usage auth prepare`
-command yourself from the verified pair and tell the user when to approve the
-Keychain prompt. Never print, log, commit, or transmit credential
-contents. Do not alter Claude Code credentials, settings, environment,
-worktrees, Keychain ACLs, or an existing broker; establish service ownership
-before any proposed disruption and obtain specific approval before stopping or
-replacing it.
+Monitor watch events 16 and 18 refreshed only five-hour usage to 19%, with
+evidence/receipt epochs `1791708434`/`1791708435` and reset `1791722999`.
+Weekly monitor usage remains stale at 72%, with original evidence/receipt
+epochs `1791699771`/`1791708133` and reset `1792134000`, even though the source
+projection reports All models at 82% used. At event 18 the monitor reported
+provider current, quota stale, tracking waiting, dispatch unauthorized,
+`runnable=false`, lifecycle `needs_evidence`, and issue `quota_stale`; evidence
+ages were 97 and 8,760 seconds. Source and monitor weekly resets differ by one
+second. A lower source reset watermark may explain the mismatch; this is under
+investigation and is not a confirmed root cause. The 300-second watch in exec session 65330
+completed with exit code 0. A second natural coordinator generation 78
+succeeded after the saved floor: it started at `1791708735`, invoked the
+provider at `1791708736`, completed at `1791708737`, had no reported
+rate-limit/retry, and set next floor `1791709037`. Source projection broker
+generation 152 reports Session 21% used and All models 83% used, both current
+at `1791708736`. Monitor watch event 29 and subsequent events through 32 show
+five-hour usage at 21% with fresh evidence, while weekly monitor usage remains
+stale at 72% with the original evidence/receipt times. Thus two natural source
+generations succeeded but neither completed the two-window monitor workflow.
+Both bounded watches, exec sessions 65330 and 78393, exited 0; session 78393
+ended through event 32 at `1791708826`. The foreground attended session 84850
+is still running, as reported by root; these session IDs are not OS PIDs. The
+installed CLI help lists `--timeout-secs` without printing its range, and the
+exact source parser allows 1..=300 seconds; the reported 900-second request
+was rejected. Provider request count is unmeasured. Current sanitized
+status/watch details are in
+[`v10-live-verification.json`](v10-live-verification.json).
 
 Checkpoint status:
 
@@ -1109,8 +1128,8 @@ Checkpoint status:
   synthetic sibling-selection/status/watch smoke; exact hashes and scope are
   preserved in `installation_history[0]` of `v10-installation.json`. This did
   not open the existing v7 state or perform authentication/provider requests.
-- [x] Read-only investigation found prior v8 PID 25738 absent and a persisted
-  protocol-v8 lease that blocked startup before the recovery fix. A later
+- [x] Read-only investigation found the prior v8 broker process absent and a
+  persisted protocol-v8 lease that blocked startup before the recovery fix. A later
   read-only ownership recheck found no PID, broker process, or socket owner.
 - [x] Commit and push the lease-recovery fix at
   `9809c24400e9f24ad86e83e45dca7bf5d9bab278`. The stale-lease scope passed
@@ -1119,33 +1138,48 @@ Checkpoint status:
 - [x] Build/install the corrected pair from `9809c244` and record/review its
   manifest. The exact pair's private installed smoke passed; it did not access
   or migrate the existing v7 state.
-- [ ] Recheck the corrected pair and existing state read-only before asking
-  for attended confirmation. No auth or real provider request has occurred.
+- [x] Recheck the corrected pair and existing state read-only before attended
+  authentication. The user explicitly confirmed presence; the service was
+  reported ready. Native Keychain UI observation remains unrecorded.
+- [x] Confirm schema-5 migration preserved the existing binding revision and
+  observe-only monitor. The first status contained stale retained quota data,
+  not a new provider observation.
+- [x] Capture the first natural collector outcome: source generation 77
+  succeeded with all six normalized groups current, but monitor watch events
+  16 and 18 refreshed only five-hour usage. Weekly monitor evidence remains
+  stale and the source-to-monitor mismatch is under investigation.
+- [x] Capture a second natural collector success after generation 77's 300-
+  second floor. Source generation 78 succeeded, but event 29 and later events
+  through 32 still show stale weekly monitor evidence. The required two-window
+  workflow remains incomplete.
 
 Remaining real-account acceptance gates:
 
-- [ ] Read-only identify the installed CLI and sibling broker, exact paths,
+- [x] Read-only identify the installed CLI and sibling broker, exact paths,
   hashes, source/build provenance, supported command syntax, service process
   owner/image/arguments, state directory, binding, and monitor schema. Compare
-  with the installation manifest and current CLI help. Reuse the existing
-  observation-only binding/monitor when valid; otherwise use supported commands
-  to create only an observation-only monitor after attended confirmation.
-- [ ] After attended authentication, verify the running broker is the intended
-  pair. Confirm `service_ready` selects the expected source. State whether the
-  binding account ID is a local label or an independently authenticated
-  identity; do not imply that a local label proves identity.
-- [ ] Through normal collector scheduling, obtain genuine five-hour and weekly
-  usage. Capture actual CLI status and bounded watch output, exit codes, event
-  sequence, percentages, reset epochs, evidence source and account/session
-  scope, evidence and receipt timestamps, freshness, provider/readiness issue
-  codes, and service state. Confirm observation-only `runnable=false` and
-  dispatch unauthorized are expected and do not misclassify collection as
-  failure.
-- [ ] Observe at least two naturally scheduled successful collections. Respect
-  the persisted minimum attempt interval and every Retry-After/backoff/circuit
-  deadline. Do not force refresh, bypass cooldown, rotate tokens, or consume
-  subscription capacity. Record provider request counts only where directly
-  measured; label architectural expectations separately from measurements.
+  with the installation manifest and current CLI help. The existing
+  observation-only binding/monitor was preserved. Watch timeout is limited to
+  300 seconds by the installed CLI parser.
+- [x] After attended authentication, verify the running broker is the intended
+  pair. The foreground service was reported ready, and the process hashes match
+  the manifest. The account label remains local; provider identity is not
+  independently verified. The native Keychain UI event was not recorded.
+- [ ] Resolve and install the source-aware publication fix, then through normal
+  collector scheduling obtain current monitor evidence for both quota windows.
+  Capture actual CLI status and bounded watch output, exit codes,
+  event sequence, percentages, reset epochs, evidence source and
+  account/session scope, evidence and receipt timestamps, freshness,
+  provider/readiness issue codes, and service state. Confirm observation-only
+  `runnable=false` and dispatch unauthorized are expected and do not
+  misclassify collection as failure.
+- [ ] After the corrected pair is installed, observe two naturally scheduled
+  successful collection cycles through the monitor. Respect current floor
+  `1791709037` and every Retry-After/backoff/circuit deadline. Verify both
+  monitor windows update appropriately. Do not force refresh, bypass cooldown,
+  rotate tokens, or consume subscription capacity. Record provider request
+  counts only where directly measured; label architectural expectations
+  separately from measurements.
 - [ ] Verify repeated passive status/watch reads do not cause credential access
   or provider requests using available instrumentation, and distinguish those
   measurements from fixture counts and source-code assertions. Verify a later

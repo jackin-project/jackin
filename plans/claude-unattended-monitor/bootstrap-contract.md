@@ -14,10 +14,16 @@ synthetic installed smoke. Exact source/tree, binary hashes, manifest digest,
 and scope are in [v10-installation.json](v10-installation.json) and the
 [v10-live-verification.md](v10-live-verification.md) runbook. The smoke did
 not access or open the existing v7 account state, migrate it, authenticate, or
-make a provider request. The latest read-only owner check found no prior v8
-PID, broker process, or socket owner, but the real-state owner/lease/status
-must be rechecked before authentication. No successful attended
-authentication or real provider request has occurred. See
+make a provider request. Since that smoke, the user explicitly confirmed
+attendance and the v10 foreground command was started; the service was
+reported ready. The native Keychain UI event was not recorded. Two natural
+provider generations later succeeded and source projections reported current
+Session and All models values, but monitor publication refreshed only
+five-hour usage; weekly monitor evidence remains stale. The source-to-monitor
+mismatch is under investigation, and live provider request count remains
+unmeasured. The observed `provider=current` readiness describes
+collector/provider state; it does not make stale weekly monitor evidence
+current or complete acceptance. See
 [v10-live-verification.md](v10-live-verification.md) for the gated live
 acceptance procedure.**
 
@@ -39,7 +45,10 @@ After explicit local-source binding and collector approval, an observation-only
 monitor can use the experimental Claude usage collector. The statusline remains
 an optional, separate evidence source. The installed fixture did not exercise
 successful foreground authentication or a live account/provider request, so
-neither live readiness nor continuous credential availability is established.
+its results establish neither. Separately, the current v10 live checkpoint
+records two successful natural provider generations and current source
+projections; it does not establish continuous credential availability or
+current monitor evidence for both quota windows.
 The passive local service and ordinary observer do not bootstrap credentials or
 make provider requests; collection requires the running foreground bootstrap,
 the stored binding approval, and the explicit observer flag.
@@ -277,13 +286,21 @@ and default offline CLI regressions passed 9/9. Strict feature Clippy, scoped
 formatting, and diff-check passed. The earlier expanded synthetic flow at
 `019de448` also passed three consecutive full-target runs. Exact results and
 limits are in [verification.md](verification.md). These checks do not prove
-native authentication or real account collection. The v10 pair in
-[v10-installation.json](v10-installation.json) now contains the default-feature
-build from source checkpoint `9809c244` and its private smoke result. The
-earlier protocol-v8 lease blocked startup before the fix; the new pair has not
-yet been run against the existing state, which remains a separate read-only
-and attended verification gate. The live gate and attended confirmation
-requirement are in [v10-live-verification.md](v10-live-verification.md).
+native Keychain UI behavior or successful real account collection. The v10
+pair in [v10-installation.json](v10-installation.json) contains the
+default-feature build from source checkpoint `9809c244` and its private smoke
+result. After explicit user confirmation, the pair opened the existing state
+in the foreground and migrated it to schema 5 while preserving the current
+binding and observe-only monitor. The first status showed stale 47% five-hour
+and 72% weekly usage. Natural provider generations 77 and 78 then succeeded;
+source projections reported Session at 19% then 21% used and All models at
+82% then 83% used. Monitor watch events 16/18 and 29 through 32 refreshed only
+five-hour usage; weekly monitor evidence remains stale with issue
+`quota_stale`. The one-second lower source reset watermark is a candidate cause
+under investigation, not a confirmed root cause. The current sanitized record is
+[v10-live-verification.json](v10-live-verification.json). Native UI
+observation and live provider request count remain unrecorded. The live gate
+is tracked in [v10-live-verification.md](v10-live-verification.md).
 
 The following `8abfa235`, `45a33093`, and 22ac results are historical; they do
 not describe the current installed pair or close the live gate. Checkpoint
