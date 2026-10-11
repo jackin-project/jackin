@@ -34,6 +34,11 @@ pub(super) fn observe_projection_account(
             projection_window_pair_is_current(account, index, window, now_epoch)
         })
     });
+    let current_used_only_windows = std::array::from_fn(|index| {
+        windows[index].as_ref().is_some_and(|window| {
+            projection_window_used_only_is_current(account, index, window, now_epoch)
+        })
+    });
     if !state.accounts.contains_key(local_account_id) && state.accounts.len() >= MAX_ACCOUNTS {
         return Err(issue(
             MonitorIssueCode::MonitorStoreUnavailable,
@@ -84,8 +89,13 @@ pub(super) fn observe_projection_account(
     if provider_changed {
         account_state.provider_observation = Some(next_provider_observation);
     }
-    let windows_changed =
-        update_broker_windows(account_state, windows, current_windows, proposed_sequence);
+    let windows_changed = update_broker_windows(
+        account_state,
+        windows,
+        current_windows,
+        current_used_only_windows,
+        proposed_sequence,
+    );
     if windows_changed {
         if !provider_changed && let Some(previous) = account_state.provider_observation.as_ref() {
             let mut fenced = previous.clone();
@@ -403,7 +413,7 @@ pub(super) fn metric_group_time(
             let group_used = (*group_used)
                 .or_else(|| group_remaining.map(|remaining| 100i32.saturating_sub(remaining)));
             (used_raw_percent.is_none() || group_used == used_raw_percent)
-                && (reset_at_epoch.is_none() || group.reset_at_epoch == reset_at_epoch)
+                && group.reset_at_epoch == reset_at_epoch
         })
         .collect::<Vec<_>>();
     if groups.len() != 1 {
@@ -463,6 +473,7 @@ pub(super) fn update_broker_windows(
     account: &mut AccountObservations,
     input: [Option<ObservedWindow>; 2],
     current_windows: [bool; 2],
+    current_used_only_windows: [bool; 2],
     input_sequence: u64,
 ) -> bool {
     let mut changed = false;
@@ -470,6 +481,20 @@ pub(super) fn update_broker_windows(
         let Some(window) = maybe_window else {
             continue;
         };
+        if is_used_only_window(&window) {
+            if current_used_only_windows[index]
+                && projection_used_only_is_after_admission_fence(
+                    account,
+                    index,
+                    &window,
+                    input_sequence,
+                )
+            {
+                let current = &mut account.broker_windows[index];
+                changed |= update_broker_used_only(current, &window, input_sequence);
+            }
+            continue;
+        }
         let lower_than_watermark = account.latest_reset_epochs[index].is_some_and(|latest| {
             window
                 .reset
@@ -502,6 +527,275 @@ pub(super) fn update_broker_windows(
         changed |= update_broker_window(current, &window, input_sequence, lower_reset_repair);
     }
     changed
+}
+
+fn is_used_only_window(window: &ObservedWindow) -> bool {
+    window.reset.is_none()
+        && window.paired.is_none()
+        && window
+            .used
+            .as_ref()
+            .is_some_and(|used| used.reset_at_epoch.is_none())
+}
+
+fn update_broker_used_only(
+    current: &mut ObservedWindow,
+    next: &ObservedWindow,
+    input_sequence: u64,
+) -> bool {
+    let Some(mut used) = next.used.clone() else {
+        return false;
+    };
+    used.input_sequence = input_sequence;
+    current.used = Some(used);
+    current.paired = None;
+    true
+}
+
+pub(super) fn projection_used_only_is_after_admission_fence(
+    account: &AccountObservations,
+    index: usize,
+    next: &ObservedWindow,
+    input_sequence: u64,
+) -> bool {
+    let Some(used) = next.used.as_ref() else {
+        return false;
+    };
+    let Some(source_time) = used.evidence_at_epoch else {
+        return false;
+    };
+    if input_sequence <= account.input_sequence
+        || used.received_at_epoch < 0
+        || source_time < 0
+        || source_time > used.received_at_epoch.saturating_add(MAX_FUTURE_SKEW_SECS)
+    {
+        return false;
+    }
+
+    let prior = &account.broker_windows[index];
+    if !broker_observations_are_valid(prior) {
+        return false;
+    }
+    if let Some(latest_reset) = account.latest_reset_epochs[index] {
+        let Some(fence) = lower_reset_admission_after_epoch(account, index, latest_reset) else {
+            return false;
+        };
+        // For KnownNone, this helper also returns the newest retained broker
+        // receipt used to prove the provider-derived global reset. That receipt
+        // advances after every accepted used-only sample, so use it only as
+        // origin proof here. The retained reset receipt and per-field ordering
+        // checks below provide the fixed fence and reject replays. Statusline
+        // receipts and legacy migration cutoffs remain strict source fences.
+        let known_none = matches!(
+            account.statusline_reset_watermarks.get(index),
+            Some(super::StatuslineResetWatermark::KnownNone)
+        );
+        if !known_none && (source_time <= fence || used.received_at_epoch <= fence) {
+            return false;
+        }
+    }
+
+    let Some(persisted_fence) = used_only_persisted_fence(account, index) else {
+        return false;
+    };
+    if persisted_fence.is_some_and(|fence| source_time <= fence || used.received_at_epoch <= fence)
+    {
+        return false;
+    }
+    prior_broker_observations(prior).all(|(evidence_at, received_at)| {
+        used.received_at_epoch > received_at && source_time > evidence_at.unwrap_or(received_at)
+    })
+}
+
+fn broker_observations_are_valid(window: &ObservedWindow) -> bool {
+    prior_broker_observations(window).all(|(evidence_at, received_at)| {
+        received_at >= 0
+            && evidence_at.is_none_or(|evidence_at| {
+                evidence_at >= 0 && evidence_at <= received_at.saturating_add(MAX_FUTURE_SKEW_SECS)
+            })
+    })
+}
+
+fn prior_broker_observations(
+    window: &ObservedWindow,
+) -> impl Iterator<Item = (Option<i64>, i64)> + '_ {
+    window
+        .used
+        .iter()
+        .map(|field| (field.evidence_at_epoch, field.received_at_epoch))
+        .chain(
+            window
+                .reset
+                .iter()
+                .map(|field| (field.evidence_at_epoch, field.received_at_epoch)),
+        )
+        .chain(
+            window
+                .paired
+                .iter()
+                .map(|field| (field.evidence_at_epoch, field.received_at_epoch)),
+        )
+}
+
+/// Returns an ordering fence that remains after replacing `used` and clearing
+/// `paired`. The replaced used field is separately ordered at admission.
+/// `None` in the inner option means no reset watermark or reset observation
+/// exists to fence.
+fn used_only_persisted_fence(account: &AccountObservations, index: usize) -> Option<Option<i64>> {
+    let latest_reset = account.latest_reset_epochs[index];
+    let durable_fence = match account.statusline_reset_watermarks.get(index)? {
+        super::StatuslineResetWatermark::Known {
+            reset_at_epoch,
+            received_at_epoch,
+        } if latest_reset.is_some_and(|latest| *reset_at_epoch <= latest) => {
+            Some(*received_at_epoch)
+        }
+        super::StatuslineResetWatermark::Known { .. } => return None,
+        super::StatuslineResetWatermark::Unknown => account
+            .legacy_reset_admission_after_epochs
+            .get(index)
+            .copied()
+            .flatten(),
+        super::StatuslineResetWatermark::KnownNone => None,
+    };
+    let window = account.broker_windows.get(index)?;
+    let reset_fence = window.reset.as_ref().map(|reset| reset.received_at_epoch);
+    let persisted_fence = match (durable_fence, reset_fence) {
+        (Some(durable), Some(reset)) => Some(durable.max(reset)),
+        (Some(fence), None) | (None, Some(fence)) => Some(fence),
+        (None, None) if latest_reset.is_none() => None,
+        (None, None) => return None,
+    };
+    if persisted_fence.is_some_and(|fence| fence < 0)
+        || window.reset.as_ref().is_some_and(|reset| {
+            reset.value < 0
+                || reset.received_at_epoch < 0
+                || reset.evidence_at_epoch.is_some_and(|evidence_at| {
+                    evidence_at < 0
+                        || evidence_at
+                            > reset.received_at_epoch.saturating_add(MAX_FUTURE_SKEW_SECS)
+                })
+        })
+    {
+        return None;
+    }
+    Some(persisted_fence)
+}
+
+pub(super) fn projection_window_used_only_is_current(
+    account: &UsageAccountV1,
+    window_index: usize,
+    window: &ObservedWindow,
+    now_epoch: i64,
+) -> bool {
+    if !is_used_only_window(window) {
+        return false;
+    }
+    let Some(used) = window.used.as_ref() else {
+        return false;
+    };
+    if used.value % 100 != 0 || used.value < 0 {
+        return false;
+    }
+    let Some(label) = principal_used_only_window_label(account, window_index, used.value / 100)
+    else {
+        return false;
+    };
+    let matching_groups = account
+        .metric_groups
+        .iter()
+        .filter(|group| {
+            if group.kind != UsageMetricGroupKindV1::Window
+                || group.label != label
+                || group.scope.service.is_some()
+                || group.scope.model.is_some()
+                || group.scope.pool.is_some()
+                || group.scope.key_id.is_some()
+            {
+                return false;
+            }
+            let UsageMetricValueV1::Window { period, .. } = &group.value else {
+                return false;
+            };
+            metric_group_period_matches_window(*period, window_index)
+        })
+        .collect::<Vec<_>>();
+    let [group] = matching_groups.as_slice() else {
+        return false;
+    };
+    if group.phase != UsageFreshnessPhaseV1::Current
+        || group.is_stale
+        || group.reset_at_epoch.is_some()
+    {
+        return false;
+    }
+    let UsageMetricValueV1::Window {
+        used_raw_percent,
+        remaining_raw_percent,
+        ..
+    } = &group.value
+    else {
+        return false;
+    };
+    let group_used = (*used_raw_percent)
+        .or_else(|| remaining_raw_percent.map(|remaining| 100i32.saturating_sub(remaining)));
+    if group_used != Some(used.value / 100) {
+        return false;
+    }
+    let Some(evidence_at) = group_evidence_time(account, group) else {
+        return false;
+    };
+    used.evidence_at_epoch == Some(evidence_at)
+        && evidence_at >= 0
+        && used.received_at_epoch >= 0
+        && evidence_at <= used.received_at_epoch.saturating_add(MAX_FUTURE_SKEW_SECS)
+        && used.received_at_epoch <= now_epoch.saturating_add(MAX_FUTURE_SKEW_SECS)
+        && evidence_at <= now_epoch.saturating_add(MAX_FUTURE_SKEW_SECS)
+        && now_epoch.saturating_sub(evidence_at) <= MONITOR_EVIDENCE_TTL_SECS
+}
+
+fn principal_used_only_window_label(
+    account: &UsageAccountV1,
+    window_index: usize,
+    used_raw_percent: i32,
+) -> Option<&str> {
+    let category = match window_index {
+        0 => UsageWindowCategoryV1::Session,
+        1 => UsageWindowCategoryV1::LongRange,
+        _ => return None,
+    };
+    let matching_windows = account
+        .windows
+        .iter()
+        .filter(|candidate| {
+            if candidate.category != category || candidate.reset_at_epoch.is_some() {
+                return false;
+            }
+            candidate
+                .used_raw_percent
+                .or_else(|| {
+                    candidate
+                        .remaining_raw_percent
+                        .map(|remaining| 100i32.saturating_sub(remaining))
+                })
+                .filter(|raw_used| *raw_used >= 0)
+                .map(|raw_used| raw_used.min(100))
+                == Some(used_raw_percent)
+        })
+        .collect::<Vec<_>>();
+    let [candidate] = matching_windows.as_slice() else {
+        return None;
+    };
+    if account
+        .windows
+        .iter()
+        .filter(|window| window.category == category && window.label == candidate.label)
+        .count()
+        != 1
+    {
+        return None;
+    }
+    Some(candidate.label.as_str())
 }
 
 pub(super) fn update_broker_window(

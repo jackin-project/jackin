@@ -1364,13 +1364,49 @@ the documentation test suite passed 18/18, MBX `xtask docs repo-links`,
 were rendered and inspected in the local browser. The verifier's final artifact
 cleanup check was reported complete before this documentation checkpoint.
 
-These documentation checks do not establish live readiness. The v11 pair has
-only passed its isolated schema-6 / broker-v9 fixture smoke; it has not been
-started against the existing account state or used for successful auth or a
-provider call. The attended v10 service remains the current owner. Explicit
-approval to stop or replace it and fresh attendance confirmation for the next
-auth step remain unanswered. Do not start v11 against the existing state,
-stop the current owner, or repeat authentication before those approvals are
-given. Preserve the observation-only binding and monitor, and require two
-natural collection cycles with both quota windows current before claiming
-acceptance or preparing a live-use handoff.
+At the documentation checkpoint, these checks did not establish live
+readiness: the v11 pair had only passed its isolated schema-6 / broker-v9
+fixture smoke, and approval for attended cutover had not yet been recorded.
+The subsequent attended v11 run and its partial observations are recorded
+below. The observation-only binding and monitor remain in scope; acceptance
+still requires both quota windows to update through natural collection cycles.
+
+## Live v11 partial-observation finding (2026-10-11)
+
+The attended v11 run subsequently completed two naturally scheduled provider
+observations. At source/receipt epochs 3523/3524 and 3825/3826, the normalized
+Session window reported zero percent used with no reset epoch. The monitor
+retained the earlier 54-percent Session value, its old reset, and evidence
+timestamp 2633 instead of publishing the newer used-only observation. The
+Weekly window remained current at 92 percent used. This is a partial
+publication result, not accepted end-to-end freshness: the monitor still has
+an unverified Session reset and is not Ready. Provider request counts and the
+native Keychain UI event were not measured in this observation record.
+
+The current source change adds a bounded path for a fresh, unambiguous
+used-only provider window when its reset is absent. It changes only used
+evidence and clears the unsupported pair; it preserves reset fields and
+watermarks. A fresh value at or above 95 percent latches or rebases the durable
+account barrier using the known reset high-water mark, and no used-only sample
+can satisfy or clear that barrier. `MissingReset` keeps quota readiness
+blocked. A repeated same-value update advances evidence only when source and
+receipt times are newer.
+
+The monitor regressions cover repeated same-value zero usage with strictly
+newer source/receipt times, plus high usage without reset evidence both with
+and without a pre-existing barrier. They assert reset provenance stays
+unchanged, high usage latches/rebases the barrier, a later low sample cannot
+clear it, `MissingReset` keeps quota readiness blocked, and stale, ambiguous,
+scoped, malformed, or non-advancing candidates are rejected. The latest source
+snapshot passed MBX verification: 765/765 `jackin-usage` library tests, 135/135
+protocol tests, 6/6 CLI-to-provider fixture flows, 9/9 offline CLI regressions,
+strict Clippy, formatting, and diff-check. The fixture flow includes a current
+resetless observation, restart recovery, delta and HTTP-date `Retry-After`,
+and auth failure outcomes; it does not exercise native Keychain UI or a live
+provider. Independent source/security review is Ready for this source diff but
+does not establish live readiness. The functional source change is not yet
+installed as a fresh pair.
+The v11 live service still has the partial observation described above; do not
+claim live readiness until a later authorized natural observation confirms
+both quota windows through the monitor. No live service, credentials, or
+provider state were changed for this diagnosis.

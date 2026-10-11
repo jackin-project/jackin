@@ -115,6 +115,53 @@ it cannot confirm reset or replenish quota. Reset grace, fresh-confirmation,
 weekly, model, and threshold guards continue to apply. See the usage command
 guide for the runnable rules and recovery conditions.
 
+### Current provider usage without a reset
+
+A current, unambiguous provider window may contain fresh used-only evidence
+while its reset is absent. The monitor accepts only a newly observed window
+whose used field has current source freshness, a strictly newer source and
+receipt time than retained evidence and reset-admission fences, and an
+unscoped principal-window metric. It updates only the used field, records that
+field's source/receipt times and input sequence, clears the unsupported used/reset
+pair, and leaves the prior reset, account reset high-water mark, statusline
+reset watermark, and admission cutoff unchanged. A genuinely new provider
+generation with the same used value can refresh this used-only field when its
+source and receipt times advance. A replayed generation cannot. A repeated or
+timer-driven statusline callback does not renew unchanged statusline evidence
+and cannot fill in or refresh the provider projection's missing reset; the two
+sources remain separate.
+
+The previous reset remains visible for diagnosis. It is not paired with the
+new used-only provider field. Therefore `MissingReset` keeps quota readiness
+blocked even if the retained reset evidence is otherwise current or its epoch
+is still `future`; `provider: current` does not mean the monitor has a usable
+quota pair. The stale five-hour value remains stale until the new used-only
+observation is accepted, and the reset itself keeps its original evidence age.
+Unknown or missing reset data is not converted into a reset time, and an old or
+future reset plus fresh used data does not make the window dispatch-ready.
+
+A fresh provider used-only value at or above 95% creates or rebases a durable
+account reset barrier and the active monitor barrier. Account barriers share one
+reset fence across statusline and broker observations: latching takes the
+maximum of the incoming reset, the account-wide reset maximum, the retained
+broker reset, and any existing barrier high-water. A later low used-only value
+cannot erase that fence. When the selected fresh high used-only value has no
+paired reset, the monitor-local pause barrier may use this known associated
+account reset maximum internally. That is only a recovery fence; it does not
+create fresh reset evidence, fill `MissingReset`, or make quota ready. If no
+reset history is known, no reset is inferred and the monitor-local barrier
+fails closed. Passing the old reset plus the 60-second grace, a reset-only
+update, a model-only callback, or elapsed time cannot release the pause.
+Recovery requires a newly accepted, fresh used/reset pair from one evidence
+source (and one session when that source is session-scoped), received after the
+grace deadline, with usage below the barrier's prior high-water usage and a
+reset strictly beyond the barrier's recorded reset high-water mark and no
+lower than the account reset maximum.
+Carrying a known account maximum into the monitor barrier lets a later
+qualifying advanced pair satisfy that strict release check. A statusline
+callback can supply its own paired evidence, but cannot borrow the broker
+projection's used-only value or reset.
+
 Status classifies each window's reset as `unknown`, `future`, or `due` in
 `reset_validity`, independently of reset-field freshness. `future` and `due`
 only compare the recorded reset epoch with broker time; `due` does not confirm
@@ -187,69 +234,60 @@ Keychain access, provider HTTP requests, or operator approval.
 
 ## Protocol and migration
 
-The current source versions are independent: broker wire protocol v8, normalized
-statusline input schema v2, and durable monitor-store schema v4. Wire v8 adds
-`UsageIdentityKindV1::LocalSourceHandle` for locally derived credential-source
-identity metadata. It does not claim a provider-issued or authenticated
-account identity, and it does not change the statusline input or durable store.
-Optional `claude_code_version` remains callback metadata; it is not Jackin's
-store or input schema version. Schema v4 changes the durable local store only;
-it does not change broker wire v8 or statusline input v2.
+The current source versions are independent: broker wire protocol v9,
+normalized statusline input schema v2, durable monitor-store schema v6, and
+durable projection-envelope schema v3. `UsageIdentityKindV1::LocalSourceHandle`
+identifies a stable local credential-source handle, not a provider-issued or
+authenticated account identity. Optional `claude_code_version` is callback
+metadata; it is not Jackin's store or input schema version.
 
-The V4 `historical_correction_horizon_epoch` records uncertainty about older
-closed-period receipts no longer represented in the retained account periods.
-It is a monotonic protection boundary, not evidence that a correction was
-received. Later receipts or clock rollback cannot clear the affected goal's
-unknown/incomplete state.
+Monitor-store schemas V1–V5 migrate explicitly to V6, after semantic
+validation. Migration preserves policy revisions and origins, baselines and
+cumulative estimates, quota-pause latches, counters, evidence ages, cooldowns,
+action/event sequences, and existing unknown or incomplete state. V1–V4
+provider snapshots without verifiable binding/source provenance are dropped;
+V5 source-bound provider provenance is retained. Migrations do not invent a
+baseline, zero spend, approval, provider identity, collector opt-in, or fresh
+callback time. V1 strict policies retain `migrated_v1` history but are not
+operator-approved; dispatch still requires a confirmed binding and a new
+operator policy revision.
 
-The store migrates V1, V2, and V3 snapshots explicitly to V4. It preserves
-policy revisions and origins, baselines and cumulative estimates, quota-pause
-latches, counters, evidence ages, cooldowns, and action/event sequences. Existing
-unknown or incomplete states are not cleared; migration does not invent a
-baseline, zero spend, approval, provider identity, or fresh callback time.
-V1 strict policies retain `migrated_v1` history but are not operator-approved;
-dispatch requires a separately confirmed binding and an operator policy
-revision. Migrations do not infer new source mappings or collector approvals.
-Known V2 state is preserved.
+V6 adds a per-window statusline reset watermark: `Unknown`, `KnownNone`, or
+`Known { reset_at_epoch, received_at_epoch }`. For each V1–V5 account window, a
+nonempty old `latest_reset_epochs` value becomes `Unknown`; an empty value
+becomes `KnownNone`. Migration does not infer statusline reset or receipt time
+from the old account-wide reset, quota values, or event history. When the old
+account-wide reset is nonempty, V6 stores the old `last_now_epoch` as a strict
+admission cutoff. A lower-reset repair requires a complete current provider
+pair whose used, reset, paired-source, and receipt timestamps are all after
+that cutoff. Such a repair may update displayed values, but does not lower the
+account-wide reset maximum or release a quota barrier. V1–V5 snapshots that
+contain V6-only reset metadata are rejected, including V6 snapshots relabeled
+as older schemas.
 
-V3 did not store `historical_correction_horizon_epoch`, so it deserializes as
-`None`. If no affected forward rollover is present, V3 known goal state is
-preserved and the horizon remains `None`. For a V3 strict goal with a baseline
-and retained account or goal anchors proving a forward period transition,
-migration preserves its cumulative estimate but latches `rollover_unknown` and
-`cumulative_complete: false`. A closed-period anchor only contributes when a
-later goal anchor proves a rollover; it cannot rule out an older correction
-that was already lost. The account horizon is the newest retained affected
-current-period or goal-period start, or a qualifying closed-period end, bounded
-by the snapshot clock. This records uncertainty, not proof that a correction
-was received. A goal whose baseline starts at the horizon remains known; only a
-strictly later horizon makes its spend incomplete. Later receipts or clock
-rollback cannot clear an affected-goal latch.
+Migration also preserves the monotonic
+`historical_correction_horizon_epoch`. When V3 rollover history could have
+hidden an older correction, migration retains the known strict-goal estimate
+but latches cumulative completeness false and rollover unknown. The horizon
+records possible lost history, not proof that a correction was received; later
+receipts or clock rollback cannot clear an affected goal's uncertainty. A goal
+whose baseline starts at the horizon remains independently known.
 
-The only budget-repair exception is a V1 `migrated_v1` strict policy whose
-recorded budget is exactly zero SGD with exponent 2. A separate explicit
-operator approval may replace it with a positive strict SGD budget, creating a
-new `operator` revision while retaining the migrated policy, baseline,
-cumulative spend, and historical uncertainty. This does not establish a
-baseline: an affected goal remains blocked until valid baseline admission. The
-exception never permits quota-only or applies to other currencies or malformed
-state. New strict-goal activation without valid baseline admission fails
-atomically without reserving its idempotency key or assigning a monitor ID.
+## v11 live evidence boundary
 
-For V2/V3, every persisted event's embedded status schema version must match
-the enclosing source-store version before migration restamps it to V4. The
-normalized source and all migrated state are validated before replacement; a
-version mismatch, invalid source snapshot, or unsupported future schema fails
-closed without replacing the original store.
-
-The recorded v3 installed fixture passed for source commit
-`1a45196dbe24d439e596c14e22fbda59799e7b0d` using wire v7. That fixture record
-remains historical evidence for that exact pair; it does not verify the current
-wire-v8 source. The installed pair is pending a rebuild after dormant-helper
-cleanup and its provenance must be refreshed. That fixture did not verify a
-real account, successful foreground Keychain authorization, or a live provider
-request. This document describes the current source contract and does not claim
-live readiness.
+The installed v11 CLI/broker pair passed an isolated synthetic fixture, but
+that does not establish existing-state migration or live collection. The
+subsequent live record documents two natural provider generations against the
+existing v7 state: weekly usage was current at 92%, while the Session
+projection had 100% remaining usage but no reset. The monitor retained stale
+five-hour evidence and reported `quota_stale` and `reset_due_unverified`;
+acceptance remained false. The `MissingReset` behavior described above is a
+source contract, not an outcome recorded in this live capture. The capture did
+not publish Session used-only evidence, so it does not verify that source path
+or establish readiness. See the [v11 live
+verification report](v11-live-verification.md) and its [sanitized JSON
+record](v11-live-verification.json); the installed-fixture provenance is in
+[v11-installation.json](v11-installation.json).
 
 ## Official references
 

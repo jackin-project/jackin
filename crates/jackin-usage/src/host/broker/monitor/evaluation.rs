@@ -423,7 +423,30 @@ pub(super) fn append_quota_usage_actions(
     }
 
     let reason = quota_pause_reason(used);
-    let used_reset = observed_reset_for_used(monitor, account, status, index);
+    let used_reset = observed_reset_for_used(monitor, account, status, index).or_else(|| {
+        let account = account?;
+        account
+            .latest_reset_epochs
+            .get(index)
+            .copied()
+            .flatten()
+            .into_iter()
+            .chain(
+                account
+                    .broker_windows
+                    .get(index)
+                    .and_then(|window| window.reset.as_ref())
+                    .map(|reset| reset.value),
+            )
+            .chain(
+                account
+                    .reset_barriers
+                    .get(index)
+                    .and_then(Option::as_ref)
+                    .and_then(|barrier| barrier.prior_reset_at_epoch),
+            )
+            .max()
+    });
     latch_monitor_reset_barrier(monitor, index, used, used_reset, status, reason, now_epoch);
     push_action(&mut evaluation.actions, MonitorAction::Pause { reason });
     push_issue(

@@ -516,6 +516,192 @@ fn cli_auth_binding_watch_and_natural_provider_poll_survive_restart() -> Result<
 #[test]
 #[expect(
     clippy::too_many_lines,
+    reason = "the real CLI flow ties one provider partial update to its preserved reset barrier"
+)]
+fn cli_session_used_only_without_reset_preserves_reset_barrier_and_weekly() -> Result<()> {
+    let _test_guard = acquire_provider_flow_test_lock();
+    let mut flow = ProviderFlow::new("session-used-only")?;
+    let session_reset = INITIAL_WALL_EPOCH + 301;
+    let weekly_reset = INITIAL_WALL_EPOCH + 604_800;
+    let seeded = seed_provider_quota_with(
+        &flow,
+        ProviderQuotaSeed {
+            request_epoch: INITIAL_WALL_EPOCH + 1,
+            publication_epoch: INITIAL_WALL_EPOCH + 2,
+            five_hour_used: 95,
+            seven_day_used: 92,
+            five_hour_reset: session_reset,
+            seven_day_reset: weekly_reset,
+        },
+    )?;
+    let before_status = seeded.status;
+    ensure!(
+        before_status["five_hour"]["used_percentage_basis_points"] == 9_500
+            && before_status["five_hour"]["reset_at_epoch"] == session_reset
+            && before_status["five_hour"]["reset_validity"] == "future"
+            && before_status["seven_day"]["used_percentage_basis_points"] == 9_200,
+        "full provider seed did not establish the expected Session reset barrier and Weekly quota"
+    );
+
+    let local_account_id = "local-claude-account-session-used-only";
+    let before_account = flow.fixture.monitor_account(local_account_id)?;
+    let prior_barriers = before_account["reset_barriers"].clone();
+    let prior_session_reset = before_account["broker_windows"][0]["reset"].clone();
+    ensure!(
+        prior_barriers[0].is_object()
+            && prior_barriers[0]["prior_used_percentage_basis_points"] == 9_500
+            && prior_barriers[0]["prior_reset_at_epoch"] == session_reset
+            && prior_barriers[0]["source"] == "broker_projection"
+            && before_account["broker_windows"][0]["used"]["value"] == 9_500
+            && before_account["broker_windows"][0]["paired"].is_object()
+            && prior_session_reset["value"] == session_reset,
+        "high Session seed did not persist its reset and account barrier"
+    );
+
+    flow.set_clock(INITIAL_WALL_EPOCH + 300)?;
+    assert_request_count_remains(
+        &flow.fixture.http,
+        1,
+        Duration::from_millis(750),
+        "provider polled before the Session reset boundary",
+    )?;
+    let request_epoch = INITIAL_WALL_EPOCH + 301;
+    flow.set_clock(request_epoch)?;
+    let request = next_provider_request(
+        &flow.fixture,
+        &flow.monitor_id,
+        &flow.source_id,
+        "Session used-only without reset",
+        flow.credential_reads,
+    )?;
+    assert_provider_request(&request)?;
+    let attempt = flow.fixture.wait_for_coordinator_attempt(
+        &flow.source_id,
+        request_epoch,
+        Duration::from_secs(5),
+    )?;
+    let mut watch = flow.fixture.start_watch(&flow.monitor_id)?;
+    let sequence = watch.wait_for_event(&flow.monitor_id, Duration::from_secs(10))?;
+    let weekly_reset_at = rfc3339_utc_from_epoch(weekly_reset);
+    request
+        .respond
+        .send(HttpResponse::session_used_without_reset(
+            0,
+            92,
+            &weekly_reset_at,
+        ))?;
+    let completion = flow.fixture.wait_for_coordinator_completion(
+        &flow.source_id,
+        CoordinatorCompletionExpectation {
+            generation: attempt.generation,
+            provider_invoked_at_epoch: request_epoch,
+            fetched_at_epoch: request_epoch,
+            session_used_label: "0% used",
+            weekly_used_label: "92% used",
+            timeout: Duration::from_secs(10),
+        },
+    )?;
+    ensure!(
+        completion.phase == "completed" && completion.has_terminal_result,
+        "used-only provider response did not complete successfully"
+    );
+
+    let publication_epoch = INITIAL_WALL_EPOCH + 302;
+    flow.set_clock(publication_epoch)?;
+    let session_used_expectation = ProviderUsedExpectation {
+        window: "five_hour",
+        used_percentage_basis_points: 0,
+        evidence_at_epoch: request_epoch,
+        received_at_min_epoch: request_epoch,
+        received_at_max_epoch: publication_epoch,
+    };
+    let weekly_used_expectation = ProviderUsedExpectation {
+        window: "seven_day",
+        used_percentage_basis_points: 9_200,
+        evidence_at_epoch: request_epoch,
+        received_at_min_epoch: request_epoch,
+        received_at_max_epoch: publication_epoch,
+    };
+    let weekly_reset_expectation = ProviderResetExpectation {
+        window: "seven_day",
+        reset_at_epoch: weekly_reset,
+        evidence_at_epoch: request_epoch,
+        received_at_min_epoch: request_epoch,
+        received_at_max_epoch: publication_epoch,
+    };
+    let watched_status = watch.wait_for_provider_used_after(
+        &flow.monitor_id,
+        sequence,
+        session_used_expectation,
+        Duration::from_secs(15),
+    )?;
+    watch.wait_for_exit(Duration::from_secs(5))?;
+    let status = flow.fixture.status(&flow.monitor_id)?;
+    assert_provider_used_only(&status, session_used_expectation)
+        .context("final CLI status used-only assertions")?;
+    assert_provider_used_only(&watched_status, session_used_expectation)
+        .context("CLI watch used-only assertions")?;
+    ensure!(
+        weekly_used_expectation.matches(&status) && weekly_reset_expectation.matches(&status),
+        "same-response Weekly 92% evidence was not published as current broker evidence"
+    );
+    ensure!(
+        status["five_hour"]["reset_at_epoch"] == before_status["five_hour"]["reset_at_epoch"]
+            && status["five_hour"]["reset_validity"] == "due"
+            && evidence_identity(&status["five_hour"]["reset_evidence"])
+                == evidence_identity(&before_status["five_hour"]["reset_evidence"]),
+        "used-only response replaced or restamped the retained Session reset evidence"
+    );
+    ensure!(
+        status["seven_day"]["used_percentage_basis_points"] == 9_200
+            && status["seven_day"]["reset_at_epoch"] == weekly_reset
+            && status["seven_day"]["used_evidence"]["freshness"] == "current"
+            && status["seven_day"]["reset_evidence"]["freshness"] == "current",
+        "partial Session response lost the fresh Weekly 92% quota"
+    );
+
+    let after_account = flow.fixture.monitor_account(local_account_id)?;
+    let updated_used_sequence = after_account["broker_windows"][0]["used"]["input_sequence"]
+        .as_u64()
+        .context("used-only Session observation omitted its input sequence")?;
+    let retained_reset_sequence = prior_session_reset["input_sequence"]
+        .as_u64()
+        .context("retained Session reset omitted its input sequence")?;
+    ensure!(
+        after_account["broker_windows"][0]["used"]["value"] == 0
+            && after_account["broker_windows"][0]["used"]["reset_at_epoch"].is_null()
+            && updated_used_sequence > retained_reset_sequence
+            && after_account["broker_windows"][0]["reset"] == prior_session_reset
+            && after_account["broker_windows"][0]["paired"].is_null(),
+        "new Session used-only observation did not preserve the old reset and clear the pair"
+    );
+    ensure!(
+        after_account["reset_barriers"] == prior_barriers
+            && after_account["latest_reset_epochs"] == before_account["latest_reset_epochs"]
+            && after_account["statusline_reset_watermarks"]
+                == before_account["statusline_reset_watermarks"]
+            && after_account["legacy_reset_admission_after_epochs"]
+                == before_account["legacy_reset_admission_after_epochs"],
+        "used-only observation changed reset barriers or account reset watermarks"
+    );
+    ensure!(
+        after_account["broker_windows"][1]["used"]["value"] == 9_200
+            && after_account["broker_windows"][1]["reset"]["value"] == weekly_reset,
+        "provider collection did not retain the full Weekly 92% observation"
+    );
+    assert_request_count_remains(
+        &flow.fixture.http,
+        2,
+        Duration::from_millis(750),
+        "provider issued more than one request during the successful cooldown",
+    )?;
+    flow.fixture.stop_auth()?;
+    Ok(())
+}
+
+#[test]
+#[expect(
+    clippy::too_many_lines,
     reason = "one migration scenario asserts the real CLI restart and cutoff repair in order"
 )]
 fn cli_v5_migration_admits_new_provider_reset_without_statusline_adapter() -> Result<()> {
@@ -837,6 +1023,93 @@ struct QuotaExpectation {
     evidence_at_epoch: i64,
     received_at_min_epoch: i64,
     received_at_max_epoch: i64,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ProviderUsedExpectation {
+    window: &'static str,
+    used_percentage_basis_points: i64,
+    evidence_at_epoch: i64,
+    received_at_min_epoch: i64,
+    received_at_max_epoch: i64,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ProviderResetExpectation {
+    window: &'static str,
+    reset_at_epoch: i64,
+    evidence_at_epoch: i64,
+    received_at_min_epoch: i64,
+    received_at_max_epoch: i64,
+}
+
+impl ProviderResetExpectation {
+    fn matches(self, status: &Value) -> bool {
+        let window = &status[self.window];
+        if window["reset_at_epoch"].as_i64() != Some(self.reset_at_epoch)
+            || window["reset_evidence"]["freshness"] != "current"
+            || window["reset_evidence"]["evidence_at_epoch"].as_i64()
+                != Some(self.evidence_at_epoch)
+            || !self.receipt_matches(&window["reset_evidence"]["evidence_received_at_epoch"])
+        {
+            return false;
+        }
+        let Some(sequence) = window["reset_evidence"]["evidence_sequence"].as_u64() else {
+            return false;
+        };
+        status["evidence"].as_array().is_some_and(|evidence| {
+            evidence.iter().any(|entry| {
+                entry["sequence"].as_u64() == Some(sequence)
+                    && entry["source"] == "broker_projection"
+                    && entry["evidence_at_epoch"].as_i64() == Some(self.evidence_at_epoch)
+                    && self.receipt_matches(&entry["evidence_received_at_epoch"])
+                    && entry["value"]["kind"] == "quota_reset"
+                    && entry["value"]["window"] == self.window
+                    && entry["value"]["reset_at_epoch"].as_i64() == Some(self.reset_at_epoch)
+            })
+        })
+    }
+
+    fn receipt_matches(self, value: &Value) -> bool {
+        value.as_i64().is_some_and(|received| {
+            (self.received_at_min_epoch..=self.received_at_max_epoch).contains(&received)
+        })
+    }
+}
+
+impl ProviderUsedExpectation {
+    fn matches(self, status: &Value) -> bool {
+        let window = &status[self.window];
+        if window["used_percentage_basis_points"].as_i64()
+            != Some(self.used_percentage_basis_points)
+            || window["used_evidence"]["freshness"] != "current"
+            || window["used_evidence"]["evidence_at_epoch"].as_i64() != Some(self.evidence_at_epoch)
+            || !self.receipt_matches(&window["used_evidence"]["evidence_received_at_epoch"])
+        {
+            return false;
+        }
+        let Some(sequence) = window["used_evidence"]["evidence_sequence"].as_u64() else {
+            return false;
+        };
+        status["evidence"].as_array().is_some_and(|evidence| {
+            evidence.iter().any(|entry| {
+                entry["sequence"].as_u64() == Some(sequence)
+                    && entry["source"] == "broker_projection"
+                    && entry["evidence_at_epoch"].as_i64() == Some(self.evidence_at_epoch)
+                    && self.receipt_matches(&entry["evidence_received_at_epoch"])
+                    && entry["value"]["kind"] == "quota_used_percentage"
+                    && entry["value"]["window"] == self.window
+                    && entry["value"]["used_percentage_basis_points"].as_i64()
+                        == Some(self.used_percentage_basis_points)
+            })
+        })
+    }
+
+    fn receipt_matches(self, value: &Value) -> bool {
+        value.as_i64().is_some_and(|received| {
+            (self.received_at_min_epoch..=self.received_at_max_epoch).contains(&received)
+        })
+    }
 }
 
 impl QuotaExpectation {
@@ -1781,6 +2054,16 @@ struct SeededQuota {
     status: Value,
 }
 
+#[derive(Clone, Copy)]
+struct ProviderQuotaSeed {
+    request_epoch: i64,
+    publication_epoch: i64,
+    five_hour_used: u8,
+    seven_day_used: u8,
+    five_hour_reset: i64,
+    seven_day_reset: i64,
+}
+
 struct RateLimitedQuota {
     timing: CoordinatorTiming,
     status: Value,
@@ -1912,8 +2195,24 @@ fn run_retry_after_restart_case(case: RetryAfterCase) -> Result<()> {
 }
 
 fn seed_provider_quota(flow: &ProviderFlow) -> Result<SeededQuota> {
-    let request_epoch = INITIAL_WALL_EPOCH + 1;
-    flow.set_clock(request_epoch)?;
+    let seeded = seed_provider_quota_with(
+        flow,
+        ProviderQuotaSeed {
+            request_epoch: INITIAL_WALL_EPOCH + 1,
+            publication_epoch: INITIAL_WALL_EPOCH + 2,
+            five_hour_used: 37,
+            seven_day_used: 23,
+            five_hour_reset: INITIAL_WALL_EPOCH + 6_400,
+            seven_day_reset: INITIAL_WALL_EPOCH + 604_800,
+        },
+    )?;
+    assert_provider_quota(&seeded.status, seeded.expectation)?;
+    assert_successful_coordinator_timing(&flow.fixture.coordinator_timing(&flow.source_id)?)?;
+    Ok(seeded)
+}
+
+fn seed_provider_quota_with(flow: &ProviderFlow, seed: ProviderQuotaSeed) -> Result<SeededQuota> {
+    flow.set_clock(seed.request_epoch)?;
     let request = next_provider_request(
         &flow.fixture,
         &flow.monitor_id,
@@ -1924,42 +2223,42 @@ fn seed_provider_quota(flow: &ProviderFlow) -> Result<SeededQuota> {
     assert_provider_request(&request)?;
     let timing = flow.fixture.wait_for_coordinator_attempt(
         &flow.source_id,
-        request_epoch,
+        seed.request_epoch,
         Duration::from_secs(5),
     )?;
     let mut watch = flow.fixture.start_watch(&flow.monitor_id)?;
     let sequence = watch.wait_for_event(&flow.monitor_id, Duration::from_secs(10))?;
-    let five_hour_reset = INITIAL_WALL_EPOCH + 6_400;
-    let weekly_reset = INITIAL_WALL_EPOCH + 604_800;
-    let five_hour_reset_at = rfc3339_utc_from_epoch(five_hour_reset);
-    let weekly_reset_at = rfc3339_utc_from_epoch(weekly_reset);
+    let five_hour_reset_at = rfc3339_utc_from_epoch(seed.five_hour_reset);
+    let weekly_reset_at = rfc3339_utc_from_epoch(seed.seven_day_reset);
     request.respond.send(HttpResponse::ok(
-        37,
-        23,
+        seed.five_hour_used,
+        seed.seven_day_used,
         &five_hour_reset_at,
         &weekly_reset_at,
     ))?;
+    let five_hour_used_label = format!("{}% used", seed.five_hour_used);
+    let seven_day_used_label = format!("{}% used", seed.seven_day_used);
     flow.fixture.wait_for_coordinator_completion(
         &flow.source_id,
         CoordinatorCompletionExpectation {
             generation: timing.generation,
-            provider_invoked_at_epoch: request_epoch,
-            fetched_at_epoch: request_epoch,
-            session_used_label: "37% used",
-            weekly_used_label: "23% used",
+            provider_invoked_at_epoch: seed.request_epoch,
+            fetched_at_epoch: seed.request_epoch,
+            session_used_label: &five_hour_used_label,
+            weekly_used_label: &seven_day_used_label,
             timeout: Duration::from_secs(10),
         },
     )?;
     let expectation = QuotaExpectation {
-        five_hour_used: 3_700,
-        seven_day_used: 2_300,
-        five_hour_reset,
-        seven_day_reset: weekly_reset,
-        evidence_at_epoch: request_epoch,
-        received_at_min_epoch: request_epoch,
-        received_at_max_epoch: INITIAL_WALL_EPOCH + 2,
+        five_hour_used: i64::from(seed.five_hour_used) * 100,
+        seven_day_used: i64::from(seed.seven_day_used) * 100,
+        five_hour_reset: seed.five_hour_reset,
+        seven_day_reset: seed.seven_day_reset,
+        evidence_at_epoch: seed.request_epoch,
+        received_at_min_epoch: seed.request_epoch,
+        received_at_max_epoch: seed.publication_epoch,
     };
-    flow.set_clock(INITIAL_WALL_EPOCH + 2)?;
+    flow.set_clock(seed.publication_epoch)?;
     watch.wait_for_quota_after(
         &flow.monitor_id,
         sequence,
@@ -1968,8 +2267,10 @@ fn seed_provider_quota(flow: &ProviderFlow) -> Result<SeededQuota> {
     )?;
     watch.wait_for_exit(Duration::from_secs(5))?;
     let status = flow.fixture.status(&flow.monitor_id)?;
-    assert_provider_quota(&status, expectation)?;
-    assert_successful_coordinator_timing(&flow.fixture.coordinator_timing(&flow.source_id)?)?;
+    ensure!(
+        expectation.matches(&status),
+        "seed provider status omitted the expected quota evidence"
+    );
     Ok(SeededQuota {
         expectation,
         status,
@@ -2339,6 +2640,37 @@ impl WatchProcess {
         bail!("CLI watch did not receive the expected quota update")
     }
 
+    fn wait_for_provider_used_after(
+        &mut self,
+        monitor_id: &str,
+        after_sequence: u64,
+        expected: ProviderUsedExpectation,
+        timeout: Duration,
+    ) -> Result<Value> {
+        let deadline = Instant::now() + timeout;
+        while Instant::now() < deadline {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            match self.receiver.recv_timeout(remaining) {
+                Ok(line) => {
+                    let Ok(event) = serde_json::from_str::<Value>(&line) else {
+                        continue;
+                    };
+                    let status = &event["status"];
+                    if event["sequence"]
+                        .as_u64()
+                        .is_some_and(|sequence| sequence > after_sequence)
+                        && status["monitor_id"].as_str() == Some(monitor_id)
+                        && expected.matches(status)
+                    {
+                        return Ok(status.clone());
+                    }
+                }
+                Err(RecvTimeoutError::Timeout | RecvTimeoutError::Disconnected) => break,
+            }
+        }
+        bail!("CLI watch did not receive the expected provider used-only update")
+    }
+
     fn wait_for_rate_limited_after(
         &mut self,
         monitor_id: &str,
@@ -2417,6 +2749,61 @@ fn assert_provider_quota(status: &Value, expected: QuotaExpectation) -> Result<(
         "monitor status did not contain provider quota and reset evidence from the expected fetch"
     );
     Ok(())
+}
+
+fn assert_provider_used_only(status: &Value, expected: ProviderUsedExpectation) -> Result<()> {
+    let readiness = &status["readiness"];
+    let session = &status["five_hour"];
+    ensure!(
+        status["purpose"] == "observe_only"
+            && status["runnable"] == false
+            && readiness["dispatch"] == "not_authorized",
+        "used-only status was runnable or left observe-only mode (purpose={}, runnable={}, dispatch={})",
+        status["purpose"],
+        status["runnable"],
+        readiness["dispatch"]
+    );
+    ensure!(
+        readiness["provider"] == "current",
+        "provider readiness was not current after the used-only response (provider={})",
+        readiness["provider"]
+    );
+    ensure!(
+        readiness["quota"] != "ready",
+        "used-only quota without a reset was reported as ready (purpose={}, runnable={}, readiness={}, session={{used: {}, reset: {}, reset_validity: {}, used_freshness: {}, reset_freshness: {}}}, missing_reset={})",
+        status["purpose"],
+        status["runnable"],
+        readiness,
+        session["used_percentage_basis_points"],
+        session["reset_at_epoch"],
+        session["reset_validity"],
+        session["used_evidence"]["freshness"],
+        session["reset_evidence"]["freshness"],
+        has_monitor_issue(status, "missing_reset")
+    );
+    ensure!(
+        has_monitor_issue(status, "missing_reset"),
+        "used-only provider evidence did not expose the missing reset issue"
+    );
+    ensure!(
+        expected.matches(status),
+        "status did not expose current broker-projection used evidence from the partial response"
+    );
+    Ok(())
+}
+
+fn has_monitor_issue(status: &Value, code: &str) -> bool {
+    status["issues"]
+        .as_array()
+        .is_some_and(|issues| issues.iter().any(|issue| issue["code"] == code))
+}
+
+fn evidence_identity(evidence: &Value) -> Value {
+    json!({
+        "evidence_sequence": evidence["evidence_sequence"],
+        "evidence_at_epoch": evidence["evidence_at_epoch"],
+        "evidence_received_at_epoch": evidence["evidence_received_at_epoch"],
+    })
 }
 
 fn assert_known_weekly_reset_watermark(
@@ -2842,6 +3229,19 @@ impl HttpResponse {
             retry_after: None,
             body: json!({
                 "five_hour": {"utilization": five_hour, "resets_at": five_hour_reset},
+                "seven_day": {"utilization": seven_day, "resets_at": seven_day_reset},
+            })
+            .to_string(),
+        }
+    }
+
+    fn session_used_without_reset(five_hour: u8, seven_day: u8, seven_day_reset: &str) -> Self {
+        Self {
+            status: 200,
+            reason: "OK",
+            retry_after: None,
+            body: json!({
+                "five_hour": {"utilization": five_hour, "resets_at": null},
                 "seven_day": {"utilization": seven_day, "resets_at": seven_day_reset},
             })
             .to_string(),

@@ -199,8 +199,20 @@ pub(super) fn apply_unbound_statusline(
 pub(super) fn latch_account_reset_barrier(
     account: &mut AccountObservations,
     index: usize,
-    incoming: AccountResetBarrier,
+    mut incoming: AccountResetBarrier,
 ) {
+    incoming.prior_reset_at_epoch = max_option(
+        incoming.prior_reset_at_epoch,
+        account.latest_reset_epochs.get(index).copied().flatten(),
+    );
+    incoming.prior_reset_at_epoch = max_option(
+        incoming.prior_reset_at_epoch,
+        account
+            .broker_windows
+            .get(index)
+            .and_then(|window| window.reset.as_ref())
+            .map(|reset| reset.value),
+    );
     let Some(slot) = account.reset_barriers.get_mut(index) else {
         return;
     };
@@ -216,7 +228,6 @@ pub(super) fn latch_account_reset_barrier(
     if incoming.prior_used_percentage_basis_points > existing.prior_used_percentage_basis_points
         || reset_advanced
     {
-        let mut incoming = incoming;
         incoming.prior_reset_at_epoch =
             max_option(existing.prior_reset_at_epoch, incoming.prior_reset_at_epoch);
         *slot = Some(incoming);

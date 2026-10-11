@@ -153,6 +153,9 @@ pub(super) fn evidence_is_effective_used(
         {
             return false;
         }
+        if used.reset_at_epoch.is_none() {
+            return broker_used_only_is_effective(account, index, used, now_epoch);
+        }
         let Some(latest_reset) = account.latest_reset_epochs[index] else {
             return true;
         };
@@ -735,4 +738,150 @@ pub(super) fn reset_barrier_satisfied(
                 })
         })
     })
+}
+
+fn broker_used_only_is_effective(
+    account: &AccountObservations,
+    index: usize,
+    used: &super::ObservedPercentage,
+    now_epoch: i64,
+) -> bool {
+    let Some(window) = account.broker_windows.get(index) else {
+        return false;
+    };
+    let Some(source_time) = used.evidence_at_epoch else {
+        return false;
+    };
+    if used.reset_at_epoch.is_some()
+        || window.paired.is_some()
+        || used.value < 0
+        || used.value > 10_000
+        || used.input_sequence == 0
+        || used.input_sequence > account.input_sequence
+        || used.received_at_epoch < 0
+        || used.received_at_epoch > now_epoch.saturating_add(MAX_FUTURE_SKEW_SECS)
+        || source_time < 0
+        || source_time > used.received_at_epoch.saturating_add(MAX_FUTURE_SKEW_SECS)
+        || source_time > now_epoch.saturating_add(MAX_FUTURE_SKEW_SECS)
+    {
+        return false;
+    }
+    let Some(fence) = broker_used_only_read_fence(account, index) else {
+        return false;
+    };
+    if fence.is_some_and(|fence| source_time <= fence || used.received_at_epoch <= fence) {
+        return false;
+    }
+    if let Some(reset) = window.reset.as_ref()
+        && (reset.value < 0
+            || !valid_broker_time(reset.evidence_at_epoch, reset.received_at_epoch, now_epoch)
+            || used.input_sequence <= reset.input_sequence
+            || source_time <= reset.evidence_at_epoch.unwrap_or(reset.received_at_epoch)
+            || used.received_at_epoch <= reset.received_at_epoch)
+    {
+        return false;
+    }
+    true
+}
+
+fn broker_used_only_read_fence(account: &AccountObservations, index: usize) -> Option<Option<i64>> {
+    let latest_reset = *account.latest_reset_epochs.get(index)?;
+    let window = account.broker_windows.get(index)?;
+    let durable_fence = match account.statusline_reset_watermarks.get(index)? {
+        StatuslineResetWatermark::Known {
+            reset_at_epoch,
+            received_at_epoch,
+        } if latest_reset.is_some_and(|latest| *reset_at_epoch <= latest) => {
+            Some(*received_at_epoch)
+        }
+        StatuslineResetWatermark::Known { .. } => return None,
+        StatuslineResetWatermark::Unknown => {
+            let cutoff = account
+                .legacy_reset_admission_after_epochs
+                .get(index)
+                .copied()
+                .flatten();
+            if latest_reset.is_some() && cutoff.is_none() {
+                return None;
+            }
+            cutoff
+        }
+        StatuslineResetWatermark::KnownNone if latest_reset.is_some() => {
+            let reset = window.reset.as_ref()?;
+            if reset.value < 0
+                || reset.value > latest_reset?
+                || !valid_broker_time(reset.evidence_at_epoch, reset.received_at_epoch, i64::MAX)
+            {
+                return None;
+            }
+            Some(reset.received_at_epoch)
+        }
+        StatuslineResetWatermark::KnownNone => None,
+    };
+    let reset_fence = window.reset.as_ref().map(|reset| reset.received_at_epoch);
+    let fence = match (durable_fence, reset_fence) {
+        (Some(durable), Some(reset)) => Some(durable.max(reset)),
+        (Some(fence), None) | (None, Some(fence)) => Some(fence),
+        (None, None) if latest_reset.is_none() => None,
+        (None, None) => return None,
+    };
+    if fence.is_some_and(|fence| fence < 0) {
+        return None;
+    }
+    Some(fence)
+}
+
+fn valid_broker_time(
+    evidence_at_epoch: Option<i64>,
+    received_at_epoch: i64,
+    now_epoch: i64,
+) -> bool {
+    received_at_epoch >= 0
+        && received_at_epoch <= now_epoch.saturating_add(MAX_FUTURE_SKEW_SECS)
+        && evidence_at_epoch.is_none_or(|evidence_at_epoch| {
+            evidence_at_epoch >= 0
+                && evidence_at_epoch <= received_at_epoch.saturating_add(MAX_FUTURE_SKEW_SECS)
+                && evidence_at_epoch <= now_epoch.saturating_add(MAX_FUTURE_SKEW_SECS)
+        })
+}
+
+pub(super) fn chosen_broker_used_only_orphan(
+    monitor: &DurableMonitor,
+    account: Option<&AccountObservations>,
+    status: &MonitorQuotaWindowStatus,
+    window: MonitorQuotaWindow,
+    index: usize,
+    now_epoch: i64,
+) -> bool {
+    let (Some(account), Some(field)) = (account, status.used_evidence.as_ref()) else {
+        return false;
+    };
+    let Some(evidence) = monitor
+        .evidence
+        .iter()
+        .find(|evidence| evidence.sequence == field.evidence_sequence)
+    else {
+        return false;
+    };
+    let expected_index = match window {
+        MonitorQuotaWindow::FiveHour => 0,
+        MonitorQuotaWindow::SevenDay => 1,
+    };
+    if expected_index != index || evidence.source != MonitorEvidenceSource::BrokerProjection {
+        return false;
+    }
+    let MonitorEvidenceValue::QuotaUsedPercentage {
+        window: evidence_window,
+        ..
+    } = &evidence.value
+    else {
+        return false;
+    };
+    if *evidence_window != window {
+        return false;
+    }
+    let Some(used) = account.broker_windows[index].used.as_ref() else {
+        return false;
+    };
+    used.reset_at_epoch.is_none() && broker_used_only_is_effective(account, index, used, now_epoch)
 }

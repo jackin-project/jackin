@@ -4,7 +4,10 @@
 use super::evaluation::{
     quota_pause_reason, spend_decision_blocks_dispatch, spend_issue, spend_policy,
 };
-use super::quota::{evidence_is_relevant, field_age, model_status, quota_window_status};
+use super::quota::{
+    chosen_broker_used_only_orphan, evidence_is_relevant, field_age, model_status,
+    quota_window_status,
+};
 use super::validation::{current_binding, current_policy};
 use super::{
     AccountObservations, DurableGoalSpend, DurableMonitor, MAX_EVENTS_PER_MONITOR,
@@ -581,7 +584,10 @@ pub(super) fn quota_readiness(
         .all(|window| window.reset_validity == MonitorResetValidity::Future)
         && quota_fields.iter().all(|field| {
             field.is_some_and(|field| field.freshness == MonitorEvidenceFreshness::Current)
-        });
+        })
+        && !issues
+            .iter()
+            .any(|item| item.code == MonitorIssueCode::MissingReset);
     let all_quota_present = quota_fields.iter().all(Option::is_some);
     if exhausted {
         MonitorQuotaReadiness::Exhausted
@@ -788,6 +794,19 @@ pub(super) fn quota_window_issues(
 ) -> Vec<MonitorIssue> {
     let mut issues = Vec::new();
     let status = quota_window_status(monitor, account, window, index, now_epoch);
+    if chosen_broker_used_only_orphan(monitor, account, &status, window, index, now_epoch) {
+        push_issue(
+            &mut issues,
+            issue(
+                MonitorIssueCode::MissingReset,
+                "provider quota utilization was observed without a reset timestamp",
+                status
+                    .used_evidence
+                    .as_ref()
+                    .map(|field| field.evidence_received_at_epoch),
+            ),
+        );
+    }
     for (value, code, missing_code, message) in [
         (
             status.used_evidence.as_ref(),

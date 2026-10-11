@@ -104,6 +104,898 @@ fn rate_limited_provider_preserves_retry_and_fresh_statusline_quota() {
     );
 }
 
+#[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "This regression checks accepted used-only updates and all preserved reset/readiness invariants together."
+)]
+fn current_session_zero_without_reset_updates_only_used_and_keeps_reset_unverified() {
+    for initial_session_used in [54, 95] {
+        let (_directory, store) = open_store();
+        let account_id = format!("operator-local-used-only-{initial_session_used}");
+        let (binding, observer_id) =
+            start_approved_projection_observer(&store, &account_id, "acct-provider-freshness", NOW);
+        let guard_id = start_provider_dispatch_guard(
+            &store,
+            &binding,
+            &format!("used-only-{initial_session_used}"),
+            NOW + 1,
+        );
+
+        let initial_source_at = NOW + 4;
+        let session_reset_at = NOW + 3_600;
+        let weekly_reset_at = NOW + 86_400;
+        let initial = projection_with_quota_fields(
+            initial_source_at,
+            1,
+            1,
+            initial_session_used,
+            Some(session_reset_at),
+            92,
+            Some(weekly_reset_at),
+        );
+        store
+            .observe_projection(&initial, initial_source_at)
+            .expect("publish initial paired Session and Weekly quota");
+
+        let before = {
+            let state = store.lock();
+            let account = &state.accounts[&account_id];
+            assert_eq!(
+                account.broker_windows[0]
+                    .used
+                    .as_ref()
+                    .expect("initial Session used value")
+                    .value,
+                initial_session_used * 100
+            );
+            assert!(account.broker_windows[0].paired.is_some());
+            assert_eq!(
+                account.broker_windows[1]
+                    .used
+                    .as_ref()
+                    .expect("initial Weekly used value")
+                    .value,
+                9_200
+            );
+            (
+                (*account).clone(),
+                serde_json::to_value(&account.reset_barriers)
+                    .expect("serialize account reset barrier snapshot"),
+                serde_json::to_value(&state.monitors[&guard_id].reset_barriers)
+                    .expect("serialize monitor reset barrier snapshot"),
+            )
+        };
+        if initial_session_used == 95 {
+            assert!(
+                before.0.reset_barriers[0].is_some(),
+                "the threshold sample establishes a durable account reset barrier"
+            );
+        }
+
+        let first_session_source_at = initial_source_at + MONITOR_EVIDENCE_TTL_SECS + 1;
+        let first_session_received_at = first_session_source_at + 1;
+        let first_used_only = projection_with_quota_fields(
+            first_session_source_at,
+            2,
+            2,
+            0,
+            None,
+            92,
+            Some(weekly_reset_at),
+        );
+        store
+            .observe_projection(&first_used_only, first_session_received_at)
+            .expect("accept a fresh zero-usage Session field without a reset");
+        let first_used_sequence = {
+            let state = store.lock();
+            let session = &state.accounts[&account_id].broker_windows[0];
+            let first_used = session.used.as_ref().expect("first Session update");
+            assert_eq!(first_used.value, 0);
+            assert_eq!(first_used.evidence_at_epoch, Some(first_session_source_at));
+            assert_eq!(first_used.received_at_epoch, first_session_received_at);
+            assert_eq!(first_used.reset_at_epoch, None);
+            assert!(session.paired.is_none());
+            first_used.input_sequence
+        };
+
+        let session_source_at = first_session_source_at + 1;
+        let session_received_at = session_source_at + 1;
+        let repeated_used_only = projection_with_quota_fields(
+            session_source_at,
+            3,
+            3,
+            0,
+            None,
+            92,
+            Some(weekly_reset_at),
+        );
+        store
+            .observe_projection(&repeated_used_only, session_received_at)
+            .expect("accept a newer same-value Session observation");
+
+        let state = store.lock();
+        let account = &state.accounts[&account_id];
+        let session = &account.broker_windows[0];
+        let used = session
+            .used
+            .as_ref()
+            .expect("fresh Session usage is retained");
+        assert_eq!(used.value, 0);
+        assert_eq!(used.reset_at_epoch, None);
+        assert_eq!(used.evidence_at_epoch, Some(session_source_at));
+        assert_eq!(used.received_at_epoch, session_received_at);
+        assert!(used.input_sequence > first_used_sequence);
+        assert!(session.paired.is_none());
+        let reset_fields = |reset: Option<&Observed<i64>>| {
+            reset.map(|reset| {
+                (
+                    reset.value,
+                    reset.evidence_at_epoch,
+                    reset.received_at_epoch,
+                    reset.input_sequence,
+                    reset.claude_code_version.clone(),
+                )
+            })
+        };
+        assert_eq!(
+            reset_fields(session.reset.as_ref()),
+            reset_fields(before.0.broker_windows[0].reset.as_ref()),
+            "missing reset evidence cannot refresh or erase the previous reset"
+        );
+        assert_eq!(
+            account.latest_reset_epochs, before.0.latest_reset_epochs,
+            "the used-only update leaves account reset maxima unchanged"
+        );
+        assert_eq!(
+            account.statusline_reset_watermarks,
+            before.0.statusline_reset_watermarks
+        );
+        assert_eq!(
+            account.legacy_reset_admission_after_epochs,
+            before.0.legacy_reset_admission_after_epochs
+        );
+        assert_eq!(
+            serde_json::to_value(&account.reset_barriers)
+                .expect("serialize account reset barrier snapshot"),
+            before.1
+        );
+        assert_eq!(
+            serde_json::to_value(&state.monitors[&guard_id].reset_barriers)
+                .expect("serialize monitor reset barrier snapshot"),
+            before.2,
+            "the lower used value cannot satisfy or clear an existing monitor barrier"
+        );
+
+        let weekly = &account.broker_windows[1];
+        assert_eq!(weekly.used.as_ref().map(|field| field.value), Some(9_200));
+        assert_eq!(
+            weekly.reset.as_ref().map(|field| field.value),
+            Some(weekly_reset_at)
+        );
+        assert!(weekly.paired.is_some());
+        drop(state);
+
+        let status = descriptor_status(&store, &observer_id, session_received_at);
+        assert_eq!(status.readiness.provider, MonitorProviderReadiness::Current);
+        assert_eq!(status.five_hour.used_percentage_basis_points, Some(0));
+        let current_used = status
+            .five_hour
+            .used_evidence
+            .as_ref()
+            .expect("current zero-usage evidence is published");
+        assert_eq!(current_used.evidence_at_epoch, Some(session_source_at));
+        assert_eq!(current_used.evidence_received_at_epoch, session_received_at);
+        assert_eq!(current_used.freshness, MonitorEvidenceFreshness::Current);
+        assert_eq!(status.five_hour.reset_at_epoch, Some(session_reset_at));
+        assert_eq!(
+            status.five_hour.reset_validity,
+            MonitorResetValidity::Future,
+            "the retained future reset keeps its original meaning"
+        );
+        let old_reset = status
+            .five_hour
+            .reset_evidence
+            .as_ref()
+            .expect("the old reset is retained for diagnosis");
+        assert_eq!(old_reset.evidence_at_epoch, Some(initial_source_at));
+        assert_eq!(old_reset.evidence_received_at_epoch, initial_source_at);
+        assert_eq!(old_reset.age_seconds, 303);
+        assert_eq!(old_reset.freshness, MonitorEvidenceFreshness::Stale);
+        assert_ne!(status.readiness.quota, MonitorQuotaReadiness::Ready);
+        assert!(
+            status
+                .issues
+                .iter()
+                .any(|issue| issue.code == MonitorIssueCode::MissingReset)
+        );
+        assert!(!status.runnable);
+        assert_eq!(status.seven_day.used_percentage_basis_points, Some(9_200));
+        assert_eq!(status.seven_day.reset_at_epoch, Some(weekly_reset_at));
+        assert_eq!(
+            status
+                .seven_day
+                .used_evidence
+                .as_ref()
+                .expect("the sibling Weekly value remains visible")
+                .freshness,
+            MonitorEvidenceFreshness::Current
+        );
+    }
+}
+
+#[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "This checks barrier creation, rebasing, and non-release across high and low used-only samples."
+)]
+fn high_session_used_only_without_reset_latches_and_low_sample_cannot_clear_barrier() {
+    for initial_session_used in [54, 95] {
+        let (_directory, store) = open_store();
+        let account_id = format!("operator-local-high-used-only-{initial_session_used}");
+        let (binding, observer_id) =
+            start_approved_projection_observer(&store, &account_id, "acct-provider-freshness", NOW);
+        let guard_id = start_provider_dispatch_guard(
+            &store,
+            &binding,
+            &format!("high-used-only-{initial_session_used}"),
+            NOW + 1,
+        );
+        let source_at = NOW + 4;
+        let session_reset_at = NOW + 3_600;
+        let weekly_reset_at = NOW + 86_400;
+        store
+            .observe_projection(
+                &projection_with_quota_fields(
+                    source_at,
+                    1,
+                    1,
+                    initial_session_used,
+                    Some(session_reset_at),
+                    92,
+                    Some(weekly_reset_at),
+                ),
+                source_at,
+            )
+            .expect("publish the initial complete Session observation");
+
+        let (has_account_barrier, has_monitor_barrier, prior_account_barrier_reset) = {
+            let state = store.lock();
+            let account = &state.accounts[&account_id];
+            let account_barrier = account.reset_barriers[0].as_ref();
+            let monitor_barrier = state.monitors[&guard_id].reset_barriers[0].as_ref();
+            if initial_session_used == 54 {
+                assert!(account_barrier.is_none());
+                assert!(monitor_barrier.is_none());
+            } else {
+                assert!(account_barrier.is_some());
+                assert!(monitor_barrier.is_some());
+            }
+            (
+                account_barrier.is_some(),
+                monitor_barrier.is_some(),
+                account_barrier.and_then(|barrier| barrier.prior_reset_at_epoch),
+            )
+        };
+        let expected_prior_reset = prior_account_barrier_reset
+            .into_iter()
+            .chain(Some(session_reset_at))
+            .max();
+
+        let used_only_source_at = source_at + MONITOR_EVIDENCE_TTL_SECS + 1;
+        let used_only_received_at = used_only_source_at + 1;
+        store
+            .observe_projection(
+                &projection_with_quota_fields(
+                    used_only_source_at,
+                    2,
+                    2,
+                    96,
+                    None,
+                    92,
+                    Some(weekly_reset_at),
+                ),
+                used_only_received_at,
+            )
+            .expect("accept current high Session usage without a reset");
+
+        let (after_high_account_barriers, after_high_monitor_barriers) = {
+            let state = store.lock();
+            let account = &state.accounts[&account_id];
+            let session = &account.broker_windows[0];
+            let used = session
+                .used
+                .as_ref()
+                .expect("high used-only value is retained");
+            assert_eq!(used.value, 9_600);
+            assert_eq!(used.reset_at_epoch, None);
+            assert_eq!(used.evidence_at_epoch, Some(used_only_source_at));
+            assert_eq!(used.received_at_epoch, used_only_received_at);
+            assert!(session.paired.is_none());
+
+            let account_barrier = account.reset_barriers[0]
+                .as_ref()
+                .expect("high usage without a reset latches an account barrier");
+            assert_eq!(account_barrier.prior_reset_at_epoch, expected_prior_reset);
+            assert_eq!(account_barrier.prior_used_percentage_basis_points, 9_600);
+            let monitor_barrier = state.monitors[&guard_id].reset_barriers[0]
+                .as_ref()
+                .expect("high usage remains paused for the active observer");
+            assert_eq!(
+                monitor_barrier.prior_reset_at_epoch, expected_prior_reset,
+                "the selected used-only orphan anchors the monitor barrier to the historical reset"
+            );
+            assert_eq!(monitor_barrier.prior_used_percentage_basis_points, 9_600);
+            if initial_session_used == 54 {
+                assert!(!has_account_barrier);
+                assert!(!has_monitor_barrier);
+            }
+
+            (
+                serde_json::to_value(&account.reset_barriers)
+                    .expect("serialize account reset barrier snapshot"),
+                serde_json::to_value(&state.monitors[&guard_id].reset_barriers)
+                    .expect("serialize monitor reset barrier snapshot"),
+            )
+        };
+
+        let low_used_source_at = used_only_source_at + 1;
+        let low_used_received_at = low_used_source_at + 1;
+        store
+            .observe_projection(
+                &projection_with_quota_fields(
+                    low_used_source_at,
+                    3,
+                    3,
+                    0,
+                    None,
+                    92,
+                    Some(weekly_reset_at),
+                ),
+                low_used_received_at,
+            )
+            .expect("accept newer low usage while retaining reset barriers");
+
+        let state = store.lock();
+        let account = &state.accounts[&account_id];
+        assert_eq!(
+            account.broker_windows[0]
+                .used
+                .as_ref()
+                .map(|field| field.value),
+            Some(0)
+        );
+        assert!(account.broker_windows[0].paired.is_none());
+        assert_eq!(
+            serde_json::to_value(&account.reset_barriers)
+                .expect("serialize account reset barrier snapshot"),
+            after_high_account_barriers
+        );
+        assert_eq!(
+            serde_json::to_value(&state.monitors[&guard_id].reset_barriers)
+                .expect("serialize monitor reset barrier snapshot"),
+            after_high_monitor_barriers
+        );
+        drop(state);
+
+        let status = descriptor_status(&store, &observer_id, low_used_received_at);
+        assert_eq!(status.five_hour.used_percentage_basis_points, Some(0));
+        assert_eq!(status.five_hour.reset_at_epoch, Some(session_reset_at));
+        assert_eq!(status.readiness.provider, MonitorProviderReadiness::Current);
+        assert_ne!(status.readiness.quota, MonitorQuotaReadiness::Ready);
+        assert!(
+            status
+                .issues
+                .iter()
+                .any(|issue| issue.code == MonitorIssueCode::MissingReset)
+        );
+        assert!(!status.runnable);
+
+        let old_reset_source_at = session_reset_at + MONITOR_RESET_GRACE_SECS + 1;
+        let old_reset_received_at = old_reset_source_at + 1;
+        store
+            .observe_projection(
+                &projection_with_quota_fields(
+                    old_reset_source_at,
+                    4,
+                    4,
+                    20,
+                    Some(session_reset_at),
+                    92,
+                    Some(weekly_reset_at),
+                ),
+                old_reset_received_at,
+            )
+            .expect("publish a fresh low-use pair with the old reset after grace");
+        {
+            let state = store.lock();
+            assert!(
+                state.accounts[&account_id].reset_barriers[0].is_some(),
+                "a complete pair with the old reset cannot release the account barrier"
+            );
+            assert!(
+                state.monitors[&guard_id].reset_barriers[0].is_some(),
+                "a complete pair with the old reset cannot release the observer barrier"
+            );
+        }
+
+        let recovery_source_at = old_reset_received_at + 1;
+        let recovery_received_at = recovery_source_at + 1;
+        let advanced_reset_at = session_reset_at + 3_600;
+        store
+            .observe_projection(
+                &projection_with_quota_fields(
+                    recovery_source_at,
+                    5,
+                    5,
+                    20,
+                    Some(advanced_reset_at),
+                    92,
+                    Some(weekly_reset_at),
+                ),
+                recovery_received_at,
+            )
+            .expect("publish a fresh complete pair after reset grace with a newer reset");
+        {
+            let state = store.lock();
+            assert!(
+                state.accounts[&account_id].reset_barriers[0].is_none(),
+                "the fresh complete pair releases the account barrier"
+            );
+            assert!(
+                state.monitors[&guard_id].reset_barriers[0].is_none(),
+                "the fresh complete pair releases the observer barrier"
+            );
+            let session = &state.accounts[&account_id].broker_windows[0];
+            assert!(session.paired.is_some());
+            assert_eq!(session.used.as_ref().map(|field| field.value), Some(2_000));
+            assert_eq!(
+                session.reset.as_ref().map(|field| field.value),
+                Some(advanced_reset_at)
+            );
+        }
+    }
+}
+
+#[test]
+fn statusline_high_without_reset_keeps_provider_reset_fence_until_advanced_pair() {
+    let (_directory, store) = open_store();
+    let account_id = "operator-local-statusline-high-without-reset";
+    let (binding, monitor_id) =
+        start_approved_projection_observer(&store, account_id, "acct-provider-freshness", NOW);
+    let guard_id = start_provider_dispatch_guard(&store, &binding, "statusline-high", NOW + 1);
+    let prior_reset = NOW + 3_600;
+    let weekly_reset = NOW + 86_400;
+    store
+        .observe_projection(
+            &projection_with_quota_fields(
+                NOW + 2,
+                1,
+                1,
+                54,
+                Some(prior_reset),
+                92,
+                Some(weekly_reset),
+            ),
+            NOW + 2,
+        )
+        .expect("publish provider reset history before statusline high usage");
+
+    store
+        .operate(
+            MonitorOperation::Ingest {
+                scope: binding_scope(&binding),
+                observation: observation_with_windows(
+                    "statusline-high-no-reset",
+                    Some(9_500),
+                    None,
+                    None,
+                    None,
+                ),
+            },
+            NOW + 3,
+        )
+        .expect("ingest high statusline usage without a reset field");
+    {
+        let state = store.lock();
+        let account = &state.accounts[account_id];
+        assert!(matches!(
+            account.statusline_reset_watermarks[0],
+            StatuslineResetWatermark::KnownNone
+        ));
+        assert_eq!(account.latest_reset_epochs[0], Some(prior_reset));
+        let barrier = account.reset_barriers[0]
+            .as_ref()
+            .expect("high statusline usage latches an account barrier");
+        assert_eq!(barrier.source, MonitorEvidenceSource::Statusline);
+        assert_eq!(barrier.prior_reset_at_epoch, Some(prior_reset));
+        assert_eq!(barrier.prior_used_percentage_basis_points, 9_500);
+        assert!(
+            state.monitors[&guard_id].reset_barriers[0].is_none(),
+            "without an effective reset proof, the monitor-local barrier remains unset"
+        );
+    }
+    let status = descriptor_status(&store, &monitor_id, NOW + 3);
+    assert!(
+        !status.runnable,
+        "the durable account barrier pauses dispatch"
+    );
+    assert!(status.issues.iter().any(|issue| {
+        matches!(
+            issue.code,
+            MonitorIssueCode::LimitGuardReached | MonitorIssueCode::ResetDueUnverified
+        )
+    }));
+
+    let old_reset_source_at = prior_reset + MONITOR_RESET_GRACE_SECS + 1;
+    let old_reset_received_at = old_reset_source_at + 1;
+    store
+        .observe_projection(
+            &projection_with_quota_fields(
+                old_reset_source_at,
+                2,
+                2,
+                20,
+                Some(prior_reset),
+                92,
+                Some(weekly_reset),
+            ),
+            old_reset_received_at,
+        )
+        .expect("accept a fresh pair with the unchanged historical reset");
+    {
+        let state = store.lock();
+        assert!(state.accounts[account_id].reset_barriers[0].is_some());
+        let barrier = state.monitors[&guard_id].reset_barriers[0]
+            .as_ref()
+            .expect("the elapsed old reset creates a monitor-local due barrier");
+        assert_eq!(barrier.prior_reset_at_epoch, Some(prior_reset));
+    }
+    let blocked_status = descriptor_status(&store, &monitor_id, old_reset_received_at);
+    assert!(!blocked_status.runnable);
+    assert!(
+        blocked_status
+            .issues
+            .iter()
+            .any(|issue| { issue.code == MonitorIssueCode::ResetDueUnverified })
+    );
+
+    let advanced_source_at = old_reset_received_at + 1;
+    let advanced_received_at = advanced_source_at + 1;
+    let advanced_reset = prior_reset + 3_600;
+    store
+        .observe_projection(
+            &projection_with_quota_fields(
+                advanced_source_at,
+                3,
+                3,
+                10,
+                Some(advanced_reset),
+                92,
+                Some(weekly_reset),
+            ),
+            advanced_received_at,
+        )
+        .expect("accept a fresh lower-use pair with a reset advanced after grace");
+    {
+        let state = store.lock();
+        assert!(state.accounts[account_id].reset_barriers[0].is_none());
+        assert!(state.monitors[&guard_id].reset_barriers[0].is_none());
+    }
+    let status = descriptor_status(&store, &monitor_id, advanced_received_at);
+    assert_eq!(status.five_hour.used_percentage_basis_points, Some(1_000));
+    assert_eq!(status.five_hour.reset_at_epoch, Some(advanced_reset));
+    assert!(!status.issues.iter().any(|issue| {
+        matches!(
+            issue.code,
+            MonitorIssueCode::LimitGuardReached
+                | MonitorIssueCode::LimitExhausted
+                | MonitorIssueCode::ResetDueUnverified
+        )
+    }));
+}
+
+#[test]
+fn session_used_only_rejects_stale_ambiguous_scoped_and_old_evidence() {
+    for rejected_case in [
+        "stale-group",
+        "ambiguous-group",
+        "scoped-group",
+        "old-source",
+        "old-receipt",
+    ] {
+        let (_directory, store) = open_store();
+        let account_id = format!("operator-local-used-only-rejected-{rejected_case}");
+        let (_binding, observer_id) =
+            start_approved_projection_observer(&store, &account_id, "acct-provider-freshness", NOW);
+        let initial_source_at = NOW + 4;
+        let session_reset_at = NOW + 3_600;
+        let weekly_reset_at = NOW + 86_400;
+        store
+            .observe_projection(
+                &projection_with_quota_fields(
+                    initial_source_at,
+                    1,
+                    1,
+                    54,
+                    Some(session_reset_at),
+                    92,
+                    Some(weekly_reset_at),
+                ),
+                initial_source_at,
+            )
+            .expect("publish the previous paired Session field");
+        let before = broker_window_snapshot(&store.lock().accounts[&account_id].broker_windows[0]);
+
+        let (source_at, received_at) = match rejected_case {
+            "old-source" => (initial_source_at, initial_source_at + 2),
+            "old-receipt" => (initial_source_at + 10, initial_source_at),
+            _ => (initial_source_at + 20, initial_source_at + 21),
+        };
+        let mut candidate =
+            projection_with_quota_fields(source_at, 2, 2, 0, None, 92, Some(weekly_reset_at));
+        let account = &mut candidate.providers[0].accounts[0];
+        match rejected_case {
+            "stale-group" => {
+                let session_group = account
+                    .metric_groups
+                    .iter_mut()
+                    .find(|group| group.label == "Session")
+                    .expect("principal Session metric group");
+                session_group.phase = UsageFreshnessPhaseV1::Stale;
+                session_group.is_stale = true;
+                session_group.observed_at_epoch = None;
+                session_group.last_success_at_epoch = Some(initial_source_at);
+            }
+            "ambiguous-group" => {
+                let session_group = account
+                    .metric_groups
+                    .iter()
+                    .find(|group| group.label == "Session")
+                    .expect("principal Session metric group");
+                let mut duplicate = session_group.clone();
+                duplicate.group_id = "ambiguous-session-used-only".to_owned();
+                duplicate.rank += 1;
+                account.metric_groups.push(duplicate);
+            }
+            "scoped-group" => {
+                let session_group = account
+                    .metric_groups
+                    .iter_mut()
+                    .find(|group| group.label == "Session")
+                    .expect("principal Session metric group");
+                session_group.scope.service = Some("anthropic".to_owned());
+            }
+            "old-source" | "old-receipt" => {}
+            other => panic!("unexpected used-only rejection case: {other}"),
+        }
+        if let Err(error) = store.observe_projection(&candidate, received_at) {
+            assert_eq!(
+                rejected_case, "ambiguous-group",
+                "only a malformed ambiguous DTO may fail whole-projection validation: {error:?}"
+            );
+            assert_eq!(error.code, MonitorIssueCode::MonitorStoreUnavailable);
+        }
+        assert_eq!(
+            broker_window_snapshot(&store.lock().accounts[&account_id].broker_windows[0]),
+            before,
+            "{rejected_case} evidence cannot replace the prior paired Session fields"
+        );
+        let status = descriptor_status(&store, &observer_id, received_at);
+        assert_eq!(status.five_hour.used_percentage_basis_points, Some(5_400));
+        assert_eq!(status.five_hour.reset_at_epoch, Some(session_reset_at));
+    }
+}
+
+#[test]
+fn current_used_only_after_receipt_only_reset_requires_strictly_new_times() {
+    let (_directory, store) = open_store();
+    let account_id = "operator-local-receipt-only-reset";
+    let (binding, observer_id) =
+        start_approved_projection_observer(&store, account_id, "acct-provider-freshness", NOW);
+    let reset_received_at = NOW + 4;
+    let session_reset_at = reset_received_at + 3_600;
+    store
+        .operate(
+            MonitorOperation::Ingest {
+                scope: binding_scope(&binding),
+                observation: observation_with_windows(
+                    "statusline-reset-without-source-time",
+                    None,
+                    Some(session_reset_at),
+                    None,
+                    None,
+                ),
+            },
+            reset_received_at,
+        )
+        .expect("ingest statusline reset with local receipt time");
+
+    {
+        let state = store.lock();
+        let account = &state.accounts[account_id];
+        let reset = account.sessions["statusline-reset-without-source-time"].windows[0]
+            .reset
+            .as_ref()
+            .expect("statusline reset is retained");
+        assert_eq!(reset.value, session_reset_at);
+        assert_eq!(reset.evidence_at_epoch, None);
+        assert_eq!(reset.received_at_epoch, reset_received_at);
+    }
+
+    let at_fence = projection_with_quota_fields(
+        reset_received_at,
+        1,
+        1,
+        0,
+        None,
+        92,
+        Some(reset_received_at + 86_400),
+    );
+    store
+        .observe_projection(&at_fence, reset_received_at + 1)
+        .expect("a sample at the reset receipt fence is ignored safely");
+    assert!(
+        store.lock().accounts[account_id].broker_windows[0]
+            .used
+            .is_none()
+    );
+
+    let used_source_at = reset_received_at + 1;
+    let used_received_at = reset_received_at + 2;
+    let after_fence = projection_with_quota_fields(
+        used_source_at,
+        2,
+        2,
+        0,
+        None,
+        92,
+        Some(reset_received_at + 86_400),
+    );
+    store
+        .observe_projection(&after_fence, used_received_at)
+        .expect("a sample strictly after both reset receipt and source fence is admitted");
+
+    let state = store.lock();
+    let broker_session = &state.accounts[account_id].broker_windows[0];
+    let broker_used = broker_session
+        .used
+        .as_ref()
+        .expect("fresh provider used-only field is retained");
+    assert_eq!(broker_used.value, 0);
+    assert_eq!(broker_used.reset_at_epoch, None);
+    assert_eq!(broker_used.evidence_at_epoch, Some(used_source_at));
+    assert_eq!(broker_used.received_at_epoch, used_received_at);
+    assert!(broker_session.paired.is_none());
+    drop(state);
+
+    let status = descriptor_status(&store, &observer_id, used_received_at);
+    assert_eq!(status.readiness.provider, MonitorProviderReadiness::Current);
+    assert_eq!(status.five_hour.used_percentage_basis_points, Some(0));
+    let used = status
+        .five_hour
+        .used_evidence
+        .as_ref()
+        .expect("provider used-only evidence is visible");
+    assert!(status.evidence.iter().any(|evidence| {
+        evidence.sequence == used.evidence_sequence
+            && evidence.source == MonitorEvidenceSource::BrokerProjection
+            && matches!(
+                &evidence.value,
+                MonitorEvidenceValue::QuotaUsedPercentage {
+                    window: MonitorQuotaWindow::FiveHour,
+                    used_percentage_basis_points: 0,
+                }
+            )
+    }));
+    assert_eq!(used.evidence_at_epoch, Some(used_source_at));
+    assert_eq!(used.evidence_received_at_epoch, used_received_at);
+    assert_eq!(used.freshness, MonitorEvidenceFreshness::Current);
+    assert_eq!(status.five_hour.reset_at_epoch, Some(session_reset_at));
+    let reset = status
+        .five_hour
+        .reset_evidence
+        .as_ref()
+        .expect("receipt-only reset remains visible");
+    assert!(status.evidence.iter().any(|evidence| {
+        evidence.sequence == reset.evidence_sequence
+            && evidence.source == MonitorEvidenceSource::Statusline
+            && matches!(
+                &evidence.value,
+                MonitorEvidenceValue::QuotaReset {
+                    window: MonitorQuotaWindow::FiveHour,
+                    reset_at_epoch,
+                } if *reset_at_epoch == session_reset_at
+            )
+    }));
+    assert_eq!(reset.evidence_at_epoch, None);
+    assert_eq!(reset.evidence_received_at_epoch, reset_received_at);
+    assert_eq!(reset.age_seconds, 2);
+    assert_eq!(reset.freshness, MonitorEvidenceFreshness::Current);
+    assert_eq!(
+        status.five_hour.reset_validity,
+        MonitorResetValidity::Future
+    );
+    assert_ne!(status.readiness.quota, MonitorQuotaReadiness::Ready);
+    assert!(
+        status
+            .issues
+            .iter()
+            .any(|issue| issue.code == MonitorIssueCode::MissingReset)
+    );
+    assert!(!status.runnable);
+}
+
+#[test]
+fn used_only_source_time_must_follow_prior_local_receipt_when_old_source_time_is_missing() {
+    let prior_received_at = NOW + 10;
+    let mut account = AccountObservations {
+        input_sequence: 7,
+        ..AccountObservations::default()
+    };
+    account.broker_windows[0].used = Some(ObservedPercentage {
+        value: 5_400,
+        reset_at_epoch: None,
+        evidence_at_epoch: None,
+        received_at_epoch: prior_received_at,
+        input_sequence: 7,
+        claude_code_version: None,
+    });
+    let before = broker_window_snapshot(&account.broker_windows[0]);
+
+    let candidate_at_prior_receipt = ObservedWindow {
+        used: Some(ObservedPercentage {
+            value: 0,
+            reset_at_epoch: None,
+            evidence_at_epoch: Some(prior_received_at),
+            received_at_epoch: prior_received_at + 1,
+            input_sequence: 8,
+            claude_code_version: None,
+        }),
+        reset: None,
+        paired: None,
+    };
+    assert!(!projection::update_broker_windows(
+        &mut account,
+        [Some(candidate_at_prior_receipt), None],
+        [false, false],
+        [true, false],
+        8,
+    ));
+    assert_eq!(broker_window_snapshot(&account.broker_windows[0]), before);
+
+    let candidate_after_prior_receipt = ObservedWindow {
+        used: Some(ObservedPercentage {
+            value: 0,
+            reset_at_epoch: None,
+            evidence_at_epoch: Some(prior_received_at + 1),
+            received_at_epoch: prior_received_at + 2,
+            input_sequence: 8,
+            claude_code_version: None,
+        }),
+        reset: None,
+        paired: None,
+    };
+    assert!(projection::update_broker_windows(
+        &mut account,
+        [Some(candidate_after_prior_receipt), None],
+        [false, false],
+        [true, false],
+        8,
+    ));
+    let accepted = account.broker_windows[0]
+        .used
+        .as_ref()
+        .expect("strictly later used-only evidence is accepted");
+    assert_eq!(accepted.value, 0);
+    assert_eq!(accepted.evidence_at_epoch, Some(prior_received_at + 1));
+    assert_eq!(accepted.received_at_epoch, prior_received_at + 2);
+    assert_eq!(accepted.reset_at_epoch, None);
+    assert!(account.broker_windows[0].reset.is_none());
+    assert!(account.broker_windows[0].paired.is_none());
+    assert_eq!(account.latest_reset_epochs[0], None);
+}
+
 #[expect(
     clippy::too_many_lines,
     reason = "The fixture builds a complete V4 policy, spend, quota, and event history for migration verification."
@@ -520,6 +1412,7 @@ fn v5_migration_unknown_reset_watermark_uses_liveness_cutoff() {
         &mut missing_cutoff_account,
         [None, Some(missing_cutoff_window)],
         [false, true],
+        [false, false],
         500,
     ));
     assert_eq!(
@@ -719,6 +1612,15 @@ fn broker_weekly_snapshot(store: &MonitorStore, account_id: &str) -> BrokerWindo
     broker_window_snapshot(&state.accounts[account_id].broker_windows[1])
 }
 
+fn assert_weekly_snapshot_unchanged(
+    store: &MonitorStore,
+    account_id: &str,
+    expected: &BrokerWindowSnapshot,
+) {
+    let actual = broker_weekly_snapshot(store, account_id);
+    assert_eq!(&actual, expected);
+}
+
 fn broker_window_snapshot(window: &ObservedWindow) -> BrokerWindowSnapshot {
     BrokerWindowSnapshot {
         used_value: window.used.as_ref().map(|field| field.value),
@@ -782,6 +1684,85 @@ fn weekly_projection(
         }
     }
     projection
+}
+
+fn projection_with_quota_fields(
+    source_at_epoch: i64,
+    account_generation: u64,
+    broker_generation: u64,
+    session_used_percent: i32,
+    session_reset_at_epoch: Option<i64>,
+    weekly_used_percent: i32,
+    weekly_reset_at_epoch: Option<i64>,
+) -> UsageProjectionV1 {
+    let mut projection =
+        provider_projection(source_at_epoch, account_generation, broker_generation);
+    set_projection_quota_field(
+        &mut projection,
+        UsageWindowCategoryV1::Session,
+        "Session",
+        session_used_percent,
+        session_reset_at_epoch,
+        source_at_epoch,
+    );
+    set_projection_quota_field(
+        &mut projection,
+        UsageWindowCategoryV1::LongRange,
+        "Weekly",
+        weekly_used_percent,
+        weekly_reset_at_epoch,
+        source_at_epoch,
+    );
+    projection
+}
+
+fn set_projection_quota_field(
+    projection: &mut UsageProjectionV1,
+    category: UsageWindowCategoryV1,
+    label: &str,
+    used_percent: i32,
+    reset_at_epoch: Option<i64>,
+    source_at_epoch: i64,
+) {
+    let account = &mut projection.providers[0].accounts[0];
+    account.freshness.last_good_at_epoch = Some(source_at_epoch);
+    let windows = account
+        .windows
+        .iter_mut()
+        .filter(|window| window.category == category)
+        .collect::<Vec<_>>();
+    assert_eq!(windows.len(), 1, "fixture has one descriptor for {label}");
+    for window in windows {
+        window.label = label.to_owned();
+        window.used_percent = Some(UsagePercent::clamp_raw(used_percent));
+        window.used_raw_percent = Some(used_percent);
+        window.reset_at_epoch = reset_at_epoch;
+    }
+
+    let groups = account
+        .metric_groups
+        .iter_mut()
+        .filter(|group| group.label == label)
+        .collect::<Vec<_>>();
+    assert_eq!(groups.len(), 1, "fixture has one typed group for {label}");
+    for group in groups {
+        group.observed_at_epoch = Some(source_at_epoch);
+        group.fetched_at_epoch = source_at_epoch;
+        group.last_success_at_epoch = Some(source_at_epoch);
+        group.phase = UsageFreshnessPhaseV1::Current;
+        group.is_stale = false;
+        group.reset_at_epoch = reset_at_epoch;
+        let UsageMetricValueV1::Window {
+            used_percent: group_used,
+            used_raw_percent,
+            ..
+        } = &mut group.value
+        else {
+            panic!("fixture {label} metric group is not a quota window");
+        };
+        *group_used = Some(UsagePercent::clamp_raw(used_percent));
+        *used_raw_percent = Some(used_percent);
+    }
 }
 
 fn all_models_weekly_projection(
@@ -1249,7 +2230,11 @@ fn lower_reset_provider_pair_can_repair_an_account_without_prior_broker_fields()
 }
 
 #[test]
-fn malformed_or_stale_lower_reset_projection_does_not_replace_last_good_weekly_fields() {
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keeps malformed, stale, and valid partial projection cases in one ordered regression."
+)]
+fn malformed_or_stale_lower_reset_projection_preserves_fields_and_current_partial_is_visible() {
     let (_directory, store) = open_store();
     let account_id = "operator-local-lower-reset-rejected";
     let (binding, monitor_id) =
@@ -1275,7 +2260,7 @@ fn malformed_or_stale_lower_reset_projection_does_not_replace_last_good_weekly_f
     store
         .observe_projection(&at_watermark, NOW + 2)
         .expect("reject a source timestamp equal to the watermark receipt");
-    assert_eq!(broker_weekly_snapshot(&store, account_id), baseline);
+    assert_weekly_snapshot_unchanged(&store, account_id, &baseline);
 
     let mut stale = weekly_projection(NOW + 3, 3, 3, 88, Some(prior_reset + 5));
     let weekly = stale.providers[0].accounts[0]
@@ -1290,7 +2275,7 @@ fn malformed_or_stale_lower_reset_projection_does_not_replace_last_good_weekly_f
     store
         .observe_projection(&stale, NOW + 3)
         .expect("reject stale typed pair");
-    assert_eq!(broker_weekly_snapshot(&store, account_id), baseline);
+    assert_weekly_snapshot_unchanged(&store, account_id, &baseline);
 
     let mut missing_group = weekly_projection(NOW + 4, 4, 4, 88, Some(prior_reset + 5));
     missing_group.providers[0].accounts[0]
@@ -1299,7 +2284,7 @@ fn malformed_or_stale_lower_reset_projection_does_not_replace_last_good_weekly_f
     store
         .observe_projection(&missing_group, NOW + 4)
         .expect("reject pair without its typed weekly group");
-    assert_eq!(broker_weekly_snapshot(&store, account_id), baseline);
+    assert_weekly_snapshot_unchanged(&store, account_id, &baseline);
 
     let mut mismatched_cohort = weekly_projection(NOW + 5, 5, 5, 88, Some(prior_reset + 5));
     let weekly = mismatched_cohort.providers[0].accounts[0]
@@ -1311,13 +2296,7 @@ fn malformed_or_stale_lower_reset_projection_does_not_replace_last_good_weekly_f
     store
         .observe_projection(&mismatched_cohort, NOW + 5)
         .expect("reject used/reset mismatch");
-    assert_eq!(broker_weekly_snapshot(&store, account_id), baseline);
-
-    let partial = weekly_projection(NOW + 6, 6, 6, 88, None);
-    store
-        .observe_projection(&partial, NOW + 6)
-        .expect("reject lower-reset used value without reset");
-    assert_eq!(broker_weekly_snapshot(&store, account_id), baseline);
+    assert_weekly_snapshot_unchanged(&store, account_id, &baseline);
 
     let mut future = weekly_projection(NOW + 7, 7, 7, 88, Some(prior_reset + 5));
     let weekly = future.providers[0].accounts[0]
@@ -1329,7 +2308,7 @@ fn malformed_or_stale_lower_reset_projection_does_not_replace_last_good_weekly_f
     store
         .observe_projection(&future, NOW + 7)
         .expect("reject a future-dated sibling field");
-    assert_eq!(broker_weekly_snapshot(&store, account_id), baseline);
+    assert_weekly_snapshot_unchanged(&store, account_id, &baseline);
 
     let expired_source_at = NOW + 8;
     let expired_received_at = expired_source_at + MONITOR_EVIDENCE_TTL_SECS + 1;
@@ -1337,7 +2316,7 @@ fn malformed_or_stale_lower_reset_projection_does_not_replace_last_good_weekly_f
     store
         .observe_projection(&expired, expired_received_at)
         .expect("reject out-of-TTL source pair");
-    assert_eq!(broker_weekly_snapshot(&store, account_id), baseline);
+    assert_weekly_snapshot_unchanged(&store, account_id, &baseline);
 
     let mut account_state = store.lock().accounts[account_id].clone();
     let before_malformed = broker_window_snapshot(&account_state.broker_windows[1]);
@@ -1357,6 +2336,7 @@ fn malformed_or_stale_lower_reset_projection_does_not_replace_last_good_weekly_f
         &mut account_state,
         [None, Some(malformed_attached_reset)],
         [false, false],
+        [false, false],
         100,
     ));
     assert_eq!(
@@ -1368,6 +2348,55 @@ fn malformed_or_stale_lower_reset_projection_does_not_replace_last_good_weekly_f
     let status = descriptor_status(&store, &monitor_id, expired_received_at);
     assert_eq!(status.seven_day.used_percentage_basis_points, None);
     assert!(status.seven_day.used_evidence.is_none());
+
+    let partial_source_at = expired_received_at + 1;
+    let partial_received_at = partial_source_at + 1;
+    let partial = weekly_projection(partial_source_at, 9, 9, 88, None);
+    store
+        .observe_projection(&partial, partial_received_at)
+        .expect("admit a fresh Weekly used-only observation without reset");
+    let updated = broker_weekly_snapshot(&store, account_id);
+    assert_eq!(updated.used_value, Some(8_800));
+    assert_eq!(updated.used_reset, None);
+    assert_eq!(updated.used_source_at, Some(partial_source_at));
+    assert_eq!(updated.used_received_at, Some(partial_received_at));
+    assert!(updated.used_sequence > baseline.used_sequence);
+    assert_eq!(updated.reset_value, baseline.reset_value);
+    assert_eq!(updated.reset_source_at, baseline.reset_source_at);
+    assert_eq!(updated.reset_received_at, baseline.reset_received_at);
+    assert!(!updated.pair_present);
+    {
+        let state = store.lock();
+        let account = &state.accounts[account_id];
+        assert_eq!(account.latest_reset_epochs[1], Some(watermark));
+        assert!(account.reset_barriers[1].is_none());
+    }
+    let partial_status = descriptor_status(&store, &monitor_id, partial_received_at);
+    assert_eq!(
+        partial_status.seven_day.used_percentage_basis_points,
+        Some(8_800)
+    );
+    assert_eq!(
+        partial_status
+            .seven_day
+            .used_evidence
+            .as_ref()
+            .expect("current partial Weekly usage is visible")
+            .freshness,
+        MonitorEvidenceFreshness::Current
+    );
+    assert_ne!(
+        partial_status.readiness.quota,
+        MonitorQuotaReadiness::Ready,
+        "missing reset evidence keeps quota fail-closed"
+    );
+    assert!(
+        partial_status
+            .issues
+            .iter()
+            .any(|issue| { issue.code == MonitorIssueCode::MissingReset })
+    );
+    assert!(!partial_status.runnable);
 }
 
 #[test]
@@ -1924,6 +2953,7 @@ fn known_none_without_prior_provider_fields_fails_closed_for_lower_pair() {
         &mut account,
         [None, Some(window)],
         [false, true],
+        [false, false],
         1,
     ));
     assert_eq!(broker_window_snapshot(&account.broker_windows[1]), before);
@@ -1973,6 +3003,7 @@ fn known_none_rejects_malformed_prior_receipt_for_lower_admission() {
         &mut account,
         [None, Some(lower_window)],
         [false, true],
+        [false, false],
         2,
     ));
     assert_eq!(broker_window_snapshot(&account.broker_windows[1]), before);
