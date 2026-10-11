@@ -1,9 +1,15 @@
 # Claude Code quota observer handoff — DRAFT, NOT READY FOR LIVE USE
 
 > **Do not run or paste this draft into a live task yet.** The installed v11
-> CLI/broker pair passed its isolated fixture, but it has not been switched onto
-> the existing v7 state. The specific owner-stop and attended approval are
-> pending. No v11 status/watch result or live acceptance has been recorded.
+> CLI/broker pair is the current live owner against the existing v7-named state;
+> its attended startup and v10 replacement were authorized and completed. Two
+> natural v11 collection generations were recorded, but live acceptance remains
+> false: in those captures Weekly was current at 92% used, while Session
+> projection reported 100% remaining with no direct used-percentage or reset
+> field; the monitor retained stale 54% usage with its old reset. The v12
+> source fix can derive a zero-used observation from the remaining value, but
+> that path has not been verified live. Its installed pair passed only an
+> isolated smoke. Explicit approval for a v11-to-v12 cutover is still pending.
 
 ## Verified artifacts and pending gate
 
@@ -13,33 +19,55 @@ broker wire v9 and monitor schema 6. It did not access the existing account
 state, authenticate, or make a provider request. See
 [v11-installation.json](v11-installation.json) for provenance and hashes.
 
-The intended CLI and existing data directory are:
+The attended v11 service owns the existing state. Its live report records
+natural coordinator generations 126 and 127 and a bounded status/watch capture;
+Weekly monitor evidence was current at 92% in those captures, while Session
+remained stale at 54% with an elapsed reset. The provider Session projection
+reported 100% remaining but published neither used nor reset, so the capture
+does not show the later v12 used-only path or a `MissingReset` result.
+Acceptance is false.
+See the [sanitized v11 live report](v11-live-verification.md) and
+[JSON record](v11-live-verification.json).
+
+The installed v12 pair comes from source checkpoint
+`db59c4015fb4715e1d39157aaa31f4a1497c823a`. Its isolated schema-6 / wire-v9
+smoke passed, but v12 has not opened the existing state or been verified against
+the live provider. Its manifest is [v12-installation.json](v12-installation.json).
+
+The current live CLI and candidate v12 binaries are:
 
 ```bash
-JACKIN='/Users/donbeave/.local/share/jackin-claude-monitor-v11/bin/jackin'
+LIVE_JACKIN='/Users/donbeave/.local/share/jackin-claude-monitor-v11/bin/jackin'
 DATA='/Users/donbeave/.local/share/jackin-claude-monitor-v7/state'
 MONITOR_ID='monitor-00000001'
+V12_CANDIDATE_JACKIN='/Users/donbeave/.local/share/jackin-claude-monitor-v12/bin/jackin'
+V12_CANDIDATE_BROKER='/Users/donbeave/.local/share/jackin-claude-monitor-v12/bin/jackin-usage-broker'
 ```
 
-The last recorded v10 state was schema 5. On first load, v11 migrates a v5
-monitor store to schema 6 and saves it. Therefore even the status command below
-may write the versioned state migration. Run neither command until the approved
-owner handoff and attended approval are complete. Do not stop or replace a
-running owner without approval for that specific process and state directory.
+The attended v11 startup already migrated the v10 schema-5 store to schema 6
+and preserved `binding-00000001` revision 1 and observe-only
+`monitor-00000001`. The live service is reported in terminal session `35711`
+with processes `3127` and `3128`. Do not treat this draft as authorization to
+stop that owner or switch to v12; the specific v11-to-v12 cutover approval is
+pending. Do not stop or replace a running owner without approval for that
+specific process and state directory. The v12 paths are inventory for the
+installed candidate only; v12 has not opened this data directory and must not
+be invoked against it until the specific cutover is approved.
 Verify that `JACKIN_USAGE_BROKER_BIN` is absent or points to the verified v11
 sibling broker at
 `/Users/donbeave/.local/share/jackin-claude-monitor-v11/bin/jackin-usage-broker`.
 If it conflicts, checkpoint and report the mismatch; do not modify the
 environment.
 
-After that gate, these source-verified commands read the existing monitor
-without starting authentication or requesting provider data:
+These source-verified commands make bounded passive status/watch observations
+of the existing v11 monitor without starting authentication or requesting
+provider data:
 
 ```bash
-"$JACKIN" usage --data-dir "$DATA" status \
+"$LIVE_JACKIN" usage --data-dir "$DATA" status \
   --monitor "$MONITOR_ID" --format json
 
-"$JACKIN" usage --data-dir "$DATA" watch \
+"$LIVE_JACKIN" usage --data-dir "$DATA" watch \
   --monitor "$MONITOR_ID" --timeout-secs 300 --format jsonl
 ```
 
@@ -52,10 +80,12 @@ returning useful JSON.
 
 The recorded monitor is `observe_only`. Its expected `goal_id` is null,
 `readiness.dispatch` is `not_authorized`, and `runnable` is false by design.
-Those fields describe this monitor's dispatch authority; they do not grant or
-revoke separately established task authorization. Do not block authorized work
-solely on this observer's `runnable` value or its status exit code. The observer
-does not authorize dispatch, policy, a budget, or extra usage.
+This is intrinsic to its purpose, independent of quota freshness or the stale
+Session evidence. Those fields describe this monitor's dispatch authority; they
+do not grant or revoke separately established task authorization. Do not block
+authorized work solely on this observer's `runnable` value or its status exit
+code. The observer does not authorize dispatch, policy, a budget, or extra
+usage.
 
 Check the five-hour (`five_hour`, Session) and seven-day (`seven_day`, weekly)
 windows independently. For each, inspect `used_percentage_basis_points`,

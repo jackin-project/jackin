@@ -21,10 +21,11 @@ review status are in [v7-installation.json](v7-installation.json).
 
 This v7 installation is historical. It did not run bootstrap, inspect
 Keychain, make a provider request, or test a live account. Do not use its path
-as an operator command. The later v10 real-account checkpoint is tracked at
-the end of this queue; a fresh provider generation has succeeded, but the
-monitor still retains stale weekly evidence and full acceptance is incomplete.
-No dispatch policy is approved.
+as an operator command. The historical v10 real-account checkpoint at the end
+of this queue showed stale weekly monitor evidence. The later v11 live record
+has current weekly evidence but still-stale Session evidence; full acceptance
+remains incomplete. No dispatch policy or budget authorization follows from
+these observation records.
 
 ## Bounded auth diagnostic follow-up on main
 
@@ -110,7 +111,7 @@ live credential, account
 identity/status, provider endpoint, or settings was accessed or changed; the
 operator still needs to retry the attended account bootstrap.
 
-## Current source and install checkpoint
+## Historical v11 source and install checkpoint
 
 Signed source checkpoint `62cefbbbb11ce8b6dc0634f490095d9838ebef9e` is
 pushed on `fix/claude-usage-live-repair` (tree
@@ -137,14 +138,12 @@ state; it did not open the existing account state, successfully authenticate,
 make a provider request, or instrument native Security Framework calls or
 OS-level egress.
 
-This install is not yet the active account service. The previously attended
-v10 foreground service remains the current owner against the existing state;
-the exact operator approval to stop/replace it and the attendance confirmation
-for the next auth step are still pending. Do not launch v11 against that state,
-stop the current owner, repeat authentication, or force a refresh before those
-gates are explicitly answered. The historical v10 observations and current
-live acceptance gates remain below and in
-[`v10-live-verification.json`](v10-live-verification.json).
+At this install checkpoint, the attended v10 foreground service still owned
+the existing state and approval for the v10-to-v11 replacement remained
+pending. That snapshot was superseded by the explicitly authorized and attended
+v11 cutover recorded in [v11-live-verification.md](v11-live-verification.md).
+The v11 live record and the later v12 isolated-install result appear below;
+neither makes the v11-to-v12 cutover authorized or live verified.
 
 ### Schema-6 source repair
 
@@ -1131,12 +1130,13 @@ The final source-gate record for MBX 1.22.0 / Rust 1.97.1 is:
   and both monitor windows publish with original evidence timestamps in the
   fixture flow.
 
-The existing v10 service and its state were outside these source gates. The
-v11 pair is installed, but the existing state has not been opened with v11 and
-real-account acceptance remains pending an explicitly approved cutover and
-natural collection verification.
+The existing v10 service and its state were outside these source gates. At
+that source-verification checkpoint, v11 was installed but had not opened the
+existing state; the subsequent attended cutover and partial live observations
+are recorded below. Do not read this dated checkpoint as current ownership or
+as evidence of complete real-account acceptance.
 
-## Active real-account acceptance task
+## Current live state and remaining v12 acceptance task
 
 The offline CLI-to-provider fixture is complete at signed/pushed checkpoint
 `019de448ef8a6590b0a847046cf6a71c03d2079b`. It proves the synthetic credential,
@@ -1145,7 +1145,7 @@ monitor status/watch, retry deadlines, and typed auth outcomes described above.
 It does not prove native Keychain behavior, Anthropic HTTPS/TLS, or any real
 account value or provider request count.
 
-The current installed-pair record is
+The current live owner is the installed v11 pair recorded in
 [`v11-installation.json`](v11-installation.json): it records the default-feature
 v11 CLI/broker pair at `/Users/donbeave/.local/share/jackin-claude-monitor-v11`,
 installed from source checkpoint `62cefbbbb11ce8b6dc0634f490095d9838ebef9e`
@@ -1156,10 +1156,8 @@ SHA-256 `5b7661bb186b81e1f52ec50c3b034ed3477e37f86984568cdd4e331641e6a689`.
 The isolated installed smoke passed, asserting monitor schema 6 and broker
 wire v9 and selecting the exact installed sibling. It used temporary
 synthetic state and recorded zero fake broker launches for headless auth,
-credential-shell trips, and local HTTP proxy requests. It did not access the
-existing account data, start v11 against it, successfully authenticate, make a
-provider request, instrument native Security Framework calls, or measure
-OS-level egress. The older
+credential-shell trips, and local HTTP proxy requests. Those fixture limits do
+not describe the later attended live run. The older
 [`v10-installation.json`](v10-installation.json) records the previous pair and
 is historical. The earlier `019de448ef8a6590b0a847046cf6a71c03d2079b`
 installation is preserved in that v10 manifest. The older
@@ -1169,24 +1167,39 @@ CLI with the v7 state directory and monitor `monitor-00000001`; its source-side
 collection succeeded while monitor evidence stayed empty. None of those older
 quota values or readiness results are current.
 
-The existing data directory is
-`~/.local/share/jackin-claude-monitor-v7/state`. The attended v10 service
-opened and migrated it to monitor schema 5 while preserving
-`binding-00000001` revision 1 and observe-only `monitor-00000001`. The account
-label `my-claude-subscription` remains a local label, not verified provider
-identity. The v11 install is fresh-prefix only; it has not opened this state or
-replaced the v10 owner. The v10 process identity matched its then-current
-manifest during the prior run; the v11 binary hashes are listed above and in
-its manifest. Do not infer that v11 is the running service.
+### Current live v11 owner and monitor
 
-The user previously confirmed attendance for the v10 startup, and that
-foreground service was reported ready. The exact native Keychain UI observation
-was not recorded. That earlier confirmation does not authorize stopping or
-replacing the v10 owner or a new v11 auth flow. The explicit stop/replacement
-approval and attendance confirmation for the next auth step are currently
-pending. No credential material is in this record. Do not start another auth
-process, stop or replace the current owner, manually change the lease, or issue
-a forced refresh.
+The live data directory remains
+`~/.local/share/jackin-claude-monitor-v7/state` (the directory name is
+unchanged). The attended v10-to-v11 cutover migrated its monitor store from
+schema 5 to schema 6 and preserved `binding-00000001` revision 1 and observe-only
+`monitor-00000001`. The service is recorded in terminal session `35711` with
+processes `3127` and `3128`. The account label `my-claude-subscription` is a
+local label, not verified provider identity. The live cutover and sanitized
+evidence are documented in [v11-live-verification.md](v11-live-verification.md)
+and [v11-live-verification.json](v11-live-verification.json).
+
+Two natural coordinator generations, 126 and 127, completed after the
+restart floor. Weekly monitor evidence was current at 92% used in both
+captures. The current Session projection reported 100% remaining but contained
+no used field and no reset. The monitor retained stale 54% Session usage from
+epoch `1791722633` with reset `1791723000`, now due; the captured status reported
+`quota_stale` and `reset_due_unverified`. Acceptance remains false. The v11
+capture did not publish Session used-only evidence, so it does not demonstrate
+the v12 used-only source path or a `MissingReset` result. The v12 source can
+parse the 100%-remaining Session value as 0% used-only, but that evidence has
+not been published through the live v11 monitor. `runnable=false` is intrinsic
+to the monitor's observe-only purpose, separately from its stale Session quota.
+In the captured status, Weekly was 92% used with current evidence and future
+reset `1792134000`.
+
+Attended v11 startup returned `service_ready` while the operator was present
+for Keychain approval. The report does not measure native credential reads or
+UI prompt counts. The v10-to-v11 replacement authorization and attendance do
+not establish approval for a later v11-to-v12 cutover. The v12 pair is installed
+in a fresh prefix and passed only an isolated fixture smoke; it has not opened
+the existing state or been live verified. Explicit approval for the
+v11-to-v12 cutover remains pending. No credential material is in this record.
 
 ### Historical v10 live observations (not v11 acceptance)
 
@@ -1223,13 +1236,12 @@ five-hour usage at 21% with fresh evidence, while weekly monitor usage remains
 stale at 72% with the original evidence/receipt times. Thus two natural source
 generations succeeded but neither completed the two-window monitor workflow.
 Both bounded watches exited 0; the second ended through event 32 at
-`1791708826`. The v10 foreground owner was reported still running after those
-observations; current ownership must be checked read-only before any approved
-cutover. The
-installed CLI help lists `--timeout-secs` without printing its range, and the
-exact source parser allows 1..=300 seconds; the reported 900-second request
-was rejected. Provider request count is unmeasured. Current sanitized
-status/watch details are in
+`1791708826`. At this v10 checkpoint, the foreground owner was reported still
+running. Its later attended replacement by v11 is documented in the current
+live-state section above. The installed CLI help lists `--timeout-secs`
+without printing its range, and the exact source parser allows 1..=300
+seconds; the reported 900-second request was rejected. Provider request count
+is unmeasured. Sanitized v10 status/watch details are preserved in
 [`v10-live-verification.json`](v10-live-verification.json).
 
 Historical v10 checkpoint status:
@@ -1272,34 +1284,35 @@ Remaining real-account acceptance gates:
   observation-only binding/monitor was preserved. Watch timeout is limited to
   300 seconds by the installed CLI parser.
 - [x] After attended authentication, verify the running broker is the intended
-  pair. The foreground service was reported ready, and the process hashes match
-  the manifest. The account label remains local; provider identity is not
-  independently verified. The native Keychain UI event was not recorded.
+  v11 pair. The attended service returned `service_ready`; the process identity
+  matched the install manifest. The account label remains local; provider
+  identity is not independently verified. Native credential reads and UI
+  prompt counts were not instrumented.
 - [x] Commit and install the source-aware schema-6 repair as v11. Final source
   gates passed and the isolated installed schema-6/protocol-v9 smoke passed;
-  neither step touched the existing account state or active v10 owner.
-- [ ] Obtain explicit operator approval to stop/replace the current v10 owner
-  and fresh attendance confirmation for the next auth step. These approvals
-  are currently unanswered. Recheck the owner read-only immediately before any
-  authorized stop or replacement; never remove its lease manually.
-- [ ] After approval, perform the attended v11 startup against the existing
-  state and confirm schema-6 migration preserves binding revision 1 and
-  observe-only monitor identity. Record whether the native Keychain UI was
-  actually shown and approved; do not infer it from service readiness.
-- [ ] Through normal v11 collector scheduling, obtain current monitor evidence
-  for both quota windows. Capture actual CLI status and bounded watch output, exit codes,
-  event sequence, percentages, reset epochs, evidence source and
-  account/session scope, evidence and receipt timestamps, freshness,
-  provider/readiness issue codes, and service state. Confirm observation-only
-  `runnable=false` and dispatch unauthorized are expected and do not
-  misclassify collection as failure.
-- [ ] After the attended v11 startup, observe two naturally scheduled
-  successful collection cycles through the monitor. Read the active coordinator
-  floor and every Retry-After/backoff/circuit deadline before waiting. Verify both
-  monitor windows update appropriately. Do not force refresh, bypass cooldown,
-  rotate tokens, or consume subscription capacity. Record provider request
-  counts only where directly measured; label architectural expectations
-  separately from measurements.
+  neither step touched the existing account state or active v10 owner at that
+  checkpoint.
+- [x] Complete the specifically authorized v10-to-v11 owner replacement and
+  attended startup. The v10 service stopped normally; the v11 service returned
+  `service_ready` with the operator present. This records only that cutover; it
+  does not authorize a later v11-to-v12 cutover.
+- [x] Confirm v11 opened the existing v7-named data directory, migrated the
+  monitor store to schema 6, and preserved binding revision 1 and the
+  observe-only monitor. The current monitor ID is `monitor-00000001`.
+- [x] Capture v11 status and a bounded 300-second watch with the evidence
+  fields, exit codes, event sequence, freshness, issues, and service state. The
+  captured monitor remains non-runnable by design. See the sanitized v11 live
+  report and JSON record above.
+- [x] Observe two natural post-start coordinator generations, 126 and 127.
+  Weekly monitor evidence updated to current 92% usage. Session projection was
+  current at 100% remaining but had no used or reset field; monitor Session
+  evidence remained stale at 54% with its reset due. This observation does not
+  complete two-window acceptance. Provider request counts and native Keychain
+  activity were not measured.
+- [ ] After explicit approval for the v11-to-v12 cutover, verify the installed
+  v12 pair against the existing state and observe two natural collection
+  cycles. Require fresh monitor evidence for both quota windows; do not force
+  refresh, bypass cooldown, rotate tokens, or consume subscription capacity.
 - [ ] Verify repeated passive status/watch reads do not cause credential access
   or provider requests using available instrumentation, and distinguish those
   measurements from fixture counts and source-code assertions. Verify a later
@@ -1350,12 +1363,12 @@ asserts that its qualified key survives migration.
 
 These source changes are committed and pushed at `62cefbbbb11ce8b6dc0634f490095d9838ebef9e`.
 Installation as v11 and the isolated fixture smoke are recorded in
-`v11-installation.json`; the existing v10 service and account state were not
-used. Real-account acceptance remains blocked on attended cutover approval,
-successful v11 startup against the existing state, and both quota windows
-updating through the monitor over natural collection cycles.
+`v11-installation.json`; at that source/install checkpoint, the existing v10
+service and account state were not used. The later attended v10-to-v11 cutover
+and partial live observations are recorded below. The v11 result did not meet
+the two-window acceptance condition.
 
-## Current documentation checkpoint (2026-10-11; live use still blocked)
+## Historical documentation checkpoint (2026-10-11; before live v11 cutover)
 
 Updated the public usage command page and the Claude provider API research
 page. Documentation verification passed: site build rendered 1,293 routes,
@@ -1383,14 +1396,15 @@ publication result, not accepted end-to-end freshness: the monitor still has
 an unverified Session reset and is not Ready. Provider request counts and the
 native Keychain UI event were not measured in this observation record.
 
-The current source change adds a bounded path for a fresh, unambiguous
-used-only provider window when its reset is absent. It changes only used
-evidence and clears the unsupported pair; it preserves reset fields and
-watermarks. A fresh value at or above 95 percent latches or rebases the durable
-account barrier using the known reset high-water mark, and no used-only sample
-can satisfy or clear that barrier. `MissingReset` keeps quota readiness
-blocked. A repeated same-value update advances evidence only when source and
-receipt times are newer.
+The v12 source revision adds a bounded path for a fresh, unambiguous used-only
+provider window when its reset is absent. It changes only used evidence and
+clears the unsupported pair; it preserves reset fields and watermarks. A fresh
+value at or above 95 percent latches or rebases the durable account barrier
+using the known reset high-water mark, and no used-only sample can satisfy or
+clear that barrier. `MissingReset` keeps quota readiness blocked. A repeated
+same-value update advances evidence only when source and receipt times are
+newer. This is v12 source behavior, not a v11 live outcome: v11 did not publish
+Session used-only evidence and its live capture did not report `MissingReset`.
 
 The monitor regressions cover repeated same-value zero usage with strictly
 newer source/receipt times, plus high usage without reset evidence both with
@@ -1429,12 +1443,21 @@ broker launches, credential shell tripwires, and local proxy requests were
 zero. The fixture did not exercise successful authentication, native
 Security.framework behavior, OS-level egress, or provider collection.
 
-The v11 live service remains running with its existing v7 state untouched; the
-v12 prefix created no user state. The earlier v11 monitor result still has a
-stale Weekly window, so there is no live acceptance or handoff. Before any
-v11-to-v12 cutover or auth operation, obtain explicit operator approval for
-that attended cutover and confirmation that the operator will be present for
-any interactive Keychain prompt. After approval, recheck the live broker
-owner and state before acting. Then verify two natural post-cutover collection
-cycles update both Session and Weekly monitor evidence; do not use manual
-refresh or claim success from the isolated smoke.
+The v11 live service remains the owner of the existing v7-named state, already
+migrated to schema 6, with binding revision 1 and observe-only monitor
+`monitor-00000001`; its reported process IDs are 3127 and 3128 in terminal
+session 35711. The v12 prefix created no account state. In the two v11 natural
+captures, Weekly monitor evidence was current at 92% used. Session provider
+projection was current at 100% remaining but had no used or reset field, while
+the monitor retained stale 54% usage and the old due reset. The issues were
+`quota_stale` and `reset_due_unverified`; acceptance remains false. This v11
+capture does not show a Session used-only publication or a `MissingReset`
+result. See [v11-live-verification.md](v11-live-verification.md) and its
+[sanitized JSON](v11-live-verification.json).
+
+The v12 source fix is installed but has only passed the isolated fixture smoke;
+it has not been run against the existing state or verified with live collection.
+Explicit approval for the specific v11-to-v12 cutover remains pending. After
+that approval, recheck the live broker owner and state before acting, then
+verify two natural post-cutover cycles update both Session and Weekly monitor
+evidence. Do not use manual refresh or claim success from the isolated smoke.
