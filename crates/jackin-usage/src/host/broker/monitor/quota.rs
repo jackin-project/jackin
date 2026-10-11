@@ -443,14 +443,18 @@ pub(super) fn fingerprint_key_references_removed_session(key: &str, removed: &[S
     if let Some(session_id) = key.strip_prefix("model:") {
         return removed.iter().any(|removed| removed == session_id);
     }
-    let Some((_, session_id)) = key
-        .strip_prefix("used:")
-        .or_else(|| key.strip_prefix("reset:"))
-        .and_then(|rest| rest.rsplit_once(':'))
-    else {
+    let Some((prefix, session_id)) = key.rsplit_once(":session:") else {
         return false;
     };
-    session_id != "account" && removed.iter().any(|removed| removed == session_id)
+    let Some((_, field_and_window)) = prefix.split_once(':') else {
+        return false;
+    };
+    let Some((field, window)) = field_and_window.split_once(':') else {
+        return false;
+    };
+    matches!(field, "used" | "reset")
+        && matches!(window, "five_hour" | "seven_day")
+        && removed.iter().any(|removed| removed == session_id)
 }
 
 pub(super) fn evidence_references_removed_session(

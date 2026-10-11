@@ -1044,15 +1044,7 @@ fn run_watch(paths: &JackinPaths, args: &UsageWatchArgs) -> Result<()> {
     // current snapshot, so old runnable events cannot act as current state.
     let mut sequence = 0_u64;
     loop {
-        let timeout_ms = deadline.map_or(30_000, |deadline| {
-            u64::try_from(
-                deadline
-                    .saturating_duration_since(Instant::now())
-                    .as_millis(),
-            )
-            .unwrap_or(u64::MAX)
-            .min(30_000)
-        });
+        let timeout_ms = watch_timeout_ms(deadline, Instant::now());
         if timeout_ms == 0 {
             return Ok(());
         }
@@ -1066,7 +1058,7 @@ fn run_watch(paths: &JackinPaths, args: &UsageWatchArgs) -> Result<()> {
         let MonitorReply::Watch {
             events,
             next_sequence,
-            timed_out,
+            ..
         } = reply
         else {
             return Err(usage_error(
@@ -1087,10 +1079,23 @@ fn run_watch(paths: &JackinPaths, args: &UsageWatchArgs) -> Result<()> {
             }
             println!("{}", serde_json::to_string(&event)?);
         }
-        if timed_out && deadline.is_some() {
+        // A broker timeout ends one bounded RPC; only the CLI deadline ends a finite watch.
+        if watch_deadline_reached(deadline, Instant::now()) {
             return Ok(());
         }
     }
+}
+
+fn watch_deadline_reached(deadline: Option<Instant>, now: Instant) -> bool {
+    deadline.is_some_and(|deadline| now >= deadline)
+}
+
+fn watch_timeout_ms(deadline: Option<Instant>, now: Instant) -> u64 {
+    deadline.map_or(30_000, |deadline| {
+        u64::try_from(deadline.saturating_duration_since(now).as_millis())
+            .unwrap_or(u64::MAX)
+            .min(30_000)
+    })
 }
 
 fn advance_watch_cursor(

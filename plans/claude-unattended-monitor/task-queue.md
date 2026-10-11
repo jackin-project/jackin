@@ -844,3 +844,108 @@ read or changed. Corrected installed smoke passed again with zero credential
 tripwire/proxy counts and owned cleanup. Manifest/log/schema examples updated
 from this fresh run; real-account prerequisites and dispatch approval remain
 unverified. The correction and evidence are committed/pushed as one checkpoint.
+
+## Live usage publication repair
+
+- [x] Root cause established: real provider collection completes, but
+  `publisher_tick_step` skips `publish_due` when the coordinator is idle, so
+  the final usage projection is not published.
+- [x] Second root cause confirmed: the default 15-minute idle lifetime plus
+  jitter exceeds the 300-second usage TTL.
+- [x] Repair committed as signed source checkpoint `dba3a181`: active approved
+  observers use the existing `DirectInteraction` scheduling hint while
+  preserving the 300-second attempt floor and persisted `RetryAfter`.
+  Publication and failed observation persistence retry on a monotonic
+  one-second interval. No freshness is synthesized and no collection is
+  forced.
+- [x] Earlier RPC unavailability was transient: current typed service and
+  status calls respond but return empty evidence. Keep any remaining RPC stall
+  investigation separate from this publication repair.
+- [x] Real diagnosis found 36% five-hour and 28% seven-day usage in the
+  completed provider result in broker durable state; the stale projection and
+  monitor status still exposed no evidence. This is not yet installed-CLI
+  acceptance.
+- [x] Source gates: `jackin-usage` 720 passed, two focused regressions passed,
+  workspace format and strict Clippy passed; independent source review Ready.
+- [x] Install the v8 debug pair from signed source checkpoint `dba3a181` with
+  MBX 1.22.0 / Rust 1.97.1. Both binaries report 0.6.4; the prefix is bin-only
+  with no state directory. Only `--version` was run, with no auth, broker
+  start, or provider call. Builder-owned `v8-installation.json` records hashes
+  and provenance.
+- [ ] Acceptance requires real installed-CLI `usage status` and `usage watch`
+  verification across 5-hour and 7-day observation windows. Fixture-only
+  evidence is insufficient. The pair is installed, but live installed-CLI
+  gates remain pending; do not claim full readiness.
+- [x] Post-install read-only v8 verification matched the running broker PID and
+  image hash to the installed binary and confirmed the catalog capability
+  matched the existing binding. The observer remains `observe_only`, dispatch
+  unauthorized, and not runnable.
+- [x] Live snapshot: generation 22 has four consecutive `rate_limited`
+  failures and retry deadline `1791683766` (08:56:06 ICT). Last-good values
+  were 39% five-hour / 50% seven-day at `1791676313`; they are stale. Current
+  monitor status hides last-good values, rate-limit details, and the deadline.
+- [x] A requested 300-second `usage watch` exits after about 30 seconds with
+  sequence 1; source confirms the effective timeout bug. CLI output does not
+  expose provider request counts.
+- [x] Official docs reviewed: Claude Code `/usage` may show cached bars up to
+  60 minutes after a rate-limited plan-usage request; published Messages API
+  limits are RPM/ITPM/OTPM, a separate surface. Public docs publish no
+  subscription polling quota or OAuth contract; do not infer a blanket GET
+  prohibition. A zero-429 guarantee is unsupported.
+- [x] The v9 source checkpoint `f5163e987b861adca1de5add6087ee3d2d12e11a`
+  includes the queued status/watch, rate-control, and probe-cancellation work.
+  Its tree is `9418c762f07d6b6a6203def838e11ddb33a29c53`; root reports 736
+  tests passed, strict all-target Clippy for both packages, and formatting
+  passed. Keep real-account behavior and provider request counts as separate
+  acceptance questions; no zero-429 or continuous-freshness claim is supported.
+
+## v9 rate control and live-state checkpoint
+
+- [x] The pending Claude circuit rule opens only when there are at least three
+  consecutive failed generations since success and the latest typed failure is
+  `RateLimited`. All failure kinds contribute to the count. It adds a local
+  one-hour deadline from completion as a lower bound; a longer provider or
+  normal retry deadline remains authoritative. The persisted 300-second
+  attempt floor remains in force. Tests cover the threshold, latest-failure
+  kind, and restart recovery. This is local policy, not an Anthropic reset or
+  polling quota.
+- [x] Official-doc research confirms `/usage` can encounter a rate-limited
+  plan-usage request and show cached bars for up to 60 minutes. Public docs do
+  not publish the subscription polling quota or OAuth endpoint contract; the
+  Messages API's RPM/ITPM/OTPM limits are a separate surface. No public source
+  supports a zero-429 guarantee or a blanket GET prohibition.
+- [x] The v8 source-side collector succeeded normally after the persisted
+  deadline: generation 23 completed at epoch `1791683768`, cleared the failure
+  count and retry deadline, and produced a point-in-time projection of 62%
+  five-hour / 56% seven-day usage. At the projection sample time
+  `1791683871` (08:57:51 ICT), its provider sample was 104 seconds old. The
+  provider HTTP request count was not measured; these values are historical,
+  not a current reading.
+- [x] Despite that source-side success, the installed v8 monitor CLI remained
+  at event sequence 1 with empty five-hour/seven-day evidence, `quota_unknown`,
+  `missing_reset`, and dispatch unauthorized. The projection does not prove
+  monitor publication or current v9 behavior; v9 real-account acceptance is
+  still pending.
+- [x] The installed smoke fixture now expects broker protocol v9 and monitor
+  schema 5. Its non-TTY auth-negative path uses a failing fake broker sentinel;
+  the 35-second watch check runs against a no-evidence fixture monitor, bounds
+  the child at 50 seconds, records elapsed time, and requires one unchanged
+  event sequence. Syntax/diff checks and independent script review passed.
+- [x] Source commit `f5163e987b861adca1de5add6087ee3d2d12e11a` (tree
+  `9418c762f07d6b6a6203def838e11ddb33a29c53`) was installed with locked MBX
+  1.22.0 / Rust 1.97.1 dev profile into the previously absent v9 prefix.
+  Both binaries report 0.6.4; hashes and the three pre-install modified plan
+  files are recorded in `v9-installation.json`. The fresh prefix contains only
+  `bin/` and Cargo install metadata, with no state directory.
+- [x] The reviewed installed smoke passed against private synthetic state and
+  settings. The non-TTY auth-negative check returned `interaction_required`
+  without launching its fake broker; shell credential tripwires and the local
+  HTTP proxy each observed zero requests. The 35-second JSONL watch took
+  35.068 seconds and emitted one unchanged event at sequence 1. Fixture
+  service cleanup was orderly. Native Security Framework calls and OS-level
+  egress were not instrumented; no successful authentication or provider
+  collection was attempted. See `v9-installation.json` for the exact command
+  and results.
+- [ ] Keep real v9 `usage status`/`usage watch` acceptance pending until a
+  separately authorized attended operator check; do not claim live readiness,
+  continuous freshness, or zero 429s.

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::net::{TcpListener, TcpStream};
 use std::os::unix::fs::symlink;
 use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
@@ -10,9 +11,9 @@ use std::sync::{Arc, Barrier, Mutex, mpsc};
 use std::thread;
 
 use crate::coordinator::{
-    AccountStateEnvelope, AccountStateStore, FileAccountStateStore, FileProjectionStateStore,
-    ProjectionAlias, ProjectionStateEnvelope, ProviderProbeOutcome, UsageCoordinator,
-    UsageCoordinatorConfig, UsageProviderExecutor,
+    AccountStateEnvelope, AccountStateStore, ClockSample, FileAccountStateStore,
+    FileProjectionStateStore, MonotonicClock, ProjectionAlias, ProjectionStateEnvelope,
+    ProviderProbeOutcome, UsageCoordinator, UsageCoordinatorConfig, UsageProviderExecutor,
 };
 use crate::host::discovery::{ProviderCredentialSourceMaterial, ValidatedCredentialSource};
 use crate::host::{HostSurfaceId, OpaqueCredentialHandle};
@@ -112,6 +113,302 @@ impl UsageProviderExecutor for CountingExecutor {
     ) -> ProviderProbeOutcome {
         self.calls.fetch_add(1, Ordering::SeqCst);
         ProviderProbeOutcome::success(quota_view())
+    }
+}
+
+struct FakeBrokerClock {
+    sample: Mutex<ClockSample>,
+}
+
+impl FakeBrokerClock {
+    fn new(epoch: i64) -> Self {
+        Self {
+            sample: Mutex::new(ClockSample::anchored(epoch, Duration::ZERO)),
+        }
+    }
+
+    fn set_epoch(&self, epoch: i64) {
+        self.sample.lock().unwrap().wall_epoch =
+            Duration::from_secs(u64::try_from(epoch.max(0)).unwrap_or(u64::MAX));
+    }
+
+    fn epoch(&self) -> i64 {
+        self.sample.lock().unwrap().floor_epoch()
+    }
+
+    fn advance(&self, duration: Duration) {
+        let mut sample = self.sample.lock().unwrap();
+        sample.monotonic = sample.monotonic.saturating_add(duration);
+        sample.wall_epoch = sample.wall_epoch.saturating_add(duration);
+    }
+}
+
+impl MonotonicClock for FakeBrokerClock {
+    fn now(&self) -> Duration {
+        self.sample.lock().unwrap().monotonic
+    }
+
+    fn sample(&self, _fallback_epoch: i64) -> ClockSample {
+        *self.sample.lock().unwrap()
+    }
+}
+
+/// One-request localhost server for exercising the real shared bearer HTTP
+/// parser without capturing request headers or contacting a provider.
+struct Fake429Server {
+    url: String,
+    request_started: mpsc::Receiver<Result<(), String>>,
+    release_response: mpsc::Sender<()>,
+    request_count: Arc<AtomicUsize>,
+    stop: Arc<AtomicBool>,
+    worker: Option<thread::JoinHandle<()>>,
+}
+
+struct Fake429ResponseGuard(Option<mpsc::Sender<()>>);
+
+impl Fake429ResponseGuard {
+    fn new(release_response: mpsc::Sender<()>) -> Self {
+        Self(Some(release_response))
+    }
+
+    fn release(&mut self) {
+        if let Some(release_response) = self.0.take() {
+            let _send_result = release_response.send(());
+        }
+    }
+}
+
+impl Drop for Fake429ResponseGuard {
+    fn drop(&mut self) {
+        self.release();
+    }
+}
+
+impl Fake429Server {
+    fn start(retry_after: Option<String>) -> Self {
+        const ACCEPT_TIMEOUT: Duration = Duration::from_secs(10);
+
+        let listener = TcpListener::bind(("127.0.0.1", 0)).expect("bind local fake provider");
+        listener
+            .set_nonblocking(true)
+            .expect("make local fake provider cancellable");
+        let url = format!("http://{}/test/usage", listener.local_addr().unwrap());
+        let (request_started_tx, request_started) = mpsc::channel();
+        let (release_response, response_released) = mpsc::channel();
+        let request_count = Arc::new(AtomicUsize::new(0));
+        let worker_request_count = Arc::clone(&request_count);
+        let stop = Arc::new(AtomicBool::new(false));
+        let worker_stop = Arc::clone(&stop);
+        let worker = thread::spawn(move || {
+            let accept_deadline = Instant::now() + ACCEPT_TIMEOUT;
+            let (mut stream, _) = loop {
+                if worker_stop.load(Ordering::SeqCst) {
+                    let _send_result = request_started_tx.send(Err(
+                        "fake provider stopped before accepting the request".to_owned(),
+                    ));
+                    return;
+                }
+                if Instant::now() >= accept_deadline {
+                    let _send_result = request_started_tx.send(Err(
+                        "timed out accepting the localhost fake provider request".to_owned(),
+                    ));
+                    return;
+                }
+                match listener.accept() {
+                    Ok(connection) => break connection,
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        thread::park_timeout(
+                            Duration::from_millis(5)
+                                .min(accept_deadline.saturating_duration_since(Instant::now())),
+                        );
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
+                    Err(error) => {
+                        let _send_result = request_started_tx.send(Err(format!(
+                            "accepting the localhost fake provider request failed: {error}"
+                        )));
+                        return;
+                    }
+                }
+            };
+            if let Err(error) = drain_http_request_headers(&mut stream, &worker_stop) {
+                let _send_result = request_started_tx.send(Err(error));
+                return;
+            }
+            worker_request_count.fetch_add(1, Ordering::SeqCst);
+            if request_started_tx.send(Ok(())).is_err()
+                || response_released
+                    .recv_timeout(Duration::from_secs(15))
+                    .is_err()
+            {
+                return;
+            }
+            stream
+                .set_write_timeout(Some(Duration::from_secs(5)))
+                .expect("bound the localhost fake provider response write");
+            let retry_after = retry_after
+                .as_deref()
+                .map_or_else(String::new, |value| format!("Retry-After: {value}\r\n"));
+            let response = format!(
+                "HTTP/1.1 429 Too Many Requests\r\n{retry_after}Content-Length: 0\r\nConnection: close\r\n\r\n"
+            );
+            stream
+                .write_all(response.as_bytes())
+                .expect("send the localhost fake provider response");
+        });
+        Self {
+            url,
+            request_started,
+            release_response,
+            request_count,
+            stop,
+            worker: Some(worker),
+        }
+    }
+
+    fn wait_for_request(&self) {
+        match self.request_started.recv_timeout(Duration::from_secs(23)) {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => {
+                panic!("localhost fake provider did not receive a complete request: {error}")
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                panic!(
+                    "timed out waiting for the broker probe to reach the localhost fake provider"
+                )
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                panic!("localhost fake provider worker exited without reporting its request result")
+            }
+        }
+    }
+
+    fn release(&self) {
+        let _send_result = self.release_response.send(());
+    }
+
+    fn request_count(&self) -> usize {
+        self.request_count.load(Ordering::SeqCst)
+    }
+
+    fn join(&mut self) {
+        if let Some(worker) = self.worker.take() {
+            worker.join().expect("localhost fake provider should exit");
+        }
+    }
+}
+
+impl Drop for Fake429Server {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::SeqCst);
+        self.release();
+        self.join();
+    }
+}
+
+/// Consume headers bytewise so the fixture never retains Authorization or
+/// other request values.
+fn drain_http_request_headers(stream: &mut TcpStream, stop: &AtomicBool) -> Result<(), String> {
+    const DEADLINE: Duration = Duration::from_secs(12);
+    const READ_SLICE: Duration = Duration::from_millis(100);
+    const MAX_HEADER_BYTES: usize = 64 * 1024;
+
+    let deadline = Instant::now() + DEADLINE;
+    let mut ending = [0_u8; 4];
+    let mut request_line_prefix = [0_u8; 4];
+    for byte_count in 0..MAX_HEADER_BYTES {
+        if stop.load(Ordering::SeqCst) {
+            return Err("fake provider stopped while reading request headers".to_owned());
+        }
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err("timed out reading localhost fake provider request headers".to_owned());
+        }
+        stream
+            .set_read_timeout(Some(remaining.min(READ_SLICE)))
+            .map_err(|error| format!("setting fake provider read timeout failed: {error}"))?;
+        let mut byte = [0_u8; 1];
+        match stream.read(&mut byte) {
+            Ok(0) => {
+                return Err("peer closed before completing HTTP request headers".to_owned());
+            }
+            Ok(_) => {
+                if byte_count < request_line_prefix.len() {
+                    request_line_prefix[byte_count] = byte[0];
+                }
+                ending.rotate_left(1);
+                ending[3] = byte[0];
+                if ending == *b"\r\n\r\n" {
+                    return if request_line_prefix == *b"GET " {
+                        Ok(())
+                    } else {
+                        Err("localhost fake provider received a non-GET request line".to_owned())
+                    };
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                ) => {}
+            Err(error) => {
+                return Err(format!(
+                    "reading fake provider request headers failed: {error}"
+                ));
+            }
+        }
+    }
+    Err(format!(
+        "localhost fake provider request headers exceeded {MAX_HEADER_BYTES} bytes"
+    ))
+}
+
+struct FakeHttp429Executor {
+    calls: AtomicUsize,
+    url: String,
+    clock: Arc<FakeBrokerClock>,
+}
+
+impl UsageProviderExecutor for FakeHttp429Executor {
+    fn probe(
+        &self,
+        _capability: &UsageAccountCapability,
+        _generation: u64,
+    ) -> ProviderProbeOutcome {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        match crate::usage::get_json_bearer::<serde_json::Value>(
+            jackin_telemetry::schema::enums::ProviderName::Anthropic,
+            "/test/usage",
+            "test usage",
+            &self.url,
+            "fake-test-token",
+            &[],
+        ) {
+            Err(crate::usage::ProviderHttpError::HttpStatus {
+                status,
+                retry_after_seconds,
+                response_received_at_epoch,
+                ..
+            }) => {
+                let response_epoch =
+                    response_received_at_epoch.expect("HTTP error carries its response timestamp");
+                self.clock.set_epoch(response_epoch);
+                let retry_at_epoch = retry_after_seconds.map(|seconds| {
+                    response_epoch.saturating_add(i64::try_from(seconds).unwrap_or(i64::MAX))
+                });
+                provider_probe_outcome_with_metadata(
+                    quota_view(),
+                    (status == 429).then_some(crate::usage::ProviderRateLimit { retry_at_epoch }),
+                    Some(crate::usage::ProviderFailureMetadata {
+                        kind: crate::usage::ProviderErrorKind::HttpStatus,
+                        http_status: Some(status),
+                    }),
+                )
+            }
+            Err(error) => panic!("fake provider should return a typed HTTP status: {error:?}"),
+            Ok(_) => panic!("fake provider must not return a successful response"),
+        }
     }
 }
 
@@ -1115,6 +1412,274 @@ fn selected_routes_require_exact_source_proofs_and_same_identity() {
         None,
         "different provider identities must not collapse into one route"
     );
+}
+
+#[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "The table-driven integration case shares one real broker, store, and restart flow across all Retry-After header variants."
+)]
+fn local_http_429_retry_after_survives_broker_restart_and_catalog_rotation() {
+    #[derive(Clone, Copy)]
+    enum ProviderDeadline {
+        None,
+        Offset(u64),
+        Absolute(i64),
+    }
+
+    let date = SystemTime::now() + Duration::from_hours(1);
+    let date_epoch = i64::try_from(
+        date.duration_since(UNIX_EPOCH)
+            .expect("future HTTP-date is after the epoch")
+            .as_secs(),
+    )
+    .unwrap();
+    let cases = [
+        (
+            "delta-seconds",
+            Some("600".to_owned()),
+            ProviderDeadline::Offset(600),
+        ),
+        (
+            "http-date",
+            Some(httpdate::fmt_http_date(date)),
+            ProviderDeadline::Absolute(date_epoch),
+        ),
+        ("absent", None, ProviderDeadline::None),
+        (
+            "invalid",
+            Some("not-a-delay".to_owned()),
+            ProviderDeadline::None,
+        ),
+        ("zero", Some("0".to_owned()), ProviderDeadline::Offset(0)),
+    ];
+
+    for (case_name, retry_after, provider_deadline) in cases {
+        let temp = tempfile::tempdir().expect("isolated rate-limit state directory");
+        let capability = capability();
+        let store = Arc::new(FileAccountStateStore::at(temp.path().join("accounts")));
+        let initial_epoch = i64::try_from(
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system clock is after the epoch")
+                .as_secs(),
+        )
+        .unwrap();
+        let mut server = Fake429Server::start(retry_after);
+        let clock = Arc::new(FakeBrokerClock::new(initial_epoch));
+        let executor = Arc::new(FakeHttp429Executor {
+            calls: AtomicUsize::new(0),
+            url: server.url.clone(),
+            clock: Arc::clone(&clock),
+        });
+        #[expect(
+            clippy::clone_on_ref_ptr,
+            reason = "coerce the concrete local fake executor to the broker port"
+        )]
+        let provider_executor: Arc<dyn UsageProviderExecutor> = executor.clone();
+        #[expect(
+            clippy::clone_on_ref_ptr,
+            reason = "coerce the fake clock to the coordinator clock port"
+        )]
+        let clock_port: Arc<dyn MonotonicClock> = clock.clone();
+        let coordinator = UsageCoordinator::start_with_clock(
+            provider_executor,
+            Arc::<FileAccountStateStore>::clone(&store),
+            UsageCoordinatorConfig::default(),
+            Some(BTreeMap::from([(
+                capability.clone(),
+                "credential-revision-a".to_owned(),
+            )])),
+            None,
+            clock_port,
+        );
+        // Declared after the coordinator so unwinding always releases the
+        // blocked local response before the coordinator joins its worker.
+        let mut response_guard = Fake429ResponseGuard::new(server.release_response.clone());
+
+        let queued = coordinator
+            .request_refresh(&capability, 0, true, initial_epoch)
+            .expect("first forced refresh is admitted");
+        server.wait_for_request();
+        assert_eq!(
+            server.request_count(),
+            1,
+            "{case_name}: one HTTP request starts"
+        );
+        let joined = coordinator
+            .request_refresh(&capability, queued.generation, true, initial_epoch)
+            .expect("a force request joins the active generation");
+        assert_eq!(joined.generation, queued.generation, "{case_name}");
+        assert_eq!(executor.calls.load(Ordering::SeqCst), 1, "{case_name}");
+
+        response_guard.release();
+        let failed = coordinator
+            .join_generation(
+                &capability,
+                queued.generation,
+                Duration::from_secs(5),
+                clock.epoch(),
+            )
+            .expect("typed HTTP 429 reaches a terminal broker generation");
+        server.join();
+        let response_epoch = clock.epoch();
+        assert_eq!(failed.phase, UsageRefreshPhase::Failed, "{case_name}");
+        assert_eq!(
+            failed.error.as_ref().map(|error| error.kind),
+            Some(UsageCoordinationErrorKind::RateLimited),
+            "{case_name}: 429 remains typed across the broker seam"
+        );
+        assert_eq!(
+            server.request_count(),
+            1,
+            "{case_name}: no duplicate HTTP call"
+        );
+
+        let local_floor = response_epoch.saturating_add(300);
+        let parsed_provider_deadline = match provider_deadline {
+            ProviderDeadline::None => None,
+            ProviderDeadline::Offset(seconds) => {
+                Some(response_epoch.saturating_add(i64::try_from(seconds).unwrap_or(i64::MAX)))
+            }
+            ProviderDeadline::Absolute(epoch) => Some(epoch),
+        };
+        let expected_deadline =
+            parsed_provider_deadline.map_or(local_floor, |deadline| deadline.max(local_floor));
+        assert_eq!(
+            failed.retry_at_epoch,
+            Some(expected_deadline),
+            "{case_name}"
+        );
+
+        coordinator
+            .reconcile_catalog(
+                [UsageCatalogEntry {
+                    capability: capability.clone(),
+                    revision: "credential-revision-b".to_owned(),
+                }],
+                response_epoch,
+            )
+            .expect("same account catalog rotation succeeds");
+        let reset = coordinator
+            .current(&capability, response_epoch)
+            .expect("rotated account remains visible");
+        assert_eq!(reset.phase, UsageRefreshPhase::Idle, "{case_name}");
+        let durable = store
+            .load(&capability, response_epoch)
+            .expect("read durable rate-limit state")
+            .expect("rate-limit state survives catalog rotation");
+        assert_eq!(
+            durable.rate_limit_deadline_epoch,
+            Some(expected_deadline),
+            "{case_name}: persisted provider cooldown"
+        );
+        assert_eq!(
+            durable.retry_deadline_epoch,
+            Some(expected_deadline),
+            "{case_name}: persisted retry cooldown"
+        );
+        if matches!(provider_deadline, ProviderDeadline::None)
+            || matches!(provider_deadline, ProviderDeadline::Offset(0))
+        {
+            assert_eq!(
+                expected_deadline, local_floor,
+                "{case_name}: positive floor"
+            );
+            assert!(
+                durable.retry_deadline_epoch.unwrap()
+                    >= durable
+                        .provider_invoked_at_epoch
+                        .unwrap()
+                        .saturating_add(300),
+                "{case_name}: missing, invalid, or zero Retry-After still gets the Claude floor"
+            );
+        }
+        drop(coordinator);
+
+        let restart_clock = Arc::new(FakeBrokerClock::new(response_epoch));
+        let restart_executor = Arc::new(CountingExecutor {
+            calls: AtomicUsize::new(0),
+        });
+        #[expect(
+            clippy::clone_on_ref_ptr,
+            reason = "coerce the post-restart executor to the broker port"
+        )]
+        let restart_provider: Arc<dyn UsageProviderExecutor> = restart_executor.clone();
+        #[expect(
+            clippy::clone_on_ref_ptr,
+            reason = "coerce the restarted fake clock to the coordinator clock port"
+        )]
+        let restart_clock_port: Arc<dyn MonotonicClock> = restart_clock.clone();
+        let restarted = UsageCoordinator::start_with_clock(
+            restart_provider,
+            Arc::<FileAccountStateStore>::clone(&store),
+            UsageCoordinatorConfig::default(),
+            Some(BTreeMap::from([(
+                capability.clone(),
+                "credential-revision-b".to_owned(),
+            )])),
+            None,
+            restart_clock_port,
+        );
+        let restored = restarted
+            .current(&capability, response_epoch)
+            .expect("restarted coordinator restores the account cooldown");
+        assert_eq!(
+            restored.retry_at_epoch,
+            Some(expected_deadline),
+            "{case_name}"
+        );
+
+        let remaining = u64::try_from(expected_deadline - response_epoch)
+            .expect("all cases have a future enforced deadline");
+        assert!(remaining > 0, "{case_name}");
+        restart_clock.advance(Duration::from_secs(remaining - 1));
+        let before_deadline = restart_clock.epoch();
+        assert!(
+            restarted.poll_due(before_deadline).is_empty(),
+            "{case_name}: polling cannot bypass the persisted deadline"
+        );
+        let early = restarted
+            .request_refresh(&capability, restored.generation, true, before_deadline)
+            .expect("forced refresh before the retry deadline is suppressed");
+        assert_eq!(early.generation, restored.generation, "{case_name}");
+        assert_eq!(
+            restart_executor.calls.load(Ordering::SeqCst),
+            0,
+            "{case_name}"
+        );
+
+        restart_clock.advance(Duration::from_secs(1));
+        let at_deadline = restart_clock.epoch();
+        assert_eq!(at_deadline, expected_deadline, "{case_name}");
+        let retry = restarted
+            .request_refresh(&capability, restored.generation, true, at_deadline)
+            .expect("refresh is admitted at the exact persisted deadline");
+        assert_eq!(retry.generation, restored.generation + 1, "{case_name}");
+        assert_eq!(
+            restarted
+                .join_generation(
+                    &capability,
+                    retry.generation,
+                    Duration::from_secs(5),
+                    at_deadline,
+                )
+                .expect("retry generation completes")
+                .phase,
+            UsageRefreshPhase::Completed,
+            "{case_name}"
+        );
+        assert_eq!(
+            restart_executor.calls.load(Ordering::SeqCst),
+            1,
+            "{case_name}"
+        );
+        assert_eq!(
+            server.request_count(),
+            1,
+            "{case_name}: restart uses fake executor"
+        );
+    }
 }
 
 #[test]

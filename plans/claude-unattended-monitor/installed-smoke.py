@@ -5,10 +5,12 @@ Requires an explicit installed binary directory and a JSON provenance manifest
 with a full source commit and SHA-256 digests for `jackin` and
 `jackin-usage-broker`. The script uses isolated HOME/config/data directories,
 PATH tripwires, and a local HTTP proxy. It never runs successful auth
-preparation or provider collection. PATH tripwires do not instrument native
-Security Framework calls; this smoke test therefore does not claim OS-level
-Keychain or egress tracing. The manifest is caller-supplied and is not
-signature-verified.
+preparation or provider collection. Its non-TTY auth-prepare check points the
+broker executable override at a failing tripwire and fails if that tripwire is
+launched, preventing the check from reaching the installed helper when the CLI
+honors its explicit override. PATH tripwires do not instrument native Security
+Framework calls; this smoke test therefore does not claim OS-level Keychain or
+egress tracing. The manifest is caller-supplied and is not signature-verified.
 
 The accepted manifest shape is `{"source_commit": "<40 hex chars>",
 "binaries": [{"name": "jackin", "sha256": "<64 hex chars>"},
@@ -51,8 +53,8 @@ EXPECTED_HELP = (
     "spend",
     "auth",
 )
-EXPECTED_PROTOCOL_VERSION = "v8"
-EXPECTED_MONITOR_SCHEMA_VERSION = 4
+EXPECTED_PROTOCOL_VERSION = "v9"
+EXPECTED_MONITOR_SCHEMA_VERSION = 5
 EXPECTED_BINARY_NAMES = {"jackin", "jackin-usage-broker"}
 
 
@@ -165,6 +167,7 @@ def main() -> int:
         directory.mkdir()
 
     tripwire_log = root / "credential-trips.log"
+    broker_tripwire_log = root / "broker-launch-trips.log"
     command_log = root / "commands.log"
     for command in ("op", "claude", "security"):
         executable = tripwire_dir / command
@@ -175,6 +178,15 @@ def main() -> int:
             encoding="utf-8",
         )
         executable.chmod(0o755)
+
+    broker_tripwire = tripwire_dir / "jackin-usage-broker"
+    broker_tripwire.write_text(
+        "#!/bin/sh\n"
+        f"printf '%s\\n' 'broker-launch' >> {shlex.quote(str(broker_tripwire_log))}\n"
+        "exit 91\n",
+        encoding="utf-8",
+    )
+    broker_tripwire.chmod(0o755)
 
     ProxyCounter.requests = []
     proxy = http.server.ThreadingHTTPServer(("127.0.0.1", 0), ProxyCounter)
@@ -219,15 +231,18 @@ def main() -> int:
         arguments: list[str],
         expected_exit: int,
         input_text: str = "",
+        *,
+        environment: dict[str, str] | None = None,
+        timeout_seconds: float = 20,
     ) -> subprocess.CompletedProcess[str]:
         command = [str(jackin), *arguments]
         completed = subprocess.run(
             command,
-            env=child_env,
+            env=child_env if environment is None else environment,
             input=input_text,
             text=True,
             capture_output=True,
-            timeout=20,
+            timeout=timeout_seconds,
             check=False,
         )
         with command_log.open("a", encoding="utf-8") as log:
@@ -393,6 +408,13 @@ def main() -> int:
         if requests:
             raise SmokeFailure(f"{label}: local HTTP proxy saw requests: {requests}")
 
+    def assert_no_broker_launch(label: str) -> None:
+        if broker_tripwire_log.exists() and broker_tripwire_log.stat().st_size:
+            raise SmokeFailure(
+                f"{label}: fake broker launch tripwire fired: "
+                f"{broker_tripwire_log.read_text(encoding='utf-8')}"
+            )
+
     def merge_statusline_patch_fixture(
         source_settings: pathlib.Path,
         patch: dict[str, Any],
@@ -527,7 +549,7 @@ def main() -> int:
         print(f"provenance_manifest_sha256={manifest_digest}")
         print(f"installed_jackin_sha256={actual_digests['jackin']}")
         print(f"installed_broker_sha256={actual_digests['jackin-usage-broker']}")
-        print("JACKIN_USAGE_BROKER_BIN=unset")
+        print("JACKIN_USAGE_BROKER_BIN=unset except for the fake headless-auth tripwire")
         for label, binary in (("jackin-version", jackin), ("broker-version", broker)):
             result = subprocess.run(
                 [str(binary), "--version"],
@@ -609,6 +631,11 @@ def main() -> int:
                     if removed_word in result.stdout:
                         raise SmokeFailure(f"{label} retained removed option `{removed_word}`")
 
+        auth_environment = {
+            **child_env,
+            "JACKIN_USAGE_BROKER_BIN": str(broker_tripwire),
+        }
+        print(f"headless_auth_broker_tripwire={broker_tripwire}")
         auth = invoke(
             "headless-auth-prepare",
             usage(
@@ -620,6 +647,7 @@ def main() -> int:
                 "jackin-offline-smoke-no-access",
             ),
             2,
+            environment=auth_environment,
         )
         auth_reply = json.loads(auth.stdout)
         if (
@@ -632,6 +660,8 @@ def main() -> int:
         if (data_dir / "usage-broker" / "run").exists():
             raise SmokeFailure("headless auth preparation started the broker")
         assert_no_shell_or_proxy_activity("headless auth preparation")
+        assert_no_broker_launch("headless auth preparation")
+        print("headless_auth_fake_broker_launch=none")
 
         for label, arguments in [
             (
@@ -849,6 +879,91 @@ def main() -> int:
         if repeated_status["monitor_id"] != monitor_id:
             raise SmokeFailure("repeating the observer idempotency key created a second monitor")
 
+        watch = invoke(
+            "watch",
+            usage(
+                "watch",
+                "--monitor",
+                monitor_id,
+                "--timeout-secs",
+                "1",
+                fmt="jsonl",
+            ),
+            0,
+        )
+        events = [json.loads(line) for line in watch.stdout.splitlines() if line.strip()]
+        if not events:
+            raise SmokeFailure("watch did not emit the current monitor status as JSONL")
+        if len(events) != 1:
+            raise SmokeFailure(
+                f"one-second watch emitted {len(events)} fixture events; expected one initial event"
+            )
+        initial_watch_event_sequence = events[0].get("sequence")
+        if (
+            not isinstance(initial_watch_event_sequence, int)
+            or isinstance(initial_watch_event_sequence, bool)
+        ):
+            raise SmokeFailure("one-second watch event omitted its integer sequence")
+        first_watch_status = monitor_status(events[0], "session observer watch")
+        if first_watch_status["monitor_id"] != monitor_id:
+            raise SmokeFailure("watch emitted a different monitor ID")
+
+        # Run while this isolated observer has no time-aging evidence. The broker
+        # ticks on each RPC, but there is no new input or evidence age to create
+        # a second event during the requested deadline.
+        watch_35_started = time.monotonic()
+        watch_35 = invoke(
+            "watch-35-second-deadline",
+            usage(
+                "watch",
+                "--monitor",
+                monitor_id,
+                "--timeout-secs",
+                "35",
+                fmt="jsonl",
+            ),
+            0,
+            timeout_seconds=50,
+        )
+        watch_35_elapsed = time.monotonic() - watch_35_started
+        print(
+            f"[watch-35-second-deadline] elapsed={watch_35_elapsed:.3f}s requested=35s"
+        )
+        with command_log.open("a", encoding="utf-8") as log:
+            log.write(f"watch_35_requested_timeout_seconds=35\n")
+            log.write(f"watch_35_elapsed_seconds={watch_35_elapsed:.3f}\n")
+        if watch_35_elapsed < 34.5:
+            raise SmokeFailure(
+                f"35-second watch returned after {watch_35_elapsed:.3f}s; "
+                f"fixture retained at {root}"
+            )
+        watch_35_events = [
+            json.loads(line) for line in watch_35.stdout.splitlines() if line.strip()
+        ]
+        if len(watch_35_events) != 1:
+            raise SmokeFailure(
+                f"35-second watch emitted {len(watch_35_events)} fixture events; "
+                "expected exactly one initial event"
+            )
+        watch_35_sequences = [event.get("sequence") for event in watch_35_events]
+        if (
+            any(
+                not isinstance(sequence, int) or isinstance(sequence, bool)
+                for sequence in watch_35_sequences
+            )
+            or len(set(watch_35_sequences)) != len(watch_35_sequences)
+        ):
+            raise SmokeFailure("35-second watch emitted a missing or duplicate event sequence")
+        if watch_35_sequences[0] != initial_watch_event_sequence:
+            raise SmokeFailure(
+                "35-second watch changed the fixture monitor despite no intervening input"
+            )
+        first_35_watch_status = monitor_status(
+            watch_35_events[0], "35-second session observer watch"
+        )
+        if first_35_watch_status["monitor_id"] != monitor_id:
+            raise SmokeFailure("35-second watch emitted a different monitor ID")
+
         reset_epoch = int(time.time())
         statusline = json.dumps(
             {
@@ -907,25 +1022,6 @@ def main() -> int:
             )
             if repeated_status["monitor_id"] != monitor_id:
                 raise SmokeFailure("repeated status returned a different monitor ID")
-
-        watch = invoke(
-            "watch",
-            usage(
-                "watch",
-                "--monitor",
-                monitor_id,
-                "--timeout-secs",
-                "1",
-                fmt="jsonl",
-            ),
-            0,
-        )
-        events = [json.loads(line) for line in watch.stdout.splitlines() if line.strip()]
-        if not events:
-            raise SmokeFailure("watch did not emit the current monitor status as JSONL")
-        first_watch_status = monitor_status(events[0], "session observer watch")
-        if first_watch_status["monitor_id"] != monitor_id:
-            raise SmokeFailure("watch emitted a different monitor ID")
 
         wait = invoke(
             "wait",

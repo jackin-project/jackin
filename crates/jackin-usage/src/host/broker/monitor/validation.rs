@@ -6,14 +6,15 @@ use super::reconcile::{budget_is_same_or_tighter, is_migrated_zero_sgd_budget_re
 use super::spend::{self, capture_goal_baseline};
 use super::{
     DurableGoalSpend, MAX_ACCOUNTS, MAX_BINDINGS, MAX_EVENTS_PER_MONITOR,
-    MAX_EVIDENCE_FINGERPRINTS, MAX_EVIDENCE_PER_MONITOR, MAX_GOAL_ID_LENGTH, MAX_GOALS,
-    MAX_ID_LENGTH, MAX_IDEMPOTENCY_KEY_LENGTH, MAX_MODEL_LENGTH, MAX_MONITORS,
+    MAX_EVIDENCE_FINGERPRINTS, MAX_EVIDENCE_PER_MONITOR, MAX_FUTURE_SKEW_SECS, MAX_GOAL_ID_LENGTH,
+    MAX_GOALS, MAX_ID_LENGTH, MAX_IDEMPOTENCY_KEY_LENGTH, MAX_MODEL_LENGTH, MAX_MONITORS,
     MAX_OPERATOR_LABEL_LENGTH, MAX_POLICY_REVISIONS, MAX_SESSIONS_PER_ACCOUNT,
     MAX_UNBOUND_SESSIONS, MONITOR_EVIDENCE_TTL_SECS, MonitorAccountBinding, MonitorConfig,
     MonitorDecision, MonitorDispatchReadiness, MonitorEvidence, MonitorEvidenceSource,
     MonitorIssue, MonitorIssueCode, MonitorPolicy, MonitorPolicyOrigin, MonitorPolicyRecord,
-    MonitorPurpose, MonitorScope, SpendAccountState, SpendState, StatuslineObservation, StoreState,
-    USAGE_MONITOR_SCHEMA_VERSION, USAGE_STATUSLINE_INPUT_SCHEMA_VERSION, issue, store_unavailable,
+    MonitorProviderReadiness, MonitorPurpose, MonitorScope, ProviderObservation, SpendAccountState,
+    SpendState, StatuslineObservation, StoreState, USAGE_MONITOR_SCHEMA_VERSION,
+    USAGE_STATUSLINE_INPUT_SCHEMA_VERSION, issue, store_unavailable,
 };
 use jackin_protocol::control::Money;
 use std::collections::BTreeSet;
@@ -195,12 +196,25 @@ pub(super) fn prepare_goal_activation(
 }
 
 pub(super) fn validate_store_state(state: &StoreState) -> Result<(), MonitorIssue> {
+    validate_store_state_with_legacy_fingerprints(state, false)
+}
+
+pub(super) fn validate_store_state_before_fingerprint_migration(
+    state: &StoreState,
+) -> Result<(), MonitorIssue> {
+    validate_store_state_with_legacy_fingerprints(state, true)
+}
+
+fn validate_store_state_with_legacy_fingerprints(
+    state: &StoreState,
+    allow_legacy_fingerprints: bool,
+) -> Result<(), MonitorIssue> {
     validate_store_header(state)?;
     validate_accounts(state)?;
     validate_unbound_sessions(state)?;
     validate_bindings(state)?;
     validate_policy_records(state)?;
-    validate_monitors(state)?;
+    validate_monitors_with_fingerprint_version(state, allow_legacy_fingerprints)?;
     validate_goals(state)
 }
 
@@ -249,6 +263,13 @@ pub(super) fn validate_accounts(state: &StoreState) -> Result<(), MonitorIssue> 
                 .spend
                 .historical_correction_horizon_epoch
                 .is_some_and(|epoch| epoch > state.last_now_epoch)
+            || account
+                .provider_observation
+                .as_ref()
+                .is_some_and(|observation| {
+                    !provider_observation_is_valid(observation, state.last_now_epoch)
+                        || !provider_observation_matches_account(state, account_id, observation)
+                })
         {
             return Err(store_unavailable());
         }
@@ -324,6 +345,55 @@ pub(super) fn validate_accounts(state: &StoreState) -> Result<(), MonitorIssue> 
         }
     }
     Ok(())
+}
+
+fn provider_observation_is_valid(observation: &ProviderObservation, last_now_epoch: i64) -> bool {
+    let issue_code_is_supported = observation.issue_code.is_none_or(|code| {
+        matches!(
+            code,
+            MonitorIssueCode::ProviderRateLimited
+                | MonitorIssueCode::ProviderUnauthorized
+                | MonitorIssueCode::ProviderTimeout
+                | MonitorIssueCode::ProviderUnavailable
+                | MonitorIssueCode::ProviderNeedsSecret
+        )
+    });
+    valid_identifier(&observation.source_account_id)
+        && valid_bounded_text(&observation.broker_instance_id, MAX_ID_LENGTH)
+        && match (&observation.binding_id, observation.binding_revision) {
+            (Some(binding_id), Some(revision)) => valid_identifier(binding_id) && revision > 0,
+            (None, None) => true,
+            _ => false,
+        }
+        && observation.last_good_at_epoch.is_none_or(|epoch| {
+            epoch >= 0 && epoch <= last_now_epoch.saturating_add(MAX_FUTURE_SKEW_SECS)
+        })
+        && observation.retry_at_epoch.is_none_or(|epoch| epoch >= 0)
+        && issue_code_is_supported
+        && (observation.readiness == MonitorProviderReadiness::RateLimited)
+            == (observation.issue_code == Some(MonitorIssueCode::ProviderRateLimited))
+}
+
+fn provider_observation_matches_account(
+    state: &StoreState,
+    local_account_id: &str,
+    observation: &ProviderObservation,
+) -> bool {
+    let (Some(binding_id), Some(binding_revision)) = (
+        observation.binding_id.as_deref(),
+        observation.binding_revision,
+    ) else {
+        return false;
+    };
+    let Some(binding) = current_binding(state, binding_id) else {
+        return false;
+    };
+    binding.revision == binding_revision
+        && binding.account_id == local_account_id
+        && binding.provider == jackin_protocol::usage_monitor::MonitorProvider::Claude
+        && binding.operator_confirmed
+        && binding.experimental_collector_approved
+        && binding.provider_account_id.as_deref() == Some(observation.source_account_id.as_str())
 }
 
 pub(super) fn validate_unbound_sessions(state: &StoreState) -> Result<(), MonitorIssue> {
@@ -498,7 +568,10 @@ pub(super) fn policy_binding_exists(
     })
 }
 
-pub(super) fn validate_monitors(state: &StoreState) -> Result<(), MonitorIssue> {
+fn validate_monitors_with_fingerprint_version(
+    state: &StoreState,
+    allow_legacy_fingerprints: bool,
+) -> Result<(), MonitorIssue> {
     let mut idempotency_keys = BTreeSet::<&str>::new();
     for (monitor_id, monitor) in &state.monitors {
         let expected_goal = monitor.config.goal_id.as_deref();
@@ -506,10 +579,13 @@ pub(super) fn validate_monitors(state: &StoreState) -> Result<(), MonitorIssue> 
         if parse_counter_id(monitor_id, "monitor-").is_none()
             || monitor.evidence.len() > MAX_EVIDENCE_PER_MONITOR
             || monitor.evidence_fingerprints.len() > MAX_EVIDENCE_FINGERPRINTS
-            || monitor
-                .evidence_fingerprints
-                .iter()
-                .any(|(key, value)| !valid_evidence_fingerprint(key, value))
+            || monitor.evidence_fingerprints.iter().any(|(key, value)| {
+                !(if allow_legacy_fingerprints {
+                    valid_legacy_evidence_fingerprint(key, value)
+                } else {
+                    valid_evidence_fingerprint(key, value)
+                })
+            })
             || monitor.events.len() > MAX_EVENTS_PER_MONITOR
             || monitor.events.len() as u64 > monitor.next_event_sequence
             || monitor.next_evidence_sequence == u64::MAX
@@ -1079,6 +1155,31 @@ pub(super) fn valid_identifier(value: &str) -> bool {
 }
 
 pub(super) fn valid_evidence_fingerprint(key: &str, value: &str) -> bool {
+    if !valid_bounded_text(key, MAX_ID_LENGTH + 64) || !valid_bounded_text(value, 2_048) {
+        return false;
+    }
+    if key == "spend:account" {
+        return true;
+    }
+    if let Some(session_id) = key.strip_prefix("model:") {
+        return valid_identifier(session_id);
+    }
+    let Some((source, rest)) = key.split_once(':') else {
+        return false;
+    };
+    let Some((field, rest)) = rest.split_once(':') else {
+        return false;
+    };
+    let Some((window, scope)) = rest.split_once(':') else {
+        return false;
+    };
+    valid_fingerprint_source(source)
+        && matches!(field, "used" | "reset")
+        && matches!(window, "five_hour" | "seven_day")
+        && (scope == "account" || scope.strip_prefix("session:").is_some_and(valid_identifier))
+}
+
+pub(super) fn valid_legacy_evidence_fingerprint(key: &str, value: &str) -> bool {
     if !valid_bounded_text(key, MAX_ID_LENGTH + 32) || !valid_bounded_text(value, 2_048) {
         return false;
     }
@@ -1096,6 +1197,13 @@ pub(super) fn valid_evidence_fingerprint(key: &str, value: &str) -> bool {
         return false;
     };
     matches!(window, "five_hour" | "seven_day") && (scope == "account" || valid_identifier(scope))
+}
+
+fn valid_fingerprint_source(source: &str) -> bool {
+    matches!(
+        source,
+        "broker_projection" | "statusline" | "provider_spend" | "operator" | "local_session_log"
+    )
 }
 
 pub(super) fn parse_counter_id(value: &str, prefix: &str) -> Option<u64> {

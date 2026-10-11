@@ -204,6 +204,13 @@ pub(crate) fn finish_failure_in_state(
     } else {
         retry_at_epoch
     };
+    let retry_at_epoch = policy::claude_rate_limit_retry_deadline(
+        &job.capability,
+        kind,
+        consecutive_failures,
+        retry_at_epoch,
+        finished_at_epoch,
+    );
     entry.envelope.retry_deadline_epoch = retry_at_epoch;
     if kind == UsageCoordinationErrorKind::RateLimited {
         entry.envelope.rate_limit_deadline_epoch = retry_at_epoch;
@@ -258,6 +265,13 @@ fn finish_fenced_provider_attempt(
         } else {
             provider_deadline
         };
+        let retry = policy::claude_rate_limit_retry_deadline(
+            &job.capability,
+            kind,
+            failures,
+            retry,
+            finished_at_epoch,
+        );
         if let Some(retry) = retry {
             entry.envelope.retry_deadline_epoch = Some(
                 entry

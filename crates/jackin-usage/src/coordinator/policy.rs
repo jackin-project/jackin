@@ -10,6 +10,11 @@ use jackin_protocol::usage_broker::{UsageAccountCapability, UsageCoordinationErr
 /// Claude usage attempts are spaced at least five minutes apart.
 pub(crate) const CLAUDE_MIN_ATTEMPT_INTERVAL: Duration = Duration::from_mins(5);
 
+/// Claude's undocumented OAuth usage endpoint gets a local one-hour cooldown
+/// after repeated failed generations ending in a rate-limit response.
+pub(crate) const CLAUDE_RATE_LIMIT_CIRCUIT_INTERVAL: Duration = Duration::from_hours(1);
+const CLAUDE_RATE_LIMIT_CIRCUIT_FAILURE_THRESHOLD: u32 = 3;
+
 /// Operator activity used to select the automatic refresh cadence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UsageActivity {
@@ -132,6 +137,51 @@ pub(crate) fn minimum_attempt_deadline(
     } else {
         None
     }
+}
+
+/// Add a local circuit cooldown to a repeated Claude rate-limit failure.
+///
+/// This uses the existing persisted count of all failed generations since the
+/// last success, including non-retryable credential and authorization errors.
+/// The latest failure must still be `RateLimited`; other providers and other
+/// latest failure kinds keep the normal retry policy. This cooldown is local
+/// policy, not a provider reset estimate.
+#[must_use]
+pub(crate) fn claude_rate_limit_circuit_deadline(
+    capability: &UsageAccountCapability,
+    latest_failure: UsageCoordinationErrorKind,
+    consecutive_failures: u32,
+    finished_at_epoch: i64,
+) -> Option<i64> {
+    (capability.surface_id == "claude"
+        && latest_failure == UsageCoordinationErrorKind::RateLimited
+        && consecutive_failures >= CLAUDE_RATE_LIMIT_CIRCUIT_FAILURE_THRESHOLD)
+        .then(|| {
+            finished_at_epoch.saturating_add(
+                i64::try_from(CLAUDE_RATE_LIMIT_CIRCUIT_INTERVAL.as_secs()).unwrap_or(i64::MAX),
+            )
+        })
+}
+
+/// Preserve an existing provider/backoff deadline while applying the Claude
+/// rate-limit circuit as an additional local lower bound.
+#[must_use]
+pub(crate) fn claude_rate_limit_retry_deadline(
+    capability: &UsageAccountCapability,
+    latest_failure: UsageCoordinationErrorKind,
+    consecutive_failures: u32,
+    retry_deadline_epoch: Option<i64>,
+    finished_at_epoch: i64,
+) -> Option<i64> {
+    let Some(circuit_deadline) = claude_rate_limit_circuit_deadline(
+        capability,
+        latest_failure,
+        consecutive_failures,
+        finished_at_epoch,
+    ) else {
+        return retry_deadline_epoch;
+    };
+    Some(retry_deadline_epoch.map_or(circuit_deadline, |deadline| deadline.max(circuit_deadline)))
 }
 
 fn account_key_hash_seed(

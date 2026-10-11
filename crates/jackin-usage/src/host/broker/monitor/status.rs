@@ -10,12 +10,14 @@ use super::{
     AccountObservations, DurableGoalSpend, DurableMonitor, MAX_EVENTS_PER_MONITOR,
     MONITOR_RESET_GRACE_SECS, MonitorAccountBinding, MonitorAction, MonitorBudgetReadiness,
     MonitorDecision, MonitorDispatchReadiness, MonitorEvent, MonitorEvidenceFreshness,
-    MonitorIssue, MonitorIssueCode, MonitorLifecycle, MonitorModelGuardValidity, MonitorPolicy,
-    MonitorPolicyOrigin, MonitorPolicyRecord, MonitorPurpose, MonitorQuotaReadiness,
-    MonitorQuotaWindow, MonitorQuotaWindowStatus, MonitorReadiness, MonitorResetValidity,
-    MonitorScope, MonitorStatus, MonitorTrackingReadiness, SessionObservation, StoreState,
-    USAGE_MONITOR_SCHEMA_VERSION, issue,
+    MonitorFieldEvidence, MonitorIssue, MonitorIssueCode, MonitorLifecycle,
+    MonitorModelGuardValidity, MonitorPolicy, MonitorPolicyOrigin, MonitorPolicyRecord,
+    MonitorProviderReadiness, MonitorPurpose, MonitorQuotaReadiness, MonitorQuotaWindow,
+    MonitorQuotaWindowStatus, MonitorReadiness, MonitorResetValidity, MonitorScope, MonitorStatus,
+    MonitorTrackingReadiness, ProviderObservation, SessionObservation, StoreState,
+    USAGE_MONITOR_SCHEMA_VERSION, clear_account_broker_projection, issue,
 };
+use std::borrow::Cow;
 
 pub(super) fn append_event_if_changed(
     state: &mut StoreState,
@@ -71,42 +73,10 @@ pub(super) fn status_for(
     monitor: &DurableMonitor,
     now_epoch: i64,
 ) -> MonitorStatus {
-    let account = monitor
-        .account_id
-        .as_deref()
-        .and_then(|account_id| state.accounts.get(account_id));
-    let unbound_session = match &monitor.config.scope {
-        MonitorScope::Session { session_id } => state.unbound_sessions.get(session_id),
-        MonitorScope::BoundAccount { .. } => None,
-    };
-    let session = match &monitor.config.scope {
-        MonitorScope::Session { .. } => unbound_session,
-        MonitorScope::BoundAccount { session_id, .. } => match session_id.as_deref() {
-            Some(session_id) => account.and_then(|account| account.sessions.get(session_id)),
-            None => account.and_then(|account| {
-                account
-                    .sessions
-                    .values()
-                    .filter(|session| session.last_callback_received_at_epoch.is_some())
-                    .max_by_key(|session| session.last_callback_received_at_epoch)
-            }),
-        },
-    };
-    let five_hour =
-        quota_window_status(monitor, account, MonitorQuotaWindow::FiveHour, 0, now_epoch);
-    let seven_day =
-        quota_window_status(monitor, account, MonitorQuotaWindow::SevenDay, 1, now_epoch);
-    let (model, model_evidence, model_unknown, model_mismatch) =
-        model_status(monitor, account, session, now_epoch);
-    let model_guard_validity = if monitor.config.expected_model.is_none() {
-        MonitorModelGuardValidity::NotConfigured
-    } else if model_mismatch {
-        MonitorModelGuardValidity::Mismatch
-    } else if model_unknown {
-        MonitorModelGuardValidity::Unknown
-    } else {
-        MonitorModelGuardValidity::Match
-    };
+    let owned_account = account_for_monitor(state, monitor);
+    let account = owned_account.as_deref();
+    let session = session_for_monitor(state, monitor, account);
+    let metrics = status_metrics(monitor, account, session, now_epoch);
     let current_binding = match &monitor.config.scope {
         MonitorScope::BoundAccount { binding_id, .. } => current_binding(state, binding_id),
         MonitorScope::Session { .. } => None,
@@ -137,8 +107,11 @@ pub(super) fn status_for(
         && spend_decision_blocks_dispatch(&spend_policy(monitor, account, now_epoch));
     let readiness = monitor_readiness(MonitorReadinessContext {
         monitor,
-        five_hour: &five_hour,
-        seven_day: &seven_day,
+        provider: account
+            .and_then(|account| account.provider_observation.as_ref())
+            .map_or(MonitorProviderReadiness::Unknown, |state| state.readiness),
+        five_hour: &metrics.five_hour,
+        seven_day: &metrics.seven_day,
         issues: &issues,
         session,
         current_binding,
@@ -173,14 +146,14 @@ pub(super) fn status_for(
         claude_code_version: version,
         policy: monitor.policy.clone(),
         expected_model: monitor.config.expected_model.clone(),
-        model,
-        model_evidence,
-        model_guard_validity,
+        model: metrics.model,
+        model_evidence: metrics.model_evidence,
+        model_guard_validity: metrics.model_guard_validity,
         lifecycle,
         readiness,
         runnable,
-        five_hour,
-        seven_day,
+        five_hour: metrics.five_hour,
+        seven_day: metrics.seven_day,
         budget,
         cumulative_goal_spend: monitor
             .spend_state
@@ -208,6 +181,117 @@ pub(super) fn status_for(
         updated_at_epoch: monitor.updated_at_epoch,
         issues,
     }
+}
+
+fn account_for_monitor<'a>(
+    state: &'a StoreState,
+    monitor: &DurableMonitor,
+) -> Option<Cow<'a, AccountObservations>> {
+    let stored_account = monitor
+        .account_id
+        .as_deref()
+        .and_then(|account_id| state.accounts.get(account_id))?;
+    let source_mismatch = stored_account
+        .provider_observation
+        .as_ref()
+        .is_some_and(|observation| {
+            !provider_observation_matches_monitor(state, monitor, observation)
+        });
+    let unscoped_broker_windows = stored_account.provider_observation.is_none()
+        && stored_account.broker_windows.iter().any(|window| {
+            window.used.is_some() || window.reset.is_some() || window.paired.is_some()
+        });
+    if !source_mismatch && !unscoped_broker_windows {
+        return Some(Cow::Borrowed(stored_account));
+    }
+
+    let mut filtered_account = stored_account.clone();
+    clear_account_broker_projection(&mut filtered_account);
+    Some(Cow::Owned(filtered_account))
+}
+
+fn session_for_monitor<'a>(
+    state: &'a StoreState,
+    monitor: &DurableMonitor,
+    account: Option<&'a AccountObservations>,
+) -> Option<&'a SessionObservation> {
+    match &monitor.config.scope {
+        MonitorScope::Session { session_id } => state.unbound_sessions.get(session_id),
+        MonitorScope::BoundAccount { session_id, .. } => match session_id.as_deref() {
+            Some(session_id) => account.and_then(|account| account.sessions.get(session_id)),
+            None => account.and_then(|account| {
+                account
+                    .sessions
+                    .values()
+                    .filter(|session| session.last_callback_received_at_epoch.is_some())
+                    .max_by_key(|session| session.last_callback_received_at_epoch)
+            }),
+        },
+    }
+}
+
+struct StatusMetrics {
+    five_hour: MonitorQuotaWindowStatus,
+    seven_day: MonitorQuotaWindowStatus,
+    model: Option<String>,
+    model_evidence: Option<MonitorFieldEvidence>,
+    model_guard_validity: MonitorModelGuardValidity,
+}
+
+fn status_metrics(
+    monitor: &DurableMonitor,
+    account: Option<&AccountObservations>,
+    session: Option<&SessionObservation>,
+    now_epoch: i64,
+) -> StatusMetrics {
+    let five_hour =
+        quota_window_status(monitor, account, MonitorQuotaWindow::FiveHour, 0, now_epoch);
+    let seven_day =
+        quota_window_status(monitor, account, MonitorQuotaWindow::SevenDay, 1, now_epoch);
+    let (model, model_evidence, model_unknown, model_mismatch) =
+        model_status(monitor, account, session, now_epoch);
+    let model_guard_validity = if monitor.config.expected_model.is_none() {
+        MonitorModelGuardValidity::NotConfigured
+    } else if model_mismatch {
+        MonitorModelGuardValidity::Mismatch
+    } else if model_unknown {
+        MonitorModelGuardValidity::Unknown
+    } else {
+        MonitorModelGuardValidity::Match
+    };
+    StatusMetrics {
+        five_hour,
+        seven_day,
+        model,
+        model_evidence,
+        model_guard_validity,
+    }
+}
+
+fn provider_observation_matches_monitor(
+    state: &StoreState,
+    monitor: &DurableMonitor,
+    observation: &ProviderObservation,
+) -> bool {
+    let MonitorScope::BoundAccount {
+        binding_id,
+        binding_revision,
+        ..
+    } = &monitor.config.scope
+    else {
+        return false;
+    };
+    let Some(binding) = current_binding(state, binding_id) else {
+        return false;
+    };
+    monitor.account_id.as_deref() == Some(binding.account_id.as_str())
+        && binding.binding_id.as_str() == observation.binding_id.as_deref().unwrap_or_default()
+        && binding.revision == *binding_revision
+        && observation.binding_revision == Some(binding.revision)
+        && binding.provider == monitor.config.provider
+        && binding.operator_confirmed
+        && binding.experimental_collector_approved
+        && binding.provider_account_id.as_deref() == Some(observation.source_account_id.as_str())
 }
 
 pub(super) fn status_session_id(
@@ -311,6 +395,7 @@ pub(super) fn status_lifecycle(
 
 pub(super) struct MonitorReadinessContext<'a> {
     monitor: &'a DurableMonitor,
+    provider: MonitorProviderReadiness,
     five_hour: &'a MonitorQuotaWindowStatus,
     seven_day: &'a MonitorQuotaWindowStatus,
     issues: &'a [MonitorIssue],
@@ -324,6 +409,7 @@ pub(super) struct MonitorReadinessContext<'a> {
 pub(super) fn monitor_readiness(context: MonitorReadinessContext<'_>) -> MonitorReadiness {
     let MonitorReadinessContext {
         monitor,
+        provider,
         five_hour,
         seven_day,
         issues,
@@ -445,6 +531,7 @@ pub(super) fn monitor_readiness(context: MonitorReadinessContext<'_>) -> Monitor
     };
     MonitorReadiness {
         tracking,
+        provider,
         quota,
         budget,
         dispatch,
@@ -517,6 +604,12 @@ pub(super) fn monitor_issues(
     now_epoch: i64,
 ) -> Vec<MonitorIssue> {
     let mut issues = Vec::new();
+    if let Some(provider_issue) = account
+        .and_then(|account| account.provider_observation.as_ref())
+        .and_then(provider_observation_issue)
+    {
+        push_issue(&mut issues, provider_issue);
+    }
     for (index, window) in [MonitorQuotaWindow::FiveHour, MonitorQuotaWindow::SevenDay]
         .into_iter()
         .enumerate()
@@ -548,102 +641,139 @@ pub(super) fn monitor_issues(
             );
         }
     }
-    if monitor.config.purpose == MonitorPurpose::DispatchGuard {
-        if !current_binding.is_some_and(|binding| {
-            binding.operator_confirmed
-                && monitor.account_id.as_deref() == Some(binding.account_id.as_str())
-                && matches!(
+    for dispatch_issue in dispatch_guard_issues(
+        monitor,
+        account,
+        current_binding,
+        current_policy,
+        goal,
+        now_epoch,
+    ) {
+        push_issue(&mut issues, dispatch_issue);
+    }
+    issues
+}
+
+fn provider_observation_issue(observation: &ProviderObservation) -> Option<MonitorIssue> {
+    let code = observation.issue_code?;
+    let message = match code {
+        MonitorIssueCode::ProviderRateLimited => "provider rate limited the usage refresh",
+        MonitorIssueCode::ProviderUnauthorized => "provider denied the usage request",
+        MonitorIssueCode::ProviderTimeout => "provider usage refresh timed out",
+        MonitorIssueCode::ProviderUnavailable => "provider usage data is temporarily unavailable",
+        MonitorIssueCode::ProviderNeedsSecret => {
+            "provider usage refresh requires a host-side secret"
+        }
+        _ => return None,
+    };
+    Some(issue(code, message, observation.retry_at_epoch))
+}
+
+fn dispatch_guard_issues(
+    monitor: &DurableMonitor,
+    account: Option<&AccountObservations>,
+    current_binding: Option<&MonitorAccountBinding>,
+    current_policy: Option<&MonitorPolicyRecord>,
+    goal: Option<&DurableGoalSpend>,
+    now_epoch: i64,
+) -> Vec<MonitorIssue> {
+    let mut issues = Vec::new();
+    if monitor.config.purpose != MonitorPurpose::DispatchGuard {
+        return issues;
+    }
+    if !current_binding.is_some_and(|binding| {
+        binding.operator_confirmed
+            && monitor.account_id.as_deref() == Some(binding.account_id.as_str())
+            && matches!(
+                &monitor.config.scope,
+                MonitorScope::BoundAccount {
+                    binding_id,
+                    binding_revision,
+                    ..
+                } if binding_id == &binding.binding_id && *binding_revision == binding.revision
+            )
+    }) {
+        push_issue(
+            &mut issues,
+            issue(
+                if current_binding.is_some_and(|binding| !binding.operator_confirmed) {
+                    MonitorIssueCode::OperatorConfirmationRequired
+                } else {
+                    MonitorIssueCode::BindingMismatch
+                },
+                "a current operator-confirmed account binding is required",
+                None,
+            ),
+        );
+    }
+    match current_policy {
+        None => push_issue(
+            &mut issues,
+            issue(
+                MonitorIssueCode::PolicyRequired,
+                "no approved policy exists for this goal",
+                None,
+            ),
+        ),
+        Some(policy) if Some(policy.revision) != monitor.config.policy_revision => push_issue(
+            &mut issues,
+            issue(
+                MonitorIssueCode::PolicyConflict,
+                "the monitor is not using the current policy revision",
+                None,
+            ),
+        ),
+        Some(policy) if policy.origin != MonitorPolicyOrigin::Operator => push_issue(
+            &mut issues,
+            issue(
+                MonitorIssueCode::PolicyRequired,
+                "a migrated policy must be explicitly approved before dispatch",
+                None,
+            ),
+        ),
+        Some(policy)
+            if !policy.operator_confirmed
+                || matches!(
                     &monitor.config.scope,
                     MonitorScope::BoundAccount {
                         binding_id,
                         binding_revision,
                         ..
-                    } if binding_id == &binding.binding_id && *binding_revision == binding.revision
-                )
-        }) {
-            push_issue(
-                &mut issues,
-                issue(
-                    if current_binding.is_some_and(|binding| !binding.operator_confirmed) {
-                        MonitorIssueCode::OperatorConfirmationRequired
-                    } else {
-                        MonitorIssueCode::BindingMismatch
-                    },
-                    "a current operator-confirmed account binding is required",
-                    None,
-                ),
-            );
-        }
-        match current_policy {
-            None => push_issue(
-                &mut issues,
-                issue(
-                    MonitorIssueCode::PolicyRequired,
-                    "no approved policy exists for this goal",
-                    None,
-                ),
-            ),
-            Some(policy) if Some(policy.revision) != monitor.config.policy_revision => push_issue(
-                &mut issues,
-                issue(
-                    MonitorIssueCode::PolicyConflict,
-                    "the monitor is not using the current policy revision",
-                    None,
-                ),
-            ),
-            Some(policy) if policy.origin != MonitorPolicyOrigin::Operator => push_issue(
-                &mut issues,
-                issue(
-                    MonitorIssueCode::PolicyRequired,
-                    "a migrated policy must be explicitly approved before dispatch",
-                    None,
-                ),
-            ),
-            Some(policy)
-                if policy.origin == MonitorPolicyOrigin::Operator
-                    && (!policy.operator_confirmed
-                        || matches!(
-                            &monitor.config.scope,
-                            MonitorScope::BoundAccount {
-                                binding_id,
-                                binding_revision,
-                                ..
-                            } if policy.binding_id.as_deref() != Some(binding_id)
-                                || policy.binding_revision != Some(*binding_revision)
-                        )) =>
-            {
-                push_issue(
-                    &mut issues,
-                    issue(
-                        MonitorIssueCode::OperatorConfirmationRequired,
-                        "the selected policy is not confirmed for this binding revision",
-                        None,
-                    ),
-                );
-            }
-            _ => {}
-        }
-        if goal.is_none_or(|goal| {
-            monitor.account_id.as_deref() != Some(goal.account_id.as_str())
-                || current_policy.is_none_or(|policy| goal.policy_revision != policy.revision)
-        }) {
-            push_issue(
-                &mut issues,
-                issue(
-                    MonitorIssueCode::PolicyRequired,
-                    "the approved goal has not been activated",
-                    None,
-                ),
-            );
-        }
-        if monitor
-            .policy
-            .as_ref()
-            .is_some_and(|policy| policy.new_policy == MonitorPolicy::StrictSgd)
+                    } if policy.binding_id.as_deref() != Some(binding_id)
+                        || policy.binding_revision != Some(*binding_revision)
+                ) =>
         {
-            for code in spend_policy(monitor, account, now_epoch).issues {
-                push_issue(&mut issues, spend_issue(code));
-            }
+            push_issue(
+                &mut issues,
+                issue(
+                    MonitorIssueCode::OperatorConfirmationRequired,
+                    "the selected policy is not confirmed for this binding revision",
+                    None,
+                ),
+            );
+        }
+        _ => {}
+    }
+    if goal.is_none_or(|goal| {
+        monitor.account_id.as_deref() != Some(goal.account_id.as_str())
+            || current_policy.is_none_or(|policy| goal.policy_revision != policy.revision)
+    }) {
+        push_issue(
+            &mut issues,
+            issue(
+                MonitorIssueCode::PolicyRequired,
+                "the approved goal has not been activated",
+                None,
+            ),
+        );
+    }
+    if monitor
+        .policy
+        .as_ref()
+        .is_some_and(|policy| policy.new_policy == MonitorPolicy::StrictSgd)
+    {
+        for code in spend_policy(monitor, account, now_epoch).issues {
+            push_issue(&mut issues, spend_issue(code));
         }
     }
     issues

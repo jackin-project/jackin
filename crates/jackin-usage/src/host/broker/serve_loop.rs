@@ -25,6 +25,7 @@ use super::{
     ServePolicy, protocol_error, publish, unavailable,
 };
 use crate::coordinator::UsageCoordinator;
+use crate::coordinator::policy::UsageActivity;
 
 const CLOCK_WAKE_DETECTION_THRESHOLD_SECS: u64 = 2;
 const MONITOR_TICK_RETRY_DELAY: Duration = Duration::from_secs(1);
@@ -82,6 +83,9 @@ struct TickerState {
     last_observed_projection_id: Option<String>,
     last_ticked_wake: Option<i64>,
     retry: Option<TickRetry>,
+    last_collection_check: Option<Duration>,
+    last_publish_attempt: Option<Duration>,
+    observation_retry_after: Option<Duration>,
 }
 
 pub(super) struct ServeConfig {
@@ -368,6 +372,9 @@ fn spawn_publisher_ticker_with_clock(
             last_observed_projection_id: initial_projection_id,
             last_ticked_wake: None,
             retry: None,
+            last_collection_check: None,
+            last_publish_attempt: None,
+            observation_retry_after: None,
         };
         while !shutdown.load(Ordering::Relaxed) {
             let Some(sample) = clock.next_sample() else {
@@ -401,16 +408,43 @@ fn publisher_tick_step(
     }
     state.last_sample = sample;
 
-    collect_due_for_active_monitors(publisher, coordinator, monitor_store, sample.wall_epoch);
+    if state.last_collection_check.is_none_or(|last_check| {
+        sample.monotonic_elapsed.saturating_sub(last_check) >= MONITOR_TICK_RETRY_DELAY
+    }) {
+        collect_due_for_active_monitors(publisher, coordinator, monitor_store, sample.wall_epoch);
+        state.last_collection_check = Some(sample.monotonic_elapsed);
+    }
 
-    if !coordinator.is_idle() {
-        publisher.publish_due(sample.wall_epoch);
+    // Provider completion makes the coordinator idle before this ticker runs
+    // again. Publish terminal state even in that case so the last projection
+    // cannot remain queued/updating until a client happens to read or refresh.
+    // A one-second monotonic poll catches asynchronous completion while
+    // keeping unchanged or persistence-blocked accounts off the 200ms loop.
+    if state.last_publish_attempt.is_none_or(|last_attempt| {
+        sample.monotonic_elapsed.saturating_sub(last_attempt) >= MONITOR_TICK_RETRY_DELAY
+    }) {
+        let _published = publisher.publish_due(sample.wall_epoch);
+        state.last_publish_attempt = Some(sample.monotonic_elapsed);
     }
     if let Ok(projection) = publisher.current_projection()
         && state.last_observed_projection_id.as_deref() != Some(projection.projection_id.as_str())
+        && state
+            .observation_retry_after
+            .is_none_or(|retry_after| sample.monotonic_elapsed >= retry_after)
     {
-        let _ignored = monitor_store.observe_projection(&projection, sample.wall_epoch);
-        state.last_observed_projection_id = Some(projection.projection_id);
+        if monitor_store
+            .observe_projection(&projection, sample.wall_epoch)
+            .is_ok()
+        {
+            state.last_observed_projection_id = Some(projection.projection_id);
+            state.observation_retry_after = None;
+        } else {
+            state.observation_retry_after = Some(
+                sample
+                    .monotonic_elapsed
+                    .saturating_add(MONITOR_TICK_RETRY_DELAY),
+            );
+        }
     }
 
     let next_wake = monitor_store.next_wake();
@@ -467,13 +501,18 @@ pub(super) fn collect_due_for_active_monitors(
     }
     for capability in &capabilities {
         publisher.observe(capability);
+        let _activity = coordinator.set_activity(
+            capability,
+            UsageActivity::DirectInteraction,
+            false,
+            now_epoch,
+        );
     }
     if coordinator
         .next_due_epoch_for_capabilities(capabilities.clone(), now_epoch)
         .is_some_and(|due| due <= now_epoch)
     {
         let _started_or_joined = coordinator.poll_due_for_capabilities(capabilities, now_epoch);
-        publisher.publish_due(now_epoch);
     }
 }
 
