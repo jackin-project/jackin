@@ -1174,13 +1174,10 @@ does not show whether or how many provider requests occurred.
 
 The 300-second attempt floor does not guarantee fresh evidence: the provider
 may return `429`, `Retry-After` may extend the interval, and no new collection
-may occur while idle. The rate-limit investigation should reduce avoidable
-requests by honoring persisted deadlines and preventing timed-out probes from
-continuing into a later retry; it cannot promise zero 429s. The outer probe
-budget currently has a separate cancellation finding: after its budget expires,
-a detached probe can still make a late request along the existing 401
-follow-up/retry path. Cancellation repair and status/watch visibility fixes are
-in progress; neither is verified complete.
+may occur while idle. The v9 source checkpoint below includes changes for
+status visibility, watch duration, and bounded probe cancellation. The offline
+fixture verifies the watch deadline and status contract against synthetic
+state; it cannot establish live provider behavior or a zero-429 guarantee.
 
 Public documentation draws a separate boundary: the [Claude Code costs
 guide](https://code.claude.com/docs/en/costs) says `/usage` may encounter a
@@ -1192,3 +1189,75 @@ public docs do not publish the subscription usage endpoint's OAuth path, auth
 schema, or poll quota. Do not treat Messages API quotas as subscription polling
 limits or infer a blanket GET prohibition. This research cannot establish a
 zero-429 polling guarantee.
+
+## v9 rate control, installed fixture, and latest v8 live snapshot
+
+The v9 source checkpoint is signed and pushed at
+`f5163e987b861adca1de5add6087ee3d2d12e11a`, tree
+`9418c762f07d6b6a6203def838e11ddb33a29c53`. Its Claude-specific local circuit
+deadline applies after at least three consecutive failed generations since
+the last success, and only when the latest typed failure is `RateLimited`; all
+failed generations contribute to that count. The circuit adds one hour from
+failure completion as a lower bound alongside the normal retry/backoff
+deadline, while preserving any longer existing provider deadline and the
+persisted 300-second attempt floor. Tests cover the threshold, latest failure
+kind, longer deadline, and restart recovery. This one-hour value is client
+policy, not an Anthropic published quota or reset estimate. It can reduce
+repeated requests after several failures but cannot prevent an initial `429`
+or guarantee zero 429s.
+
+The reviewed [Claude Code costs guide](https://code.claude.com/docs/en/costs)
+documents that a `/usage` plan-usage request may be rate-limited and that the
+CLI can show locally cached bars for up to 60 minutes. That cache window is not
+a published polling interval. Public docs do not specify the subscription
+usage endpoint's OAuth path, request/auth schema, or polling quota. The
+[Messages API rate-limit guide](https://platform.claude.com/docs/en/api/rate-limits)
+describes RPM/ITPM/OTPM for a separate API surface; it does not establish
+subscription-usage polling rules. Do not infer a blanket GET prohibition or a
+zero-429 guarantee from those docs.
+
+The v8 live artifact records a normal source-side success after its natural
+retry deadline. Generation 23 completed at epoch `1791683768`, cleared the
+prior failure count and retry deadline, and yielded source generation 23 in
+broker projection generation 39. At projection sample epoch `1791683871`
+(`2026-10-11 08:57:51 ICT`), the provider sample was 104 seconds old and showed
+62% used in the five-hour window (38% remaining; reset epoch `1791687000`) and
+56% used in the seven-day window (44% remaining; reset epoch `1792134000`).
+These are historical source-side values from
+[`v8-live-verification.json`](v8-live-verification.json), not a current v9
+reading; HTTP request count was unmeasured.
+
+The same v8 artifact records the monitor CLI still at sequence 1 with null
+five-hour/seven-day quota and reset fields, empty evidence, `quota_unknown`,
+`missing_reset`, and dispatch unauthorized after the source success. The
+source projection therefore does not establish monitor publication. These
+v8 values remain historical; real v9 status/watch acceptance remains pending
+and no live readiness claim is made.
+
+Root reports the v9 source gates passed under MBX 1.22.0 / Rust 1.97.1:
+736 tests, strict all-target Clippy for both packages, and formatting. The
+locked debug `jackin`/`jackin-usage-broker` pair was installed from the exact
+source commit/tree above into the previously absent
+`/Users/donbeave/.local/share/jackin-claude-monitor-v9` prefix. Both binaries
+report 0.6.4. Hashes, sizes, modes, install command, and provenance are in
+[`v9-installation.json`](v9-installation.json). At install time the three
+modified paths were only `installed-smoke.py`, `task-queue.md`, and
+`verification.md`; no source paths were modified. The fresh prefix has the two
+binary siblings and Cargo installation metadata, with no state directory.
+
+The reviewed installed smoke passed against private synthetic state and
+settings. It checked monitor schema 5 and exact installed sibling broker
+selection. The headless auth-negative command returned `interaction_required`
+without launching its fake broker; the shell credential tripwires and local
+HTTP proxy observed zero requests. A 35-second JSONL watch completed in
+35.068 seconds and emitted exactly one unchanged event at sequence 1. The
+fixture-owned local service stopped cleanly and its temporary directory was
+removed. This run did not attempt successful authentication or provider
+collection. The smoke does not instrument native Security Framework calls or
+OS-level egress; zero local proxy requests is not a general egress guarantee.
+
+Real v9 `usage status` and `usage watch` against the selected account, including
+freshness across the five-hour and seven-day windows, still need a separately
+authorized attended operator check. The v8 live values are historical, the
+offline fixture is not live-account acceptance, and no live readiness,
+continuous-freshness, or zero-429 claim is made.

@@ -892,8 +892,60 @@ unverified. The correction and evidence are committed/pushed as one checkpoint.
   limits are RPM/ITPM/OTPM, a separate surface. Public docs publish no
   subscription polling quota or OAuth contract; do not infer a blanket GET
   prohibition. A zero-429 guarantee is unsupported.
-- [ ] Fix status/watch to expose stale last-good data, provider failure and
-  retry deadline; make the requested watch duration effective; cancel timed-out
-  probes before they can continue into a later retry. Separate agent fixes are
-  still in progress; honor persisted rate deadlines and make no zero-429 or
-  continuous-freshness claim.
+- [x] The v9 source checkpoint `f5163e987b861adca1de5add6087ee3d2d12e11a`
+  includes the queued status/watch, rate-control, and probe-cancellation work.
+  Its tree is `9418c762f07d6b6a6203def838e11ddb33a29c53`; root reports 736
+  tests passed, strict all-target Clippy for both packages, and formatting
+  passed. Keep real-account behavior and provider request counts as separate
+  acceptance questions; no zero-429 or continuous-freshness claim is supported.
+
+## v9 rate control and live-state checkpoint
+
+- [x] The pending Claude circuit rule opens only when there are at least three
+  consecutive failed generations since success and the latest typed failure is
+  `RateLimited`. All failure kinds contribute to the count. It adds a local
+  one-hour deadline from completion as a lower bound; a longer provider or
+  normal retry deadline remains authoritative. The persisted 300-second
+  attempt floor remains in force. Tests cover the threshold, latest-failure
+  kind, and restart recovery. This is local policy, not an Anthropic reset or
+  polling quota.
+- [x] Official-doc research confirms `/usage` can encounter a rate-limited
+  plan-usage request and show cached bars for up to 60 minutes. Public docs do
+  not publish the subscription polling quota or OAuth endpoint contract; the
+  Messages API's RPM/ITPM/OTPM limits are a separate surface. No public source
+  supports a zero-429 guarantee or a blanket GET prohibition.
+- [x] The v8 source-side collector succeeded normally after the persisted
+  deadline: generation 23 completed at epoch `1791683768`, cleared the failure
+  count and retry deadline, and produced a point-in-time projection of 62%
+  five-hour / 56% seven-day usage. At the projection sample time
+  `1791683871` (08:57:51 ICT), its provider sample was 104 seconds old. The
+  provider HTTP request count was not measured; these values are historical,
+  not a current reading.
+- [x] Despite that source-side success, the installed v8 monitor CLI remained
+  at event sequence 1 with empty five-hour/seven-day evidence, `quota_unknown`,
+  `missing_reset`, and dispatch unauthorized. The projection does not prove
+  monitor publication or current v9 behavior; v9 real-account acceptance is
+  still pending.
+- [x] The installed smoke fixture now expects broker protocol v9 and monitor
+  schema 5. Its non-TTY auth-negative path uses a failing fake broker sentinel;
+  the 35-second watch check runs against a no-evidence fixture monitor, bounds
+  the child at 50 seconds, records elapsed time, and requires one unchanged
+  event sequence. Syntax/diff checks and independent script review passed.
+- [x] Source commit `f5163e987b861adca1de5add6087ee3d2d12e11a` (tree
+  `9418c762f07d6b6a6203def838e11ddb33a29c53`) was installed with locked MBX
+  1.22.0 / Rust 1.97.1 dev profile into the previously absent v9 prefix.
+  Both binaries report 0.6.4; hashes and the three pre-install modified plan
+  files are recorded in `v9-installation.json`. The fresh prefix contains only
+  `bin/` and Cargo install metadata, with no state directory.
+- [x] The reviewed installed smoke passed against private synthetic state and
+  settings. The non-TTY auth-negative check returned `interaction_required`
+  without launching its fake broker; shell credential tripwires and the local
+  HTTP proxy each observed zero requests. The 35-second JSONL watch took
+  35.068 seconds and emitted one unchanged event at sequence 1. Fixture
+  service cleanup was orderly. Native Security Framework calls and OS-level
+  egress were not instrumented; no successful authentication or provider
+  collection was attempted. See `v9-installation.json` for the exact command
+  and results.
+- [ ] Keep real v9 `usage status`/`usage watch` acceptance pending until a
+  separately authorized attended operator check; do not claim live readiness,
+  continuous freshness, or zero 429s.
