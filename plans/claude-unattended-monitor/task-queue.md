@@ -670,3 +670,53 @@ This is targeted local fixture evidence only; the PR's hosted checks remain
 failed at the older remote head, and the action-owned MBX metadata guard is
 still in progress. No full workspace test result or native-host acceptance is
 claimed.
+
+## Live CI and MBX cleanup correction — 2026-10-11 03:17 UTC
+
+PR #1121 remains OPEN/DRAFT at head
+`60f86955b28fd7683bca44ba8dfe2152820f7f77`, based on main
+`1c3dd1be4a3b1ed518133ec3899c084c792370ff`. Its latest run,
+[38098781455](https://github.com/jackin-project/jackin/actions/runs/38098781455),
+failed Actionlint, Plan, and Required; 27 Rust package jobs and baseline
+publication were skipped. The Actionlint and Plan logs show Setup Mise
+installing 2026.9.18 while the repository pins 2026.10.7. DCO remains
+`ACTION_REQUIRED`; no sign-off rewrite is represented as completed. This is
+not a current full-CI success.
+
+Velnor PR #144 is OPEN/DRAFT at head
+`cf43ae442b64cfdb087dc79947e963db732be468`, based on main
+`b7b3da582aa8042f7a465ec0cdfc794eb9a90c35`. Its prior run,
+[38107331906](https://github.com/tailrocks/velnor-new/actions/runs/38107331906),
+failed Plan while running generated `Clean MBX workspace outputs`: it invoked
+`mbx +1.99.0 clean`, and MBX 1.23.0 rejects the Rust selector because clean
+does not compile. The narrow source fix removes that selector from both the
+shared workspace-clean step and the schema2 MBX qualification cleanup. It
+keeps the Rust-only Mise environment and absolute action-owned MBX path; build
+commands retain `+1.99.0`.
+
+The fix is source commit `0cb04698dbff145805d0a7ba50bb08857501da50` and its
+rendered-test expectation update is `08d5479e938ff1bdd4f1861f168a832eceb4e8b8`.
+The generated workflow refresh is `cf43ae442b64cfdb087dc79947e963db732be468`.
+Pinned local MBX 1.23.0 smoke confirmed that `mbx clean` under
+`mise exec rust@1.99.0 -- <absolute-mbx> clean` exits 0 in a temporary Cargo
+workspace with no managed target, while `mbx +1.99.0 clean` reproduces the CI
+error. Four focused renderer tests passed in Nextest run
+`63e3f0b1-9320-4411-9600-debc43937d0e`; renderer all-target Clippy with
+`-D warnings`, formatter, diff check, and Actionlint 1.7.12 passed.
+
+The final pre-commit source for generation was
+`08d5479e938ff1bdd4f1861f168a832eceb4e8b8`, tree
+`0e3df4b2dc16ececb845d04bea32665847f21e75`. Its debug CLI build is bound by
+`/private/tmp/velnor-cli-build-08d.receipt.json` (SHA-256
+`af28f82bdd327f0e02aefb76bdf2ea949009af3cddbeaac51ecfe7342e0337f7`) to
+binary SHA-256
+`fecad7e11ee4feb2d4731cfe361788f94599c07cbc38594fc195eb2faedac522`.
+Generation receipt `/private/tmp/velnor-generate-08d.receipt.json` (SHA-256
+`d2699402accf455f252139fea6b71c5f13ef135c07f52a5f79792317f6e84b19`) records
+29/29 source paths and the two expected output deltas in `ci.yml` and
+`qualification.yml`. Independent review confirmed the diff removes only
+`+1.99.0` from the 14 CI and 2 qualification cleanup commands; MBX authority,
+Rust-only Mise selection, path checks, status propagation, and compile
+selectors remain. The new Velnor CI run on `cf43ae442b64cfdb087dc79947e963db732be468`
+was queued at 2026-10-11 03:16 UTC; its outcome is pending at this checkpoint.
+No full hosted-CI success or merge readiness is claimed.
