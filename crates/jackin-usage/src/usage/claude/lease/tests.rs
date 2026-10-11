@@ -745,6 +745,277 @@ fn service_stop_and_lease_release_during_blocked_401_reread_skip_retry_and_keep_
 }
 
 #[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "The regression needs both generations and the blocked reread in one deterministic fixture to prove non-overlap and cache preservation."
+)]
+fn timed_out_probe_cannot_retry_after_blocked_401_reread_resumes() {
+    let _serial = test_lease_lock();
+    clear_bootstrapped_claude_credential();
+    let service = "Claude Code-credentials-selected";
+    let original = r#"{"claudeAiOauth":{"accessToken":"old-token"}}"#;
+    let replacement = r#"{"claudeAiOauth":{"accessToken":"late-token"}}"#;
+    let generation = next_generation();
+    cached_credential().store(
+        service.to_owned(),
+        Zeroizing::new(original.to_owned()),
+        generation,
+    );
+    let _lease = ClaudeCredentialLease {
+        service: service.to_owned(),
+        generation,
+    };
+    let collector_liveness = Arc::new(crate::usage::ClaudeCollectorLiveness::new(()));
+    collector_liveness.bind_generation(generation);
+    let probe_active = Arc::new(Mutex::new(true));
+    let active_http = Arc::new(AtomicUsize::new(0));
+    let max_active_http = Arc::new(AtomicUsize::new(0));
+    let old_fetch_count = Arc::new(AtomicUsize::new(0));
+    let old_reread_count = Arc::new(AtomicUsize::new(0));
+    let (reread_started_tx, reread_started_rx) = mpsc::channel();
+    let (reread_release_tx, reread_release_rx) = mpsc::channel();
+
+    let task_collector_admission = Arc::clone(&collector_liveness);
+    let task_collector_current = Arc::clone(&collector_liveness);
+    let task_probe_admission = Arc::clone(&probe_active);
+    let task_probe_current = Arc::clone(&probe_active);
+    let task_probe_commit = Arc::clone(&probe_active);
+    let task_active_http = Arc::clone(&active_http);
+    let task_max_active_http = Arc::clone(&max_active_http);
+    let task_old_fetch_count = Arc::clone(&old_fetch_count);
+    let task_old_reread_count = Arc::clone(&old_reread_count);
+    let old_task = std::thread::spawn(move || {
+        let mut resolved = resolved_from_payload(original, service);
+        let mut commit_if_probe_current = |operation: &mut dyn FnMut() -> bool| {
+            let active = task_probe_commit
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            (*active).then(operation)
+        };
+        super::super::fetch_claude_with_one_401_reread_with_probe_liveness(
+            service,
+            &mut resolved,
+            move |_| {
+                let active = task_active_http.fetch_add(1, Ordering::SeqCst) + 1;
+                task_max_active_http.fetch_max(active, Ordering::SeqCst);
+                let attempt = task_old_fetch_count.fetch_add(1, Ordering::SeqCst);
+                task_active_http.fetch_sub(1, Ordering::SeqCst);
+                assert_eq!(attempt, 0, "a timed-out probe must not start a retry");
+                Err(crate::usage::ProviderHttpError::HttpStatus {
+                    status: 401,
+                    message: "unauthorized".to_owned(),
+                    retry_after_seconds: None,
+                    response_received_at_epoch: None,
+                })
+            },
+            move |requested_service| {
+                assert_eq!(requested_service, service);
+                task_old_reread_count.fetch_add(1, Ordering::SeqCst);
+                reread_started_tx
+                    .send(())
+                    .expect("signal that the bounded reread is blocked");
+                reread_release_rx
+                    .recv()
+                    .expect("release the blocked test reread");
+                ClaudeKeychainRead::Payload {
+                    json: Zeroizing::new(replacement.to_owned()),
+                }
+            },
+            move || {
+                task_collector_admission.admit_if(|generation| {
+                    claude_credential_generation_is_current(service, generation)
+                })
+            },
+            move || {
+                let active = task_probe_admission
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                (*active).then_some(())
+            },
+            move || {
+                task_collector_current.is_current_if(|generation| {
+                    claude_credential_generation_is_current(service, generation)
+                })
+            },
+            move || {
+                *task_probe_current
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+            },
+            &mut commit_if_probe_current,
+        )
+    });
+
+    reread_started_rx
+        .recv()
+        .expect("first typed 401 starts one exact-service reread");
+    *probe_active
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = false;
+
+    // A later generation may start a provider request while the detached old
+    // task remains blocked in Keychain. Keep that request in flight so the
+    // test detects any late retry overlapping it.
+    let newer_resolved = resolved_from_payload(original, service);
+    let newer_active_http = Arc::clone(&active_http);
+    let newer_max_active_http = Arc::clone(&max_active_http);
+    let (new_http_started_tx, new_http_started_rx) = mpsc::channel();
+    let (new_http_release_tx, new_http_release_rx) = mpsc::channel();
+    let newer_task = std::thread::spawn(move || {
+        let mut resolved = newer_resolved;
+        super::super::fetch_claude_with_one_401_reread(
+            service,
+            &mut resolved,
+            move |_| {
+                let active = newer_active_http.fetch_add(1, Ordering::SeqCst) + 1;
+                newer_max_active_http.fetch_max(active, Ordering::SeqCst);
+                new_http_started_tx
+                    .send(())
+                    .expect("signal that the later probe request is in flight");
+                new_http_release_rx
+                    .recv()
+                    .expect("release the later probe request");
+                newer_active_http.fetch_sub(1, Ordering::SeqCst);
+                serde_json::from_str::<crate::usage::ClaudeOAuthUsageResponse>("{}")
+                    .map_err(|error| crate::usage::ProviderHttpError::Decode(error.to_string()))
+            },
+            |_| unreachable!("successful later probe must not reread Keychain"),
+            || true,
+        )
+    });
+    new_http_started_rx
+        .recv()
+        .expect("later generation starts while old Keychain read is blocked");
+
+    reread_release_tx
+        .send(())
+        .expect("resume the old timed-out probe");
+    assert!(matches!(
+        old_task.join().expect("old collector returns after reread"),
+        Err(super::super::ClaudeFetchError::ProbeExpired {
+            provider_http_status: Some(401)
+        })
+    ));
+    assert_eq!(old_fetch_count.load(Ordering::SeqCst), 1);
+    assert_eq!(old_reread_count.load(Ordering::SeqCst), 1);
+    assert_eq!(active_http.load(Ordering::SeqCst), 1);
+    assert_eq!(max_active_http.load(Ordering::SeqCst), 1);
+    assert!(
+        cached_credential()
+            .payload(service)
+            .is_some_and(|payload| payload.as_str() == original),
+        "late reread must not replace the cached credential"
+    );
+
+    new_http_release_tx
+        .send(())
+        .expect("complete the later probe request");
+    let _response = newer_task
+        .join()
+        .expect("later probe completes independently")
+        .expect("later probe succeeds");
+    assert_eq!(active_http.load(Ordering::SeqCst), 0);
+    assert_eq!(max_active_http.load(Ordering::SeqCst), 1);
+    clear_bootstrapped_claude_credential();
+}
+
+#[test]
+fn timed_out_probe_between_401_and_reread_admission_skips_keychain() {
+    let _serial = test_lease_lock();
+    clear_bootstrapped_claude_credential();
+    let service = "Claude Code-credentials-selected";
+    let original = r#"{"claudeAiOauth":{"accessToken":"old-token"}}"#;
+    let generation = next_generation();
+    cached_credential().store(
+        service.to_owned(),
+        Zeroizing::new(original.to_owned()),
+        generation,
+    );
+    let _lease = ClaudeCredentialLease {
+        service: service.to_owned(),
+        generation,
+    };
+    let collector_liveness = Arc::new(crate::usage::ClaudeCollectorLiveness::new(()));
+    collector_liveness.bind_generation(generation);
+    let probe_active = Arc::new(Mutex::new(true));
+    let fetch_count = Arc::new(AtomicUsize::new(0));
+    let reread_count = Arc::new(AtomicUsize::new(0));
+
+    let fetch_probe_gate = Arc::clone(&probe_active);
+    let admission_probe_gate = Arc::clone(&probe_active);
+    let current_probe_gate = Arc::clone(&probe_active);
+    let task_collector_admission = Arc::clone(&collector_liveness);
+    let task_collector_current = Arc::clone(&collector_liveness);
+    let task_fetch_count = Arc::clone(&fetch_count);
+    let task_reread_count = Arc::clone(&reread_count);
+    let mut resolved = resolved_from_payload(original, service);
+    let mut commit_if_probe_current = |operation: &mut dyn FnMut() -> bool| {
+        let active = probe_active
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        (*active).then(operation)
+    };
+    let result = super::super::fetch_claude_with_one_401_reread_with_probe_liveness(
+        service,
+        &mut resolved,
+        move |_| {
+            task_fetch_count.fetch_add(1, Ordering::SeqCst);
+            *fetch_probe_gate
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = false;
+            Err(crate::usage::ProviderHttpError::HttpStatus {
+                status: 401,
+                message: "unauthorized".to_owned(),
+                retry_after_seconds: None,
+                response_received_at_epoch: None,
+            })
+        },
+        move |_| {
+            task_reread_count.fetch_add(1, Ordering::SeqCst);
+            ClaudeKeychainRead::Payload {
+                json: Zeroizing::new(original.to_owned()),
+            }
+        },
+        move || {
+            task_collector_admission
+                .admit_if(|generation| claude_credential_generation_is_current(service, generation))
+        },
+        move || {
+            let active = admission_probe_gate
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            (*active).then_some(())
+        },
+        move || {
+            task_collector_current.is_current_if(|generation| {
+                claude_credential_generation_is_current(service, generation)
+            })
+        },
+        move || {
+            *current_probe_gate
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+        },
+        &mut commit_if_probe_current,
+    );
+
+    assert!(matches!(
+        result,
+        Err(super::super::ClaudeFetchError::ProbeExpired {
+            provider_http_status: Some(401)
+        })
+    ));
+    assert_eq!(fetch_count.load(Ordering::SeqCst), 1);
+    assert_eq!(reread_count.load(Ordering::SeqCst), 0);
+    assert!(
+        cached_credential()
+            .payload(service)
+            .is_some_and(|payload| payload.as_str() == original)
+    );
+    clear_bootstrapped_claude_credential();
+}
+
+#[test]
 fn retry_429_metadata_survives_consent_revocation_after_response() {
     let _serial = test_lease_lock();
     clear_bootstrapped_claude_credential();

@@ -193,8 +193,8 @@ fn v4_monitor_control_shapes_are_tagged_and_secret_free() {
     });
     serde_json::from_value::<MonitorOperation>(legacy_start)
         .expect_err("legacy budget override must be rejected");
-    assert_eq!(USAGE_MONITOR_SCHEMA_VERSION, 4);
-    assert_eq!(crate::usage_broker::USAGE_BROKER_PROTOCOL_VERSION, "v8");
+    assert_eq!(USAGE_MONITOR_SCHEMA_VERSION, 5);
+    assert_eq!(crate::usage_broker::USAGE_BROKER_PROTOCOL_VERSION, "v9");
     let mut pre_opt_in_start = start_value;
     pre_opt_in_start["config"]
         .as_object_mut()

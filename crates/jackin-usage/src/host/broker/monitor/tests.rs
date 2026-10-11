@@ -5,24 +5,50 @@ use super::super::empty_projection;
 use super::*;
 use jackin_protocol::control::Money;
 use jackin_protocol::usage_broker::{
-    UsageCalendarPeriodV1, UsageFreshnessV1, UsageIdentityKindV1, UsageLifecycleV1,
+    UsageCalendarPeriodV1, UsageFreshnessPhaseV1, UsageFreshnessV1, UsageIdentityKindV1,
+    UsageIssueRecoverabilityV1, UsageIssueScopeV1, UsageIssueV1, UsageLifecycleV1,
     UsageLimitWindowV1, UsageMembershipStateV1, UsageMetricGroupKindV1, UsageMetricGroupV1,
-    UsageMetricPeriodV1, UsageMetricScopeV1, UsagePercent, UsageProjectionRefreshStateV1,
-    UsageProjectionSchemaV1, UsageProviderV1, UsageQuotaStateV1,
+    UsageMetricPeriodV1, UsageMetricScopeV1, UsageMetricValueV1, UsagePercent,
+    UsageProjectionRefreshStateV1, UsageProjectionSchemaV1, UsageProviderV1, UsageQuotaStateV1,
 };
 use jackin_protocol::usage_monitor::{
     MonitorAccountBinding, MonitorAccountBindingInput, MonitorAction, MonitorBudgetReadiness,
     MonitorConfig, MonitorDispatchReadiness, MonitorEvidenceFreshness, MonitorIssueCode,
     MonitorLifecycle, MonitorModelGuardValidity, MonitorOperation, MonitorPolicy,
     MonitorPolicyApprovalInput, MonitorPolicyOrigin, MonitorPolicyRecord, MonitorProvider,
-    MonitorPurpose, MonitorQuotaReadiness, MonitorReply, MonitorResetValidity, MonitorScope,
-    MonitorStatus, SpendRecord, SpendRecordInput, SpendRecordSource, SpendVerification,
-    StatuslineObservation, StatuslineQuotaWindow, StatuslineRateLimits,
-    USAGE_MONITOR_SCHEMA_VERSION, USAGE_STATUSLINE_INPUT_SCHEMA_VERSION,
+    MonitorProviderReadiness, MonitorPurpose, MonitorQuotaReadiness, MonitorReply,
+    MonitorResetValidity, MonitorScope, MonitorStatus, SpendRecord, SpendRecordInput,
+    SpendRecordSource, SpendVerification, StatuslineObservation, StatuslineQuotaWindow,
+    StatuslineRateLimits, USAGE_MONITOR_SCHEMA_VERSION, USAGE_STATUSLINE_INPUT_SCHEMA_VERSION,
 };
 use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
+
+#[path = "tests/fingerprint_migration.rs"]
+mod fingerprint_migration;
+#[path = "tests/provider_diagnostics.rs"]
+mod provider_diagnostics;
+
+#[test]
+fn current_quota_fingerprint_keys_bind_source_and_scope() {
+    assert!(valid_evidence_fingerprint(
+        "broker_projection:used:five_hour:account",
+        "fingerprint"
+    ));
+    assert!(valid_evidence_fingerprint(
+        "statusline:used:five_hour:session:account",
+        "fingerprint"
+    ));
+    assert!(!valid_evidence_fingerprint(
+        "used:five_hour:account",
+        "fingerprint"
+    ));
+    assert!(valid_legacy_evidence_fingerprint(
+        "used:five_hour:account",
+        "fingerprint"
+    ));
+}
 
 const NOW: i64 = 1_800_000_000;
 
@@ -38,6 +64,78 @@ fn persisted_state_path(directory: &tempfile::TempDir) -> std::path::PathBuf {
         .join(super::super::BROKER_DIR)
         .join("monitor")
         .join("state.json")
+}
+
+fn downgrade_quota_fingerprints_for_v3(snapshot: &mut serde_json::Value) {
+    for monitor in snapshot["monitors"]
+        .as_object_mut()
+        .expect("persisted monitors")
+        .values_mut()
+    {
+        let fingerprints = monitor["evidence_fingerprints"]
+            .as_object_mut()
+            .expect("persisted evidence fingerprints");
+        let current = std::mem::take(fingerprints);
+        let mut legacy = serde_json::Map::new();
+        let mut sources = BTreeMap::<String, String>::new();
+        for (key, value) in current {
+            let parts = key.split(':').collect::<Vec<_>>();
+            let (legacy_key, source) = match parts.as_slice() {
+                [source, field @ ("used" | "reset"), window, "account"]
+                    if matches!(
+                        *source,
+                        "broker_projection"
+                            | "statusline"
+                            | "provider_spend"
+                            | "operator"
+                            | "local_session_log"
+                    ) =>
+                {
+                    (Some(format!("{field}:{window}:account")), Some(*source))
+                }
+                [
+                    source,
+                    field @ ("used" | "reset"),
+                    window,
+                    "session",
+                    session_id,
+                ] if matches!(
+                    *source,
+                    "broker_projection"
+                        | "statusline"
+                        | "provider_spend"
+                        | "operator"
+                        | "local_session_log"
+                ) =>
+                {
+                    (
+                        Some(format!("{field}:{window}:{session_id}")),
+                        Some(*source),
+                    )
+                }
+                _ => (None, None),
+            };
+            let (Some(legacy_key), Some(source)) = (legacy_key, source) else {
+                legacy.insert(key, value);
+                continue;
+            };
+            match sources.get(&legacy_key) {
+                None => {
+                    legacy.insert(legacy_key.clone(), value);
+                    sources.insert(legacy_key, source.to_owned());
+                }
+                Some(_) if source == "broker_projection" => {
+                    legacy.insert(legacy_key.clone(), value);
+                    sources.insert(legacy_key, source.to_owned());
+                }
+                Some(previous) => assert_eq!(
+                    previous, "broker_projection",
+                    "pre-V5 quota fingerprint collision must match old writer order"
+                ),
+            }
+        }
+        *fingerprints = legacy;
+    }
 }
 
 fn overwrite_persisted_state(directory: &tempfile::TempDir, snapshot: &serde_json::Value) {
@@ -2800,10 +2898,7 @@ fn assert_expiry_is_reconciled_and_notified(trigger: impl FnOnce(&MonitorStore, 
     assert_eq!(used.evidence_sequence, original_sequence);
     assert_eq!(used.evidence_received_at_epoch, NOW);
     assert_eq!(used.age_seconds, 301);
-    assert_eq!(
-        used.freshness,
-        jackin_protocol::usage_monitor::MonitorEvidenceFreshness::Stale
-    );
+    assert_eq!(used.freshness, MonitorEvidenceFreshness::Stale);
 }
 
 #[test]
@@ -3700,10 +3795,31 @@ fn v3_store_migration_defaults_horizon_and_preserves_goal_history() {
     let account = snapshot["accounts"]["acct-v3-migration"]
         .as_object_mut()
         .expect("persisted account");
+    account["broker_windows"][0] = serde_json::json!({
+        "used": {
+            "value": 5_000,
+            "reset_at_epoch": null,
+            "evidence_at_epoch": NOW,
+            "received_at_epoch": NOW,
+            "input_sequence": 1,
+            "claude_code_version": null
+        },
+        "reset": {
+            "value": NOW + 3_600,
+            "evidence_at_epoch": NOW,
+            "received_at_epoch": NOW,
+            "input_sequence": 1,
+            "claude_code_version": null
+        },
+        "paired": null
+    });
+    account["input_sequence"] = serde_json::json!(1);
+    account["latest_reset_epochs"] = serde_json::json!([NOW + 3_600, NOW + 86_400]);
     account["spend"]
         .as_object_mut()
         .expect("persisted account spend")
         .remove("historical_correction_horizon_epoch");
+    snapshot["next_input_sequence"] = serde_json::json!(1);
 
     let goal_spend = snapshot["goals"]["goal-v3-migration"]["spend_state"]
         .as_object_mut()
@@ -3725,6 +3841,7 @@ fn v3_store_migration_defaults_horizon_and_preserves_goal_history() {
             event["status"]["schema_version"] = serde_json::json!(3);
         }
     }
+    downgrade_quota_fingerprints_for_v3(&mut snapshot);
     drop(store);
     overwrite_persisted_state(&directory, &snapshot);
 
@@ -3738,6 +3855,19 @@ fn v3_store_migration_defaults_horizon_and_preserves_goal_history() {
             .spend
             .historical_correction_horizon_epoch,
         None
+    );
+    assert!(
+        state.accounts["acct-v3-migration"]
+            .broker_windows
+            .iter()
+            .all(|window| window.used.is_none()
+                && window.reset.is_none()
+                && window.paired.is_none())
+    );
+    assert_eq!(
+        state.accounts["acct-v3-migration"].latest_reset_epochs,
+        [None, None],
+        "legacy unscoped provider resets are removed during pre-v5 migration"
     );
     let goal = &state.goals["goal-v3-migration"];
     assert_eq!(goal.budget, Some(Money::new(5_000, "SGD", 2)));
@@ -4126,6 +4256,7 @@ fn migrate_rolled_goal_fixture(fixture: RolledGoalMigrationFixture) -> RolledGoa
             event["status"]["schema_version"] = serde_json::json!(3);
         }
     }
+    downgrade_quota_fingerprints_for_v3(&mut snapshot);
     drop(store);
     overwrite_persisted_state(&directory, &snapshot);
     let store = MonitorStore::open(directory.path()).expect("migrate rolled V3 store");
@@ -6531,11 +6662,15 @@ fn quota_group(
     }
 }
 
-fn provider_projection(observed_at_epoch: i64) -> UsageProjectionV1 {
+fn provider_projection(
+    observed_at_epoch: i64,
+    account_generation: u64,
+    broker_generation: u64,
+) -> UsageProjectionV1 {
     let session_reset = NOW + 3_600;
     let weekly_reset = NOW + 86_400;
     let freshness = UsageFreshnessV1 {
-        generation: 1,
+        generation: account_generation,
         phase: UsageFreshnessPhaseV1::Current,
         last_good_at_epoch: Some(observed_at_epoch),
         retry_at_epoch: None,
@@ -6592,11 +6727,11 @@ fn provider_projection(observed_at_epoch: i64) -> UsageProjectionV1 {
     };
     UsageProjectionV1 {
         schema_version: UsageProjectionSchemaV1,
-        projection_id: format!("provider-observation-{observed_at_epoch}"),
+        projection_id: format!("provider-observation-{observed_at_epoch}-{broker_generation}"),
         generated_at_epoch: observed_at_epoch,
         discovery_revision: "fixture-discovery".to_owned(),
         broker_instance_id: "fixture-broker".to_owned(),
-        broker_generation: 1,
+        broker_generation,
         refresh_state: UsageProjectionRefreshStateV1::Idle,
         providers: vec![UsageProviderV1 {
             provider_id: "anthropic".to_owned(),
@@ -6612,76 +6747,47 @@ fn provider_projection(observed_at_epoch: i64) -> UsageProjectionV1 {
     }
 }
 
-fn start_quota_only_guard(store: &MonitorStore, now_epoch: i64) -> String {
-    let account_id = "acct-provider-freshness";
-    let goal_id = "goal-provider-freshness";
+fn start_approved_projection_observer(
+    store: &MonitorStore,
+    account_id: &str,
+    source_account_id: &str,
+    now_epoch: i64,
+) -> (MonitorAccountBinding, String) {
+    store.set_experimental_collector_source(Some(source_account_id.to_owned()));
     let binding = match store
         .operate(
             MonitorOperation::BindAccount {
                 binding: MonitorAccountBindingInput {
                     provider: MonitorProvider::Claude,
                     account_id: account_id.to_owned(),
-                    provider_account_id: None,
-                    experimental_collector_approved: false,
+                    provider_account_id: Some(source_account_id.to_owned()),
+                    experimental_collector_approved: true,
                     operator_label: "test-operator".to_owned(),
                     operator_confirmed: true,
                 },
             },
             now_epoch,
         )
-        .expect("bind fixture account")
+        .expect("bind approved provider source")
     {
         MonitorReply::AccountBound { binding } => binding,
         other => panic!("expected account-bound reply, got {other:?}"),
     };
-    let policy = match store
-        .operate(
-            MonitorOperation::ApprovePolicy {
-                approval: MonitorPolicyApprovalInput {
-                    binding_id: binding.binding_id.clone(),
-                    binding_revision: binding.revision,
-                    goal_id: goal_id.to_owned(),
-                    new_policy: MonitorPolicy::QuotaOnly,
-                    budget: None,
-                    operator_label: "test-operator".to_owned(),
-                    operator_confirmed: true,
-                    acknowledge_no_sgd_cap: true,
-                    expected_revision: None,
-                },
-            },
-            now_epoch,
-        )
-        .expect("approve quota-only fixture policy")
-    {
-        MonitorReply::PolicyApproved { policy } => policy,
-        other => panic!("expected policy-approved reply, got {other:?}"),
-    };
-    let config = MonitorConfig {
-        provider: MonitorProvider::Claude,
-        purpose: MonitorPurpose::DispatchGuard,
-        scope: MonitorScope::BoundAccount {
-            binding_id: binding.binding_id,
-            binding_revision: binding.revision,
-            session_id: None,
-        },
-        goal_id: Some(goal_id.to_owned()),
-        expected_model: None,
-        policy_revision: Some(policy.revision),
-        experimental_collector: false,
-    };
-    match store
+    let config = collector_config(&binding, MonitorPurpose::ObserveOnly);
+    let monitor_id = match store
         .operate(
             MonitorOperation::Start {
                 config,
-                idempotency_key: "provider-freshness-guard".to_owned(),
+                idempotency_key: format!("provider-freshness-observer-{account_id}"),
             },
             now_epoch,
         )
-        .expect("start quota-only dispatch guard")
+        .expect("start approved provider observer")
     {
         MonitorReply::Started { status } => status.monitor_id.clone(),
         other => panic!("expected started reply, got {other:?}"),
-    }
+    };
+    (binding, monitor_id)
 }
 
 fn descriptor_status(store: &MonitorStore, monitor_id: &str, now_epoch: i64) -> MonitorStatus {
@@ -6700,23 +6806,74 @@ fn descriptor_status(store: &MonitorStore, monitor_id: &str, now_epoch: i64) -> 
 }
 
 #[test]
+fn provider_observation_accepts_hashed_instance_id_and_rejects_unbounded_text() {
+    let directory = tempfile::tempdir().expect("temporary monitor directory");
+    let store = MonitorStore::open(directory.path()).expect("open monitor store");
+    let local_account_id = "local-hashed-instance";
+    start_approved_projection_observer(&store, local_account_id, "acct-provider-freshness", NOW);
+    let mut projection = provider_projection(NOW, 1, 1);
+    projection.broker_instance_id = format!("sha256:{}", "a".repeat(64));
+    store
+        .observe_projection(&projection, NOW)
+        .expect("persist a production-format broker instance id");
+
+    let state = store.lock().clone();
+    assert_eq!(
+        state.accounts[local_account_id]
+            .provider_observation
+            .as_ref()
+            .unwrap()
+            .broker_instance_id,
+        projection.broker_instance_id
+    );
+    for invalid in [
+        format!("sha256:\n{}", "a".repeat(64)),
+        "a".repeat(MAX_ID_LENGTH + 1),
+    ] {
+        let mut corrupted = state.clone();
+        corrupted
+            .accounts
+            .get_mut(local_account_id)
+            .unwrap()
+            .provider_observation
+            .as_mut()
+            .unwrap()
+            .broker_instance_id = invalid;
+        assert!(validate_store_state(&corrupted).is_err());
+    }
+}
+
+#[test]
 fn identical_provider_observation_refreshes_fields_but_replay_and_tick_do_not() {
     let directory = tempfile::tempdir().expect("temporary monitor directory");
     let store = MonitorStore::open(directory.path()).expect("open monitor store");
-    let initial_projection = provider_projection(NOW);
+    let (_binding, monitor_id) = start_approved_projection_observer(
+        &store,
+        "local-provider-freshness",
+        "acct-provider-freshness",
+        NOW,
+    );
+    let initial_projection = provider_projection(NOW, 1, 1);
     store
         .observe_projection(&initial_projection, NOW)
         .expect("observe initial provider response");
-    let monitor_id = start_quota_only_guard(&store, NOW);
-    assert!(descriptor_status(&store, &monitor_id, NOW).runnable);
+    let initial = descriptor_status(&store, &monitor_id, NOW);
+    assert_eq!(
+        initial.readiness.provider,
+        MonitorProviderReadiness::Current
+    );
+    assert_eq!(initial.five_hour.used_percentage_basis_points, Some(2_000));
 
     let refreshed_at = NOW + MONITOR_EVIDENCE_TTL_SECS + 1;
-    let refreshed_projection = provider_projection(refreshed_at);
+    let refreshed_projection = provider_projection(refreshed_at, 2, 2);
     store
         .observe_projection(&refreshed_projection, refreshed_at)
         .expect("observe genuine identical provider response");
     let refreshed = descriptor_status(&store, &monitor_id, refreshed_at);
-    assert!(refreshed.runnable);
+    assert_eq!(
+        refreshed.readiness.provider,
+        MonitorProviderReadiness::Current
+    );
     for window in [&refreshed.five_hour, &refreshed.seven_day] {
         for field in [
             window.used_evidence.as_ref(),
@@ -6729,6 +6886,30 @@ fn identical_provider_observation_refreshes_fields_but_replay_and_tick_do_not() 
         }
     }
 
+    // A publication with the same account generation but an older broker
+    // generation is stale even if it carries a later generated timestamp.
+    let older_broker_generation = provider_projection(refreshed_at + 1, 2, 1);
+    let sequence_before_stale_publication = store.lock().next_input_sequence;
+    store
+        .observe_projection(&older_broker_generation, refreshed_at + 1)
+        .expect("ignore older broker generation");
+    assert_eq!(
+        store.lock().next_input_sequence,
+        sequence_before_stale_publication
+    );
+    let after_older_publication = descriptor_status(&store, &monitor_id, refreshed_at + 2);
+    for window in [
+        &after_older_publication.five_hour,
+        &after_older_publication.seven_day,
+    ] {
+        let used = window
+            .used_evidence
+            .as_ref()
+            .expect("provider quota remains");
+        assert_eq!(used.evidence_received_at_epoch, refreshed_at);
+        assert_eq!(used.age_seconds, 2);
+    }
+
     // Re-reading the same cached projection has a later receipt time but no
     // newer provider observation timestamp, so it cannot extend either TTL.
     let replayed_at = refreshed_at + MONITOR_EVIDENCE_TTL_SECS + 1;
@@ -6736,7 +6917,10 @@ fn identical_provider_observation_refreshes_fields_but_replay_and_tick_do_not() 
         .observe_projection(&refreshed_projection, replayed_at)
         .expect("replay cached projection");
     let replayed = descriptor_status(&store, &monitor_id, replayed_at);
-    assert!(!replayed.runnable);
+    assert_eq!(
+        replayed.readiness.provider,
+        MonitorProviderReadiness::Current
+    );
     for window in [&replayed.five_hour, &replayed.seven_day] {
         for field in [
             window.used_evidence.as_ref(),
@@ -6763,5 +6947,331 @@ fn identical_provider_observation_refreshes_fields_but_replay_and_tick_do_not() 
             .evidence_received_at_epoch,
         refreshed_at,
         "timer reconciliation cannot create provider evidence"
+    );
+}
+
+#[test]
+fn provider_projection_maps_only_to_the_current_approved_local_account() {
+    let directory = tempfile::tempdir().expect("temporary monitor directory");
+    let store = MonitorStore::open(directory.path()).expect("open monitor store");
+    let (_binding_a, approved_monitor) =
+        start_approved_projection_observer(&store, "operator-local-a", "provider-source-a", NOW);
+    let unapproved_binding = match store
+        .operate(
+            MonitorOperation::BindAccount {
+                binding: MonitorAccountBindingInput {
+                    provider: MonitorProvider::Claude,
+                    account_id: "provider-source-a".to_owned(),
+                    provider_account_id: Some("provider-source-b".to_owned()),
+                    experimental_collector_approved: false,
+                    operator_label: "isolated-test-operator".to_owned(),
+                    operator_confirmed: true,
+                },
+            },
+            NOW,
+        )
+        .expect("bind a different unapproved source to a source-shaped local label")
+    {
+        MonitorReply::AccountBound { binding } => binding,
+        other => panic!("expected account-bound reply, got {other:?}"),
+    };
+    let unapproved_monitor = match store
+        .operate(
+            MonitorOperation::Start {
+                config: MonitorConfig {
+                    provider: MonitorProvider::Claude,
+                    purpose: MonitorPurpose::ObserveOnly,
+                    scope: MonitorScope::BoundAccount {
+                        binding_id: unapproved_binding.binding_id.clone(),
+                        binding_revision: unapproved_binding.revision,
+                        session_id: None,
+                    },
+                    goal_id: None,
+                    expected_model: None,
+                    policy_revision: None,
+                    experimental_collector: false,
+                },
+                idempotency_key: "unapproved-source-observer".to_owned(),
+            },
+            NOW,
+        )
+        .expect("start passive observer without collector approval")
+    {
+        MonitorReply::Started { status } => status.monitor_id.clone(),
+        other => panic!("expected started reply, got {other:?}"),
+    };
+
+    let mut projection = provider_projection(NOW, 1, 2);
+    let mut second_source = projection.providers[0].accounts[0].clone();
+    second_source.canonical_account_id = "provider-source-b".to_owned();
+    second_source.rank = 1;
+    projection.providers[0].accounts[0].canonical_account_id = "provider-source-a".to_owned();
+    projection.providers[0].accounts.push(second_source);
+    store
+        .observe_projection(&projection, NOW)
+        .expect("observe canonical provider projection");
+
+    assert_eq!(store.collection_accounts(), vec!["provider-source-a"]);
+    let approved = descriptor_status(&store, &approved_monitor, NOW);
+    assert_eq!(approved.account_id.as_deref(), Some("operator-local-a"));
+    assert_eq!(
+        approved.readiness.provider,
+        MonitorProviderReadiness::Current
+    );
+    assert_eq!(approved.five_hour.used_percentage_basis_points, Some(2_000));
+    assert_eq!(approved.seven_day.used_percentage_basis_points, Some(3_000));
+
+    let unapproved = descriptor_status(&store, &unapproved_monitor, NOW);
+    assert_eq!(
+        unapproved.readiness.provider,
+        MonitorProviderReadiness::Unknown
+    );
+    assert_eq!(unapproved.five_hour.used_percentage_basis_points, None);
+    assert_eq!(unapproved.seven_day.used_percentage_basis_points, None);
+    let state = store.lock();
+    assert!(state.accounts.contains_key("operator-local-a"));
+    assert!(!state.accounts.contains_key("provider-source-a"));
+    assert!(!state.accounts.contains_key("provider-source-b"));
+}
+
+#[test]
+fn provider_incarnation_reset_preserves_last_good_and_exhausted_weekly_guard() {
+    let directory = tempfile::tempdir().expect("temporary monitor directory");
+    let store = MonitorStore::open(directory.path()).expect("open monitor store");
+    let (_binding, _monitor_id) = start_approved_projection_observer(
+        &store,
+        "operator-local-incarnation-reset",
+        "acct-provider-freshness",
+        NOW,
+    );
+    let mut initial = provider_projection(NOW, 8, 12);
+    initial.providers[0].accounts[0].windows[1].used_percent = Some(UsagePercent::clamp_raw(96));
+    initial.providers[0].accounts[0].windows[1].used_raw_percent = Some(96);
+    for group in &mut initial.providers[0].accounts[0].metric_groups {
+        if group.label == "Weekly"
+            && let UsageMetricValueV1::Window {
+                used_percent,
+                used_raw_percent,
+                ..
+            } = &mut group.value
+        {
+            *used_percent = Some(UsagePercent::clamp_raw(96));
+            *used_raw_percent = Some(96);
+        }
+    }
+    store
+        .observe_projection(&initial, NOW)
+        .expect("publish exhausted weekly provider quota");
+
+    let before = store.lock();
+    let account_before = &before.accounts["operator-local-incarnation-reset"];
+    let barrier_before = account_before.reset_barriers[1]
+        .as_ref()
+        .expect("exhausted weekly window latches a reset barrier")
+        .clone();
+    assert_eq!(
+        barrier_before.pause_reason,
+        MonitorIssueCode::LimitGuardReached
+    );
+    assert_eq!(
+        account_before
+            .provider_observation
+            .as_ref()
+            .unwrap()
+            .last_good_at_epoch,
+        Some(NOW)
+    );
+    drop(before);
+
+    // A newer catalog publication can restart the account generation while
+    // retaining the broker incarnation. A new broker incarnation can restart
+    // both counters. Neither ordering reset releases quota guards.
+    for (step, account_generation, broker_generation, broker_instance_id) in [
+        (1, 1, 13, "fixture-broker"),
+        (2, 0, 1, "restarted-fixture-broker"),
+    ] {
+        let mut restarted = provider_projection(NOW - 1, account_generation, broker_generation);
+        restarted.broker_instance_id = broker_instance_id.to_owned();
+        let account = &mut restarted.providers[0].accounts[0];
+        account.freshness = UsageFreshnessV1 {
+            generation: account_generation,
+            phase: UsageFreshnessPhaseV1::Failed,
+            last_good_at_epoch: Some(NOW - 1),
+            retry_at_epoch: None,
+            is_stale: true,
+        };
+        account.issues = vec![UsageIssueV1 {
+            code: "provider_timeout".to_owned(),
+            scope: UsageIssueScopeV1::Account,
+            recoverability: UsageIssueRecoverabilityV1::Retryable,
+            message: "provider timeout".to_owned(),
+            retry_at_epoch: None,
+        }];
+        for window in &mut account.windows {
+            if window.category == UsageWindowCategoryV1::LongRange {
+                window.used_percent = Some(UsagePercent::clamp_raw(96));
+                window.used_raw_percent = Some(96);
+            }
+        }
+        for group in &mut account.metric_groups {
+            group.phase = UsageFreshnessPhaseV1::Failed;
+            group.is_stale = true;
+            group.observed_at_epoch = None;
+            group.fetched_at_epoch = NOW + step;
+            group.last_success_at_epoch = Some(NOW - 1);
+            if group.label == "Weekly"
+                && let UsageMetricValueV1::Window {
+                    used_percent,
+                    used_raw_percent,
+                    ..
+                } = &mut group.value
+            {
+                *used_percent = Some(UsagePercent::clamp_raw(96));
+                *used_raw_percent = Some(96);
+            }
+        }
+        store
+            .observe_projection(&restarted, NOW + step)
+            .expect("observe lower generation after catalog or broker reset");
+
+        let after = store.lock();
+        let account_after = &after.accounts["operator-local-incarnation-reset"];
+        let observation = account_after
+            .provider_observation
+            .as_ref()
+            .expect("provider failure diagnostics retained");
+        assert_eq!(observation.generation, account_generation);
+        assert_eq!(observation.broker_generation, broker_generation);
+        assert_eq!(observation.broker_instance_id, broker_instance_id);
+        assert_eq!(observation.last_good_at_epoch, Some(NOW));
+        assert_eq!(observation.readiness, MonitorProviderReadiness::Stale);
+        let barrier = account_after.reset_barriers[1]
+            .as_ref()
+            .expect("generation reset cannot release exhausted weekly guard");
+        assert_eq!(barrier.started_at_epoch, barrier_before.started_at_epoch);
+        assert_eq!(
+            barrier.prior_reset_at_epoch,
+            barrier_before.prior_reset_at_epoch
+        );
+        assert_eq!(
+            account_after.latest_reset_epochs[1],
+            barrier_before.prior_reset_at_epoch
+        );
+        assert_eq!(
+            account_after.broker_windows[1]
+                .used
+                .as_ref()
+                .expect("last good weekly value remains stored")
+                .value,
+            9_600
+        );
+    }
+}
+
+#[test]
+fn rate_limit_keeps_original_quota_age_and_does_not_block_fresh_statusline() {
+    let directory = tempfile::tempdir().expect("temporary monitor directory");
+    let store = MonitorStore::open(directory.path()).expect("open monitor store");
+    let (binding, monitor_id) = start_approved_projection_observer(
+        &store,
+        "operator-local-rate-limited",
+        "acct-provider-freshness",
+        NOW,
+    );
+    store
+        .observe_projection(&provider_projection(NOW, 1, 1), NOW)
+        .expect("publish initial provider success");
+
+    let retry_at_epoch = NOW + 900;
+    let mut failed = provider_projection(NOW + 10, 2, 2);
+    let account = &mut failed.providers[0].accounts[0];
+    account.freshness = UsageFreshnessV1 {
+        generation: 2,
+        phase: UsageFreshnessPhaseV1::Failed,
+        last_good_at_epoch: Some(NOW),
+        retry_at_epoch: Some(retry_at_epoch),
+        is_stale: true,
+    };
+    account.issues = vec![UsageIssueV1 {
+        code: "rate_limited".to_owned(),
+        scope: UsageIssueScopeV1::Account,
+        recoverability: UsageIssueRecoverabilityV1::Retryable,
+        message: "rate limited".to_owned(),
+        retry_at_epoch: Some(retry_at_epoch),
+    }];
+    for group in &mut account.metric_groups {
+        group.phase = UsageFreshnessPhaseV1::Failed;
+        group.is_stale = true;
+        group.observed_at_epoch = None;
+        group.fetched_at_epoch = NOW + 10;
+        group.last_success_at_epoch = Some(NOW);
+    }
+    store
+        .observe_projection(&failed, NOW + 10)
+        .expect("publish rate-limited last-good state");
+
+    let expired = descriptor_status(&store, &monitor_id, NOW + MONITOR_EVIDENCE_TTL_SECS + 1);
+    assert_eq!(
+        expired.readiness.provider,
+        MonitorProviderReadiness::RateLimited
+    );
+    assert_eq!(expired.readiness.quota, MonitorQuotaReadiness::Stale);
+    assert_eq!(expired.five_hour.used_percentage_basis_points, Some(2_000));
+    assert_eq!(expired.seven_day.used_percentage_basis_points, Some(3_000));
+    for window in [&expired.five_hour, &expired.seven_day] {
+        let used = window.used_evidence.as_ref().expect("retained quota value");
+        assert_eq!(used.evidence_at_epoch, Some(NOW));
+        assert_eq!(used.evidence_received_at_epoch, NOW);
+        assert_eq!(used.age_seconds, 301);
+        assert_eq!(used.freshness, MonitorEvidenceFreshness::Stale);
+    }
+    let rate_issue = expired
+        .issues
+        .iter()
+        .find(|issue| issue.code == MonitorIssueCode::ProviderRateLimited)
+        .expect("provider rate-limit issue is visible");
+    assert_eq!(rate_issue.retry_at_epoch, Some(retry_at_epoch));
+
+    store
+        .operate(
+            MonitorOperation::Ingest {
+                scope: MonitorScope::BoundAccount {
+                    binding_id: binding.binding_id.clone(),
+                    binding_revision: binding.revision,
+                    session_id: None,
+                },
+                observation: observation_with_windows(
+                    "fresh-statusline-after-provider-failure",
+                    Some(42),
+                    Some(NOW + 3_600),
+                    Some(34),
+                    Some(NOW + 86_400),
+                ),
+            },
+            NOW + MONITOR_EVIDENCE_TTL_SECS + 2,
+        )
+        .expect("ingest independent fresh statusline quota");
+    let recovered_quota =
+        descriptor_status(&store, &monitor_id, NOW + MONITOR_EVIDENCE_TTL_SECS + 2);
+    assert_eq!(
+        recovered_quota.readiness.provider,
+        MonitorProviderReadiness::RateLimited
+    );
+    assert_eq!(
+        recovered_quota.readiness.quota,
+        MonitorQuotaReadiness::Ready
+    );
+    assert!(
+        recovered_quota
+            .issues
+            .iter()
+            .any(|issue| issue.code == MonitorIssueCode::ProviderRateLimited),
+        "provider diagnostics remain visible independently of fresh statusline quota"
+    );
+    assert!(
+        !recovered_quota
+            .issues
+            .iter()
+            .any(|issue| issue.code == MonitorIssueCode::QuotaStale)
     );
 }

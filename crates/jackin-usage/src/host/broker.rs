@@ -525,21 +525,6 @@ fn probe_claude_with_scope(
                 .any(|account_id| account_id == &consent_capability.account_id)
     });
     let consent_liveness = executor.collector_liveness.as_ref().map(Arc::clone);
-    let liveness_for_current = consent_liveness.as_ref().map(Arc::clone);
-    let source_for_current = Arc::clone(&authorized_source);
-    let consent_is_current = move || {
-        liveness_for_current.as_ref().is_some_and(|liveness| {
-            liveness.is_current_if(|generation| source_for_current(generation))
-        })
-    };
-    let liveness_for_admission = consent_liveness;
-    let admit_operation = move || {
-        liveness_for_admission.as_ref().and_then(|liveness| {
-            let authorized_source = Arc::clone(&authorized_source);
-            liveness.admit_if(move |generation| authorized_source(generation))
-        })
-    };
-
     #[cfg(test)]
     if let Some(collector) = executor.claude_collector.as_ref() {
         let lifecycle_is_current = executor
@@ -559,14 +544,40 @@ fn probe_claude_with_scope(
         };
     }
 
-    match probe::run_probe_with_budget(executor.probe_budget, move || {
+    match probe::run_probe_with_liveness(executor.probe_budget, move |probe_liveness| {
+        let liveness_for_current = consent_liveness.as_ref().map(Arc::clone);
+        let source_for_current = Arc::clone(&authorized_source);
+        let probe_for_current = probe_liveness.clone();
+        let consent_is_current = move || {
+            probe_for_current.is_current()
+                && liveness_for_current.as_ref().is_some_and(|liveness| {
+                    liveness.is_current_if(|generation| source_for_current(generation))
+                })
+        };
+        let liveness_for_admission = consent_liveness;
+        let source_for_admission = Arc::clone(&authorized_source);
+        let admit_operation = move || {
+            liveness_for_admission.as_ref().and_then(|liveness| {
+                let authorized_source = Arc::clone(&source_for_admission);
+                liveness.admit_if(move |generation| authorized_source(generation))
+            })
+        };
+        let probe_for_admission = probe_liveness.clone();
+        let admit_probe_operation = move || probe_for_admission.admit_operation();
+        let probe_for_commit = probe_liveness.clone();
+        let mut commit_if_probe_current = move |operation: &mut dyn FnMut() -> bool| {
+            probe_for_commit.commit_if_current(operation)
+        };
         let result = crate::usage::experimental_claude_usage_snapshot_for_service(
             "claude",
             Some("Claude"),
             chrono::Utc::now().timestamp(),
             &service,
             admit_operation,
+            admit_probe_operation,
             consent_is_current,
+            || probe_liveness.is_current(),
+            &mut commit_if_probe_current,
         );
         match result {
             Ok(Some(snapshot)) => provider_probe_outcome_with_metadata(
@@ -601,6 +612,9 @@ fn probe_claude_with_scope(
                         http_status: Some(http_status),
                     }),
                 )
+            }
+            Err(crate::usage::ClaudeCollectionError::ProbeExpired { .. }) => {
+                probe::probe_timeout_outcome()
             }
         }
     }) {

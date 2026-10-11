@@ -70,6 +70,30 @@ struct GatedExecutor {
     calls: AtomicUsize,
 }
 
+struct GatedRelease {
+    sender: Option<SyncSender<()>>,
+}
+
+impl GatedRelease {
+    fn release(&mut self) {
+        self.sender
+            .take()
+            .expect("provider release is available")
+            .send(())
+            .expect("release the deterministic provider result");
+    }
+}
+
+impl Drop for GatedRelease {
+    fn drop(&mut self) {
+        if let Some(sender) = self.sender.take() {
+            // Unblock the worker before TickerHarness drops its coordinator,
+            // including when an assertion unwinds before the normal release.
+            let _send_result = sender.try_send(());
+        }
+    }
+}
+
 struct RetryAfterExecutor {
     calls: AtomicUsize,
 }
@@ -643,7 +667,7 @@ fn ticker_publishes_completed_provider_evidence_for_approved_observer() {
     use std::os::unix::fs::symlink;
 
     let (started_sender, started_receiver) = mpsc::channel();
-    let (release_sender, release_receiver) = mpsc::sync_channel(0);
+    let (release_sender, release_receiver) = mpsc::sync_channel(1);
     let executor = Arc::new(GatedExecutor {
         started: started_sender,
         release: Mutex::new(release_receiver),
@@ -651,8 +675,13 @@ fn ticker_publishes_completed_provider_evidence_for_approved_observer() {
     });
     let executor_trait: Arc<dyn UsageProviderExecutor> = Arc::<GatedExecutor>::clone(&executor);
     let mut harness = TickerHarness::with_executor(executor_trait, None);
+    // Declared after the harness so panic cleanup releases the provider before
+    // coordinator teardown joins its worker thread.
+    let mut release = GatedRelease {
+        sender: Some(release_sender),
+    };
     let capability = UsageAccountCapability {
-        account_id: ACCOUNT_ID.to_owned(),
+        account_id: "provider-canonical-serve-ticker".to_owned(),
         surface_id: "claude".to_owned(),
     };
     harness.install_catalog(&capability);
@@ -686,6 +715,29 @@ fn ticker_publishes_completed_provider_evidence_for_approved_observer() {
         updating_projection.refresh_state,
         UsageProjectionRefreshStateV1::Refreshing
     );
+    publisher_tick_step(
+        &harness.publisher,
+        &harness.coordinator,
+        &harness.store,
+        ClockSample {
+            wall_epoch: NOW + 1,
+            monotonic_elapsed: Duration::from_millis(1_200),
+        },
+        &mut ticker_state,
+    );
+    let observed_updating_projection = harness
+        .publisher
+        .current_projection()
+        .expect("read updating projection after the ticker step");
+    assert_eq!(
+        observed_updating_projection.refresh_state,
+        UsageProjectionRefreshStateV1::Refreshing
+    );
+    assert_eq!(
+        ticker_state.last_observed_projection_id.as_deref(),
+        Some(observed_updating_projection.projection_id.as_str()),
+        "the ticker observes the in-flight projection before terminal publication"
+    );
     let cursor = watch_cursor(&harness.store, &monitor_id);
     let (watch_result, watcher) =
         watch_for_next_event(Arc::clone(&harness.store), monitor_id.clone(), cursor);
@@ -694,9 +746,7 @@ fn ticker_publishes_completed_provider_evidence_for_approved_observer() {
     fs::rename(&state_file, &backup_file).expect("move durable state file for test fault");
     symlink(&backup_file, &state_file).expect("install test-only state symlink");
 
-    release_sender
-        .send(())
-        .expect("release the deterministic provider result");
+    release.release();
     let completed = harness
         .coordinator
         .join_generation(&capability, generation, Duration::from_secs(1), NOW + 2)
@@ -712,7 +762,7 @@ fn ticker_publishes_completed_provider_evidence_for_approved_observer() {
         &harness.store,
         ClockSample {
             wall_epoch: NOW + 2,
-            monotonic_elapsed: Duration::from_millis(1_200),
+            monotonic_elapsed: Duration::from_millis(2_200),
         },
         &mut ticker_state,
     );
@@ -742,7 +792,7 @@ fn ticker_publishes_completed_provider_evidence_for_approved_observer() {
 
     assert_eq!(
         ticker_state.last_observed_projection_id.as_deref(),
-        Some(updating_projection.projection_id.as_str()),
+        Some(observed_updating_projection.projection_id.as_str()),
         "failed monitor persistence leaves the final projection pending"
     );
     let observation_retry_after = ticker_state.observation_retry_after;
@@ -753,7 +803,7 @@ fn ticker_publishes_completed_provider_evidence_for_approved_observer() {
         &harness.store,
         ClockSample {
             wall_epoch: NOW + 3,
-            monotonic_elapsed: Duration::from_millis(1_400),
+            monotonic_elapsed: Duration::from_millis(2_400),
         },
         &mut ticker_state,
     );
@@ -772,7 +822,7 @@ fn ticker_publishes_completed_provider_evidence_for_approved_observer() {
         &harness.store,
         ClockSample {
             wall_epoch: NOW + 3,
-            monotonic_elapsed: Duration::from_millis(2_200),
+            monotonic_elapsed: Duration::from_millis(3_200),
         },
         &mut ticker_state,
     );

@@ -5,34 +5,31 @@ use super::evidence::latch_account_reset_barrier;
 use super::validation::valid_identifier;
 use super::{
     AccountObservations, AccountResetBarrier, MAX_ACCOUNTS, MAX_FUTURE_SKEW_SECS,
-    MONITOR_EVIDENCE_TTL_SECS, MonitorEvidenceSource, MonitorIssue, MonitorIssueCode, Observed,
-    ObservedPercentage, ObservedQuotaPair, ObservedWindow, StoreState, UsageAccountV1,
+    MONITOR_EVIDENCE_TTL_SECS, MonitorEvidenceSource, MonitorIssue, MonitorIssueCode,
+    MonitorProviderReadiness, Observed, ObservedPercentage, ObservedQuotaPair, ObservedWindow,
+    ProjectionBindingIdentity, ProviderObservation, StoreState, UsageAccountV1,
     UsageFreshnessPhaseV1, UsageMetricGroupKindV1, UsageMetricPeriodV1, UsageMetricValueV1,
-    UsageWindowCategoryV1, issue,
+    UsageProjectionV1, UsageWindowCategoryV1, clear_account_broker_projection, issue,
 };
 
 pub(super) fn observe_projection_account(
     state: &mut StoreState,
     account: &UsageAccountV1,
+    projection: &UsageProjectionV1,
+    local_account_id: &str,
+    binding: Option<&ProjectionBindingIdentity>,
     now_epoch: i64,
 ) -> Result<bool, MonitorIssue> {
-    if !valid_identifier(&account.canonical_account_id)
-        || account.freshness.is_stale
-        || account.freshness.phase != UsageFreshnessPhaseV1::Current
-    {
+    if !valid_identifier(&account.canonical_account_id) || !valid_identifier(local_account_id) {
         return Ok(false);
     }
 
     // A whole-projection publication can advance because another account
-    // refreshed. Only current per-account evidence can update quota field age.
+    // refreshed. Stale per-account evidence can still be retained with its
+    // source timestamps; it never receives a new evidence time here.
     let proposed_sequence = state.next_input_sequence.saturating_add(1);
     let windows = projection_windows(account, now_epoch, proposed_sequence);
-    if windows.iter().all(Option::is_none) {
-        return Ok(false);
-    }
-    if !state.accounts.contains_key(&account.canonical_account_id)
-        && state.accounts.len() >= MAX_ACCOUNTS
-    {
+    if !state.accounts.contains_key(local_account_id) && state.accounts.len() >= MAX_ACCOUNTS {
         return Err(issue(
             MonitorIssueCode::MonitorStoreUnavailable,
             "monitor store reached its configured account limit",
@@ -42,15 +39,155 @@ pub(super) fn observe_projection_account(
 
     let account_state = state
         .accounts
-        .entry(account.canonical_account_id.clone())
+        .entry(local_account_id.to_owned())
         .or_default();
-    if !update_broker_windows(account_state, windows, proposed_sequence) {
-        return Ok(false);
+    let mut next_provider_observation = provider_observation(account, projection, binding);
+    let identity_changed = account_state
+        .provider_observation
+        .as_ref()
+        .is_some_and(|previous| !same_source_binding(previous, &next_provider_observation));
+    if identity_changed {
+        // A local label can be rebound to another canonical source. Retained
+        // quota evidence and reset barriers belong to the old mapping. The
+        // shared reset watermark is recomputed from retained statusline data.
+        clear_account_broker_projection(account_state);
     }
-    account_state.input_sequence = proposed_sequence;
-    state.next_input_sequence = proposed_sequence;
-    latch_broker_reset_barriers(account_state, proposed_sequence, now_epoch);
-    Ok(true)
+    if let Some(previous) = account_state.provider_observation.as_ref() {
+        if !identity_changed && projection_is_older(previous, &next_provider_observation) {
+            return Ok(false);
+        }
+        if !identity_changed && same_source_binding(previous, &next_provider_observation) {
+            // A provider generation reset changes ordering metadata only.
+            // Last-good evidence and quota-reset barriers remain authoritative.
+            next_provider_observation.last_good_at_epoch = match (
+                next_provider_observation.last_good_at_epoch,
+                previous.last_good_at_epoch,
+            ) {
+                (Some(next), Some(previous)) => Some(next.max(previous)),
+                (None, previous) => previous,
+                (next, None) => next,
+            };
+        }
+    }
+    let mut provider_changed = account_state
+        .provider_observation
+        .as_ref()
+        .is_none_or(|previous| !same_provider_observation(previous, &next_provider_observation));
+    if !provider_changed && let Some(previous) = account_state.provider_observation.as_ref() {
+        next_provider_observation.broker_generation = previous.broker_generation;
+    }
+    if provider_changed {
+        account_state.provider_observation = Some(next_provider_observation);
+    }
+    let windows_changed = update_broker_windows(account_state, windows, proposed_sequence);
+    if windows_changed {
+        if !provider_changed && let Some(previous) = account_state.provider_observation.as_ref() {
+            let mut fenced = previous.clone();
+            fenced.broker_generation = projection.broker_generation;
+            account_state.provider_observation = Some(fenced);
+            provider_changed = true;
+        }
+        account_state.input_sequence = proposed_sequence;
+        state.next_input_sequence = proposed_sequence;
+        latch_broker_reset_barriers(account_state, proposed_sequence, now_epoch);
+    }
+    Ok(provider_changed || windows_changed)
+}
+
+fn provider_observation(
+    account: &UsageAccountV1,
+    projection: &UsageProjectionV1,
+    binding: Option<&ProjectionBindingIdentity>,
+) -> ProviderObservation {
+    let (issue_code, issue_retry_at) = [
+        "rate_limited",
+        "unauthorized",
+        "provider_timeout",
+        "provider_unavailable",
+        "needs_secret",
+    ]
+    .into_iter()
+    .find_map(|code| {
+        account
+            .issues
+            .iter()
+            .find(|item| item.code == code)
+            .map(|item| {
+                let code = match item.code.as_str() {
+                    "rate_limited" => MonitorIssueCode::ProviderRateLimited,
+                    "unauthorized" => MonitorIssueCode::ProviderUnauthorized,
+                    "provider_timeout" => MonitorIssueCode::ProviderTimeout,
+                    "provider_unavailable" => MonitorIssueCode::ProviderUnavailable,
+                    "needs_secret" => MonitorIssueCode::ProviderNeedsSecret,
+                    _ => unreachable!("the selected provider issue code is supported"),
+                };
+                (code, item.retry_at_epoch)
+            })
+    })
+    .map_or((None, None), |(code, retry_at)| (Some(code), retry_at));
+    let readiness = if issue_code == Some(MonitorIssueCode::ProviderRateLimited) {
+        MonitorProviderReadiness::RateLimited
+    } else {
+        match account.freshness.phase {
+            UsageFreshnessPhaseV1::Current if !account.freshness.is_stale => {
+                MonitorProviderReadiness::Current
+            }
+            UsageFreshnessPhaseV1::Refreshing => MonitorProviderReadiness::Refreshing,
+            UsageFreshnessPhaseV1::Stale => MonitorProviderReadiness::Stale,
+            UsageFreshnessPhaseV1::Current => MonitorProviderReadiness::Stale,
+            UsageFreshnessPhaseV1::Failed if account.freshness.last_good_at_epoch.is_some() => {
+                MonitorProviderReadiness::Stale
+            }
+            UsageFreshnessPhaseV1::Failed => MonitorProviderReadiness::Unknown,
+        }
+    };
+    ProviderObservation {
+        generation: account.freshness.generation,
+        broker_instance_id: projection.broker_instance_id.clone(),
+        broker_generation: projection.broker_generation,
+        source_account_id: account.canonical_account_id.clone(),
+        binding_id: binding.map(|binding| binding.binding_id.clone()),
+        binding_revision: binding.map(|binding| binding.binding_revision),
+        readiness,
+        last_good_at_epoch: account.freshness.last_good_at_epoch,
+        retry_at_epoch: issue_retry_at.or(account.freshness.retry_at_epoch),
+        issue_code,
+    }
+}
+
+fn same_source_binding(previous: &ProviderObservation, next: &ProviderObservation) -> bool {
+    previous.source_account_id == next.source_account_id
+        && previous.binding_id == next.binding_id
+        && previous.binding_revision == next.binding_revision
+}
+
+fn projection_is_older(previous: &ProviderObservation, next: &ProviderObservation) -> bool {
+    if !same_source_binding(previous, next)
+        || previous.broker_instance_id != next.broker_instance_id
+    {
+        return false;
+    }
+    if next.generation > previous.generation {
+        return false;
+    }
+    if next.generation < previous.generation {
+        // A newer broker publication may represent a provider catalog reset
+        // that legitimately restarted this account's generation counter.
+        return next.broker_generation <= previous.broker_generation;
+    }
+    next.broker_generation < previous.broker_generation
+}
+
+fn same_provider_observation(previous: &ProviderObservation, next: &ProviderObservation) -> bool {
+    previous.generation == next.generation
+        && previous.broker_instance_id == next.broker_instance_id
+        && previous.source_account_id == next.source_account_id
+        && previous.binding_id == next.binding_id
+        && previous.binding_revision == next.binding_revision
+        && previous.readiness == next.readiness
+        && previous.last_good_at_epoch == next.last_good_at_epoch
+        && previous.retry_at_epoch == next.retry_at_epoch
+        && previous.issue_code == next.issue_code
 }
 
 pub(super) fn latch_broker_reset_barriers(
@@ -273,28 +410,33 @@ pub(super) fn metric_group_time(
     }
     let current = groups
         .iter()
-        .filter(|group| !group.is_stale && group.phase == UsageFreshnessPhaseV1::Current)
+        .filter(|group| group_evidence_time(account, group).is_some())
         .filter(|group| {
-            group
-                .observed_at_epoch
-                .or(group.last_success_at_epoch)
-                .unwrap_or(group.fetched_at_epoch)
-                <= now_epoch.saturating_add(MAX_FUTURE_SKEW_SECS)
+            group_evidence_time(account, group)
+                .is_some_and(|time| time <= now_epoch.saturating_add(MAX_FUTURE_SKEW_SECS))
         })
-        .max_by_key(|group| {
-            group
-                .observed_at_epoch
-                .or(group.last_success_at_epoch)
-                .unwrap_or(group.fetched_at_epoch)
-        });
+        .max_by_key(|group| group_evidence_time(account, group));
     current.map_or(Some(None), |group| {
-        Some(Some(
+        group_evidence_time(account, group).map(Some)
+    })
+}
+
+fn group_evidence_time(
+    account: &UsageAccountV1,
+    group: &jackin_protocol::usage_broker::UsageMetricGroupV1,
+) -> Option<i64> {
+    if group.is_stale || group.phase != UsageFreshnessPhaseV1::Current {
+        group
+            .last_success_at_epoch
+            .or(account.freshness.last_good_at_epoch)
+    } else {
+        Some(
             group
                 .observed_at_epoch
                 .or(group.last_success_at_epoch)
                 .unwrap_or(group.fetched_at_epoch),
-        ))
-    })
+        )
+    }
 }
 
 pub(super) fn update_broker_windows(

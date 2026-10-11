@@ -11,7 +11,8 @@ use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use jackin_protocol::usage_monitor::{
-    MonitorIssue, MonitorIssueCode, USAGE_MONITOR_SCHEMA_VERSION,
+    MonitorEvidenceSource, MonitorEvidenceValue, MonitorIssue, MonitorIssueCode,
+    MonitorQuotaWindow, USAGE_MONITOR_SCHEMA_VERSION,
 };
 use nix::fcntl::{OFlag, open, openat, renameat};
 use nix::sys::stat::{Mode, fchmod, mkdirat};
@@ -91,6 +92,7 @@ pub(super) fn load(dir: &File) -> Result<Option<StoreState>, MonitorIssue> {
     let state = match version {
         1 => super::legacy::migrate_v1(&bytes)?,
         2 | 3 => migrate_v2_or_v3(&bytes, version)?,
+        4 => migrate_v4(&bytes)?,
         USAGE_MONITOR_SCHEMA_VERSION => {
             serde_json::from_slice(&bytes).map_err(|_| unavailable())?
         }
@@ -103,6 +105,34 @@ pub(super) fn load(dir: &File) -> Result<Option<StoreState>, MonitorIssue> {
         save(dir, &state)?;
     }
     Ok(Some(state))
+}
+
+/// V4 predates provider-refresh diagnostics and local/source attribution.
+/// Preserve goal and event history, restamp nested status schemas, and fail
+/// closed by dropping broker quota values that lack source-bound ownership.
+fn migrate_v4(bytes: &[u8]) -> Result<StoreState, MonitorIssue> {
+    let mut state: StoreState = serde_json::from_slice(bytes).map_err(|_| unavailable())?;
+    if state.schema_version != 4 {
+        return Err(unavailable());
+    }
+    state.schema_version = USAGE_MONITOR_SCHEMA_VERSION;
+    for monitor in state.monitors.values_mut() {
+        for event in &mut monitor.events {
+            if event.status.schema_version != 4 {
+                return Err(unavailable());
+            }
+            event.status.schema_version = USAGE_MONITOR_SCHEMA_VERSION;
+        }
+    }
+    // Validate the complete historical snapshot before dropping fields whose
+    // source attribution cannot be recovered by the new schema.
+    super::validate_store_state_before_fingerprint_migration(&state)?;
+    // V4 keyed provider quota by the canonical source string in the same map
+    // as operator-local partitions. Its source attribution cannot be proven;
+    // retain audit/history, but drop those unscoped quota values and barriers.
+    clear_unscoped_provider_projection(&mut state);
+    super::validate_store_state(&state)?;
+    Ok(state)
 }
 
 /// Upgrade pre-V4 snapshots that already use the current durable state shape.
@@ -125,7 +155,8 @@ fn migrate_v2_or_v3(bytes: &[u8], version: u16) -> Result<StoreState, MonitorIss
     // Validate the normalized source before applying migration semantics.
     // This prevents V3 uncertainty latching from repairing a persisted
     // goal/monitor mismatch that should make the source unavailable.
-    super::validate_store_state(&state)?;
+    super::validate_store_state_before_fingerprint_migration(&state)?;
+    clear_unscoped_provider_projection(&mut state);
 
     let changed_goals = if version == 3 {
         latch_ambiguous_v3_rollovers(&mut state)
@@ -156,6 +187,152 @@ fn migrate_v2_or_v3(bytes: &[u8], version: u16) -> Result<StoreState, MonitorIss
         }
     }
     Ok(state)
+}
+
+/// Pre-v5 snapshots do not bind broker quota data to a current local account
+/// binding. Preserve statusline sessions and their reset watermarks while
+/// dropping provider projections and barriers that could be attributed to a
+/// different account after migration.
+pub(super) fn clear_unscoped_provider_projection(state: &mut StoreState) {
+    for account in state.accounts.values_mut() {
+        super::clear_account_broker_projection(account);
+    }
+    for monitor in state.monitors.values_mut() {
+        let provider_sequences = monitor
+            .evidence
+            .iter()
+            .filter(|evidence| evidence.source == MonitorEvidenceSource::BrokerProjection)
+            .map(|evidence| evidence.sequence)
+            .collect::<BTreeSet<_>>();
+        monitor
+            .evidence
+            .retain(|evidence| evidence.source != MonitorEvidenceSource::BrokerProjection);
+        let fingerprints = std::mem::take(&mut monitor.evidence_fingerprints);
+        for (key, value) in fingerprints {
+            if key.starts_with("used:")
+                || key.starts_with("reset:")
+                || [
+                    "broker_projection:",
+                    "statusline:",
+                    "provider_spend:",
+                    "operator:",
+                    "local_session_log:",
+                ]
+                .iter()
+                .any(|prefix| key.starts_with(prefix))
+            {
+                if let Some((scoped_key, source)) = migrate_quota_fingerprint(&key, &value)
+                    && source != MonitorEvidenceSource::BrokerProjection
+                {
+                    monitor.evidence_fingerprints.insert(scoped_key, value);
+                }
+            } else {
+                monitor.evidence_fingerprints.insert(key, value);
+            }
+        }
+        for evidence in &monitor.evidence {
+            let (field, window) = match &evidence.value {
+                MonitorEvidenceValue::QuotaUsedPercentage { window, .. } => ("used", window),
+                MonitorEvidenceValue::QuotaReset { window, .. } => ("reset", window),
+                _ => continue,
+            };
+            let window = match window {
+                MonitorQuotaWindow::FiveHour => "five_hour",
+                MonitorQuotaWindow::SevenDay => "seven_day",
+            };
+            let fingerprint_key = super::evidence::quota_fingerprint_key(
+                evidence.source,
+                field,
+                window,
+                evidence.session_id.as_deref(),
+            );
+            let fingerprint = super::evidence::serialize_evidence_fingerprint(
+                evidence.source,
+                evidence.session_id.as_deref(),
+                evidence.evidence_at_epoch,
+                evidence.evidence_received_at_epoch,
+                evidence.claude_code_version.as_deref(),
+                &evidence.value,
+            );
+            monitor
+                .evidence_fingerprints
+                .insert(fingerprint_key, fingerprint);
+        }
+        for barrier in &mut monitor.reset_barriers {
+            if barrier.as_ref().is_some_and(|barrier| {
+                barrier
+                    .dependency_evidence_sequence
+                    .is_some_and(|sequence| provider_sequences.contains(&sequence))
+            }) {
+                *barrier = None;
+            }
+        }
+    }
+}
+
+type QuotaFingerprint = (
+    MonitorEvidenceSource,
+    Option<String>,
+    Option<i64>,
+    i64,
+    Option<String>,
+    MonitorEvidenceValue,
+);
+
+fn migrate_quota_fingerprint(
+    key: &str,
+    fingerprint: &str,
+) -> Option<(String, MonitorEvidenceSource)> {
+    let (source, session_id, _, _, _, value) =
+        serde_json::from_str::<QuotaFingerprint>(fingerprint).ok()?;
+    let (field, window) = if let Some(rest) = key.strip_prefix("used:") {
+        ("used", rest.split_once(':')?.0)
+    } else if let Some(rest) = key.strip_prefix("reset:") {
+        ("reset", rest.split_once(':')?.0)
+    } else {
+        let mut parts = key.splitn(5, ':');
+        let source_label = parts.next()?;
+        let field = parts.next()?;
+        let window = parts.next()?;
+        if !matches!(
+            source_label,
+            "broker_projection"
+                | "statusline"
+                | "provider_spend"
+                | "operator"
+                | "local_session_log"
+        ) {
+            return None;
+        }
+        (field, window)
+    };
+    let expected_window = match window {
+        "five_hour" => MonitorQuotaWindow::FiveHour,
+        "seven_day" => MonitorQuotaWindow::SevenDay,
+        _ => return None,
+    };
+    let field_matches = matches!(
+        (field, &value),
+        (
+            "used",
+            MonitorEvidenceValue::QuotaUsedPercentage { window, .. }
+        ) if *window == expected_window
+    ) || matches!(
+        (field, &value),
+        ("reset", MonitorEvidenceValue::QuotaReset { window, .. })
+            if *window == expected_window
+    );
+    if !field_matches {
+        return None;
+    }
+    let scoped_key =
+        super::evidence::quota_fingerprint_key(source, field, window, session_id.as_deref());
+    let old_scope = session_id.as_deref().unwrap_or("account");
+    let matches_old_key = key == format!("{field}:{window}:{old_scope}");
+    if !matches_old_key && key != scoped_key {
+        return None;
+    }
+    Some((scoped_key, source))
 }
 
 /// V3 did not persist an uncertainty horizon for verified receipts that fell

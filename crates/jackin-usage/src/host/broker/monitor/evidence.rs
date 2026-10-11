@@ -523,7 +523,7 @@ pub(super) fn sync_window(
                     window: kind,
                     used_percentage_basis_points: used.value,
                 },
-                fingerprint_key: format!("used:{name}:{}", session_id.unwrap_or("account")),
+                fingerprint_key: quota_fingerprint_key(source, "used", name, session_id),
             },
         );
     }
@@ -541,10 +541,46 @@ pub(super) fn sync_window(
                     window: kind,
                     reset_at_epoch: reset.value,
                 },
-                fingerprint_key: format!("reset:{name}:{}", session_id.unwrap_or("account")),
+                fingerprint_key: quota_fingerprint_key(source, "reset", name, session_id),
             },
         );
     }
+}
+
+pub(super) fn quota_fingerprint_key(
+    source: MonitorEvidenceSource,
+    field: &str,
+    window: &str,
+    session_id: Option<&str>,
+) -> String {
+    let source = match source {
+        MonitorEvidenceSource::BrokerProjection => "broker_projection",
+        MonitorEvidenceSource::Statusline => "statusline",
+        MonitorEvidenceSource::ProviderSpend => "provider_spend",
+        MonitorEvidenceSource::Operator => "operator",
+        MonitorEvidenceSource::LocalSessionLog => "local_session_log",
+    };
+    let scope = session_id.map_or_else(|| "account".to_owned(), |id| format!("session:{id}"));
+    format!("{source}:{field}:{window}:{scope}")
+}
+
+pub(super) fn serialize_evidence_fingerprint(
+    source: MonitorEvidenceSource,
+    session_id: Option<&str>,
+    evidence_at_epoch: Option<i64>,
+    received_at_epoch: i64,
+    claude_code_version: Option<&str>,
+    value: &MonitorEvidenceValue,
+) -> String {
+    serde_json::to_string(&(
+        source,
+        session_id,
+        evidence_at_epoch,
+        received_at_epoch,
+        claude_code_version,
+        value,
+    ))
+    .unwrap_or_default()
 }
 
 pub(super) struct EvidenceInput<'a> {
@@ -569,15 +605,14 @@ pub(super) fn upsert_evidence(monitor: &mut DurableMonitor, input: EvidenceInput
         value,
         fingerprint_key,
     } = input;
-    let fingerprint = serde_json::to_string(&(
+    let fingerprint = serialize_evidence_fingerprint(
         source,
         session_id,
         evidence_at_epoch,
         received_at_epoch,
         claude_code_version,
         &value,
-    ))
-    .unwrap_or_default();
+    );
     if monitor
         .evidence_fingerprints
         .get(&fingerprint_key)

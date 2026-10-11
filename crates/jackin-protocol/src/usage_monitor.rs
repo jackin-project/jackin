@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::control::Money;
 
 /// Version of durable monitor-state records. Statusline input has its own version.
-pub const USAGE_MONITOR_SCHEMA_VERSION: u16 = 4;
+pub const USAGE_MONITOR_SCHEMA_VERSION: u16 = 5;
 
 /// Version of the normalized statusline input accepted by the monitor.
 pub const USAGE_STATUSLINE_INPUT_SCHEMA_VERSION: u16 = 2;
@@ -86,6 +86,26 @@ pub enum MonitorTrackingReadiness {
     Unavailable,
 }
 
+/// Readiness of the latest provider refresh for the bound account.
+///
+/// This reports provider refresh state independently from quota evidence age:
+/// stale quota remains stale and never becomes runnable because of this field.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum MonitorProviderReadiness {
+    /// No provider refresh state has been observed.
+    #[default]
+    Unknown,
+    /// The latest provider generation completed with current data.
+    Current,
+    /// The latest provider data is retained but stale.
+    Stale,
+    /// Provider refresh work is in progress.
+    Refreshing,
+    /// Provider refresh was deferred by rate limiting.
+    RateLimited,
+}
+
 /// Readiness of required quota evidence.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -132,6 +152,9 @@ pub enum MonitorDispatchReadiness {
 pub struct MonitorReadiness {
     /// Whether evidence can be tracked for the selected scope.
     pub tracking: MonitorTrackingReadiness,
+    /// Latest provider refresh state, separate from quota freshness.
+    #[serde(default)]
+    pub provider: MonitorProviderReadiness,
     /// Whether required quota evidence is current and usable.
     pub quota: MonitorQuotaReadiness,
     /// Whether the approved spend policy is satisfied or disabled.
@@ -733,6 +756,16 @@ pub enum MonitorIssueCode {
     ResetDueUnverified,
     /// A fresh quota observation reports no remaining allowance.
     LimitExhausted,
+    /// Provider rate limiting deferred the next usage refresh.
+    ProviderRateLimited,
+    /// Provider denied the usage request.
+    ProviderUnauthorized,
+    /// Provider usage request timed out.
+    ProviderTimeout,
+    /// Provider does not currently provide the usage surface.
+    ProviderUnavailable,
+    /// Provider usage refresh requires an operator-side secret.
+    ProviderNeedsSecret,
     /// The configured usage guard requires pausing before full exhaustion.
     LimitGuardReached,
     /// The monitored operation requires interactive operator input.

@@ -1219,6 +1219,143 @@ fn claude_attempt_floor_persists_across_restart_and_force_cannot_bypass() {
 }
 
 #[test]
+fn claude_rate_limit_circuit_uses_consecutive_failures_and_survives_restart() {
+    let account = capability("repeated-rate-limit");
+    let temp = tempfile::tempdir().unwrap();
+    let store = Arc::new(FileAccountStateStore::at(temp.path().join("accounts")));
+    let clock = Arc::new(FakeMonotonicClock::with_wall_epoch(Duration::from_secs(
+        1_000,
+    )));
+    let executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::Failure {
+        kind: UsageCoordinationErrorKind::Unauthorized,
+        message: "first generation had an authorization failure".into(),
+        retry_at_epoch: None,
+    }));
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce concrete executor to the coordinator port"
+    )]
+    let provider_executor: Arc<dyn UsageProviderExecutor> = executor.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "share the fake clock with the coordinator"
+    )]
+    let clock_port: Arc<dyn MonotonicClock> = clock.clone();
+    let coordinator = UsageCoordinator::start_with_clock(
+        provider_executor,
+        Arc::<FileAccountStateStore>::clone(&store),
+        UsageCoordinatorConfig::default(),
+        None,
+        None,
+        clock_port,
+    );
+
+    let first = coordinator
+        .request_refresh(&account, 0, true, 1_000)
+        .unwrap();
+    let first_terminal = join_ok(&coordinator, &account, first.generation, 1_000);
+    assert_eq!(first_terminal.phase, UsageRefreshPhase::Failed);
+    assert_eq!(first_terminal.retry_at_epoch, Some(1_300));
+    assert_eq!(
+        store
+            .load(&account, 1_000)
+            .unwrap()
+            .unwrap()
+            .consecutive_failures,
+        1
+    );
+
+    clock.advance(Duration::from_mins(5));
+    executor.set_outcome(ProviderProbeOutcome::Failure {
+        kind: UsageCoordinationErrorKind::RateLimited,
+        message: "second generation was rate limited".into(),
+        retry_at_epoch: Some(1_700),
+    });
+    let second = coordinator
+        .request_refresh(&account, 1, true, 1_300)
+        .unwrap();
+    let second_terminal = join_ok(&coordinator, &account, second.generation, 1_300);
+    assert_eq!(second_terminal.phase, UsageRefreshPhase::Failed);
+    assert_eq!(second_terminal.retry_at_epoch, Some(1_700));
+    let second_durable = store.load(&account, 1_300).unwrap().unwrap();
+    assert_eq!(second_durable.consecutive_failures, 2);
+    assert_eq!(second_durable.rate_limit_deadline_epoch, Some(1_700));
+
+    clock.advance(Duration::from_secs(400));
+    executor.set_outcome(ProviderProbeOutcome::Failure {
+        kind: UsageCoordinationErrorKind::RateLimited,
+        message: "third generation was rate limited".into(),
+        retry_at_epoch: Some(1_750),
+    });
+    let third = coordinator
+        .request_refresh(&account, 2, true, 1_700)
+        .unwrap();
+    let third_terminal = join_ok(&coordinator, &account, third.generation, 1_700);
+    assert_eq!(third_terminal.phase, UsageRefreshPhase::Failed);
+    assert_eq!(third_terminal.retry_at_epoch, Some(5_300));
+    let durable = store.load(&account, 1_700).unwrap().unwrap();
+    assert_eq!(durable.consecutive_failures, 3);
+    assert_eq!(durable.provider_invoked_at_epoch, Some(1_700));
+    assert_eq!(durable.retry_deadline_epoch, Some(5_300));
+    assert_eq!(durable.rate_limit_deadline_epoch, Some(5_300));
+    drop(coordinator);
+
+    let restart_clock = Arc::new(FakeMonotonicClock::with_wall_epoch(Duration::from_secs(
+        5_000,
+    )));
+    let restart_executor = Arc::new(GateExecutor::new(ProviderProbeOutcome::success(
+        quota_view(5_300, 70),
+    )));
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce concrete executor to the coordinator port"
+    )]
+    let restart_provider: Arc<dyn UsageProviderExecutor> = restart_executor.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "share the restart fake clock with the coordinator"
+    )]
+    let restart_clock_port: Arc<dyn MonotonicClock> = restart_clock.clone();
+    let restarted = UsageCoordinator::start_with_clock(
+        restart_provider,
+        Arc::<FileAccountStateStore>::clone(&store),
+        UsageCoordinatorConfig::default(),
+        None,
+        None,
+        restart_clock_port,
+    );
+    let restored = restarted.current(&account, 5_000).unwrap();
+    assert_eq!(restored.generation, 3);
+    assert_eq!(restored.retry_at_epoch, Some(5_300));
+    assert!(restarted.poll_due(5_000).is_empty());
+    let forced_early = restarted.request_refresh(&account, 3, true, 5_000).unwrap();
+    assert_eq!(forced_early.generation, 3);
+    assert_eq!(restart_executor.calls.load(Ordering::SeqCst), 0);
+
+    restart_clock.advance(Duration::from_secs(299));
+    assert!(restarted.poll_due(5_299).is_empty());
+    let still_early = restarted.request_refresh(&account, 3, true, 5_299).unwrap();
+    assert_eq!(still_early.generation, 3);
+    assert_eq!(restart_executor.calls.load(Ordering::SeqCst), 0);
+    restart_clock.advance(Duration::from_secs(1));
+    let half_open = restarted.poll_due(5_300);
+    assert_eq!(half_open.len(), 1);
+    assert_eq!(half_open[0].generation, 4);
+    restart_executor.wait_started(1);
+    let joined = restarted.request_refresh(&account, 3, true, 5_300).unwrap();
+    assert_eq!(joined.generation, 4);
+    assert_eq!(restart_executor.calls.load(Ordering::SeqCst), 1);
+    restart_executor.release(1);
+    let completed = join_ok(&restarted, &account, 4, 5_301);
+    assert_eq!(completed.phase, UsageRefreshPhase::Completed);
+    assert_eq!(restart_executor.calls.load(Ordering::SeqCst), 1);
+    let recovered = store.load(&account, 5_301).unwrap().unwrap();
+    assert_eq!(recovered.consecutive_failures, 0);
+    assert_eq!(recovered.retry_deadline_epoch, None);
+    assert_eq!(recovered.rate_limit_deadline_epoch, None);
+}
+
+#[test]
 fn claude_attempt_floor_starts_at_invocation_after_fake_clock_queue_delay() {
     let executor = Arc::new(GateExecutor::new(ProviderProbeOutcome::success(
         quota_view(1_000, 80),

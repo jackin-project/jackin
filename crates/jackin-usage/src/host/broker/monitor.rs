@@ -32,10 +32,10 @@ use jackin_protocol::usage_monitor::{
     MonitorDoctorReport, MonitorEvent, MonitorEvidence, MonitorEvidenceFreshness,
     MonitorEvidenceSource, MonitorEvidenceValue, MonitorFieldEvidence, MonitorIssue,
     MonitorIssueCode, MonitorLifecycle, MonitorModelGuardValidity, MonitorOperation, MonitorPolicy,
-    MonitorPolicyApprovalInput, MonitorPolicyOrigin, MonitorPolicyRecord, MonitorPurpose,
-    MonitorQuotaReadiness, MonitorQuotaWindow, MonitorQuotaWindowStatus, MonitorReadiness,
-    MonitorReply, MonitorResetValidity, MonitorScope, MonitorServiceStatus, MonitorStatus,
-    MonitorTrackingReadiness, SpendRecord, SpendRecordInput, SpendVerification,
+    MonitorPolicyApprovalInput, MonitorPolicyOrigin, MonitorPolicyRecord, MonitorProviderReadiness,
+    MonitorPurpose, MonitorQuotaReadiness, MonitorQuotaWindow, MonitorQuotaWindowStatus,
+    MonitorReadiness, MonitorReply, MonitorResetValidity, MonitorScope, MonitorServiceStatus,
+    MonitorStatus, MonitorTrackingReadiness, SpendRecord, SpendRecordInput, SpendVerification,
     StatuslineObservation, USAGE_MONITOR_SCHEMA_VERSION, USAGE_STATUSLINE_INPUT_SCHEMA_VERSION,
 };
 use serde::{Deserialize, Serialize};
@@ -55,9 +55,9 @@ use self::status::{append_event, status_for};
 use self::validation::{
     StartAuthority, binding_mismatch, binding_required, current_binding, current_policy,
     invalid_operator_label, operator_confirmation_required, policy_conflict,
-    prepare_start_authority, valid_bounded_text, valid_evidence_fingerprint, validate_config,
-    validate_goal_id, validate_identifier, validate_observation, validate_policy_input,
-    validate_store_state,
+    prepare_start_authority, valid_bounded_text, valid_legacy_evidence_fingerprint,
+    validate_config, validate_goal_id, validate_identifier, validate_observation,
+    validate_policy_input, validate_store_state, validate_store_state_before_fingerprint_migration,
 };
 
 #[cfg(test)]
@@ -66,6 +66,8 @@ use self::evaluation::evaluate_model_guard;
 use self::quota::model_status;
 #[cfg(test)]
 use self::status::append_event_if_changed;
+#[cfg(test)]
+use self::validation::valid_evidence_fingerprint;
 #[cfg(test)]
 use self::validation::{spend_snapshot_preserves_history, spend_state_matches_account};
 
@@ -155,6 +157,30 @@ struct AccountObservations {
     reset_barriers: [Option<AccountResetBarrier>; 2],
     input_sequence: u64,
     spend: SpendAccountState,
+    #[serde(default)]
+    provider_observation: Option<ProviderObservation>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+struct ProviderObservation {
+    generation: u64,
+    broker_instance_id: String,
+    broker_generation: u64,
+    source_account_id: String,
+    binding_id: Option<String>,
+    binding_revision: Option<u64>,
+    readiness: MonitorProviderReadiness,
+    last_good_at_epoch: Option<i64>,
+    retry_at_epoch: Option<i64>,
+    issue_code: Option<MonitorIssueCode>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct ProjectionBindingIdentity {
+    account_id: String,
+    binding_id: String,
+    binding_revision: u64,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -334,6 +360,7 @@ impl MonitorStore {
             MonitorOperation::Refresh { monitor_id } => self.refresh(&monitor_id, now_epoch),
             MonitorOperation::ServiceStatus => {
                 self.tick(now_epoch)?;
+                let experimental_collector_source = self.experimental_collector_source();
                 let state = self.lock();
                 let active_monitors = active_monitor_count(&state);
                 Ok(MonitorReply::ServiceStatus {
@@ -341,7 +368,7 @@ impl MonitorStore {
                         running: true,
                         active_monitors,
                         next_wake_epoch: next_wake_for(&state),
-                        experimental_collector_source: self.experimental_collector_source(),
+                        experimental_collector_source,
                     },
                 })
             }
@@ -367,19 +394,36 @@ impl MonitorStore {
                 None,
             )
         })?;
+        // Read the ephemeral source before locking durable state; collector
+        // admission uses the same source-then-state lock order.
+        let configured_source = self.experimental_collector_source();
         let mut guard = self.lock();
         let mut staged = guard.clone();
         let now_epoch = effective_now(staged.last_now_epoch, now_epoch);
         let clock_advanced = now_epoch > guard.last_now_epoch;
         staged.last_now_epoch = now_epoch;
         let mut observations_changed = false;
-        for provider in &projection.providers {
-            if provider.provider_id == HostSurfaceId::Claude.provider_id() {
-                for account in &provider.accounts {
-                    observations_changed |=
-                        observe_projection_account(&mut staged, account, now_epoch)?;
-                }
-            }
+        for account in projection
+            .providers
+            .iter()
+            .filter(|provider| provider.provider_id == HostSurfaceId::Claude.provider_id())
+            .flat_map(|provider| &provider.accounts)
+        {
+            let Some(binding) = projection_binding_for_source(
+                &staged,
+                configured_source.as_deref(),
+                &account.canonical_account_id,
+            ) else {
+                continue;
+            };
+            observations_changed |= observe_projection_account(
+                &mut staged,
+                account,
+                projection,
+                &binding.account_id,
+                Some(&binding),
+                now_epoch,
+            )?;
         }
         let monitors_changed = reconcile_all_monitors(&mut staged, now_epoch);
         if observations_changed || monitors_changed || clock_advanced {
@@ -454,6 +498,11 @@ impl MonitorStore {
                     && binding.provider_account_id.as_deref() == Some(configured_source.as_str()))
                 .then(|| binding.provider_account_id.clone())
                 .flatten()
+            })
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .filter(|source| {
+                projection_binding_for_source(&state, Some(&configured_source), source).is_some()
             })
             .collect::<BTreeSet<_>>();
         accounts.into_iter().collect()
@@ -543,6 +592,9 @@ impl MonitorStore {
                     .revision
                     .checked_add(1)
                     .ok_or_else(store_unavailable)?;
+                // Evidence from a prior binding revision must never flow into
+                // the newly selected local/source mapping.
+                clear_broker_projection(&mut staged, &previous.account_id);
                 let next = MonitorAccountBinding {
                     binding_id: binding_id.clone(),
                     provider: input.provider,
@@ -1189,6 +1241,84 @@ impl MonitorStore {
         **guard = staged;
         Ok(())
     }
+}
+
+fn projection_binding_for_source(
+    state: &StoreState,
+    configured_source: Option<&str>,
+    source_account_id: &str,
+) -> Option<ProjectionBindingIdentity> {
+    if configured_source != Some(source_account_id) {
+        return None;
+    }
+    let candidates = state
+        .monitors
+        .values()
+        .filter(|monitor| {
+            monitor.stopped_at_epoch.is_none()
+                && monitor.config.experimental_collector
+                && monitor.config.purpose == MonitorPurpose::ObserveOnly
+                && monitor.config.provider
+                    == jackin_protocol::usage_monitor::MonitorProvider::Claude
+        })
+        .filter_map(|monitor| {
+            let MonitorScope::BoundAccount {
+                binding_id,
+                binding_revision,
+                ..
+            } = &monitor.config.scope
+            else {
+                return None;
+            };
+            let binding = current_binding(state, binding_id)?;
+            (binding.revision == *binding_revision
+                && binding.provider == monitor.config.provider
+                && binding.operator_confirmed
+                && binding.experimental_collector_approved
+                && monitor.account_id.as_deref() == Some(binding.account_id.as_str())
+                && binding.provider_account_id.as_deref() == Some(source_account_id))
+            .then(|| ProjectionBindingIdentity {
+                account_id: binding.account_id.clone(),
+                binding_id: binding.binding_id.clone(),
+                binding_revision: binding.revision,
+            })
+        })
+        .collect::<BTreeSet<_>>();
+    (candidates.len() == 1)
+        .then(|| candidates.into_iter().next())
+        .flatten()
+}
+
+fn clear_broker_projection(state: &mut StoreState, account_id: &str) {
+    let Some(account) = state.accounts.get_mut(account_id) else {
+        return;
+    };
+    clear_account_broker_projection(account);
+}
+
+fn clear_account_broker_projection(account: &mut AccountObservations) {
+    account.broker_windows = Default::default();
+    account.latest_reset_epochs = std::array::from_fn(|index| {
+        account
+            .sessions
+            .values()
+            .filter_map(|session| {
+                session.windows[index]
+                    .reset
+                    .as_ref()
+                    .map(|reset| reset.value)
+            })
+            .max()
+    });
+    for barrier in &mut account.reset_barriers {
+        if barrier
+            .as_ref()
+            .is_some_and(|barrier| barrier.source == MonitorEvidenceSource::BrokerProjection)
+        {
+            *barrier = None;
+        }
+    }
+    account.provider_observation = None;
 }
 
 fn active_monitor_count(state: &StoreState) -> u32 {

@@ -513,18 +513,33 @@ fn claude_resolved_view(
 /// reread; the current callback fences results after those operations return.
 /// This function can only use the one exact foreground-bootstrap cache entry;
 /// it never resolves files, environment values, or another Keychain service.
-pub(crate) fn experimental_claude_usage_snapshot_for_service<C, A>(
+#[expect(
+    clippy::too_many_arguments,
+    reason = "The broker boundary keeps consent, source lease, probe admission, liveness, and guarded commit gates explicit."
+)]
+pub(crate) fn experimental_claude_usage_snapshot_for_service<C, A, PA, P, M, Q>(
     agent: &str,
     provider: Option<&str>,
     now: i64,
     service: &str,
     admit_operation: A,
+    admit_probe_operation: PA,
     consent_is_current: C,
+    probe_is_current: P,
+    commit_if_probe_current: M,
 ) -> Result<Option<ClaudeServiceUsageSnapshot>, ClaudeCollectionError>
 where
     C: Fn() -> bool,
     A: Fn() -> Option<ClaudeCollectorOperationPermit>,
+    PA: FnMut() -> Option<Q>,
+    P: Fn() -> bool,
+    M: FnMut(&mut dyn FnMut() -> bool) -> Option<bool>,
 {
+    if !probe_is_current() {
+        return Err(ClaudeCollectionError::ProbeExpired {
+            provider_http_status: None,
+        });
+    }
     if !consent_is_current() {
         return Err(ClaudeCollectionError::ConsentRevoked {
             provider_http_status: None,
@@ -549,13 +564,16 @@ where
         profile.organization_type,
         Some(service.to_owned()),
     );
-    let result = fetch_claude_with_one_401_reread_with_admission(
+    let result = fetch_claude_with_one_401_reread_with_probe_liveness(
         service,
         &mut resolved,
         fetch_claude_oauth_usage,
         keychain::read_claude_keychain_item_uncached,
         admit_operation,
+        admit_probe_operation,
         consent_is_current,
+        probe_is_current,
+        commit_if_probe_current,
     );
     let result = match result {
         Ok(response) => Ok(response),
@@ -564,6 +582,13 @@ where
             provider_http_status,
         }) => {
             return Err(ClaudeCollectionError::ConsentRevoked {
+                provider_http_status,
+            });
+        }
+        Err(ClaudeFetchError::ProbeExpired {
+            provider_http_status,
+        }) => {
+            return Err(ClaudeCollectionError::ProbeExpired {
                 provider_http_status,
             });
         }
@@ -587,6 +612,7 @@ where
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ClaudeCollectionError {
     ConsentRevoked { provider_http_status: Option<u16> },
+    ProbeExpired { provider_http_status: Option<u16> },
 }
 
 pub(crate) struct ClaudeServiceUsageSnapshot {
@@ -599,6 +625,7 @@ pub(crate) struct ClaudeServiceUsageSnapshot {
 enum ClaudeFetchError {
     Provider(ProviderHttpError),
     ConsentRevoked { provider_http_status: Option<u16> },
+    ProbeExpired { provider_http_status: Option<u16> },
 }
 
 #[cfg(test)]
@@ -633,9 +660,9 @@ where
 fn fetch_claude_with_one_401_reread_with_admission<F, R, A, C>(
     service: &str,
     resolved: &mut ClaudeResolved,
-    mut fetch: F,
+    fetch: F,
     reread: R,
-    mut admit_operation: A,
+    admit_operation: A,
     consent_is_current: C,
 ) -> Result<ClaudeOAuthUsageResponse, ClaudeFetchError>
 where
@@ -644,9 +671,57 @@ where
     A: FnMut() -> Option<ClaudeCollectorOperationPermit>,
     C: Fn() -> bool,
 {
+    let mut commit_if_probe_current = |operation: &mut dyn FnMut() -> bool| Some(operation());
+    fetch_claude_with_one_401_reread_with_probe_liveness(
+        service,
+        resolved,
+        fetch,
+        reread,
+        admit_operation,
+        || Some(()),
+        consent_is_current,
+        || true,
+        &mut commit_if_probe_current,
+    )
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Each callback controls a distinct credential, probe budget, or commit boundary and must be checked at its operation."
+)]
+fn fetch_claude_with_one_401_reread_with_probe_liveness<F, R, A, PA, C, P, M, Q>(
+    service: &str,
+    resolved: &mut ClaudeResolved,
+    mut fetch: F,
+    reread: R,
+    mut admit_operation: A,
+    mut admit_probe_operation: PA,
+    consent_is_current: C,
+    mut probe_is_current: P,
+    mut commit_if_probe_current: M,
+) -> Result<ClaudeOAuthUsageResponse, ClaudeFetchError>
+where
+    F: FnMut(&str) -> Result<ClaudeOAuthUsageResponse, ProviderHttpError>,
+    R: FnOnce(&str) -> ClaudeKeychainRead,
+    A: FnMut() -> Option<ClaudeCollectorOperationPermit>,
+    PA: FnMut() -> Option<Q>,
+    C: Fn() -> bool,
+    P: FnMut() -> bool,
+    M: FnMut(&mut dyn FnMut() -> bool) -> Option<bool>,
+{
     let first = {
         let Some(_permit) = admit_operation() else {
+            if !probe_is_current() {
+                return Err(ClaudeFetchError::ProbeExpired {
+                    provider_http_status: None,
+                });
+            }
             return Err(ClaudeFetchError::ConsentRevoked {
+                provider_http_status: None,
+            });
+        };
+        let Some(_probe_permit) = admit_probe_operation() else {
+            return Err(ClaudeFetchError::ProbeExpired {
                 provider_http_status: None,
             });
         };
@@ -659,6 +734,11 @@ where
             ..
         }))
     ) {
+        if !probe_is_current() {
+            return Err(ClaudeFetchError::ProbeExpired {
+                provider_http_status: None,
+            });
+        }
         if first.is_ok() && !consent_is_current() {
             return Err(ClaudeFetchError::ConsentRevoked {
                 provider_http_status: None,
@@ -668,7 +748,17 @@ where
     }
     let (generation, reread) = {
         let Some(permit) = admit_operation() else {
+            if !probe_is_current() {
+                return Err(ClaudeFetchError::ProbeExpired {
+                    provider_http_status: Some(401),
+                });
+            }
             return Err(ClaudeFetchError::ConsentRevoked {
+                provider_http_status: Some(401),
+            });
+        };
+        let Some(_probe_permit) = admit_probe_operation() else {
+            return Err(ClaudeFetchError::ProbeExpired {
                 provider_http_status: Some(401),
             });
         };
@@ -678,6 +768,11 @@ where
         }
         (generation, reread(service))
     };
+    if !probe_is_current() {
+        return Err(ClaudeFetchError::ProbeExpired {
+            provider_http_status: Some(401),
+        });
+    }
     if !consent_is_current() {
         return Err(ClaudeFetchError::ConsentRevoked {
             provider_http_status: Some(401),
@@ -708,7 +803,17 @@ where
         return first;
     }
     let Some(permit) = admit_operation() else {
+        if !probe_is_current() {
+            return Err(ClaudeFetchError::ProbeExpired {
+                provider_http_status: Some(401),
+            });
+        }
         return Err(ClaudeFetchError::ConsentRevoked {
+            provider_http_status: Some(401),
+        });
+    };
+    let Some(probe_permit) = admit_probe_operation() else {
+        return Err(ClaudeFetchError::ProbeExpired {
             provider_http_status: Some(401),
         });
     };
@@ -720,8 +825,14 @@ where
     resolved.access_token = credential.access_token;
     let retried = {
         let _permit = permit;
+        let _probe_permit = probe_permit;
         fetch(resolved.access_token.as_str()).map_err(ClaudeFetchError::Provider)
     };
+    if !probe_is_current() {
+        return Err(ClaudeFetchError::ProbeExpired {
+            provider_http_status: Some(401),
+        });
+    }
     if !consent_is_current() {
         return match retried {
             Err(provider_error) => Err(provider_error),
@@ -730,7 +841,18 @@ where
             }),
         };
     }
-    if !lease::replace_bootstrapped_claude_payload(service, generation, json) {
+    let mut payload = Some(json);
+    let mut replace_payload = || {
+        payload.take().is_some_and(|payload| {
+            lease::replace_bootstrapped_claude_payload(service, generation, payload)
+        })
+    };
+    let Some(replaced) = commit_if_probe_current(&mut replace_payload) else {
+        return Err(ClaudeFetchError::ProbeExpired {
+            provider_http_status: Some(401),
+        });
+    };
+    if !replaced {
         return match retried {
             Err(provider_error) => Err(provider_error),
             Ok(_) => Err(ClaudeFetchError::ConsentRevoked {

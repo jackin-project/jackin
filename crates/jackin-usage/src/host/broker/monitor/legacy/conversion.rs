@@ -29,10 +29,11 @@ use jackin_protocol::usage_monitor::{
     MonitorAccountBinding, MonitorAction, MonitorBudgetReadiness, MonitorDecision,
     MonitorDispatchReadiness, MonitorEvent, MonitorEvidence, MonitorEvidenceFreshness,
     MonitorEvidenceSource, MonitorEvidenceValue, MonitorFieldEvidence, MonitorLifecycle,
-    MonitorModelGuardValidity, MonitorPolicy, MonitorPolicyOrigin, MonitorProvider, MonitorPurpose,
-    MonitorQuotaReadiness, MonitorQuotaWindow, MonitorQuotaWindowStatus, MonitorReadiness,
-    MonitorResetValidity, MonitorScope, MonitorStatus, MonitorTrackingReadiness, SpendRecord,
-    SpendRecordSource, SpendVerification, USAGE_MONITOR_SCHEMA_VERSION,
+    MonitorModelGuardValidity, MonitorPolicy, MonitorPolicyOrigin, MonitorProvider,
+    MonitorProviderReadiness, MonitorPurpose, MonitorQuotaReadiness, MonitorQuotaWindow,
+    MonitorQuotaWindowStatus, MonitorReadiness, MonitorResetValidity, MonitorScope, MonitorStatus,
+    MonitorTrackingReadiness, SpendRecord, SpendRecordSource, SpendVerification,
+    USAGE_MONITOR_SCHEMA_VERSION,
 };
 
 /// Decode and migrate one complete V1 snapshot without touching persistence.
@@ -129,7 +130,7 @@ pub(in crate::host::broker::monitor) fn migrate_v1(
         .and_then(|count| count.checked_add(1))
         .ok_or_else(unavailable)?;
 
-    Ok(StoreState {
+    let mut state = StoreState {
         schema_version: USAGE_MONITOR_SCHEMA_VERSION,
         next_monitor_id: legacy.next_monitor_id,
         next_input_sequence: legacy.next_input_sequence,
@@ -141,7 +142,9 @@ pub(in crate::host::broker::monitor) fn migrate_v1(
         monitors,
         goals,
         next_binding_id,
-    })
+    };
+    super::super::storage::clear_unscoped_provider_projection(&mut state);
+    Ok(state)
 }
 
 impl V1Money {
@@ -404,6 +407,7 @@ impl V1AccountObservations {
                 .map(|barrier| barrier.map(V1AccountResetBarrier::into_account_reset_barrier)),
             input_sequence: self.input_sequence,
             spend: self.spend.into_spend_account_state(),
+            provider_observation: None,
         })
         .and_then(|account| {
             if account
@@ -601,7 +605,7 @@ pub(super) fn retain_migrated_evidence_fingerprints(
     fingerprints
         .into_iter()
         .filter(|(key, value)| {
-            super::super::valid_evidence_fingerprint(key, value)
+            super::super::valid_legacy_evidence_fingerprint(key, value)
                 && (is_account_fingerprint_key(key)
                     || retained_session_ids
                         .iter()
@@ -897,6 +901,7 @@ impl V1MonitorStatus {
 
         MonitorReadiness {
             tracking,
+            provider: MonitorProviderReadiness::Unknown,
             quota,
             budget,
             dispatch: if self.runnable {
