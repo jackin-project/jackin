@@ -1,33 +1,32 @@
 # Foreground Claude bootstrap and explicit usage collection
 
-**Current status (2026-10-11):** The latest signed, pushed source checkpoint is
-`9809c24400e9f24ad86e83e45dca7bf5d9bab278`. It includes the bounded stale-lease
-recovery and integration coverage. Its focused lease tests passed 38/38, the
-seeded CLI/provider flow passed 4/4, default offline CLI regressions passed
-9/9, strict feature Clippy and formatting passed, and independent review is
-Ready. That pushed source checkpoint uses broker wire v9, normalized statusline
-input v2, and durable monitor schema v5. The current working source advances
-the durable monitor schema to v6 while keeping wire v9 and statusline input v2;
-the v6 source has not yet been built or installed.
+**Current status (2026-10-11):** The latest pushed source checkpoint is
+`62cefbbbb11ce8b6dc0634f490095d9838ebef9e`. It keeps broker wire v9 and
+normalized statusline input v2 while advancing durable monitor state to schema
+v6. The default-feature CLI/broker pair was built from that exact commit into
+the fresh v11 prefix and passed the isolated installed smoke. Exact source and
+tree IDs, toolchain and build command, binary hashes, manifest digest, and
+smoke scope are recorded in [v11-installation.json](v11-installation.json).
+The v11 fixture asserts schema 6 and selects the exact installed sibling
+broker. The pair has not been activated against existing account state.
 
-The installed default-feature v10 pair has been rebuilt from the fixed source
-checkpoint `9809c24400e9f24ad86e83e45dca7bf5d9bab278` and passed the private
-synthetic installed smoke. Exact source/tree, binary hashes, manifest digest,
-and scope are in [v10-installation.json](v10-installation.json) and the
-[v10-live-verification.md](v10-live-verification.md) runbook. The smoke did
-not access or open the existing v7 account state, migrate it, authenticate, or
-make a provider request. Since that smoke, the user explicitly confirmed
-attendance and the v10 foreground command was started; the service was
-reported ready. The native Keychain UI event was not recorded. Two natural
-provider generations later succeeded and source projections reported current
-Session and All models values, but monitor publication refreshed only
-five-hour usage; weekly monitor evidence remains stale. The source-to-monitor
-mismatch is under investigation, and live provider request count remains
-unmeasured. The observed `provider=current` readiness describes
-collector/provider state; it does not make stale weekly monitor evidence
-current or complete acceptance. See
-[v10-live-verification.md](v10-live-verification.md) for the gated live
-acceptance procedure.**
+The v11 smoke used only private fixture state and did not access or migrate the
+existing v7 account state, use the existing v10 service, authenticate, or make
+a provider request. Credential shell tripwires and the local HTTP proxy
+recorded zero activity; native Security Framework calls and OS-level egress
+were not instrumented. Separately, the installed default-feature v10 pair was
+rebuilt from commit `9809c24400e9f24ad86e83e45dca7bf5d9bab278` and passed its
+private synthetic smoke; its exact evidence is in
+[v10-installation.json](v10-installation.json). The subsequent v10 foreground
+session and source-to-monitor evidence are described in
+[v10-live-verification.md](v10-live-verification.md): the foreground command
+was reported ready, the native Keychain UI event was not recorded, and two
+natural provider generations succeeded. Source projections reported current
+Session and All models values, but monitor publication refreshed only five-hour
+usage; weekly monitor evidence remained stale. The observed `provider=current`
+readiness described collector/provider state and did not establish current
+monitor evidence for both quota windows. V11 has not changed that live state;
+follow the separate live-verification procedure before any activation.**
 
 The earlier `8abfa235`, `45a33093`, and 22ac install records below are
 historical. The `45a33093` source-gate record is in [v3-checks.json](v3-checks.json),
