@@ -426,7 +426,13 @@ fn watch_fresh_attach_uses_current_event_as_cursor_then_only_advances() {
 #[test]
 fn watch_batch_timeout_does_not_end_the_absolute_cli_deadline() {
     let started = Instant::now();
-    let deadline = started + Duration::from_secs(300);
+    let deadline = started + Duration::from_mins(5);
+    let one_second_before_deadline = deadline
+        .checked_sub(Duration::from_secs(1))
+        .expect("five-minute deadline supports subtracting one second");
+    let one_nanosecond_before_deadline = deadline
+        .checked_sub(Duration::from_nanos(1))
+        .expect("five-minute deadline supports subtracting one nanosecond");
 
     assert_eq!(watch_timeout_ms(None, started), 30_000);
     assert_eq!(watch_timeout_ms(Some(deadline), started), 30_000);
@@ -435,7 +441,7 @@ fn watch_batch_timeout_does_not_end_the_absolute_cli_deadline() {
         30_000
     );
     assert_eq!(
-        watch_timeout_ms(Some(deadline), deadline - Duration::from_secs(1)),
+        watch_timeout_ms(Some(deadline), one_second_before_deadline),
         1_000
     );
     assert_eq!(watch_timeout_ms(Some(deadline), deadline), 0);
@@ -450,7 +456,7 @@ fn watch_batch_timeout_does_not_end_the_absolute_cli_deadline() {
     ));
     assert!(!watch_deadline_reached(
         Some(deadline),
-        deadline - Duration::from_nanos(1)
+        one_nanosecond_before_deadline
     ));
     assert!(watch_deadline_reached(Some(deadline), deadline));
     assert!(watch_deadline_reached(
@@ -459,7 +465,7 @@ fn watch_batch_timeout_does_not_end_the_absolute_cli_deadline() {
     ));
     assert!(!watch_deadline_reached(
         None,
-        started + Duration::from_secs(300)
+        started + Duration::from_mins(5)
     ));
 }
 
