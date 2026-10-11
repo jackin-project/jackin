@@ -20,40 +20,120 @@ This chapter informs jackin-desktop.
 
 Clean-room note: CodexBar/OpenUsage source was not read. A CodexBar Claude documentation page surfaced in one search result; it was deliberately not fetched. Payload-shape claims below are evidence available by the 2026-07-24 cutoff from Anthropic docs, anthropics GitHub issues, independent community observations, and jackin❯'s then-existing live-API mirror fixtures. No embedded instructions were encountered in any fetched page.
 
-## Current main-port source boundary — 2026-10-10
+## Current main-port source and installed-fixture boundary — 2026-10-11
 
-The main-port candidate source under verification includes an **experimental**
-collector for the
-private, undocumented `GET https://api.anthropic.com/api/oauth/usage` route. It
-sends `User-Agent: jackin/<version>` rather than impersonating Claude Code.
-This source shape and historical fixtures do not prove the route is supported,
-available, or compatible with a live account; no current-port live provider
-request or matching installed CLI/broker pair has been verified. The earlier
-findings below remain evidence from the 2026-07-24 cutoff, not a current
-readiness claim.
+Source commit `62cefbbbb11ce8b6dc0634f490095d9838ebef9e` includes an
+**experimental** collector for the private, undocumented
+`GET https://api.anthropic.com/api/oauth/usage` route. It sends
+`User-Agent: jackin/<version>` rather than impersonating Claude Code. This
+source shape and historical fixtures do not prove that the route is supported,
+available, or compatible with a live account.
 
-The candidate auth path is separate from passive statusline and monitor
-observation. The candidate contract requires attended foreground
-`usage auth prepare` to claim the broker
-lease before reading the selected Claude Keychain service and keep the
-credential in zeroizing process memory. Passive service/status, ordinary
-`monitor observe`, and statusline ingest/compose paths perform no credential
-lookup or provider request. Collection requires a separately approved account
-binding and `monitor observe --experimental-collector`; the observer remains
-observation-only and cannot authorize dispatch. The current source versions are
-broker wire protocol v8, durable monitor state schema 4, statusline input
-schema 2, and durable projection envelope schema 3. The broker migrates a v2
-projection envelope by canonicalizing serialized provider IDs and persisting
-v3 before exposing the projection; ordinary projection reads accept only v3.
-Strict dispatch remains fail-closed for unknown or incomplete evidence;
-quota-only requires its own explicit policy approval and acknowledgement that
-it has no SGD cap.
+The installed v11 CLI/broker pair (`jackin 0.6.4` and
+`jackin-usage-broker 0.6.4`) passed the isolated synthetic fixture recorded in
+<RepoFile path="plans/claude-unattended-monitor/v11-installation.json" />.
+The fixture asserted broker wire v9, monitor schema 6, selected the installed
+sibling broker, and verified one unchanged watch event across its 35-second
+deadline. It used temporary state and synthetic statusline evidence; it did
+not read existing state, complete attended authentication, or make a provider
+request. Thus the installed-fixture result is not live readiness. The prior v10
+run completed two genuine natural provider generations with current Session
+and All models source projections, but weekly monitor publication failed,
+leaving weekly evidence stale and full two-window acceptance incomplete. The
+v11 pair has not had live verification; real-state migration and live
+collection verification remain pending. The specific stop and attendance
+approval for a live switch are also pending. The earlier endpoint findings
+below remain evidence from the
+2026-07-24 cutoff, not a supported API contract or a current v11 live-provider
+result.
+
+The foreground authentication path is separate from passive statusline and
+monitor observation. `usage auth prepare` claims the broker lease before
+reading the selected Claude Keychain service and retains the credential in
+zeroizing process memory. Passive service/status, ordinary `monitor observe`,
+and statusline ingest/compose paths perform no credential lookup or provider
+request. Collection requires a separately approved local binding and
+`monitor observe --experimental-collector`; the observer remains
+observation-only and cannot authorize dispatch. Its
+`dispatch: not_authorized` and `runnable: false` values are expected by design.
+They describe the observer's purpose; they neither grant nor block a separate
+authorized task. Status or refresh may return useful observation JSON with
+exit 2 because dispatch is not authorized. Readiness must be assessed from
+tracking and the freshness/provenance of collected evidence, not observer
+`runnable`.
+
+The current source versions are broker wire protocol v9, durable monitor
+schema 6, normalized statusline input schema v2, and durable projection
+envelope schema 3. The broker migrates a v2 projection envelope by
+canonicalizing serialized provider IDs and persisting v3 before exposing the
+projection; ordinary projection reads accept only v3. Strict dispatch remains
+fail-closed for unknown or incomplete evidence; quota-only requires its own
+explicit policy approval and acknowledgement that it has no SGD cap.
 Operator command details are in [jackin❯ usage](/commands/usage/).
+
+### Source identity and freshness
+
+`UsageIdentityKindV1::LocalSourceHandle` marks a stable local credential-source
+handle. The canonical local source ID selects the Jackin Claude credential
+source (such as the selected Keychain service); it is not an Anthropic-issued
+account ID and does not prove which provider account is authenticated. A
+confirmed binding associates that local source with a monitor account. The
+experimental collector approval on that binding is separate from dispatch
+policy approval.
+
+Quota evidence retains field-level source evidence time and receipt time. Each
+field is assessed independently; one field's update cannot renew a sibling's
+age. The evidence age accounts for both source and receipt timestamps, and the
+monitor freshness bound is 300 seconds. Statusline duplicates and timer ticks
+do not renew evidence; only a newly accepted provider observation can refresh
+the provider fields it supplies. Missing quota fields, stale values, timestamps
+beyond the accepted future-skew bound, or mismatched source evidence remain
+unknown or blocked. Discovery membership marked
+`current` is not a freshness assertion for monitor quota. A fresh provider
+projection likewise does not make independently aged statusline fields fresh.
+
+### Durable monitor schema 6 migration
+
+The monitor store migrates schemas V1–V5 explicitly to V6 and persists the
+converted snapshot only after semantic validation. It preserves policy and
+baseline history, spend, action/event sequences, evidence ages, cooldowns, and
+existing unknown or latched state. V1–V4 provider snapshots without provable
+binding/source provenance are dropped, so retained values cannot be attributed
+to the wrong source or treated as current. V5 already carries source-bound
+provider provenance and retains quota and goal history.
+
+Migration also preserves the monotonic historical spend-correction horizon.
+When V3 rollover history could have hidden an older correction, it retains the
+known estimate but latches cumulative spend incomplete and rollover unknown.
+That horizon records possible lost history, not proof a correction occurred;
+new receipts cannot clear an affected goal's uncertainty. A goal whose
+baseline begins at the horizon remains independently known.
+
+V6 adds one statusline-reset watermark per quota window:
+`Unknown`, `KnownNone`, or `Known { reset_at_epoch, received_at_epoch }`. For a
+V1–V5 account window, a nonempty legacy `latest_reset_epochs` value migrates to
+`Unknown`; an empty value migrates to `KnownNone`. Migration does not synthesize
+a statusline reset or receipt time from the old account-wide reset, retained
+quota, or event evidence. `Unknown` keeps the account-wide reset fence from
+moving backward when the provider projection is cleared; `KnownNone` records
+that no prior statusline reset was seen.
+
+For a legacy nonempty account-wide reset, the V6 admission cutoff is the old
+store's `last_now_epoch`, not new evidence or a receipt/freshness time. A
+lower-reset repair requires a complete current provider pair whose used,
+reset, paired-source, and receipt timestamps are all strictly after that
+cutoff. It may update displayed used/reset values but cannot lower the
+account-wide reset or release a latched reset barrier. Resume still requires
+fresh paired lower-use and advanced-reset evidence after the reported reset
+plus 60 seconds, within normal field freshness limits. V1–V5 snapshots that
+contain V6-only reset metadata are rejected, including a V6 snapshot relabeled
+with an older schema number.
 
 Source references: <RepoFile path="crates/jackin-usage/src/usage/claude.rs" />,
 <RepoFile path="crates/jackin/src/cli/usage.rs" />,
-<RepoFile path="crates/jackin-protocol/src/usage_broker.rs" />, and
-<RepoFile path="crates/jackin-protocol/src/usage_monitor.rs" />.
+<RepoFile path="crates/jackin-protocol/src/usage_broker.rs" />,
+<RepoFile path="crates/jackin-protocol/src/usage_monitor.rs" />, and
+<RepoFile path="crates/jackin-usage/src/host/broker/monitor/storage.rs" />.
 
 ## Findings
 

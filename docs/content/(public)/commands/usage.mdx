@@ -40,49 +40,53 @@ ingress reads its bounded JSON input from stdin.
 
 ## Implementation status
 
-The foreground `auth prepare` bootstrap and experimental collector described
-below are candidate behavior under implementation on main. They remain
-unverified until the matching installed CLI/broker pair passes verification. A
-predecessor v2 fixture using synthetic data does not validate this candidate,
-and no real account, Keychain grant, or provider request has been verified.
-Experimental collection does not establish Anthropic support or provider
-readiness.
+The v11 CLI/broker pair from the current source passed an isolated synthetic
+fixture smoke for monitor schema 6, broker wire v9, sibling-broker selection,
+and a bounded watch. That fixture did not read existing monitor state, use a
+real Keychain credential, authenticate, or make a provider request. It does
+not establish live readiness. The prior v10 run had two successful genuine
+provider collections with current Session and All models source projections,
+but weekly monitor publication failed to refresh weekly evidence, so two-window
+acceptance remained incomplete. The v11 pair has not had live verification;
+existing-state migration and live collection verification remain pending. The
+specific stop and attendance approval for switching to live use are also pending.
+Experimental collection does
+not establish Anthropic support or provider readiness.
 
-### Candidate durable monitor schema 4
+### Durable monitor schema 6
 
-The candidate durable monitor store advances to schema 4 to persist a
-monotonic historical correction horizon for account spend. When a closed-period
-correction can no longer be applied from retained receipts, the horizon keeps
-affected goal accounting incomplete or unknown; later receipts or clock
-rollback cannot clear that protection.
-
-The V1, V2, and V3 migrations carry forward existing policy revisions and
-origins, baselines and cumulative estimates, quota-pause latches, and
-unknown/incomplete markers. They do not clear an existing latch or unknown
-state. V1 strict history remains migrated and unconfirmed; V2 known state is
-preserved unchanged.
-
-V3 snapshots without the correction horizon decode it as `None`. If migration
-finds no affected forward rollover, that horizon stays `None` and known goal
-state is preserved. For a V3 strict goal with a baseline and a forward
-billing-period transition in its retained goal or account anchors, migration
-preserves its cumulative estimate but conservatively marks spend unknown and
-incomplete, even when a closed-period anchor exists; that anchor cannot rule out
-an older lost correction. It records the latest affected forward anchor start
-as the account horizon, so later receipts or clock rollback cannot clear that
-uncertainty. Goals whose baseline starts at that horizon remain known; a later
-horizon is required to mark their spend incomplete.
-
-Migration does not invent a baseline, zero spend, approval, or quota evidence.
-Invalid and unsupported future schemas fail closed before stored state is
-replaced.
-
-The current source versions are independent: broker wire protocol v8, durable
-monitor-store schema 4, normalized statusline input schema v2, and durable
+The current source versions are independent: broker wire protocol v9, durable
+monitor-store schema 6, normalized statusline input schema v2, and durable
 projection-envelope schema 3. The broker migrates a v2 projection envelope by
 canonicalizing its serialized provider IDs and persisting v3 before exposing
 the projection; ordinary projection reads accept only v3. This migration is
 separate from the monitor-store schema migration.
+
+Monitor-store schemas V1 through V5 migrate explicitly to V6. Migration
+preserves policy and baseline history, spend, action and event sequences,
+evidence ages, cooldowns, and existing unknown or latched state. V1–V4 provider
+snapshots whose binding/source provenance cannot be established are dropped;
+V5 already has source-bound provider provenance and retains quota and goal
+history. Migration never invents approval, a baseline, or quota evidence.
+
+Migration also preserves strict-goal uncertainty from the monotonic historical
+spend-correction horizon. When V3 rollover history could have hidden an older
+correction, the known estimate is retained while cumulative spend stays
+incomplete and rollover stays unknown. The horizon marks possible lost history,
+not proof that a correction occurred; later receipts cannot clear an affected
+goal's uncertainty. A goal whose baseline starts at the horizon remains
+independently known.
+
+V6 stores a per-window statusline-reset watermark as `Unknown`, `KnownNone`, or
+`Known { reset_at_epoch, received_at_epoch }`. A nonempty legacy reset migrates
+to `Unknown`; an empty one migrates to `KnownNone`. The migration does not
+derive statusline reset or receipt times from an account-wide reset, retained
+quota values, or event history. For legacy nonempty account-wide resets, V6
+records the old store's `last_now_epoch` as an admission cutoff. Any lower-reset
+repair needs a complete current provider pair with used, reset, source, and
+receipt timestamps strictly after that cutoff. An admitted repair can update
+the displayed values but does not lower the account-wide reset or clear a
+latched reset barrier. Invalid and unsupported future schemas fail closed.
 
 Use one installed `jackin` binary and its matching sibling broker throughout,
 with the same explicit `--data-dir PATH`. Do not switch to a repository
@@ -177,9 +181,13 @@ retroactively. The optional `--experimental-collector` flag is available only
 for an account-bound observer. It requests experimental polling for that source,
 but cannot approve collection on its own.
 
-An observer always reports dispatch as `not_authorized` and `runnable: false`;
-its creation exits 0 when tracking starts, including when quota evidence is
-missing.
+An observer always reports dispatch as `not_authorized` and `runnable: false`
+by design; its creation exits 0 when tracking starts, including when quota
+evidence is missing. Status or refresh can still return useful observation
+JSON with exit 2 because no dispatch is authorized. That status is not a
+collection failure, does not grant dispatch, and does not block an independently
+authorized task. Do not wait for an observer to become runnable; observation
+purpose never becomes a dispatch guard.
 
 A binding maps a local monitor account ID to a canonical local source ID. The
 canonical ID selects a Jackin credential source; it is not an authenticated
@@ -221,12 +229,17 @@ reset cumulative goal spend or account quota-pause state.
 ## Readiness and exit status
 
 Monitor JSON reports purpose, scope, policy, and independent tracking, quota,
-budget, and dispatch readiness. `runnable` is authoritative. A `Wait` action,
-future reset time, or lifecycle label does not override it. Observation-only
-status is never runnable. Dispatch status, refresh, and wait exit 0 only when
+budget, and dispatch readiness. For a dispatch guard, `runnable` is the
+authoritative gate for work covered by that guard. A `Wait` action, future
+reset time, or lifecycle label does not override it. Observation-only status
+is always `runnable: false` and dispatch `not_authorized`; that describes the
+monitor's purpose, not whether independent work has authorization or whether
+observation succeeded. Dispatch status, refresh, and wait exit 0 only when
 work is permitted, exit 2 when work is blocked or degraded, and exit 3 for an
 unavailable service or invalid request. An observation start exits 0 when
-tracking is durable even when quota is unknown.
+tracking is durable even when quota is unknown. Its status/refresh may exit 2
+while still returning the observation JSON. `wait --until runnable` is for a
+dispatch guard; an observation monitor cannot become runnable.
 
 Each quota window reports `reset_validity` as `unknown`, `future`, or `due`,
 independently of reset-field freshness. `unknown` means no usable reset epoch is
@@ -250,7 +263,7 @@ requests. `usage refresh --monitor ID` only reconciles local evidence. `doctor`
 reports broker and statusline-ingress capability; it does not establish quota,
 endpoint support, spend, policy, or dispatch readiness.
 
-### Foreground authentication bootstrap (implementation in progress)
+### Foreground authentication bootstrap (live verification pending)
 
 `usage auth prepare` is the explicit foreground bootstrap for the experimental
 collector. It requires stdin, stdout, and stderr to be terminals. It acquires
@@ -278,7 +291,7 @@ promise permanent credential availability or prevent prompts from other
 processes. Do not run authentication preparation from a statusline hook or an
 automated lane.
 
-### Experimental Claude collector (implementation in progress)
+### Experimental Claude collector (live verification pending)
 
 Polling is off by default and requires two separate gates: the binding must
 first be confirmed by an operator with `--approve-experimental-collector`, then
@@ -318,8 +331,9 @@ undocumented OAuth usage endpoint. The endpoint has no documented public usage
 contract; it may change or reject requests. Label its results experimental and
 do not claim Anthropic support, guaranteed availability, or provider readiness.
 The existing broker attempt floor and rate-limit backoff apply; the experimental
-flag does not bypass them. This implementation is in progress and has not been
-verified against a live account or provider.
+flag does not bypass them. The v11 pair has not been verified against a live
+account or provider. The earlier v10 natural collections refreshed the source
+projection but left weekly monitor evidence stale, as described above.
 
 ## Local Claude Code evidence
 
@@ -391,14 +405,16 @@ does not automatically send usage to Jackin.
 
 Used values in monitor JSON are integer `used_percentage_basis_points`:
 `9000` means 90%. Read the five-hour and seven-day windows independently.
-Unknown or stale evidence blocks runnable decisions. Treat `status.runnable` as
-authoritative regardless of lifecycle or a `Wait` action. A future reset can
-produce `Wait` while the monitor remains runnable; it is a reevaluation hint,
-not a pause. Continue work within any checkpoint or dispatch limits. If a
-`Pause` action is present or `status.runnable` is false, checkpoint and stop new
-work. Use bounded `wait --until runnable` only while blocked, then re-read
-status before resuming. Execute the actions in each `latest_decision.sequence`
-once, saving the last handled sequence durably.
+Unknown or stale evidence blocks dispatch-guard decisions. Treat
+`status.runnable` as the gate for work covered by that guard, regardless of
+lifecycle or a `Wait` action. A future reset can produce `Wait` while the guard
+remains runnable; it is a reevaluation hint, not a pause. Continue within any
+checkpoint or dispatch limits. For an observation monitor,
+`runnable: false` is expected and is not a stop signal for separately
+authorized work. Use bounded `wait --until runnable` only for a blocked
+dispatch guard, then re-read status before resuming. Handle each requested
+action at most once per `latest_decision.sequence`, recording the last handled
+sequence durably; observation-only decisions may have no actions.
 `watch` starts with the latest reconciled event and then streams newer events;
 it does not replay an old runnable state on a fresh attachment. Treat event
 history as history, and use current status before starting work.
@@ -409,9 +425,16 @@ history as history, and use current status before starting work.
 | 91% | Reduce dispatch concurrency; use small checkpointed slices. |
 | 95% | Finish the current slice, checkpoint and pause new work. |
 
-A threshold jump includes the necessary checkpoint and concurrency actions
-before pause. Decisions are requests to the coordinator/operator; Jackin does
-not forcibly terminate lanes or edit their projects.
+Apply thresholds independently to the five-hour and seven-day windows. When
+the weekly window reaches 90%, start a complete durable handoff across active
+lanes and plan to stop new work by 95%, before 100%; do not wait for the
+five-hour window to reach its threshold. Record each lane's branch/head,
+changed files, failing checks, exact resume command, dependencies, and next
+order, plus the monitor ID and decision sequence, current evidence/freshness,
+reset state, unresolved issues, and stop reason. A threshold jump includes the
+necessary checkpoint and concurrency actions before pause. Decisions are
+requests to the coordinator/operator; Jackin does not forcibly terminate lanes
+or edit their projects.
 
 A reported reset schedules reevaluation after a small grace. Time passing
 produces `reset_due_unverified`, never proof of replenished allowance. A reset
@@ -448,8 +471,9 @@ The experimental collector uses the broker's persisted attempt floor,
 local evidence; it cannot force a provider request or bypass cooldowns. A
 collector attempt can fail or return stale evidence, and no stability or
 readiness guarantee follows. Jackin does not invoke `claude -p /usage` or
-independently rotate Claude Code refresh tokens. This collection path remains in
-progress and has not been validated against a live endpoint or account.
+independently rotate Claude Code refresh tokens. The v11 pair still lacks live
+endpoint/account verification; the earlier v10 result did not establish current
+weekly monitor evidence.
 
 ## Spend guard
 

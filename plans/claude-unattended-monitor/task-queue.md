@@ -1354,3 +1354,23 @@ Installation as v11 and the isolated fixture smoke are recorded in
 used. Real-account acceptance remains blocked on attended cutover approval,
 successful v11 startup against the existing state, and both quota windows
 updating through the monitor over natural collection cycles.
+
+## Current documentation checkpoint (2026-10-11; live use still blocked)
+
+Updated the public usage command page and the Claude provider API research
+page. Documentation verification passed: site build rendered 1,293 routes,
+the documentation test suite passed 18/18, MBX `xtask docs repo-links`,
+`xtask roadmap audit`, and `xtask research check` passed, and both edited pages
+were rendered and inspected in the local browser. The verifier's final artifact
+cleanup check was reported complete before this documentation checkpoint.
+
+These documentation checks do not establish live readiness. The v11 pair has
+only passed its isolated schema-6 / broker-v9 fixture smoke; it has not been
+started against the existing account state or used for successful auth or a
+provider call. The attended v10 service remains the current owner. Explicit
+approval to stop or replace it and fresh attendance confirmation for the next
+auth step remain unanswered. Do not start v11 against the existing state,
+stop the current owner, or repeat authentication before those approvals are
+given. Preserve the observation-only binding and monitor, and require two
+natural collection cycles with both quota windows current before claiming
+acceptance or preparing a live-use handoff.
