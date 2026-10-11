@@ -876,3 +876,24 @@ unverified. The correction and evidence are committed/pushed as one checkpoint.
   verification across 5-hour and 7-day observation windows. Fixture-only
   evidence is insufficient. The pair is installed, but live installed-CLI
   gates remain pending; do not claim full readiness.
+- [x] Post-install read-only v8 verification matched the running broker PID and
+  image hash to the installed binary and confirmed the catalog capability
+  matched the existing binding. The observer remains `observe_only`, dispatch
+  unauthorized, and not runnable.
+- [x] Live snapshot: generation 22 has four consecutive `rate_limited`
+  failures and retry deadline `1791683766` (08:56:06 ICT). Last-good values
+  were 39% five-hour / 50% seven-day at `1791676313`; they are stale. Current
+  monitor status hides last-good values, rate-limit details, and the deadline.
+- [x] A requested 300-second `usage watch` exits after about 30 seconds with
+  sequence 1; source confirms the effective timeout bug. CLI output does not
+  expose provider request counts.
+- [x] Official docs reviewed: Claude Code `/usage` may show cached bars up to
+  60 minutes after a rate-limited plan-usage request; published Messages API
+  limits are RPM/ITPM/OTPM, a separate surface. Public docs publish no
+  subscription polling quota or OAuth contract; do not infer a blanket GET
+  prohibition. A zero-429 guarantee is unsupported.
+- [ ] Fix status/watch to expose stale last-good data, provider failure and
+  retry deadline; make the requested watch duration effective; cancel timed-out
+  probes before they can continue into a later retry. Separate agent fixes are
+  still in progress; honor persisted rate deadlines and make no zero-429 or
+  continuous-freshness claim.

@@ -1148,3 +1148,47 @@ recorded in the builder-owned `v8-installation.json`. Real installed-CLI
 `usage status`/`usage watch` checks across the five-hour and seven-day windows
 remain pending. The install and source tests do not establish live readiness
 or authorize dispatch.
+
+## Post-install v8 observation and rate-limit findings
+
+A later read-only run used the installed v8 CLI against the existing v7 data
+directory. Running broker PID `25738` matched the installed v8 broker image and
+SHA-256 `19ba4957ce28f4acb9890704419dbf90349969efc9b16bdc28e612e989c5e985`;
+the catalog capability matched the existing binding. The observer remained
+`observe_only`, dispatch was unauthorized, and `runnable` was false.
+
+At `08:46:34 ICT`, the selected account's generation 22 had four consecutive
+failures with terminal error `rate_limited`; the persisted retry deadline was
+epoch `1791683766` (`08:56:06 ICT`). Its latest successful provider sample was
+historical epoch `1791676313` (`06:51:53 ICT`): 39% used in the five-hour
+window and 50% in the seven-day window. That sample was 1 hour 54 minutes
+41 seconds old at read time and stale. The monitor status hid the last-good
+sample, 429 failure count, and retry deadline. It returned null quota/evidence
+fields with `quota_unknown` and `missing_reset`. A newer broker projection did
+not make the provider sample fresh.
+
+A `usage watch` invocation requesting 300 seconds exited successfully after
+about 30 seconds with only sequence 1. Source review confirms the shorter
+effective limit is a bug. The CLI exposes no HTTP request count, so this watch
+does not show whether or how many provider requests occurred.
+
+The 300-second attempt floor does not guarantee fresh evidence: the provider
+may return `429`, `Retry-After` may extend the interval, and no new collection
+may occur while idle. The rate-limit investigation should reduce avoidable
+requests by honoring persisted deadlines and preventing timed-out probes from
+continuing into a later retry; it cannot promise zero 429s. The outer probe
+budget currently has a separate cancellation finding: after its budget expires,
+a detached probe can still make a late request along the existing 401
+follow-up/retry path. Cancellation repair and status/watch visibility fixes are
+in progress; neither is verified complete.
+
+Public documentation draws a separate boundary: the [Claude Code costs
+guide](https://code.claude.com/docs/en/costs) says `/usage` may encounter a
+rate-limited plan-usage endpoint and then shows locally cached bars for up to
+60 minutes with their age and a retry action. The [Messages API rate-limit
+guide](https://platform.claude.com/docs/en/api/rate-limits) describes
+RPM/ITPM/OTPM limits and acceleration-related 429s for that API. The reviewed
+public docs do not publish the subscription usage endpoint's OAuth path, auth
+schema, or poll quota. Do not treat Messages API quotas as subscription polling
+limits or infer a blanket GET prohibition. This research cannot establish a
+zero-429 polling guarantee.
