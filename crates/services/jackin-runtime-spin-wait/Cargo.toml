@@ -1,0 +1,32 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "jackin-runtime-spin-wait"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
+description = "Async spinner-wait helper for polling operations."
+license.workspace = true
+readme = "README.md"
+publish = false
+
+repository.workspace = true
+
+[lib]
+name = "jackin_runtime_spin_wait"
+path = "src/lib.rs"
+
+[dependencies]
+jackin-brand = { workspace = true }
+jackin-diagnostics = { workspace = true }
+anyhow = { workspace = true }
+owo-colors = { workspace = true, features = ["supports-colors"] }
+tokio = { workspace = true, features = ["time"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt", "time", "test-util"] }
+
+[lints]
+workspace = true

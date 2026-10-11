@@ -197,7 +197,7 @@ Recommended persisted values:
 
 Validation should reject `source_branch_policy` on `shared` mounts unless it is absent or defaulted to `host_head`, reject `source_branch` unless the policy is `named`, and reject `named` without a non-empty `source_branch`. The editor should prevent invalid combinations before save; the parser still needs hard errors for hand-edited files.
 
-Because this changes `WorkspaceConfig`, the implementing PR must ship the full versioned-schema set required by the pre-release schema rule: bump `CURRENT_WORKSPACE_VERSION`, add a `WORKSPACE_MIGRATIONS` step in <RepoFile path="crates/jackin-config/src/migrations.rs" />, add a new workspace migration fixture from the predecessor version, re-bake every existing workspace fixture's `after.toml`, and add a Schema Versions timeline entry under `/reference/runtime/schema-versions/`. Existing configs should migrate by stamping no new field and relying on the serde default, or by explicitly writing `host_head` on the next save if the current writer emits defaults.
+Because this changes `WorkspaceConfig`, the implementing PR must ship the full versioned-schema set required by the pre-release schema rule: bump `CURRENT_WORKSPACE_VERSION`, add a `WORKSPACE_MIGRATIONS` step in <RepoFile path="crates/core/jackin-config/src/migrations.rs" />, add a new workspace migration fixture from the predecessor version, re-bake every existing workspace fixture's `after.toml`, and add a Schema Versions timeline entry under `/reference/runtime/schema-versions/`. Existing configs should migrate by stamping no new field and relying on the serde default, or by explicitly writing `host_head` on the next save if the current writer emits defaults.
 
 ## Runtime Semantics
 

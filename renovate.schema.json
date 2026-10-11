@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/tailrocks/rust-repository-policy/schemas/renovate.schema.json",
+  "title": "Renovate config (strict policy)",
+  "description": "Canonical schema for modules/renovate.yml. Adopters vendor this file to renovate.schema.json at repo root (schema_path resolves relative to the lint root). Requires non-empty extends; all other Renovate keys pass through.",
+  "type": "object",
+  "properties": {
+    "$schema": { "type": "string" },
+    "extends": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1
+    }
+  },
+  "required": ["extends"],
+  "additionalProperties": true
+}

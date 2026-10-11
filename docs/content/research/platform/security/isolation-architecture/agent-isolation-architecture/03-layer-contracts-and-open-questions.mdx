@@ -171,15 +171,15 @@ For the current threat model, the four layers close the practical failure modes:
 
 The key implementation seams for this architecture are:
 
-- <RepoFile path="crates/jackin-capsule/src/main.rs" /> — PID-1 detection and `JACKIN_CAPSULE_FORCE_DAEMON` dispatch for Apple Container
-- <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> — daemon control plane and jackin-exec picker dispatch
-- <RepoFile path="crates/jackin-instance/src/manifest.rs" /> — `InstanceManifest`, `DockerResources`, and `BackendResources` with `AppleContainerResources`
-- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> — launch orchestration; backend split point
-- <RepoFile path="crates/jackin-docker/src/docker_client.rs" /> — Docker lifecycle boundary; Apple Container gets a peer module
+- <RepoFile path="crates/apps/jackin-capsule/src/main.rs" /> — PID-1 detection and `JACKIN_CAPSULE_FORCE_DAEMON` dispatch for Apple Container
+- <RepoFile path="crates/apps/jackin-capsule/src/daemon.rs" /> — daemon control plane and jackin-exec picker dispatch
+- <RepoFile path="crates/services/jackin-instance/src/manifest.rs" /> — `InstanceManifest`, `DockerResources`, and `BackendResources` with `AppleContainerResources`
+- <RepoFile path="crates/services/jackin-runtime/src/runtime/launch.rs" /> — launch orchestration; backend split point
+- <RepoFile path="crates/adapters/jackin-docker/src/docker_client.rs" /> — Docker lifecycle boundary; Apple Container gets a peer module
 - <RepoFile path="docker/construct/Dockerfile" /> — role base image; install `jackin-exec` and `zerobox` here
 - <RepoFile path="docker/runtime/entrypoint.sh" /> — capsule startup inside role container; inject `JACKIN_EXEC_BINDINGS` env var
-- <RepoFile path="crates/jackin-config/src/schema.rs" /> — `AppConfig` + `WorkspaceConfig` runtime backend fields
-- <RepoFile path="crates/jackin-core/src/env_value.rs" /> — `EnvValue::Extended` and `OpRef.on_demand` for jackin-exec
+- <RepoFile path="crates/core/jackin-config/src/schema.rs" /> — `AppConfig` + `WorkspaceConfig` runtime backend fields
+- <RepoFile path="crates/core/jackin-core/src/env_value.rs" /> — `EnvValue::Extended` and `OpRef.on_demand` for jackin-exec
 
 
 ## Implications for jackin❯

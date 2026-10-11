@@ -1,0 +1,312 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
+use super::super::measure_file_lines;
+use super::*;
+
+#[test]
+fn file_size_provider_classifies_canonical_test_paths_relative_to_repository_root() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    for path in [
+        "crates/pkg/src/tests.rs",
+        "crates/pkg/src/tests/case_01.rs",
+        "crates/pkg/tests/main.rs",
+        "crates/pkg/src/test_support/production.rs",
+    ] {
+        let file = root.join(path);
+        fs::create_dir_all(file.parent().expect("parent")).expect("mkdir");
+        fs::write(&file, "fn fixture() {}\n").expect("write source");
+    }
+
+    let production = measure_file_lines(root, false).expect("production family");
+    let tests = measure_file_lines(root, true).expect("test family");
+    assert_eq!(
+        production
+            .keys()
+            .map(String::as_str)
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from(["crates/pkg/src/test_support/production.rs"])
+    );
+    assert_eq!(
+        tests.keys().map(String::as_str).collect::<BTreeSet<_>>(),
+        BTreeSet::from([
+            "crates/pkg/src/tests.rs",
+            "crates/pkg/src/tests/case_01.rs",
+            "crates/pkg/tests/main.rs",
+        ])
+    );
+}
+
+#[test]
+fn numeric_growth_fails() {
+    assert_eq!(
+        check_numeric_entry(Some(2000), 1938, 1850),
+        NumericVerdict::Growth {
+            measured: 2000,
+            budgeted: 1938
+        }
+    );
+}
+
+#[test]
+fn numeric_shrink_force_fails() {
+    assert_eq!(
+        check_numeric_entry(Some(1900), 1938, 1850),
+        NumericVerdict::Shrink {
+            measured: 1900,
+            budgeted: 1938
+        }
+    );
+}
+
+#[test]
+fn numeric_stale_under_cap_fails() {
+    assert_eq!(
+        check_numeric_entry(Some(1000), 1938, 1850),
+        NumericVerdict::StaleUnderCap { measured: 1000 }
+    );
+}
+
+#[test]
+fn numeric_missing_stale_fails() {
+    assert_eq!(
+        check_numeric_entry(None, 1938, 1850),
+        NumericVerdict::StaleMissing
+    );
+}
+
+#[test]
+fn numeric_steady_state_ok() {
+    assert_eq!(
+        check_numeric_entry(Some(1938), 1938, 1850),
+        NumericVerdict::Ok
+    );
+}
+
+#[test]
+fn numeric_unlisted_over_cap_fails() {
+    assert_eq!(
+        check_numeric_unlisted(2000, 1850),
+        NumericVerdict::UnlistedOverCap {
+            measured: 2000,
+            cap: 1850
+        }
+    );
+}
+
+#[test]
+fn presence_stale_and_new() {
+    let mut violations = BTreeMap::new();
+    violations.insert("a.rs".into(), "bad".into());
+    let mut allowed = BTreeSet::new();
+    allowed.insert("b.rs".into());
+    let v = check_presence(&violations, &allowed);
+    assert!(
+        v.iter()
+            .any(|(k, ver)| k == "b.rs" && *ver == PresenceVerdict::Stale)
+    );
+    assert!(v.iter().any(|(k, ver)| {
+        k == "a.rs" && matches!(ver, PresenceVerdict::New { reason } if reason == "bad")
+    }));
+}
+
+#[test]
+fn curated_pub_mods_rejects_extra_root_mod() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    // Valid curated siblings so the only failure is the intentional leak.
+    for (crate_name, body) in [
+        ("jackin-config", "mod private;\npub mod fixtures;\n"),
+        (
+            "jackin-core",
+            "mod private;\npub mod container_paths;\npub mod tui_theme;\n",
+        ),
+    ] {
+        write_fixture_crate(dir.path(), "core", crate_name, body);
+    }
+    write_fixture_crate(
+        dir.path(),
+        "core",
+        "jackin-env",
+        "mod env_layer;\npub mod test_support;\npub mod leaked;\n",
+    );
+    let err = check_curated_pub_mods(dir.path()).expect_err("extra pub mod must fail");
+    let msg = format!("{err:#}");
+    assert!(
+        msg.contains("leaked") && msg.contains("jackin-env"),
+        "unexpected message: {msg}"
+    );
+}
+
+#[test]
+fn curated_pub_mods_accepts_env_pilot_shape() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let shapes = [
+        ("jackin-env", "mod env_layer;\npub mod test_support;\n"),
+        ("jackin-config", "mod private;\npub mod fixtures;\n"),
+        ("jackin-core", "mod private;\npub mod container_paths;\n"),
+    ];
+    for (crate_name, body) in shapes {
+        write_fixture_crate(dir.path(), "core", crate_name, body);
+    }
+    check_curated_pub_mods(dir.path()).expect("curated pilot shapes ok");
+}
+
+#[test]
+fn real_tree_curated_pub_mods_green() {
+    // Workspace root is three levels up from this crate under the test runner.
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../..")
+        .canonicalize()
+        .expect("repo root");
+    check_curated_pub_mods(&root).expect("real tree curated surfaces green");
+}
+
+#[test]
+fn suite_time_parses_fixture_junit_ms() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let junit_dir = dir.path().join("target/nextest/ci");
+    fs::create_dir_all(&junit_dir).expect("mkdir");
+    // Two time attributes: 1.5s + 2s → 3500ms sum (attributes on suite + case).
+    fs::write(
+        junit_dir.join("junit.xml"),
+        r#"<?xml version="1.0"?><testsuites time="1.5"><testsuite time="2.0"></testsuite></testsuites>"#,
+    )
+    .expect("write junit");
+    let measured = measure_suite_time(dir.path()).expect("measure");
+    assert_eq!(measured.get("junit_total_ms").copied(), Some(3500));
+}
+
+#[test]
+fn suite_time_absent_junit_measures_zero() {
+    use super::measure_suite_time;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let measured = measure_suite_time(dir.path()).expect("measure");
+    assert_eq!(measured.get("junit_total_ms"), Some(&0));
+}
+
+#[test]
+fn suite_time_absent_junit_is_advisory_not_stale() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let config = Config {
+        family: vec![Family {
+            id: "suite-time".into(),
+            kind: "numeric".into(),
+            provider: "suite_time".into(),
+            cap: None,
+            mode: "enforce".into(),
+            entry: vec![Entry {
+                key: "junit_total_ms".into(),
+                bound: Some(3_600_000),
+            }],
+        }],
+    };
+
+    let outcome = check_families(dir.path(), &config, None).expect("check family");
+    assert!(outcome.problems.is_empty(), "{:?}", outcome.problems);
+    assert!(
+        outcome
+            .report_lines
+            .iter()
+            .any(|line| line.starts_with("suite-time/junit_total_ms:"))
+    );
+}
+
+#[test]
+fn build_times_flattens_scheduled_artifact() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    fs::create_dir_all(dir.path().join("target")).expect("mkdir");
+    fs::write(
+        dir.path().join("target/build-times.json"),
+        r#"{"jackin-core":{"clean_s":12,"incremental_s":3}}"#,
+    )
+    .expect("write artifact");
+    let measured = measure_build_times(dir.path()).expect("measure");
+    assert_eq!(measured.get("jackin-core.clean_s"), Some(&12));
+    assert_eq!(measured.get("jackin-core.incremental_s"), Some(&3));
+}
+
+#[test]
+fn build_time_family_skips_without_scheduled_artifact() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let config = Config {
+        family: vec![Family {
+            id: "build-time".into(),
+            kind: "numeric".into(),
+            provider: "build_times".into(),
+            cap: Some(0),
+            mode: "artifact-ceiling".into(),
+            entry: vec![Entry {
+                key: "jackin-core.clean_s".into(),
+                bound: Some(30),
+            }],
+        }],
+    };
+    let outcome = check_families(dir.path(), &config, None).expect("check family");
+    assert!(outcome.problems.is_empty());
+    assert!(
+        outcome
+            .report_lines
+            .iter()
+            .any(|line| line.contains("skipped"))
+    );
+}
+
+#[test]
+fn export_volume_does_not_spawn_work_when_artifact_is_absent() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let measured = measure_export_volume_measured(dir.path()).expect("measure");
+    assert!(measured.is_empty());
+}
+
+#[test]
+fn only_checks_selected_ratchet_family() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let config = Config {
+        family: vec![
+            Family {
+                id: "suite-time".into(),
+                kind: "numeric".into(),
+                provider: "suite_time".into(),
+                cap: None,
+                mode: "enforce".into(),
+                entry: vec![Entry {
+                    key: "junit_total_ms".into(),
+                    bound: Some(3_600_000),
+                }],
+            },
+            Family {
+                id: "unknown-provider-family".into(),
+                kind: "numeric".into(),
+                provider: "must-not-run".into(),
+                cap: Some(0),
+                mode: "enforce".into(),
+                entry: Vec::new(),
+            },
+        ],
+    };
+    let outcome =
+        check_families(dir.path(), &config, Some(&["suite-time"])).expect("selected family only");
+    assert!(outcome.problems.is_empty());
+}
+
+#[test]
+fn function_complexity_reports_per_crate_max_and_ignores_tests() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let src = dir.path().join("crates/example/src");
+    fs::create_dir_all(&src).expect("mkdir");
+    fs::write(
+        src.join("lib.rs"),
+        "fn small(v: bool) { if v {} }\nfn larger(v: bool) { if v {} else if !v {} }\n",
+    )
+    .expect("write source");
+    fs::write(
+        src.join("tests.rs"),
+        "fn ignored() { if true {} else if false {} else if true {} }\n",
+    )
+    .expect("write tests");
+
+    let measured = measure_rust_function_complexity(dir.path()).expect("measure");
+    assert_eq!(measured.get("example"), Some(&2));
+    assert_eq!(measured.len(), 1);
+}

@@ -1,0 +1,28 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "jackin-runtime-attach-transport"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
+description = "Host attach transport selection and attach-proxy exec args."
+license.workspace = true
+readme = "README.md"
+publish = false
+
+repository.workspace = true
+
+[lib]
+name = "jackin_runtime_attach_transport"
+path = "src/lib.rs"
+
+[dependencies]
+jackin-core = { workspace = true }
+jackin-runtime-attach-capsule-ready = { workspace = true }
+jackin-runtime-snapshot = { workspace = true }
+jackin-telemetry = { workspace = true }
+
+[lints]
+workspace = true

@@ -1,6 +1,6 @@
 # Unblocking Claude Code usage tracking
 
-Historical design proposal from the predecessor implementation. Its diagnosis describes that earlier snapshot, not current shipped behavior. Current contracts and verification are in [bootstrap-contract.md](bootstrap-contract.md), [claude-code-handoff.md](claude-code-handoff.md), and [verification.md](verification.md). Retained for design provenance; do not execute it as a current CLI runbook.
+Status: proposed architecture, not implemented or an installed CLI contract.
 
 ## Verified cause
 

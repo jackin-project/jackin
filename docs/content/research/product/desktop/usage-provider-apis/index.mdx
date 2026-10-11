@@ -3,6 +3,8 @@ title: Agent usage provider APIs
 description: Maps vetted provider quota APIs, authentication, semantics, provenance, and jackin❯ coverage gaps.
 ---
 
+> Historical research: Claude monitoring now uses the [durable usage monitor](/commands/usage/). The former automatic CLI fallback and interactive background Keychain behavior described below have been removed; these notes are not proof of current shipped behavior.
+
 **Research state:** Needs refresh
 
 Verification cutoff: 2026-07-24. Chapters 01–11 cover provider APIs, quota
@@ -13,7 +15,7 @@ semantics, authentication, provenance, and implementation gaps. Informs:
 
 (a) Per provider, which API exposes the availability data a limits-only menu bar shows, and which displayed elements have no direct API source; (b) semantics of
 the run-out projection phrases and what jackin❯ already computes; (c) what
-`crates/jackin-usage/` already fetches vs. gaps.
+`crates/services/jackin-usage/` already fetches vs. gaps.
 
 ## Headline findings
 

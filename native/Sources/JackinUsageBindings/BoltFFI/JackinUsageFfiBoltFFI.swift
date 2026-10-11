@@ -1242,10 +1242,10 @@ public final class UsageMenuBarBridge {
         }
     }
 
-    /// Refresh one surface (`surface_id`) or all enabled (`None`).
+    /// Read the latest projection or explicitly request a broker-owned refresh.
     ///
-    /// When `force` is false, respects the runtime refresh floor (poll-safe).
-    /// When `force` is true, bypasses the floor (manual Refresh).
+    /// Non-forced calls are cache reads; force refresh is account-wide because
+    /// the broker owns a single canonical projection generation.
     public func refresh(surfaceId: String?, force: Bool) throws {
         let boltffiSurfaceIdBytes = boltffiEncode { boltffiSurfaceIdWriter in boltffiSurfaceIdWriter.writeOptional(surfaceId) { boltffiSurfaceIdWriter, boltffiValue0 in boltffiSurfaceIdWriter.writeString(boltffiValue0) } }
         try boltffiSurfaceIdBytes.withUnsafeBufferPointer { boltffiSurfaceIdBuffer -> Void in

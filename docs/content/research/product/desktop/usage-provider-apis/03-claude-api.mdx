@@ -42,7 +42,8 @@ lookup or provider request. Collection requires a separately approved account
 binding and `monitor observe --experimental-collector`; the observer remains
 observation-only and cannot authorize dispatch. The current source versions are
 broker wire protocol v8, durable monitor state schema 4, statusline input
-schema 2, and durable projection envelope schema 3. The broker migrates a v2
+schema 2, durable account-state envelope schema 3, and durable projection
+envelope schema 3. These versions are independent. The broker migrates a v2
 projection envelope by canonicalizing serialized provider IDs and persisting
 v3 before exposing the projection; ordinary projection reads accept only v3.
 Strict dispatch remains fail-closed for unknown or incomplete evidence;
@@ -50,10 +51,10 @@ quota-only requires its own explicit policy approval and acknowledgement that
 it has no SGD cap.
 Operator command details are in [jackin❯ usage](/commands/usage/).
 
-Source references: <RepoFile path="crates/jackin-usage/src/usage/claude.rs" />,
-<RepoFile path="crates/jackin/src/cli/usage.rs" />,
-<RepoFile path="crates/jackin-protocol/src/usage_broker.rs" />, and
-<RepoFile path="crates/jackin-protocol/src/usage_monitor.rs" />.
+Source references: <RepoFile path="crates/services/jackin-usage/src/usage/claude.rs" />,
+<RepoFile path="crates/apps/jackin/src/cli/usage.rs" />,
+<RepoFile path="crates/core/jackin-protocol/src/usage_broker.rs" />, and
+<RepoFile path="crates/core/jackin-protocol/src/usage_monitor.rs" />.
 
 ## Findings
 
@@ -64,7 +65,7 @@ Source references: <RepoFile path="crates/jackin-usage/src/usage/claude.rs" />,
 - As reported by the 2026-07-24 cutoff, the same endpoint, headers (`anthropic-beta: oauth-2025-04-20`, `User-Agent: claude-code/<version>`), and response shape appeared in Claude-Code-Usage-Monitor — https://github.com/Maciek-roboblog/Claude-Code-Usage-Monitor/issues/202 (confidence: MED; community evidence, not an Anthropic contract)
 - Historical response-window observations: `five_hour` (Session), `seven_day` (Weekly, all models), `seven_day_opus`, `seven_day_sonnet` (both nullable), each `{utilization: 0–100, resets_at: ISO 8601 UTC}`, plus `extra_usage` (`is_enabled`, `monthly_limit`, `used_credits`, `utilization`) — https://github.com/Maciek-roboblog/Claude-Code-Usage-Monitor/issues/202 and https://gist.github.com/monperrus/3ac4b303a84946bbeaf2b1123ee99491 (confidence: MED; observed fields only)
 - Cited historical reports describe percent-used (`utilization`) values rather than absolute token counts or plan-limit sizes — https://github.com/anthropics/claude-code/issues/45392 (closed not planned) (confidence: MED)
-- Historical jackin❯ observation recorded by the 2026-07-24 cutoff: a live 200 body was decoded and mirrored in `crates/jackin-usage/src/usage/tests.rs:218-245`. It additionally carried `seven_day_oauth_apps`, a `limits[]` array (`kind`, `group`, `percent`, `severity`, `resets_at`, `scope`, `is_active`), a `spend` object (money as `amount_minor`/`currency`/`exponent`), and rotating codename keys (`amber_ladder`, `omelette_promotional`, …). The older source comments said legacy `seven_day_sonnet`/`seven_day_opus` were null on the observed account and per-model weekly data appeared in `limits[]` as `weekly_scoped` entries. This is a dated observation and fixture, not proof that current main-port credentials or its `jackin/<version>` User-Agent are accepted.
+- Historical jackin❯ observation recorded by the 2026-07-24 cutoff: a live 200 body was decoded and mirrored in `crates/services/jackin-usage/src/usage/tests.rs:218-245`. It additionally carried `seven_day_oauth_apps`, a `limits[]` array (`kind`, `group`, `percent`, `severity`, `resets_at`, `scope`, `is_active`), a `spend` object (money as `amount_minor`/`currency`/`exponent`), and rotating codename keys (`amber_ladder`, `omelette_promotional`, …). The older source comments said legacy `seven_day_sonnet`/`seven_day_opus` were null on the observed account and per-model weekly data appeared in `limits[]` as `weekly_scoped` entries. This is a dated observation and fixture, not proof that current main-port credentials or its `jackin/<version>` User-Agent are accepted.
 - Official UI surfaces for the same windows: the `/usage` command in Claude Code (plan usage bars, activity stats, usage breakdown for subscribers) and claude.ai Settings > Usage, which shows "how much of your plan's five-hour session limit you've used" and "when your plan's weekly usage limit resets for Opus only and all other models" — https://code.claude.com/docs/en/costs.md and https://support.claude.com/en/articles/9797557-usage-limit-best-practices (confidence: HIGH)
 - Per-model window on current plans: Max plans include "up to 50% of your weekly usage limits on Fable 5"; on Pro, Fable 5 runs on usage credits outside plan limits — https://support.claude.com/en/articles/15424964-claude-fable-5-on-your-plan (confidence: HIGH). The article does not name a "Fable only" window label; the support UI wording "for Opus only" is the documented per-model label precedent — https://support.claude.com/en/articles/9797557-usage-limit-best-practices (confidence: HIGH)
 - Rate limiting: the endpoint 429s aggressively with no `Retry-After` and no reset indication — https://github.com/anthropics/claude-code/issues/31637 (confidence: MED). Claude Code itself falls back to last-known bars cached ≤60 min with a "Showing last-known usage" note — https://code.claude.com/docs/en/costs.md (confidence: HIGH; the fallback is documented there, not in the issue)
@@ -74,14 +75,14 @@ Source references: <RepoFile path="crates/jackin-usage/src/usage/claude.rs" />,
 
 - Primary sources document a per-account DAILY ROUTINE RUN CAP, not a payload window: "routines have a daily cap on how many runs can start per account. See your current consumption and remaining daily routine runs at claude.ai/code/routines or claude.ai/settings/usage"; one-off runs are exempt — https://code.claude.com/docs/en/routines.md (confidence: HIGH)
 - Caps per plan: Pro 5, Max 15, Team/Enterprise 25 routine runs per day; "Routines draw down subscription usage limits in the same way as interactive sessions" — https://claude.com/blog/introducing-routines-in-claude-code (confidence: HIGH)
-- No primary source documents a "Daily Routines" field in the `oauth/usage` payload or its field name. jackin❯ cross-reference: the live body mirrored in `crates/jackin-usage/src/usage/tests.rs:229` contains key `seven_day_cowork` (observed `null`); the decoder at `crates/jackin-usage/src/usage/claude.rs:278-283` canonicalizes `seven_day_routines` with aliases `seven_day_claude_routines`, `claude_routines`, `routines`, `seven_day_cowork` (confidence: MED for `seven_day_cowork` existing as a live key; LOW for which key carries data on routines-active accounts)
+- No primary source documents a "Daily Routines" field in the `oauth/usage` payload or its field name. jackin❯ cross-reference: the live body mirrored in `crates/services/jackin-usage/src/usage/tests.rs:229` contains key `seven_day_cowork` (observed `null`); the decoder at `crates/services/jackin-usage/src/usage/claude.rs:278-283` canonicalizes `seven_day_routines` with aliases `seven_day_claude_routines`, `claude_routines`, `routines`, `seven_day_cowork` (confidence: MED for `seven_day_cowork` existing as a live key; LOW for which key carries data on routines-active accounts)
 
 ### 3. Auth required
 
 - Auth = the Claude Code subscription OAuth access token as a Bearer token, plus `anthropic-beta: oauth-2025-04-20` — https://github.com/anthropics/claude-code/issues/31637 and https://github.com/Maciek-roboblog/Claude-Code-Usage-Monitor/issues/202 (confidence: MED; header value undocumented officially)
 - Token storage (official; locations/types only, no values): macOS — encrypted macOS Keychain; Linux — `~/.claude/.credentials.json` mode `0600`; Windows — `%USERPROFILE%\.claude\.credentials.json`; `CLAUDE_CONFIG_DIR` relocates the file on Linux/Windows — https://code.claude.com/docs/en/authentication.md (confidence: HIGH)
 - macOS Keychain item is a generic password with service name `Claude Code-credentials` — https://github.com/Maciek-roboblog/Claude-Code-Usage-Monitor/issues/202 (confidence: MED — community; official docs name the Keychain but not the service string)
-- Credential JSON shape: top-level `claudeAiOauth` object with `accessToken`, `refreshToken`, `expiresAt`, `scopes` — community write-ups, e.g. https://git.joshthomas.dev/mirrors/claude-code-sandbox/src/commit/b44cf1a84e0bab3f5f2ded8a871cbdc43ce50249/docs/lift-and-shift-credentials.md (confidence: MED; matches jackin❯ decoder `crates/jackin-usage/src/usage/claude.rs:235-257`)
+- Credential JSON shape: top-level `claudeAiOauth` object with `accessToken`, `refreshToken`, `expiresAt`, `scopes` — community write-ups, e.g. https://git.joshthomas.dev/mirrors/claude-code-sandbox/src/commit/b44cf1a84e0bab3f5f2ded8a871cbdc43ce50249/docs/lift-and-shift-credentials.md (confidence: MED; matches jackin❯ decoder `crates/services/jackin-usage/src/usage/claude.rs:235-257`)
 - Scopes `user:inference` and `user:profile` appear in community documentation of the stored credential; no official Anthropic source lists Claude Code OAuth scopes — same sources as above (confidence: LOW–MED, needs verification)
 - `claude setup-token` long-lived tokens (`CLAUDE_CODE_OAUTH_TOKEN`) "can only make model requests" per official docs — whether they can call the usage endpoint is untested — https://code.claude.com/docs/en/authentication.md (confidence: HIGH for the quote; unknown for usage-endpoint applicability)
 
@@ -89,7 +90,7 @@ Source references: <RepoFile path="crates/jackin-usage/src/usage/claude.rs" />,
 
 - Plan tier labels "Max 5x" ($100/mo) and "Max 20x" ($200/mo) are official product names — https://support.claude.com/en/articles/11049741-what-is-the-max-plan (confidence: HIGH)
 - No official documentation of any endpoint returning plan label or email. Claude Code's own `/status` shows "the organization and email it has saved for the expired login" — i.e., identity is persisted client-side with the login — https://code.claude.com/docs/en/authentication.md (confidence: HIGH)
-- Client-side sources on disk (locations/types only): `~/.claude.json` → `oauthAccount.emailAddress` (account email) and `oauthAccount.organizationType` (tier, e.g. `claude_max`); credentials file → `claudeAiOauth.subscriptionType` / `rateLimitTier` — jackin❯ cross-reference `crates/jackin-usage/src/usage/claude.rs:196-257` (confidence: MED — recorded in the 2026-07-24 code snapshot, no primary doc)
+- Client-side sources on disk (locations/types only): `~/.claude.json` → `oauthAccount.emailAddress` (account email) and `oauthAccount.organizationType` (tier, e.g. `claude_max`); credentials file → `claudeAiOauth.subscriptionType` / `rateLimitTier` — jackin❯ cross-reference `crates/services/jackin-usage/src/usage/claude.rs:196-257` (confidence: MED — recorded in the 2026-07-24 code snapshot, no primary doc)
 - Multi-account: no official multi-account usage API exists; multi-account display is client aggregation over multiple stored credentials/config dirs (`CLAUDE_CONFIG_DIR` per official docs enables parallel credential stores) — https://code.claude.com/docs/en/authentication.md (confidence: HIGH for the mechanism; the aggregation itself is purely client-side)
 - Community references to an `api.anthropic.com/api/oauth/profile` endpoint could not be verified against any citable non-banned source — dropped to open unknown
 

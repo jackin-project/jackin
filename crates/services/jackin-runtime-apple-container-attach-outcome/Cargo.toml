@@ -1,0 +1,28 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "jackin-runtime-apple-container-attach-outcome"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
+description = "Post-attach outcome recording for the jackin apple-container backend."
+license.workspace = true
+readme = "README.md"
+publish = false
+
+repository.workspace = true
+
+[lib]
+name = "jackin_runtime_apple_container_attach_outcome"
+path = "src/lib.rs"
+
+[dependencies]
+jackin-core = { workspace = true }
+jackin-runtime-apple-container-running = { workspace = true }
+jackin-runtime-isolation = { workspace = true }
+jackin-runtime-launch-attach-outcome = { workspace = true }
+
+[lints]
+workspace = true

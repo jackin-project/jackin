@@ -1,0 +1,34 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "jackin-usage-store-backend"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
+description = "Turso SQLite import chokepoint for usage stores: connections plus traced DB operations."
+license.workspace = true
+readme = "README.md"
+publish = false
+
+repository.workspace = true
+
+[lib]
+name = "jackin_usage_store_backend"
+path = "src/lib.rs"
+
+[dependencies]
+jackin-telemetry = { workspace = true }
+turso = { workspace = true }
+
+[dev-dependencies]
+anyhow = { workspace = true }
+jackin-diagnostics = { workspace = true, features = ["test-support"] }
+jackin-otlp-testbed = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["macros", "net", "rt", "rt-multi-thread", "sync", "time"] }
+tracing = { workspace = true }
+
+[lints]
+workspace = true

@@ -16,36 +16,36 @@ commands.
 Run all tests:
 
 ```sh
-cargo nextest run
+mise exec -- mbx +1.99.0 nextest run
 ```
 
 Run specific test:
 
 ```sh
-cargo nextest run -E 'test(test_name)'
+mise exec -- mbx +1.99.0 nextest run -E 'test(test_name)'
 ```
 
 Run tests for specific module:
 
 ```sh
-cargo nextest run -E 'test(/module::tests/)'
+mise exec -- mbx +1.99.0 nextest run -E 'test(/module::tests/)'
 ```
 
 Run all feature-gated Rust tests except profile-isolated environment-backed smoke tests:
 
 ```sh
-cargo nextest run --all-features
+mise exec -- mbx +1.99.0 nextest run --all-features
 ```
 
 Run Docker-backed smoke tests:
 
 ```sh
-cargo nextest run -p jackin --features e2e --profile docker-e2e
+mise exec -- mbx +1.99.0 nextest run -p jackin --features e2e --profile docker-e2e
 ```
 
 In PR checkouts, run `jackin-dev pr sync <PR_NUMBER>` and source
 `$(jackin-dev pr path <PR_NUMBER>)/env.sh` first. Outside the PR sync flow, use
-`eval "$(cargo run --bin build-jackin-capsule -- --export)"` before the
+`eval "$(mise exec -- mbx +1.99.0 run --bin build-jackin-capsule -- --export)"` before the
 Docker-backed smoke command.
 
 ### Mandatory macOS OrbStack usage-broker lane
@@ -55,7 +55,7 @@ refresh, Desktop refresh, or backend launch assembly requires this release-path 
 on Apple Silicon macOS 26 with OrbStack running:
 
 ```sh
-cargo xtask ci --e2e
+mise exec -- mbx +1.99.0 xtask ci --e2e
 ```
 
 The `usage_broker_e2e` target must execute under the `docker-e2e` nextest profile;
@@ -69,8 +69,8 @@ ownership, Desktop/Capsule generation adoption, capability isolation, distinct-
 account concurrency, shared rate deadline/failure count, and unavailable-state zero-
 call assertions.
 
-All Rust tests run through `cargo nextest run`. Public documentation examples
-must have nextest-discoverable regression tests. `cargo xtask ci-doc-examples
+All Rust tests run through `mise exec -- mbx +1.99.0 nextest run`. Public documentation examples
+must have nextest-discoverable regression tests. `mise exec -- mbx +1.99.0 xtask ci-doc-examples
 --package <crate>` rejects runnable rustdoc fences so examples cannot silently
 create a second test surface outside nextest.
 
@@ -156,41 +156,40 @@ latest-target pointer; it does not duplicate the target archive.
 
 | Change surface | Command | When |
 |---|---|---|
-| One module | `cargo nextest run -E 'test(/module::tests/)'` | inner loop |
-| One crate | `cargo nextest run -p <crate>` + `cargo clippy -p <crate> --all-targets -- -D warnings` | before commit |
-| Cross-crate Rust | `cargo xtask ci --fast` | before PR |
-| Full non-Docker gate | `cargo xtask ci` | merge readiness |
-| One CI partition | `cargo xtask ci --only <lint\|policy\|tests\|snapshots\|docs\|powerset>` | inner loop mirroring a CI lane |
-| Scoped feature powerset | `cargo hack check -p jackin -p jackin-diagnostics -p jackin-capsule -p jackin-agent-status -p jackin-runtime --feature-powerset --all-targets --locked` | optional-feature crates (PR gate) |
-| Container/runtime behavior | `cargo xtask ci --e2e` (Docker running) | capsule/runtime PRs |
-| Desktop / native Swift | `mise run desktop-ci` (PR cadence); `mise run desktop-merge` adds `desktop-test-ui` on a logged-in macOS host; `mise run desktop-scheduled` adds `desktop-deadcode` | Desktop UI, bridge, or usage projection changes; PR gate: `swift-package-native` unit |
-| Docs/roadmap | `cargo xtask roadmap audit && cargo xtask docs repo-links && cargo xtask research check` | any docs edit |
-| File-size gate | `cargo xtask lint files` (`--format json\|github`) | structure / split PRs |
-| README freshness (advisory) | `cargo xtask lint readme-freshness --base origin/main` | structural `crates/*/src` A/D/R without README touch |
-| Agents gate | `cargo xtask lint agents` (`--format json\|github`) | new crate / AGENTS files |
-| TUI snapshots | `cargo nextest run -p jackin-capsule -p jackin-console` (insta snapshots live only in these two crates today) | TUI render changes |
+| One module | `mise exec -- mbx +1.99.0 nextest run -E 'test(/module::tests/)'` | inner loop |
+| One crate | `mise exec -- mbx +1.99.0 nextest run -p <crate>` + `mise exec -- mbx +1.99.0 clippy -p <crate> --all-targets -- -D warnings` | before commit |
+| Cross-crate Rust | `mise exec -- mbx +1.99.0 xtask ci --fast` | before PR |
+| Full non-Docker gate | `mise exec -- mbx +1.99.0 xtask ci` | merge readiness |
+| One CI partition | `mise exec -- mbx +1.99.0 xtask ci --only <lint\|policy\|tests\|snapshots\|docs\|powerset>` | inner loop mirroring a CI lane |
+| Scoped feature powerset | `mise exec -- mbx +1.99.0 hack check -p jackin -p jackin-diagnostics -p jackin-capsule -p jackin-agent-status -p jackin-runtime --feature-powerset --all-targets --locked` | optional-feature crates (PR gate) |
+| Container/runtime behavior | `mise exec -- mbx +1.99.0 xtask ci --e2e` (Docker running) | capsule/runtime PRs |
+| Desktop / native Swift | `mise -C native run ci` (local cadence); `mise -C native run merge` adds UI tests on a logged-in macOS host; `mise -C native run scheduled` adds dead-code analysis | Desktop UI, bridge, or usage projection changes; macOS required |
+| Docs/roadmap | `mise exec -- mbx +1.99.0 xtask roadmap audit && mise exec -- mbx +1.99.0 xtask docs repo-links && mise exec -- mbx +1.99.0 xtask research check` | any docs edit |
+| File-size gate | `mise exec -- mbx +1.99.0 xtask lint files` (`--format json\|github`) | structure / split PRs |
+| README freshness (advisory) | `mise exec -- mbx +1.99.0 xtask lint readme-freshness --base origin/main` | structural `crates/*/src` A/D/R without README touch |
+| Agents gate | `mise exec -- mbx +1.99.0 xtask lint agents` (`--format json\|github`) | new crate / AGENTS files |
+| TUI snapshots | `mise exec -- mbx +1.99.0 nextest run -p jackin-capsule -p jackin-console` (insta snapshots live only in these two crates today) | TUI render changes |
 
-Every first-party `cargo xtask lint <gate>`, `docs <gate>`, `research check`, and
+Every first-party `mise exec -- mbx +1.99.0 xtask lint <gate>`, `docs <gate>`, `research check`, and
 `roadmap audit` command accepts `--format json|github`. JSON violations use
 schema 1 with `file`, nullable `line`, `message`, `fix`, and exact `rerun`
 fields. The shared problem matcher is registered by CI for human/GitHub output.
 
 ### Snapshot review policy
 
-Changed `.snap` files are enumerated in CI against the PR merge-base with `origin/main` (step summary + job log). Reviewers must acknowledge each listed snapshot; hand-edited snapshots that merely match buggy output are rejected in review. Pending files (`*.pending-snap`) still fail CI. Prefer `cargo insta review` / `cargo insta accept` over hand-editing `.snap` bodies.
+Changed `.snap` files are enumerated in CI against the PR merge-base with `origin/main` (step summary + job log). Reviewers must acknowledge each listed snapshot; hand-edited snapshots that merely match buggy output are rejected in review. Pending files (`*.pending-snap`) still fail CI. Prefer `mise exec -- mbx +1.99.0 insta review` / `mise exec -- mbx +1.99.0 insta accept` over hand-editing `.snap` bodies.
 
 
-Every Rust workspace member is verified by `cargo nextest run -p <crate>`. The
-Swift shell is verified by `cargo xtask desktop test` and the Desktop commands
+Every Rust workspace member is verified by `mise exec -- mbx +1.99.0 nextest run -p <crate>`. The
+Swift shell is verified by `mise exec -- mbx +1.99.0 xtask desktop test` and the Desktop commands
 above. Governed PR CI runs the Swift units in the generated
 [`.github/workflows/ci-pr.yml`](.github/workflows/ci-pr.yml) (generated by
 velnor-workflow, dispatches `ci-unit-swift.yml` via `group-swift`); those units
 are the PR gate named in the verification matrix.
 The `jackin` E2E
 tests additionally need `--features e2e --profile docker-e2e`. Documentation
-examples are mirrored into ordinary tests and checked with `cargo xtask
-ci-doc-examples --package <crate>`. The machine-checkable per-member map is
-also emitted by `cargo xtask health --format json` under `verification_map`.
+examples are mirrored into ordinary tests and checked with `mise exec -- mbx +1.99.0 xtask ci-doc-examples --package <crate>`. The machine-checkable per-member map is
+also emitted by `mise exec -- mbx +1.99.0 xtask health --format json` under `verification_map`.
 
 ## Recording capsule render-conformance fixtures
 
@@ -198,27 +197,27 @@ Capsule echo-back harness ([crates/jackin-capsule/src/daemon/tests.rs](crates/ja
 
 1. Set `JACKIN_PTY_FIXTURE_CAPTURE` to an operator-selected temporary capture path and run the specific capture scenario.
 2. Review the temporary capture for secrets and unstable content.
-3. Copy the reviewed bytes into the fixture tree with `cargo xtask pty-fixture <capture.bin> crates/jackin-capsule/tests/fixtures/pty/<fixture.bin>`.
+3. Copy the reviewed bytes into the fixture tree with `mise exec -- mbx +1.99.0 xtask pty-fixture <capture.bin> crates/jackin-capsule/tests/fixtures/pty/<fixture.bin>`.
 4. Reference the fixture with `include_bytes!` and add the scenario to the fixture README.
 
 Without the capture variable, production and test sessions do not write PTY streams. OTLP telemetry never contains PTY bytes.
 
 ## Walking the operator through local validation
 
-Every `jackin <subcommand>` invocation in manual validation MUST include `--debug`. This includes `cargo run --bin jackin -- <subcommand> --debug` from a checkout. Debug mode controls operator troubleshooting output; it does not create a telemetry or diagnostics file.
+Every `jackin <subcommand>` invocation in manual validation MUST include `--debug`. This includes `mise exec -- mbx +1.99.0 run --bin jackin -- <subcommand> --debug` from a checkout. Debug mode controls operator troubleshooting output; it does not create a telemetry or diagnostics file.
 
 When validating observability, start the dev-only OTLP testbed or another trusted gRPC backend, set `OTEL_EXPORTER_OTLP_ENDPOINT`, and run `jackin diagnostics validate` first. Use `cli.invocation.id` and `session.id` to inspect the run in the backend. With no endpoint, telemetry remains disabled and no local fallback artifact is written.
 
 Smoke tests: suggest `jackin console` first, prefer `the-architect` role over `agent-smith`. Standard smoke command:
 
 ```bash
-cargo run --bin jackin -- console --debug
+mise exec -- mbx +1.99.0 run --bin jackin -- console --debug
 ```
 
 Use `jackin load` only when PR specifically needs that CLI path:
 
 ```bash
-cargo run --bin jackin -- load the-architect . --debug
+mise exec -- mbx +1.99.0 run --bin jackin -- load the-architect . --debug
 ```
 
 No `--no-intro` on debug smoke — debug mode already suppresses intro; `--debug --no-intro` = redundant.
@@ -237,7 +236,7 @@ Does not apply to:
 CI nextest uses `[profile.ci]` (`.config/nextest.toml`): fixed 2 retries with a 1s delay and `final-status-level = "flaky"`. A pass-on-retry is reported as flaky — never silently absorbed. The matrix is exactly one job per affected crate that requires testing; an input-identical successful result is resolved before matrix expansion and does not consume a runner. It has no shards, multi-crate buckets, older-toolchain lanes, or second jobs for crate-specific clippy, benchmarks, powersets, fuzzing, or Docker tests. The `jackin` job owns its conditional Docker E2E steps. Every crate job uploads `target/nextest/ci/junit.xml` and fails if any flaky test is not listed in the shrink-only quarantine ledger `flaky-tests.toml` (repo root; each `[[test]]` needs `name`, `owner`, `reason`, `since`). Prefer fixing the flake over quarantining.
 
 Native UI tests run outside nextest and require a logged-in macOS session.
-`mise run desktop-test-ui` writes one JUnit report per XCTest under the ignored
+`native/Scripts/run-ui-tests.sh` writes one JUnit report per XCTest under the ignored
 `native/.build/test-results/` tree. The script does not retry failures. If a manual
 rerun proves an XCTest intermittent, review its report under the same
 `flaky-tests.toml` owner/reason/since policy; the current nextest analyzer does not
@@ -329,7 +328,7 @@ Scheduled hygiene retains the 120-300 second campaigns for the same targets,
 including the nightly AddressSanitizer run.
 
 Junit artifacts are named `nextest-junit-<crate>-<lane>` and seed the Phase 0 suite-wall-time baseline once measured.
-Each package job runs `cargo xtask lint ratchet --only suite-time`; it must not invoke
+Each package job runs `mise exec -- mbx +1.99.0 xtask lint ratchet --only suite-time`; it must not invoke
 the all-family ratchet because unrelated artifact providers can add hidden build
 work. The telemetry conformance job similarly owns generation of
 `target/telemetry-volume-ratchet.json` and enforces only `export-volume` after
@@ -354,10 +353,10 @@ conformance replay, allocation) live in the
 Local smoke (nightly + cargo-fuzz via mise):
 
 ```sh
-cd crates/jackin-config && cargo fuzz run --sanitizer none config_migrate -- -max_total_time=30
+cd crates/jackin-config && mise exec -- mbx +1.99.0 fuzz run --sanitizer none config_migrate -- -max_total_time=30
 ```
 
-Committed seeds live under each fuzz crate's `corpus/<target>/` (fixture-derived TOML for migrate/validate targets; tag+payload frames for `decode_frames`). **Promotion rule:** when a fuzzer finds a crash or hang, (1) minimize with `cargo fuzz cmin <target>` / `tmin`, (2) commit the minimized input under `corpus/<target>/`, (3) add a deterministic regression test in the owning crate that feeds the same bytes (or the decoded fixture) so the finding never re-enters CI only via the fuzzer. Do not grow corpora with non-minimized corpus dirs from long runs without `cmin`.
+Committed seeds live under each fuzz crate's `corpus/<target>/` (fixture-derived TOML for migrate/validate targets; tag+payload frames for `decode_frames`). **Promotion rule:** when a fuzzer finds a crash or hang, (1) minimize with `mise exec -- mbx +1.99.0 fuzz cmin <target>` / `tmin`, (2) commit the minimized input under `corpus/<target>/`, (3) add a deterministic regression test in the owning crate that feeds the same bytes (or the decoded fixture) so the finding never re-enters CI only via the fuzzer. Do not grow corpora with non-minimized corpus dirs from long runs without `cmin`.
 
 Migration fixture harness ([`crates/jackin/tests/migration_fixtures.rs`](crates/jackin/tests/migration_fixtures.rs)) enforces golden equality against `after.toml` and second-pass idempotence for every config/workspace/manifest fixture.
 
@@ -366,7 +365,7 @@ Migration fixture harness ([`crates/jackin/tests/migration_fixtures.rs`](crates/
 Hygiene job `dind-chaos` runs the complete nine-test suite against real Docker,
 including the three seeded fault scenarios
 (`chaos_kill_container_mid_session`, `chaos_sigkill_capsule`, `chaos_drop_control_socket`).
-Replay: `JACKIN_CHAOS_SEED=<n> cargo nextest run -p jackin --features e2e --profile docker-e2e -E 'test(chaos_kill_container_mid_session)'`.
+Replay: `JACKIN_CHAOS_SEED=<n> mise exec -- mbx +1.99.0 nextest run -p jackin --features e2e --profile docker-e2e -E 'test(chaos_kill_container_mid_session)'`.
 Default seed is fixed (`0xc4a0_55eed`); `workflow_dispatch` input `chaos_seed` overrides.
 
 ## Allocation lane (dhat) — static budget policy (plan 026)
@@ -408,7 +407,7 @@ estimates so a baseline change can be reviewed from retained evidence.
 
 ## First-frame / input-to-frame harness (plan 026)
 
-`cargo xtask frame-timing` launches the built host console through a 120×36 PTY,
+`mise exec -- mbx +1.99.0 xtask frame-timing` launches the built host console through a 120×36 PTY,
 waits for alternate-screen entry plus the first substantial paint, injects a
 Down-arrow event, and measures the next repaint. Three independent samples are
 written to `frame-timing.json`; the scheduled lane keeps this advisory because

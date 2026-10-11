@@ -20,11 +20,11 @@ Rust, and Swift gates green before commit.
 | Xcode agent bridge setup/boundary (P0) | `e7f66979` | `native/README.md` "Xcode agent bridge": setup, no-screenshot/no-automation boundary, unavailable-never-pass rule, no-secret verification checklist. |
 | Agent responsibility ownership (P1) | `e7f66979` | One-owner table in `native/README.md` "Agent responsibility ownership". |
 | One-way bridge package boundary (P0) | `3ea08dc2` | `JackinUsageBindings` (generated only) → `JackinUsageBridge` (sole handwritten importer, typed facade — `RefreshScheduler.run` is private) → UI targets; `BridgeBoundaryTests` enforce the import/handle rules. |
-| Generated-binding drift gate (P0) | `09934ad7` | `cargo xtask desktop bindings-check` / `mise run desktop-bindings-check`: staging regeneration, byte-compare of both trees, stale/missing/extra fixtures unit-tested. |
+| Generated-binding drift gate (P0) | `09934ad7` | `cargo xtask desktop bindings-check` runs in the `mise -C native run ci` cadence: staging regeneration, byte-compare of both trees, stale/missing/extra fixtures unit-tested. |
 | Swift unit-test count proof + all five harnesses (P0) | `508fe9b4` | `cargo xtask desktop test-swift`: dual proof — XCTest `All tests` summary (SwiftPM 6.3 writes xUnit for Swift Testing only) plus `-swift-testing.xml`; zero/missing/corrupt results fail. All five declared harness products run. |
-| Local/CI/release parity (P0) | `c449025f` | Cadence graph `desktop-ci` (PR) → `desktop-merge` (+UI) → `desktop-scheduled` (+dead-code); release.yml invokes the exact `mise run desktop-*` names; xtask contract tests prove the graph, the release wiring, and that generated `ci-pr.yml` only delegates the native lane; TESTING.md contradiction reconciled. |
+| Local/CI/release parity (P0) | `c449025f` | Native cadence graph `mise -C native run ci` → `merge` (+UI) → `scheduled` (+dead-code); the former release workflow invoked root-level desktop task names, which have since been retired; xtask contract tests prove the graph, the release wiring, and that generated `ci-pr.yml` only delegates the native lane; TESTING.md contradiction reconciled. |
 | Release symbols (P1) | `dc32dc3f` | `[profile.desktop-release]` (thin LTO, 1 codegen unit, line tables, no strip) drives the static library/bindings/XCFramework; build archives the dSYM beside the app and proves correspondence via matching arm64 UUIDs; release CI uploads dSYM + compressed unstripped `.a` (90-day retention). dSYM verified to carry Rust function names and source lines. |
-| SwiftLint debt + unit-test policy (P1) | `fd04d8c4` | Root disables only the four verified swift-format conflicts; six size rules re-enabled at defaults with legacy overages in nested per-directory configs (SwiftLint has no per-rule path exclusion; `--config` would silently disable nested discovery, so `desktop-lint` drops it) carrying owner + deletion condition; `native/Tests/.swiftlint.yml` added; `LintPolicyTests` prove force rules stay error outside test trees. |
+| SwiftLint debt + unit-test policy (P1) | `fd04d8c4` | Root disables only the four verified swift-format conflicts; six size rules re-enabled at defaults with legacy overages in nested per-directory configs (SwiftLint has no per-rule path exclusion; `--config` would silently disable nested discovery, so the native `lint` task drops it) carrying owner + deletion condition; `native/Tests/.swiftlint.yml` added; `LintPolicyTests` prove force rules stay error outside test trees. |
 | Apple agent knowledge governance (P1) | `f8324d6` + `105b73a` | Standing blocker: Xcode 26.6 (17F113) ships no exportable skill documents — nothing reviewable to vendor. Recorded with probe date, refresh rule, and non-execution policy in `native/README.md`; `VendorProvenanceTests` require PROVENANCE.md if a vendor tree ever appears. |
 
 Standing exceptions (both dated, both nonblocking):
@@ -37,7 +37,7 @@ Standing exceptions (both dated, both nonblocking):
 
 Scheduled-cadence note: the readiness implementation listed an accessibility
 audit and a visual-state matrix under merge/scheduled cadences. The
-accessibility audit runs inside `desktop-test-ui` (merge cadence); no separate
+accessibility audit runs inside `native/Scripts/run-ui-tests.sh` (merge cadence); no separate
 visual-state-matrix task exists yet — adding one is a follow-up, not a
 regression.
 
@@ -89,7 +89,7 @@ ignored project output; regeneration produced no tracked binding diff.
 | `rtk cargo xtask desktop build --version 0.6.0 --build 1` | PASS — XCFramework, boltffi generation, XcodeGen, arm64 Release build, ad hoc sign, app assembly | Mutating build pipeline passed. It is not a nonmutating binding-drift gate. |
 | `rtk git diff -- native/Generated native/Sources/JackinUsageBridge/jackin_usage_ffi.swift` after build | PASS — empty | Current regeneration matched tracked bindings. This manual observation does not replace CI drift enforcement. |
 | `rtk cargo xtask desktop verify native/dist/JackinDesktop.app` | PASS — ad hoc/PR verification | Local artifact shape only; no Developer ID/notary/public-download proof. |
-| `rtk mise run desktop-test-ui` | UNAVAILABLE — mise required trusting repository config; trust was declined because it writes host state | Canonical wrapper did not start. |
+| `rtk mise run `native/Scripts/run-ui-tests.sh`` | UNAVAILABLE — mise required trusting repository config; trust was declined because it writes host state | Canonical wrapper did not start. |
 | `rtk proxy xcodebuild test -project native/JackinDesktop.xcodeproj -scheme JackinDesktop -destination 'platform=macOS' -parallel-testing-enabled NO -only-testing:JackinDesktopUITests/JackinDesktopUITests/testOverviewPassesAccessibilityAudit -derivedDataPath native/DerivedData -resultBundlePath native/.build/test-results/goal-accessibility-overview.xcresult` | FAIL — one test executed; activation failed after 61.977 s because app state remained `Running Background` | The accessibility audit body did not execute. This is stronger failure evidence than a zero-test timeout, not an accessibility pass. |
 | `command -v swiftlint xcbeautify periphery` | UNAVAILABLE — all absent | Strict lint, canonical UI-test reporting, and dead-code scan could not run unmanaged. |
 | `rtk cargo xtask desktop bindings --help` | INCOMPLETE — only mutating `bindings` exists | No nonmutating drift-check command exists. |
@@ -144,14 +144,17 @@ Acceptance:
   nonblocking.
 - No beta toolchain becomes the shipping lane.
 
-### P0 — make local and CI commands identical and complete
+### Historical implementation plan (superseded by native/mise.toml)
+
+The plan below records the former root-level task/workflow state. Current native operator commands are documented in `native/README.md`; native mise tasks are in `native/mise.toml`, and the checked-in GitHub workflow does not invoke those cadences.
+
+## P0 — historical implementation plan
 
 Current condition:
 
-- `mise.toml` is the version authority and exposes strong desktop tasks.
-- `desktop-ci` regenerates bindings, formats, lints, runs Rust/harness tests, and
-  runs SwiftPM tests (`mise.toml:163-173`). It does not generate the Xcode project,
-  build the app, verify the app, run XCUITests, or assert a Swift unit-test count.
+- The former root `mise.toml` exposed desktop task wrappers; native workflows now live in `native/mise.toml`.
+- `native `ci` task` regenerates bindings, formats, lints, runs Rust/harness tests, and
+  ran an incomplete gate graph before the native tasks moved into `native/mise.toml`.
 - `TESTING.md:167` calls the native lane a PR gate while `TESTING.md:184-187`
   says generated PR CI has no native Swift lane. The source of truth contradicts
   itself and therefore cannot prove coverage.
@@ -167,13 +170,13 @@ Implementation:
 
 1. Split canonical tasks by cadence while keeping one definition per command:
    - PR: Rust format/clippy/tests → refactored bridge/XCFramework pack into
-     staging → nonmutating `desktop-bindings-check` → `desktop-generate` →
-     `desktop-format-check` → `desktop-lint` → app build → counted Swift unit
+     staging → nonmutating `mise -C native run ci` (bindings check) → `Xcode project generation` →
+     `native `format-check` task` → `native `lint` task` → app build → counted Swift unit
      tests → app verify.
-   - Merge: PR gates plus `desktop-test-ui` and accessibility audit.
-   - Scheduled: merge gates plus `desktop-deadcode`, forward SDK build, and the
+   - Merge: PR gates plus `native/Scripts/run-ui-tests.sh` and accessibility audit.
+   - Scheduled: merge gates plus `native `deadcode` task`, forward SDK build, and the
      visual-state matrix.
-2. Make CI and release invoke these exact `mise run desktop-*` task names. Any
+2. Invoke the native cadence with `mise -C native run ci` when appropriate. Any
    workflow orchestration remains in the governing Rust xtask or generated
    workflow source, not new shell logic.
 3. Replace the bare `swift test -c release` step with an xtask-owned test driver
@@ -242,8 +245,9 @@ Implementation:
    every committed output byte-for-byte.
 2. Compare both `native/Generated/*` and the generated Swift copy under
    `native/Sources/JackinUsageBridge/`; reject missing, extra, or changed files.
-3. Add `mise run desktop-bindings-check` before format/build in the PR task and
-   test the checker with stale, missing, and extra fixture files.
+3. Run the generated-binding drift check before format/build in the native
+   cadence (`mise -C native run ci`) and test the checker with stale, missing,
+   and extra fixture files.
 
 Acceptance:
 

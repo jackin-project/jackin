@@ -80,7 +80,7 @@ The explain command must not mutate host state. It may read config, role metadat
 
 ## Existing partial building blocks
 
-Two backend-specific text renderers inform this design: <RepoFile path="crates/jackin-runtime/src/runtime/docker_profile.rs">crates/jackin-runtime/src/runtime/docker_profile.rs</RepoFile> `format_session_contract` covers Docker profile, network, resources, credentials, and residual risk behind `--debug`; <RepoFile path="crates/jackin-runtime/src/runtime/apple_container.rs">crates/jackin-runtime/src/runtime/apple_container.rs</RepoFile> `print_session_contract` covers Apple Container isolation, mounts, network, and residual risk at attach. Neither is backend-neutral, has a JSON form, or is reachable through a stand-alone `explain` command.
+Two backend-specific text renderers inform this design: <RepoFile path="crates/services/jackin-runtime/src/runtime/docker_profile.rs">crates/services/jackin-runtime/src/runtime/docker_profile.rs</RepoFile> `format_session_contract` covers Docker profile, network, resources, credentials, and residual risk behind `--debug`; <RepoFile path="crates/services/jackin-runtime/src/runtime/apple_container.rs">crates/services/jackin-runtime/src/runtime/apple_container.rs</RepoFile> `print_session_contract` covers Apple Container isolation, mounts, network, and residual risk at attach. Neither is backend-neutral, has a JSON form, or is reachable through a stand-alone `explain` command.
 
 ## Sources
 

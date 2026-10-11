@@ -109,7 +109,7 @@ Every role repo must satisfy a contract:
    FROM projectjackin/construct:0.4-trixie AS runtime
    ```
 5. **Earlier stages may use any base image** — multi-stage builds are fully supported
-6. **Contained symlinks** — the <RepoFile path="crates/jackin-image/src/derived_image.rs">derived build-context generator</RepoFile> dereferences targets inside the checkout. File targets are copied; directory targets are traversed recursively, so directory-link cycles are unsupported. Dangling, escaping, and non-file/directory targets are rejected. Hook symlinks must resolve to regular files.
+6. **Contained symlinks** — the <RepoFile path="crates/adapters/jackin-image/src/derived_image.rs">derived build-context generator</RepoFile> dereferences targets inside the checkout. File targets are copied; directory targets are traversed recursively, so directory-link cycles are unsupported. Dangling, escaping, and non-file/directory targets are rejected. Hook symlinks must resolve to regular files.
 
 <Aside type="caution">
 Role repos only own their agent-specific environment layer. jackin❯ owns everything else: validating the contract, generating the derived Dockerfile, resolving and caching the agent runtimes declared by the role (Claude Code, Codex, Amp, Kimi, OpenCode), injecting the entrypoint, mounting workspaces, and wiring Docker-in-Docker.

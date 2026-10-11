@@ -9,7 +9,7 @@ description: Defines the Apple Container backend architecture, CLI integration, 
 
 Apple Container fits the backend abstraction through its CLI, but rootless DinD and mount behavior remain empirical gates.
 
-This design record covers the runtime stack, CLI boundary, manifest schema, and telemetry implemented by <RepoFile path="crates/jackin-runtime/src/runtime/apple_container.rs" /> and <RepoFile path="crates/jackin-runtime/src/apple_container_client.rs" />. See [Apple Container backend](/roadmap/apple-container-backend/) for current work.
+This design record covers the runtime stack, CLI boundary, manifest schema, and telemetry implemented by <RepoFile path="crates/services/jackin-runtime/src/runtime/apple_container.rs" /> and <RepoFile path="crates/services/jackin-runtime/src/apple_container_client.rs" />. See [Apple Container backend](/roadmap/apple-container-backend/) for current work.
 
 ## Why This Backend
 
@@ -56,7 +56,7 @@ container logs jackin-<instance>                       # logs
 
 ### `AppleContainerApi` Trait
 
-<RepoFile path="crates/jackin-runtime/src/apple_container_client.rs" /> defines the trait shape for the backend. Unlike <RepoFile path="crates/jackin-docker/src/docker_client.rs" />, which uses the **bollard** crate (a typed async Rust API client for Docker), Apple Container has no Rust API — every method shells out to the `container` CLI via `tokio::process::Command`, which is a fundamentally different pattern from the Docker client:
+<RepoFile path="crates/services/jackin-runtime/src/apple_container_client.rs" /> defines the trait shape for the backend. Unlike <RepoFile path="crates/adapters/jackin-docker/src/docker_client.rs" />, which uses the **bollard** crate (a typed async Rust API client for Docker), Apple Container has no Rust API — every method shells out to the `container` CLI via `tokio::process::Command`, which is a fundamentally different pattern from the Docker client:
 
 ```rust
 pub trait AppleContainerApi: Send + Sync {
@@ -85,11 +85,11 @@ pub struct AppleContainerInfo {
 
 ## Networking
 
-Each apple/container VM gets its own dedicated IP address via vmnet — no port mapping needed. Services inside the role container are reachable from macOS at the container's IP. The 1.0 release retains a DNS sleep/wake caveat: container-to-container networking on the same bridge has DNS hiccups after macOS sleep/wake. jackin❯ detects DNS failures (<RepoFile path="crates/jackin-runtime/src/runtime/apple_container.rs" /> `check_dns`) and surfaces a "reconnect required" hint to the operator.
+Each apple/container VM gets its own dedicated IP address via vmnet — no port mapping needed. Services inside the role container are reachable from macOS at the container's IP. The 1.0 release retains a DNS sleep/wake caveat: container-to-container networking on the same bridge has DNS hiccups after macOS sleep/wake. jackin❯ detects DNS failures (<RepoFile path="crates/services/jackin-runtime/src/runtime/apple_container.rs" /> `check_dns`) and surfaces a "reconnect required" hint to the operator.
 
 ## Instance Manifest Shape
 
-<RepoFile path="crates/jackin-instance/src/manifest.rs" /> carries a backend-neutral `BackendResources` enum:
+<RepoFile path="crates/services/jackin-instance/src/manifest.rs" /> carries a backend-neutral `BackendResources` enum:
 
 ```rust
 pub struct AppleContainerResources {
@@ -120,11 +120,11 @@ Two versioned config surfaces touch this backend:
 | `[runtime] default_backend = "apple-container"` | `config.toml` | `AppConfig` |
 | `[runtime] backend = "apple-container"` | `~/.config/jackin/workspaces/<name>.toml` | `WorkspaceConfig` |
 
-Both use optional fields with serde defaults. Config and workspace version constants remain independent and follow the one-bump-per-PR rule in AGENTS.md. Current version values live in <RepoFile path="crates/jackin-config/src/versions.rs" />.
+Both use optional fields with serde defaults. Config and workspace version constants remain independent and follow the one-bump-per-PR rule in AGENTS.md. Current version values live in <RepoFile path="crates/core/jackin-config/src/versions.rs" />.
 
 ## Telemetry Spec
 
-Backend operations emit `debug_log!("apple-container", …)` per the two-tier telemetry rule in AGENTS.md. Lines implemented in <RepoFile path="crates/jackin-runtime/src/runtime/apple_container.rs" /> and <RepoFile path="crates/jackin-runtime/src/apple_container_client.rs" />:
+Backend operations emit `debug_log!("apple-container", …)` per the two-tier telemetry rule in AGENTS.md. Lines implemented in <RepoFile path="crates/services/jackin-runtime/src/runtime/apple_container.rs" /> and <RepoFile path="crates/services/jackin-runtime/src/apple_container_client.rs" />:
 
 - `container_version version=<container --version>`
 - `container_run name=<name> ok` / failure detail
@@ -140,7 +140,7 @@ apple-container launch name=jackin-<id> image=the-architect inner_docker=rootles
 
 ## Session Contract Output
 
-<RepoFile path="crates/jackin-runtime/src/runtime/apple_container.rs" /> `print_session_contract` prints the operator-facing security boundary summary before attach: backend, provider version, container name/image, kernel isolation model, mount list, DinD state, `JACKIN_CAPSULE_FORCE_DAEMON` marker, network model, DNS caveat, and residual risks (rootless DinD compatibility unverified, `vminitd` as PID 1 relying on gRPC/vsock signal forwarding, and build-time Docker using the host engine).
+<RepoFile path="crates/services/jackin-runtime/src/runtime/apple_container.rs" /> `print_session_contract` prints the operator-facing security boundary summary before attach: backend, provider version, container name/image, kernel isolation model, mount list, DinD state, `JACKIN_CAPSULE_FORCE_DAEMON` marker, network model, DNS caveat, and residual risks (rootless DinD compatibility unverified, `vminitd` as PID 1 relying on gRPC/vsock signal forwarding, and build-time Docker using the host engine).
 
 ## Current limitations
 
@@ -156,7 +156,7 @@ apple-container launch name=jackin-<id> image=the-architect inner_docker=rootles
 ## Design Alternatives Considered
 
 - **bollard-style typed Rust client**: rejected — Apple Container's programmatic surface is Swift XPC-native, not a Rust or REST API, so a bollard-equivalent typed client isn't available; shelling out to the `container` CLI is the only integration path for V1.
-- **Static `JACKIN_CAPSULE_FORCE_DAEMON` Dockerfile `ENV`**: rejected — would break the Docker backend, where capsule IS PID 1 and client-mode invocations (e.g. `jackin-capsule status`) must not enter daemon mode. The env var is injected only as a `-e` flag on the apple-container launch path, and <RepoFile path="crates/jackin-capsule/src/main.rs" /> additionally gates on `forced_daemon_mode`/`is_daemon_entrypoint_args` so an inherited env var in `container exec` children (which also see the VM's env) cannot capture a client-mode invocation into daemon mode.
+- **Static `JACKIN_CAPSULE_FORCE_DAEMON` Dockerfile `ENV`**: rejected — would break the Docker backend, where capsule IS PID 1 and client-mode invocations (e.g. `jackin-capsule status`) must not enter daemon mode. The env var is injected only as a `-e` flag on the apple-container launch path, and <RepoFile path="crates/apps/jackin-capsule/src/main.rs" /> additionally gates on `forced_daemon_mode`/`is_daemon_entrypoint_args` so an inherited env var in `container exec` children (which also see the VM's env) cannot capture a client-mode invocation into daemon mode.
 - **smolvm as the primary VM-per-workload backend**: deferred — Apple Container is the first-party macOS path but requires a separate install; smolvm remains the fallback research track if the apple-container rootless-DinD compatibility test fails. See [smolvm backend research](/research/platform/isolation/smolvm-backend/).
 
 ## Validation gates

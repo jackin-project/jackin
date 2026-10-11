@@ -13,20 +13,27 @@ const cratesRoot = join(repoRoot, 'crates')
 const outDir = join(docsRoot, 'content', 'reference', 'crates')
 const metaPath = join(outDir, 'meta.json')
 
-export type CrateReadme = { name: string; body: string }
+export type CrateReadme = { name: string; dir: string; body: string }
 
 /** List workspace crates that carry a README.md (sorted). */
 export async function listCrateReadmes(): Promise<CrateReadme[]> {
-  const entries = await readdir(cratesRoot, { withFileTypes: true })
+  const groups = await readdir(cratesRoot, { withFileTypes: true })
   const crates: CrateReadme[] = []
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue
-    const readmePath = join(cratesRoot, entry.name, 'README.md')
-    try {
-      const body = await readFile(readmePath, 'utf8')
-      crates.push({ name: entry.name, body })
-    } catch {
-      // no README — skip (agents gate enforces presence separately)
+  for (const group of groups) {
+    if (!group.isDirectory()) continue
+    const entries = await readdir(join(cratesRoot, group.name), {
+      withFileTypes: true,
+    })
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue
+      const dir = join('crates', group.name, entry.name)
+      const readmePath = join(repoRoot, dir, 'README.md')
+      try {
+        const body = await readFile(readmePath, 'utf8')
+        crates.push({ name: entry.name, dir: dir.split(sep).join('/'), body })
+      } catch {
+        // no README — skip (agents gate enforces presence separately)
+      }
     }
   }
   crates.sort((a, b) => a.name.localeCompare(b.name))
@@ -45,21 +52,25 @@ export function stripH1(markdown: string): string {
 
 /**
  * Normalize a relative link target from a crate README into a repo path under
- * crates/<name>/, or null if it should not become a RepoFile.
+ * crates/<group>/<name>/, or null if it should not become a RepoFile.
  */
 export function normalizeRepoPath(
-  crateName: string,
+  crateDir: string,
   href: string,
 ): string | null {
   if (!href || href.startsWith('#') || href.startsWith('http://') || href.startsWith('https://') || href.startsWith('mailto:')) {
     return null
   }
   // Sibling crate README → handled separately as a site route.
-  const sibling = href.match(/^\.\.\/([^/]+)\/README\.md(?:#.*)?$/)
+  const sibling = href.match(/^(?:\.\.\/)+(?:[^/]+\/)?([^/]+)\/README\.md(?:#.*)?$/)
   if (sibling) return null
 
   // Docs content path → site route, not RepoFile.
-  if (href.includes('docs/content/') || href.startsWith('../../docs/')) {
+  if (
+    href.includes('docs/content/') ||
+    href.startsWith('../../docs/') ||
+    href.startsWith('../../../docs/')
+  ) {
     return null
   }
 
@@ -67,20 +78,19 @@ export function normalizeRepoPath(
   const bare = href.split('#')[0] ?? href
   if (!bare) return null
 
-  const crateRoot = join('crates', crateName)
   let joined: string
   if (bare.startsWith('src/') || bare.startsWith('./src/')) {
-    joined = join(crateRoot, bare.replace(/^\.\//, ''))
+    joined = join(crateDir, bare.replace(/^\.\//, ''))
   } else if (bare.startsWith('../')) {
-    // Resolve relative to crates/<name>/README.md location.
-    joined = normalize(join(crateRoot, bare))
+    // Resolve relative to crates/<group>/<name>/README.md location.
+    joined = normalize(join(crateDir, bare))
   } else if (bare.startsWith('/')) {
     return null
   } else {
-    joined = join(crateRoot, bare)
+    joined = join(crateDir, bare)
   }
   // Reject escapes outside the repo crates tree (and allow other repo roots
-  // that resolve via ../ outside crates/<name>).
+  // that resolve via ../ outside crates/<group>/<name>).
   const norm = joined.split(sep).join('/')
   if (norm.includes('..')) return null
   return norm
@@ -108,7 +118,7 @@ export function resolveExistingFile(
 
 /** Sibling crate README → /reference/crates/<other>/. */
 export function siblingCrateRoute(href: string): string | null {
-  const m = href.match(/^\.\.\/([^/]+)\/README\.md(?:#.*)?$/)
+  const m = href.match(/^(?:\.\.\/)+(?:[^/]+\/)?([^/]+)\/README\.md(?:#.*)?$/)
   if (!m) return null
   return `/reference/crates/${m[1]}/`
 }
@@ -194,7 +204,7 @@ const BARE_REPO_PATH =
   /`((?:crates|docs|src|docker|scripts|plans)\/[^`\s]+|[A-Z][A-Z0-9_.-]*\.md)`/g
 
 /** Rewrite markdown links according to plan 049 rules. */
-export function rewriteLinks(crateName: string, markdown: string): string {
+export function rewriteLinks(crateDir: string, markdown: string): string {
   return markdown.replace(MD_LINK, (full, text: string, href: string) => {
     if (href.startsWith('http://') || href.startsWith('https://') || href.startsWith('mailto:') || href.startsWith('#')) {
       return full
@@ -205,7 +215,7 @@ export function rewriteLinks(crateName: string, markdown: string): string {
     const docsRoute = docsContentRoute(href)
     if (docsRoute) return `[${text}](${docsRoute})`
 
-    const repoPath = normalizeRepoPath(crateName, href)
+    const repoPath = normalizeRepoPath(crateDir, href)
     if (repoPath) {
       const filePath = resolveExistingFile(repoPath)
       if (filePath) {
@@ -231,22 +241,22 @@ export function rewriteBareRepoPaths(markdown: string): string {
 }
 
 /** Full body transform: strip H1 → rewrite links → bare paths → escape MDX. */
-export function transformReadmeBody(crateName: string, body: string): string {
+export function transformReadmeBody(crate: CrateReadme, body: string): string {
   const stripped = stripH1(body)
-  const linked = rewriteLinks(crateName, stripped)
+  const linked = rewriteLinks(crate.dir, stripped)
   const bare = rewriteBareRepoPaths(linked)
   return escapeMdxOutsideFences(bare)
 }
 
-export function renderMdxPage(crateName: string, body: string): string {
-  const transformed = transformReadmeBody(crateName, body)
-  const title = crateName === 'jackin' ? 'jackin❯' : crateName
+export function renderMdxPage(crate: CrateReadme, body: string): string {
+  const transformed = transformReadmeBody(crate, body)
+  const title = crate.name === 'jackin' ? 'jackin❯' : crate.name
   return [
     '---',
     `title: "${title}"`,
     '---',
     '',
-    `{/* GENERATED from crates/${crateName}/README.md — edit the README, not this file */}`,
+    `{/* GENERATED from ${crate.dir}/README.md — edit the README, not this file */}`,
     '',
     transformed.trimEnd(),
     '',
@@ -290,7 +300,7 @@ export function metaCompletenessError(
 async function main(): Promise<void> {
   const crates = await listCrateReadmes()
   if (crates.length === 0) {
-    console.error('gen-crate-pages: no crates/*/README.md found')
+    console.error('gen-crate-pages: no crates/*/*/README.md found')
     process.exit(1)
   }
 
@@ -312,7 +322,7 @@ async function main(): Promise<void> {
 
   await mkdir(outDir, { recursive: true })
   for (const crate of crates) {
-    const mdx = renderMdxPage(crate.name, crate.body)
+    const mdx = renderMdxPage(crate, crate.body)
     const outPath = join(outDir, `${crate.name}.mdx`)
     await writeFile(outPath, mdx, 'utf8')
   }

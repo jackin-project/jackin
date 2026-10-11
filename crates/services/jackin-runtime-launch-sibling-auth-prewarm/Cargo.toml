@@ -1,0 +1,34 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "jackin-runtime-launch-sibling-auth-prewarm"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
+description = "Sibling-agent auth prewarm spawn/await for a launch role."
+license.workspace = true
+readme = "README.md"
+publish = false
+
+repository.workspace = true
+
+[lib]
+name = "jackin_runtime_launch_sibling_auth_prewarm"
+path = "src/lib.rs"
+
+[dependencies]
+jackin-config = { workspace = true }
+jackin-core = { workspace = true }
+jackin-diagnostics = { workspace = true }
+jackin-instance = { workspace = true }
+jackin-manifest = { workspace = true }
+jackin-runtime-launch-capsule-setup = { workspace = true }
+jackin-telemetry = { workspace = true }
+anyhow = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["rt"] }
+
+[lints]
+workspace = true

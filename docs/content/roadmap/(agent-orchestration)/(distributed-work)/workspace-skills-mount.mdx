@@ -8,9 +8,9 @@ title: "Workspace Skills Mount (cross-runtime customization)"
 
 ## Shipped facts
 
-Role repos can declare Claude plugin marketplaces and plugin IDs in `jackin.role.toml`; jackin❯ bakes those Claude plugins into the derived image rather than mounting runtime plugin state during launch. The role manifest reference documents `[claude].plugins` and `[[claude.marketplaces]]`, and the Rust manifest schema (<RepoFile path="crates/jackin-core/src/manifest.rs" />) still carries those fields.
+Role repos can declare Claude plugin marketplaces and plugin IDs in `jackin.role.toml`; jackin❯ bakes those Claude plugins into the derived image rather than mounting runtime plugin state during launch. The role manifest reference documents `[claude].plugins` and `[[claude.marketplaces]]`, and the Rust manifest schema (<RepoFile path="crates/core/jackin-core/src/manifest.rs" />) still carries those fields.
 
-The runtime already has per-agent durable home mounts for Claude, Codex, Amp, Kimi, OpenCode, and Grok, plus workspace/global bind-mount plumbing (<RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" />) for normal workspace mounts. It does not have a `[skills]` or `[workspaces.<name>.skills]` config schema (<RepoFile path="crates/jackin-config/src/schema.rs" /> has mounts and runtime/auth fields only), a skill-collection layer, per-runtime workspace skill destinations, or skill-name conflict handling.
+The runtime already has per-agent durable home mounts for Claude, Codex, Amp, Kimi, OpenCode, and Grok, plus workspace/global bind-mount plumbing (<RepoFile path="crates/services/jackin-runtime/src/runtime/launch.rs" />) for normal workspace mounts. It does not have a `[skills]` or `[workspaces.<name>.skills]` config schema (<RepoFile path="crates/core/jackin-config/src/schema.rs" /> has mounts and runtime/auth fields only), a skill-collection layer, per-runtime workspace skill destinations, or skill-name conflict handling.
 
 ## Remaining work
 

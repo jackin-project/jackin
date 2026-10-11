@@ -1,0 +1,30 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "jackin-runtime-launch-git-pull"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
+description = "Git pull helpers for workspace repos during launch."
+license.workspace = true
+readme = "README.md"
+publish = false
+
+repository.workspace = true
+
+[lib]
+name = "jackin_runtime_launch_git_pull"
+path = "src/lib.rs"
+
+[dependencies]
+jackin-config = { workspace = true }
+jackin-diagnostics = { workspace = true }
+jackin-process = { workspace = true }
+jackin-runtime-process-telemetry = { workspace = true }
+jackin-telemetry = { workspace = true }
+anyhow = { workspace = true }
+
+[lints]
+workspace = true

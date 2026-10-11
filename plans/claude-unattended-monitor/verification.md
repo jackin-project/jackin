@@ -1,459 +1,6 @@
 # Verification evidence
 
-## Bounded auth diagnostic follow-up on main
-
-Branch `fix/auth-malformed-diagnostic-dco` is based on remote main
-`3f3ddd7c48284b648b083305f969ee3e709b74b7`. DCO-signed source checkpoints
-`eb8f6b58c5fda32f437f7e9434edabaa1d47f0f8` and
-`31dc0574a8d0a052e115fa4031740eef31664af5` are on the delivery branch. The
-latest branch has source tree `ea7246252602ed897f0027ff448050219f191533`,
-identical to the tree used for the installed v4 pair. The bounded diagnostic
-is attached to `auth_malformed` only after the existing all-stream TTY gate;
-it uses the payload from the existing single bootstrap read and stops JSON
-classification above 65,536 bytes. It reports fixed JSON kinds, recognized
-alias presence/duplicates, access-token string/nonempty facts, and total
-payload/limit bytes. It includes no values, snippets, token length, identifiers,
-or unknown keys. Existing typed parsing remains the acceptance authority.
-
-MBX source check and scoped formatting passed. Focused offline tests passed:
-
-| Check | Result |
-| --- | --- |
-| Diagnostic fixtures | 9 passed, 0 failed |
-| Oversize bootstrap validation | 1 passed, 0 failed |
-| Malformed foreground bootstrap | 1 passed; one read, zero guard/ready calls |
-| Broker malformed JSON | 1 passed, 0 failed |
-| Broker foreground TTY/error mapping | 3 passed, 0 failed |
-| Claude credential lease regressions | 15 passed, 0 failed |
-
-The installed v4 debug pair was built with MBX 1.22.0/Rust 1.97.1 and reports
-version 0.6.4. The installed non-TTY command exited 2 with
-`interaction_required`, without a diagnostic and without calling the broker.
-Independent read-only review confirmed the parser and install checks; installed
-v2/v3 hashes were unchanged. Exact command, artifact hashes, and command output
-are in [v4-installation.json](v4-installation.json). This verifies only
-synthetic fixture behavior and the non-TTY interaction gate. No Keychain item,
-credential, account identity/status, live bootstrap, or provider endpoint was
-inspected; actual account status remains unknown.
-
-## Claude metadata alias correction and v5 install
-
-Operator feedback showed that a valid payload with separate `subscriptionType`
-and `rateLimitTier` strings was rejected. The typed parser had attached all
-four camel/snake spellings to one serde field, making the independent metadata
-fields look like duplicate aliases. Commit
-[`cc012603951c46d3fe909c21538af4c5b0715948`](https://github.com/jackin-project/jackin/commit/cc012603951c46d3fe909c21538af4c5b0715948)
-now preserves the fields independently, prefers subscription type when both
-are present, and falls back to rate limit tier when subscription type is
-absent or null. The structural diagnostic still reports each spelling's JSON
-kind and only marks both spellings of one logical field as duplicate.
-
-Focused offline MBX proof passed at source `cc012603`:
-
-| Check | Result |
-| --- | --- |
-| Claude parser, diagnostic, and lease suite | 39 passed, 0 failed |
-| Broker foreground bootstrap mapping | 3 passed, 0 failed |
-| Fake foreground bootstrap/lease lifecycle | 1 passed, 0 failed |
-| Malformed bootstrap read-count/no-start path | 1 passed, 0 failed |
-| `jackin-usage` and `jackin` scoped formatting | passed |
-
-The fixtures include the reported 524-byte structural shape with two different
-metadata values, camel/snake spellings, same-field duplicate rejection,
-subscription-first fallback, null/missing optional fields, wrong-type rejection,
-and value redaction. Bootstrap payload validation accepts the 524-byte shape.
-
-MBX 1.22.0/Rust 1.97.1 installed the debug pair at the new v5 prefix from the
-exact signed source tree. Both binaries report 0.6.4. A non-TTY sentinel
-returned `interaction_required` before broker launch and did not create its
-data directory. Installed v2/v3/v4 hashes match their pre-install values.
-Exact source IDs, command, hashes, tests, and sentinel output are in
-[v5-installation.json](v5-installation.json). Independent review verified the
-installed hashes and versions and reran the sentinel with an executable marker
-at `JACKIN_USAGE_BROKER_BIN`; the marker and data directory remained absent.
-The reviewer rehashed v2/v3/v4 and confirmed they were unchanged.
-
-This is fixture and interaction-gate evidence only. No Keychain item, live
-credential, account identity/status, provider endpoint, or settings was
-accessed or changed. The operator must retry the intended account through its
-normal attended bootstrap; actual account status remains unknown.
-
-## PR #1123 generated-file CI diagnosis
-
-On PR head `96b068e160a47b92dc6d6f01d38cba4690e83225`, CI run
-[38061798598](https://github.com/jackin-project/jackin/actions/runs/38061798598)
-failed Plan's generated-file comparison with the sole difference
-`.github/PULL_REQUEST_TEMPLATE.md`. The same deterministic failure occurred on
-earlier PR heads `e7e6864` and `cc012603`; it was not caused by the metadata
-parser fix. `PULL_REQUESTS.md` names `docs/PULL_REQUEST_TEMPLATE.md` as the
-canonical template, and that file is unchanged between the PR base and head.
-`.github/AGENTS.md` says `.github/` is generator-owned, so the stale `.github`
-duplicate was removed while preserving the canonical docs template.
-
-On the first generated-file correction head `b99824b7`, Plan's comparison and
-Actionlint passed. Five Rust matrix jobs then failed Clippy: the new
-`raw_field_kind` implementation used `map(...).unwrap_or(...)`, and its
-successful-payload assertion used `Result::is_ok()`. Those triggered
-`map_unwrap_or` and `assertions_on_result_states`, respectively, across five
-crate jobs. Signed commit
-[`ded71bd51600eb2a12ec8c6741259fdc3f93eb80`](https://github.com/jackin-project/jackin/commit/ded71bd51600eb2a12ec8c6741259fdc3f93eb80)
-rewrites them as `map_or` and `unwrap`. Focused MBX Clippy and format checks
-pass, and the `jackin-usage` suite passed 718 tests. The latest source head has
-its own exact-head CI run.
-
-The local Velnor preview attempt did not reach generation: offline preparation
-stopped because the Cargo cache lacked `android_system_properties v0.1.5`.
-The successful Plan comparison on `b99824b7` is the available generated-file
-parity proof. Velnor's warning about `mise.lock` line 388 was pre-existing: the
-lockfile SHA-256 is identical at base and head
-(`d2d1b07a8f02fb07f405ac5b00607b35155207ebcb9651ec1e10ca09ac26e55d`).
-
-## Clippy correction and v6 install
-
-MBX 1.22.0 with Rust 1.97.1 rebuilt the debug CLI and broker from clean source
-commit `ded71bd51600eb2a12ec8c6741259fdc3f93eb80` into the new v6 prefix. The
-non-TTY auth command returned `interaction_required` before launching an
-executable broker marker and did not create its fresh data directory. Installed
-v2-v5 hashes match their prior manifests. Exact source/tree IDs, toolchain,
-build command, artifact hashes, focused results, and sentinel output are in
-[v6-installation.json](v6-installation.json). Independent installed-pair review
-confirmed the source/tree and binary hashes, all eight v2-v5 hashes, CLI and
-broker versions, and the non-TTY marker sentinel.
-
-This remains synthetic fixture and interaction-gate evidence only. No Keychain
-item, live credential, account identity/status, provider endpoint, or settings
-was accessed or changed. The operator must retry the intended account through
-its normal attended bootstrap; actual account status remains unknown.
-
-## Current main-port verification snapshot
-
-The canonical branch is `feat/claude-usage-monitor-main`, based on main
-`868ce535`. Latest signed/pushed source checkpoint:
-`8abfa235cce150d5382d99a5679afab49e098525`. The final seven-gate MBX rerun
-and scoped regression matrix passed. Its offline MBX pair build passed in
-1.29 seconds. CLI SHA-256 is
-`b57e60f2f13b026ae2ec47034b61ecddc69644b230157e621c5ddb5cf447007d`; broker
-SHA-256 is
-`30b6f3b1f0777dbe9181851f83fbc2efb3f0356d290e1896bf2ccaf434fbf550`. The
-installed fixture smoke passed with exit 0, selected the sibling broker,
-recorded one JSONL watch event, recorded zero proxy requests and
-credential-command trips, and left the fixture state empty with no open
-binaries. Manifest SHA-256 is
-`64a0a101224ad5c38f4292a59c5191a44071fc54eab3cc95e8a57a13bc454601`. Source-head
-CI run [38044592706](https://github.com/jackin-project/jackin/actions/runs/38044592706)
-passed for this exact commit: Required, all Rust matrix jobs, and Actionlint
-succeeded; the baseline publication job was skipped by workflow rules. The
-documentation/evidence PR head `56181d4d` passed run
-[38045612792](https://github.com/jackin-project/jackin/actions/runs/38045612792):
-Required, all Rust matrix jobs, Actionlint, and DCO passed; baseline publication
-was skipped by workflow rules. The documentation corrections in this commit
-create a new PR head and require their own exact-head checks. CI run
-`38042237548` and the 45a installed pair are historical for this source.
-
-P1's private one-way-migration rejection has fresh proof; follow-up reply
-`4237303703` is posted and the thread resolved. P2 was accepted: the FFI rank
-fix resets raw fields before capping, and its focused suite passed 11 tests.
-The fix is included in 8abfa; reply `4237302394` links the fixing commit and
-the thread is resolved. General comment `6096529404` has a linked disposition.
-A V1 end-to-end migration regression passed 1 test. The final seven-gate MBX
-rerun and its focused regression checks passed:
-
-| Current frozen-patch focused scope | Result | Evidence |
-| --- | --- | --- |
-| Seven-package scoped formatting | Passed | `/private/tmp/jackin-mbx-v4-final-freeze11-fmt.log` |
-| Seven-package source check | Passed | `/private/tmp/jackin-mbx-v4-final-freeze11-check.log` |
-| Seven-package strict Clippy, all targets | Passed | `/private/tmp/jackin-mbx-v4-final-freeze10-clippy.log` |
-| S6 rotation | 1 passed | `/private/tmp/jackin-mbx-v4-final-freeze4-s6-rotation.log` |
-| S6/full-scope verification | 7 passed | `/private/tmp/jackin-mbx-v4-final-freeze4-scope-verification.log` |
-| FFI rank fix | 11 passed | `/private/tmp/jackin-mbx-v4-final-freeze5-ffi.log` |
-| Docs Commands | 5 passed | `/private/tmp/jackin-mbx-v4-final-freeze5-docs-commands.log` |
-| V1 storage/migration | 1 passed | `/private/tmp/jackin-mbx-v4-final-freeze5-v1-migration.log` |
-| Host broker | 184 passed | `/private/tmp/jackin-mbx-v4-final-freeze5-host-broker.log` |
-| Capsule diagnostic dedup | 1 passed | `/private/tmp/jackin-mbx-v4-final-freeze10-capsule-dedup1.log` |
-| Capsule proxy scope | 11 passed, 1 filtered | `/private/tmp/jackin-mbx-v4-final-freeze10-capsule-proxy.log` |
-| MBX offline pair build | Passed, exit 0, 1.29 seconds; CLI/broker hashes unchanged | `/private/tmp/jackin-mbx-build-8abfa235.log` |
-| Installed fixture smoke | Passed, exit 0; exact sibling selected, one JSONL watch event, zero proxy/credential-command trips, fixture cleaned, no open binaries | [v3-installed-smoke.log](v3-installed-smoke.log) |
-| Installed manifest | SHA-256 `64a0a101224ad5c38f4292a59c5191a44071fc54eab3cc95e8a57a13bc454601` | [v3-installation.json](v3-installation.json), [v3-checks.json](v3-checks.json) |
-| Installed handoff | Matches repository handoff; SHA-256 `3ca3855cb508ccc6785d5d28aee382f878f490e91021a03afbff02c4df935c43` | [claude-code-handoff.md](claude-code-handoff.md) |
-
-The capsule fake socket test used a canonical parent directory with mode 0700,
-a socket with mode 0600, and a bounded accept deadline. Checkpoint `8abfa235`
-is signed and pushed, its fixture install smoke passed, and source-head CI run
-[38044592706](https://github.com/jackin-project/jackin/actions/runs/38044592706)
-completed successfully. Native Security
-Framework calls were not instrumented; this smoke does not establish live
-account readiness or successful foreground authentication. The 56181d4 PR
-head's exact checks passed; final checks for the documentation corrections
-remain required before landing. The 45a installed pair is detailed below; it is
-historical and does not validate this source.
-
-Current Cargo verification must use MBX 1.22.0 with offline/locked flags.
-Earlier checks used the checked-in Mise-to-MBX Cargo wrapper. Current isolated
-checks use `MISE_AUTO_INSTALL=false mise exec -- mbx ...`; commands that can
-launch nested Cargo also inject wrapper-first PATH after Mise, as documented in
-the current task queue. The direct-Cargo blocks in the historical sections
-below preserve old transcripts and are not current run instructions. The local
-wrapper and prior build output verify MBX 1.22.0; PR #1120 is not required to
-enable it and remains draft with failing required checks.
-
-| Checkpoint 8288 selected source scope | Result | Evidence |
-| --- | --- | --- |
-| Production five-package compile | Passed | `/private/tmp/jackin-mbx-v4-five-package-check-final.log` |
-| Final seven-package scoped check | Passed after test-scanner fix | `/private/tmp/jackin-mbx-v4-scoped-check-final-retry.log` |
-| Seven-package scoped formatting | Passed | `/private/tmp/jackin-mbx-v4-fmt-final4.log` |
-| Protocol | 135 passed | `/private/tmp/jackin-mbx-v4-protocol-full.log` |
-| Projection | 10 passed | `/private/tmp/jackin-mbx-v4-usage-projection-tests-retry.log` |
-| Discovery | 41 passed | `/private/tmp/jackin-mbx-v4-usage-discovery-tests.log` |
-| Claude provider | 25 passed | `/private/tmp/jackin-mbx-v4-usage-claude.log` |
-| Coordinator | 50 passed | `/private/tmp/jackin-mbx-v4-usage-coordinator-tests.log` |
-| Coordinator state | 11 passed | `/private/tmp/jackin-mbx-v4-usage-coordinator-state-tests.log` |
-| Host broker | 183 passed, 0 failed, 511 filtered | `/private/tmp/jackin-mbx-v4-usage-host-broker-retry2.log` |
-| Host inventory | 13 passed | `/private/tmp/jackin-mbx-v4-usage-host-tests-final.log` |
-| Runtime usage relay | 21 passed | `/private/tmp/jackin-mbx-v4-runtime-usage-relay-final.log` |
-| CLI usage | 43 passed | `/private/tmp/jackin-mbx-v4-jackin-cli-usage-lib.log` |
-| App | 29 passed | `/private/tmp/jackin-mbx-v4-jackin-app-tests.log` |
-| Console | 61 passed | `/private/tmp/jackin-mbx-v4-console-usage-tests.log` |
-| FFI bridge | 9 passed | `/private/tmp/jackin-mbx-v4-ffi-bridge.log` |
-| Capsule | 11 passed | `/private/tmp/jackin-mbx-v4-capsule-usage-relay-proxy.log` |
-| Offline bootstrap integration | 2 passed | `/private/tmp/jackin-mbx-v4-integration-usage-bootstrap-offline.log` |
-| Offline monitor integration | 5 passed | `/private/tmp/jackin-mbx-v4-integration-usage-monitor-offline.log` |
-| Broker installation integration tests | 5 passed | `/private/tmp/jackin-mbx-v4-integration-broker-installation.log` |
-| Broker service lifecycle integration tests | 2 passed | `/private/tmp/jackin-mbx-v4-integration-broker-service-lifecycle.log` |
-| Contract baseline | 10 passed | `/private/tmp/jackin-mbx-v4-usage-contract-baseline-final.log` |
-| Docs typecheck, tests, and static build | 18 tests, 30 assertions; 1,293 routes | `/private/tmp/jackin-docs-wire8-final-build-rerun.log` |
-| Docs repository links | Passed | `/private/tmp/jackin-mbx-v4-docs-repo-links-final.log` |
-| Roadmap metadata scan | 18 pages passed | `/private/tmp/jackin-mbx-v4-roadmap-audit.log` |
-| Research metadata scan | 63 pages passed | `/private/tmp/jackin-mbx-v4-research-check.log` |
-
-These are independent scopes and overlap; do not sum their counts. They record
-passing selected source checks at checkpoint 8288, not final acceptance. The
-broker run covers the lifetime leader lock remaining held on its exact inode
-across sleep, `O_CLOEXEC` descriptors, dead-owner takeover, wake/renewal, and
-owned-path cleanup. Its passing cases include
-`expired_lease_is_reclaimed_after_dead_owner_releases_lifetime_lock`,
-`live_lease_owner_blocks_expired_takeover_and_can_renew_after_waking`,
-`stale_lease_descriptor_cannot_renew_or_clean_successor_files`, and
-`spawned_ticker_reconciles_one_sleep_jump_and_wakes_monitor_watch`. The same
-183-test run passes
-`interaction_diagnostics_survive_new_catalog_incremental_publish_and_revocation`,
-`clean_catalog_scan_clears_catalog_diagnostics_and_keeps_unrelated_provider_issues`,
-and `cleared_diagnostic_removes_empty_provider_row`.
-
-The unused public `HostUsageRuntime` and its references were removed; the
-active `HostUsageProjectionRuntime` remains. This was checked against current
-consumers and the seven-package scoped check. The following records the
-historical 8288/14c gate state: retry/cooldown and security lifecycle work was
-still open at 8288. Linux CI run
-[38035268298](https://github.com/jackin-project/jackin/actions/runs/38035268298)
-for that exact head failed five Rust jobs plus Required; failures included
-excessive-nesting Clippy and E0308/E0599 compile errors. Later CI run
-`38042237548` on head 14c failed three
-Rust jobs (`jackin`, `jackin-runtime`, and `jackin-capsule`), and its Required
-aggregate failed. The cfg fix and subsequent changes are included in source
-checkpoint 8abfa; its final MBX gates and affected suites passed, and source-head
-CI run [38044592706](https://github.com/jackin-project/jackin/actions/runs/38044592706)
-passed. These historical failures do not describe 8abfa or the current PR head.
-
-## Historical bounded source verification: checkpoint 22ac3581
-
-These scoped results are newer than the checkpoint 8288 matrix above. They
-verify signed, pushed source checkpoint
-`22ac3581a70310b9792f03d71168ee8bdd799591`; they are historical evidence and
-do not cover the cfg fix committed in 45a33093. The installed pair for 22ac3581
-passed its fixture smoke below.
-CI run [38040399067](https://github.com/jackin-project/jackin/actions/runs/38040399067)
-for this 22ac head had five failed Rust jobs, all reporting the same three
-E0004 match-site diagnostics; its Required aggregate check failed as well.
-Each suite is an independent scope and overlaps other suites; do not sum test
-counts.
-
-| Checkpoint 22ac bounded scope | Result | Evidence |
-| --- | --- | --- |
-| Seven-package scoped formatting | Passed | `/private/tmp/jackin-mbx-v4-final-fmt-seven.log` |
-| Seven-package source check | Passed | `/private/tmp/jackin-mbx-v4-final-source-check.log` |
-| Seven-package strict Clippy, all targets | Passed, exit 0 | `/private/tmp/jackin-mbx-v4-final-clippy-seven.log` |
-| Coordinator | 57 passed | `/private/tmp/jackin-mbx-v4-final-coordinator-tests2.log` |
-| Coordinator state | 11 passed | `/private/tmp/jackin-mbx-v4-final-coordinator-state-tests.log` |
-| Host broker | 183 passed, 0 failed, 522 filtered | `/private/tmp/jackin-mbx-v4-final-host-broker.log` |
-| Host inventory | 13 passed | `/private/tmp/jackin-mbx-v4-final-host-tests.log` |
-| Projection | 10 passed | `/private/tmp/jackin-mbx-v4-usage-projection-tests-retry.log` |
-| Discovery | 41 passed | `/private/tmp/jackin-mbx-v4-usage-discovery-tests.log` |
-| Runtime usage relay | 21 passed | `/private/tmp/jackin-mbx-v4-final-runtime-tests.log` |
-| CLI usage | 43 passed | `/private/tmp/jackin-mbx-v4-final-cli-usage-tests.log` |
-| FFI bridge | 9 passed | `/private/tmp/jackin-mbx-v4-final-ffi-tests.log` |
-| Console | 61 passed | `/private/tmp/jackin-mbx-v4-final-console-tests.log` |
-| Capsule | 11 passed, 1 filtered | `/private/tmp/jackin-mbx-v4-final-capsule-tests.log` |
-| Offline bootstrap integration | 2 passed | `/private/tmp/jackin-mbx-v4-final-integration-bootstrap.log` |
-| Offline monitor integration | 5 passed | `/private/tmp/jackin-mbx-v4-final-integration-monitor.log` |
-| App | 29 passed | `/private/tmp/jackin-mbx-v4-final-app-tests.log` |
-| Broker installation integration | 5 passed | `/private/tmp/jackin-mbx-v4-final-integration-broker-installation.log` |
-| Broker service lifecycle integration | 2 passed | `/private/tmp/jackin-mbx-v4-final-integration-broker-lifecycle.log` |
-| Claude provider and lease lifecycle | 28 passed | `/private/tmp/jackin-mbx-v4-final-claude-tests.log` |
-| Contract baseline | 10 passed | `/private/tmp/jackin-mbx-v4-final-contract-baseline2.log` |
-
-## Historical source checks for checkpoint 45a33093
-
-These results cover signed, pushed source checkpoint
-`45a33093df524c03440ed524e71375953ee6834b`. They are historical for the
-later signed/pushed source checkpoint `8abfa235` and its current verification.
-Local macOS MBX results; each affected test suite is an independent scope.
-
-| Scope | Result | Evidence |
-| --- | --- | --- |
-| Seven-package formatting | Passed | `/private/tmp/jackin-mbx-v4-linux-payload-fmt.log` |
-| Seven-package source check | Passed | `/private/tmp/jackin-mbx-v4-linux-payload-check.log` |
-| Seven-package strict Clippy, all targets | Passed | `/private/tmp/jackin-mbx-v4-linux-payload-clippy.log` |
-| Claude provider and lease lifecycle | 28 passed | `/private/tmp/jackin-mbx-v4-linux-payload-claude.log` |
-| Host broker | 183 passed, 0 failed, 522 filtered | `/private/tmp/jackin-mbx-v4-linux-payload-broker.log` |
-| Discovery | 41 passed | `/private/tmp/jackin-mbx-v4-linux-payload-discovery.log` |
-| MBX offline build | Passed, exit 0, 15.93 seconds | `/private/tmp/jackin-mbx-build-45a33093.log` |
-| Installed fixture smoke | Passed | [v3-installed-smoke-checkpoint-45a.log](v3-installed-smoke-checkpoint-45a.log) |
-| Intermediate Linux CI poll for 45a | 22 passed, 6 pending, 0 failed | Later run `38042237548` failed three Rust jobs on head 14c; source-head run `38044592706` then passed for 8abfa; see current snapshot above |
-
-The installed 22ac and 45a pairs below are historical relative to current
-source checkpoint 8abfa.
-
-The retry/cooldown suites cover restart floor recovery, projection cadence,
-and active cooldown tombstones across loaded, lazy-loaded, and
-pending-before-purge paths. Independent review confirmed the corrected
-tombstone assertion: a non-pending-reset tombstone clears
-`started_at_epoch` while retaining `provider_invoked=1000` and
-`RetryAfter=5000`; restart at 1101 with a fresh 300-second floor chooses
-`max(1300, 1401)`.
-
-The current Claude lifecycle tests and independent review confirm that each
-initial HTTP request, credential reread, and retry needs a generation permit;
-deactivation prevents new permits, previously admitted I/O may finish, and
-cache updates are serialized against the exact generation. An earlier
-pre-permit race concern was withdrawn after review of the current liveness
-mutex. Static review and fake fixtures do not prove native Keychain runtime
-behavior.
-
-The corrected contract baseline passed 10/10 with the exact 33-row
-provider-call inventory. The earlier 9/10 run failed because its inventory
-expected the pre-rename wrapper route; it is superseded by the passing result
-in the table. Host inventory, runtime, CLI, app, FFI, console, capsule,
-bootstrap/monitor, broker-lifecycle, and broker-installation results complete
-the consumer/integration matrix for historical checkpoint 22ac3581. Scoped
-formatting and strict Clippy across all targets passed for that checkpoint,
-and its MBX installed pair passed the isolated fixture smoke. The 45a source
-checks, build, and installed smoke are recorded as historical above. The
-post-14c production changes were finalized in checkpoint 8abfa. Its final
-seven-gate MBX verification and installed fixture smoke are recorded in the
-current snapshot at the top of this document, and source-head CI run
-`38044592706` passed. CI run `38042237548` is the historical failed run on
-head 14c; it does not describe checkpoint 8abfa or the current PR head.
-
-## Historical installed fixture checkpoint 45a33093
-
-The installed pair for signed, pushed checkpoint
-`45a33093df524c03440ed524e71375953ee6834b` was built through MBX 1.22.0 with
-offline, locked flags. Build time was 15.93 seconds; build log:
-`/private/tmp/jackin-mbx-build-45a33093.log`.
-
-The isolated fixture smoke passed; its checkpoint-specific transcript is
-[v3-installed-smoke-checkpoint-45a.log](v3-installed-smoke-checkpoint-45a.log).
-It verified the installed
-CLI SHA-256
-`b57e60f2f13b026ae2ec47034b61ecddc69644b230157e621c5ddb5cf447007d` and
-broker SHA-256
-`30b6f3b1f0777dbe9181851f83fbc2efb3f0356d290e1896bf2ccaf434fbf550`.
-The provenance manifest SHA-256 is
-`8c3a3ba5b4d80ed6a11e1c0c6dc1d8b611a3e7a54f926c8886b5d7ee02d20c02`,
-recorded with the binary hashes in that checkpoint-specific transcript. The
-smoke selected the installed sibling
-broker with `JACKIN_USAGE_BROKER_BIN` unset, recorded zero HTTP-proxy requests
-and zero credential-command trips, and left the fixture state directory
-empty. After orderly stop, no broker process or open files remained.
-
-Native Security Framework calls were not instrumented; successful foreground
-authentication, live account/provider readiness, and dispatch approval were
-not exercised. The installed fixture proves only isolated smoke behavior.
-
-## Installed fixture checkpoint 22ac3581
-
-The installed pair for signed, pushed checkpoint
-`22ac3581a70310b9792f03d71168ee8bdd799591` through MBX 1.22.0 with offline,
-locked flags. Build time was 37.02 seconds and reported network transfer was
-0 bytes. Build log: `/private/tmp/jackin-mbx-build-22ac3581.log`.
-
-The installed fixture smoke passed:
-`/private/tmp/jackin-v3-installed-smoke-22ac3581.log`. It verified the exact
-installed CLI hash `7f7d99960351b1da8fe3da9cd6ac35d577261bcdc42325a40d5e2d146d2d8225`
-and broker hash `b74c9cae283f454fcffe6b5c13e6fd498017fec3d808c97a8aeba72ea7f5bcc0`.
-The exact binary hashes and provenance manifest are recorded in the
-[checkpoint-specific smoke transcript](v3-installed-smoke-checkpoint-22ac.log);
-the current JSON artifacts describe 8abfa. It selected the installed sibling broker
-with `JACKIN_USAGE_BROKER_BIN` unset, and recorded zero HTTP-proxy requests and
-zero credential-command executions. The fixture state was empty afterward;
-the service process and its open files were absent after orderly stop. The
-provenance manifest SHA-256 is
-`3982ae357883ec5e67ab586790dc1b195024290e4731e9f963dbbb8555381738`.
-The frozen transcript for this historical pair is
-[v3-installed-smoke-checkpoint-22ac.log](v3-installed-smoke-checkpoint-22ac.log).
-
-Native Security Framework calls were not instrumented; foreground auth
-success, live account/provider readiness, and dispatch approval were not
-tested. Real-account setup remains operator-controlled and unverified.
-Checkpoint 8288's earlier fixture transcript is preserved in
-`v3-installed-smoke-checkpoint-8288.log` and does not describe the 22ac pair.
-
-Passive usage `status`, `watch`, `wait`, `doctor`, and `current` reads remain
-credential- and network-free in the selected offline scopes. Standalone
-interactive console startup is an active consumer: it can request broker
-refresh for known accounts, so the passive guarantee does not apply to every
-CLI command. Claude provider requests remain foreground-only and require the
-capability, approval, and persisted 300-second rate floor. No live account or
-native Keychain runtime verification is claimed.
-
-## Checkpoint 8288 installed fixture evidence
-
-The MBX 1.22.0 / Rust 1.97.1 offline, locked binary build and isolated installed
-smoke passed for source commit
-`8288ef4a4e174624e353f8748304766ce98e5822`. The directory retains its historical
-`jackin-claude-monitor-v3` name, but this installed pair uses broker wire v8,
-monitor schema v4, projection schema v3 in source, and statusline input v2.
-The exact build command, installed paths, and binary hashes are in
-`/private/tmp/jackin-v3-provenance-8288ef4a.json`; the installed transcript is
-`/private/tmp/jackin-v3-installed-smoke-8288ef4a.log`.
-The smoke verified the installed sibling broker with
-`JACKIN_USAGE_BROKER_BIN` unset, wire v8 and monitor schema v4, zero
-HTTP-proxy requests, zero credential-command executions, and orderly fixture
-cleanup. Native Security Framework calls were not instrumented; foreground
-auth success and dispatch approval were not exercised. The smoke does not
-assert persistence of a projection envelope. This section is historical
-evidence for source checkpoint 8288. The separate installed pair for checkpoint
-22ac3581 is recorded above as historical evidence. The 45a33093 build and
-installed fixture smoke, and CI run `38042237548` on head 14c, are historical.
-The final 8abfa build, installed smoke, seven-gate MBX verification, and passing
-source-head CI run `38044592706` are recorded in the current snapshot at the top
-of this document. PR documentation/evidence head `56181d4d` passed exact-head
-run `38045612792`; this documentation correction creates a new head whose
-checks are still required before landing.
-
-Previously recorded pre-v8 scopes: protocol 133; broker 173; Claude
-fake-auth/provider 25; CLI usage 43; app 29; coordinator 54. These historical
-counts and results do not validate the current wire-v8 candidate. The
-Docker/e2e-feature executable ran zero tests and is not e2e proof. Prior logs
-and source provenance are recorded in `v3-checks.json` and
-`v3-installation.json`.
-
-Before checkpoint 8288, the pair built through MBX from
-`1a45196dbe24d439e596c14e22fbda59799e7b0d` used wire v7/store v4. Its earlier
-isolated fixture smoke is historical and was superseded in the same install
-directory by the checkpoint 8288 wire-v8 pair above. The v7 smoke does not
-verify the current pair. Nothing here approves a dispatch policy or modifies
-the running Claude session. The old v2 installation remains untouched.
-
-The previously described pre-v8 cleanup removed dormant CLI fallback helpers
-and repaired the provider-call inventory, including callback routes. Its checks,
-consumer regressions, rebuild, updated hashes/smoke and GitHub landing were
-pending at that checkpoint. The prior installed v7 fixture pass does not prove
-that cleanup or the current v8 candidate. See the durable task queue for current
-gates. An operator-controlled attended bootstrap and real usage observation
-remain necessary before claiming real-account readiness.
-
-## Historical predecessor status — source and installed fixture verified
+## V2 status — source and installed fixture verified
 
 V2 uses monitor/store schema 2 and broker wire protocol 6. The installed pair
 was built from clean source `4492d3cb91d9e45fafec2aa8acb8158268618cd9` and
@@ -463,7 +10,7 @@ The old pair/state, original checkout, and Claude settings remain untouched.
 
 A tooling incident activated a global `codebook-lsp` installation with crates.io traffic; that installer was stopped. Exact tooling request count is unknown. The overall session is not wholly offline. Provider/credential fixture counters are reported separately; no live provider or Keychain verification is authorized.
 
-## Historical predecessor source gates
+## V2 final source gates
 
 Binary source commit: `4492d3cb91d9e45fafec2aa8acb8158268618cd9`.
 All commands used the absolute Rust 1.97.1 Cargo binary, `--offline --locked`,
@@ -505,7 +52,7 @@ and installed-proof schema assertions. Final bounded integrity/security/consumer
 reviews have no outstanding actionable finding; static reviews are not live
 account verification.
 
-## Historical installed workflow proof from predecessor pair
+## Actual installed workflow proof
 
 - CLI: `/Users/donbeave/.local/share/jackin-claude-monitor-v2/bin/jackin`
 - Broker: `/Users/donbeave/.local/share/jackin-claude-monitor-v2/bin/jackin-usage-broker`
@@ -560,11 +107,10 @@ provider/Keychain/interactive-auth verification was performed. Provider fake HTT
 request-count assertions include one shared flight, zero requests before persisted
 Retry-After, no reset-time bypass, and a next attempt only after the deadline.
 
-## Historical handoff reverification
+## Handoff reverification
 
 The installed smoke was rerun before handing instructions to Claude. Both binary
-hashes still match; no product source changed between the predecessor build at
-`4492d3cb` and this installed smoke. Independent
+hashes still match; no product source changed since build4492d3cb. Independent
 Luna max review found no blocking CLI/schema mismatch. Its one illustrative-path
 finding was fixed: printed settings examples use the absolute path rather than
 a quoted `~`. The corrected run passed with zero credential-command/proxy counts
@@ -637,11 +183,9 @@ uses piped standard streams and verifies rejection before the helper starts.
 | Spend baseline is explicit and goal-scoped | Receipt after goal creation does not silently repair its baseline; a distinct new goal captures the verified receipt; an account without a receipt stays `budget_unverifiable` |
 | Broker lifecycle is orderly | Test fixture stops each monitor, sends service stop, and waits for leader/socket files to disappear |
 
-## Historical V1 direct-Cargo transcripts and results
+## Recorded commands and results
 
-These verbatim commands and results record predecessor V1 verification. They
-are historical evidence, not current main-port test results or run
-instructions:
+The current offline subprocess, CLI, and race regression gates passed:
 
 ```text
 cargo test --offline --locked -p jackin --test usage_monitor_offline -- --nocapture
@@ -689,7 +233,7 @@ changed. The final fixture passed the store filter five times and the full
 usage filter five times with default parallelism, while retaining the 7-span
 and privacy assertions.
 
-Historical V1 provider, broker, protocol, and consumer gate transcripts:
+Offline provider, broker, protocol, and consumer gates:
 
 ```text
 cargo test --offline --locked -p jackin-usage-provider-core -p jackin-usage-provider-claude -p jackin-usage-discovery -p jackin-usage-credential-resolver -p jackin-usage-credential-snapshots
@@ -745,10 +289,10 @@ The provider, broker, host-runtime, FFI, runtime relay, and publisher all-target
 Clippy gates passed. Whole-app Clippy exited successfully; the RTK summary
 reported one non-fatal warning in addition to zero errors.
 
-## Historical accidental Docker suite invocation
+## Accidental Docker suite invocation
 
-During predecessor V1 verification, this broad command was run accidentally
-and was not counted as offline verification:
+The following broad command was run accidentally and is not counted as offline
+verification:
 
 ```text
 cargo test --offline --locked -p jackin --features e2e --test usage_broker_e2e
@@ -889,7 +433,7 @@ defect remains in the dependency; the test fixture removes its enabling
 single-dispatch condition rather than modifying production instrumentation.
 
 
-## Historical predecessor renewed acceptance audit
+## Renewed acceptance audit
 
 The renewed goal reopened proof against the complete objective. The previous
 installation is historical evidence. The audit found that a suspended owner's
@@ -922,8 +466,8 @@ were corrected to assert the actual generated `-h` and `--help`. Cargo caught
 an Arc moved before teardown and test import/qualification errors; all were
 fixed before the passing reruns. Clippy's four test duration lints were fixed.
 
-That predecessor snapshot's fresh gates: broker 101 tests and all-target
-Clippy; Claude provider 37 and discovery 43 and all-target Clippy; broker auth helper 7; CLI help 1; usage
+Fresh current gates: broker 101 tests and all-target Clippy; Claude provider 37
+and discovery 43 and all-target Clippy; broker auth helper 7; CLI help 1; usage
 command tests 14; offline subprocess 2 with zero credential trips and HTTP
 requests; lifecycle 2; exact fake killed-owner recovery 1. The recovery filter
 uses only local fake processes, never the broad Docker suite. Final app gates,
@@ -942,10 +486,9 @@ There is no separate circuit-breaker state beyond these persisted timed
 admission guards. Standard independent Claude OAuth remains disabled.
 
 
-## Historical predecessor replacement build and installed proof
+## Replacement build and installed proof
 
-The historical predecessor run's direct-Cargo build
-`cargo build --offline --locked -p jackin --bin jackin --bin
+Fresh `cargo build --offline --locked -p jackin --bin jackin --bin
 jackin-usage-broker` passed from source commit
 `6c1709e4bea1db9ee05d56352f11440db165e4e7`. Its sole warning is the dependency
 future-incompatibility notice for `proc-macro-error2 v2.0.1`; app all-target
@@ -958,15 +501,13 @@ compare byte-for-byte with their build artifacts.
 | jackin | `/Users/donbeave/.local/share/jackin-claude-monitor/bin/jackin` | 0755 / 213671080 | `5bee8b128d872fcfcea9476d15b7185c2eb0cbc5dce177bbe723bda9f5067d6f` |
 | jackin-usage-broker | `/Users/donbeave/.local/share/jackin-claude-monitor/bin/jackin-usage-broker` | 0755 / 51862296 | `6321536a6908ef0e0a594e7c0460be9527ac257ac0015940de71165d723412b0` |
 
-That predecessor snapshot also recorded passing current-at-the-time gates: the
-complete 30-test usage consumer group, two exact fake single-flight/rate-deadline
+Canonical build directory remains
+`/Users/donbeave/Library/Caches/mbx/targets/v1/519eebab1636eb6d9b57bb77aa6e6d394b5e4bf8c0d778e9bcdd1148ee1fffff/debug`.
+Both binaries report 0.6.4. Fresh current gates additionally pass the complete
+30-test usage consumer group, the two exact fake single-flight/rate-deadline
 E2Es and app all-target Clippy. Twenty clients assert one fake provider call;
 forced early waiters assert one call; eight recovery clients assert one
 replacement (two total including the killed fixture owner).
-
-Canonical build directory remains
-`/Users/donbeave/Library/Caches/mbx/targets/v1/519eebab1636eb6d9b57bb77aa6e6d394b5e4bf8c0d778e9bcdd1148ee1fffff/debug`.
-Both binaries report 0.6.4.
 
 The reusable `installed-smoke.py` is ready to exercise this installed pair
 without a broker override, including JSONL watch, headless auth rejection and
@@ -1069,7 +610,7 @@ they do not guarantee availability without operator setup or prevent an
 uninstructed caller from choosing a different binary.
 
 
-## Historical final composed-hook verification — 2026-10-10
+## Final composed-hook verification — 2026-10-10
 
 On source HEAD `37fd349c`, the offline rerun passed 362 tests: broker 101;
 Claude provider/discovery 80; protocol 123; coordinator 50 plus one pre-existing
@@ -1107,3 +648,23 @@ billing. Current production source and installed binaries are unchanged; the
 original checkout remains untouched. Real operator binding, reviewed adapter
 installation and genuine spend evidence are still needed before live readiness
 can be claimed.
+
+## Main ancestry reconciliation — 2026-10-11
+
+The target candidate was reconciled against main
+`1c3dd1be4a3b1ed518133ec3899c084c792370ff` from merge base
+`3f3ddd7c48284b648b083305f969ee3e709b74b7`. Main's #1123/#1124 behavior is
+already present in grouped target commits `06afe425553d2cfe8e56fe26c8b3fe233d51c81d`
+and `b23144dae7bfa3e8a3e577629088dec1b4711d6e`; the source-to-target paths and
+behavioral dispositions are listed in `task-queue.md`. The merge keeps those
+grouped paths, leaves retired flat source paths deleted, and does not carry the
+unused `serde_json/raw_value` edge into `jackin-usage`.
+
+Main added `auth-malformed-diagnostic.md` and v4-v7 installation records. The
+documentation and JSON evidence are retained for source history only. Their
+MBX 1.22/Rust 1.97 binaries and wire generations are not evidence for the
+grouped target's current MBX 1.23/Rust 1.99, wire-v8 contract. The target's
+existing verification records remain authoritative for the previously tested
+grouped code. No test, build, installation, or Actions result is claimed for
+the ancestry merge itself; the exact merged head must receive its own required
+checks.

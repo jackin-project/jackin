@@ -17,7 +17,7 @@ jackin❯ needed a repo-committed, docs-first, cross-agent spec workflow. The ea
 
 ## Decision
 
-jackin❯ did not adopt an external tool wholesale. Instead the roadmap item `.mdx` file itself is the living change-spec: while a change is open it carries `## Problem` / `## Why It Matters` / `## Design` / `## Tasks` sections; on ship it retires into canonical docs, so docs are the archive. No parallel `openspec/` directory and no separate `internal/specs/` tree exist in the repo. Repo-local helper tooling supports the human side of this: the `jackin-dev` helper (<RepoFile path="crates/jackin-dev/src/main.rs" />) drives PR sync/status/env/path/explain workflows. Agent skills can orchestrate the workflow, but durable project rules live in repo docs and PR guidance rather than in an external tool-specific spec directory.
+jackin❯ did not adopt an external tool wholesale. Instead the roadmap item `.mdx` file itself is the living change-spec: while a change is open it carries `## Problem` / `## Why It Matters` / `## Design` / `## Tasks` sections; on ship it retires into canonical docs, so docs are the archive. No parallel `openspec/` directory and no separate `internal/specs/` tree exist in the repo. Repo-local helper tooling supports the human side of this: the `jackin-dev` helper (<RepoFile path="crates/tools/jackin-dev/src/main.rs" />) drives PR sync/status/env/path/explain workflows. Agent skills can orchestrate the workflow, but durable project rules live in repo docs and PR guidance rather than in an external tool-specific spec directory.
 
 ## Prior art mined (not adopted wholesale)
 

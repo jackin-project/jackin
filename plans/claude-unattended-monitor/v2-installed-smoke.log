@@ -14,7 +14,7 @@ Future installed-pair command examples (run binding and policy in a TTY):
   /Users/donbeave/.local/share/jackin-claude-monitor-v2/bin/jackin usage --format json --data-dir /tmp/jkin-installed-smoke-4lmkcf2u/data statusline ingest --binding BINDING_ID --binding-revision 1
   /Users/donbeave/.local/share/jackin-claude-monitor-v2/bin/jackin usage --format json --data-dir /tmp/jkin-installed-smoke-4lmkcf2u/data statusline compose --binding BINDING_ID --binding-revision 1 --settings /Users/donbeave/.claude/settings.json
 [usage-help] exit=0
-   jackin❯
+   jackin❯ 
 
 
 Read broker-owned cached usage and manage durable usage monitors
@@ -44,7 +44,7 @@ Arguments:
 Options:
       --format <FORMAT>
           Output format
-
+          
           [default: human]
 
       --data-dir <PATH>
@@ -52,9 +52,9 @@ Options:
 
       --debug
           Print raw container output for troubleshooting.
-
+          
           Global flag: accepted before or after any subcommand. Also enabled by setting `JACKIN_DEBUG=1` in the environment.
-
+          
           [env: JACKIN_DEBUG=]
 
   -h, --help
@@ -69,29 +69,29 @@ Options:
           [possible values: claude]
 
       --binding <ID>
-
+          
 
       --binding-revision <REVISION>
-
+          
 
       --goal <ID>
-
+          
 
       --policy-revision <REVISION>
-
+          
 
       --idempotency-key <KEY>
-
+          
 
       --session <ID>
-
+          
 
       --expected-model <MODEL>
-
+          
 
       --format <FORMAT>
           Output format
-
+          
           [default: human]
 
       --data-dir <PATH>
@@ -99,9 +99,9 @@ Options:
 
       --debug
           Print raw container output for troubleshooting.
-
+          
           Global flag: accepted before or after any subcommand. Also enabled by setting `JACKIN_DEBUG=1` in the environment.
-
+          
           [env: JACKIN_DEBUG=]
 
   -h, --help
@@ -122,17 +122,17 @@ Options:
           Previously confirmed account binding
 
       --binding-revision <REVISION>
-
+          
 
       --idempotency-key <KEY>
-
+          
 
       --expected-model <MODEL>
-
+          
 
       --format <FORMAT>
           Output format
-
+          
           [default: human]
 
       --data-dir <PATH>
@@ -140,9 +140,9 @@ Options:
 
       --debug
           Print raw container output for troubleshooting.
-
+          
           Global flag: accepted before or after any subcommand. Also enabled by setting `JACKIN_DEBUG=1` in the environment.
-
+          
           [env: JACKIN_DEBUG=]
 
   -h, --help
@@ -160,11 +160,11 @@ Options:
           Previously confirmed account binding
 
       --binding-revision <REVISION>
-
+          
 
       --format <FORMAT>
           Output format
-
+          
           [default: human]
 
       --data-dir <PATH>
@@ -172,9 +172,9 @@ Options:
 
       --debug
           Print raw container output for troubleshooting.
-
+          
           Global flag: accepted before or after any subcommand. Also enabled by setting `JACKIN_DEBUG=1` in the environment.
-
+          
           [env: JACKIN_DEBUG=]
 
   -h, --help
@@ -186,7 +186,7 @@ Usage: jackin usage statusline compose [OPTIONS] --settings <PATH>
 
 Options:
       --settings <PATH>
-
+          
 
       --session-only
           Ingest this callback only under its session ID from the JSON payload
@@ -195,11 +195,11 @@ Options:
           Previously confirmed account binding
 
       --binding-revision <REVISION>
-
+          
 
       --format <FORMAT>
           Output format
-
+          
           [default: human]
 
       --data-dir <PATH>
@@ -207,9 +207,9 @@ Options:
 
       --debug
           Print raw container output for troubleshooting.
-
+          
           Global flag: accepted before or after any subcommand. Also enabled by setting `JACKIN_DEBUG=1` in the environment.
-
+          
           [env: JACKIN_DEBUG=]
 
   -h, --help

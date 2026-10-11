@@ -25,14 +25,14 @@ jackin: warning: docker pull docker.io/chainargos/jackin-agent-brown:latest fail
 Error response from daemon: pull access denied for chainargos/jackin-agent-brown, repository does not exist or may require 'docker login'
 ```
 
-jackin❯ never sends registry credentials when pulling. The pull path in <RepoFile path="crates/jackin-docker/src/docker_client.rs">crates/jackin-docker/src/docker_client.rs</RepoFile> calls bollard `create_image` with the `RegistryAuth` argument hard-coded to `None`. Because the freshness check in <RepoFile path="crates/jackin-runtime/src/runtime/image.rs">crates/jackin-runtime/src/runtime/image.rs</RepoFile> treats *any* pull failure as "image is stale", an auth failure is indistinguishable from a genuinely outdated image — so jackin❯ falls through to a full workspace rebuild from the Dockerfile (13+ minutes in the report above) and never tells the operator the real problem was a missing login.
+jackin❯ never sends registry credentials when pulling. The pull path in <RepoFile path="crates/adapters/jackin-docker/src/docker_client.rs">crates/adapters/jackin-docker/src/docker_client.rs</RepoFile> calls bollard `create_image` with the `RegistryAuth` argument hard-coded to `None`. Because the freshness check in <RepoFile path="crates/services/jackin-runtime/src/runtime/image.rs">crates/services/jackin-runtime/src/runtime/image.rs</RepoFile> treats *any* pull failure as "image is stale", an auth failure is indistinguishable from a genuinely outdated image — so jackin❯ falls through to a full workspace rebuild from the Dockerfile (13+ minutes in the report above) and never tells the operator the real problem was a missing login.
 
 ### Root cause — the bug class, not the missing argument
 
-The `auth: None` argument is the symptom. The structural cause is that jackin❯ has no place for an operator to declare credentials for an external endpoint. There is no `[registry]`/`[[registries]]` block in the config schema (<RepoFile path="crates/jackin-config/src/schema.rs">crates/jackin-config/src/schema.rs</RepoFile> defines `AppConfig` and `WorkspaceConfig` with auth blocks only for the agent API key and the GitHub token). Because there is no general credential-source layer, every external secret jackin❯ has ever needed was solved as a one-off:
+The `auth: None` argument is the symptom. The structural cause is that jackin❯ has no place for an operator to declare credentials for an external endpoint. There is no `[registry]`/`[[registries]]` block in the config schema (<RepoFile path="crates/core/jackin-config/src/schema.rs">crates/core/jackin-config/src/schema.rs</RepoFile> defines `AppConfig` and `WorkspaceConfig` with auth blocks only for the agent API key and the GitHub token). Because there is no general credential-source layer, every external secret jackin❯ has ever needed was solved as a one-off:
 
-- Agent API keys and GitHub token — bespoke fields in <RepoFile path="crates/jackin-config/src/auth.rs">crates/jackin-config/src/auth.rs</RepoFile>.
-- 1Password / env references — resolved ad hoc through the host-socket daemon in <RepoFile path="crates/jackin-capsule/src/exec.rs">crates/jackin-capsule/src/exec.rs</RepoFile>.
+- Agent API keys and GitHub token — bespoke fields in <RepoFile path="crates/core/jackin-config/src/auth.rs">crates/core/jackin-config/src/auth.rs</RepoFile>.
+- 1Password / env references — resolved ad hoc through the host-socket daemon in <RepoFile path="crates/apps/jackin-capsule/src/exec.rs">crates/apps/jackin-capsule/src/exec.rs</RepoFile>.
 - A general [`CredentialSource`](/roadmap/credential-source-pattern/) abstraction was designed but never built.
 
 Registry pull-auth is simply the next instance of this class. A correct architecture would have absorbed it without a new code path. Patching only `create_image` would leave the enabling condition — no credential-source layer, no per-endpoint configuration surface — in place, and the next external endpoint (a second ECR account, a private GHCR, a proxy) would reproduce the same gap.
@@ -59,7 +59,7 @@ The structural move is a configurations layer: a list of named, scoped endpoint 
 
 The pull path must stay in-process via the bollard API, not shell out to the `docker` CLI. The CLI offers no way to hold a session or inject ad-hoc credentials per pull; bollard does, and jackin❯ already calls it. This was verified against the pinned `bollard 0.21.0`:
 
-- `create_image(options, body, credentials: Option<DockerCredentials>)` — the third argument is the injection point. Today it is `None` in <RepoFile path="crates/jackin-docker/src/docker_client.rs">crates/jackin-docker/src/docker_client.rs</RepoFile>. bollard base64-encodes the credentials into the `X-Registry-Auth` header itself — the same mechanism the CLI uses internally.
+- `create_image(options, body, credentials: Option<DockerCredentials>)` — the third argument is the injection point. Today it is `None` in <RepoFile path="crates/adapters/jackin-docker/src/docker_client.rs">crates/adapters/jackin-docker/src/docker_client.rs</RepoFile>. bollard base64-encodes the credentials into the `X-Registry-Auth` header itself — the same mechanism the CLI uses internally.
 - `bollard::auth::DockerCredentials { username, password, auth, email, serveraddress, identitytoken, registrytoken }` — all `Option<String>`. (Note: the type is `DockerCredentials`, not `RegistryAuth`.)
 
 So the only missing piece is producing a `DockerCredentials` and passing it. No architecture change, no CLI dependency.
@@ -146,7 +146,7 @@ Precedence: an explicit matching `[[registries]]` entry wins over the host-confi
 
 ### Decided: separate auth failure from staleness — fail fast, opt-in fallback
 
-The root pain is that <RepoFile path="crates/jackin-runtime/src/runtime/image.rs">image.rs</RepoFile>'s `published_image_freshness` maps every pull error to `Stale`, so an auth failure silently triggers a multi-minute rebuild. The fix splits the conflated states: a pull failure is classified, not assumed stale.
+The root pain is that <RepoFile path="crates/services/jackin-runtime/src/runtime/image.rs">image.rs</RepoFile>'s `published_image_freshness` maps every pull error to `Stale`, so an auth failure silently triggers a multi-minute rebuild. The fix splits the conflated states: a pull failure is classified, not assumed stale.
 
 - **Auth failure** (HTTP 401/403, `pull access denied`, `requires 'docker login'`, `no basic auth credentials`, `unauthorized`) → by default fail fast with an actionable message naming the registry and the fix (add a `[[registries]]` entry / `docker login` / install the ECR helper). No rebuild — rebuilding masks a one-line config error, and the construct base image may itself be private and also unpullable. Why default-fail: correctness over a silent expensive fallback that hides the real problem.
 - **Manifest/tag not found** (`manifest unknown`, repo reachable but no such tag) → genuinely no published image → fall back to building from the workspace Dockerfile, as today. This is the one legitimate "stale/missing" case.
@@ -167,14 +167,14 @@ The `CredentialSource` members built in this item:
 |---|---|---|
 | `docker-config` | yes | implicit fallback; reads `~/.docker/config.json` + helpers |
 | `ecr` | yes | native, forcing case; AWS chain + auto-refresh |
-| `op` | yes | reuses the shipped host-socket 1Password resolution (<RepoFile path="crates/jackin-capsule/src/exec.rs">exec.rs</RepoFile>) |
+| `op` | yes | reuses the shipped host-socket 1Password resolution (<RepoFile path="crates/apps/jackin-capsule/src/exec.rs">exec.rs</RepoFile>) |
 | `env` | yes | named env var; essential for CI/headless |
 | `static` (literal user/pass) | yes | plaintext-on-disk — docs must discourage beyond local testing (registry-credential plaintext is the [GHSA-99pg-grm5-qq3v](https://github.com/docker/cli/security/advisories/GHSA-99pg-grm5-qq3v) pitfall); never log/echo it |
 | `command` | deferred | generic refresh escape hatch; add post-v1 if a custom-SSO need appears |
 
 ### Decided: single injection point, host-side resolution
 
-One `BollardDockerClient` (host daemon via `DOCKER_HOST`/defaults, <RepoFile path="crates/jackin-docker/src/docker_client.rs">docker_client.rs</RepoFile>) drives every pull — the published-image freshness check (<RepoFile path="crates/jackin-runtime/src/runtime/image.rs">image.rs</RepoFile>) and the DinD sidecar image pull (<RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_dind.rs">launch_dind.rs</RepoFile>). So credential resolution threads into `pull_image` itself — a single injection point that covers role images and the DinD base image (which may also be private). Why this is clean: creds are produced host-side and handed only to the docker daemon via bollard's `X-Registry-Auth` header; they never cross into a container's env or image layers, satisfying container-credential-exposure goals without extra plumbing. The provider is constructed once and passed down to the docker client.
+One `BollardDockerClient` (host daemon via `DOCKER_HOST`/defaults, <RepoFile path="crates/adapters/jackin-docker/src/docker_client.rs">docker_client.rs</RepoFile>) drives every pull — the published-image freshness check (<RepoFile path="crates/services/jackin-runtime/src/runtime/image.rs">image.rs</RepoFile>) and the DinD sidecar image pull (<RepoFile path="crates/services/jackin-runtime/src/runtime/launch/launch_dind.rs">launch_dind.rs</RepoFile>). So credential resolution threads into `pull_image` itself — a single injection point that covers role images and the DinD base image (which may also be private). Why this is clean: creds are produced host-side and handed only to the docker daemon via bollard's `X-Registry-Auth` header; they never cross into a container's env or image layers, satisfying container-credential-exposure goals without extra plumbing. The provider is constructed once and passed down to the docker client.
 
 ### Decided: ECR provider mechanics
 
@@ -243,12 +243,12 @@ Rust library options:
 
 ## Expected code touchpoints
 
-- <RepoFile path="crates/jackin-docker/src/docker_client.rs">crates/jackin-docker/src/docker_client.rs</RepoFile> — `pull_image`; bollard `create_image` with `RegistryAuth` currently `None`.
-- <RepoFile path="crates/jackin-runtime/src/runtime/image.rs">crates/jackin-runtime/src/runtime/image.rs</RepoFile> — published-image freshness check that conflates auth failure with staleness.
-- <RepoFile path="crates/jackin-config/src/schema.rs">crates/jackin-config/src/schema.rs</RepoFile> — `AppConfig` / `WorkspaceConfig`; where a configurations block would live.
-- <RepoFile path="crates/jackin-config/src/auth.rs">crates/jackin-config/src/auth.rs</RepoFile> — existing bespoke auth blocks (agent key, GitHub token).
-- <RepoFile path="crates/jackin-core/src/manifest.rs">crates/jackin-core/src/manifest.rs</RepoFile> — `RoleManifest.published_image`.
-- <RepoFile path="crates/jackin-capsule/src/exec.rs">crates/jackin-capsule/src/exec.rs</RepoFile> — host-socket credential resolution in use today.
+- <RepoFile path="crates/adapters/jackin-docker/src/docker_client.rs">crates/adapters/jackin-docker/src/docker_client.rs</RepoFile> — `pull_image`; bollard `create_image` with `RegistryAuth` currently `None`.
+- <RepoFile path="crates/services/jackin-runtime/src/runtime/image.rs">crates/services/jackin-runtime/src/runtime/image.rs</RepoFile> — published-image freshness check that conflates auth failure with staleness.
+- <RepoFile path="crates/core/jackin-config/src/schema.rs">crates/core/jackin-config/src/schema.rs</RepoFile> — `AppConfig` / `WorkspaceConfig`; where a configurations block would live.
+- <RepoFile path="crates/core/jackin-config/src/auth.rs">crates/core/jackin-config/src/auth.rs</RepoFile> — existing bespoke auth blocks (agent key, GitHub token).
+- <RepoFile path="crates/core/jackin-core/src/manifest.rs">crates/core/jackin-core/src/manifest.rs</RepoFile> — `RoleManifest.published_image`.
+- <RepoFile path="crates/apps/jackin-capsule/src/exec.rs">crates/apps/jackin-capsule/src/exec.rs</RepoFile> — host-socket credential resolution in use today.
 
 ## Related work
 

@@ -1,0 +1,36 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "jackin-runtime-apple-container-client"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
+description = "Apple Container backend client: `container` CLI lifecycle over the shared process transport."
+license.workspace = true
+readme = "README.md"
+publish = false
+
+repository.workspace = true
+
+[lib]
+name = "jackin_runtime_apple_container_client"
+path = "src/lib.rs"
+
+[features]
+test-support = []
+
+[dependencies]
+jackin-process = { workspace = true }
+jackin-runtime-identity = { workspace = true }
+jackin-runtime-process-telemetry = { workspace = true }
+anyhow = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt"] }
+
+[lints]
+workspace = true

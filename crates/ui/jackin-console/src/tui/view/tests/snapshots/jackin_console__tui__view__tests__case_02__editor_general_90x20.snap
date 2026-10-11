@@ -1,0 +1,24 @@
+---
+source: crates/ui/jackin-console/src/tui/view/tests/case_02.rs
+expression: rendered
+---
+ jackin❯  · edit workspace · my-workspace                                                 
+                                                                                          
+                                                                                          
+ General   Mounts   Roles   Environments   Accounts                                       
+─────────                                                                                 
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│    Name           my-workspace                                                         │
+│    Working dir                                                                         │
+│    Keep awake     disabled                                                             │
+│    Git pull       disabled                                                             │
+│                                                                                        │
+│                                                                                        │
+│                                                                                        │
+│                                                                                        │
+│                                                                                        │
+│                                                                                        │
+│                                                                                        │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+                                                                                          
+            ←→ switch tab   S save workspace   Esc back · Ctrl-Q quit · ? help

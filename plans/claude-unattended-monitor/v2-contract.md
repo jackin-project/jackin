@@ -1,9 +1,7 @@
 # Observer and dispatch policy contract
 
-Contract freeze: 2026-10-10. The isolated CLI/broker pair built from
-predecessor source `4492d3cb` passed its synthetic installed fixture. The current
-main-port source has not yet been rebuilt or fixture-smoked as an installed pair;
-do not treat the predecessor proof as validation of this port.
+Contract freeze: 2026-10-10. Implementation and verification are in progress.
+These commands must not be presented as installed until binary proof passes.
 
 ## Commands
 

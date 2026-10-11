@@ -69,34 +69,34 @@ The prototype is a reference, not production architecture. `PRODUCTION_MAPPING.m
 
 The signoff records build/test commands and passed F00–F29 human review at 800×520, 1000×680, and 1200×760. `DESIGN_AUDIT.md` records the dark-only contract and canonical captures. Planning should cite `SIGNOFF.md` and `PRODUCTION_MAPPING.md` for acceptance, then implement in production files above; it must never treat `ProtoStore` or `ReferenceModels` as production DTOs. — `native/Design/Prototypes/UnifiedAgentUsage/SIGNOFF.md:1-35`, `native/Design/Prototypes/UnifiedAgentUsage/DESIGN_AUDIT.md:243-266`, `native/Design/Prototypes/UnifiedAgentUsage/Sources/UnifiedAgentUsageProto/Domain/ProtoStore.swift`, `native/Design/Prototypes/UnifiedAgentUsage/Sources/UnifiedAgentUsageProto/Domain/ReferenceModels.swift` (confidence: HIGH)
 
-## Exact verification command graph
+## Current verification command graph (2026-10-10)
 
-The repository task definitions, not prose aliases, are authoritative. Run through `rtk` per repository operator rules.
+Rust commands use the pinned MBX integration. Native macOS tasks live in `native/mise.toml`; direct Swift tools run through Mise from the native directory so the pinned environment and nested configuration apply.
 
 | Purpose | Exact command | Proven owner / qualification |
 |---|---|---|
-| Rust formatting | `rtk mise run fmt` | `mise.toml:99-101`; nonmutating. |
-| Unified Rust tests | `rtk mise run test` | `mise.toml:91-93`; invokes fast `cargo xtask ci --only tests`. |
-| Unified Rust lint | `rtk mise run lint` | `mise.toml:95-97`; invokes fast lint gate. |
-| Focused crate tests during iteration | `rtk cargo nextest run -p jackin-usage -p jackin-usage-ffi -p jackin-runtime -p jackin-capsule -p jackin-console -p jackin` | Repository uses nextest in CI; package set corresponds to all changed usage surfaces. Final proof still runs unified tasks. |
-| Generated binding drift | `rtk mise run desktop-bindings-check` | `mise.toml:116-119`; never edit generated Swift manually. |
-| Regenerate native project | `rtk mise run desktop-generate` | `mise.toml:124-126`; writes generated Xcode project as intended. |
-| Swift formatting check | `rtk mise run desktop-format-check` | `mise.toml:134-136`. |
-| SwiftLint | `rtk mise run desktop-lint` | `mise.toml:138-142`. |
-| Native Rust/FFI/parity tests | `rtk mise run desktop-test` | `mise.toml:177-180`. |
-| Native PR graph | `rtk mise run desktop-ci` | `mise.toml:183-196`; bindings, project, formatting, lint, tests, build, Swift tests, app verification. |
-| Native merge graph | `rtk mise run desktop-merge` | `mise.toml:197-203`; adds real-host UI tests. |
-| Native scheduled graph | `rtk mise run desktop-scheduled` | `mise.toml:205-211`; adds dead-code scan. |
-| Prototype build | `rtk mise run desktop-prototype-build` | `mise.toml:227-239`. |
-| Prototype tests | `rtk swift test --package-path native/Design/Prototypes/UnifiedAgentUsage` | `native/Design/Prototypes/UnifiedAgentUsage/SIGNOFF.md:11-15`. |
-| Prototype scenario | `rtk mise run desktop-prototype -- F02 1000x680 dark` | `mise.toml:267-284`; supports F00–F29 and fixed size/appearance arguments. |
-| Production deterministic captures | `rtk native/Scripts/VisualQA/capture-final-matrix.sh native/dist/JackinDesktop.app` | `native/README.md:137-146`, `native/Scripts/VisualQA/capture-final-matrix.sh:1-12`; requires macOS WindowServer and Screen Recording permission, and temporarily changes app/system presentation state. |
-| Local app build | `rtk mise run desktop-build -- 0.6.0 1` | `mise.toml:152-159`; produces app/dSYM using fixture version/build. |
-| Local fail-closed verify | `rtk mise run desktop-verify -- native/dist/JackinDesktop.app 0.6.0 1` | `mise.toml:160-175`; secret-free for ad-hoc validation. |
-| Release-mode verify | `rtk mise run desktop-verify -- native/dist/JackinDesktop.app 0.6.0 1 --release` | `mise.toml:160-175`; only succeeds for Developer ID signed, notarized, stapled, Gatekeeper-accepted app. |
-| Sign/notarize/staple | `rtk mise run desktop-sign-notarize -- native/dist/JackinDesktop.app <out-zip> <version> <build>` | `mise.toml:300-315`; credential-dependent; secret values never enter plans/docs. |
-| Read-only release/cask reconciliation | `rtk mise run desktop-release-state -- <version> --repo jackin-project/jackin --tap jackin-project/homebrew-tap` | `mise.toml:317-324`, `.github/workflows/release.yml:500-508`; network/auth may be required, no publication write. |
-| Credential bootstrap | `rtk mise run desktop-bootstrap-secrets` | `mise.toml:326-328`; external operator authorization and GitHub/Apple credential material required. |
+| Rust formatting | `mise exec -- mbx +1.99.0 fmt --check` | Nonmutating; fix with `mise exec -- mbx +1.99.0 fmt`. |
+| Unified Rust tests | `mise exec -- mbx +1.99.0 xtask ci --only tests --fast` | Fast Rust test partition; full non-Docker gate is `mise exec -- mbx +1.99.0 xtask ci`. |
+| Unified Rust lint | `mise exec -- mbx +1.99.0 xtask ci --only lint --fast` | Runs the unified lint partition. |
+| Focused crate tests during iteration | `mise exec -- mbx +1.99.0 nextest run -p jackin-usage -p jackin-usage-ffi -p jackin-runtime -p jackin-capsule -p jackin-console -p jackin` | Package set corresponds to the usage surfaces in this research; final proof still runs the unified gate. |
+| Generated binding drift | `mise exec -- mbx +1.99.0 xtask desktop bindings-check` | Never edit generated Swift manually. |
+| Regenerate native project | `mise exec -- xcodegen generate --spec native/project.yml` | Writes the generated Xcode project. |
+| Swift formatting check | `mise -C native run format-check` | Native task excludes generated bindings. |
+| SwiftLint | `mise -C native exec -- swiftlint lint --strict` | Runs from `native/` to preserve nested SwiftLint configuration. |
+| Native Rust/FFI/parity tests | `mise exec -- mbx +1.99.0 xtask desktop test` | Does not run the Xcode app build. |
+| Native PR graph | `mise -C native run ci` | Bindings, project, formatting, lint, tests, build, Swift tests, and app verification; macOS/Xcode required. |
+| Native merge graph | `mise -C native run merge` | Adds UI tests against the real app host. |
+| Native scheduled graph | `mise -C native run scheduled` | Adds dead-code analysis. |
+| Prototype build | `mise -C native run prototype-build` | Builds the Unified Agent Usage prototype. |
+| Prototype tests | `mise exec -- swift test --package-path native/Design/Prototypes/UnifiedAgentUsage` | Prototype signoff records the visual acceptance scenarios. |
+| Prototype scenario | `mise -C native run prototype-run -- F02 1000x680 dark` | Supports F00–F29 and the documented appearance/accessibility arguments. |
+| Production deterministic captures | `native/Scripts/VisualQA/capture-final-matrix.sh native/dist/JackinDesktop.app` | Requires macOS WindowServer and Screen Recording permission, and temporarily changes app/system presentation state. |
+| Local app build | `mise exec -- mbx +1.99.0 xtask desktop build --version 0.6.0 --build 1` | Produces the app/dSYM with the fixture version/build. |
+| Local fail-closed verify | `mise exec -- mbx +1.99.0 xtask desktop verify native/dist/JackinDesktop.app` | Secret-free ad-hoc validation. |
+| Release-mode verify | `mise exec -- mbx +1.99.0 xtask desktop verify native/dist/JackinDesktop.app --release` | Requires Developer ID signing, notarization, staple, and Gatekeeper acceptance. |
+| Sign/notarize/staple | `mise -C native run sign-notarize` | Credential-dependent; secret values never enter plans/docs. |
+| Read-only release/cask reconciliation | `mise exec -- mbx +1.99.0 xtask desktop release-state <version> --repo jackin-project/jackin --tap jackin-project/homebrew-tap` | Network/auth may be required; no publication write. |
+| Credential bootstrap | `mise exec -- mbx +1.99.0 xtask desktop bootstrap-secrets` | Requires GitHub/Apple credential material and operator authorization. |
 
 The desktop capture script currently enumerates light fixtures despite the settled dark-only product contract (`native/Scripts/VisualQA/capture-final-matrix.sh:123-157`). Implementation planning must update the canonical production matrix so dark-only proof cannot silently pass via obsolete light cases, while retaining accessibility contrast/transparency/motion evidence. This is a concrete verification-gap fix, not permission to restore light mode. (confidence: HIGH)
 

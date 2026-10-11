@@ -1,311 +1,5 @@
 # Claude unattended usage monitor
 
-## Foreground broker idle lifetime fix (PR #1124)
-
-Signed source commit `67f77ac01a160335a7b2ca1c101112034b4f5fc9` keeps a
-prepared foreground broker alive while its foreground liveness lease remains
-active, including when it has zero monitors. The operator must leave the
-attended terminal open until explicitly shutting the service down. A passive
-broker with no active monitors retains its idle timeout; active observers keep
-their existing lifetime behavior. This change does not guarantee credential
-availability, validity, or provider acceptance.
-
-MBX 1.22.0 / Rust 1.97.1 installed the debug CLI/broker pair from that exact
-source commit into the new v7 prefix. The 718-test `jackin-usage` library suite,
-focused sleep-jump regression, strict all-target Clippy, and workspace format
-check passed. The v7 non-TTY auth sentinel returned `interaction_required`
-before broker launch and left its fresh data directory absent. v2-v6 installed
-CLI and broker hashes still match their recorded values. Exact source/tree IDs,
-build command, installed hashes, sentinel output, MBX cache-pruning notice, and
-review status are in [v7-installation.json](v7-installation.json).
-
-The next operator step is an attended `auth prepare` using the v7 CLI and a
-fresh v7 state directory, left running in its terminal. Then, from a second
-attended terminal, complete the already-approved local binding and
-experimental-observation workflow against that state. This installation did
-not run bootstrap, inspect Keychain, make a provider request, or test a live
-account; the observation remains pending, and no dispatch policy is approved.
-
-## Bounded auth diagnostic follow-up on main
-
-This narrow follow-up is being developed on isolated branch
-`fix/auth-malformed-diagnostic-dco`, based on remote main
-`3f3ddd7c48284b648b083305f969ee3e709b74b7`. It adds a
-redacted structural diagnostic to `auth_malformed` only when all operator TTY
-streams are attached. The operator command is
-`jackin usage --data-dir PATH auth prepare --provider claude`; the TTY-only
-`error.diagnostic` contains fixed JSON kinds, recognized camel/snake alias
-presence, duplicate-alias booleans, access-token string/nonempty facts, and
-payload/limit byte counts. It exposes no credential values, token length,
-identifiers, snippets, or unknown keys. Payloads above 65,536 bytes skip JSON
-classification. Expiry and account/provider readiness are not established by
-this check.
-
-The DCO-signed source commits `eb8f6b58c5fda32f437f7e9434edabaa1d47f0f8` and
-`31dc0574a8d0a052e115fa4031740eef31664af5` are on the delivery branch.
-Focused MBX check, scoped format check, fixture/parser/service/CLI/lease tests, and
-independent parser and installed-pair review passed. MBX installed the debug
-pair from source tree `ea7246252602ed897f0027ff448050219f191533` under the new
-v4 prefix; the DCO-signed branch has the identical source tree. v2 and v3
-prefixes remain unchanged. Exact commands, hashes, and fixture limits are in
-[v4-installation.json](v4-installation.json) and
-[verification.md](verification.md). The installed non-TTY gate returns
-`interaction_required` without a diagnostic and does not call the broker.
-No Keychain item, live credential, account identity/status, or provider
-endpoint has been inspected; the real account remains unknown. No live
-bootstrap or provider request was made.
-
-### Claude metadata alias correction and v5 install
-
-The operator's structural diagnostic exposed a parser bug: serde aliased
-`subscriptionType`, `subscription_type`, `rateLimitTier`, and
-`rate_limit_tier` onto one field, so two distinct metadata values were
-misclassified as a duplicate and rejected as `auth_malformed`. Source commit
-[`cc012603`](https://github.com/jackin-project/jackin/commit/cc012603951c46d3fe909c21538af4c5b0715948)
-separates subscription type from rate limit tier, keeps subscription type as
-the preferred label with rate limit tier as fallback, and marks diagnostics as
-duplicate only for camel/snake spellings of the same field.
-
-Focused MBX tests passed: 39 Claude tests, 3 broker foreground-bootstrap
-tests, 1 fake foreground bootstrap lifecycle test, and 1 malformed-bootstrap
-single-read test. The scoped MBX format check passed. The debug CLI/broker pair
-was installed to the new v5 prefix from that exact signed commit. Independent
-review verified the installed hashes and versions, reran the non-TTY gate with
-a broker marker sentinel, confirmed the marker and data directory stayed
-absent, and rechecked the unchanged v2/v3/v4 hashes. See
-[v5-installation.json](v5-installation.json) for source/tree IDs, command,
-binary hashes, preserved v2/v3/v4 hashes, and the non-TTY install sentinel.
-No Keychain item, live credential, account identity/status, provider endpoint,
-or settings was accessed or changed. The operator must retry their own
-attended account bootstrap; live account readiness remains unknown.
-
-### PR #1123 generated-file gate correction
-
-Exact-head CI run `38061798598` failed Plan because `.github/PULL_REQUEST_TEMPLATE.md`
-was outside Velnor's generated preview. It was a stale duplicate: the canonical
-template remains at `docs/PULL_REQUEST_TEMPLATE.md`, as required by
-`PULL_REQUESTS.md`, and `.github/AGENTS.md` states that all `.github/` content is
-generator-owned. The fix removes only that duplicate. Required failed downstream
-because Plan failed; Actionlint passed and the Rust matrix was skipped. Velnor
-also warned about malformed `mise.lock` line 388, but `mise.lock` is byte-identical
-at the PR base and failed head, so that warning did not trigger this failure.
-The generated-file correction passed Plan and Actionlint at `b99824b7`. Five
-Rust matrix jobs then failed on two Clippy findings introduced with the parser
-diagnostic: `map_unwrap_or` in `raw_field_kind` and
-`assertions_on_result_states` in the 524-byte fixture. Signed commit
-[`ded71bd5`](https://github.com/jackin-project/jackin/commit/ded71bd51600eb2a12ec8c6741259fdc3f93eb80)
-rewrites those expressions as `map_or` and `unwrap`, with no behavior change.
-Focused MBX Clippy and format checks pass, and the `jackin-usage` suite passes
-718 tests. The latest PR head has its own exact-head CI run.
-
-The matching debug CLI/broker pair was rebuilt from clean source commit
-`ded71bd5` into the new v6 prefix. Its non-TTY auth sentinel returned
-`interaction_required` before launching the marker broker and left the fresh
-data directory absent. Hashes for the v2-v5 pairs are unchanged. See
-[v6-installation.json](v6-installation.json) for source/tree identity, build
-command, binary hashes, focused checks, and sentinel output. Independent
-installed-pair review passed and confirmed the source/tree and binary hashes,
-v2-v5 preservation, CLI and broker versions, and non-TTY sentinel. No Keychain item,
-live credential, account
-identity/status, provider endpoint, or settings was accessed or changed; the
-operator still needs to retry the attended account bootstrap.
-
-## Current delivery checkpoint
-
-Delivery branch: `feat/claude-usage-monitor-main`, isolated from the running Claude checkout. Signed source checkpoint `8abfa235cce150d5382d99a5679afab49e098525` is pushed. The final seven-gate MBX rerun, scoped regression matrix, 1.29-second offline pair build, and installed fixture smoke passed. Smoke exited 0, selected the sibling broker, recorded one JSONL watch event, zero proxy requests and credential-command trips, and left no fixture state or open binaries. CLI SHA-256 is `b57e60f2f13b026ae2ec47034b61ecddc69644b230157e621c5ddb5cf447007d`; broker SHA-256 is `30b6f3b1f0777dbe9181851f83fbc2efb3f0356d290e1896bf2ccaf434fbf550`; manifest SHA-256 is `64a0a101224ad5c38f4292a59c5191a44071fc54eab3cc95e8a57a13bc454601`. Source-head CI run [38044592706](https://github.com/jackin-project/jackin/actions/runs/38044592706) passed for 8abfa: Required, all Rust matrix jobs, and Actionlint succeeded; the baseline publication job was skipped by workflow rules. A later documentation/evidence commit requires its own exact-head checks. CI run `38042237548` and its three failed Rust jobs, and the 45a installed pair, are historical. P2 reply `4237302394` links the fixing commit and is resolved. P1 follow-up proof/reply `4237303703` is resolved; general comment `6096529404` has a linked disposition.
-
-Focused checks and the final seven-gate MBX rerun passed: seven-package fmt/check/strict Clippy; S6 rotation (1) and full scope (7); FFI rank fix (11); docs Commands (5); V1 storage (1); broker (184); capsule diagnostic dedup (1) and proxy scope (11 passed, 1 filtered). Capsule used a canonical parent directory with mode 0700, a socket with mode 0600, and a bounded accept deadline. P1's private one-way-migration rejection has fresh evidence; its follow-up proof is posted and the thread resolved. P2's FFI rank fix resets raw fields before capping; it is included in 8abfa, and its commit-linked reply and thread are resolved. The V1 end-to-end regression is included. See [verification.md](verification.md) for log paths. Source-head CI for 8abfa passed; a later documentation/evidence commit requires its own exact-head checks. The current direct-CLI contract is [bootstrap-contract.md](bootstrap-contract.md); statusline remains an optional credential-free source.
-
-Checkpoints `8288ef4a`, `22ac3581`, `45a33093`, and `14c09cd5` are historical evidence. Checkpoint `8abfa235` is the current signed/pushed source; its final seven-gate MBX verification, scoped regression matrix, build, installed fixture smoke, and source-head CI passed. The final documentation/evidence head requires its own checks before landing.
-
-All Cargo work must run through MBX 1.22.0. Main's Mise Cargo wrapper selects MBX, but injecting the toolchain directory before `mise exec` can shadow that wrapper. Current invocations use `MISE_AUTO_INSTALL=false mise exec -- mbx <Cargo-subcommand>` with an owned isolated `CARGO_HOME`. For commands that can launch nested Cargo, inject wrapper-first PATH **after** Mise using `MISE_AUTO_INSTALL=false mise exec -- env PATH="<mise-command-wrappers>/bin:<selected-rust-toolchain>/bin:$PATH" mbx ...`; setting PATH before Mise is insufficient. Do not invoke plain Cargo. Main already supplies MBX; draft/red PR #1120 is not a prerequisite and remains untouched.
-
-Previously recorded pre-v8 offline gates: protocol 133, broker 173, coordinator 54, CLI 43, app 29; installation 5, lifecycle 2, bootstrap 2, monitor 5; docs 18 tests and 1,293 rendered routes. The prior installed v3 pair used wire v7 and passed isolated observation, structured-output, sibling selection and composed-statusline checks. Its proxy request and credential-command trip counts were zero; native Keychain calls were not instrumented and successful foreground auth was not exercised. These results are historical and do not validate the current v8 candidate. No real-account readiness claim follows.
-
-The pre-v8 cleanup removed dormant Claude CLI diagnostic/parser paths and strengthened provider-call inventory detection for both direct calls and callbacks. Its recorded post-cleanup provider contract 2/2 and broker 173/173 results are historical. Current-source checks and installed-smoke checkpoint evidence are recorded in [verification.md](verification.md); exact-head CI for PR documentation checkpoint 56181d4 passed, while this docs correction needs its own checks and landing gates remain open. Remaining queue:
-
-- [x] Historical checkpoints: Claude fake-auth/provider 25 and initial contract 8 passed; forbidden-command guard was extended and independently reviewed Ready within documented syntactic limits. The later contract run had 9 passing and 1 failing test before the 33-row inventory fixture correction; the corrected current run now passes 10/10. Latest bounded results are recorded in [verification.md](verification.md).
-- [x] Pre-v8 checkpoint: FFI passive/consumer regression 9 passed through MBX; docs typecheck and 18 tests passed after published research updates. These results do not establish current wire-v8 behavior.
-- [x] Verify current wire-v8 publication provider order against `HostSurfaceId::ALL`, account ordering by full display label with canonical-account-ID tie-break, and diagnostic-label lookup across the canonical surface inventory. The latest host-inventory scope passed 13 tests and the broker scope passed 183. See `/private/tmp/jackin-mbx-v4-final-host-tests.log` and `/private/tmp/jackin-mbx-v4-final-host-broker.log`.
-- [x] Verify the 300-second attempt floor with fractional Retry-After under forced refresh, restart recovery, projection cadence, and active cooldown tombstones in loaded, lazy-loaded, and pending-before-purge states. Independent review confirmed the corrected tombstone assertion: non-pending-reset clears `started_at_epoch` while retaining `provider_invoked=1000` and `RetryAfter=5000`; restart at 1101 with a fresh 300-second floor chooses `max(1300, 1401)`. See `/private/tmp/jackin-mbx-v4-final-coordinator-tests2.log`, `/private/tmp/jackin-mbx-v4-final-coordinator-state-tests.log`, and `/private/tmp/jackin-mbx-v4-final-host-broker.log`.
-- [x] Verify explicit `LocalSourceHandle` identity stays distinct from provider ID and stable-account identity through discovery, serialization, deduplication, and publication. Discovery passed 41 tests, host inventory passed 13, and the corrected 33-row contract baseline passed 10/10; see [verification.md](verification.md).
-- [x] Reconcile the lifetime leader lock from predecessor `f669ec77`: ownership stays held on the exact inode across sleep, lock descriptors use `O_CLOEXEC`, and dead-owner takeover, wake/renewal, and owned-path cleanup regressions pass in the latest 183-test broker scope. See `/private/tmp/jackin-mbx-v4-final-host-broker.log`.
-- [x] Remove the unused public `HostUsageRuntime` and all references while retaining active `HostUsageProjectionRuntime`; reference review and the latest seven-package source check passed. See `/private/tmp/jackin-mbx-v4-final-source-check.log`.
-- [x] Verify catalog-diagnostic incremental publication, authoritative clean-scan clearing, revocation labels, and bounded independent reviews. The latest broker scope passed 183 tests, including catalog-diagnostic publication regressions; see `/private/tmp/jackin-mbx-v4-final-host-broker.log`.
-- [x] Close the scoped security lifecycle gate: each initial HTTP request, credential reread, and retry requires a generation permit; deactivation blocks new permits, already-admitted I/O may finish, and cache mutation is serialized against the exact generation. The 28-test Claude suite and independent review cover the stop/revoke races. Static review and fake fixtures do not constitute native Keychain runtime proof; see [verification.md](verification.md).
-- [x] Complete the current consumer/integration matrix: runtime, CLI, app, console, FFI, capsule, bootstrap, monitor, broker lifecycle, and broker installation scopes passed; see [verification.md](verification.md).
-- [x] Record final scoped formatting and strict Clippy across all targets; see [verification.md](verification.md).
-- [x] Build and install the MBX pair for checkpoint `22ac3581a70310b9792f03d71168ee8bdd799591`; isolated fixture smoke passed with exact installed hashes, selected sibling broker, zero proxy requests, and zero credential-command executions. This is checkpoint evidence; see [verification.md](verification.md).
-- [x] Build/install and pass the isolated fixture smoke for checkpoint `45a33093df524c03440ed524e71375953ee6834b`. It selected the installed sibling broker with `JACKIN_USAGE_BROKER_BIN` unset; proxy requests and credential-command trips were zero; fixture state was empty and no service process/open files remained after stop. See [verification.md](verification.md) for CLI, broker, and manifest hashes.
-- [x] Verify the frozen cfg fix through seven-package format, source check, strict Clippy, and affected Claude (28), broker (183), and discovery (41) suites. See [verification.md](verification.md).
-- [x] Record signed, pushed source checkpoint `45a33093df524c03440ed524e71375953ee6834b` for the cfg fix and build it through MBX; the build passed in 15.93 seconds. The earlier 22ac pair remains historical and does not cover this checkpoint.
-- [x] Resolve P1 with an evidence-backed rejection: the migration is private and one-way. Reply posted; thread resolved.
-- [x] Final seven-gate MBX rerun passed. Seven-package fmt/check/strict Clippy and the focused regressions are recorded in [verification.md](verification.md); the capsule rerun covered diagnostic dedup and proxy scopes.
-- [x] Accept P2 and verify the FFI rank fix (11 passed); raw fields reset before capping. The fix is in 8abfa; commit-linked reply `4237302394` was posted and the thread resolved.
-- [x] Add the V1 end-to-end migration regression; its focused storage case passed 1 test.
-- [x] Finish the final seven-gate MBX rerun for frozen fixes. Historical CI run `38042237548` failed three Rust jobs (`jackin`, `jackin-runtime`, and `jackin-capsule`) on head 14c; source-head CI rerun `38044592706` passed for 8abfa. PR documentation/evidence head 56181d4 passed exact-head run `38045612792`; this correction's new head requires its own checks.
-- [x] Commit and push source checkpoint `8abfa235cce150d5382d99a5679afab49e098525` with the accepted P2 fix; final seven-gate MBX checks, scoped regression matrix, offline pair build, and installed smoke passed. Exact hashes and manifest are recorded in [verification.md](verification.md).
-- [x] Complete fresh installed provenance/smoke for `8abfa235`; fixture smoke passed with one JSONL watch event, zero proxy/credential trips, and cleanup. P2 reply `4237302394` links the fixing commit and is resolved; P1 follow-up proof/reply `4237303703` is resolved; general comment `6096529404` has a linked disposition.
-- [ ] Pass all required checks at the final documentation/evidence PR head, complete exact-head feedback and main-up-to-date review, and land.
-- [x] Refresh and freeze historical checkpoint 22ac provenance, checks, installed smoke, and handoff evidence; see [verification.md](verification.md).
-- [x] Push the reviewed documentation/evidence checkpoint `56181d4d`; exact-head run `38045612792` passed. The correction in this commit requires its own checks, tracked in the landing item above.
-- [ ] Operator-controlled real credential/account/provider verification remains outside offline acceptance. Do not modify running Claude settings, credentials, environment or worktrees.
-
-Observation alone never creates a spend baseline or grants dispatch. Collection opt-in is separate from dispatch policy approval. Strict SGD remains fail-closed; quota-only requires explicit audited approval and discloses unknown spend/disabled SGD enforcement. External prerequisites mean checkpoint/report, not endless diagnostics or automatic resumption claims.
-
-## Historical branch audit checkpoint
-
-The following audit notes are earlier checkpoint records; consult [branch-consolidation.md](branch-consolidation.md) and [verification.md](verification.md) for refreshed evidence.
-
-### Branch consolidation audit
-
-`feat/claude-usage-monitor-main` is the single intended delivery branch. Keep
-`claude-unattended-monitor` preserved and untouched until its changes and the
-main-port agent work are fully inventoried, reconciled, and independently
-reviewed. A direct read-only inventory found 28 usage commits on the
-predecessor after `ff9eb01f`, spanning 232 files (+36,856/-11,218). The older
-25-commit/219-file counts are stale checkpoint figures from before commits
-`a9001732`, `427c104b`, and `771bb088`. The separate PR #1121 dependency
-contains 203 unrelated commits; it is not a prerequisite for landing the
-main-port usage work. Exclude that unrelated history from the usage-port
-inventory. The earlier inventory snapshot found a dirty 59 tracked-file port
-  plus untracked split modules, tests, and docs; those worktree counts predate
-  source checkpoint `c18cdbf` and need refresh. The semantic inventory spans
-protocol, coordinator, monitor/broker, Claude auth/provider, CLI/broker binary
-and integration tests, runtime/FFI/telemetry, and usage docs. The full
-file-level reconciliation is still pending, so consolidation is not complete.
-Do not cherry-pick the predecessor history wholesale. Account for each area,
-its tests, and its evidence on the single candidate before closing this item.
-
-The old branch visibly contains the closed-period spend anchor,
-invocation-time floor, and strict budget guard/test changes, but their main-port
-counterparts have not been independently verified. The predecessor's separate
-`landing-queue.md` is absent from this port; it records accepted fixes and
-branch/PR evidence but also contains outdated broad landing instructions. If
-needed, extract only relevant fix evidence into the current verification notes
-after checking it against the candidate. Keep the old branch intact during
-that accounting.
-
-An earlier security review of a previous snapshot found ordinary token copies
-that were not zeroized, an incomplete exact-source 401 reread, possible
-credential fallback after a selected-source cache miss, incomplete service
-validation, an unwired collector approval gate, and a Claude Code user agent.
-Port agents report corrective changes for those findings in the current
-worktree. They remain historical findings pending compile, focused offline
-tests, and independent re-review; do not describe them as confirmed current
-defects or as verified fixes.
-
-The new pair-command integration session, bootstrap fixture disposition,
-current CLI/auth compilation, branch-proof review, installed-fixture
-verification, and remaining Required-review dispositions remain pending; the
-broker and protocol runs passed. The
-telemetry gate reports eight unchanged baseline literals in
-`/private/tmp/jackin-main-telemetry-gate.log`; these findings have no broad
-fix or waiver. Any canonical tag for the consolidated port remains pending
-until that port is verified and its ownership/reconciliation review is
-complete.
-
-### Historical branch-port queue
-
-The checkboxes below preserve statuses from that earlier branch audit. They
-are not the current delivery checklist; use the queue under “Current delivery
-checkpoint” above for present status.
-
-- [done] Confirm the local Cargo wrapper path and MBX 1.22.0 route; PR #1120
-  is not needed to enable MBX on main and remains open/draft with failed
-  required checks. See [mbx-prerequisite.md](mbx-prerequisite.md).
-- [done] Record scoped MBX tests: Claude usage 23/0, coordinator 54/0,
-  consumer compilation run 5 passed, privacy CLI 43 passed, app suite 29
-  passed, consent/429 tests 25 passed, protocol 133 passed, and broker final 7
-  173 passed. The consent/429 run used a changed-service compile input; none
-  of these scoped gates substitutes for final-pair, integration, or install
-  proof.
-- [done] Capture MBX consumer compilation run 5: binary and library targets in
-  `jackin`, `usage-ffi`, `runtime`, and `capsule` passed; see
-  `/private/tmp/jackin-mbx-consumers-check-5.log`.
-- [done] Follow-up fixes `22ed2576`, `f6c3c8b6`, and `a3ecdf62` are pushed,
-  including first-success consent revocation and persisted-policy changes.
-  Latest source commit `c18cdbf` awaits push confirmation from session `67152`.
-- [done] Broker final 7 passed 173 tests, 0 failures, with no input-modified
-  warnings; socket, legacy-format, and model-evidence tests passed. See
-  `/private/tmp/jackin-mbx-broker-tests-final-7.log`.
-- [done] Protocol suite passed 133 tests through MBX; see
-  `/private/tmp/jackin-mbx-protocol-final.log`.
-- [ ] Capture integration session `41433` after the new pair commands finish.
-  Earlier broker installation passed 5/5 and lifecycle passed 2/2; the
-  bootstrap stale expected-unmapped failure still needs disposition.
-- [ ] Complete branch-proof review; source reviews for privacy, rate, policy,
-  and socket behavior are Ready only within their stated limits.
-- [done] Scoped CLI privacy suite (43/0), app suite (29/0), and consent/429
-  tests (25/0) passed through MBX. The consent/429 compile used a changed
-  service; auth source was unchanged after that run, but this is not final-pair
-  or installed-artifact proof.
-- [ ] Verify the current CLI/auth test compilation against the latest source
-  commit and record its exact command and result; scoped passes above do not
-  establish a final paired build.
-- [done] Regenerate MDX and verify docs: 18 tests, 1,293 HTML pages,
-  and HTML/hydrated rendering passed; screenshot paths are recorded above.
-- [done] Complete source reviews for privacy/rate/policy/socket behavior; the
-  Ready verdict is bounded by the reviewers' stated limits. Branch-proof
-  review and verification of final integration behavior remain pending.
-- [ ] Record disposition of the bounded source-only Rust finding and re-fetch
-  reviews, comments, replies, outdated/unresolved threads, and checks at PR
-  #1120's current head. It remains open/draft with Plan and Required failing.
-- [ ] Do not merge PR #1120 merely to enable MBX. Consider it only if a
-  separate integration audit requires its changes, and then only after all
-  review findings and required checks are resolved and verified.
-- [ ] Integrate the usage candidate with the resulting main branch and pass
-  the required main-integration gates before the usage PR can land.
-- [x] Historical predecessor milestone: the v7 protocol contract was frozen
-  independently of callback input v2. Checkpoint `fa7f2f0e` is pushed; 129
-  offline protocol tests passed. See [protocol-v7-verification.md](protocol-v7-verification.md).
-  This is v7 evidence only; it does not verify the current v8 candidate.
-- [ ] Verify the reported baseline port and reconcile any remaining
-  independent-review findings before treating the current source tree as a
-  candidate.
-- [ ] Verify foreground auth ownership, exact-service zeroizing cache,
-  lease/TTY/no-UI ordering, conflict behavior, and cache cleanup.
-- [ ] Verify the confirmed provider-account mapping and default-off
-  `--experimental-collector`, including explicit binding-level approval and
-  presence in the local split artifact.
-- [ ] Verify that only the selected scope uses persisted rate limits, an
-  honest user agent, and the reviewed same-source 401 behavior.
-- [ ] Finish and verify the in-flight V1/V2/V3-to-V4 migration. Source review
-  is ready after source validation and nested-schema malformed-input and
-  unchanged-bytes negative checks; still verify runtime behavior while
-  preserving existing goals, strict policy, baselines, spend history,
-  action/event sequences, evidence ages, cooldowns, and unknown/latched state
-  while leaving new mappings/opt-ins empty.
-- [ ] Complete remaining independent security/rate/contract reviews and
-  offline fake coverage; verify actual help, JSON, and exit behavior from a
-  fresh build.
-- [ ] Build/install the exact local artifact and run its isolated fixture.
-  Update handoff evidence only from those results; do not perform live account
-  or provider checks under this task.
-- [ ] Reconcile docs and review the final main-port diff. Prepare/refresh the
-  usage PR only after the source, review, test, install, and main-integration
-  gates are recorded; re-fetch comments, threads, and required checks before
-  landing. Do not mark the PR complete before that evidence exists.
-- [ ] Finish the file/commit-level reconciliation of predecessor and agent
-  work; review the single-branch result before considering the preserved
-  predecessor branch for any cleanup.
-
-## Historical predecessor progress — 2026-10-10
-
-- The usage command page and this feature's planning/evidence files are being
-  ported onto main at `868ce535`; unrelated rollout documentation is excluded.
-- Three independent-review fixes remain pending. The current main-port source
-  has not been built or fixture-smoked as an installed pair; no current-port
-  verification or readiness claim is available.
-- The installed pair built from predecessor source `4492d3cb` passed its
-  synthetic fixture twice. Keep that result as historical predecessor evidence;
-  it does not validate the main-port source.
-- No real-account callback, operator setup, native Keychain, or live provider
-  check is verified. Rebuild and rerun the private fixture after review fixes
-  are addressed before updating this status.
-- The queue and checkpoints below record predecessor-branch implementation
-  history; their completed states do not mean the main-port candidate is ready.
-
 ## Safety boundary
 
 Work starts read-only. Implementation and verification use isolated state and
@@ -313,7 +7,7 @@ fixtures. Do not access live provider endpoints or Keychain, invoke Claude,
 modify Claude auth/settings, kill sessions, or mutate their worktrees.
 All delegated work uses GPT-6-Luna at max reasoning.
 
-## Predecessor implementation queue (historical)
+## Queue
 
 - [done] Research shipped provider/auth, broker/coordinator, CLI/consumers,
   and official statusline contracts independently.
@@ -337,7 +31,7 @@ paths here as they become available. Historical plans are not implementation pro
 
 ## Implementation boundary and contract
 
-Predecessor implementation checkout: `/tmp/jackin-claude-monitor` (branch
+Implementation checkout: `/tmp/jackin-claude-monitor` (branch
 `claude-unattended-monitor`, base `ff9eb01f`). The original checkout is clean;
 a read-only process check found Claude running, so all edits/builds remain in
 the isolated checkout. No live auth, Keychain or provider checks are authorized.
@@ -375,10 +69,9 @@ fields remain unknown. Session list-price cost is not billing evidence.
 - statusline_docs: composition helper and official input contract documentation.
 - security_review: independent read-only security review.
 
-## Historical predecessor checks
+## Verified so far
 
-- Historical direct-Cargo check `cargo check --offline -p jackin-protocol`:
-  passed.
+- `cargo check --offline -p jackin-protocol`: passed.
 - Protocol monitor contract fixtures: 4 tests passed (agent report).
 - Original worktree status after moving our newly created files: clean.
 
@@ -458,11 +151,11 @@ fields remain unknown. Session list-price cost is not billing evidence.
   allocation zeroization (including malformed bytes and whitespace). This is
   static and fake-adapter evidence; live ACLs/provider availability are untested.
 
-## Historical predecessor final gate queue
+## Final gate queue
 
-- At that checkpoint, implementation owners were frozen after mechanical lint
-  refactors. The offline verifier owned sequential Cargo gates; security, rate
-  and contract reviewers independently inspected that source snapshot.
+- Implementation owners are frozen after mechanical lint refactors. Offline
+  verifier owns sequential Cargo gates; security, rate and contract reviewers
+  independently inspect the current code.
 - Final audit found normal desktop refresh could still poll Claude accounts.
   The production executor now rejects every Claude probe before cache lookup
   or fallback rediscovery; there is no enabled OAuth opt-in command. Other
@@ -637,7 +330,7 @@ record real SGD evidence before monitor creation and disclose pre-monitor
 spend. No product code changed. The durable proof and handoff are committed
 and published with this verification checkpoint.
 
-## Historical predecessor observation and policy implementation — 2026-10-10
+## Observation and policy implementation — verified 2026-10-10
 
 Objective: implement the full attached tracker goal, keeping collection separate
 from dispatch and preserving strict SGD semantics until explicit operator approval.
@@ -664,10 +357,9 @@ idle/restart/sleep persistence and all existing provider/freshness/reset/spend
 regressions. Real-account integration will be distinguished from fixture proof;
 the operator-controlled adapter installation remains outside authorized edits.
 
-Historical pre-MBX baseline on `cc4a0cb0`: the direct-Cargo command
-`cargo test --offline --locked -p jackin-usage-broker -p jackin-protocol -p
-jackin-usage-coordinator` passed 274 tests with one pre-existing ignored test.
-This is baseline evidence, not v2 proof or current run guidance.
+Baseline on `cc4a0cb0`: `cargo test --offline --locked -p
+jackin-usage-broker -p jackin-protocol -p jackin-usage-coordinator` passed 274
+tests with one pre-existing ignored test. This is baseline evidence, not v2 proof.
 
 Verification tooling incident: the read-only verification agent invoked
 `mise exec --deny-net -- mbx --help`, which activated a missing configured
@@ -675,16 +367,12 @@ Verification tooling incident: the read-only verification agent invoked
 traffic. The confirmed installer process tree was terminated; no Claude process
 or project package build was stopped. Tool cache mutation and network traffic
 occurred; exact external request count is unknown. This run is not wholly
-offline. No provider, auth or Keychain verification occurred. As an
-incident-specific workaround, that historical verification run avoided Mise
-and used direct offline Cargo. Do not reuse that workaround as a run
-instruction; the current MBX contract at the top of this file supersedes it
-and disables Mise automatic installation on every invocation.
-Future verification reports must distinguish this tooling traffic from
-fixture provider/credential counters.
+offline. No provider, auth or Keychain verification occurred. Do not activate
+Mise again; use direct offline Cargo commands. Future verification reports must
+distinguish this tooling traffic from fixture provider/credential counters.
 
-Historical V2 intermediate checks: protocol passed 132 tests with one
-pre-existing ignored test; Claude provider passed 37 tests, including changed/unchanged fake-source
+V2 intermediate checks: protocol passed 132 tests with one pre-existing ignored
+test; Claude provider passed 37 tests, including changed/unchanged fake-source
 401 behavior. Direct Cargo used `--offline --locked`. The combined provider/relay
 run reached the unfinished broker migration and failed compilation; it is not
 a passing gate. Engine ownership is addressing the reported borrow/type errors.
@@ -710,8 +398,7 @@ retain their evidence age. Latest protocol gate passed 134 tests, one ignored.
 The provider-core/discovery/resolver gate passed 139 tests with 83 filtered cases;
 fake Keychain evidence remains distinct from live macOS verification.
 
-Historical V2 integrated-gate record: a direct offline Cargo all-target CLI
-check passed; this is not a current run instruction or main-port gate claim.
+V2 integrated gate update: direct offline Cargo all-target CLI check passed.
 Protocol now passes 135 cases (one existing ignored), relay 20. Broker passes
 119/120; the outstanding test expects PolicyConflict for an unapproved
 revision but the broker returns PolicyRequired. Fixture semantics are under
@@ -828,6 +515,94 @@ existing Claude goal has quota-only approval, and no strict policy can downgrade
 On that external blocker Claude should checkpoint, report and exit its goal;
 there is no unattended doctor loop or promised automatic reinvocation.
 
+## Main ancestry content reconciliation — 2026-10-11
+
+The target branch is being reconciled with main at `1c3dd1be4a3b1ed518133ec3899c084c792370ff`.
+The source changes are already represented by grouped target commits; the merge
+must not restore the retired flat `crates/jackin-usage` implementation or its old
+binary test path.
+
+- PR #1123 source merge `835df8071da4b2802eef8619250e3c6b5bbfb4a6`
+  (source head `f04400b4b27ab1e2d93e4caec9dd3addad6e3146`) maps to grouped
+  target commit `06afe425553d2cfe8e56fe26c8b3fe233d51c81d` and its follow-up
+  zeroization/import fixes. The bounded, TTY-only malformed-auth diagnostic,
+  independent subscription/tier parsing, redaction, one-read behavior, and
+  malformed-path no-collection behavior are in the provider, broker, and app
+  paths. The source `auth-malformed-diagnostic.md` is retained as operator
+  guidance; source installation snapshots v4-v6 are retained only as historical
+  provenance, not as validation of this grouped target.
+- PR #1124 source commit `67f77ac01a160335a7b2ca1c101112034b4f5fc9`, merged
+  by `1c3dd1be4a3b1ed518133ec3899c084c792370ff`, maps to grouped target commit
+  `b23144dae7bfa3e8a3e577629088dec1b4711d6e`. A foreground broker remains alive
+  while its authenticated foreground guard is held; passive idle exit and
+  active-monitor behavior remain unchanged. Source installation snapshot v7
+  is historical evidence only and does not qualify the grouped target.
+- The content map is: source `crates/jackin-usage/src/usage.rs` maps to grouped
+  provider re-exports in `crates/services/jackin-usage-provider-claude/src/lib.rs`;
+  source `usage/claude.rs` maps to provider `credentials.rs`, `lease.rs`, and
+  `payload_diagnostic.rs`; source `usage/claude/auth_diagnostic_tests.rs` maps
+  to `payload_diagnostic/tests.rs`; and source `usage/claude/lease/tests.rs`
+  maps to provider `lease/tests.rs`. The source `crates/jackin-usage/Cargo.toml`
+  dependency feature maps to the provider `Cargo.toml`, where `raw_value` is
+  used. Source broker service/tests map to
+  `crates/services/jackin-usage-broker/src/service.rs` and its test modules;
+  the old CLI binary/tests map to `crates/apps/jackin/src/bin/usage-broker/`.
+  Source `serve_loop.rs` and its tests map to grouped `serve.rs` and
+  `serve/tests.rs`. These grouped files remain the implementation and
+  regression-test paths.
+- Source plan changes are preserved as this ledger's mapping and in the v4-v7
+  evidence files, with their original MBX 1.22/Rust 1.97 tool context clearly
+  treated as historical. They do not replace the current wire-v8, MBX 1.23,
+  Rust 1.99 target verification state.
+
+The retired flat source implementation and test paths remain deleted.
+The moved `serde_json` `raw_value` feature remains on the grouped Claude provider,
+where the parser uses it; no unused edge is added back to `jackin-usage`. This
+reconciliation is a source-content port and ancestry merge, not new test or
+installation evidence. No post-merge test run is claimed here.
+
+## PR #1121 current gate checkpoint — 2026-10-11
+
+The live PR remains open and draft at remote head
+`0a181fd517f7863319c0fbf5c16d1f581922c99b`. The latest observed CI run is
+`38090648346` on that exact head. Actionlint, Plan, and Required failed; all 27
+Rust package jobs and baseline publication were skipped. The setup/Plan failure
+is the stale generated Velnor workflow/tool-pin state recorded above, not a
+successful validation of the newly imported task contract. DCO also remains
+failed. Do not describe the PR as green or merge-ready.
+
+The private candidate now contains two additional test-only commits on top of
+that remote head: `070034b6436f4e5fc1b9b7c2516eaadcc89eea8d` binds the native
+task to the root and native Mise lock inputs, and
+`7f21345fccf5485f0f9ec2838fe58238c3809a3f` binds the native lock path to its
+digest. The exact `ci_contract` selectors are
+`required_fan_in_covers_every_workspace_crate_and_configured_task`,
+`configured_verification_jobs_are_isolated_and_run_only_the_declared_mise_task`,
+`configured_native_build_is_mac26_bounded_locked_and_mbx_routed`, and
+`architect_manifest_snapshot_is_bound_to_an_immutable_source_commit`. They
+remain pending until owner-v1 regeneration is integrated; the current generated
+tree lacks the execution manifest and omits the four configured task IDs.
+
+The imported Usage port is mapped by
+`/private/tmp/jackin-usage-commit-manifest-468-to-2edeeaa.json` (SHA-256
+`a790bb36aa6a349212f2c791f9ab26832c47e7f48e1db4944c8f1e8ab5f1d58f`). It maps
+the ordered 17-commit source chain from target base
+`468c6a4e2f321e134992452e1191ddd49955e946` through source head
+`2edeeaa826dc4d7081c94c766fad7d3a6ed786e8`, preserving grouped paths and
+source provenance. The source gate passed 9/9 in Nextest run
+`7583e0a4-70b1-4068-8b51-c6525311a165`; this is source-chain evidence, not a
+test run on the current Jackin PR head. The native operator guard has static
+and mocked checks only; the required macOS 26/Xcode/OrbStack acceptance remains
+pending.
+
+At 2026-10-11, Velnor PR #144 is still a separate open draft. Its last observed
+remote head is `3f92d889c95e99d93d188d8240e942bc6ea34f85`; CI run
+`38091798665` failed on that head. The local, unpushed continuation is at
+`11418b9f12914a875e9fc7712b87a96c29dc3bd0` and has not yet completed the
+combined Clippy/test gate. No stable Velnor 0.1.7 release is available; the
+latest published 0.1.7 item observed was a prerelease. These pending Velnor
+checks do not change the recorded source-only 9/9 Usage result.
+
 Final handoff review requested two documentation repairs: scope unknown-spend
 pause explicitly to strict-SGD, and record both pre/post smoke script hashes.
 Both are fixed and installed copies synchronized. Source401 evidence is described
@@ -844,3 +619,114 @@ read or changed. Corrected installed smoke passed again with zero credential
 tripwire/proxy counts and owned cleanup. Manifest/log/schema examples updated
 from this fresh run; real-account prerequisites and dispatch approval remain
 unverified. The correction and evidence are committed/pushed as one checkpoint.
+
+## PR #1121 check result follow-up — 2026-10-11
+
+Run `38094316284` completed on head `7c82463b25fc0ab1702add50226d9cbbc71507a0`
+with failure: Actionlint, Plan, and Required failed, all 27 Rust package jobs
+and baseline publication were skipped, and DCO failed. The failed Actionlint
+and Plan jobs both stop in Setup Mise: the action installs 2026.9.18 while the
+checked-in config requires 2026.10.7. This confirms the PR still has no current
+full-CI success; the new contract tests remain unexecuted because the generated
+workflow is not yet the owner-v1 task-manifest output.
+
+## Live PR and focused fixture checkpoint — 2026-10-11
+
+At 00:31 UTC, PR #1121 is still OPEN/DRAFT at
+`c7a7f1b2866f1b54b72abe438967662a2de035a9` on `rust-policy-rollout`, based on
+main `1c3dd1be4a3b1ed518133ec3899c084c792370ff`. Its latest run,
+[38094607092](https://github.com/jackin-project/jackin/actions/runs/38094607092),
+failed Plan, Actionlint, and Required; all 27 Rust package jobs and baseline
+publication were skipped, and DCO was `action_required`. The latest API review
+refresh found no reviews, inline review comments, or review threads; one older
+bot issue comment remains.
+This run is not a validation of the local changes recorded below.
+
+The separate Velnor PR #144 is OPEN/DRAFT at remote head
+`b9ea8d2dff3c1b1eb119aee8be9964aeb24ccd61`, based on main
+`b7b3da582aa8042f7a465ec0cdfc794eb9a90c35`. Its latest run,
+[38097357540](https://github.com/tailrocks/velnor-new/actions/runs/38097357540),
+completed with 9 of 13 Rust jobs passing and four failing: CLI, workflow
+renderer, orchestrator, and Mise. Plan, Cargo Machete, Alint, Actionlint,
+Cargo Deny, Zizmor, and maintenance helpers passed; Required failed and baseline
+publication was skipped. The PR has no reviews, inline comments, issue
+comments, or review threads. Main has not moved on either repository.
+
+The local Velnor candidate at
+`5ca22ba30b5dcbd1cdc64d0c7bd9b08bf042073b` / tree
+`64fb1b35d11681a13081570bd544f3c6de08dd09` contains three fixture-only
+follow-ups on top of remote #144: the Rust 1.99 qualified target expectation,
+the matching attach fixture pin, and the renderer fixture's current Rust/MBX
+pins. A focused Nextest inventory over the Mise, orchestrator, and workflow
+renderer packages contained 2,482 cases. The four exact cases corresponding to
+the failed remote jobs passed locally in run
+`4a9ad639-d766-4e31-9d03-c72edfbc9d57` (4 passed, 1,356 skipped):
+`impl_mise_catalog::rust_toolchain_name_pins_version_and_target`,
+`attach::attach_tests::mbx_tests::preseed_restores_mbx_builds_after_sources_with_homes`,
+`verification_jobs::workflow_task_jobs::tests::mixed_variants_validate_and_join_required_fan_in`,
+and
+`verification_jobs::workflow_task_jobs::tests::undeclared_task_prefixed_jobs_fail_closed`.
+This is targeted local fixture evidence only; the PR's hosted checks remain
+failed at the older remote head, and the action-owned MBX metadata guard is
+still in progress. No full workspace test result or native-host acceptance is
+claimed.
+
+## Live CI and MBX cleanup correction — 2026-10-11 03:17 UTC
+
+PR #1121 remains OPEN/DRAFT at head
+`60f86955b28fd7683bca44ba8dfe2152820f7f77`, based on main
+`1c3dd1be4a3b1ed518133ec3899c084c792370ff`. Its latest run,
+[38098781455](https://github.com/jackin-project/jackin/actions/runs/38098781455),
+failed Actionlint, Plan, and Required; 27 Rust package jobs and baseline
+publication were skipped. The Actionlint and Plan logs show Setup Mise
+installing 2026.9.18 while the repository pins 2026.10.7. DCO remains
+`ACTION_REQUIRED`; no sign-off rewrite is represented as completed. This is
+not a current full-CI success.
+
+Velnor PR #144 is OPEN/DRAFT at head
+`cf43ae442b64cfdb087dc79947e963db732be468`, based on main
+`b7b3da582aa8042f7a465ec0cdfc794eb9a90c35`. Its prior run,
+[38107331906](https://github.com/tailrocks/velnor-new/actions/runs/38107331906),
+failed Plan while running generated `Clean MBX workspace outputs`: it invoked
+`mbx +1.99.0 clean`, and MBX 1.23.0 rejects the Rust selector because clean
+does not compile. The narrow source fix removes that selector from both the
+shared workspace-clean step and the schema2 MBX qualification cleanup. It
+keeps the Rust-only Mise environment and absolute action-owned MBX path; build
+commands retain `+1.99.0`.
+
+The fix is source commit `0cb04698dbff145805d0a7ba50bb08857501da50` and its
+rendered-test expectation update is `08d5479e938ff1bdd4f1861f168a832eceb4e8b8`.
+The generated workflow refresh is `cf43ae442b64cfdb087dc79947e963db732be468`.
+Pinned local MBX 1.23.0 smoke confirmed that `mbx clean` under
+`mise exec rust@1.99.0 -- <absolute-mbx> clean` exits 0 in a temporary Cargo
+workspace with no managed target, while `mbx +1.99.0 clean` reproduces the CI
+error. Four focused renderer tests passed in Nextest run
+`63e3f0b1-9320-4411-9600-debc43937d0e`; renderer all-target Clippy with
+`-D warnings`, formatter, diff check, and Actionlint 1.7.12 passed.
+
+The final pre-commit source for generation was
+`08d5479e938ff1bdd4f1861f168a832eceb4e8b8`, tree
+`0e3df4b2dc16ececb845d04bea32665847f21e75`. Its debug CLI build is bound by
+`/private/tmp/velnor-cli-build-08d.receipt.json` (SHA-256
+`af28f82bdd327f0e02aefb76bdf2ea949009af3cddbeaac51ecfe7342e0337f7`) to
+binary SHA-256
+`fecad7e11ee4feb2d4731cfe361788f94599c07cbc38594fc195eb2faedac522`.
+Generation receipt `/private/tmp/velnor-generate-08d.receipt.json` (SHA-256
+`d2699402accf455f252139fea6b71c5f13ef135c07f52a5f79792317f6e84b19`) records
+29/29 source paths and the two expected output deltas in `ci.yml` and
+`qualification.yml`. Independent review confirmed the diff removes only
+`+1.99.0` from the 14 CI and 2 qualification cleanup commands; MBX authority,
+Rust-only Mise selection, path checks, status propagation, and compile
+selectors remain. The new Velnor CI run on `cf43ae442b64cfdb087dc79947e963db732be468`
+was queued at 2026-10-11 03:16 UTC; its outcome is pending at this checkpoint.
+No full hosted-CI success or merge readiness is claimed.
+
+## Velnor follow-up and live PR checkpoint — 2026-10-11 03:33 UTC
+
+Jackin PR #1121 remains OPEN/DRAFT at `d9f02a5711f53169791e143f0c3268717b5ba0f3`. Its latest observed run, [38107965417](https://github.com/jackin-project/jackin/actions/runs/38107965417), completed with Actionlint and Plan failing during Setup Mise: the action attempted Mise 2026.9.18 while the repository requires 2026.10.7. All 27 Rust package jobs and baseline publication were skipped; Required failed while merging unavailable reports. DCO remains `ACTION_REQUIRED`. This run provides no full-PR validation.
+
+Velnor PR #144 is OPEN/DRAFT at `72de702b7b56b46caa95c023139fda1b2baf3111`, tree `79e0c975943ab8de34e4e9ebb6fee1742cf3ebef`, based on main `b7b3da582aa8042f7a465ec0cdfc794eb9a90c35`. Run [38108658503](https://github.com/tailrocks/velnor-new/actions/runs/38108658503) is still in progress on that exact head. Actionlint, Alint, Cargo Deny, Cargo Machete, and Zizmor have passed. Plan is compiling the pre-seed helper after successful Mise setup, Rust preflight, native MBX version verification, and source fetch; no Required or full Rust result is available yet.
+
+The new Velnor head adds three scoped commits after `cf43ae442b64cfdb087dc79947e963db732be468`: `54c041b01efc3f6cf1e0b521494420577df04f48` updates only the two stale `+1.99.0 clean` occurrences in the multi-crate parity golden; `fb2a479c6f923c1e864ebbcf45add8f68e9a7cc0` imports the reviewed exact action-owned MBX route expectation in the product-release pins test; `72de702b7b56b46caa95c023139fda1b2baf3111` updates the Mise source inventory test and moves its filesystem fixture outside scanned source. The earlier run [38107851301](https://github.com/tailrocks/velnor-new/actions/runs/38107851301) had the parity, orchestrator expectation, and Mise source-inventory failures; these are the scoped changes above, not evidence of a full pass.
+
+Local checks on the current Velnor source passed: the CLI parity test passed in update mode with only the two expected cleanup-token changes, then passed again without update mode; the exact Mise focused inventory ran 3/3 (421 skipped) in Nextest run `0daa1cdb-29c2-4269-8d01-fe6c57ec70b0`; the exact orchestrator release-pins test ran 1/1 (720 skipped) in run `eaf2f074-8906-4c4c-a5f0-736e9bee4be1`; strict all-target Clippy with `-D warnings` passed for the Mise and orchestrator packages and dependencies. These are focused local checks. They do not replace the pending hosted run or establish full-workspace success.

@@ -1,0 +1,306 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+set -euo pipefail
+
+source_commit="${VELNOR_SOURCE_COMMIT:?missing VELNOR_SOURCE_COMMIT}"
+case "$source_commit" in
+  ''|*[!0-9a-f]*) echo "source commit is not lowercase hex: $source_commit" >&2; exit 1 ;;
+esac
+[ "$(printf '%s' "$source_commit" | wc -c | tr -d ' ')" = 40 ]
+[ "$(git rev-parse HEAD)" = "$source_commit" ]
+
+source_ref="${VELNOR_SOURCE_REF:?missing VELNOR_SOURCE_REF}"
+[ "$source_ref" = "refs/heads/main" ] || { echo "preview source ref must be refs/heads/main: $source_ref" >&2; exit 1; }
+source_repository="jackin-project/jackin"
+origin_url="$(git remote get-url origin)"
+case "$origin_url" in
+  https://github.com/jackin-project/jackin|https://github.com/jackin-project/jackin.git|git@github.com:jackin-project/jackin|git@github.com:jackin-project/jackin.git|ssh://git@github.com/jackin-project/jackin|ssh://git@github.com/jackin-project/jackin.git) ;;
+  *) echo "preview source origin is not $source_repository: $origin_url" >&2; exit 1 ;;
+esac
+[ -z "$(git status --porcelain=v1 --untracked-files=all)" ] || {
+  echo "preview source checkout must be clean" >&2
+  exit 1
+}
+base_version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
+case "$base_version" in
+  ''|*[!0-9.]*|.*|*.|*..*) echo "workspace version is not X.Y.Z: $base_version" >&2; exit 1 ;;
+esac
+case "$(printf '%s' "$base_version" | tr -cd '.')" in
+  '..') ;;
+  *) echo "workspace version is not X.Y.Z: $base_version" >&2; exit 1 ;;
+esac
+short_commit="$(printf '%s' "$source_commit" | cut -c1-7)"
+commit_count="$(git rev-list --count "$source_commit")"
+case "$commit_count" in
+  ''|*[!0-9]*) echo "invalid source commit count: $commit_count" >&2; exit 1 ;;
+esac
+version="${base_version}-preview.${commit_count}+${short_commit}"
+
+package_dir="${VELNOR_VERIFIED_PACKAGE_DIR:?missing VELNOR_VERIFIED_PACKAGE_DIR}"
+runner_temp="${RUNNER_TEMP:?missing RUNNER_TEMP}"
+case "$runner_temp" in
+  /*) ;;
+  *) echo "RUNNER_TEMP must be an absolute path: $runner_temp" >&2; exit 1 ;;
+esac
+[ -d "$runner_temp" ] || { echo "RUNNER_TEMP is not a directory: $runner_temp" >&2; exit 1; }
+workspace_root="$(pwd -P)"
+runner_temp="$(cd -- "$runner_temp" && pwd -P)"
+case "$runner_temp" in
+  "$workspace_root"|"$workspace_root"/*)
+    echo "RUNNER_TEMP must not be inside the source checkout: $runner_temp" >&2
+    exit 1
+    ;;
+esac
+run_id="${GITHUB_RUN_ID:?missing GITHUB_RUN_ID}"
+run_attempt="${GITHUB_RUN_ATTEMPT:?missing GITHUB_RUN_ATTEMPT}"
+case "$run_id:$run_attempt" in
+  ''|*[!0-9:]*) echo "GitHub run identity is not numeric" >&2; exit 1 ;;
+esac
+workspace="${GITHUB_WORKSPACE:?missing GITHUB_WORKSPACE}"
+workspace_real="$(cd -- "$workspace" && pwd -P)"
+[[ "$workspace_real" = "$(pwd -P)" ]] || {
+  echo "GITHUB_WORKSPACE differs from the active source checkout" >&2
+  exit 1
+}
+package_relative="${PACKAGE_DIR:?missing PACKAGE_DIR}"
+expected_package_dir="$workspace_real/$package_relative"
+[ "$package_dir" = "$expected_package_dir" ] || {
+  echo "VELNOR_VERIFIED_PACKAGE_DIR must equal the declared handoff $expected_package_dir" >&2
+  exit 1
+}
+[[ "$package_relative" != /* && "$package_relative" != *//* && "$package_relative" != */ && "$package_relative" != *\\* ]] || {
+  echo "PACKAGE_DIR must be a normalized relative path" >&2
+  exit 1
+}
+IFS='/' read -r -a handoff_segments <<< "$package_relative"
+handoff_parent="$workspace_real"
+for segment in "${handoff_segments[@]}"; do
+  [[ -n "$segment" && "$segment" != . && "$segment" != .. ]] || {
+    echo "PACKAGE_DIR contains an invalid path component" >&2
+    exit 1
+  }
+  candidate="$handoff_parent/$segment"
+  [[ ! -L "$candidate" ]] || { echo "package handoff contains a symlink" >&2; exit 1; }
+  [[ -d "$candidate" ]] || { echo "declared package handoff does not exist" >&2; exit 1; }
+  handoff_parent="$candidate"
+done
+[[ -d "$package_dir" && ! -L "$package_dir" ]] || {
+  echo "declared package handoff is missing or a symlink" >&2
+  exit 1
+}
+if ! git check-ignore -q -- "$package_relative"; then
+  echo "declared package handoff must be ignored by the source checkout" >&2
+  exit 1
+fi
+shopt -s dotglob nullglob
+for handoff_entry in "$package_dir/"*; do
+  if [[ -e "$handoff_entry" || -L "$handoff_entry" ]]; then
+    echo "declared package handoff is not empty; refusing stale or partial output" >&2
+    exit 1
+  fi
+done
+
+scratch_dir="$runner_temp/package-release-scratch-${run_id}-${run_attempt}"
+if [[ -e "$scratch_dir" || -L "$scratch_dir" ]]; then
+  echo "package scratch already exists; refusing to remove a pre-existing path" >&2
+  exit 1
+fi
+mkdir -m 700 -- "$scratch_dir"
+scratch_owned=1
+handoff_copy_started=0
+handoff_created=()
+cleanup_package_scratch() {
+  local status=$?
+  trap - EXIT INT TERM
+  if (( status != 0 && handoff_copy_started )); then
+    for name in "${handoff_created[@]}"; do
+      if ! rm -f -- "$package_dir/$name"; then status=1; fi
+    done
+  fi
+  if (( scratch_owned )); then
+    if ! rm -rf -- "$scratch_dir"; then status=1; fi
+  fi
+  exit "$status"
+}
+trap cleanup_package_scratch EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+archive_root="$scratch_dir/archives"
+mkdir -p -- "$archive_root/jackin" "$archive_root/capsule"
+staged_package_dir="$scratch_dir/verified-package"
+mkdir -m 700 -- "$staged_package_dir"
+
+package_sha256() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk 'NR == 1 {print $1}'
+  else
+    shasum -a 256 "$1" | awk 'NR == 1 {print $1}'
+  fi
+}
+
+export CARGO_TARGET_DIR="$scratch_dir/target"
+cargo xtask release-archives \
+  --package jackin \
+  --version "$version" \
+  --output-dir "$archive_root/jackin"
+cargo xtask release-archives \
+  --package jackin-capsule \
+  --version "$version" \
+  --output-dir "$archive_root/capsule"
+
+cp "$archive_root/jackin/"*.tar.gz* "$staged_package_dir/"
+cp "$archive_root/capsule/"*.tar.gz* "$staged_package_dir/"
+
+payloads=(
+  jackin-aarch64-apple-darwin.tar.gz
+  jackin-x86_64-apple-darwin.tar.gz
+  jackin-aarch64-unknown-linux-gnu.tar.gz
+  jackin-x86_64-unknown-linux-gnu.tar.gz
+  jackin-capsule-aarch64-unknown-linux-gnu.tar.gz
+  jackin-capsule-x86_64-unknown-linux-gnu.tar.gz
+)
+supporting_assets=(
+  jackin-aarch64-apple-darwin.tar.gz.sha256
+  jackin-aarch64-apple-darwin.tar.gz.bundle
+  jackin-aarch64-apple-darwin.tar.gz.sbom.json
+  jackin-x86_64-apple-darwin.tar.gz.sha256
+  jackin-x86_64-apple-darwin.tar.gz.bundle
+  jackin-x86_64-apple-darwin.tar.gz.sbom.json
+  jackin-aarch64-unknown-linux-gnu.tar.gz.sha256
+  jackin-aarch64-unknown-linux-gnu.tar.gz.bundle
+  jackin-aarch64-unknown-linux-gnu.tar.gz.sbom.json
+  jackin-x86_64-unknown-linux-gnu.tar.gz.sha256
+  jackin-x86_64-unknown-linux-gnu.tar.gz.bundle
+  jackin-x86_64-unknown-linux-gnu.tar.gz.sbom.json
+  jackin-capsule-aarch64-unknown-linux-gnu.tar.gz.sha256
+  jackin-capsule-aarch64-unknown-linux-gnu.tar.gz.bundle
+  jackin-capsule-aarch64-unknown-linux-gnu.tar.gz.sbom.json
+  jackin-capsule-x86_64-unknown-linux-gnu.tar.gz.sha256
+  jackin-capsule-x86_64-unknown-linux-gnu.tar.gz.bundle
+  jackin-capsule-x86_64-unknown-linux-gnu.tar.gz.sbom.json
+  SHA256SUMS
+  capsule-manifest.json
+  capsule-manifest.json.bundle
+)
+for payload in "${payloads[@]}"; do
+  test -s "$staged_package_dir/$payload"
+  test -s "$staged_package_dir/$payload.sha256"
+  test -s "$staged_package_dir/$payload.bundle"
+  test -s "$staged_package_dir/$payload.sbom.json"
+  expected="$(awk 'NR == 1 {print $1}' "$staged_package_dir/$payload.sha256")"
+  [[ "$expected" =~ ^[0-9a-f]{64}$ ]]
+  test "$(package_sha256 "$staged_package_dir/$payload")" = "$expected"
+  cargo xtask release-verify "$staged_package_dir/$payload" --skip-attestation
+done
+
+for payload in "${payloads[@]}"; do
+  printf '%s  %s\n' "$(package_sha256 "$staged_package_dir/$payload")" "$payload"
+done > "$staged_package_dir/SHA256SUMS"
+
+jq -n \
+  --arg version "$version" \
+  --arg arm64 "$(awk 'NR == 1 {print $1}' "$staged_package_dir/jackin-capsule-aarch64-unknown-linux-gnu.tar.gz.sha256")" \
+  --arg x86 "$(awk 'NR == 1 {print $1}' "$staged_package_dir/jackin-capsule-x86_64-unknown-linux-gnu.tar.gz.sha256")" \
+  '{version: $version, targets: {"aarch64-unknown-linux-gnu": $arm64, "x86_64-unknown-linux-gnu": $x86}}' \
+  > "$staged_package_dir/capsule-manifest.json"
+cosign sign-blob \
+  --bundle "$staged_package_dir/capsule-manifest.json.bundle" \
+  --yes "$staged_package_dir/capsule-manifest.json"
+
+for supporting_asset in "${supporting_assets[@]}"; do
+  test -s "$staged_package_dir/$supporting_asset"
+done
+
+jq -n \
+  --arg version "$version" \
+  --arg source_commit "$source_commit" \
+  --arg source_ref "$source_ref" \
+  --arg source_repository "$source_repository" \
+  --arg schema "velnor.package-release.v1" \
+  --argjson assets "$(
+    for payload in "${payloads[@]}"; do
+      jq -n \
+        --arg name "$payload" \
+        --arg sha256 "$(awk 'NR == 1 {print $1}' "$staged_package_dir/$payload.sha256")" \
+        '{name: $name, sha256: $sha256}'
+    done | jq -s .
+  )" \
+  --argjson supporting_assets "$(
+    for supporting_asset in "${supporting_assets[@]}"; do
+      jq -n \
+        --arg name "$supporting_asset" \
+        --arg sha256 "$(package_sha256 "$staged_package_dir/$supporting_asset")" \
+        '{name: $name, sha256: $sha256}'
+    done | jq -s .
+  )" \
+  '{assets: $assets, schema: $schema, source_commit: $source_commit, source_ref: $source_ref, source_repository: $source_repository, supporting_assets: $supporting_assets, version: $version}' \
+  > "$staged_package_dir/release-manifest.json"
+
+payload_count="$(printf '%s\n' "${payloads[@]}" | wc -l | tr -d '[:space:]')"
+supporting_asset_count="$(printf '%s\n' "${supporting_assets[@]}" | wc -l | tr -d '[:space:]')"
+jq -e \
+  --arg schema "velnor.package-release.v1" \
+  --arg source_commit "$source_commit" \
+  --arg source_ref "$source_ref" \
+  --arg source_repository "$source_repository" \
+  --arg version "$version" \
+  --argjson payload_count "$payload_count" \
+  --argjson supporting_asset_count "$supporting_asset_count" \
+  'keys == ["assets", "schema", "source_commit", "source_ref", "source_repository", "supporting_assets", "version"] and
+   .schema == $schema and
+   .source_commit == $source_commit and
+   .source_ref == $source_ref and
+   .source_repository == $source_repository and
+   .version == $version and
+   (.assets | type == "array" and length == $payload_count and all(.[]; (keys == ["name", "sha256"] and (.sha256 | test("^[0-9a-f]{64}$"))))) and
+   (.supporting_assets | type == "array" and length == $supporting_asset_count and all(.[]; (keys == ["name", "sha256"] and (.sha256 | test("^[0-9a-f]{64}$")))))' \
+  "$staged_package_dir/release-manifest.json" >/dev/null
+for payload in "${payloads[@]}"; do
+  expected="$(package_sha256 "$staged_package_dir/$payload")"
+  jq -e --arg name "$payload" --arg sha256 "$expected" \
+    '[.assets[] | select(.name == $name and .sha256 == $sha256)] | length == 1' \
+    "$staged_package_dir/release-manifest.json" >/dev/null
+done
+for supporting_asset in "${supporting_assets[@]}"; do
+  expected="$(package_sha256 "$staged_package_dir/$supporting_asset")"
+  jq -e --arg name "$supporting_asset" --arg sha256 "$expected" \
+    '[.supporting_assets[] | select(.name == $name and .sha256 == $sha256)] | length == 1' \
+    "$staged_package_dir/release-manifest.json" >/dev/null
+done
+
+jq -n \
+  --arg source_digest "$source_commit" \
+  --arg source_ref "$source_ref" \
+  --arg source_repository "$source_repository" \
+  --slurpfile manifest "$staged_package_dir/release-manifest.json" \
+  '{manifest: $manifest[0], source_digest: $source_digest, source_ref: $source_ref, source_repository: $source_repository}' \
+  > "$staged_package_dir/identity.json"
+
+jq -e \
+  --arg source_digest "$source_commit" \
+  --arg source_ref "$source_ref" \
+  --arg source_repository "$source_repository" \
+  --slurpfile manifest "$staged_package_dir/release-manifest.json" \
+  'keys == ["manifest", "source_digest", "source_ref", "source_repository"] and
+   .source_digest == $source_digest and
+   .source_ref == $source_ref and
+   .source_repository == $source_repository and
+   .manifest == $manifest[0]' \
+  "$staged_package_dir/identity.json" >/dev/null
+
+# Verify the complete handoff, including the signed capsule manifest's target
+# bindings, before exposing the package to the workflow's publish steps.
+VELNOR_VERIFIED_PACKAGE_DIR="$staged_package_dir" cargo xtask release-verify-package
+
+# Promote only a completely verified package into the generator-owned handoff.
+handoff_copy_started=1
+for staged_file in "$staged_package_dir/"*; do
+  handoff_created+=("${staged_file##*/}")
+  cp -- "$staged_file" "$package_dir/"
+done
+cargo xtask release-verify-package
+
+printf 'version=%s\nsource_commit=%s\n' "$version" "$source_commit"

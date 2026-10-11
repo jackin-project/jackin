@@ -8,7 +8,7 @@ title: "Console Resource Panel (machine + per-agent live usage)"
 
 ## Shipped baseline
 
-jackin❯ already exports narrow process-local resource data that is not operator-facing. The Capsule daemon sampler in <RepoFile path="crates/jackin-capsule/src/daemon/resource_metrics.rs" /> records registered `process.cpu.time` and `process.uptime` metrics. The shared observability composition root in <RepoFile path="crates/jackin-diagnostics/src/observability.rs" /> records standard process CPU utilization and memory usage for the configured OTLP endpoint. Neither path is a per-agent or machine-summary view, and no `DockerApi` stats endpoint, console panel module, or panel keybinding exists anywhere in the tree today.
+jackin❯ already exports narrow process-local resource data that is not operator-facing. The Capsule daemon sampler in <RepoFile path="crates/apps/jackin-capsule/src/daemon/resource_metrics.rs" /> records registered `process.cpu.time` and `process.uptime` metrics. The shared observability composition root in <RepoFile path="crates/services/jackin-diagnostics/src/observability.rs" /> records standard process CPU utilization and memory usage for the configured OTLP endpoint. Neither path is a per-agent or machine-summary view, and no `DockerApi` stats endpoint, console panel module, or panel keybinding exists anywhere in the tree today.
 
 ## Remaining work
 

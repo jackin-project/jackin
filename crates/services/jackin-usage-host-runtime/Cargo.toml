@@ -1,0 +1,34 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "jackin-usage-host-runtime"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
+description = "Capsule-free host usage runtime for the macOS menu-bar app and CLI."
+license.workspace = true
+readme = "README.md"
+publish = false
+
+repository.workspace = true
+
+[lib]
+name = "jackin_usage_host_runtime"
+path = "src/lib.rs"
+
+[dependencies]
+jackin-protocol = { workspace = true }
+jackin-usage-broker = { workspace = true }
+jackin-usage-discovery = { workspace = true }
+jackin-usage-host-presentation = { workspace = true }
+jackin-usage-provider-core = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

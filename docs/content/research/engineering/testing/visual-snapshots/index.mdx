@@ -17,7 +17,7 @@ Every surface jackin❯ renders is something an operator sees: the operator cons
 
 There are two concrete blind spots:
 
-- **The console snapshot helper captures glyphs only.** It dumps each cell's `.symbol()` and discards colour and every text attribute (see <RepoFile path="crates/jackin-console/src/tui/view/tests.rs">crates/jackin-console/src/tui/view/tests.rs</RepoFile>). A change to colour, underline, or `REVERSED` alone cannot change this glyph-only artifact. Separate render assertions may catch those changes; they do not make the text snapshot style-complete.
+- **The console snapshot helper captures glyphs only.** It dumps each cell's `.symbol()` and discards colour and every text attribute (see <RepoFile path="crates/ui/jackin-console/src/tui/view/tests.rs">crates/ui/jackin-console/src/tui/view/tests.rs</RepoFile>). A change to colour, underline, or `REVERSED` alone cannot change this glyph-only artifact. Separate render assertions may catch those changes; they do not make the text snapshot style-complete.
 - **The historical component SVG encoder is absent.** The removed `jackin-tui-lookbook` implementation encoded foreground/background colour but omitted modifiers. Its old gallery and `--check` command cannot establish current coverage. Current render assertions and text snapshots need separate style-fidelity evidence; this proposal supplies no executed SVG gate.
 
 The goal is a single, deterministic, **PR-diffable snapshot of what is on screen** — for both TUI screens and CLI output — so that every visual change is surfaced as a reviewable before/after in the pull request, and an unintended change fails CI.
@@ -62,7 +62,7 @@ The single source of truth for "what the user sees" in a ratatui surface is the 
 
 Two further classes of test pin **intent** independently of pixel output, so a "wrong token used" regression fails even when two tokens look similar:
 
-- **Palette golden.** A single snapshot of every `pub const` colour/style token in `crates/jackin-tui/src/theme.rs`. Changing `STATUS_BLOCKED_RED_RGB` then shows as one intentional, reviewable diff instead of rippling silently through dozens of screen goldens.
+- **Palette golden.** A single snapshot of every `pub const` colour/style token in `crates/ui/jackin-tui/src/theme.rs`. Changing `STATUS_BLOCKED_RED_RGB` then shows as one intentional, reviewable diff instead of rippling silently through dozens of screen goldens.
 - **Semantic style assertions.** At known coordinates, assert the resolved style of high-value cells (the `Blocked` badge resolves to `STATUS_BLOCKED_RED` + `BOLD`; a link has `UNDERLINED`), separating "the token's value changed" from "the wrong token was applied".
 
 ## Surfaces to cover
@@ -107,7 +107,7 @@ Multi-source, adversarially-verified external research (primary sources: crates.
 ## Current state (absorbed from prior items)
 
 - **Historical component SVG lookbook** — the former `jackin-tui-lookbook`, `buffer_to_svg`, `--check`, and `docs/public/tui-lookbook` gallery are absent from the current tree. This records the earlier implementation, not shipped capability. Restoring styled SVG artifacts and a gate requires new implementation and proof.
-- **Text-only console snapshots** — `insta` snapshots (including list, settings, editor-general, and editor-mounts) in <RepoFile path="crates/jackin-console/src/tui/view/tests.rs">crates/jackin-console/src/tui/view/tests.rs</RepoFile> with committed `.snap` files, generated with `INSTA_UPDATE=new`. These capture glyphs only.
+- **Text-only console snapshots** — `insta` snapshots (including list, settings, editor-general, and editor-mounts) in <RepoFile path="crates/ui/jackin-console/src/tui/view/tests.rs">crates/ui/jackin-console/src/tui/view/tests.rs</RepoFile> with committed `.snap` files, generated with `INSTA_UPDATE=new`. These capture glyphs only.
 - **Capsule render tests** — `insta` and buffer assertions exist for capsule chrome and the branch-context bar.
 - **Live screen model** — `DamageGrid::dump()` produces a `GridSnapshot` whose cells can feed a future styled renderer; the snapshot API does not itself serialize a complete styled screen.
 
@@ -123,7 +123,7 @@ Multi-source, adversarially-verified external research (primary sources: crates.
 
 - **Golden churn.** Style-complete SVG goldens change whenever the render legitimately changes; the `insta`/`--check` review workflow keeps that a one-keystroke accept, but reviewers must actually look at the diff, not rubber-stamp it.
 - **Determinism is load-bearing.** Any unpinned size, theme, clock, or path makes a golden flaky. Broad golden coverage requires the shared deterministic harness.
-- **Encoder fidelity.** The SVG encoder must apply the same colour resolution and dim/scaling transform the real renderer uses (see the `scale()` path in `crates/jackin-tui/src/theme.rs`), or goldens will diverge from on-screen reality.
+- **Encoder fidelity.** The SVG encoder must apply the same colour resolution and dim/scaling transform the real renderer uses (see the `scale()` path in `crates/ui/jackin-tui/src/theme.rs`), or goldens will diverge from on-screen reality.
 - **Scope discipline.** This item owns the *visual render artifact and its regression net*. It must not absorb live-automation or functional-CLI concerns; cross-reference the owning items instead.
 
 ## Limitations and open questions

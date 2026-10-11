@@ -1,0 +1,154 @@
+# Native macOS development workflows. Run these with `mise -C native run <task>`.
+# Native-only tools and tasks live here instead of the repository root.
+
+[tasks.format]
+description = "Format handwritten jackin❯ desktop Swift sources"
+# Generated boltffi Swift carries swiftlint/swiftformat disable headers, but
+# Apple's swift-format honors no inline disables — exclude the bindings tree.
+run = "find Sources Tests UITests Tools Scripts -name '*.swift' ! -path '*/JackinUsageBindings/*' -print0 | xargs -0 xcrun swift-format format --configuration .swift-format --in-place --parallel"
+
+[tasks.format-check]
+description = "Fail on jackin❯ desktop Swift formatting violations"
+run = "export DEVELOPER_DIR=/Applications/Xcode_26.6.app/Contents/Developer; find Sources Tests UITests Tools Scripts -name '*.swift' ! -path '*/JackinUsageBindings/*' -print0 | xargs -0 xcrun swift-format lint --configuration .swift-format --strict --parallel"
+
+[tasks.lint]
+description = "Fail on jackin❯ desktop SwiftLint violations"
+run = "swiftlint lint --strict"
+tools = { swiftlint = "0.65.1" }
+
+[tasks.deadcode]
+description = "Scan jackin❯ desktop for unused declarations"
+run = "periphery scan --project JackinDesktop.xcodeproj --schemes JackinDesktop --retain-public --retain-objc-accessible --retain-assign-only-properties --report-exclude '**/JackinUsageBindings/**' --strict --quiet"
+
+[tasks.ci]
+description = "PR cadence: full nonmutating jackin❯ desktop gate graph"
+run = '''
+set -euo pipefail
+cd ..
+mbx +1.99.0 xtask desktop bindings-check
+xcodegen generate --spec native/project.yml
+find native/Sources native/Tests native/UITests native/Tools native/Scripts -name '*.swift' ! -path '*/JackinUsageBindings/*' -print0 | xargs -0 xcrun swift-format lint --configuration native/.swift-format --strict --parallel
+swiftlint lint --strict --config native/.swiftlint.yml
+mbx +1.99.0 xtask desktop test
+export JACKIN_APP_VERSION="${JACKIN_APP_VERSION:-0.6.0}"
+export JACKIN_APP_BUILD="${JACKIN_APP_BUILD:-1}"
+mbx +1.99.0 xtask desktop build
+mbx +1.99.0 xtask desktop test-swift --jobs 2
+mbx +1.99.0 xtask desktop verify
+'''
+
+[tasks.merge]
+description = "Merge cadence: PR graph plus UI tests against the real app host"
+dir = ".."
+run = '''
+set -euo pipefail
+mise -C native run ci
+native/Scripts/run-ui-tests.sh
+'''
+
+[tasks.scheduled]
+description = "Scheduled cadence: merge graph plus dead-code scan"
+dir = ".."
+run = '''
+set -euo pipefail
+mise -C native run merge
+mise -C native run deadcode
+'''
+
+[tasks.sign-notarize]
+description = "Developer ID sign + notarize + staple JackinDesktop.app (requires Apple credentials)"
+usage = '''
+arg "[app]" help="Path to JackinDesktop.app" default="native/dist/JackinDesktop.app"
+arg "[out_zip]" help="Final post-staple ZIP path"
+arg "[version]" help="Expected CFBundleShortVersionString"
+arg "[build]" help="Expected CFBundleVersion numeric build"
+'''
+dir = ".."
+run = '''
+set -eu
+# CI imports an ephemeral signing keychain when the release job maps the
+# P12 secret; local runs use the login keychain and skip the import.
+# Credentials are deleted before this process exits (success, failure,
+# interrupt, or termination).
+if [ -n "${DEVELOPER_ID_APPLICATION_P12_BASE64:-}" ]; then
+  : "${DEVELOPER_ID_APPLICATION_P12_PASSWORD:?missing DEVELOPER_ID_APPLICATION_P12_PASSWORD}"
+  : "${APP_STORE_CONNECT_API_KEY_P8:?missing APP_STORE_CONNECT_API_KEY_P8}"
+  : "${APP_STORE_CONNECT_KEY_ID:?missing APP_STORE_CONNECT_KEY_ID}"
+  : "${APP_STORE_CONNECT_ISSUER_ID:?missing APP_STORE_CONNECT_ISSUER_ID}"
+  keychain_path="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/jackin-signing.keychain-db"
+  keychain_password="$(openssl rand -base64 32)"
+  p12_path="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/developer-id.p12"
+  p8_path="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8"
+  cleanup_signing() {
+    security delete-keychain "$keychain_path" 2>/dev/null || true
+    rm -f "$p12_path" "$p8_path"
+  }
+  trap cleanup_signing EXIT INT TERM
+  printf '%s' "$DEVELOPER_ID_APPLICATION_P12_BASE64" | base64 --decode > "$p12_path"
+  printf '%s' "$APP_STORE_CONNECT_API_KEY_P8" > "$p8_path"
+  security create-keychain -p "$keychain_password" "$keychain_path"
+  security set-keychain-settings -lut 21600 "$keychain_path"
+  security unlock-keychain -p "$keychain_password" "$keychain_path"
+  security import "$p12_path" -P "$DEVELOPER_ID_APPLICATION_P12_PASSWORD" -A -t cert -f pkcs12 \
+    -k "$keychain_path" -T /usr/bin/codesign
+  old_ifs=$IFS; IFS='
+'
+  # Newline-split only: IFS above keeps keychain paths with spaces intact.
+  # shellcheck disable=SC2046,SC2086
+  security list-keychain -d user -s "$keychain_path" $(security list-keychain -d user | tr -d '"')
+  IFS=$old_ifs
+  security set-key-partition-list -S apple-tool:,apple:,codesign: -s \
+    -k "$keychain_password" "$keychain_path"
+  identity="$(security find-identity -v -p codesigning "$keychain_path" | awk -F'"' '/Developer ID Application/ {print $2; exit}')"
+  [ -n "$identity" ] || { echo "no Developer ID Application identity in imported keychain" >&2; exit 1; }
+  export DEVELOPER_ID_APPLICATION="$identity"
+  export APP_STORE_CONNECT_API_KEY_PATH="$p8_path"
+fi
+set -- "${usage_app:-native/dist/JackinDesktop.app}"
+if [ -n "${usage_out_zip:-}" ]; then set -- "$@" "$usage_out_zip"; fi
+if [ -n "${usage_version:-}" ]; then set -- "$@" --version "$usage_version"; fi
+if [ -n "${usage_build:-}" ]; then set -- "$@" --build "$usage_build"; fi
+mbx +1.99.0 xtask desktop sign-notarize "$@"
+'''
+
+[tasks.prototype-build]
+description = "Build the Unified Agent Usage native design prototype"
+dir = ".."
+run = '''
+set -euo pipefail
+package="native/Design/Prototypes/UnifiedAgentUsage"
+swift build --package-path "$package"
+app="$package/.build/UnifiedAgentUsageProto.app"
+mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+cp "$package/AppInfo.plist" "$app/Contents/Info.plist"
+cp "$package/.build/debug/UnifiedAgentUsageProto" "$app/Contents/MacOS/UnifiedAgentUsageProto"
+ditto "$package/.build/debug/UnifiedAgentUsageProto_UnifiedAgentUsageProto.bundle" \
+  "$app/Contents/Resources/UnifiedAgentUsageProto_UnifiedAgentUsageProto.bundle"
+'''
+
+[tasks.prototype-run]
+description = "Launch the Unified Agent Usage native design prototype"
+usage = '''
+arg "<scenario>" help="Fixture name (F00–F29 and named variants)" default="F02"
+arg "<window>" help="Window size in WIDTHxHEIGHT form" default="1000x680"
+arg "<appearance>" help="Appearance (dark-only application)" default="dark"
+arg "[reduce]" help="Optional reduction mode: transparency, motion, or transparency,motion"
+arg "[backdrop]" help="Optional harness backdrop hex color"
+flag "--increase-contrast" help="Render the process-local Increased Contrast variant"
+'''
+dir = ".."
+run = '''
+set -euo pipefail
+app="native/Design/Prototypes/UnifiedAgentUsage/.build/UnifiedAgentUsageProto.app"
+args=(
+  --tr-scenario "$usage_scenario"
+  --tr-window "$usage_window"
+  --tr-appearance "$usage_appearance"
+)
+if [ -n "${usage_reduce:-}" ]; then args+=(--tr-reduce "$usage_reduce"); fi
+if [ -n "${usage_backdrop:-}" ]; then args+=(--tr-backdrop "$usage_backdrop"); fi
+if [ "${usage_increase_contrast:-false}" = "true" ]; then args+=(--tr-increase-contrast); fi
+pkill -f "$PWD/$app/Contents/MacOS/UnifiedAgentUsageProto" 2>/dev/null || true
+launchctl remove com.jackin.prototype.unified-agent-usage 2>/dev/null || true
+open -n "$app" --args "${args[@]}"
+'''

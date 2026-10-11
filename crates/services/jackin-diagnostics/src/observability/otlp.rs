@@ -1,0 +1,1564 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
+mod otlp_channel;
+
+use opentelemetry::trace::TracerProvider as _;
+use opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge;
+use opentelemetry_otlp::{Compression, WithExportConfig, WithTonicConfig};
+use opentelemetry_sdk::Resource;
+use opentelemetry_sdk::logs::BatchConfigBuilder as LogBatchConfigBuilder;
+use opentelemetry_sdk::logs::SdkLoggerProvider;
+use opentelemetry_sdk::logs::log_processor_with_async_runtime::BatchLogProcessor;
+use opentelemetry_sdk::metrics::SdkMeterProvider;
+use opentelemetry_sdk::metrics::periodic_reader_with_async_runtime::PeriodicReader;
+use opentelemetry_sdk::runtime::Tokio;
+use opentelemetry_sdk::trace::span_processor_with_async_runtime::BatchSpanProcessor;
+use opentelemetry_sdk::trace::{
+    BatchConfigBuilder as SpanBatchConfigBuilder, Sampler, SdkTracerProvider,
+};
+use tracing_subscriber::EnvFilter;
+use tracing_subscriber::prelude::*;
+
+use super::ServiceIdentity;
+use super::health;
+use super::resource::build_resource_for;
+#[cfg(test)]
+use super::resource::{
+    build_resource_for_sources, container_id_from_cgroup, semantic_os_type, verified_container_id,
+};
+mod governance;
+mod metric_governance;
+mod retry;
+use governance::{GovernedLogProcessor, GovernedSpanProcessor};
+use metric_governance::validate_metric_export;
+#[cfg(test)]
+use metric_governance::{
+    metric_contract_fields, validate_metric_attributes, validate_metric_points,
+};
+
+const EXPORT_ATTEMPT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(4);
+
+/// The three SDK providers for one run, flushed together at shutdown.
+/// Named (not a positional tuple) so the flush sequence can't transpose
+/// tracer/logger/meter — all three expose identical `force_flush`/`shutdown`
+/// signatures, so a tuple destructure in the wrong order would compile
+/// silently. All three providers are required and activated atomically.
+struct OtlpProviders {
+    tracer: SdkTracerProvider,
+    logger: SdkLoggerProvider,
+    meter: SdkMeterProvider,
+    generation: u64,
+    meter_installation: MeterInstallationLease,
+}
+
+type MeterInstallationLease = std::sync::Arc<std::sync::Mutex<jackin_telemetry::MeterInstallation>>;
+
+impl OtlpProviders {
+    /// Flush buffered telemetry, then shut the exporters down. Called once,
+    /// from `ActiveRunGuard::drop`, on every run exit path.
+    ///
+    /// A `force_flush` failure is the authoritative "the backend did not
+    /// receive this run" signal — the SDK surfaces a failed export through
+    /// this `Result`, not (reliably) through a `tracing` event. So a flush
+    /// error emits one compact operator notice (stderr / deferred under a
+    /// rich TUI) rather than being dropped; otherwise an unreachable or
+    /// wrong-protocol backend would fail completely silently. `shutdown`
+    /// errors stay quiet — by then the data is already flushed-or-lost and a
+    /// second notice adds only noise.
+    fn flush_and_shutdown(
+        &mut self,
+        deadline: std::time::Instant,
+    ) -> Result<bool, jackin_telemetry::MeterDetachError> {
+        self.meter_installation
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .detach_before(deadline)?;
+        #[cfg(test)]
+        SHUTDOWN_ORDER
+            .lock()
+            .expect("shutdown order lock")
+            .push("detach.meter");
+        let (trace_flush, log_flush, metric_flush) = self.force_flush_all(deadline);
+        #[cfg(test)]
+        SHUTDOWN_ORDER
+            .lock()
+            .expect("shutdown order lock")
+            .push("tracer");
+        let tracer = self.tracer.clone();
+        let meter_installation = std::sync::Arc::clone(&self.meter_installation);
+        let trace_shutdown = sdk_operation_before(
+            deadline,
+            move |timeout| tracer.shutdown_with_timeout(timeout),
+            Some(meter_installation),
+        );
+        #[cfg(test)]
+        SHUTDOWN_ORDER
+            .lock()
+            .expect("shutdown order lock")
+            .push("logger");
+        let logger = self.logger.clone();
+        let meter_installation = std::sync::Arc::clone(&self.meter_installation);
+        let log_shutdown = sdk_operation_before(
+            deadline,
+            move |timeout| logger.shutdown_with_timeout(timeout),
+            Some(meter_installation),
+        );
+        #[cfg(test)]
+        SHUTDOWN_ORDER
+            .lock()
+            .expect("shutdown order lock")
+            .push("meter");
+        let meter = self.meter.clone();
+        let meter_installation = std::sync::Arc::clone(&self.meter_installation);
+        let metric_shutdown = sdk_operation_before(
+            deadline,
+            move |timeout| meter.shutdown_with_timeout(timeout),
+            Some(meter_installation),
+        );
+        let failed = trace_flush.is_err() || log_flush.is_err() || metric_flush.is_err();
+        let timed_out = [
+            &trace_flush,
+            &log_flush,
+            &metric_flush,
+            &trace_shutdown,
+            &log_shutdown,
+            &metric_shutdown,
+        ]
+        .into_iter()
+        .any(|result| {
+            result
+                .as_ref()
+                .is_err_and(|error| error.contains("budget exhausted"))
+        });
+        if timed_out {
+            retain_terminal_meter_lease(std::sync::Arc::clone(&self.meter_installation));
+        }
+        let flushed = !failed;
+        health::record_flush(self.generation, flushed);
+        if failed {
+            // Direct to stderr, not the deferred buffer: this fires at final
+            // teardown where the run guard may outlive the terminal session,
+            // so a buffered notice could never be drained. The TUI is already
+            // gone by now, so stderr can't corrupt it.
+            crate::logging::emit_teardown_notice(
+                "telemetry export failed to reach the backend (run telemetry may be incomplete)",
+            );
+        }
+        Ok(flushed && trace_shutdown.is_ok() && log_shutdown.is_ok() && metric_shutdown.is_ok())
+    }
+
+    fn force_flush_all(
+        &self,
+        deadline: std::time::Instant,
+    ) -> (Result<(), String>, Result<(), String>, Result<(), String>) {
+        #[cfg(test)]
+        SHUTDOWN_ORDER.lock().expect("shutdown order lock").extend([
+            "flush.tracer",
+            "flush.logger",
+            "flush.meter",
+        ]);
+        let tracer = self.tracer.clone();
+        let logger = self.logger.clone();
+        let meter = self.meter.clone();
+        let traces = FlushTask::spawn(
+            move || tracer.force_flush(),
+            Some(std::sync::Arc::clone(&self.meter_installation)),
+        );
+        let logs = FlushTask::spawn(
+            move || logger.force_flush(),
+            Some(std::sync::Arc::clone(&self.meter_installation)),
+        );
+        let metrics = FlushTask::spawn(
+            move || meter.force_flush(),
+            Some(std::sync::Arc::clone(&self.meter_installation)),
+        );
+        (
+            traces.finish_before(deadline),
+            logs.finish_before(deadline),
+            metrics.finish_before(deadline),
+        )
+    }
+}
+
+struct FlushTask {
+    receiver: std::sync::mpsc::Receiver<opentelemetry_sdk::error::OTelSdkResult>,
+    handle: std::thread::JoinHandle<()>,
+}
+
+impl FlushTask {
+    // Keep the provider-bound meter lease inside the worker. If the
+    // deadline expires, `finish_before` retains only the JoinHandle; the
+    // worker must therefore own the lease until its provider operation
+    // really returns.
+    fn spawn(
+        operation: impl FnOnce() -> opentelemetry_sdk::error::OTelSdkResult + Send + 'static,
+        meter_installation: Option<MeterInstallationLease>,
+    ) -> Self {
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        let handle = jackin_telemetry::spawn::thread_joined(move || {
+            let _meter_installation = meter_installation;
+            drop(sender.send(operation()));
+        });
+        Self { receiver, handle }
+    }
+
+    fn finish_before(self, deadline: std::time::Instant) -> Result<(), String> {
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        if remaining.is_zero() {
+            retain_flush_worker(self.handle);
+            return Err("telemetry flush budget exhausted".to_owned());
+        }
+        match self.receiver.recv_timeout(remaining) {
+            Ok(result) => {
+                self.handle
+                    .join()
+                    .map_err(|_| "telemetry flush worker panicked".to_owned())?;
+                result.map_err(|_| "telemetry flush failed".to_owned())
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                retain_flush_worker(self.handle);
+                Err("telemetry flush budget exhausted".to_owned())
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => self
+                .handle
+                .join()
+                .map_err(|_| "telemetry flush worker panicked".to_owned())
+                .and(Err("telemetry flush failed".to_owned())),
+        }
+    }
+}
+
+fn sdk_operation_before<F>(
+    deadline: std::time::Instant,
+    operation: F,
+    meter_installation: Option<MeterInstallationLease>,
+) -> Result<(), String>
+where
+    F: FnOnce(std::time::Duration) -> opentelemetry_sdk::error::OTelSdkResult + Send + 'static,
+{
+    let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+    if remaining.is_zero() {
+        return Err("telemetry shutdown budget exhausted".to_owned());
+    }
+    FlushTask::spawn(move || operation(remaining), meter_installation)
+        .finish_before(deadline)
+        .map_err(|error| {
+            if error == "telemetry flush failed" {
+                "telemetry shutdown failed".to_owned()
+            } else {
+                error
+            }
+        })
+}
+
+#[cfg(test)]
+fn flush_before<F>(deadline: std::time::Instant, operation: F) -> Result<(), String>
+where
+    F: FnOnce() -> opentelemetry_sdk::error::OTelSdkResult,
+{
+    if std::time::Instant::now() >= deadline {
+        return Err("telemetry shutdown budget exhausted".to_owned());
+    }
+    operation().map_err(|_| "telemetry flush failed".to_owned())
+}
+
+pub(super) fn validate_flush() -> Result<(), super::ValidationFailure> {
+    let providers = PROVIDERS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let providers = providers
+        .as_ref()
+        .ok_or(super::ValidationFailure::Inactive)?;
+    let (trace, logs, metrics) =
+        providers.force_flush_all(std::time::Instant::now() + std::time::Duration::from_secs(5));
+    health::record_flush(
+        providers.generation,
+        trace.is_ok() && logs.is_ok() && metrics.is_ok(),
+    );
+    validate_flush_results(&trace, &logs, &metrics)
+}
+
+fn validate_flush_results(
+    trace: &Result<(), String>,
+    logs: &Result<(), String>,
+    metrics: &Result<(), String>,
+) -> Result<(), super::ValidationFailure> {
+    if [trace, logs, metrics].into_iter().any(|result| {
+        result
+            .as_ref()
+            .is_err_and(|error| error.contains("budget exhausted"))
+    }) {
+        return Err(super::ValidationFailure::Timeout);
+    }
+    if trace.is_err() {
+        return Err(super::ValidationFailure::Export("traces"));
+    }
+    if logs.is_err() {
+        return Err(super::ValidationFailure::Export("logs"));
+    }
+    if metrics.is_err() {
+        return Err(super::ValidationFailure::Export("metrics"));
+    }
+    Ok(())
+}
+
+static ACTIVATION_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+static PROVIDERS: std::sync::Mutex<Option<OtlpProviders>> = std::sync::Mutex::new(None);
+static PENDING_FLUSH_WORKERS: std::sync::Mutex<Vec<std::thread::JoinHandle<()>>> =
+    std::sync::Mutex::new(Vec::new());
+// A shutdown budget can expire after the last worker has been detached
+// from its task but before the provider shutdown call can start. Retain
+// the detached lease permanently in that terminal case so a later
+// provider can never overlap the retired generation.
+static TERMINAL_METER_LEASES: std::sync::Mutex<Vec<MeterInstallationLease>> =
+    std::sync::Mutex::new(Vec::new());
+#[cfg(test)]
+static SHUTDOWN_ORDER: std::sync::Mutex<Vec<&'static str>> = std::sync::Mutex::new(Vec::new());
+
+/// Dedicated multi-thread tokio runtime that drives OTLP export. Held for the
+/// process lifetime so the async-runtime batch processors (and tonic's h2
+/// connection driver) have a reactor decoupled from jackin❯'s current-thread
+/// main: the `futures_executor::block_on` flush parks the main thread, and
+/// these worker threads keep exporting regardless. One worker is plenty for
+/// a single run's telemetry volume.
+static OTEL_RUNTIME: std::sync::Mutex<Option<tokio::runtime::Runtime>> =
+    std::sync::Mutex::new(None);
+#[cfg(any(test, feature = "test-support"))]
+static OTEL_RUNTIME_CREATIONS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Build-or-get the dedicated telemetry runtime. Providers must be built
+/// inside its [`tokio::runtime::Runtime::enter`] guard so their workers spawn
+/// onto it rather than the ambient (current-thread) app runtime.
+fn otel_runtime() -> anyhow::Result<std::sync::MutexGuard<'static, Option<tokio::runtime::Runtime>>>
+{
+    let mut runtime = OTEL_RUNTIME
+        .lock()
+        .map_err(|_| anyhow::anyhow!("OTLP telemetry runtime lock poisoned"))?;
+    if runtime.is_none() {
+        *runtime = Some(
+            tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(1)
+                .enable_all()
+                .thread_name("jackin-otel")
+                .build()
+                .map_err(|e| anyhow::anyhow!("OTLP telemetry runtime init failed: {e}"))?,
+        );
+        #[cfg(any(test, feature = "test-support"))]
+        OTEL_RUNTIME_CREATIONS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+    Ok(runtime)
+}
+
+fn rollback_runtime() {
+    if let Some(runtime) = OTEL_RUNTIME
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .take()
+    {
+        runtime.shutdown_background();
+    }
+}
+
+fn ensure_inactive() -> anyhow::Result<()> {
+    if PROVIDERS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .is_some()
+        || OTEL_RUNTIME
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .is_some()
+    {
+        anyhow::bail!("OTLP providers are already active");
+    }
+    Ok(())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct OtlpEndpoints {
+    traces: String,
+    logs: String,
+    metrics: String,
+    traces_timeout: std::time::Duration,
+    logs_timeout: std::time::Duration,
+    metrics_timeout: std::time::Duration,
+    traces_tls: super::config::TlsConfig,
+    logs_tls: super::config::TlsConfig,
+    metrics_tls: super::config::TlsConfig,
+}
+
+impl OtlpEndpoints {
+    pub(super) fn from_config(config: &super::config::OtlpConfig) -> Self {
+        Self {
+            traces: config.traces_endpoint.clone(),
+            logs: config.logs_endpoint.clone(),
+            metrics: config.metrics_endpoint.clone(),
+            traces_timeout: config.traces_timeout,
+            logs_timeout: config.logs_timeout,
+            metrics_timeout: config.metrics_timeout,
+            traces_tls: config.traces_tls.clone(),
+            logs_tls: config.logs_tls.clone(),
+            metrics_tls: config.metrics_tls.clone(),
+        }
+    }
+
+    /// The per-signal endpoints a single base produces. OTLP/gRPC sends every
+    /// signal to the same endpoint verbatim and routes by gRPC service name,
+    /// so — unlike OTLP/HTTP — no `/v1/<signal>` path is appended and all
+    /// three share `base`.
+    fn from_base(base: &str) -> Self {
+        Self::new(base, base, base)
+    }
+
+    /// The one construction choke point. Every field is run through
+    /// [`grpc_endpoint`] here so the "normalized gRPC channel target"
+    /// invariant has a single enforcement site rather than being re-asserted
+    /// at each caller (where one could silently drift).
+    pub(super) fn new(traces: &str, logs: &str, metrics: &str) -> Self {
+        Self {
+            traces: grpc_endpoint(traces),
+            logs: grpc_endpoint(logs),
+            metrics: grpc_endpoint(metrics),
+            traces_timeout: std::time::Duration::from_secs(5),
+            logs_timeout: std::time::Duration::from_secs(5),
+            metrics_timeout: std::time::Duration::from_secs(5),
+            traces_tls: super::config::TlsConfig::default(),
+            logs_tls: super::config::TlsConfig::default(),
+            metrics_tls: super::config::TlsConfig::default(),
+        }
+    }
+}
+
+/// Host OTLP endpoints, when configured via the standard OTLP env vars.
+/// `OTEL_EXPORTER_OTLP_ENDPOINT` provides a base for every signal; the
+/// per-signal endpoint vars wrappers commonly inject override it per signal.
+pub(super) fn endpoints() -> Option<OtlpEndpoints> {
+    let env = |key: &str| std::env::var(key).ok();
+    super::config::resolve_otlp_config(&env)
+        .ok()
+        .flatten()
+        .map(|config| OtlpEndpoints::from_config(&config))
+}
+
+fn validate_standard_env() -> anyhow::Result<()> {
+    if let Ok(sampler) = std::env::var("OTEL_TRACES_SAMPLER")
+        && !sampler.trim().is_empty()
+        && sampler.trim() != "parentbased_always_on"
+    {
+        anyhow::bail!("OTEL_TRACES_SAMPLER conflicts with required parentbased_always_on");
+    }
+    for var in [
+        "OTEL_EXPORTER_OTLP_COMPRESSION",
+        "OTEL_EXPORTER_OTLP_TRACES_COMPRESSION",
+        "OTEL_EXPORTER_OTLP_LOGS_COMPRESSION",
+        "OTEL_EXPORTER_OTLP_METRICS_COMPRESSION",
+    ] {
+        if let Ok(value) = std::env::var(var)
+            && !value.trim().is_empty()
+            && value.trim() != "gzip"
+        {
+            anyhow::bail!("{var} is unsupported; expected gzip");
+        }
+    }
+    for var in [
+        "OTEL_EXPORTER_OTLP_TIMEOUT",
+        "OTEL_EXPORTER_OTLP_TRACES_TIMEOUT",
+        "OTEL_EXPORTER_OTLP_LOGS_TIMEOUT",
+        "OTEL_EXPORTER_OTLP_METRICS_TIMEOUT",
+    ] {
+        if let Ok(value) = std::env::var(var) {
+            let _: u64 = value
+                .trim()
+                .parse()
+                .map_err(|_| anyhow::anyhow!("{var} must be an integer millisecond timeout"))?;
+        }
+    }
+    Ok(())
+}
+
+/// The endpoint handed to a launched container. The base var wins; absent it,
+/// the resolved traces endpoint stands in so a per-signal-only host config
+/// still reaches the capsule. Both are already `grpc_endpoint`-normalized.
+pub(super) fn container_endpoint() -> Option<String> {
+    base_endpoint().or_else(|| endpoints().map(|endpoints| endpoints.traces))
+}
+
+pub(super) fn base_endpoint() -> Option<String> {
+    let endpoint = resolve_endpoint(std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").ok())?;
+    super::config::normalize_endpoint(endpoint, "base").ok()
+}
+
+pub(super) fn endpoint_summary() -> Option<String> {
+    let endpoints = endpoints()?;
+    // A single configured base drives all three signal URLs, so collapse to
+    // it; per-signal overrides break the match and are spelled out in full.
+    if let Some(base) = base_endpoint()
+        && endpoints == OtlpEndpoints::from_base(&base)
+    {
+        return sanitized_authority(&base);
+    }
+    Some(format!(
+        "traces={}, logs={}, metrics={}",
+        sanitized_authority(&endpoints.traces)?,
+        sanitized_authority(&endpoints.logs)?,
+        sanitized_authority(&endpoints.metrics)?,
+    ))
+}
+
+fn sanitized_authority(endpoint: &str) -> Option<String> {
+    let endpoint = url::Url::parse(endpoint).ok()?;
+    let host = endpoint.host_str()?;
+    let host = if host.contains(':') {
+        format!("[{host}]")
+    } else {
+        host.to_owned()
+    };
+    let port = endpoint
+        .port()
+        .map_or_else(String::new, |port| format!(":{port}"));
+    Some(format!("{}://{host}{port}", endpoint.scheme()))
+}
+
+/// The configured base endpoint, if any. An exported-but-empty var must not
+/// produce a blank endpoint, so an empty value resolves to `None` and no
+/// OTLP layer is installed.
+fn resolve_endpoint(otel: Option<String>) -> Option<String> {
+    otel.filter(|s| !s.is_empty())
+}
+
+/// Normalize a gRPC endpoint: strip trailing slashes. The OTLP/gRPC exporter
+/// uses the endpoint as the channel target (`http://host:4317`) and routes by
+/// gRPC service name, so — unlike OTLP/HTTP — no signal path is appended.
+fn grpc_endpoint(endpoint: &str) -> String {
+    endpoint.trim_end_matches('/').to_owned()
+}
+
+/// Whether an explicit `OTEL_EXPORTER_OTLP_*_PROTOCOL` value names something
+/// jackin cannot send. jackin exports OTLP over gRPC only; an empty value or
+/// `grpc` is fine, anything else (`http/protobuf`, `http/json`, …) is not.
+fn unsupported_protocol(value: &str) -> bool {
+    let value = value.trim();
+    !value.is_empty() && value != "grpc"
+}
+
+/// The standard OTLP protocol-selection env vars (generic + per-signal). The
+/// protocol guard and the fatal startup check both scan this one list so they
+/// can never drift — a new per-signal var missed by one but not the other
+/// would silently re-open the wrong-protocol no-deliver hole.
+const PROTOCOL_VARS: [&str; 4] = [
+    "OTEL_EXPORTER_OTLP_PROTOCOL",
+    "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL",
+    "OTEL_EXPORTER_OTLP_LOGS_PROTOCOL",
+    "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL",
+];
+
+/// jackin exports OTLP over gRPC only. If a non-grpc protocol is explicitly
+/// requested via the standard env vars, fail loudly here rather than build a
+/// gRPC exporter against an endpoint meant for HTTP — a silent no-deliver is
+/// exactly the failure mode this guards against.
+fn ensure_grpc_protocol() -> Result<(), String> {
+    for var in PROTOCOL_VARS {
+        if let Ok(value) = std::env::var(var)
+            && unsupported_protocol(&value)
+        {
+            return Err(format!(
+                "{var}={} is not supported — jackin exports OTLP over grpc only",
+                value.trim()
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Shared OTLP tracer/logger provider construction for host and capsule.
+///
+/// Owns the protocol check, the dedicated telemetry runtime enter-guard, and
+/// both exporters + batch-processor providers so host/`init_capsule` cannot
+/// drift. Callers differ only in resource, endpoints, layer composition, and
+/// metrics handling. Returns the app runtime handle captured *before*
+/// entering the telemetry runtime (for tokio gauges).
+fn build_otlp_providers(
+    resource: Resource,
+    endpoints: &OtlpEndpoints,
+) -> anyhow::Result<(
+    SdkTracerProvider,
+    SdkLoggerProvider,
+    Option<tokio::runtime::Handle>,
+    otlp_channel::PhysicalChannels,
+)> {
+    ensure_grpc_protocol().map_err(|e| anyhow::anyhow!(e))?;
+    validate_standard_env()?;
+    let runtime = otel_runtime()?;
+    // The tokio runtime gauges must report jackin❯'s app runtime, not the
+    // dedicated telemetry runtime — capture its handle before entering ours.
+    let app_handle = tokio::runtime::Handle::try_current().ok();
+    // Build every exporter, processor, and reader inside the dedicated
+    // runtime: the async-runtime processors spawn their worker tasks (and
+    // tonic spawns its h2 connection driver) onto whichever runtime is
+    // entered here, and they must land on the multi-thread telemetry runtime
+    // — not jackin❯'s current-thread main, where flush would deadlock.
+    let runtime = runtime
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("telemetry runtime was not initialized"))?;
+    let _runtime_guard = runtime.enter();
+    otlp_channel::validate_tls_assets(&endpoints.traces_tls, "traces")?;
+    otlp_channel::validate_tls_assets(&endpoints.logs_tls, "logs")?;
+    otlp_channel::validate_tls_assets(&endpoints.metrics_tls, "metrics")?;
+    let trace_channel = otlp_channel::ChannelKey::new(
+        &endpoints.traces,
+        endpoints.traces_timeout,
+        &endpoints.traces_tls,
+    );
+    let log_channel =
+        otlp_channel::ChannelKey::new(&endpoints.logs, endpoints.logs_timeout, &endpoints.logs_tls);
+    let metric_channel = otlp_channel::ChannelKey::new(
+        &endpoints.metrics,
+        endpoints.metrics_timeout,
+        &endpoints.metrics_tls,
+    );
+    let physical_channels = otlp_channel::PhysicalChannels::build([
+        trace_channel.clone(),
+        log_channel.clone(),
+        metric_channel,
+    ])?;
+    let span_builder = opentelemetry_otlp::SpanExporter::builder()
+        .with_tonic()
+        .with_endpoint(endpoints.traces.clone())
+        .with_timeout(endpoints.traces_timeout)
+        .with_compression(Compression::Gzip)
+        .with_retry_policy(retry::policy())
+        .with_channel(physical_channels.get(&trace_channel)?);
+    let span_exporter = span_builder
+        .build()
+        .map_err(|_| anyhow::anyhow!("OTLP span exporter init failed"))?;
+    let log_builder = opentelemetry_otlp::LogExporter::builder()
+        .with_tonic()
+        .with_endpoint(endpoints.logs.clone())
+        .with_timeout(endpoints.logs_timeout)
+        .with_compression(Compression::Gzip)
+        .with_retry_policy(retry::policy())
+        .with_channel(physical_channels.get(&log_channel)?);
+    let log_exporter = log_builder
+        .build()
+        .map_err(|_| anyhow::anyhow!("OTLP log exporter init failed"))?;
+
+    // Attribute limits: generous but finite (observed max attrs + headroom).
+    // Prevents unbounded dimension growth; DroppedAttributesCount must stay 0.
+    let span_batch = SpanBatchConfigBuilder::default()
+        .with_max_queue_size(2_048)
+        .with_max_export_batch_size(512)
+        .with_scheduled_delay(std::time::Duration::from_secs(1))
+        .with_max_export_timeout(EXPORT_ATTEMPT_TIMEOUT)
+        .build();
+    let log_batch = LogBatchConfigBuilder::default()
+        .with_max_queue_size(4_096)
+        .with_max_export_batch_size(512)
+        .with_scheduled_delay(std::time::Duration::from_secs(1))
+        .with_max_export_timeout(EXPORT_ATTEMPT_TIMEOUT)
+        .build();
+    let tracer_provider = SdkTracerProvider::builder()
+        .with_sampler(Sampler::ParentBased(Box::new(Sampler::AlwaysOn)))
+        .with_max_attributes_per_span(jackin_telemetry::limits::MAX_SPAN_ATTRIBUTES as u32)
+        .with_max_attributes_per_event(jackin_telemetry::limits::MAX_LOG_ATTRIBUTES as u32)
+        .with_max_links_per_span(jackin_telemetry::limits::MAX_SPAN_LINKS as u32)
+        .with_max_attributes_per_link(jackin_telemetry::limits::MAX_SPAN_ATTRIBUTES as u32)
+        .with_span_processor(GovernedSpanProcessor(
+            BatchSpanProcessor::builder(CountingSpanExporter(span_exporter), Tokio)
+                .with_batch_config(span_batch)
+                .build(),
+        ))
+        .with_resource(resource.clone())
+        .build();
+    let logger_provider = SdkLoggerProvider::builder()
+        .with_log_processor(GovernedLogProcessor(
+            BatchLogProcessor::builder(CountingLogExporter(log_exporter), Tokio)
+                .with_batch_config(log_batch)
+                .build(),
+        ))
+        .with_resource(resource)
+        .build();
+    Ok((
+        tracer_provider,
+        logger_provider,
+        app_handle,
+        physical_channels,
+    ))
+}
+
+#[derive(Debug)]
+struct CountingSpanExporter(opentelemetry_otlp::SpanExporter);
+
+impl opentelemetry_sdk::trace::SpanExporter for CountingSpanExporter {
+    async fn export(
+        &self,
+        batch: Vec<opentelemetry_sdk::trace::SpanData>,
+    ) -> opentelemetry_sdk::error::OTelSdkResult {
+        let result = self.0.export(batch).await;
+        health::record_signal_export(health::Signal::Traces, result.is_ok());
+        result
+    }
+
+    fn shutdown_with_timeout(
+        &self,
+        timeout: std::time::Duration,
+    ) -> opentelemetry_sdk::error::OTelSdkResult {
+        self.0.shutdown_with_timeout(timeout)
+    }
+
+    fn force_flush(&self) -> opentelemetry_sdk::error::OTelSdkResult {
+        self.0.force_flush()
+    }
+
+    fn set_resource(&mut self, resource: &Resource) {
+        self.0.set_resource(resource);
+    }
+}
+
+#[derive(Debug)]
+struct CountingLogExporter(opentelemetry_otlp::LogExporter);
+
+impl opentelemetry_sdk::logs::LogExporter for CountingLogExporter {
+    async fn export(
+        &self,
+        batch: opentelemetry_sdk::logs::LogBatch<'_>,
+    ) -> opentelemetry_sdk::error::OTelSdkResult {
+        let result = self.0.export(batch).await;
+        health::record_signal_export(health::Signal::Logs, result.is_ok());
+        result
+    }
+
+    fn shutdown_with_timeout(
+        &self,
+        timeout: std::time::Duration,
+    ) -> opentelemetry_sdk::error::OTelSdkResult {
+        self.0.shutdown_with_timeout(timeout)
+    }
+
+    fn event_enabled(
+        &self,
+        level: opentelemetry::logs::Severity,
+        target: &str,
+        name: Option<&str>,
+    ) -> bool {
+        self.0.event_enabled(level, target, name)
+    }
+
+    fn set_resource(&mut self, resource: &Resource) {
+        self.0.set_resource(resource);
+    }
+}
+
+#[derive(Debug)]
+struct GovernedMetricExporter<E>(E);
+
+fn governed_metric_export_result(
+    validation: Result<(), jackin_telemetry::Rejection>,
+) -> opentelemetry_sdk::error::OTelSdkResult {
+    validation.map_err(|reason| {
+        jackin_telemetry::record_export_rejection(jackin_telemetry::Signal::Metric, reason);
+        health::record_signal_export(health::Signal::Metrics, false);
+        opentelemetry_sdk::error::OTelSdkError::InternalFailure(
+            "metric export rejected by telemetry governance".into(),
+        )
+    })
+}
+
+impl<E> opentelemetry_sdk::metrics::exporter::PushMetricExporter for GovernedMetricExporter<E>
+where
+    E: opentelemetry_sdk::metrics::exporter::PushMetricExporter,
+{
+    async fn export(
+        &self,
+        metrics: &opentelemetry_sdk::metrics::data::ResourceMetrics,
+    ) -> opentelemetry_sdk::error::OTelSdkResult {
+        governed_metric_export_result(validate_metric_export(metrics))?;
+        let result = self.0.export(metrics).await;
+        health::record_signal_export(health::Signal::Metrics, result.is_ok());
+        result
+    }
+
+    fn force_flush(&self) -> opentelemetry_sdk::error::OTelSdkResult {
+        self.0.force_flush()
+    }
+
+    fn shutdown_with_timeout(
+        &self,
+        timeout: std::time::Duration,
+    ) -> opentelemetry_sdk::error::OTelSdkResult {
+        self.0.shutdown_with_timeout(timeout)
+    }
+
+    fn temporality(&self) -> opentelemetry_sdk::metrics::Temporality {
+        self.0.temporality()
+    }
+}
+
+pub(super) fn init(
+    debug: bool,
+    _run_id: &str,
+    identity: ServiceIdentity,
+    endpoints: &OtlpEndpoints,
+) -> anyhow::Result<()> {
+    let _activation = ACTIVATION_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    ensure_inactive()?;
+    let resource = build_resource_for(identity);
+    let (tracer_provider, logger_provider, app_handle, physical_channels) =
+        match build_otlp_providers(resource.clone(), endpoints) {
+            Ok(providers) => providers,
+            Err(error) => {
+                rollback_runtime();
+                return Err(error);
+            }
+        };
+    let meter_provider = match init_metrics(&resource, endpoints, app_handle, &physical_channels) {
+        Ok(provider) => provider,
+        Err(error) => {
+            cleanup_partial(&tracer_provider, &logger_provider, None);
+            rollback_runtime();
+            return Err(error);
+        }
+    };
+    use opentelemetry::metrics::MeterProvider as _;
+    let meter_reservation = match jackin_telemetry::reserve_meter(&meter_provider.meter("jackin")) {
+        Ok(reservation) => reservation,
+        Err(error) => {
+            cleanup_partial(&tracer_provider, &logger_provider, Some(&meter_provider));
+            rollback_runtime();
+            return Err(error.into());
+        }
+    };
+
+    let tracer = tracer_provider.tracer("jackin");
+    let span_layer = tracing_opentelemetry::layer()
+        .with_tracer(tracer)
+        .with_location(false)
+        .with_threads(false)
+        .with_target(false)
+        .with_tracked_inactivity(false)
+        .with_error_records_to_exceptions(false)
+        .with_error_events_to_status(false)
+        .with_error_fields_to_exceptions(false);
+    let log_layer = OpenTelemetryTracingBridge::new(&logger_provider);
+
+    // Scope the export to jackin❯'s own telemetry. Dependency-internal
+    // spans/logs stay out of OTLP unless the operator asks for them with
+    // `JACKIN_OTEL_INTERNAL=1`.
+    let span_directive =
+        export_filter_directive(export_level_for(crate::TelemetrySink::OtlpSpans, debug));
+    let log_directive =
+        export_filter_directive(export_level_for(crate::TelemetrySink::OtlpLogs, debug));
+    let installed = tracing_subscriber::registry()
+        .with(
+            span_layer
+                .with_filter(tracing_subscriber::filter::filter_fn(|metadata| {
+                    metadata.is_span()
+                }))
+                .with_filter(EnvFilter::new(span_directive)),
+        )
+        .with(
+            log_layer
+                .with_filter(tracing_subscriber::filter::filter_fn(|metadata| {
+                    metadata.is_event()
+                }))
+                .with_filter(EnvFilter::new(log_directive)),
+        )
+        .try_init()
+        .map_err(|e| anyhow::anyhow!("tracing subscriber already installed: {e}"));
+    if installed.is_ok() {
+        let meter_installation = match meter_reservation.commit() {
+            Ok(installation) => installation,
+            Err(error) => {
+                cleanup_partial(&tracer_provider, &logger_provider, Some(&meter_provider));
+                rollback_runtime();
+                return Err(error.into());
+            }
+        };
+        let generation = health::set_active_signals();
+        *PROVIDERS
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(OtlpProviders {
+            tracer: tracer_provider,
+            logger: logger_provider,
+            meter: meter_provider,
+            generation,
+            meter_installation: std::sync::Arc::new(std::sync::Mutex::new(meter_installation)),
+        });
+    } else {
+        drop(meter_reservation);
+        cleanup_partial(&tracer_provider, &logger_provider, Some(&meter_provider));
+        rollback_runtime();
+    }
+    installed
+}
+
+/// Install OTLP export for the capsule. Mirrors `init` but composes no
+/// direct OTLP layers and stamps the
+/// capsule resource; providers come from [`build_otlp_providers`].
+pub(super) fn init_capsule(
+    _traceparent: Option<&str>,
+    config: &super::config::OtlpConfig,
+) -> anyhow::Result<()> {
+    let _activation = ACTIVATION_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    ensure_inactive()?;
+    let resource = build_resource_for(ServiceIdentity::CAPSULE);
+    let endpoints = OtlpEndpoints::from_config(config);
+    let (tracer_provider, logger_provider, app_handle, physical_channels) =
+        match build_otlp_providers(resource.clone(), &endpoints) {
+            Ok(providers) => providers,
+            Err(error) => {
+                rollback_runtime();
+                return Err(error);
+            }
+        };
+    let meter_provider = match init_metrics(&resource, &endpoints, app_handle, &physical_channels) {
+        Ok(provider) => provider,
+        Err(error) => {
+            cleanup_partial(&tracer_provider, &logger_provider, None);
+            rollback_runtime();
+            return Err(error);
+        }
+    };
+    use opentelemetry::metrics::MeterProvider as _;
+    let meter_reservation = match jackin_telemetry::reserve_meter(&meter_provider.meter("jackin")) {
+        Ok(reservation) => reservation,
+        Err(error) => {
+            cleanup_partial(&tracer_provider, &logger_provider, Some(&meter_provider));
+            rollback_runtime();
+            return Err(error.into());
+        }
+    };
+
+    let tracer = tracer_provider.tracer("jackin");
+    let span_layer = tracing_opentelemetry::layer()
+        .with_tracer(tracer)
+        .with_location(false)
+        .with_threads(false)
+        .with_target(false)
+        .with_tracked_inactivity(false)
+        .with_error_records_to_exceptions(false)
+        .with_error_events_to_status(false)
+        .with_error_fields_to_exceptions(false);
+    let log_layer = OpenTelemetryTracingBridge::new(&logger_provider);
+
+    let span_directive = export_filter_directive(export_level_for(
+        crate::TelemetrySink::OtlpSpans,
+        capsule_debug(),
+    ));
+    let log_directive = export_filter_directive(export_level_for(
+        crate::TelemetrySink::OtlpLogs,
+        capsule_debug(),
+    ));
+    let installed = tracing_subscriber::registry()
+        .with(
+            span_layer
+                .with_filter(tracing_subscriber::filter::filter_fn(|metadata| {
+                    metadata.is_span()
+                }))
+                .with_filter(EnvFilter::new(span_directive)),
+        )
+        .with(
+            log_layer
+                .with_filter(tracing_subscriber::filter::filter_fn(|metadata| {
+                    metadata.is_event()
+                }))
+                .with_filter(EnvFilter::new(log_directive)),
+        )
+        .try_init()
+        .map_err(|e| anyhow::anyhow!("tracing subscriber already installed: {e}"));
+    if installed.is_ok() {
+        let meter_installation = match meter_reservation.commit() {
+            Ok(installation) => installation,
+            Err(error) => {
+                cleanup_partial(&tracer_provider, &logger_provider, Some(&meter_provider));
+                rollback_runtime();
+                return Err(error.into());
+            }
+        };
+        let generation = health::set_active_signals();
+        *PROVIDERS
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(OtlpProviders {
+            tracer: tracer_provider,
+            logger: logger_provider,
+            meter: meter_provider,
+            generation,
+            meter_installation: std::sync::Arc::new(std::sync::Mutex::new(meter_installation)),
+        });
+    } else {
+        drop(meter_reservation);
+        cleanup_partial(&tracer_provider, &logger_provider, Some(&meter_provider));
+        rollback_runtime();
+    }
+    installed
+}
+
+fn cleanup_partial(
+    tracer: &SdkTracerProvider,
+    logger: &SdkLoggerProvider,
+    meter: Option<&SdkMeterProvider>,
+) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    let tracer = tracer.clone();
+    drop(sdk_operation_before(
+        deadline,
+        move |timeout| tracer.shutdown_with_timeout(timeout),
+        None,
+    ));
+    let logger = logger.clone();
+    drop(sdk_operation_before(
+        deadline,
+        move |timeout| logger.shutdown_with_timeout(timeout),
+        None,
+    ));
+    if let Some(meter) = meter {
+        let meter = meter.clone();
+        drop(sdk_operation_before(
+            deadline,
+            move |timeout| meter.shutdown_with_timeout(timeout),
+            None,
+        ));
+    }
+}
+
+/// Capsule OTLP filter debug gate — uses the shared telemetry resolver
+/// rather than parsing telemetry controls privately.
+fn capsule_debug() -> bool {
+    matches!(
+        crate::telemetry_level(false),
+        crate::TelemetryLevel::Debug | crate::TelemetryLevel::Trace
+    )
+}
+
+/// Tracing targets exported over OTLP. Global default is `off`: a
+/// dependency that starts emitting `tracing` data must be added here
+/// deliberately instead of leaking into the backend.
+const EXPORT_TARGETS: &[&str] = &[
+    "jackin",
+    "jackin_build_meta",
+    "jackin_capsule",
+    "jackin_config",
+    "jackin_console",
+    "jackin_core",
+    "jackin_dev",
+    "jackin_diagnostics",
+    "jackin_diagnostics::session",
+    "jackin_docker",
+    "jackin_env",
+    "jackin_host",
+    "jackin_image",
+    "jackin_instance",
+    "jackin_isolation",
+    "jackin_launch",
+    "jackin_manifest",
+    "jackin_pr_trailers",
+    "jackin_protocol",
+    "jackin_telemetry",
+    "jackin_runtime",
+    jackin_telemetry::TELEMETRY_TARGET,
+    "termrock",
+    "termrock_lookbook",
+    "jackin_usage",
+];
+
+fn export_filter_directive(level: &str) -> String {
+    export_filter_directive_with_internal(
+        level,
+        std::env::var("JACKIN_OTEL_INTERNAL").is_ok_and(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        }),
+    )
+}
+
+fn export_level_for(sink: crate::TelemetrySink, debug: bool) -> &'static str {
+    crate::telemetry_level_name(crate::sink_level(sink, debug))
+}
+
+fn export_filter_directive_with_internal(level: &str, internal: bool) -> String {
+    let mut directive = String::from("off");
+    for target in EXPORT_TARGETS {
+        directive.push_str(&format!(",{target}={level}"));
+    }
+    if internal {
+        // Operator explicitly asked for dependency internals: restore the
+        // global default level while still blocking exporter feedback loops.
+        directive.push_str(&format!(
+            ",{level},hyper=off,h2=off,tower=off,tonic=off,reqwest=off,\
+                 opentelemetry=off,opentelemetry_sdk=off,opentelemetry_otlp=off"
+        ));
+    }
+    directive
+}
+
+#[cfg(any(test, feature = "test-support"))]
+#[derive(Debug)]
+pub struct TestExport {
+    pub(crate) spans: opentelemetry_sdk::trace::InMemorySpanExporter,
+    pub(crate) logs: opentelemetry_sdk::logs::InMemoryLogExporter,
+    pub(crate) tracer_provider: SdkTracerProvider,
+    pub(crate) logger_provider: SdkLoggerProvider,
+    #[cfg(test)]
+    _test_state_guard: Option<std::sync::MutexGuard<'static, ()>>,
+}
+
+#[cfg(test)]
+pub(crate) fn test_layers(debug: bool, run_id: &str) -> (TestExport, impl tracing::Subscriber) {
+    test_layers_at(if debug { "debug" } else { "info" }, run_id)
+}
+
+#[cfg(test)]
+pub(crate) fn test_layers_at(
+    test_level: &str,
+    _run_id: &str,
+) -> (TestExport, impl tracing::Subscriber) {
+    use opentelemetry::trace::TracerProvider as _;
+
+    let test_state_guard = crate::DIAGNOSTICS_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    jackin_telemetry::limits::install_redactor(crate::redact::redact_text);
+    let spans = opentelemetry_sdk::trace::InMemorySpanExporter::default();
+    let logs = opentelemetry_sdk::logs::InMemoryLogExporter::default();
+    let resource = build_resource_for(ServiceIdentity::HOST_ONE_SHOT);
+    let tracer_provider = SdkTracerProvider::builder()
+        .with_max_attributes_per_span(jackin_telemetry::limits::MAX_SPAN_ATTRIBUTES as u32)
+        .with_max_attributes_per_event(jackin_telemetry::limits::MAX_LOG_ATTRIBUTES as u32)
+        .with_max_links_per_span(jackin_telemetry::limits::MAX_SPAN_LINKS as u32)
+        .with_max_attributes_per_link(jackin_telemetry::limits::MAX_SPAN_ATTRIBUTES as u32)
+        .with_span_processor(GovernedSpanProcessor(
+            opentelemetry_sdk::trace::SimpleSpanProcessor::new(spans.clone()),
+        ))
+        .with_resource(resource.clone())
+        .build();
+    let logger_provider = SdkLoggerProvider::builder()
+        .with_log_processor(GovernedLogProcessor(
+            opentelemetry_sdk::logs::SimpleLogProcessor::new(logs.clone()),
+        ))
+        .with_resource(resource)
+        .build();
+    let tracer = tracer_provider.tracer("jackin");
+    let span_layer = tracing_opentelemetry::layer()
+        .with_tracer(tracer)
+        .with_location(false)
+        .with_threads(false)
+        .with_target(false)
+        .with_tracked_inactivity(false)
+        .with_error_records_to_exceptions(false)
+        .with_error_events_to_status(false)
+        .with_error_fields_to_exceptions(false);
+    let log_layer = OpenTelemetryTracingBridge::new(&logger_provider);
+    let span_directive = export_filter_directive(test_level);
+    let log_directive = export_filter_directive(test_level);
+    let subscriber = tracing_subscriber::registry()
+        .with(
+            span_layer
+                .with_filter(tracing_subscriber::filter::filter_fn(|metadata| {
+                    metadata.is_span()
+                }))
+                .with_filter(EnvFilter::new(span_directive)),
+        )
+        .with(
+            log_layer
+                .with_filter(tracing_subscriber::filter::filter_fn(|metadata| {
+                    metadata.is_event()
+                }))
+                .with_filter(EnvFilter::new(log_directive)),
+        );
+
+    (
+        TestExport {
+            spans,
+            logs,
+            tracer_provider,
+            logger_provider,
+            _test_state_guard: Some(test_state_guard),
+        },
+        subscriber,
+    )
+}
+
+/// Capsule-side in-memory bootstrap for layer conformance tests.
+#[cfg(any(test, feature = "test-support"))]
+pub fn test_capsule_layers(debug: bool) -> (TestExport, impl tracing::Subscriber) {
+    use opentelemetry::trace::TracerProvider as _;
+
+    let spans = opentelemetry_sdk::trace::InMemorySpanExporter::default();
+    let logs = opentelemetry_sdk::logs::InMemoryLogExporter::default();
+    let resource = build_resource_for(ServiceIdentity::CAPSULE);
+    let tracer_provider = SdkTracerProvider::builder()
+        .with_max_attributes_per_span(jackin_telemetry::limits::MAX_SPAN_ATTRIBUTES as u32)
+        .with_max_attributes_per_event(jackin_telemetry::limits::MAX_LOG_ATTRIBUTES as u32)
+        .with_max_links_per_span(jackin_telemetry::limits::MAX_SPAN_LINKS as u32)
+        .with_max_attributes_per_link(jackin_telemetry::limits::MAX_SPAN_ATTRIBUTES as u32)
+        .with_span_processor(GovernedSpanProcessor(
+            opentelemetry_sdk::trace::SimpleSpanProcessor::new(spans.clone()),
+        ))
+        .with_resource(resource.clone())
+        .build();
+    let logger_provider = SdkLoggerProvider::builder()
+        .with_log_processor(GovernedLogProcessor(
+            opentelemetry_sdk::logs::SimpleLogProcessor::new(logs.clone()),
+        ))
+        .with_resource(resource)
+        .build();
+    let tracer = tracer_provider.tracer("jackin");
+    let span_layer = tracing_opentelemetry::layer()
+        .with_tracer(tracer)
+        .with_location(false)
+        .with_threads(false)
+        .with_target(false)
+        .with_tracked_inactivity(false)
+        .with_error_records_to_exceptions(false)
+        .with_error_events_to_status(false)
+        .with_error_fields_to_exceptions(false);
+    let log_layer = OpenTelemetryTracingBridge::new(&logger_provider);
+    let test_level = if debug { "debug" } else { "info" };
+    let span_directive = export_filter_directive(test_level);
+    let log_directive = export_filter_directive(test_level);
+    let subscriber = tracing_subscriber::registry()
+        .with(
+            span_layer
+                .with_filter(tracing_subscriber::filter::filter_fn(|metadata| {
+                    metadata.is_span()
+                }))
+                .with_filter(EnvFilter::new(span_directive)),
+        )
+        .with(
+            log_layer
+                .with_filter(tracing_subscriber::filter::filter_fn(|metadata| {
+                    metadata.is_event()
+                }))
+                .with_filter(EnvFilter::new(log_directive)),
+        );
+
+    (
+        TestExport {
+            spans,
+            logs,
+            tracer_provider,
+            logger_provider,
+            #[cfg(test)]
+            _test_state_guard: None,
+        },
+        subscriber,
+    )
+}
+
+/// Test-only entry for the governed session-start event.
+#[cfg(test)]
+pub(crate) fn emit_session_start_for_test(
+    session_id: &str,
+    _run_id: Option<&str>,
+    _traceparent: Option<&str>,
+) {
+    let attrs = [jackin_telemetry::Attr {
+        key: jackin_telemetry::schema::attrs::std_attrs::SESSION_ID,
+        value: jackin_telemetry::Value::Str(session_id),
+    }];
+    let _event_result = jackin_telemetry::emit_event(
+        &jackin_telemetry::event::SESSION_START,
+        jackin_telemetry::FieldSet::new(&attrs, None),
+    );
+}
+
+#[derive(Debug, Default)]
+struct ProcessSnapshot {
+    cpu_utilization_bits: std::sync::atomic::AtomicU64,
+    memory_bytes: std::sync::atomic::AtomicI64,
+    valid: std::sync::atomic::AtomicBool,
+}
+
+fn start_process_sampler(pid: sysinfo::Pid, cpu_count: f64) -> std::sync::Arc<ProcessSnapshot> {
+    let snapshot = std::sync::Arc::new(ProcessSnapshot::default());
+    // Miri implements none of the sysconf(3) names probed by sysinfo
+    // ("unimplemented sysconf name: 2"), so the sampler thread would
+    // abort the whole test binary. Process sampling is real-OS work
+    // outside what Miri models; under Miri skip the thread entirely and
+    // leave the snapshot permanently invalid.
+    #[cfg(not(miri))]
+    {
+        let weak = std::sync::Arc::downgrade(&snapshot);
+        drop(jackin_telemetry::spawn::thread_stream(
+            "telemetry.process_sampler",
+            move || sample_until_dropped(pid, cpu_count, weak),
+        ));
+    }
+    #[cfg(miri)]
+    let _ = (pid, cpu_count);
+    snapshot
+}
+
+/// Refresh one process's CPU and memory into `snapshot` until the last
+/// strong reference is dropped; real-OS work Miri cannot model, so the
+/// whole sampler is compiled out under Miri.
+#[cfg(not(miri))]
+fn sample_until_dropped(pid: sysinfo::Pid, cpu_count: f64, weak: std::sync::Weak<ProcessSnapshot>) {
+    use std::sync::atomic::Ordering;
+    let mut system = sysinfo::System::new();
+    while let Some(snapshot) = weak.upgrade() {
+        system.refresh_processes_specifics(
+            sysinfo::ProcessesToUpdate::Some(&[pid]),
+            true,
+            sysinfo::ProcessRefreshKind::nothing()
+                .with_cpu()
+                .with_memory(),
+        );
+        if let Some(process) = system.process(pid) {
+            let utilization = f64::from(process.cpu_usage()) / 100.0 / cpu_count;
+            snapshot
+                .cpu_utilization_bits
+                .store(utilization.to_bits(), Ordering::Relaxed);
+            snapshot.memory_bytes.store(
+                i64::try_from(process.memory()).unwrap_or(i64::MAX),
+                Ordering::Relaxed,
+            );
+            snapshot.valid.store(true, Ordering::Release);
+        }
+        drop(snapshot);
+        std::thread::park_timeout(std::time::Duration::from_millis(2_500));
+    }
+}
+
+/// Process and runtime metrics: CPU utilization and
+/// memory via `sysinfo`, plus the stable tokio runtime counters (workers,
+/// alive tasks, global queue depth) read from `app_handle` — jackin❯'s *app*
+/// runtime handle, captured by the caller before entering the dedicated
+/// telemetry runtime. Capturing it here would instead read the telemetry
+/// runtime; reading it from the collect thread (no ambient runtime) would
+/// yield `None`.
+fn init_metrics(
+    resource: &Resource,
+    endpoints: &OtlpEndpoints,
+    app_handle: Option<tokio::runtime::Handle>,
+    physical_channels: &otlp_channel::PhysicalChannels,
+) -> anyhow::Result<SdkMeterProvider> {
+    use opentelemetry::metrics::MeterProvider as _;
+    let runtime = otel_runtime()?;
+    let runtime = runtime
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("telemetry runtime was not initialized"))?;
+    let _runtime_guard = runtime.enter();
+    let metric_channel = otlp_channel::ChannelKey::new(
+        &endpoints.metrics,
+        endpoints.metrics_timeout,
+        &endpoints.metrics_tls,
+    );
+    let metric_builder = opentelemetry_otlp::MetricExporter::builder()
+        .with_tonic()
+        .with_temporality(opentelemetry_sdk::metrics::Temporality::Cumulative)
+        .with_endpoint(endpoints.metrics.clone())
+        .with_timeout(endpoints.metrics_timeout)
+        .with_compression(Compression::Gzip)
+        .with_retry_policy(retry::policy())
+        .with_channel(physical_channels.get(&metric_channel)?);
+    let metric_exporter = metric_builder
+        .build()
+        .map_err(|_| anyhow::anyhow!("OTLP metric exporter init failed"))?;
+    let reader = PeriodicReader::builder(GovernedMetricExporter(metric_exporter), Tokio)
+        .with_interval(std::time::Duration::from_secs(30))
+        .with_timeout(EXPORT_ATTEMPT_TIMEOUT)
+        .build();
+    let governed_view = |instrument: &opentelemetry_sdk::metrics::Instrument| {
+        let definition = jackin_telemetry::schema::metrics::definition(instrument.name())?;
+        let mut stream = opentelemetry_sdk::metrics::Stream::builder()
+            .with_cardinality_limit(jackin_telemetry::limits::MAX_CARDINALITY);
+        if instrument.kind() == opentelemetry_sdk::metrics::InstrumentKind::Histogram {
+            stream = stream.with_aggregation(
+                opentelemetry_sdk::metrics::Aggregation::ExplicitBucketHistogram {
+                    boundaries: definition.boundaries.to_vec(),
+                    record_min_max: false,
+                },
+            );
+        }
+        stream.build().ok()
+    };
+    let provider = SdkMeterProvider::builder()
+        .with_reader(reader)
+        .with_view(governed_view)
+        .with_resource(resource.clone())
+        .build();
+    let meter = provider.meter("jackin");
+    install_observable_metrics(&meter, app_handle);
+    Ok(provider)
+}
+
+fn install_observable_metrics(
+    meter: &opentelemetry::metrics::Meter,
+    app_handle: Option<tokio::runtime::Handle>,
+) {
+    if let Ok(pid) = sysinfo::get_current_pid() {
+        use std::sync::atomic::Ordering;
+
+        let cpu_count =
+            std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get) as f64;
+        let snapshot = start_process_sampler(pid, cpu_count);
+        let cpu_snapshot = std::sync::Arc::clone(&snapshot);
+        let _cpu_gauge = meter
+            // semconv: process.cpu.utilization, unit "1", 0..1 fraction
+            // of the CPUs available to the process.
+            .f64_observable_gauge(
+                opentelemetry_semantic_conventions::metric::PROCESS_CPU_UTILIZATION,
+            )
+            .with_unit("1")
+            .with_description("Fraction of total host CPU used by the jackin process")
+            .with_callback(move |observer| {
+                if cpu_snapshot.valid.load(Ordering::Acquire) {
+                    observer.observe(
+                        f64::from_bits(cpu_snapshot.cpu_utilization_bits.load(Ordering::Relaxed)),
+                        &[],
+                    );
+                }
+            })
+            .build();
+        let _memory_counter = meter
+            // semconv: process.memory.usage is an UpDownCounter (rises
+            // and falls), not a gauge.
+            .i64_observable_up_down_counter(
+                opentelemetry_semantic_conventions::metric::PROCESS_MEMORY_USAGE,
+            )
+            .with_unit(jackin_telemetry::schema::metrics::PROCESS_MEMORY_USAGE_DEF.unit)
+            .with_description(
+                jackin_telemetry::schema::metrics::PROCESS_MEMORY_USAGE_DEF.description,
+            )
+            .with_callback(move |observer| {
+                if snapshot.valid.load(Ordering::Acquire) {
+                    observer.observe(snapshot.memory_bytes.load(Ordering::Relaxed), &[]);
+                }
+            })
+            .build();
+    }
+
+    if let Some(handle) = app_handle {
+        let workers = handle.clone();
+        let _worker_gauge = meter
+            .u64_observable_gauge("tokio.runtime.workers")
+            .with_description("Worker threads driving the tokio runtime")
+            .with_callback(move |observer| {
+                observer.observe(workers.metrics().num_workers() as u64, &[]);
+            })
+            .build();
+        let alive = handle.clone();
+        let _alive_gauge = meter
+            .u64_observable_gauge("tokio.runtime.alive_tasks")
+            .with_description("Tasks currently alive in the tokio runtime")
+            .with_callback(move |observer| {
+                observer.observe(alive.metrics().num_alive_tasks() as u64, &[]);
+            })
+            .build();
+        let _queue_gauge = meter
+            .u64_observable_gauge("tokio.runtime.global_queue.depth")
+            .with_description("Tasks waiting in the tokio runtime's global queue")
+            .with_callback(move |observer| {
+                observer.observe(handle.metrics().global_queue_depth() as u64, &[]);
+            })
+            .build();
+    }
+}
+
+pub(super) fn shutdown() {
+    let _activation = ACTIVATION_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    reap_flush_workers();
+    let mut providers = PROVIDERS.lock().ok().and_then(|mut slot| slot.take());
+    let generation = providers.as_ref().map(|providers| providers.generation);
+    let mut runtime = OTEL_RUNTIME.lock().ok().and_then(|mut slot| slot.take());
+    if providers.is_none() && runtime.is_none() {
+        return;
+    }
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    let shutdown_result = providers
+        .as_mut()
+        .map_or(Ok(true), |providers| providers.flush_and_shutdown(deadline));
+    let succeeded = match shutdown_result {
+        Ok(succeeded) => succeeded,
+        Err(error) => {
+            // A metric writer still owns the facade read lock. Keep both
+            // provider and runtime ownership published so the next
+            // shutdown call can retry; dropping either here would turn a
+            // bounded fence timeout into a lifecycle overlap with the
+            // retiring provider.
+            *PROVIDERS
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = providers.take();
+            *OTEL_RUNTIME
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = runtime.take();
+            if let Some(generation) = generation {
+                health::record_shutdown_timeout(generation);
+            }
+            crate::logging::emit_teardown_notice(&format!(
+                "telemetry meter shutdown fence failed: {error}"
+            ));
+            reap_flush_workers();
+            return;
+        }
+    };
+    drop(providers);
+    if let Some(runtime) = runtime {
+        // Providers have already flushed and shut down under the deadline.
+        // Waiting for retired tonic driver tasks can deadlock process exit;
+        // the runtime owns no product work after provider shutdown.
+        runtime.shutdown_background();
+    }
+    let timed_out = std::time::Instant::now() >= deadline;
+    if let Some(generation) = generation {
+        if timed_out {
+            health::record_shutdown_timeout(generation);
+        }
+        health::record_shutdown(generation, succeeded && !timed_out);
+    }
+    reap_flush_workers();
+}
+
+fn retain_flush_worker(handle: std::thread::JoinHandle<()>) {
+    PENDING_FLUSH_WORKERS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .push(handle);
+}
+
+fn retain_terminal_meter_lease(lease: MeterInstallationLease) {
+    TERMINAL_METER_LEASES
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .push(lease);
+}
+
+fn reap_flush_workers() {
+    let mut pending = PENDING_FLUSH_WORKERS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut unfinished = Vec::new();
+    for handle in pending.drain(..) {
+        if handle.is_finished() {
+            drop(handle.join());
+        } else {
+            unfinished.push(handle);
+        }
+    }
+    *pending = unfinished;
+}
+
+#[cfg(any(test, feature = "test-support"))]
+pub(super) fn runtime_creation_count() -> u64 {
+    OTEL_RUNTIME_CREATIONS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+#[cfg(feature = "test-support")]
+pub(super) fn runtime_is_active() -> bool {
+    OTEL_RUNTIME
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .is_some()
+}
+
+#[cfg(test)]
+mod tests;

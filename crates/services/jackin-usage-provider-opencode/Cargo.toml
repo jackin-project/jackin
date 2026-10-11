@@ -1,0 +1,31 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "jackin-usage-provider-opencode"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
+description = "OpenCode Go subscription-limit adapter: API-key loading, zen/go usage fetch, and rolling/weekly/monthly quota views."
+license.workspace = true
+readme = "README.md"
+publish = false
+
+repository.workspace = true
+
+[lib]
+name = "jackin_usage_provider_opencode"
+path = "src/lib.rs"
+
+[dependencies]
+jackin-protocol = { workspace = true }
+jackin-usage-provider-core = { workspace = true }
+
+chrono = { workspace = true, features = ["clock"] }
+reqwest = { workspace = true, features = ["blocking", "json", "rustls"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+
+[lints]
+workspace = true

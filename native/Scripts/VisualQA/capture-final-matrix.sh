@@ -52,8 +52,8 @@ test "$app" = "$canonical_app" || {
   echo "final evidence requires the canonical branch-head app: $canonical_app" >&2
   exit 2
 }
-mise -C "$repo" run desktop-build
-mise -C "$repo" run desktop-verify
+MISE_AUTO_INSTALL=false mise -C "$repo" exec -- mbx +1.99.0 xtask desktop build --version "${JACKIN_APP_VERSION:-0.6.0}" --build "${JACKIN_APP_BUILD:-1}"
+MISE_AUTO_INSTALL=false mise -C "$repo" exec -- mbx +1.99.0 xtask desktop verify
 require_clean_sources
 test -d "$app" || {
   echo "app bundle not found: $app" >&2

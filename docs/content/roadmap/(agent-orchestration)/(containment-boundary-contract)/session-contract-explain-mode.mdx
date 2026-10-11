@@ -8,13 +8,13 @@ title: "Session Contract and Explain Mode"
 
 ## Shipped facts
 
-`format_session_contract` in <RepoFile path="crates/jackin-runtime/src/runtime/docker_profile.rs">crates/jackin-runtime/src/runtime/docker_profile.rs</RepoFile> renders a human-readable table (Docker security profile, apparmor/seccomp, capabilities, root filesystem, DinD status, network mode/enforcement, cgroup, resource limits, agent/GitHub credential forwarding, residual risk) for the active grants, but no stand-alone command exposes that explanation today.
+`format_session_contract` in <RepoFile path="crates/services/jackin-runtime/src/runtime/docker_profile.rs">crates/services/jackin-runtime/src/runtime/docker_profile.rs</RepoFile> renders a human-readable table (Docker security profile, apparmor/seccomp, capabilities, root filesystem, DinD status, network mode/enforcement, cgroup, resource limits, agent/GitHub credential forwarding, residual risk) for the active grants, but no stand-alone command exposes that explanation today.
 
-`print_session_contract` in <RepoFile path="crates/jackin-runtime/src/runtime/apple_container.rs">crates/jackin-runtime/src/runtime/apple_container.rs</RepoFile> prints an Apple Container-specific contract (isolation model, mounts, network, residual risk) unconditionally at attach time. It is backend-specific, text-only, and not gated behind an explain-style preview.
+`print_session_contract` in <RepoFile path="crates/services/jackin-runtime/src/runtime/apple_container.rs">crates/services/jackin-runtime/src/runtime/apple_container.rs</RepoFile> prints an Apple Container-specific contract (isolation model, mounts, network, residual risk) unconditionally at attach time. It is backend-specific, text-only, and not gated behind an explain-style preview.
 
-`jackin-capsule status explain <session_id>` (<RepoFile path="crates/jackin-capsule/src/client.rs">crates/jackin-capsule/src/client.rs</RepoFile>) is a different feature entirely: it dumps the agent-status evidence/arbitration bundle for [Agent runtime status](/roadmap/agent-runtime-status/), not a launch/session contract. It does not contribute toward this item.
+`jackin-capsule status explain <session_id>` (<RepoFile path="crates/apps/jackin-capsule/src/client.rs">crates/apps/jackin-capsule/src/client.rs</RepoFile>) is a different feature entirely: it dumps the agent-status evidence/arbitration bundle for [Agent runtime status](/roadmap/agent-runtime-status/), not a launch/session contract. It does not contribute toward this item.
 
-There is no `jackin explain` subcommand, no `--explain` flag on `jackin load`, and no JSON contract output anywhere in the `jackin` CLI (checked `crates/jackin/src/cli/` and <RepoFile path="crates/jackin/src/app.rs">crates/jackin/src/app.rs</RepoFile>).
+There is no `jackin explain` subcommand, no `--explain` flag on `jackin load`, and no JSON contract output anywhere in the `jackin` CLI (checked `crates/apps/jackin/src/cli/` and <RepoFile path="crates/apps/jackin/src/app.rs">crates/apps/jackin/src/app.rs</RepoFile>).
 
 ## Remaining work
 
@@ -29,11 +29,11 @@ Full contract-section schema, phase breakdown, and Hazmat/Docker Sandboxes inspi
 
 ## Related files
 
-- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> — current runtime launch path
-- <RepoFile path="crates/jackin-config/src/resolve.rs">crates/jackin-config/src/resolve.rs</RepoFile> — workspace resolution
-- <RepoFile path="crates/jackin-config/src/planner.rs">crates/jackin-config/src/planner.rs</RepoFile> — resolved mount planning
-- <RepoFile path="crates/jackin-instance/src/auth.rs">crates/jackin-instance/src/auth.rs</RepoFile> — per-instance auth behavior
-- <RepoFile path="crates/jackin-docker/src/shell_runner.rs">crates/jackin-docker/src/shell_runner.rs</RepoFile> — Docker command boundary
+- <RepoFile path="crates/services/jackin-runtime/src/runtime/launch.rs">crates/services/jackin-runtime/src/runtime/launch.rs</RepoFile> — current runtime launch path
+- <RepoFile path="crates/core/jackin-config/src/resolve.rs">crates/core/jackin-config/src/resolve.rs</RepoFile> — workspace resolution
+- <RepoFile path="crates/core/jackin-config/src/planner.rs">crates/core/jackin-config/src/planner.rs</RepoFile> — resolved mount planning
+- <RepoFile path="crates/services/jackin-instance/src/auth.rs">crates/services/jackin-instance/src/auth.rs</RepoFile> — per-instance auth behavior
+- <RepoFile path="crates/adapters/jackin-docker/src/shell_runner.rs">crates/adapters/jackin-docker/src/shell_runner.rs</RepoFile> — Docker command boundary
 
 ## Related work
 

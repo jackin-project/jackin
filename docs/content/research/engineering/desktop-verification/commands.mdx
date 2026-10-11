@@ -22,40 +22,40 @@ Vetted: 2026-10-03 (source contracts; no fresh execution claim)
 
 ### Crates tests
 - Current generated Rust CI invokes each package separately:
-  `mbx nextest run --profile ci --locked --offline --manifest-path crates/jackin-usage/Cargo.toml --package jackin-usage --no-tests fail`
+  `mbx nextest run --profile ci --locked --offline --manifest-path crates/services/jackin-usage/Cargo.toml --package jackin-usage --no-tests fail`
   and the corresponding `jackin-usage-ffi` invocation —
   <RepoFile path=".github/workflows/ci.yml" /> (confidence: HIGH).
 - Local desktop testing runs
-  `cargo nextest run -p jackin-usage -p jackin-usage-ffi --lib` through
-  <RepoFile path="crates/jackin-xtask/src/desktop.rs" />. The July 24 catalog's
+  `mise exec -- mbx +1.99.0 nextest run -p jackin-usage -p jackin-usage-ffi --lib` through
+  <RepoFile path="crates/tools/jackin-xtask/src/desktop.rs" />. The July 24 catalog's
   combined `--locked` command came from retired PR CI; it is not today's
   generated invocation (confidence: HIGH).
-- General runner and filters: `cargo nextest run`, `-E 'test(name)'`,
+- General runner and filters: `mise exec -- mbx +1.99.0 nextest run`, `-E 'test(name)'`,
   `--all-features` — <RepoFile path="TESTING.md" /> (confidence: HIGH).
 
 ### Bindings drift gate
-- `cargo xtask desktop bindings-check`
-  — local `mise run desktop-ci` step in <RepoFile path="mise.toml" />;
+- `mise exec -- mbx +1.99.0 xtask desktop bindings-check`
+  — local `mise -C native run ci` cadence in <RepoFile path="native/mise.toml" />;
   the former desktop-merge workflow was retired. <RepoFile path="mise.toml" /> pins `cargo:boltffi_cli` at `0.30.1`
   to provide `boltffi`; no current hosted bindings gate executes it
   (confidence: HIGH)
 
 ### App build / verify / run
-- `cargo xtask desktop build --version "$JACKIN_APP_VERSION" --build "$JACKIN_APP_BUILD"`
-  → `native/dist/JackinDesktop.app`; `cargo xtask desktop verify
+- `mise exec -- mbx +1.99.0 xtask desktop build --version "$JACKIN_APP_VERSION" --build "$JACKIN_APP_BUILD"`
+  → `native/dist/JackinDesktop.app`; `mise exec -- mbx +1.99.0 xtask desktop verify
   native/dist/JackinDesktop.app [zip]` — local desktop steps
-  (`mise run desktop-ci`, with heavier `desktop-merge`/`desktop-scheduled` tasks);
-  operator wrappers `mise run desktop-build|desktop-verify|desktop-run|desktop`
-  — <RepoFile path="mise.toml" /> (confidence: HIGH)
-- The local `desktop-merge` task also exercises the built app via UI tests
-  (`mise run desktop-test-ui`, after `desktop-ci`)
+  (`mise -C native run ci`, with `merge` and `scheduled` native cadences);
+  direct operator commands `mise exec -- mbx +1.99.0 xtask desktop build|verify|run`
+  — <RepoFile path="native/mise.toml" /> (confidence: HIGH)
+- The local `merge` cadence also exercises the built app via UI tests
+  (`native/Scripts/run-ui-tests.sh`, after `mise -C native run ci`)
   (confidence: HIGH)
 
 ### Swift tests
-- `cargo xtask desktop test` (mise `desktop-test`, <RepoFile path="mise.toml" />)
+- `mise exec -- mbx +1.99.0 xtask desktop test` (direct command)
   requires macOS, runs the two Rust library suites, then five pure Swift
-  harnesses. Counted SwiftPM tests use `cargo xtask desktop test-swift` —
-  <RepoFile path="crates/jackin-xtask/src/desktop.rs" /> (confidence: HIGH).
+  harnesses. Counted SwiftPM tests use `mise exec -- mbx +1.99.0 xtask desktop test-swift` —
+  <RepoFile path="crates/tools/jackin-xtask/src/desktop.rs" /> (confidence: HIGH).
 - **Snapshot runner stability:** The July 24 catalog recorded macOS 26 GA
   under explicit `macos-26` labels and a June 2026 transition schedule for
   the moving `macos-latest` alias. That is historical runner evidence; confirm
@@ -71,16 +71,16 @@ Vetted: 2026-10-03 (source contracts; no fresh execution claim)
 - Current generated Rust jobs use per-package `mbx fmt --check` and
   `mbx clippy --locked --offline --manifest-path <manifest> --package <package> --all-targets -- -D warnings`
   — <RepoFile path=".github/workflows/ci.yml" /> (confidence: HIGH).
-- Local formatting is `mise run fmt` (`cargo fmt --check`); local lint and
+- Local formatting is `mise exec -- mbx +1.99.0 fmt --check`; local lint and
   merge-readiness entry points are documented in
   <RepoFile path="CONTRIBUTING.md" />. These local commands do not establish
   hosted desktop coverage (confidence: HIGH).
 
 ### Release verification
-- `cargo xtask desktop sign-notarize` (mise `desktop-sign-notarize`),
+- `mise exec -- mbx +1.99.0 xtask desktop sign-notarize` (`mise -C native run sign-notarize`),
   `--release` verification requires Developer ID + notarization/staple/Gatekeeper —
   <RepoFile path="native/README.md" /> and <RepoFile path="mise.toml" />.
-  The July 24 catalog attributed publication and archive naming to the former
+  The historical release catalog attributed publication and archive naming to the former
   release workflow. That workflow is absent; current Rust CI does not publish
   or sign desktop releases (confidence: HIGH for local source contracts).
 

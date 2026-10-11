@@ -19,7 +19,7 @@ Provider construction is best-effort and product work stays fail-open. Export us
 
 ## Schema authority
 
-<RepoFile path="crates/jackin-telemetry/registry/manifest.yaml">`crates/jackin-telemetry/registry`</RepoFile> is the closed jackin❯ extension registry with schema URL 1.45.0, built on the vendored OpenTelemetry semantic conventions 1.43.0 registry. It generates names, bounded enums, descriptors, and facade inventories. Offline Weaver generation, bidirectional checked-in drift detection, registry-wide required/allowed-field and value enforcement, facade limits, and second-line log/span/metric validation are implemented and dynamically tested.
+<RepoFile path="crates/services/jackin-telemetry/registry/manifest.yaml">`crates/services/jackin-telemetry/registry`</RepoFile> is the closed jackin❯ extension registry with schema URL 1.45.0, built on the vendored OpenTelemetry semantic conventions 1.43.0 registry. It generates names, bounded enums, descriptors, and facade inventories. Offline Weaver generation, bidirectional checked-in drift detection, registry-wide required/allowed-field and value enforcement, facade limits, and second-line log/span/metric validation are implemented and dynamically tested.
 
 Product instrumentation uses `jackin-telemetry` registered events, operation guards, metric handles, and ownership-aware spawn helpers. All legacy and generic telemetry macro call sites, definitions, and bridge machinery have been removed. A syntax-aware architecture gate rejects their reintroduction and constrains direct OpenTelemetry SDK use and arbitrary telemetry targets. Operator-facing prose remains a separate output port.
 
@@ -67,7 +67,7 @@ Generative-AI signals use standard semantic conventions only where content captu
 
 ## Verification
 
-The dev-only <RepoFile path="crates/jackin-otlp-testbed/README.md">`jackin-otlp-testbed`</RepoFile> receives real OTLP/gRPC requests and supports deterministic failure responses. Current wire tests cover direct host/daemon/Capsule delivery, exact Resource consistency, correlation rules, payload-wide privacy detectors, shutdown, serialized daemon and Capsule protocols, the production launch controller, registry-wide event delivery, and live-volume soak behavior. Universal error-ownership enforcement, production UI causality, production prewarm-path proof, calibrated active-path performance evidence, and fresh integrated CI gates remain unfinished.
+The dev-only <RepoFile path="crates/testing/jackin-otlp-testbed/README.md">`jackin-otlp-testbed`</RepoFile> receives real OTLP/gRPC requests and supports deterministic failure responses. Current wire tests cover direct host/daemon/Capsule delivery, exact Resource consistency, correlation rules, payload-wide privacy detectors, shutdown, serialized daemon and Capsule protocols, the production launch controller, registry-wide event delivery, and live-volume soak behavior. Universal error-ownership enforcement, production UI causality, production prewarm-path proof, calibrated active-path performance evidence, and fresh integrated CI gates remain unfinished.
 
 Run focused contract checks with:
 
