@@ -1,0 +1,13 @@
+test_aliases_equivalent_patches_and_dirty_work_preserved (__main__.CollectorTests.test_aliases_equivalent_patches_and_dirty_work_preserved) ... ok
+test_existing_output_not_overwritten (__main__.CollectorTests.test_existing_output_not_overwritten) ... ok
+test_linked_worktree_common_git_directory_rejected (__main__.CollectorTests.test_linked_worktree_common_git_directory_rejected) ... ok
+test_multi_parent_tip_retains_all_parent_trees (__main__.CollectorTests.test_multi_parent_tip_retains_all_parent_trees) ... ok
+test_output_inside_repo_rejected (__main__.CollectorTests.test_output_inside_repo_rejected) ... ok
+test_ref_change_marks_snapshot_unstable (__main__.CollectorTests.test_ref_change_marks_snapshot_unstable) ... ok
+test_renames_record_both_paths (__main__.CollectorTests.test_renames_record_both_paths) ... ok
+test_shallow_history_is_not_complete_evidence (__main__.CollectorTests.test_shallow_history_is_not_complete_evidence) ... ok
+
+----------------------------------------------------------------------
+Ran 8 tests in 0.631s
+
+OK

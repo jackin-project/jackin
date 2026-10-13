@@ -61,15 +61,15 @@ Linux capsule release zigbuild for `aarch64-unknown-linux-gnu.2.17` succeeded. T
 2. Still failing:
    - `jackin_load_agent_smith_can_reach_its_dind_daemon_with_proxy_env`: Capsule transport ACK failed with connection reset, then the Java Testcontainers smoke did not pass.
    - `usage_broker_killed_owner_recovers_once_without_a_herd`: child `wait_until` barrier timed out. Raising the recovery waits from 10s to 30s still failed and was reverted.
-3. Generated `ci.yml` pins were not regenerated. `xtask ci --only policy` was not run on this head. One-minute warm CI was not measured.
+3. Generated `ci.yml` pin refresh is blocked. `docs/consolidation-20261013/evidence/task-006-remaining.md` records that the checked-in workflow still installs Rust 1.98.1, MBX 1.21.0, and Mise 2026.9.18, while the toolchain files name Rust 1.99.0, MBX 1.23.0, and Mise at least 2026.10.7. The workflow blob matches the policy tip, not the tooling tip. Do not hand-edit it. `xtask ci --only policy` was not run. One-minute warm CI was not measured.
 4. Independent review of commits after `a1f0916c` is incomplete. Later fix review rejected some commits that were subsequently patched (`59049bc1`, `274665c0`). Commits from `86693632` through `7a05f3ae` still need a reviewer who did not write them.
 5. Tasks 014, 016, 017, 018, and 020 are not closed. Task 019 is blocked: do not open or merge a pull request to `main` unless a later instruction specifically authorizes the protected squash workflow.
-6. Local audit notes under the evidence directory named in "Local-only items" were not imported into this repository.
+6. Decision notes are tracked under `docs/consolidation-20261013/evidence/`. `task-invariant-check.md` records seven passing checks at `7a05f3ae`. `task-019-protection.md` records that opening or merging a pull request to `main` was not authorized. Notes for tasks 014 and 016, the DinD proxy diagnosis, the recovery-barrier diagnosis, and an independent review of `86693632` through `7a05f3ae` were not present when these records were packed. Their absence is not approval.
 
 ## Next steps
 
 1. Clone this branch. Do not start from `main` if the goal is to continue the consolidation.
-2. Re-read this file and confirm `git rev-parse HEAD` matches the pushed integration tip.
+2. Re-read this file, then `docs/consolidation-20261013/README.md`, `docs/consolidation-20261013/plan/GOAL.md`, and `docs/consolidation-20261013/plan/goal-references/05-execution-tasks.md`. Confirm `git rev-parse HEAD` matches the pushed integration tip.
 3. Diagnose the two remaining end-to-end failures before changing product code. Do not weaken assertions to hide a five-minute retry floor or a transport reset.
 4. Regenerate `.github/workflows/ci.yml` only with the real Velnor Actions generator. If that command is not in the repo, leave the file unchanged and record BLOCKED.
 5. Run `xtask ci --only policy` once, with no second Jackin cargo compile at the same time.
@@ -119,12 +119,15 @@ The image `python:3.14-alpine` must be present locally or the docker usage-broke
 env -u RUSTUP_TOOLCHAIN mise exec -- mbx +1.99.0 build --bin jackin-usage-broker --bin jackin
 ```
 
+## Session records in this repository
+
+`docs/consolidation-20261013/plan/` holds the planning overlay, including the task list and the official coverage matrix. `docs/consolidation-20261013/evidence/` holds the decision notes. Those notes were copied so the next machine does not need the original overlay.
+
 ## Local-only items
 
 These were not pushed and must not be copied blindly:
 
-- Planning overlay `/Users/donbeave/Projects/merge/jackin` is not a git checkout. Do not `git init` it.
-- Audit notes and end-to-end homes under `/Users/donbeave/Projects/merge/jackin-evidence-prefetch-20261013/`. Homes may contain local state. Do not commit them.
+- End-to-end homes and baseline logs under `/Users/donbeave/Projects/merge/jackin-evidence-prefetch-20261013/baselines/`. Homes may contain local state.
 - Detached baseline worktrees `wt-baseline-M`, `wt-baseline-P`, `wt-baseline-U`, and `wt-baseline-T` only pin the SHAs above. They have no unique commits.
 - `target/` build output, including the Linux capsule binary. Rebuild it on the next machine.
 - No stashes were present on the primary clone at handoff.
