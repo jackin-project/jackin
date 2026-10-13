@@ -236,7 +236,7 @@ fn scanner_records_cross_boundary_literals() {
     scan_source_inputs(
         concat!(
             "const A: &str = include_str!",
-            "(\"../../../docker/x.sh\");\n",
+            "(\"../../../../docker/x.sh\");\n",
             "const B: &str = include_str!",
             "(\"local.toml\");\n",
             "#[path",
