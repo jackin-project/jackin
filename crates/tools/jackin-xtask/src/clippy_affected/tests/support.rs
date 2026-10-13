@@ -85,7 +85,11 @@ pub(super) fn workspace_root() -> PathBuf {
 
 pub(super) fn rust_sources(root: &Path) -> Vec<PathBuf> {
     let mut sources = Vec::new();
-    let mut stack = vec![root.join("crates"), root.join("vendor")];
+    let mut stack = ["crates", "vendor"]
+        .into_iter()
+        .map(|name| root.join(name))
+        .filter(|path| path.is_dir())
+        .collect::<Vec<_>>();
     while let Some(dir) = stack.pop() {
         let entries = fs_util::read_dir_sorted(&dir).expect("read dir");
         for entry in entries {
