@@ -24,7 +24,7 @@ macos_architectures = ["arm64"]
 # generated Swift `import` and the xcframework modulemap. `output` is the
 # PARENT directory; boltffi creates `{name}.xcframework` inside it.
 name = "JackinUsage"
-output = "../../target/xcframework"
+output = "../../../target/xcframework"
 
 [targets.apple.spm]
 # Binary-only package; Swift sources land beside our own Package.swift, which
@@ -33,4 +33,4 @@ layout = "split"
 skip_package_swift = true
 
 [targets.apple.swift]
-output = "../../native/Sources/JackinUsageBindings"
+output = "../../../native/Sources/JackinUsageBindings"

@@ -11,9 +11,8 @@ use std::time::{Duration, Instant};
 
 use jackin_protocol::usage_broker::{USAGE_BROKER_PROTOCOL_VERSION, UsageCoordinationError};
 use nix::fcntl::{OFlag, open};
-use nix::sys::signal::kill;
 use nix::sys::stat::Mode;
-use nix::unistd::{Pid, UnlinkatFlags, fsync, geteuid, unlinkat};
+use nix::unistd::{UnlinkatFlags, fsync, geteuid, unlinkat};
 
 use crate::{
     BrokerLease, BrokerLeaseOwner, CONNECT_RETRY, CONNECT_RETRY_STEP, UsageBrokerClient,
@@ -45,7 +44,7 @@ pub(crate) fn claim_leader(
                     let _ignored = file.unlock();
                     continue;
                 }
-                return match claim_existing_lease(&mut file, &lease, build_id, lease_duration) {
+                return match claim_existing_lease(path, &mut file, &lease, build_id, lease_duration) {
                     // The owner keeps the descriptor lock for its entire
                     // lifetime. Expiry cannot transfer a live process's
                     // authority while it is suspended or waking.
@@ -106,12 +105,13 @@ pub(crate) fn claim_leader(
 }
 
 pub(crate) fn claim_existing_lease(
+    path: &Path,
     file: &mut File,
     replacement: &BrokerLease,
     build_id: &str,
     lease_duration: Duration,
 ) -> Result<Option<bool>, UsageCoordinationError> {
-    if file.metadata().map_err(|_| unavailable())?.nlink() == 0 {
+    if !lease_path_matches_open_file(path, file) {
         return Ok(None);
     }
     let bytes = read_lease_bytes(file).map_err(|_| unavailable())?;
@@ -129,10 +129,9 @@ pub(crate) fn claim_existing_lease(
             .saturating_sub(existing.renewed_at_epoch)
             >= i64::try_from(lease_duration.as_secs()).unwrap_or(i64::MAX)
     } else {
-        // Preserve compatibility with pre-lease state only when its PID is
-        // demonstrably gone; a malformed live lease fails closed.
-        let pid = String::from_utf8_lossy(&bytes).trim().parse::<i32>().ok();
-        pid.is_some_and(|pid| kill(Pid::from_raw(pid), None).is_err())
+        // Unknown lease bytes are not authority, even when the text parses
+        // as a process id that is no longer running.
+        false
     };
     if !replace {
         return Ok(None);
@@ -235,12 +234,23 @@ fn unlink_owned_socket_path(path: &Path, expected: BrokerSocketIdentity) -> Resu
     unlink_owned_path(path)
 }
 
+fn lease_path_matches_open_file(path: &Path, file: &File) -> bool {
+    let Ok(descriptor_metadata) = file.metadata() else {
+        return false;
+    };
+    let Ok(path_metadata) = fs::symlink_metadata(path) else {
+        return false;
+    };
+    descriptor_metadata.nlink() != 0
+        && descriptor_metadata.is_file()
+        && path_metadata.is_file()
+        && !path_metadata.file_type().is_symlink()
+        && path_metadata.dev() == descriptor_metadata.dev()
+        && path_metadata.ino() == descriptor_metadata.ino()
+}
+
 fn path_matches_file(path: &Path, file: &File) -> Result<bool, ()> {
-    let descriptor = file.metadata().map_err(|_| ())?;
-    let entry = fs::symlink_metadata(path).map_err(|_| ())?;
-    Ok(!entry.file_type().is_symlink()
-        && entry.dev() == descriptor.dev()
-        && entry.ino() == descriptor.ino())
+    Ok(lease_path_matches_open_file(path, file))
 }
 
 pub(crate) fn unlink_owned_path(path: &Path) -> Result<(), ()> {
