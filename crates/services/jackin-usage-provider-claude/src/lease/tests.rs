@@ -185,3 +185,61 @@ fn stale_generation_cannot_read_or_replace_newer_cached_credential() {
         Some(r#"{"claudeAiOauth":{"accessToken":"generation-42"}}"#)
     );
 }
+
+#[test]
+fn revoked_generation_cannot_replace_cache_or_clear_newer_generation() {
+    let _serial = serialized_bootstrap();
+    clear_bootstrapped_claude_credential();
+    let service = "Claude Code-credentials-selected";
+    let outcome = bootstrap_claude_credential_with(service, true, || ClaudeKeychainRead::Payload {
+        json: valid_payload("old-token"),
+    })
+    .expect("valid bootstrap");
+    let ClaudeCredentialBootstrapOutcome::Acquired(lease) = outcome else {
+        panic!("valid fixture credential should acquire a lease")
+    };
+
+    let (write_ready_tx, write_ready_rx) = std::sync::mpsc::channel();
+    let (write_release_tx, write_release_rx) = std::sync::mpsc::channel();
+    let delayed_lease = lease.clone();
+    let delayed_write = std::thread::spawn(move || {
+        write_ready_tx
+            .send(())
+            .expect("signal before cache write");
+        write_release_rx
+            .recv()
+            .expect("release delayed cache write after revocation");
+        replace_if_exact(&delayed_lease, valid_payload("stale-token"))
+    });
+
+    write_ready_rx
+        .recv()
+        .expect("cache write is paused before its generation check");
+    super::overwrite_cached_generation_for_test(service, valid_payload("newer-session-token"));
+    assert!(!begin_unauthorized_reread(&lease));
+    write_release_tx
+        .send(())
+        .expect("stale cache write checks its old generation");
+
+    assert!(
+        !delayed_write
+            .join()
+            .expect("cache replacement completes without writing stale data")
+    );
+    let expected = valid_payload("newer-session-token");
+    assert_eq!(
+        cached_claude_keychain_payload(service)
+            .as_deref()
+            .map(String::as_str),
+        Some(expected.as_str())
+    );
+    drop(lease);
+    assert_eq!(
+        cached_claude_keychain_payload(service)
+            .as_deref()
+            .map(String::as_str),
+        Some(expected.as_str()),
+        "dropping the revoked generation must not clear the newer credential"
+    );
+    clear_bootstrapped_claude_credential();
+}

@@ -301,6 +301,26 @@ mod tests {
         ))
     }
 
+    fn resolved(token: &str) -> ClaudeResolved {
+        ClaudeResolved::from_token(
+            token.to_owned(),
+            None,
+            Some("operator@example.test".to_owned()),
+            None,
+            "OAuth · macOS Keychain".to_owned(),
+            false,
+        )
+    }
+
+    fn unauthorized(status: u16) -> ProviderHttpError {
+        ProviderHttpError::HttpStatus {
+            status,
+            message: format!("Claude usage HTTP {status}"),
+            retry_after_seconds: None,
+            response_received_at_epoch: None,
+        }
+    }
+
     fn lease(service: &str, token: &str) -> ClaudeCredentialLease {
         let outcome = bootstrap_claude_credential_with_for_test(service, true, || {
             ClaudeKeychainRead::Payload {
@@ -562,6 +582,289 @@ mod tests {
             assert_eq!(rate_limit.is_some(), status == 429);
             drop(lease);
         }
+        clear_bootstrapped_claude_credential();
+    }
+
+    #[test]
+    fn revoked_consent_before_first_request_skips_provider_and_keychain() {
+        let _serial = serialized_credential_cache_test();
+        clear_bootstrapped_claude_credential();
+        let service = "Claude Code-credentials-selected";
+        let lease = lease(service, "old-token");
+        let mut resolved = resolved("old-token");
+        let fetch_count = Cell::new(0);
+        let reread_count = Cell::new(0);
+        let result = fetch_claude_with_one_401_reread(
+            &lease,
+            &mut resolved,
+            payload("old-token"),
+            |_| {
+                fetch_count.set(fetch_count.get() + 1);
+                Err(unauthorized(401))
+            },
+            |_| {
+                reread_count.set(reread_count.get() + 1);
+                ClaudeKeychainRead::Missing
+            },
+            &mut || false,
+        );
+
+        assert!(matches!(
+            result,
+            Err(ClaudeFetchError::ConsentRevoked {
+                provider_http_status: None
+            })
+        ));
+        assert_eq!(fetch_count.get(), 0);
+        assert_eq!(reread_count.get(), 0);
+        drop(lease);
+        clear_bootstrapped_claude_credential();
+    }
+
+    #[test]
+    fn revoked_consent_after_401_skips_keychain_reread_and_preserves_401() {
+        let _serial = serialized_credential_cache_test();
+        clear_bootstrapped_claude_credential();
+        let service = "Claude Code-credentials-selected";
+        let lease = lease(service, "old-token");
+        let mut resolved = resolved("old-token");
+        let fetch_count = Cell::new(0);
+        let reread_count = Cell::new(0);
+        let validation_count = Cell::new(0);
+        let result = fetch_claude_with_one_401_reread(
+            &lease,
+            &mut resolved,
+            payload("old-token"),
+            |_| {
+                fetch_count.set(fetch_count.get() + 1);
+                Err(unauthorized(401))
+            },
+            |_| {
+                reread_count.set(reread_count.get() + 1);
+                ClaudeKeychainRead::Payload {
+                    json: payload("new-token"),
+                }
+            },
+            &mut || {
+                let call = validation_count.get();
+                validation_count.set(call + 1);
+                call == 0
+            },
+        );
+
+        assert!(matches!(
+            result,
+            Err(ClaudeFetchError::ConsentRevoked {
+                provider_http_status: Some(401)
+            })
+        ));
+        assert_eq!(fetch_count.get(), 1);
+        assert_eq!(reread_count.get(), 0);
+        assert_eq!(validation_count.get(), 2);
+        assert_eq!(
+            cached_payload_for_lease(&lease)
+                .as_deref()
+                .map(String::as_str),
+            Some(payload("old-token").as_str())
+        );
+        drop(lease);
+        clear_bootstrapped_claude_credential();
+    }
+
+    #[test]
+    fn revoked_consent_after_keychain_reread_skips_retry_and_preserves_401() {
+        let _serial = serialized_credential_cache_test();
+        clear_bootstrapped_claude_credential();
+        let service = "Claude Code-credentials-selected";
+        let lease = lease(service, "old-token");
+        let mut resolved = resolved("old-token");
+        let fetch_count = Cell::new(0);
+        let reread_count = Cell::new(0);
+        let revoked = Cell::new(false);
+        let result = fetch_claude_with_one_401_reread(
+            &lease,
+            &mut resolved,
+            payload("old-token"),
+            |_| {
+                fetch_count.set(fetch_count.get() + 1);
+                Err(unauthorized(401))
+            },
+            |_| {
+                reread_count.set(reread_count.get() + 1);
+                revoked.set(true);
+                ClaudeKeychainRead::Payload {
+                    json: payload("new-token"),
+                }
+            },
+            &mut || !revoked.get(),
+        );
+
+        assert!(matches!(
+            result,
+            Err(ClaudeFetchError::ConsentRevoked {
+                provider_http_status: Some(401)
+            })
+        ));
+        assert_eq!(fetch_count.get(), 1);
+        assert_eq!(reread_count.get(), 1);
+        assert_eq!(resolved.access_token(), "old-token");
+        assert_eq!(
+            cached_payload_for_lease(&lease)
+                .as_deref()
+                .map(String::as_str),
+            Some(payload("old-token").as_str())
+        );
+        drop(lease);
+        clear_bootstrapped_claude_credential();
+    }
+
+    #[test]
+    fn stop_before_retry_admission_skips_fetch_after_changed_credential_reread() {
+        let _serial = serialized_credential_cache_test();
+        clear_bootstrapped_claude_credential();
+        let service = "Claude Code-credentials-selected";
+        let lease = lease(service, "old-token");
+        let fetch_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let reread_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let (retry_admission_tx, retry_admission_rx) = std::sync::mpsc::channel();
+        let (retry_admission_release_tx, retry_admission_release_rx) = std::sync::mpsc::channel();
+        let task_fetch_count = std::sync::Arc::clone(&fetch_count);
+        let task_reread_count = std::sync::Arc::clone(&reread_count);
+        let consent_calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let task_consent_calls = std::sync::Arc::clone(&consent_calls);
+
+        let task = std::thread::spawn(move || {
+            let mut resolved = resolved("old-token");
+            fetch_claude_with_one_401_reread(
+                &lease,
+                &mut resolved,
+                payload("old-token"),
+                move |_| {
+                    task_fetch_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    Err(unauthorized(401))
+                },
+                move |selected_service| {
+                    assert_eq!(selected_service, service);
+                    task_reread_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    ClaudeKeychainRead::Payload {
+                        json: payload("new-token"),
+                    }
+                },
+                &mut move || {
+                    let attempt = task_consent_calls
+                        .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    if attempt == 3 {
+                        retry_admission_tx
+                            .send(())
+                            .expect("signal before retry admission");
+                        retry_admission_release_rx
+                            .recv()
+                            .expect("release retry admission after stop");
+                        return false;
+                    }
+                    true
+                },
+            )
+        });
+
+        retry_admission_rx
+            .recv()
+            .expect("changed credential reaches the retry admission gate");
+        crate::lease::overwrite_cached_generation_for_test(
+            service,
+            payload("newer-session-token"),
+        );
+        retry_admission_release_tx
+            .send(())
+            .expect("retry admission observes deactivation");
+
+        assert!(matches!(
+            task.join()
+                .expect("collector exits after denied admission"),
+            Err(ClaudeFetchError::ConsentRevoked {
+                provider_http_status: Some(401)
+            })
+        ));
+        assert_eq!(
+            fetch_count.load(std::sync::atomic::Ordering::SeqCst),
+            1
+        );
+        assert_eq!(
+            reread_count.load(std::sync::atomic::Ordering::SeqCst),
+            1
+        );
+        let expected = payload("newer-session-token");
+        assert_eq!(
+            crate::lease::cached_claude_keychain_payload(service)
+                .as_deref()
+                .map(String::as_str),
+            Some(expected.as_str())
+        );
+        clear_bootstrapped_claude_credential();
+    }
+
+    #[test]
+    fn typed_403_and_unchanged_401_never_trigger_a_second_fetch() {
+        let _serial = serialized_credential_cache_test();
+        clear_bootstrapped_claude_credential();
+        let service = "Claude Code-credentials-selected";
+        let lease = lease(service, "same-token");
+        let mut resolved = resolved("same-token");
+        let fetch_count = Cell::new(0);
+        let reread_count = Cell::new(0);
+        let result = fetch_claude_with_one_401_reread(
+            &lease,
+            &mut resolved,
+            payload("same-token"),
+            |_| {
+                fetch_count.set(fetch_count.get() + 1);
+                Err(unauthorized(403))
+            },
+            |_| {
+                reread_count.set(reread_count.get() + 1);
+                ClaudeKeychainRead::Payload {
+                    json: payload("same-token"),
+                }
+            },
+            &mut || true,
+        );
+        assert!(matches!(
+            result,
+            Err(ClaudeFetchError::Provider(ProviderHttpError::HttpStatus {
+                status: 403,
+                ..
+            }))
+        ));
+        assert_eq!(fetch_count.get(), 1);
+        assert_eq!(reread_count.get(), 0);
+
+        let result = fetch_claude_with_one_401_reread(
+            &lease,
+            &mut resolved,
+            payload("same-token"),
+            |_| {
+                fetch_count.set(fetch_count.get() + 1);
+                Err(unauthorized(401))
+            },
+            |_| {
+                reread_count.set(reread_count.get() + 1);
+                ClaudeKeychainRead::Payload {
+                    json: payload("same-token"),
+                }
+            },
+            &mut || true,
+        );
+        assert!(matches!(
+            result,
+            Err(ClaudeFetchError::Provider(ProviderHttpError::HttpStatus {
+                status: 401,
+                ..
+            }))
+        ));
+        assert_eq!(fetch_count.get(), 2);
+        assert_eq!(reread_count.get(), 1);
+        assert_eq!(resolved.access_token(), "same-token");
+        drop(lease);
         clear_bootstrapped_claude_credential();
     }
 }

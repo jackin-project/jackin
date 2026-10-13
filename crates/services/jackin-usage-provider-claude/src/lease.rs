@@ -313,5 +313,12 @@ pub(crate) fn bootstrap_claude_credential_with_for_test(
     bootstrap_claude_credential_with(service, all_stdio_are_terminal, read_item)
 }
 
+/// Replace the process cache with a newer generation. The previous lease's
+/// `Drop` clears only its own generation, so this credential stays.
+#[cfg(test)]
+pub(crate) fn overwrite_cached_generation_for_test(service: &str, payload: Zeroizing<String>) {
+    credential_cache().store(service.to_owned(), payload, next_generation());
+}
+
 #[cfg(test)]
 mod tests;
