@@ -49,25 +49,22 @@ fn filter_template_keeps_checkout_and_gated_blocks() {
 }
 
 #[test]
-fn pr_body_reads_the_canonical_docs_template() {
+fn pr_body_reads_the_github_template() {
     let root = tempfile::tempdir().expect("temporary repo root");
     let docs = root.path().join("docs");
     let github = root.path().join(".github");
     fs::create_dir_all(&docs).expect("create docs directory");
-    fs::create_dir_all(&github).expect("create generated directory");
-    fs::write(
-        docs.join("PULL_REQUEST_TEMPLATE.md"),
-        "canonical docs template",
-    )
-    .expect("write docs template");
+    fs::create_dir_all(&github).expect("create github directory");
+    fs::write(docs.join("PULL_REQUEST_TEMPLATE.md"), "stale docs template")
+        .expect("write stale docs template");
     fs::write(
         github.join("PULL_REQUEST_TEMPLATE.md"),
-        "stale generated template",
+        "canonical github template",
     )
-    .expect("write stale template");
+    .expect("write github template");
 
     assert_eq!(
         read_template(root.path()).expect("read canonical template"),
-        "canonical docs template"
+        "canonical github template"
     );
 }
