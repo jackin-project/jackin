@@ -231,6 +231,8 @@ pub fn related_restore_load_options(
         role_branch: manifest.role_source_ref.clone(),
         restore_container_base: Some(manifest.container_base.clone()),
         restore_role_source_git: Some(manifest.role_source_git.clone()),
+        model: current.model.clone(),
+        effort: current.effort,
         ..LoadOptions::default()
     })
 }

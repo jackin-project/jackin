@@ -317,11 +317,15 @@ async fn related_restore_load_options_use_manifest_source_ref_and_agent() {
     );
     manifest.agent_runtime = "codex".to_owned();
     manifest.role_source_ref = Some("restore-ref".to_owned());
-    let current = LoadOptions::for_load(true, false);
+    let mut current = LoadOptions::for_load(true, false);
+    current.model = Some("gpt-6-luna".to_owned());
+    current.effort = Some(jackin_core::ReasoningEffort::Max);
 
     let opts = related_restore_load_options(&current, &manifest).unwrap();
 
     assert!(opts.debug);
+    assert_eq!(opts.model.as_deref(), Some("gpt-6-luna"));
+    assert_eq!(opts.effort, Some(jackin_core::ReasoningEffort::Max));
     assert_eq!(opts.agent, Some(jackin_core::Agent::Codex));
     assert_eq!(opts.role_branch.as_deref(), Some("restore-ref"));
     assert_eq!(opts.restore_container_base.as_deref(), Some(container_name));
