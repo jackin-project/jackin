@@ -117,6 +117,22 @@ fn cadence_tasks_define_the_canonical_graph() {
     clippy::disallowed_methods,
     reason = "the test captures mise shim stderr and is not a render or runtime thread"
 )]
+fn mise_project_exec(root: &std::path::Path, args: &[&str], missing: &str) -> std::process::Output {
+    // CI runs nextest under `mise --no-config`, which exports MISE_NO_CONFIG and
+    // hides the repository cargo shim. Remove that override so this process loads
+    // the checked-in mise.toml.
+    let mut command = std::process::Command::new("mise");
+    command
+        .args(args)
+        .current_dir(root)
+        .env("MISE_AUTO_INSTALL", "false")
+        .env("MISE_LOG_LEVEL", "trace")
+        .env_remove("MISE_NO_CONFIG")
+        .env_remove("MISE_NO_ENV")
+        .env_remove("MISE_NO_HOOKS");
+    command.output().expect(missing)
+}
+
 #[test]
 fn mise_native_rust_option_routes_cargo_through_mbx() {
     let mise = repo_text("mise.toml");
@@ -160,13 +176,11 @@ fn mise_native_rust_option_routes_cargo_through_mbx() {
     );
 
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
-    let output = std::process::Command::new("mise")
-        .args(["exec", "-v", "--", "cargo", "--version"])
-        .current_dir(&root)
-        .env("MISE_AUTO_INSTALL", "false")
-        .env("MISE_LOG_LEVEL", "trace")
-        .output()
-        .expect("Mise must be installed for the Rust MBX integration contract");
+    let output = mise_project_exec(
+        &root,
+        &["exec", "-v", "--", "cargo", "--version"],
+        "Mise must be installed for the Rust MBX integration contract",
+    );
     assert!(
         output.status.success(),
         "Mise command wrapper failed: {}",
@@ -182,13 +196,11 @@ fn mise_native_rust_option_routes_cargo_through_mbx() {
         "MBX must delegate Cargo's version query to the selected Rust toolchain"
     );
 
-    let native_output = std::process::Command::new("mise")
-        .args(["-C", "native", "exec", "-v", "--", "cargo", "--version"])
-        .current_dir(root)
-        .env("MISE_AUTO_INSTALL", "false")
-        .env("MISE_LOG_LEVEL", "trace")
-        .output()
-        .expect("Mise must be installed for the native Rust MBX integration contract");
+    let native_output = mise_project_exec(
+        &root,
+        &["-C", "native", "exec", "-v", "--", "cargo", "--version"],
+        "Mise must be installed for the native Rust MBX integration contract",
+    );
     assert!(
         native_output.status.success(),
         "native Mise command wrapper failed: {}",

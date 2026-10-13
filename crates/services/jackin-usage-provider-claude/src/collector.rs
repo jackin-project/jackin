@@ -9,16 +9,14 @@ use jackin_usage_provider_core::{ProviderFailureMetadata, ProviderHttpError, Pro
 
 use crate::keychain::{ClaudeKeychainRead, read_claude_keychain_item_uncached};
 
+#[cfg(any(target_os = "macos", test))]
+use super::lease::{MAX_CLAUDE_KEYCHAIN_PAYLOAD_BYTES, replace_if_exact};
 use super::{
     ClaudeCredentialLease, ClaudeOAuthUsageResponse, ClaudeResolved,
     credentials::parse_claude_keychain_profile,
-    lease::{
-        MAX_CLAUDE_KEYCHAIN_PAYLOAD_BYTES, begin_unauthorized_reread, cached_payload_for_lease,
-        replace_if_exact, valid_claude_keychain_service,
-    },
-    spend::fetch_claude_oauth_usage,
-    wave::claude_resolved_view_from_result,
+    lease::{begin_unauthorized_reread, cached_payload_for_lease, valid_claude_keychain_service},
 };
+use super::{spend::fetch_claude_oauth_usage, wave::claude_resolved_view_from_result};
 
 /// A consent race can suppress collection while retaining an observed HTTP
 /// failure status for safe broker diagnostics.
@@ -239,8 +237,8 @@ where
     };
     #[cfg(not(any(target_os = "macos", test)))]
     {
-        let _ = (keychain_read, &mut commit_if_current);
-        return first_401_if_consent_current(first, consent_is_current);
+        drop((keychain_read, original_payload, commit_if_current));
+        first_401_if_consent_current(first, consent_is_current)
     }
     #[cfg(any(target_os = "macos", test))]
     {

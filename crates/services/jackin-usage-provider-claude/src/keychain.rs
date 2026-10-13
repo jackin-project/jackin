@@ -345,6 +345,7 @@ pub(crate) fn all_stdio_are_terminal() -> bool {
     stdin_is_terminal && stdout_is_terminal && stderr_is_terminal
 }
 
+#[cfg(any(target_os = "macos", test))]
 fn trim_keychain_payload_and_zeroize(json: &mut String) -> ClaudeKeychainRead {
     let payload = json.trim().to_owned();
     json.zeroize();

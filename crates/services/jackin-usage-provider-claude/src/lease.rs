@@ -87,6 +87,7 @@ impl ClaudeCredentialCache {
         true
     }
 
+    #[cfg(any(target_os = "macos", test))]
     fn replace_if_exact(&self, service: &str, generation: u64, payload: Zeroizing<String>) -> bool {
         let mut credential = self
             .credential
@@ -267,10 +268,12 @@ fn bootstrap_claude_credential_with(
     }
 }
 
+#[cfg(any(target_os = "macos", test))]
 pub(crate) fn bootstrapped_claude_service() -> Option<String> {
     credential_cache().service()
 }
 
+#[cfg(any(target_os = "macos", test))]
 pub(crate) fn cached_claude_keychain_payload(service: &str) -> Option<Zeroizing<String>> {
     credential_cache().payload(service, None)
 }
@@ -283,6 +286,7 @@ pub(crate) fn begin_unauthorized_reread(lease: &ClaudeCredentialLease) -> bool {
     credential_cache().begin_unauthorized_reread(lease.service(), lease.generation())
 }
 
+#[cfg(any(target_os = "macos", test))]
 pub(crate) fn replace_if_exact(lease: &ClaudeCredentialLease, payload: Zeroizing<String>) -> bool {
     credential_cache().replace_if_exact(lease.service(), lease.generation(), payload)
 }

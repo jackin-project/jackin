@@ -9,7 +9,9 @@ use jackin_config::AuthForwardMode;
 
 use std::path::Path;
 
-use crate::{host_home_is_real, read_source_text, wipe_file_if_present};
+#[cfg(target_os = "macos")]
+use crate::host_home_is_real;
+use crate::{read_source_text, wipe_file_if_present};
 use jackin_instance_credentials::{auth_directory, repair_permissions, write_private_file};
 
 /// Provision Claude's host-side auth files (`account_json` and

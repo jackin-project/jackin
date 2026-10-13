@@ -9,9 +9,11 @@ use std::path::Path;
 
 use crate::{
     SelectedSourceDirectory, capture_omp_database_snapshot, claude_source_missing_error,
-    host_home_is_real, read_claude_keychain, select_opencode_auth_entry,
-    validate_kimi_locked_source, validate_store_source_dir, write_snapshot_bytes,
+    select_opencode_auth_entry, validate_kimi_locked_source, validate_store_source_dir,
+    write_snapshot_bytes,
 };
+#[cfg(target_os = "macos")]
+use crate::{host_home_is_real, read_claude_keychain};
 use jackin_instance_credentials::auth_directory;
 
 pub fn create_source_snapshot_dir(parent: &Path) -> anyhow::Result<SelectedSourceDirectory> {
