@@ -189,6 +189,10 @@ fn isolated_runtime_setup_can_spawn_git_config_with_null_stdio() {
 }
 
 #[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "the UID-drop denial probe is one fork sequence and is one line over the limit"
+)]
 fn sibling_home_read_and_write_are_denied_after_uid_drop() {
     #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
     // SAFETY: `geteuid` has no pointer arguments and reports this test

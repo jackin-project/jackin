@@ -97,25 +97,9 @@ pub(crate) fn access_for_abi(access: u64, abi: libc::c_long) -> u64 {
     }
 }
 
-// Keep production constants/functions private. The Linux-only unit tests
-// live beside, rather than inside, this implementation module, so expose
-// a test-only view instead of widening the production API.
+// `WRITABLE` stays test-only. The other Landlock masks are already visible
+// to the Linux tests through the parent module.
 pub(crate) mod support {
     #[cfg(test)]
-    pub(crate) const ACCESS_RESOLVE_UNIX: u64 = super::ACCESS_RESOLVE_UNIX;
-    #[cfg(test)]
-    pub(crate) const FULL_WITH_UNIX: u64 = super::FULL_WITH_UNIX;
-    #[cfg(test)]
-    pub(crate) const NULL_DEVICE: u64 = super::NULL_DEVICE;
-    #[cfg(test)]
-    pub(crate) const READ_ONLY: u64 = super::READ_ONLY;
-    #[cfg(test)]
-    pub(crate) const READ_ONLY_WITH_UNIX: u64 = super::READ_ONLY_WITH_UNIX;
-    #[cfg(test)]
     pub(crate) const WRITABLE: u64 = super::WRITABLE;
-
-    #[cfg(test)]
-    pub(crate) fn access_for_abi(access: u64, abi: libc::c_long) -> u64 {
-        super::access_for_abi(access, abi)
-    }
 }
