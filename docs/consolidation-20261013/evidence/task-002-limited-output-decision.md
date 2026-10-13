@@ -188,7 +188,7 @@ where
             bail!("subprocess output exceeded {limit} bytes");
         }
         output.extend_from_slice(&buffer[..count]);
->>>>>>> 2990df17e25f30afca84804d9c402abc1ce00231
+        // end incoming side 2990df17e25f30afca84804d9c402abc1ce00231
     }
 }
 ```
