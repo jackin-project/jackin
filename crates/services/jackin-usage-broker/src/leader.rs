@@ -45,15 +45,27 @@ pub(crate) fn claim_leader(
                     let _ignored = file.unlock();
                     continue;
                 }
-                return match claim_existing_lease(&mut file, &lease, build_id, lease_duration) {
+                if path_matches_file(path, &file) != Ok(true) {
+                    let _ignored = file.unlock();
+                    continue;
+                }
+                return match claim_existing_lease(path, &mut file, &lease, build_id, lease_duration)
+                {
                     // The owner keeps the descriptor lock for its entire
                     // lifetime. Expiry cannot transfer a live process's
                     // authority while it is suspended or waking.
-                    Ok(Some(stale_lease_reclaimed)) => Ok(Some(BrokerLeaseOwner {
-                        lease,
-                        file,
-                        stale_lease_reclaimed,
-                    })),
+                    Ok(Some(stale_lease_reclaimed)) => {
+                        if path_matches_file(path, &file) != Ok(true) {
+                            let _ignored = file.unlock();
+                            Err(unavailable())
+                        } else {
+                            Ok(Some(BrokerLeaseOwner {
+                                lease,
+                                file,
+                                stale_lease_reclaimed,
+                            }))
+                        }
+                    }
                     Ok(None) => {
                         file.unlock().map_err(|_| unavailable())?;
                         Ok(None)
@@ -82,6 +94,10 @@ pub(crate) fn claim_leader(
                         validate_owned_file(lease_file, 0o600)?;
                         lease_file.try_lock().map_err(|_| unavailable())?;
                         write_lease(lease_file, &lease).map_err(|_| unavailable())?;
+                        if path_matches_file(path, lease_file) != Ok(true) {
+                            let _ignored = unlink_created_lease(path, lease_file);
+                            return Err(unavailable());
+                        }
                     }
                     let file = file.take().ok_or_else(unavailable)?;
                     Ok(BrokerLeaseOwner {
@@ -106,6 +122,7 @@ pub(crate) fn claim_leader(
 }
 
 pub(crate) fn claim_existing_lease(
+    lease_path: &Path,
     file: &mut File,
     replacement: &BrokerLease,
     build_id: &str,
@@ -135,6 +152,13 @@ pub(crate) fn claim_existing_lease(
         pid.is_some_and(|pid| kill(Pid::from_raw(pid), None).is_err())
     };
     if !replace {
+        return Ok(None);
+    }
+    if path_matches_file(lease_path, file) != Ok(true) {
+        return Ok(None);
+    }
+    let reread = read_lease_bytes(file).map_err(|_| unavailable())?;
+    if reread != bytes || path_matches_file(lease_path, file) != Ok(true) {
         return Ok(None);
     }
     write_lease(file, replacement).map_err(|_| unavailable())?;
@@ -283,10 +307,19 @@ pub(crate) fn read_lease(file: &mut File) -> Result<BrokerLease, std::io::Error>
         .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))
 }
 
+const BROKER_LEASE_MAX_BYTES: u64 = 4 * 1024;
+
 pub(crate) fn read_lease_bytes(file: &mut File) -> Result<Vec<u8>, std::io::Error> {
     file.seek(SeekFrom::Start(0))?;
     let mut bytes = Vec::new();
-    file.read_to_end(&mut bytes)?;
+    file.take(BROKER_LEASE_MAX_BYTES + 1)
+        .read_to_end(&mut bytes)?;
+    if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > BROKER_LEASE_MAX_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "usage broker lease exceeds the size limit",
+        ));
+    }
     Ok(bytes)
 }
 

@@ -3,7 +3,9 @@
 
 use super::*;
 use crate::leader::{read_lease, write_lease};
-use nix::fcntl::{FcntlArg, FdFlag, fcntl};
+use nix::fcntl::{FcntlArg, FdFlag, OFlag, fcntl, open};
+use nix::sys::stat::Mode;
+use std::io::{Read, Seek, SeekFrom};
 use std::os::unix::net::UnixStream;
 
 #[test]
@@ -77,6 +79,76 @@ fn broker_lease_uses_expiry_and_build_identity_not_pid_reuse() {
             .unwrap()
             .is_none()
     );
+}
+
+#[test]
+fn claim_leader_rejects_oversized_lease() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("lease");
+    let oversized = vec![b'x'; 4097];
+    fs::write(&path, &oversized).unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+
+    claim_leader(&path, "build", Duration::from_secs(30)).unwrap_err();
+    assert_eq!(fs::read(&path).unwrap(), oversized);
+}
+
+#[test]
+fn claim_existing_lease_refuses_swapped_path() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("lease");
+    let aside = temp.path().join("lease-aside");
+    let build_id = "build";
+    let mut expired = BrokerLease::new(build_id);
+    expired.renewed_at_epoch = 0;
+    let original = serde_json::to_vec(&expired).unwrap();
+    fs::write(&path, &original).unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+
+    let fd = open(&path, OFlag::O_RDWR | OFlag::O_CLOEXEC, Mode::empty()).unwrap();
+    let mut file = fs::File::from(fd);
+    fs::rename(&path, &aside).unwrap();
+    let swapped = b"swapped-lease-bytes";
+    fs::write(&path, swapped).unwrap();
+
+    let replacement = BrokerLease::new(build_id);
+    assert!(
+        leader::claim_existing_lease(
+            &path,
+            &mut file,
+            &replacement,
+            build_id,
+            Duration::from_secs(30),
+        )
+        .unwrap()
+        .is_none()
+    );
+    assert_eq!(fs::read(&path).unwrap(), swapped);
+    assert_eq!(fs::read(&aside).unwrap(), original);
+    file.seek(SeekFrom::Start(0)).unwrap();
+    let mut descriptor = Vec::new();
+    file.read_to_end(&mut descriptor).unwrap();
+    assert_eq!(descriptor, original);
+}
+
+#[test]
+fn broker_lease_rejects_unknown_fields() {
+    let lease = BrokerLease::new("build");
+    let json = serde_json::to_string(&lease).unwrap();
+    let parsed = serde_json::from_str::<BrokerLease>(&json).unwrap();
+    assert_eq!(parsed.instance_id, lease.instance_id);
+    assert_eq!(parsed.process_id, lease.process_id);
+    assert_eq!(parsed.protocol_version, lease.protocol_version);
+    assert_eq!(parsed.build_id, lease.build_id);
+    assert_eq!(parsed.renewed_at_epoch, lease.renewed_at_epoch);
+
+    let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
+    value
+        .as_object_mut()
+        .unwrap()
+        .insert("extra".to_owned(), serde_json::Value::from(1));
+    let with_extra = value.to_string();
+    serde_json::from_str::<BrokerLease>(&with_extra).unwrap_err();
 }
 
 #[test]

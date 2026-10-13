@@ -9,6 +9,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use jackin_protocol::usage_broker::USAGE_BROKER_PROTOCOL_VERSION;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct BrokerLease {
     pub instance_id: String,
     pub process_id: u32,
