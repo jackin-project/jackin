@@ -137,7 +137,27 @@ fn mise_native_rust_option_routes_cargo_through_mbx() {
         !mise.contains("[wrappers.cargo]"),
         "legacy Cargo wrapper removed"
     );
-    assert!(!mise.contains("[tasks."), "root task aliases removed");
+    for alias in [
+        "format",
+        "format-check",
+        "lint",
+        "deadcode",
+        "ci",
+        "merge",
+        "scheduled",
+        "sign-notarize",
+        "prototype-build",
+        "prototype-run",
+    ] {
+        assert!(
+            !mise.contains(&format!("[tasks.{alias}]")),
+            "root task alias [{alias}] removed"
+        );
+    }
+    assert!(
+        mise.contains("[tasks.renovate-upstream-sources]"),
+        "the renovate upstream asset check stays at the repo root"
+    );
 
     let native_mise = repo_text("native/mise.toml");
     let desktop_ci = task_block(&native_mise, "ci");
