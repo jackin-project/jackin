@@ -357,3 +357,135 @@ async fn load_agent_attaches_explicit_restore_container_with_stored_agent_before
         );
     }
 }
+
+#[tokio::test]
+async fn absent_related_rebuild_launches_with_model_and_effort() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::stubs::install_all_test_stubs(&paths);
+    write_singleton_claude_admission(&paths);
+    let mut config = AppConfig::load_or_init(&paths).unwrap();
+    let selector = RoleSelector::new(None, "agent-smith");
+    let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
+    jackin_test_support::seed_valid_role_repo(&cached_repo.repo_dir);
+    std::fs::write(
+        cached_repo.repo_dir.join("jackin.role.toml"),
+        "version = \"v1alpha3\"\ndockerfile = \"Dockerfile\"\n\n[claude]\nmodel = \"sonnet\"\n",
+    )
+    .unwrap();
+    std::fs::write(cached_repo.repo_dir.join(".git").join("FETCH_HEAD"), "\n").unwrap();
+    let container_name = "jk-k7p9m2xq-workspace-agentsmith";
+    let mut manifest = workspace_manifest(
+        container_name,
+        "agent-smith",
+        "Agent Smith",
+        jackin_core::Agent::Claude,
+    );
+    manifest.workspace_name = None;
+    write_indexed_manifest(&paths, &manifest);
+    provision_restore_account_policy(&paths, &config, &manifest);
+    let docker = jackin_test_support::FakeDockerClient::default();
+    docker
+        .inspect_state_by_name
+        .borrow_mut()
+        .insert(container_name.to_owned(), ContainerState::NotFound);
+    let mut runner = FakeRunner::for_load_agent([
+        "https://example.invalid/agent-smith.git".to_owned(),
+        String::new(),
+        "false 0 false".to_owned(),
+        "false 0 false".to_owned(),
+    ]);
+    let current = LoadOptions {
+        model: Some("gpt-6-luna".to_owned()),
+        effort: Some(jackin_core::ReasoningEffort::Max),
+        ..LoadOptions::default()
+    };
+    let opts = related_restore_load_options(&current, &manifest).unwrap();
+
+    load_role(
+        &paths,
+        &mut config,
+        &selector,
+        &repo_workspace(&cached_repo.repo_dir),
+        &docker,
+        &mut runner,
+        &opts,
+    )
+    .await
+    .unwrap_or_else(|error| panic!("{error:#}\nrecorded:\n{}", runner.recorded.join("\n")));
+
+    let capsule_config_path = paths
+        .jackin_home
+        .join("sockets")
+        .join(container_name)
+        .join(jackin_protocol::CAPSULE_CONFIG_FILENAME);
+    let capsule_config: jackin_protocol::CapsuleConfig =
+        toml::from_str(&std::fs::read_to_string(&capsule_config_path).unwrap()).unwrap();
+    assert_eq!(
+        capsule_config.models.get("claude-main").map(String::as_str),
+        Some("gpt-6-luna")
+    );
+    assert_eq!(
+        capsule_config
+            .efforts
+            .get("claude-main")
+            .map(String::as_str),
+        Some("max")
+    );
+    assert!(
+        runner.recorded.iter().any(|call| {
+            call.contains("docker run -d --name ") && call.contains(container_name)
+        }),
+        "absent related rebuild must launch the saved container name; recorded:\n{}",
+        runner.recorded.join("\n")
+    );
+}
+
+#[tokio::test]
+async fn existing_explicit_restore_still_rejects_model_and_effort() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::stubs::install_all_test_stubs(&paths);
+    write_singleton_claude_admission(&paths);
+    let mut config = AppConfig::load_or_init(&paths).unwrap();
+    let selector = RoleSelector::new(None, "agent-smith");
+    let container_name = "jk-existing-role";
+    let docker = jackin_test_support::FakeDockerClient::default();
+    docker
+        .inspect_state_by_name
+        .borrow_mut()
+        .insert(container_name.to_owned(), ContainerState::Running);
+    let mut runner = FakeRunner::for_load_agent([String::new()]);
+    let opts = LoadOptions {
+        model: Some("gpt-6-luna".to_owned()),
+        effort: Some(jackin_core::ReasoningEffort::Max),
+        restore_container_base: Some(container_name.to_owned()),
+        ..LoadOptions::default()
+    };
+
+    let error = load_role(
+        &paths,
+        &mut config,
+        &selector,
+        &repo_workspace(temp.path()),
+        &docker,
+        &mut runner,
+        &opts,
+    )
+    .await
+    .unwrap_err();
+
+    assert!(
+        error.to_string().contains("cannot apply"),
+        "unexpected error: {error:#}"
+    );
+    assert!(
+        !runner.recorded.iter().any(|call| {
+            call.contains("docker run")
+                || call.contains("docker exec")
+                || call.contains("docker start")
+        }),
+        "existing container must not launch or attach with a new model; recorded:\n{}",
+        runner.recorded.join("\n")
+    );
+}

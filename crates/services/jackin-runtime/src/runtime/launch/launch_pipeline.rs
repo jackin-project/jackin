@@ -794,7 +794,16 @@ pub(crate) async fn load_role_with(
         .contains_key(workspace.name.as_str())
         .then(|| WorkspaceName::parse(&workspace.name))
         .transpose()?;
-    validate_explicit_restore_options(paths, opts)?;
+    // NotFound is a new capsule under the saved name, so model and effort
+    // reach launch. Removing, Dead, and every live state still fail here:
+    // claim_known_container_name refuses a name that still exists, and an
+    // existing container cannot take a new model. validate_explicit_restore_options
+    // stays strict for that attach.
+    if absent_container_can_apply_model_and_effort(docker, opts).await? {
+        validate_absent_rebuild_restore_options(paths, opts)?;
+    } else {
+        validate_explicit_restore_options(paths, opts)?;
+    }
     let admission_config = config.clone();
     let mut account_config = opts
         .selection
@@ -1721,6 +1730,70 @@ fn current_role_reuse_is_compatible(opts: &super::LoadOptions) -> bool {
         && opts.op_runner.is_none()
         && opts.host_env.is_none()
         && opts.restore_role_source_git.is_none()
+}
+
+/// `true` only when the named container is gone and the caller set model or
+/// effort without any other explicit-restore override. The inspect is what
+/// distinguishes a new capsule from an attach.
+async fn absent_container_can_apply_model_and_effort(
+    docker: &impl DockerApi,
+    opts: &super::LoadOptions,
+) -> anyhow::Result<bool> {
+    let Some(container) = opts.restore_container_base.as_deref() else {
+        return Ok(false);
+    };
+    if opts.model.is_none() && opts.effort.is_none() {
+        return Ok(false);
+    }
+    if explicit_restore_has_non_model_override(opts) {
+        return Ok(false);
+    }
+    let inspection = docker.inspect_container_by_name(container).await;
+    Ok(matches!(inspection.state, ContainerState::NotFound))
+}
+
+fn explicit_restore_has_non_model_override(opts: &super::LoadOptions) -> bool {
+    opts.rebuild
+        || opts.force
+        || opts.non_interactive
+        || opts.selection.is_some()
+        || opts.docker_profile.is_some()
+        || !opts.env.is_empty()
+        || !opts.on_demand_bindings.is_empty()
+        || !opts.extra_mounts.is_empty()
+}
+
+/// Same attach checks as [`validate_explicit_restore_options`], except model
+/// and effort are allowed. Called only after the named container is NotFound.
+fn validate_absent_rebuild_restore_options(
+    paths: &JackinPaths,
+    opts: &super::LoadOptions,
+) -> anyhow::Result<()> {
+    let Some(container) = opts.restore_container_base.as_deref() else {
+        return Ok(());
+    };
+    anyhow::ensure!(
+        !opts.rebuild
+            && !opts.force
+            && !opts.non_interactive
+            && opts.selection.is_none()
+            && opts.docker_profile.is_none()
+            && opts.env.is_empty()
+            && opts.on_demand_bindings.is_empty()
+            && opts.extra_mounts.is_empty(),
+        "an explicit restore container cannot apply rebuild, selection, profile, environment, credential, or mount overrides; its selected agent must match the stored instance; start a fresh role instance instead"
+    );
+    if let Some(requested_agent) = opts.agent {
+        let manifest = InstanceManifest::read(&paths.data_dir.join(container))?;
+        let stored_agent = manifest.agent()?;
+        anyhow::ensure!(
+            requested_agent == stored_agent,
+            "explicit restore agent {} does not match stored instance agent {}",
+            requested_agent.slug(),
+            stored_agent.slug(),
+        );
+    }
+    Ok(())
 }
 
 /// Exact-container restore is an attach/start operation, so launch-changing
