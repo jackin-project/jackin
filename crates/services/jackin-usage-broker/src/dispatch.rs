@@ -116,6 +116,35 @@ mod protocol_version_tests {
             "test-build"
         ));
     }
+
+    #[test]
+    fn service_stop_clears_the_experimental_collector_source() {
+        let directory = tempfile::tempdir().expect("temporary monitor directory");
+        let store = MonitorStore::open(directory.path()).expect("open monitor store");
+        store.set_experimental_collector_source(Some("foreground-source".to_owned()));
+        let shutdown = AtomicBool::new(false);
+        let response = dispatch_monitor_operation(
+            &UsageBrokerOperation::Monitor {
+                request: MonitorOperation::ServiceStop,
+            },
+            &store,
+            &shutdown,
+        );
+        assert!(matches!(
+            response,
+            Some(UsageBrokerResponse::Monitor {
+                reply: MonitorReply::ServiceStopped,
+            })
+        ));
+        assert!(shutdown.load(Ordering::Acquire));
+        let status = store
+            .operate(MonitorOperation::ServiceStatus, 1_800_000_000)
+            .expect("service status");
+        assert!(matches!(
+            status,
+            MonitorReply::ServiceStatus { status } if status.experimental_collector_source.is_none()
+        ));
+    }
 }
 
 fn dispatch_monitor_operation(
@@ -134,6 +163,7 @@ fn dispatch_monitor_operation(
     };
     if stopping && matches!(reply, MonitorReply::ServiceStopped) {
         shutdown.store(true, Ordering::Release);
+        monitor_store.set_experimental_collector_source(None);
     }
     Some(UsageBrokerResponse::Monitor { reply })
 }

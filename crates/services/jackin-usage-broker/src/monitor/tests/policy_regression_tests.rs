@@ -446,7 +446,7 @@ fn assert_expiry_is_reconciled_and_notified(trigger: impl FnOnce(&MonitorStore, 
     assert_eq!(used.age_seconds, 301);
     assert_eq!(
         used.freshness,
-        jackin_protocol::usage_monitor::MonitorEvidenceFreshness::Stale
+        MonitorEvidenceFreshness::Stale
     );
 }
 

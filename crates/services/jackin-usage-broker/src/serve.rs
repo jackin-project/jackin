@@ -220,6 +220,9 @@ pub(crate) fn serve(config: ServeConfig) {
             Err(_) => break,
         }
     }
+    if has_authenticated_foreground_guard {
+        monitor_store.set_experimental_collector_source(None);
+    }
     // Fence all remaining connections before disconnecting the queue. Workers
     // check this gate both before handling queued streams and before dispatch.
     fenced.store(true, Ordering::Release);
