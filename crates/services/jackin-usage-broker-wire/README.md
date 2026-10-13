@@ -35,7 +35,8 @@ consts, `BrokerLease`,
 `BrokerLeaseOwner`, `ServePolicy`,
 `secure_run_directory`,
 `validate_owned_*`,
-`run_probe_with_budget`, and the
+`ProbeLiveness`, `run_probe_with_budget`,
+`run_probe_with_liveness`, and the
 wire error constructors.
 
 ## How to verify

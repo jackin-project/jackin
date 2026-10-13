@@ -27,4 +27,7 @@ pub use paths::{
     private_child_directory, secure_run_directory, validate_owned_base_directory,
     validate_owned_directory, validate_owned_mode,
 };
-pub use probe::{ProbeBudgetExpired, probe_timeout_outcome, run_probe_with_budget};
+pub use probe::{
+    ProbeBudgetExpired, ProbeLiveness, probe_timeout_outcome, run_probe_with_budget,
+    run_probe_with_liveness,
+};
