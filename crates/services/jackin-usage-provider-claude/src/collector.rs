@@ -178,7 +178,7 @@ fn fetch_claude_with_one_401_reread<F, R, C, A, M>(
     reread: R,
     consent_is_current: &mut C,
     mut admit_operation: A,
-    mut commit_if_current: M,
+    commit_if_current: M,
 ) -> Result<ClaudeOAuthUsageResponse, ClaudeFetchError>
 where
     F: FnMut(&str) -> Result<ClaudeOAuthUsageResponse, ProviderHttpError>,
@@ -242,6 +242,7 @@ where
     }
     #[cfg(any(target_os = "macos", test))]
     {
+        let mut commit_if_current = commit_if_current;
         if json.len() > MAX_CLAUDE_KEYCHAIN_PAYLOAD_BYTES {
             return first_401_if_consent_current(first, consent_is_current);
         }

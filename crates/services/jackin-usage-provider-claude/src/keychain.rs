@@ -3,7 +3,9 @@
 //! `Claude` macOS Keychain reads with an unattended default and an explicit
 //! foreground lease bootstrap.
 
-use zeroize::{Zeroize as _, Zeroizing};
+#[cfg(any(target_os = "macos", test))]
+use zeroize::Zeroize as _;
+use zeroize::Zeroizing;
 
 /// Safe failure while establishing a process-wide unattended Keychain scope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
