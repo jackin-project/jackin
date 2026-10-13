@@ -1648,6 +1648,11 @@ fn update_broker_windows(
         let Some(window) = maybe_window else {
             continue;
         };
+        if is_used_only_window(&window) {
+            let current = &mut account.broker_windows[index];
+            changed |= update_broker_used_only(current, &window, input_sequence);
+            continue;
+        }
         if window.reset.as_ref().is_some_and(|reset| {
             account.latest_reset_epochs[index].is_some_and(|latest| reset.value < latest)
         }) {
@@ -1663,6 +1668,33 @@ fn update_broker_windows(
         changed |= update_broker_window(current, &window, input_sequence);
     }
     changed
+}
+
+fn is_used_only_window(window: &ObservedWindow) -> bool {
+    window.reset.is_none()
+        && window.paired.is_none()
+        && window
+            .used
+            .as_ref()
+            .is_some_and(|used| used.reset_at_epoch.is_none())
+}
+
+fn update_broker_used_only(
+    current: &mut ObservedWindow,
+    next: &ObservedWindow,
+    input_sequence: u64,
+) -> bool {
+    let Some(mut used) = next.used.clone() else {
+        return false;
+    };
+    if used.reset_at_epoch.is_some() {
+        return false;
+    }
+    used.input_sequence = input_sequence;
+    used.reset_at_epoch = None;
+    current.used = Some(used);
+    current.paired = None;
+    true
 }
 
 fn update_broker_window(

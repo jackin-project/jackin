@@ -558,6 +558,19 @@ mod tests {
             std::fs::read(&future_path).expect("future source remains untouched"),
             future
         );
+
+        let schema6_temp = tempfile::tempdir().expect("schema 6 fixture root");
+        let schema6_data_dir = schema6_temp.path().join("data");
+        let mut schema6: serde_json::Value =
+            serde_json::from_slice(&legacy_snapshot(3)).expect("parse legacy fixture");
+        schema6["schema_version"] = serde_json::json!(6);
+        let schema6 = serde_json::to_vec(&schema6).expect("serialize schema 6 fixture");
+        let (schema6_directory, schema6_path) = write_snapshot(&schema6_data_dir, &schema6);
+        assert!(load(&schema6_directory).is_err());
+        assert_eq!(
+            std::fs::read(&schema6_path).expect("schema 6 source remains untouched"),
+            schema6
+        );
     }
 
     #[test]

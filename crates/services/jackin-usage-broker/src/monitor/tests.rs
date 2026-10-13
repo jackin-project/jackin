@@ -1942,3 +1942,126 @@ fn rollover_waits_for_a_fresh_verified_closing_total_and_contiguous_opening_tota
         MonitorIssueCode::SpendRolloverUnverified
     ));
 }
+
+#[test]
+fn used_only_zero_from_remaining_keeps_stored_reset() {
+    use jackin_protocol::usage_broker::{
+        UsageAccountV1, UsageFreshnessPhaseV1, UsageFreshnessV1, UsageIdentityKindV1,
+        UsageLifecycleV1, UsageLimitWindowV1, UsageQuotaStateV1, UsageWindowCategoryV1,
+    };
+
+    let account = UsageAccountV1 {
+        canonical_account_id: "acct-used-only".to_owned(),
+        identity_kind: UsageIdentityKindV1::ProviderAccountId,
+        rank: 0,
+        display_label: "used-only account".to_owned(),
+        plan_label: None,
+        status_label: None,
+        lifecycle: UsageLifecycleV1::Available,
+        freshness: UsageFreshnessV1 {
+            generation: 1,
+            phase: UsageFreshnessPhaseV1::Current,
+            last_good_at_epoch: Some(NOW),
+            retry_at_epoch: None,
+            is_stale: false,
+        },
+        provenance_count: 1,
+        windows: vec![
+            UsageLimitWindowV1 {
+                window_id: "session".to_owned(),
+                rank: 0,
+                category: UsageWindowCategoryV1::Session,
+                label: "session".to_owned(),
+                value_label: "session value".to_owned(),
+                reset_label: "session reset".to_owned(),
+                remaining_percent: None,
+                remaining_raw_percent: Some(100),
+                used_percent: None,
+                used_raw_percent: None,
+                reset_at_epoch: None,
+                quota_state: UsageQuotaStateV1::Available,
+                pace_label: None,
+                runs_out_label: None,
+            },
+            UsageLimitWindowV1 {
+                window_id: "long-range".to_owned(),
+                rank: 1,
+                category: UsageWindowCategoryV1::LongRange,
+                label: "long-range".to_owned(),
+                value_label: "long-range value".to_owned(),
+                reset_label: "long-range reset".to_owned(),
+                remaining_percent: None,
+                remaining_raw_percent: None,
+                used_percent: None,
+                used_raw_percent: Some(42),
+                reset_at_epoch: None,
+                quota_state: UsageQuotaStateV1::Available,
+                pace_label: None,
+                runs_out_label: None,
+            },
+        ],
+        metric_groups: Vec::new(),
+        credential_expires_at_epoch: None,
+        issues: Vec::new(),
+    };
+
+    let windows = super::projection_windows(&account, NOW, 1);
+    let session = windows[0].as_ref().expect("session projection");
+    let session_used = session.used.as_ref().expect("session used");
+    assert_eq!(session_used.value, 0);
+    assert!(session_used.reset_at_epoch.is_none());
+    assert!(session.reset.is_none());
+
+    let long_range = windows[1].as_ref().expect("long-range projection");
+    let long_range_used = long_range.used.as_ref().expect("long-range used");
+    assert_eq!(long_range_used.value, 4_200);
+    assert!(long_range_used.reset_at_epoch.is_none());
+
+    let mut stored = super::AccountObservations::default();
+    let prior_reset = NOW + 3_600;
+    for index in 0..2 {
+        stored.broker_windows[index].reset = Some(super::Observed {
+            value: prior_reset,
+            evidence_at_epoch: Some(NOW - 10),
+            received_at_epoch: NOW - 10,
+            input_sequence: 1,
+            claude_code_version: None,
+        });
+        stored.broker_windows[index].paired = Some(super::ObservedQuotaPair {
+            used_percentage_basis_points: 2_500,
+            reset_at_epoch: prior_reset,
+            evidence_at_epoch: Some(NOW - 10),
+            received_at_epoch: NOW - 10,
+            input_sequence: 1,
+            claude_code_version: None,
+        });
+        stored.latest_reset_epochs[index] = Some(prior_reset);
+    }
+
+    assert!(super::update_broker_windows(&mut stored, windows, 2));
+
+    let stored_session = &stored.broker_windows[0];
+    let stored_session_used = stored_session.used.as_ref().expect("stored session used");
+    assert_eq!(stored_session_used.value, 0);
+    assert!(stored_session_used.reset_at_epoch.is_none());
+    assert_eq!(
+        stored_session.reset.as_ref().map(|reset| reset.value),
+        Some(prior_reset)
+    );
+    assert!(stored_session.paired.is_none());
+    assert_eq!(stored.latest_reset_epochs[0], Some(prior_reset));
+
+    let stored_long_range = &stored.broker_windows[1];
+    let stored_long_range_used = stored_long_range
+        .used
+        .as_ref()
+        .expect("stored long-range used");
+    assert_eq!(stored_long_range_used.value, 4_200);
+    assert!(stored_long_range_used.reset_at_epoch.is_none());
+    assert_eq!(
+        stored_long_range.reset.as_ref().map(|reset| reset.value),
+        Some(prior_reset)
+    );
+    assert!(stored_long_range.paired.is_none());
+    assert_eq!(stored.latest_reset_epochs[1], Some(prior_reset));
+}
