@@ -3,7 +3,7 @@
 - **Status**: BLOCKED — Plan 008 external release authorization required
 - **Slug**: unified-agent-usage
 - **Created**: 2026-08-20 · **Updated**: 2026-08-21
-- **Plan**: [plans/unified-agent-usage/](../../plans/unified-agent-usage/)
+- **Plan**: removed with the `plans/` dossier
 
 ## Intent
 
