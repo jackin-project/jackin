@@ -399,8 +399,10 @@ fn reclaim_abandoned_lock(
         "Git lock changed during crash recovery; record retained"
     );
     unlinkat(parent, leaf, UnlinkatFlags::NoRemoveDir)?;
-    unlinkat(&journal, *candidate_name, UnlinkatFlags::NoRemoveDir)?;
+    // Persist disappearance of the conventional lock before removing its
+    // journaled hard-link witness, matching `Lock::cleanup`.
     sync_directory(parent)?;
+    unlinkat(&journal, *candidate_name, UnlinkatFlags::NoRemoveDir)?;
     sync_directory(journal.as_fd())?;
     Ok(true)
 }
