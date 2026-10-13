@@ -52,7 +52,7 @@ Docker-backed smoke command.
 
 Any change to usage discovery, coordinator/state, broker/relay transport, Capsule
 refresh, Desktop refresh, or backend launch assembly requires this release-path gate
-on Apple Silicon macOS 26 with OrbStack running:
+on Apple Silicon macOS 27 with OrbStack running:
 
 ```sh
 mise exec -- mbx +1.99.0 xtask ci --e2e

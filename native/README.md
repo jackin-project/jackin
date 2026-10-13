@@ -26,7 +26,7 @@ Product scope is limits only: remaining/used percentages, resets, plan/status, m
 
 ## Shipping baseline
 
-- Deployment target and release floor: **macOS 26.0**.
+- Deployment target and release floor: **macOS 27.0**.
 - Shipping lane: **Xcode 26.6, macOS 26.5 SDK, Swift 6.3** on GitHub's `macos-26` image, Swift 6 language mode with complete strict concurrency and warnings as errors.
 - Forward-validation lane: **Xcode 27 beta / macOS 27 SDK**, nonblocking and scheduled; never the shipping lane.
 - Architecture: Apple Silicon (`arm64`) static XCFramework assembly.
@@ -148,7 +148,7 @@ The checked-in GitHub Actions workflow does not currently build or publish the m
 
 | Surface | Contract |
 |---|---|
-| Local validation | macOS 26.0, Xcode 26.6, arm64 static app, tests and bundle verification |
+| Local validation | macOS 27.0, Xcode 26.6, arm64 static app, tests and bundle verification |
 | Manual release validation | fixture version, ad-hoc rejection by release verifier, read-only reconciliation |
 | Publication | Not automated by a checked-in workflow |
 | Artifact | `jackin-desktop-<VERSION>-aarch64-apple-darwin.zip` plus SHA-256, Sigstore bundle, SBOM, attestation |

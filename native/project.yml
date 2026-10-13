@@ -1,7 +1,7 @@
 name: JackinDesktop
 
 # Platform lanes (recorded contract — see native/README.md "Platform lanes"):
-#   minimum deployment target: macOS 26.0 (no compatibility branch)
+#   minimum deployment target: macOS 27.0 (no compatibility branch)
 #   shipping lane: Xcode 26.6, macOS 26.5 SDK, Swift 6 + complete strict concurrency
 #   forward-validation lane: Xcode 27 beta / macOS 27 SDK — nonblocking, scheduled;
 #     dated exception in native/README.md until the runner image exists
@@ -12,7 +12,7 @@ name: JackinDesktop
 options:
   minimumXcodeGenVersion: 2.46.0
   deploymentTarget:
-    macOS: "26.0"
+    macOS: "27.0"
   createIntermediateGroups: true
   generateEmptyDirectories: true
   projectFormat: xcode16_0
@@ -26,7 +26,7 @@ settings:
     # Xcode 26 otherwise reports the intentional no-AppIntents path as a warning.
     LM_FILTER_WARNINGS: YES
     LM_FORCE_LINK_GENERATION: YES
-    MACOSX_DEPLOYMENT_TARGET: "26.0"
+    MACOSX_DEPLOYMENT_TARGET: "27.0"
     ONLY_ACTIVE_ARCH: YES
     SWIFT_STRICT_CONCURRENCY: complete
     SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
@@ -103,7 +103,7 @@ targets:
         CFBundlePackageType: APPL
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
-        LSMinimumSystemVersion: "26.0"
+        LSMinimumSystemVersion: "27.0"
         LSUIElement: true
         NSHighResolutionCapable: true
         NSHumanReadableCopyright: Copyright © 2026 Alexey Zhokhov

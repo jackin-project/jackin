@@ -6,7 +6,7 @@ import PackageDescription
 let package = Package(
     name: "JackinDesktop",
     platforms: [
-        .macOS(.v26),
+        .macOS(.v27),
     ],
     products: [
         .library(name: "JackinUsageBridge", targets: ["JackinUsageBridge"]),

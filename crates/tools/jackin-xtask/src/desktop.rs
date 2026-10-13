@@ -33,7 +33,7 @@ const APP_EXECUTABLE: &str = "JackinDesktop";
 const BROKER_EXECUTABLE: &str = "jackin-usage-broker";
 const BUNDLE_ID: &str = "com.jackin-project.desktop";
 const BUNDLE_NAME: &str = "jackin❯ desktop";
-const MIN_OS: &str = "26.0";
+const MIN_OS: &str = "27.0";
 /// XC framework artifact name; the boltffi FFI module is always `{name}FFI`.
 const FRAMEWORK_NAME: &str = "JackinUsage";
 const MODULE_NAME: &str = "JackinUsageFFI";

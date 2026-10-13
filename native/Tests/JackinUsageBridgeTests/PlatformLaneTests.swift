@@ -26,8 +26,8 @@ final class PlatformLaneTests: XCTestCase {
         let readme = try text("README.md")
         for (name, content) in [("project.yml", project), ("README.md", readme)] {
             XCTAssertTrue(
-                content.contains("26.0"),
-                "\(name) must record the macOS 26.0 minimum deployment target"
+                content.contains("27.0"),
+                "\(name) must record the macOS 27.0 minimum deployment target"
             )
             XCTAssertTrue(
                 content.contains("Xcode 26.6"),

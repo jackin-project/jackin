@@ -127,11 +127,11 @@ fn build_accepts_numeric_only() {
 
 #[test]
 fn minos_must_match_current_baseline() {
-    assert!(minos_matches_target("26.0", MIN_OS));
-    assert!(minos_matches_target("26.0.0", MIN_OS));
+    assert!(minos_matches_target("27.0", MIN_OS));
+    assert!(minos_matches_target("27.0.0", MIN_OS));
     assert!(!minos_matches_target("25.0", MIN_OS));
     assert!(!minos_matches_target("26.1", MIN_OS));
-    assert!(!minos_matches_target("27.0", MIN_OS));
+    assert!(!minos_matches_target("26.0", MIN_OS));
 }
 
 #[test]
