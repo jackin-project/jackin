@@ -1,0 +1,57 @@
+[
+  {
+    "id": "unknown-major",
+    "projection": { "schema_version": 2 }
+  },
+  {
+    "id": "missing-required-arrays",
+    "projection": {
+      "schema_version": 1,
+      "projection_id": "p",
+      "generated_at_epoch": 0,
+      "discovery_revision": "d",
+      "broker_instance_id": "b",
+      "broker_generation": 0,
+      "refresh_state": "idle"
+    }
+  },
+  {
+    "id": "both-percent-representations",
+    "projection": {
+      "schema_version": 1,
+      "projection_id": "p",
+      "generated_at_epoch": 0,
+      "discovery_revision": "d",
+      "broker_instance_id": "b",
+      "broker_generation": 0,
+      "refresh_state": "idle",
+      "providers": [{
+        "provider_id": "openai",
+        "display_name": "OpenAI",
+        "rank": 0,
+        "membership_state": "current",
+        "freshness": { "generation": 0, "phase": "current", "is_stale": false },
+        "accounts": [{
+          "canonical_account_id": "a",
+          "identity_kind": "provider_account_id",
+          "rank": 0,
+          "display_label": "a@example.test",
+          "lifecycle": "available",
+          "freshness": { "generation": 0, "phase": "current", "is_stale": false },
+          "windows": [{
+            "window_id": "weekly",
+            "rank": 0,
+            "label": "Weekly",
+            "value_label": "50% left",
+            "reset_label": "Resets in 1d",
+            "remaining_percent": 50,
+            "used_percent": 50,
+            "quota_state": "available"
+          }]
+        }]
+      }],
+      "unresolved": [],
+      "issues": []
+    }
+  }
+]

@@ -1,0 +1,21 @@
+● Workflow(dynamic workflow: deep-research)
+  ⎿  Running in background · /workflows to monitor and save
+
+  Task Output wxf2pli9i
+  Deep research harness — fan-out web searches, fetch sources, adversarially verify claims, synthesize a cited report.
+     Waiting for task (esc to give additional instructions)
+
+· Bunning… (1m 33s · ↓ 2.6k tokens)
+  ⎿  Tip: Use /btw to ask a quick side question without interrupting Claude's current work
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ deep-research
+ Deep research harness — fan-out web searches, fetch sources, adversarially verify claims, synthesize a cited report.  15/26 agents · 1m25s
+ ╭ Phases ────────┬ Scope · 1 agent ──────────────────────────────────────────────────────────────────────────────────────────────────────╮
+ │ ❯ ✔ Scope  1/1 │  ✔ scope                    Sonnet 4.6                                                       16.3k tok · 1 tool · 11s │
+ │   ✔ Search 5/5 │                                                                                                                       │
+ │   3 Fetch 9/20 │                                                                                                                       │
+ │   4 Verify     │                                                                                                                       │
+ │   5 Synthesize │                                                                                                                       │
+ ╰────────────────┴───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+ ↑↓ select · x stop workflow · p pause · esc back · s save

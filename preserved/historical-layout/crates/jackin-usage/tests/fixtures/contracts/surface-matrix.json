@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "id": "cli-human-json",
+      "surfaces": ["cli-human", "cli-json"],
+      "state": "current|multi-account|stale|partial|empty|total-failure",
+      "dimensions": ["tty", "non-tty", "unicode", "plaintext", "narrow", "wide", "stdout-stderr", "exit-code"]
+    },
+    {
+      "id": "console-major-states",
+      "surfaces": ["console-overview", "console-account-detail"],
+      "state": "loading|refreshing-last-good|current|empty|stale|partial|global-failure|removed-selection",
+      "dimensions": ["80x24", "narrow", "wide", "focus", "keyboard", "mouse", "vertical-scroll", "horizontal-scroll"]
+    },
+    {
+      "id": "capsule-lifecycle",
+      "surfaces": ["capsule-overview", "capsule-agent-detail", "capsule-account-detail"],
+      "state": "agent-uninitialized-preview|agent-uninitialized-no-preview|initialized|zero-agent|stale|resolution-failure|refresh-failure|removed-selection",
+      "dimensions": ["narrow", "wide", "focus", "account-tabs", "scroll", "footer"]
+    },
+    {
+      "id": "desktop-runtime-accessibility",
+      "surfaces": ["desktop-status-popover", "desktop-usage-overview", "desktop-usage-detail"],
+      "state": "loading|current|stale|unavailable|empty|removed-selection",
+      "dimensions": ["800x520", "1000x680", "1200x760", "collapsed-sidebar", "hover", "keyboard-focus", "reduced-transparency", "increased-contrast", "active", "inactive", "secondary-display"]
+    },
+    {
+      "id": "cross-surface-partial-stale",
+      "surfaces": ["cli-json", "console", "capsule", "ffi", "desktop"],
+      "state": "partial-provider-failure-with-stale-last-good",
+      "dimensions": ["identity", "order", "values", "labels", "freshness", "issues", "generation"]
+    }
+  ]
+}

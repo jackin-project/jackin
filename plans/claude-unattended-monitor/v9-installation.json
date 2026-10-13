@@ -1,0 +1,124 @@
+{
+  "schema_version": 1,
+  "installed_source_commit": "f5163e987b861adca1de5add6087ee3d2d12e11a",
+  "installed_source_tree_sha1": "9418c762f07d6b6a6203def838e11ddb33a29c53",
+  "source_commit": "f5163e987b861adca1de5add6087ee3d2d12e11a",
+  "source_tree_sha1": "9418c762f07d6b6a6203def838e11ddb33a29c53",
+  "installed_source_matches_commit": true,
+  "source_code_matches_commit": true,
+  "branch": "fix/claude-usage-live-repair",
+  "base_commit": "1c3dd1be4a3b1ed518133ec3899c084c792370ff",
+  "build_working_directory": "/private/tmp/jackin-claude-usage-live-repair",
+  "source_worktree_clean_at_install": false,
+  "uncommitted_paths_at_install": [
+    "plans/claude-unattended-monitor/installed-smoke.py",
+    "plans/claude-unattended-monitor/task-queue.md",
+    "plans/claude-unattended-monitor/verification.md"
+  ],
+  "uncommitted_source_paths_at_install": [],
+  "build_command": [
+    "/Users/donbeave/.local/share/mise/installs/mr-boxington/1.22.0/mbx",
+    "+1.97.1",
+    "install",
+    "--debug",
+    "--locked",
+    "--path",
+    "crates/jackin",
+    "--root",
+    "/Users/donbeave/.local/share/jackin-claude-monitor-v9",
+    "--bin",
+    "jackin",
+    "--bin",
+    "jackin-usage-broker"
+  ],
+  "mbx": "1.22.0",
+  "rust": "1.97.1 (8bab26f4f 2026-07-14)",
+  "build_profile": "dev",
+  "cargo_profile_elapsed": "1m 13s",
+  "install_result": "success",
+  "install_root": "/Users/donbeave/.local/share/jackin-claude-monitor-v9",
+  "fresh_prefix_contents": [
+    "bin/jackin",
+    "bin/jackin-usage-broker",
+    ".crates.toml",
+    ".crates2.json"
+  ],
+  "fresh_state_directory_created": false,
+  "cli_version": "0.6.4",
+  "broker_version": "0.6.4",
+  "binaries": [
+    {
+      "name": "jackin",
+      "path": "/Users/donbeave/.local/share/jackin-claude-monitor-v9/bin/jackin",
+      "sha256": "365f45d5e2f79bf214a2ce32ac77c593677aea1ac78a4d2d304818fa8930939f",
+      "size_bytes": 209351016,
+      "mode": "0755",
+      "version": "jackin 0.6.4"
+    },
+    {
+      "name": "jackin-usage-broker",
+      "path": "/Users/donbeave/.local/share/jackin-claude-monitor-v9/bin/jackin-usage-broker",
+      "sha256": "9c56c324fb172c340a30a0b53ee366062354565763cdf508da10ca21eed53ac1",
+      "size_bytes": 58398552,
+      "mode": "0755",
+      "version": "jackin-usage-broker 0.6.4"
+    }
+  ],
+  "source_gate_summary": "Builder/root reported signed runtime commit with 736 tests passing, strict Clippy for both packages across all targets, and fmt check passing; install itself rebuilt both requested binaries from this committed source tree.",
+  "install_observation": "MBX reported locked dev-profile install success, 19 cache hits, 183 misses, 2 bypassed, 0 B downloaded and 0 B uploaded; Cargo updated the crates.io index.",
+  "installed_version_checks": {
+    "commands": [
+      "/Users/donbeave/.local/share/jackin-claude-monitor-v9/bin/jackin --version",
+      "/Users/donbeave/.local/share/jackin-claude-monitor-v9/bin/jackin-usage-broker --version"
+    ],
+    "result": [
+      "jackin 0.6.4",
+      "jackin-usage-broker 0.6.4"
+    ],
+    "performed_before_fixture_smoke": true,
+    "installed_service_started": false,
+    "auth_or_provider_call": false
+  },
+  "offline_fixture_smoke": {
+    "status": "PASS",
+    "command": "python3 plans/claude-unattended-monitor/installed-smoke.py --bin-dir /Users/donbeave/.local/share/jackin-claude-monitor-v9/bin --provenance-manifest plans/claude-unattended-monitor/v9-installation.json",
+    "script_sha256": "97f48cd374bbf1268db2d1e3ac10d40730a7dfeb9c9454b55c29bd08b136dcb8",
+    "schema_version_asserted": 5,
+    "installed_cli_and_broker_versions": [
+      "jackin 0.6.4",
+      "jackin-usage-broker 0.6.4"
+    ],
+    "broker_process_selection": "verified live fixture broker PID 16958 argv resolved to the exact installed v9 sibling with private fixture arguments",
+    "headless_auth_negative_check": {
+      "exit_code": 2,
+      "error_code": "interaction_required",
+      "fake_broker_launches": 0,
+      "shell_credential_tripwires": 0,
+      "http_proxy_requests": 0
+    },
+    "watch_deadline_check": {
+      "requested_seconds": 35,
+      "actual_elapsed_seconds": 35.068,
+      "initial_watch_events": 1,
+      "deadline_watch_events": 1,
+      "event_sequence": 1,
+      "status_unchanged_without_fixture_input": true
+    },
+    "other_fixture_results": {
+      "service_started_and_stopped_in_private_fixture": true,
+      "monitor_schema_version_5": true,
+      "synthetic_unbound_and_bound_observers": true,
+      "dispatch_authority_granted": false,
+      "experimental_collector_started": false,
+      "credential_tripwires": 0,
+      "local_http_proxy_requests": 0,
+      "native_security_framework_calls_instrumented": false,
+      "foreground_auth_success_exercised": false,
+      "fixture_cleanup": "orderly service stop; fixture directory removed"
+    },
+    "fixture_path_removed": "/tmp/jkin-installed-smoke-9tgy14qn",
+    "result_summary": "Installed v9 binary pair passed the offline synthetic fixture smoke. HTTP proxy instrumentation saw zero requests; this is not OS-level egress tracing. No successful authentication or provider collection was attempted."
+  },
+  "verification_scope": "Installed two-binary v9 pair from committed source and passed the isolated synthetic fixture smoke. The smoke used a temporary HOME/config/data tree and local broker service, synthetic statusline evidence, PATH and HTTP proxy tripwires, and a fake broker sentinel for the single headless auth negative check. It observed zero fake broker launches, zero credential shell-tripwire hits, and zero local HTTP proxy requests. Native Security Framework calls and OS-level egress are not instrumented. No successful auth, real provider collection, v7 state, or existing v8 service access occurred. Live real-account status remains unverified.",
+  "recorded_at": "2026-10-11T10:20:49+07:00"
+}

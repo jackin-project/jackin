@@ -1,0 +1,48 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "jackin-console"
+version = "0.6.4"
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+license.workspace = true
+repository.workspace = true
+[dependencies]
+anyhow = { workspace = true }
+crossterm = { workspace = true }
+directories = { workspace = true }
+jackin-config = { workspace = true }
+jackin-oppicker = { workspace = true }
+jackin-core = { workspace = true }
+jackin-tui = { workspace = true }
+jackin-diagnostics = { workspace = true }
+jackin-telemetry = { workspace = true }
+jackin-env = { workspace = true }
+jackin-protocol = { workspace = true }
+termrock = { workspace = true }
+tokio = { workspace = true, features = ["rt", "sync"] }
+nix = { workspace = true, features = ["term"] }
+open = "5.3.4"
+ratatui = { workspace = true }
+
+[dev-dependencies]
+insta = { workspace = true, features = ["filters"] }
+jackin-config = { workspace = true, features = ["test-support"] }
+jackin-diagnostics = { workspace = true, features = ["test-support"] }
+jackin-otlp-testbed = { workspace = true }
+opentelemetry-proto = { workspace = true }
+tempfile = { workspace = true }
+termrock-raster = { workspace = true }
+toml = { workspace = true }
+tracing.workspace = true
+
+[features]
+# Optional explicit feature for consumers; tests get `test-support` via
+# the dev-dependency above so `cargo nextest run -p jackin-console` works.
+test-support = ["jackin-config/test-support"]
+
+[lints]
+workspace = true

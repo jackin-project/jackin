@@ -1,0 +1,5 @@
+
+  Amp wants to execute a shell command:
+  ls -la /
+
+  Allow?  esc to cancel

@@ -1,0 +1,39 @@
+jackin❯   Claude (Kimi) ◐   Codex (OpenAI) ·   Amp     Opencode (Kimi) ◐   Grok                                                            ☰Menu
+                                                                           ━━━━━━━━
+┌ grok ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                                                                                                                                  │
+│   jackin/scratch/jk-n65xf0bw-holla-thearchitect worktree /Users/donbeave/Projects/tailrocks/holla-project/hol… ⠦ MCP (1/2) │ 458 / 200K │ +1 │  │
+│                                                                                                                                                  │
+│                                                                                                                                                  │
+│                                                                                                                                                  │
+│                                                                                                                                                  │
+│                                                                                                                                                  │
+│                                                                                                                                                  │
+│                                                                                                                                                  │
+│                                                                                                                                                  │
+│                                                                                                                                                  │
+│                                                                                                                                                  │
+│                                                                                                                                                  │
+│                                                                                                                                                  │
+│                                                                                                                                                  │
+│                                                                                                                                                  │
+│                                                                                                                                                  │
+│                                                                                                                                                  │
+│                                                                                                                                                  │
+│                                                                                                                                                  │
+│                                                                                                                                                  │
+│                                                                                                                                                  │
+│                                                                                                                                                  │
+│                                                                                                                                                  │
+│    #1 Do a deep research for a random topic in the internet. Anything, any random topic.                                                         │
+│                                                                                                                                                  │
+│  ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮  │
+│  │ ❯                                                                                                                                          │  │
+│  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────── Composer 2.5 · always-approve ─╯  │
+│                                                                                                                                                  │
+│  Shift+Tab:mode  │  Ctrl+;:queue  │  Ctrl+x:shortcuts                                                                                            │
+│                                                                                                                                                  │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+                                     Ctrl-\ menu   Alt+Shift+↑↓←→ resize pane   click focus pane   Ctrl-Q quit
+
+ Branch · jackin/scratch/jk-n65xf0bw-holla-thearchitect                                                                     error  n65xf0bw  f92fb0

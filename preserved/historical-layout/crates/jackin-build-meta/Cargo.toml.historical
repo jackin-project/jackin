@@ -1,0 +1,23 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "jackin-build-meta"
+version = "0.6.4"
+edition.workspace = true
+rust-version.workspace = true
+authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
+description = "Build-script helpers shared by jackin crates."
+license.workspace = true
+readme = "README.md"
+publish = false
+
+repository.workspace = true
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+jackin-process = { workspace = true }
+
+[lints]
+workspace = true

@@ -1,0 +1,29 @@
+---
+source: crates/jackin-console/src/tui/view/tests.rs
+assertion_line: 767
+expression: rendered
+---
+ jackin❯  · workspaces                                                          
+                                                                                
+┌──────────────────────┐┌ General ─────────────────────────────────────────────┐
+│▸  Current directory  ││    Working dir /workspace                            │
+│  + New workspace     │└──────────────────────────────────────────────────────┘
+│                      │┌ Mounts ──────────────────────────────────────────────┐
+│                      ││    Destination  Mode  Isolation  Type                │
+│                      ││    /workspace   rw    shared     unknown             │
+│                      │└──────────────────────────────────────────────────────┘
+│                      │┌ Roles ───────────────────────────────────────────────┐
+│                      ││    Default (none)                                    │
+│                      ││                                                      │
+│                      ││                                                      │
+│                      │└──────────────────────────────────────────────────────┘
+│                      │                                                        
+│                      │                                                        
+│                      │                                                        
+│                      │                                                        
+│                      │                                                        
+│                      │                                                        
+│                      │                                                        
+└──────────────────────┘                                                        
+                                                                                
+            ↑↓ · ↵ launch   N new · S settings   Ctrl-Q quit · ? help

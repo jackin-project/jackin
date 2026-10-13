@@ -1,0 +1,41 @@
+jackin❯   Claude (Kimi) ◐   Codex (OpenAI) ·   Amp     Opencode (Kimi) ◐   Grok ◐                                                          ☰Menu
+          ━━━━━━━━━━━━━━━━━
+┌ ✳ Research a random internet topic ──────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│  Research estimates current solid-state costs higher, at $400–600/kWh. Gasgoo                                                                    │
+│  (https://autonews.gasgoo.com/articles/news/how-far-away-is-the-affordable-era-for-all-solid-state-batteries-2064710316469104640)                │
+│  - Gotion cost model: 70–80% of sulfide cell cost is solid electrolyte; 70–80% of electrolyte cost is lithium sulfide; lithium sulfide alone is  │
+│  ~50–64% of total cell cost. "One-yuan/Wh era" possible if lithium sulfide drops to 500,000 yuan/ton and electrolyte to 300,000 yuan/ton. Gasgoo │
+│  Gotion (https://autonews.gasgoo.com/articles/news/how-far-away-is-the-affordable-era-for-all-solid-state-batteries-2064710316469104640)         │
+│                                                                                                                                                  │
+│  Remaining manufacturing challenges                                                                                                              │
+│                                                                                                                                                  │
+│  - Semi-solid/hybrid batteries are scaling in 2026; true all-solid-state cells are not yet at automotive volume. Most 2026 "solid-state" vehicle │
+│  packs retain 5–15% liquid electrolyte.                                                                                                          │
+│  - Sulfide electrolytes are air- and moisture-sensitive, requiring inert-gas processing and dry rooms (<1 ppm H₂O) to avoid H₂S release and      │
+│  conductivity loss.                                                                                                                              │
+│  - Solid-solid interfaces need stack pressure to maintain contact; interfacial resistance, void formation, and dendrite suppression remain       │
+│  unsolved at scale.                                                                                                                              │
+│  - Pilot-line yields for sulfide all-solid-state cells are reportedly below 70%, far short of the 95%+ needed for commercial viability.          │
+│  - Factory economics: True all-solid-state lines require new plants costing $70M–$112M per GWh; semi-solid batteries can retrofit existing       │
+│  gigafactories for ~$1.4M–$2.1M per GWh with ~90% equipment compatibility.                                                                       │
+│  - Equipment is non-standardized; lithium-metal anode handling, dry-electrode processing, and ceramic/sulfide electrolyte coating are still      │
+│  developing.                                                                                                                                     │
+│                                                                                                                                                  │
+│  Bottom line                                                                                                                                     │
+│                                                                                                                                                  │
+│  2026 is a pilot-line and validation year, not mass-market deployment for true all-solid-state EV batteries. Semi-solid and solid-liquid hybrid  │
+│  packs are entering vehicles now. Leading players (ProLogium, QuantumScape, Toyota, Samsung SDI, GAC/CATL) target commercial scale between 2027  │
+│  and 2030. Cost remains 3–5× higher than LFP, driven mainly by sulfide electrolyte/lithium sulfide prices. Energy-density lab results are        │
+│  impressive, but independent verification and real-world pack-level performance are still limited.                                               │
+│                                                                                                                                                  │
+│✻ Churned for 17m 54s                                                                                                                             │
+│                                                                                                                                     87644 tokens │
+│──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────│
+│❯                                                                                                                                                 │
+│──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────│
+│  [CAVEMAN:ULTRA]                                                                                                                                 │
+│  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents                                                                                    │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+                                     Ctrl-\ menu   Alt+Shift+↑↓←→ resize pane   click focus pane   Ctrl-Q quit
+
+ Branch · jackin/scratch/jk-n65xf0bw-holla-thearchitect                                                  Session 87% · Weekly 96%  n65xf0bw  f92fb0

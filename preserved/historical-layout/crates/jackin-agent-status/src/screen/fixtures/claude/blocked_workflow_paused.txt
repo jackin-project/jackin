@@ -1,0 +1,41 @@
+jackin❯   Claude (Kimi) ◐   Codex (OpenAI) ·   Amp     Opencode (Kimi) ◐   Grok ◐                                                          ☰Menu
+          ━━━━━━━━━━━━━━━━━
+┌ ⠂ Research a random internet topic ──────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                                                                                                                                  │
+│  ⎿  Async hook PreToolUse completed                                                                                                              │
+│  ⎿  Async hook PreToolUse completed                                                                                                              │
+│  ⎿  Async hook PreToolUse completed                                                                                                              │
+│  ⎿  Async hook PostToolUse completed                                                                                                             │
+│  ⎿  Async hook PreToolUse completed                                                                                                              │
+│  ⎿  Async hook PostToolUse completed                                                                                                             │
+│  ⎿  Async hook PostToolUse completed                                                                                                             │
+│  ⎿  Async hook PreToolUse completed                                                                                                              │
+│  ⎿  Async hook PreToolUse completed                                                                                                              │
+│  ⎿  Async hook PostToolUse completed                                                                                                             │
+│  ⎿  Async hook PreToolUse completed                                                                                                              │
+│  ⎿  Async hook PostToolUse completed                                                                                                             │
+│  ⎿  Async hook PostToolUse completed                                                                                                             │
+│                                                                                                                                                  │
+│* Bunning… (15m 24s · ↓ 5.1k tokens · thinking)                                                                                                   │
+│  ⎿  Tip: Use /btw to ask a quick side question without interrupting Claude's current work                                                        │
+│                                                                                                                                                  │
+│────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────      │
+│ deep-research                                                                                                                                    │
+│ Deep research harness — fan-out web searches, fetch sources, adversarially verify claims, synthesize a cit…57/101 agents · 15m16s · paused       │
+│ ╭ Phases ──────────┬ Synthesize · 0 agents ──────────────────────────────────────────────────────────────────────────────────────────────╮       │
+│ │   ✔ Scope    1/1 │ Not started yet                                                                                                     │       │
+│ │   ✔ Search   5/5 │                                                                                                                     │       │
+│ │   ✘ Fetch  19/20 │                                                                                                                     │       │
+│ │   4 Verify 32/75 │                                                                                                                     │       │
+│ │ ❯ 5 Synthesize   │                                                                                                                     │       │
+│ │                  │                                                                                                                     │       │
+│ │                  │                                                                                                                     │       │
+│ │                  │                                                                                                                     │       │
+│ │                  │                                                                                                                     │       │
+│ │                  │                                                                                                                     │       │
+│ ╰──────────────────┴─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯       │
+│ ↑↓ select · p resume · esc back · s save                                                                                                         │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+                                     Ctrl-\ menu   Alt+Shift+↑↓←→ resize pane   click focus pane   Ctrl-Q quit
+
+ Branch · jackin/scratch/jk-n65xf0bw-holla-thearchitect                                                  Session 87% · Weekly 96%  n65xf0bw  f92fb0

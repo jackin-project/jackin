@@ -1,0 +1,5 @@
+# not: idle
+
+Tool output:
+─────────────────────────────────────────────────────────────
+This is a divider in normal transcript output, not a live prompt box.

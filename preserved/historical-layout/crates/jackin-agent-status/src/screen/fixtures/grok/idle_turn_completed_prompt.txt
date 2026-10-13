@@ -1,0 +1,41 @@
+jackin❯   Claude (Kimi) ◐   Codex (OpenAI) ·   Amp     Opencode (Kimi) ◐   Grok ◐                                                          ☰Menu
+                                                                           ━━━━━━━━
+┌ Deep Internet Research on Random Topic C… - grok ────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                                                                                                                                  │
+│   jackin/scratch/jk-n65xf0bw-holla-thearchitect worktree /Users/donbeave/Projects/tailrocks/holla-project/holla (worktree of /ja… 72K / 512K │  │
+│                                                                                                                                                  │
+│                                                                                                                                                  │
+│     ❯ Do a deep research for a random topic in the internet. Anything, any random topic.                                             12:38 AM    │
+│                                                                                                                                                  │
+│                                                                                                                                                  │
+│                                                                                                                                                  │
+│     Why This Topic Fascinates                                                                                                                    │
+│     The Plain of Jars combines tangible megalithic engineering, deep time, ritual complexity, trade evidence, and dramatic modern                │
+│     history (war legacy + heroic clearance efforts). The 2026 discovery provides concrete "death jar" evidence of multigenerational              │
+│     secondary burial while underscoring how much remains unknown after nearly a century of study. It offers a rare window into                   │
+│     prehistoric mainland Southeast Asia at a crossroads of cultures.                                                                             │
+│                                                                                                                                                  │
+│     Sources for this research include the Wikipedia overview (cross-checked), primary reporting from Antiquity (2026 paper by                    │
+│     Skopal et al.), Science News, Smithsonian Magazine, UNESCO World Heritage documentation, archaeological summaries, and                       │
+│     discussions of regional parallels and UXO context. Recent X posts reflect ongoing scholarly and public interest in the                       │
+│     megaliths and the new findings.[7] (https://www.cambridge.org/core/journals/antiquity/article/death-jar-a-new-mortuary-                      │
+│     tradition-at-the-plain-of-jars-lao-pdr/D0A49363A484C2C891205FF638A5B5E6)                                                                     │
+│                                                                                                                                                  │
+│     If you'd like deeper dives (e.g., specific paper excerpts, comparisons to other sites, UXO details, travel notes, or a shift to              │
+│     another random topic), more targeted searches, or analysis of a sub-aspect, let me know!                                                     │
+│                                                                                                                                                  │
+│     ◆ stop  [hooks: 1]                                                                                                                          █│
+│                                                                                                                                                 █│
+│     Turn completed in 2m1s.                                                                                                                     █│
+│                                                                                                                                                 █│
+│                                                                                                                                                  │
+│  ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮  │
+│  │ ❯                                                                                                                                          │  │
+│  ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────── Grok Build · always-approve ─╯  │
+│                                                                                                                                                  │
+│  Shift+Tab:mode  │  Ctrl+x:shortcuts                                                                                                             │
+│                                                                                                                                                  │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+                                     Ctrl-\ menu   Alt+Shift+↑↓←→ resize pane   click focus pane   Ctrl-Q quit
+
+ Branch · jackin/scratch/jk-n65xf0bw-holla-thearchitect                                                                     error  n65xf0bw  f92fb0

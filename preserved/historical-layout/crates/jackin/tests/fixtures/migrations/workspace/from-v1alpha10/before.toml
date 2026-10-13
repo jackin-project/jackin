@@ -1,0 +1,9 @@
+version = "v1alpha10"
+workdir = "/workspace/project"
+accounts = ["personal"]
+
+[account_bindings]
+claude = "personal"
+
+[env]
+WORKSPACE_TOKEN = { op = "op://workspace-vault/workspace-item/auth-section/token-field?attribute=otp", path = "Shared%2FBlue/Deployment[Fixture%2FWest]/Authentication%2FSection/Token?attribute=otp", account = "workspace-fixture@example.invalid", on_demand = true }

@@ -1,0 +1,23 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "jackin-omp-store"
+version = "0.6.4"
+edition.workspace = true
+rust-version.workspace = true
+authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
+description = "Bounded, source-bound snapshots of OMP credential stores"
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+nix = { workspace = true, features = ["dir", "fs", "user"] }
+rusqlite = { workspace = true }
+tempfile = { workspace = true }
+thiserror = { workspace = true }
+zeroize = { workspace = true }
+
+[lints]
+workspace = true

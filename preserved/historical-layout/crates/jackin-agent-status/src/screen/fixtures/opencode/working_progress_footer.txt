@@ -1,0 +1,21 @@
+  ┃                                                                                                       New session - 2026-07-05T00:36:11.
+  ┃   Do a deep research for a random topic in the internet. Anything, any random topic.                  890Z
+  ┃
+                                                                                                          Context
+     ▣  Build · kimi-for-coding                                                                           0 tokens
+                                                                                                          0% used
+                                                                                                          $0.00 spent
+
+                                                                                                          MCP
+                                                                                                          • context7 Connected
+                                                                                                          • headroom Connected
+
+                                                                                                          LSP
+                                                                                                          LSPs are disabled
+
+  ┃
+  ┃                                                                                                       /Users/donbeave/Projects/tailrocks/
+  ┃                                                                                                       holla-project/holla:jackin/scratch/jk-
+  ┃  Build · kimi-for-coding Kimi                                                                         n65xf0bw-holla-thearchitect
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   ⬝⬝⬝⬝⬝⬝⬝⬝  esc interrupt                                                 tab agents  ctrl+p commands    • OpenCode 1.17.13

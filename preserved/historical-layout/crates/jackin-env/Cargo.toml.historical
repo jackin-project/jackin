@@ -1,0 +1,38 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "jackin-env"
+version = "0.6.4"
+edition.workspace = true
+rust-version.workspace = true
+authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
+description = "Operator-env resolution: op:// references, $VAR expansion, and 1Password CLI integration. Future home of operator_env/."
+license.workspace = true
+readme = "README.md"
+publish = false
+
+repository.workspace = true
+[lib]
+name = "jackin_env"
+path = "src/lib.rs"
+
+[dependencies]
+jackin-core = { workspace = true }
+jackin-config = { workspace = true }
+jackin-protocol = { workspace = true }
+jackin-diagnostics = { workspace = true }
+jackin-process = { workspace = true }
+jackin-telemetry = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+jackin-diagnostics = { workspace = true, features = ["test-support"] }
+proptest = { workspace = true }
+tracing = { workspace = true }
+
+[lints]
+workspace = true

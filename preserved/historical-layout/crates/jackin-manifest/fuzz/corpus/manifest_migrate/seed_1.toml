@@ -1,0 +1,6 @@
+dockerfile = "Dockerfile"
+agents = ["claude"]
+version = "v1alpha1"
+
+[claude]
+plugins = []

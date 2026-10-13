@@ -1,0 +1,18 @@
+∴ User asks deep research random topic. Need use deep-research skill. Need likely ask clarifying? Deep research skill says: BEFORE invoking, check
+  if question is specific enough to research directly — if underspecified (e.g., "what car to buy" without budget/use-case/region), ask 2-3
+  clarifying questions. User said random topic, very underspecified. Need ask clarifying. But caveman style. Should ask 2-3 questions.
+
+● Topic too open. Narrow:
+
+  1. Domain? (tech, science, history, finance, health, etc.)
+  2. Goal? (learn, compare options, find trends, write brief)
+  3. Depth / length? (quick scan vs exhaustive report with sources)
+
+✻ Baked for 3s
+
+                                                                                                                                    36555 tokens
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  [CAVEMAN:ULTRA]
+  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents

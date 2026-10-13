@@ -1,0 +1,27 @@
+[package]
+name = "jackin-config-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+
+[dependencies]
+jackin-config = { path = ".." }
+libfuzzer-sys = "0.4"
+tempfile = "3"
+
+[[bin]]
+name = "config_migrate"
+path = "src/config_migrate.rs"
+test = false
+bench = false
+
+[[bin]]
+name = "workspace_migrate"
+path = "src/workspace_migrate.rs"
+test = false
+bench = false
