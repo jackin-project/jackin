@@ -12,13 +12,12 @@ use crate::keychain::{ClaudeKeychainRead, read_claude_keychain_item_uncached};
 use super::{
     ClaudeCredentialLease, ClaudeOAuthUsageResponse, ClaudeResolved,
     credentials::parse_claude_keychain_profile,
-    lease::{
-        MAX_CLAUDE_KEYCHAIN_PAYLOAD_BYTES, begin_unauthorized_reread, cached_payload_for_lease,
-        replace_if_exact, valid_claude_keychain_service,
-    },
+    lease::{begin_unauthorized_reread, cached_payload_for_lease, valid_claude_keychain_service},
     spend::fetch_claude_oauth_usage,
     wave::claude_resolved_view_from_result,
 };
+#[cfg(any(target_os = "macos", test))]
+use super::lease::{MAX_CLAUDE_KEYCHAIN_PAYLOAD_BYTES, replace_if_exact};
 
 /// A consent race can suppress collection while retaining an observed HTTP
 /// failure status for safe broker diagnostics.
@@ -143,7 +142,8 @@ enum ClaudeFetchError {
 fn fetch_claude_with_one_401_reread<F, R, C>(
     lease: &ClaudeCredentialLease,
     resolved: &mut ClaudeResolved,
-    original_payload: Zeroizing<String>,
+    #[cfg(any(target_os = "macos", test))] original_payload: Zeroizing<String>,
+    #[cfg(not(any(target_os = "macos", test)))] _original_payload: Zeroizing<String>,
     mut fetch: F,
     reread: R,
     consent_is_current: &mut C,
@@ -193,7 +193,7 @@ where
     };
     #[cfg(not(any(target_os = "macos", test)))]
     {
-        let _ = keychain_read;
+        drop(keychain_read);
         return first_401_if_consent_current(first, consent_is_current);
     }
     #[cfg(any(target_os = "macos", test))]

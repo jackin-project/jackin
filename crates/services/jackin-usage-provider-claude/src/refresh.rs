@@ -28,6 +28,7 @@ impl ClaudeResolved {
         self.access_token.as_str()
     }
 
+    #[cfg(any(target_os = "macos", test))]
     pub(crate) fn replace_access_token(&mut self, access_token: Zeroizing<String>) {
         self.access_token = access_token;
     }
