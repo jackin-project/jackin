@@ -35,10 +35,10 @@ Product scope is limits only: remaining/used percentages, resets, plan/status, m
 **Forward-lane exception (dated):** the scheduled nonblocking Xcode 27/macOS 27
 build lane does not exist yet. Owner: Release Engineering. Recorded 2026-08-20.
 Shipping remains Xcode 26.6 and forward failures do not gate release. The
-exception exits when an Xcode 27 runner image is available and the lane is added
-at the owning `velnor-workflow` Swift-unit source (`ci-unit-swift.yml`,
-dispatched via `group-swift` in generated `ci-pr.yml` — never hand-edited),
-then regenerated here.
+exception stays open. The only checked-in workflow is
+`.github/workflows/ci.yml`, and it does not contain this lane. Do not
+hand-edit that file. Add the lane by regenerating the workflow from its
+source once an Xcode 27 runner image exists.
 
 **Post-26.0 API discipline:** every post-26.0 symbol is guarded with
 `if #available(macOS 27, *)`, ships a decided native fallback, and names the

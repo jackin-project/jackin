@@ -1081,7 +1081,7 @@ fn coordinator_recovers_persisted_owner_loss_once_without_a_herd() {
         .unwrap();
     assert_eq!(recovered.generation, 4);
     assert_eq!(recovered.phase, UsageRefreshPhase::Failed);
-    assert_eq!(recovered.retry_at_epoch, Some(1_301));
+    assert_eq!(recovered.retry_at_epoch, Some(1_300));
     assert_eq!(executor.calls.load(Ordering::SeqCst), 0);
 
     let recovered = coordinator
@@ -1932,13 +1932,13 @@ impl AccountStateStore for TombstoneWriteFailureStore {
             result_free: envelope.terminal_result.is_none()
                 && envelope.last_good.is_none()
                 && envelope.terminal_error.is_none(),
-            cooldown_deadline_epoch: crate::account_cooldown_deadline(envelope),
+            cooldown_deadline_epoch: account_cooldown_deadline(envelope),
         });
         let is_tombstone = envelope.phase == UsageRefreshPhase::Idle
             && envelope.terminal_result.is_none()
             && envelope.last_good.is_none()
             && envelope.terminal_error.is_none()
-            && crate::account_cooldown_deadline(envelope)
+            && account_cooldown_deadline(envelope)
                 .is_some_and(|deadline| deadline > now_epoch);
         if is_tombstone && self.fail_tombstone.swap(0, Ordering::SeqCst) > 0 {
             return Err(StateStoreError::Unavailable);
@@ -2006,7 +2006,7 @@ fn assert_later_purge_store_order(
         }
     };
     let expected_terminal_deadline =
-        crate::account_cooldown_deadline(terminal_preimage).expect("terminal cooldown");
+        account_cooldown_deadline(terminal_preimage).expect("terminal cooldown");
     assert!(matches!(
         &events[1],
         TombstoneStoreEvent::Store {
@@ -2033,7 +2033,7 @@ fn assert_later_purge_store_order(
                 pending_preimage.generation
             },
             result_free: true,
-            cooldown_deadline_epoch: crate::account_cooldown_deadline(restored_pending),
+            cooldown_deadline_epoch: account_cooldown_deadline(restored_pending),
         }
     );
     assert_eq!(
@@ -2043,7 +2043,7 @@ fn assert_later_purge_store_order(
             phase: terminal_preimage.phase,
             generation: terminal_preimage.generation,
             result_free: false,
-            cooldown_deadline_epoch: crate::account_cooldown_deadline(terminal_preimage),
+            cooldown_deadline_epoch: account_cooldown_deadline(terminal_preimage),
         }
     );
     assert_eq!(
@@ -2053,7 +2053,7 @@ fn assert_later_purge_store_order(
             phase: later_purge_preimage.phase,
             generation: later_purge_preimage.generation,
             result_free: true,
-            cooldown_deadline_epoch: crate::account_cooldown_deadline(later_purge_preimage),
+            cooldown_deadline_epoch: account_cooldown_deadline(later_purge_preimage),
         }
     );
 }
@@ -2149,7 +2149,7 @@ fn failed_later_purge_case(
         envelope.phase = UsageRefreshPhase::Failed;
         envelope.terminal_result = None;
         envelope.success_deadline_epoch = None;
-        envelope.terminal_error = Some(crate::coordination_error(
+        envelope.terminal_error = Some(coordination_error(
             UsageCoordinationErrorKind::RateLimited,
             "provider rate limited",
         ));

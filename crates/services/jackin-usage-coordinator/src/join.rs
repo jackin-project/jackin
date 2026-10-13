@@ -149,7 +149,6 @@ impl UsageCoordinator {
                 }
                 let recovery_pending = envelope.phase.is_active();
                 if recovery_pending {
-                    let recovering_invoked_attempt = envelope.phase == UsageRefreshPhase::Updating;
                     let recovery_epoch = recovery_sample.ceil_epoch();
                     let consecutive_failures = envelope.consecutive_failures.saturating_add(1);
                     envelope.phase = UsageRefreshPhase::Failed;
@@ -176,7 +175,7 @@ impl UsageCoordinator {
                         }
                         None => retry_deadline,
                     };
-                    let recovery_floor = recovering_invoked_attempt
+                    let recovery_floor = unresolved_updating_attempt
                         .then(|| {
                             policy::minimum_attempt_deadline(
                                 &envelope.capability,

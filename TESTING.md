@@ -361,27 +361,25 @@ Committed seeds live under each fuzz crate's `corpus/<target>/` (fixture-derived
 
 Migration fixture harness ([`crates/apps/jackin/tests/migration_fixtures.rs`](crates/apps/jackin/tests/migration_fixtures.rs)) enforces golden equality against `after.toml` and second-pass idempotence for every config/workspace/manifest fixture.
 
-### Full DinD E2E lane (scheduled)
+### Full DinD E2E lane
 
-Hygiene job `dind-chaos` runs the complete nine-test suite against real Docker,
-including the three seeded fault scenarios
+Run the docker end-to-end suite locally, including the three seeded fault scenarios
 (`chaos_kill_container_mid_session`, `chaos_sigkill_capsule`, `chaos_drop_control_socket`).
 Replay: `JACKIN_CHAOS_SEED=<n> mise exec -- mbx +1.99.0 nextest run -p jackin --features e2e --profile docker-e2e -E 'test(chaos_kill_container_mid_session)'`.
-Default seed is fixed (`0xc4a0_55eed`); `workflow_dispatch` input `chaos_seed` overrides.
+The default seed is fixed (`0xc4a0_55eed`). `.github/workflows/ci.yml` has no DinD job and no `chaos_seed` input.
 
 ## Allocation lane (dhat) — static budget policy (plan 026)
 
-The `dhat-heap` allocation suite in `jackin-capsule` runs on
-the scheduled Hygiene workflow (`dhat-allocation` job, advisory /
-`continue-on-error`). **Ratchet decision:** keep `perf_dhat_budgets` fed from
+The `dhat-heap` allocation suite in `jackin-capsule` is a local advisory
+measurement. `.github/workflows/ci.yml` does not run it. **Ratchet decision:** keep `perf_dhat_budgets` fed from
 the static ceilings in [`crates/apps/jackin-capsule/src/perf_budgets.rs`](crates/apps/jackin-capsule/src/perf_budgets.rs) (in-test
 guardrails + textual ratchet). Measured dhat output is artifacted for trend
 inspection but does **not** yet drive the ratchet — re-evaluate after ≥3
 stable scheduled runs on the same runner class. Never budget from a single run.
 
-## Advisory measurement lanes (hygiene schedule)
+## Advisory measurement lanes
 
-Trigger manually: `gh workflow run Hygiene` (or wait for the daily cron).
+These names belonged to a Hygiene schedule that is not in the checked-in workflow. Do not run `gh workflow run Hygiene`. `.github/workflows/ci.yml` is the only workflow, and it does not define these jobs.
 
 | Lane | Job | Artifact | Gate? |
 |---|---|---|---|
