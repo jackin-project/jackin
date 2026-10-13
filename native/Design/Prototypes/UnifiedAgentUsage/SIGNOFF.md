@@ -10,7 +10,7 @@ default, 1200×760 wide, and 380×520 popover. Launch contract:
 Build and test:
 
 ```sh
-rtk mise run desktop-prototype-build
+rtk mise -C native run prototype-build
 rtk swift test --package-path native/Design/Prototypes/UnifiedAgentUsage
 ```
 

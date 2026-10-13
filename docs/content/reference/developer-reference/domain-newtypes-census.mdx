@@ -28,8 +28,8 @@ Boundary decision record for Ownership item 4 (plan 020). Each named concept rec
 
 ### Canonical ID admission through Serde
 
-<RepoFile path="crates/jackin-core/src/container_id.rs" label="ContainerId" /> and
-<RepoFile path="crates/jackin-core/src/session_id.rs" label="SessionId" /> use manual
+<RepoFile path="crates/core/jackin-core/src/container_id.rs" label="ContainerId" /> and
+<RepoFile path="crates/core/jackin-core/src/session_id.rs" label="SessionId" /> use manual
 `Deserialize` implementations that call the same fallible constructors used by
 ordinary callers. Deserialization cannot bypass their admission rules:
 

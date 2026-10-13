@@ -63,7 +63,7 @@ When toggled to `on_demand = true`, jackin❯ serializes to the table form. This
 
 ## Configuration model
 
-The configuration types live in <RepoFile path="crates/jackin-core/src/env_value.rs" />.
+The configuration types live in <RepoFile path="crates/core/jackin-core/src/env_value.rs" />.
 
 ### `Extended` values
 
@@ -139,7 +139,7 @@ impl EnvValue {
 }
 ```
 
-In <RepoFile path="crates/jackin-env/src/resolve.rs" />, launch-time env resolution skips `on_demand` vars before container env injection:
+In <RepoFile path="crates/core/jackin-env/src/resolve.rs" />, launch-time env resolution skips `on_demand` vars before container env injection:
 
 ```rust
 // Before building -e flags, filter out on_demand vars:
@@ -263,7 +263,7 @@ fn invoked_as_jackin_exec(args: &[String]) -> bool {
 
 The `None` branch (no subcommand, but invoked as `jackin-exec`) makes `jackin-exec <command> [args...]` work — `args[0]` is `jackin-exec`, remaining args are the command.
 
-**Control protocol variants in <RepoFile path="crates/jackin-protocol/src/control.rs" />:**
+**Control protocol variants in <RepoFile path="crates/core/jackin-protocol/src/control.rs" />:**
 
 `ClientMsg` and `ServerMsg` both have an `#[serde(other)]` `Unknown` sink variant that must remain last. Exec variants appear before `Unknown`:
 
@@ -301,12 +301,12 @@ The entrypoint (<RepoFile path="docker/runtime/entrypoint.sh" />) uses this to a
 ### Runtime, picker, and host socket
 
 **Source files:**
-- <RepoFile path="crates/jackin-capsule/src/exec.rs">crates/jackin-capsule/src/exec.rs</RepoFile> — exec client: argv[0] detection, connect to control channel, send ExecCommand, receive result
-- <RepoFile path="crates/jackin-runtime/src/exec_host.rs" /> — host.sock listener: stays alive for session duration, runs `op read`, responds to capsule credential requests
-- <RepoFile path="crates/jackin-core/src/env_value.rs" /> — `Extended` variant on `EnvValue`; `on_demand: bool` on `OpRef`
-- <RepoFile path="crates/jackin-capsule/src/main.rs" /> — `exec` subcommand dispatch + argv[0] detection
-- <RepoFile path="crates/jackin-protocol/src/control.rs" /> — `ExecCommand`, `ExecResult`, `ExecDenied`
-- <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> — dispatches `ExecCommand`; pushes `Dialog::ExecPicker(ExecPickerState)` onto the daemon's `dialog_stack`. `ExecPickerState` shape:
+- <RepoFile path="crates/apps/jackin-capsule/src/exec.rs">crates/apps/jackin-capsule/src/exec.rs</RepoFile> — exec client: argv[0] detection, connect to control channel, send ExecCommand, receive result
+- <RepoFile path="crates/services/jackin-runtime/src/exec_host.rs" /> — host.sock listener: stays alive for session duration, runs `op read`, responds to capsule credential requests
+- <RepoFile path="crates/core/jackin-core/src/env_value.rs" /> — `Extended` variant on `EnvValue`; `on_demand: bool` on `OpRef`
+- <RepoFile path="crates/apps/jackin-capsule/src/main.rs" /> — `exec` subcommand dispatch + argv[0] detection
+- <RepoFile path="crates/core/jackin-protocol/src/control.rs" /> — `ExecCommand`, `ExecResult`, `ExecDenied`
+- <RepoFile path="crates/apps/jackin-capsule/src/daemon.rs" /> — dispatches `ExecCommand`; pushes `Dialog::ExecPicker(ExecPickerState)` onto the daemon's `dialog_stack`. `ExecPickerState` shape:
 
   ```rust
   pub struct ExecPickerState {
@@ -328,23 +328,23 @@ The entrypoint (<RepoFile path="docker/runtime/entrypoint.sh" />) uses this to a
   ```
 
   When `ExecCommand` arrives: build `ExecPickerState` from workspace on-demand vars (read from the capsule's loaded config), push onto dialog_stack. Dialog handles Space=toggle, ↑↓=cursor, Enter=confirm (read selected items → connect to `/jackin/run/host.sock` → resolve → inject → execute), Esc=cancel (send `ExecDenied`).
-- <RepoFile path="crates/jackin-capsule/src/socket.rs" /> — routes `ExecCommand` in the control dispatcher
-- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> + <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs" /> — starts the host.sock listener for Docker launches and injects `JACKIN_EXEC_BINDINGS=name1,name2,...` as an always-available env var. The `is_on_demand()` filtering happens upstream in <RepoFile path="crates/jackin-env/src/resolve.rs" /> (`resolve_operator_env_with_matching` drops on-demand vars before resolution, so they are never `op read` at launch), with `collect_on_demand_bindings` collecting the names beside it
-- <RepoFile path="crates/jackin-runtime/src/runtime/apple_container.rs" /> — passes the host.sock path and `JACKIN_EXEC_BINDINGS` through the apple-container launch path
+- <RepoFile path="crates/apps/jackin-capsule/src/socket.rs" /> — routes `ExecCommand` in the control dispatcher
+- <RepoFile path="crates/services/jackin-runtime/src/runtime/launch.rs" /> + <RepoFile path="crates/services/jackin-runtime/src/runtime/launch/launch_pipeline.rs" /> — starts the host.sock listener for Docker launches and injects `JACKIN_EXEC_BINDINGS=name1,name2,...` as an always-available env var. The `is_on_demand()` filtering happens upstream in <RepoFile path="crates/core/jackin-env/src/resolve.rs" /> (`resolve_operator_env_with_matching` drops on-demand vars before resolution, so they are never `op read` at launch), with `collect_on_demand_bindings` collecting the names beside it
+- <RepoFile path="crates/services/jackin-runtime/src/runtime/apple_container.rs" /> — passes the host.sock path and `JACKIN_EXEC_BINDINGS` through the apple-container launch path
 - <RepoFile path="docker/runtime/entrypoint.sh" /> — uses `JACKIN_EXEC_BINDINGS` for the system prompt block
 
 ### MCP surface
 
-- Exposes `jackin_exec` MCP tool from jackin-capsule using the same exec subcommand handler. Lives in <RepoFile path="crates/jackin-capsule/src/mcp_server.rs" /> and is registered from <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" />.
+- Exposes `jackin_exec` MCP tool from jackin-capsule using the same exec subcommand handler. Lives in <RepoFile path="crates/apps/jackin-capsule/src/mcp_server.rs" /> and is registered from <RepoFile path="crates/apps/jackin-capsule/src/runtime_setup.rs" />.
 
 ## Code touchpoints
 
-- <RepoFile path="crates/jackin-core/src/env_value.rs" /> — `EnvValue` enum and `OpRef` configuration model
-- <RepoFile path="crates/jackin-capsule/src/main.rs" /> — `exec` subcommand
-- <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> — ExecCommand dispatch, picker overlay, host.sock callback, temp env injection, output filtering
-- <RepoFile path="crates/jackin-protocol/src/control.rs" /> — ExecCommand + ExecResult + ExecDenied
-- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> — host.sock listener + `JACKIN_EXEC_BINDINGS`
-- <RepoFile path="crates/jackin-runtime/src/exec_host.rs" /> — host-side credential resolver
+- <RepoFile path="crates/core/jackin-core/src/env_value.rs" /> — `EnvValue` enum and `OpRef` configuration model
+- <RepoFile path="crates/apps/jackin-capsule/src/main.rs" /> — `exec` subcommand
+- <RepoFile path="crates/apps/jackin-capsule/src/daemon.rs" /> — ExecCommand dispatch, picker overlay, host.sock callback, temp env injection, output filtering
+- <RepoFile path="crates/core/jackin-protocol/src/control.rs" /> — ExecCommand + ExecResult + ExecDenied
+- <RepoFile path="crates/services/jackin-runtime/src/runtime/launch.rs" /> — host.sock listener + `JACKIN_EXEC_BINDINGS`
+- <RepoFile path="crates/services/jackin-runtime/src/exec_host.rs" /> — host-side credential resolver
 - <RepoFile path="docker/runtime/entrypoint.sh" /> — system prompt injection for `JACKIN_EXEC_BINDINGS`
 
 ## Related work

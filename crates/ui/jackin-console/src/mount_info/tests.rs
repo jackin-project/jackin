@@ -1,0 +1,13 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
+//! Tests for `mount_info`.
+
+use super::*;
+
+use tempfile::tempdir;
+
+mod support;
+use support::*;
+mod case_01;
+mod case_02;

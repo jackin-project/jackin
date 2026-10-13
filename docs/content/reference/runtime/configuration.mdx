@@ -30,7 +30,7 @@ Three environment variables redirect these default storage roots without touchin
 |---|---|---|
 | `JACKIN_CONFIG_DIR` | `~/.config/jackin` | Config root — `config.toml`, `workspaces/` |
 | `JACKIN_HOME_DIR` | `~/.jackin` | jackin❯ home root — `data/`, `roles/`, `cache/` |
-| `JACKIN_CONSTRUCT_IMAGE` | `projectjackin/construct:trixie` | Override the construct base image used at derived-build time. Role Dockerfiles always reference the canonical name; this substitutes it during `docker build`. Set to `jackin-local/construct:trixie` after `mise run construct-build-local` to test against a local construct build. See [The Construct Image](/developing/construct-image/) for the full workflow. |
+| `JACKIN_CONSTRUCT_IMAGE` | `projectjackin/construct:trixie` | Override the construct base image used at derived-build time. Role Dockerfiles always reference the canonical name; this substitutes it during `docker build`. Set to `jackin-local/construct:trixie` after `mise exec -- mbx +1.99.0 xtask construct build-local` to test against a local construct build. See [The Construct Image](/developing/construct-image/) for the full workflow. |
 
 Setting `JACKIN_CONFIG_DIR` and `JACKIN_HOME_DIR` to fresh directories before running jackin❯ means every command reads and writes only those directories, leaving the live operator state completely untouched. Unset behavior is identical to not setting the variables — jackin❯ falls back to the defaults above.
 
@@ -51,7 +51,7 @@ full version history and migration matrix.
 ## Publication and recovery journal
 
 Configuration publication is implemented in
-<RepoFile path="crates/jackin-config/src/persist.rs" />.
+<RepoFile path="crates/core/jackin-config/src/persist.rs" />.
 The private, mode-`0600` `config.publish.journal` records pending writes and deletes.
 Journal version 2 records the SHA-256 of each staged write generation; version 1
 and unknown versions are rejected and retained, with no automatic journal migration.

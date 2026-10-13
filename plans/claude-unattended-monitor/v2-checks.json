@@ -1,7 +1,6 @@
 {
   "cargo_binary": "/Users/donbeave/.rustup/toolchains/1.97.1-aarch64-apple-darwin/bin/cargo",
   "source_commit": "4492d3cb91d9e45fafec2aa8acb8158268618cd9",
-  "evidence_scope": "Historical predecessor source only; the current main-port source has not been built or fixture-smoked as an installed pair.",
   "notice": "Counts overlap; tests use isolated/fake state, not live provider or native Keychain. Telemetry full xtask fails pre-existing unrelated literals; see verification.md. Tooling installer traffic occurred; the whole session was not offline.",
   "gates": [
     {

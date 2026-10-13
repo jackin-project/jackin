@@ -56,7 +56,7 @@ Commit [`4c8b94bd05f84a62a04f9f235e2d846f14d04366`](https://github.com/jackin-pr
 
 Within the measured historical `CI` run, the fastest checks returned early: `changes` 5s, `actionlint` 13s, `fmt` 24s, `schema-check` 33s. The slow path is structural. Docker E2E belongs in the reusable nextest workflow without a serialized cache-seeding gate, allowing it to run beside crate jobs once its construct image is available.
 
-The inherited CI matrix split item also called out the real Docker boundary directly: <RepoFile path="crates/jackin/tests/dind_e2e.rs">crates/jackin/tests/dind_e2e.rs</RepoFile> exercises real `docker run`, PTY, runtime launch, and `jackin-capsule` handoff behavior. That should stay a named `docker-e2e` failure surface instead of being buried inside a general package-test lane. It should still belong to the nextest test system, though: the recorded command was `cargo nextest run -p jackin --features e2e --profile docker-e2e`, so the better architecture is a dedicated nextest Docker lane inside the reusable nextest workflow, not an unrelated top-level CI job.
+The inherited CI matrix split item also called out the real Docker boundary directly: <RepoFile path="crates/apps/jackin/tests/dind_e2e.rs">crates/apps/jackin/tests/dind_e2e.rs</RepoFile> exercises real `docker run`, PTY, runtime launch, and `jackin-capsule` handoff behavior. That should stay a named `docker-e2e` failure surface instead of being buried inside a general package-test lane. It should still belong to the nextest test system, though: the recorded command was `cargo nextest run -p jackin --features e2e --profile docker-e2e`, so the better architecture is a dedicated nextest Docker lane inside the reusable nextest workflow, not an unrelated top-level CI job.
 
 ## Current controls and coverage gaps
 
@@ -181,8 +181,8 @@ That retired workflow built PR and non-main rehearsals without Docker Hub creden
 - Historical workflow names: `.github/workflows/ci-pr.yml`, `.github/workflows/ci-main.yml`, and `.github/workflows/release.yml` (deleted).
 - <RepoFile path="docker/construct/Dockerfile">docker/construct/Dockerfile</RepoFile>
 - <RepoFile path=".config/nextest.toml">.config/nextest.toml</RepoFile>
-- <RepoFile path="crates/jackin/tests/dind_e2e.rs">crates/jackin/tests/dind_e2e.rs</RepoFile>
-- <RepoFile path="crates/jackin-capsule/Cargo.toml">crates/jackin-capsule/Cargo.toml</RepoFile>
+- <RepoFile path="crates/apps/jackin/tests/dind_e2e.rs">crates/apps/jackin/tests/dind_e2e.rs</RepoFile>
+- <RepoFile path="crates/apps/jackin-capsule/Cargo.toml">crates/apps/jackin-capsule/Cargo.toml</RepoFile>
 
 ## Code touchpoints
 
