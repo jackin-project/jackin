@@ -3,7 +3,8 @@
 
 use super::*;
 
-use std::os::unix::net::UnixStream;
+use std::os::unix::fs::PermissionsExt as _;
+use std::os::unix::net::{UnixListener, UnixStream};
 use std::sync::atomic::AtomicUsize;
 use std::sync::mpsc::{self, Receiver, SyncSender, TryRecvError};
 use std::thread;
@@ -547,4 +548,136 @@ fn fenced_connection_workers_drop_queued_streams_before_dispatch() {
         worker.join().expect("join fenced worker");
     }
     assert!(!harness.store.has_active());
+}
+
+fn serve_cleanup(temp: &std::path::Path, build_id: &str) -> BrokerStartupCleanup {
+    let lease_path = temp.join(format!("{build_id}-lease"));
+    let lease = crate::claim_leader(&lease_path, build_id, Duration::from_secs(30))
+        .expect("claim disposable broker lease")
+        .expect("a new lease file is claimable");
+    BrokerStartupCleanup::new(lease_path, temp.join(format!("{build_id}.sock")), lease)
+}
+
+fn bound_socket(path: &std::path::Path) -> UnixListener {
+    let listener = UnixListener::bind(path).expect("bind broker socket");
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+        .expect("restrict broker socket to its owner");
+    listener
+}
+
+#[test]
+fn foreground_serve_clears_collector_source_when_the_owner_stops() {
+    let harness = TickerHarness::new();
+    let build_id = "serve-owner-test";
+    let socket_path = harness.temp.path().join("broker.sock");
+    let listener = bound_socket(&socket_path);
+    let source = "foreground-source".to_owned();
+    harness
+        .store
+        .set_experimental_collector_source(Some(source.clone()));
+    assert_eq!(
+        harness
+            .store
+            .experimental_collector_source_for_test()
+            .as_deref(),
+        Some(source.as_str())
+    );
+    let store = Arc::clone(&harness.store);
+    let cleanup = serve_cleanup(harness.temp.path(), build_id);
+    let coordinator = Arc::clone(&harness.coordinator);
+    let publisher = harness.publisher.clone();
+    let serve_store = Arc::clone(&harness.store);
+    let serve_thread = thread::spawn(move || {
+        serve(ServeConfig {
+            listener,
+            coordinator,
+            build_id: build_id.to_owned(),
+            cleanup,
+            policy: ServePolicy {
+                idle_exit: Duration::from_secs(600),
+                lease_duration: Duration::from_secs(30),
+                lease_renewal: Duration::from_secs(3_600),
+            },
+            publisher,
+            monitor_store: serve_store,
+            catalog_refresh: None,
+            has_authenticated_foreground_guard: true,
+        });
+    });
+    let request = UsageBrokerRequest {
+        protocol_version: jackin_protocol::usage_broker::USAGE_BROKER_PROTOCOL_VERSION.to_owned(),
+        build_id: build_id.to_owned(),
+        operation: jackin_protocol::usage_broker::UsageBrokerOperation::Monitor {
+            request: MonitorOperation::ServiceStop,
+        },
+        launch_credential_scope: None,
+    };
+    let mut bytes = serde_json::to_vec(&request).expect("encode service stop");
+    bytes.push(b'\n');
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let response = loop {
+        match UnixStream::connect(&socket_path) {
+            Ok(mut stream) => {
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(2)))
+                    .expect("bound the service-stop read");
+                Write::write_all(&mut stream, &bytes).expect("write service stop");
+                stream
+                    .shutdown(std::net::Shutdown::Write)
+                    .expect("finish service stop");
+                break dispatch::read_frame::<UsageBrokerResponse>(&mut stream)
+                    .expect("read service-stop response");
+            }
+            Err(_) if Instant::now() < deadline => thread::yield_now(),
+            Err(error) => panic!("service stop connect failed: {error}"),
+        }
+    };
+    assert!(matches!(
+        response,
+        UsageBrokerResponse::Monitor {
+            reply: MonitorReply::ServiceStopped,
+        }
+    ));
+    serve_thread
+        .join()
+        .expect("foreground serve exits after service stop");
+    assert_eq!(
+        store.experimental_collector_source_for_test(),
+        None,
+        "owner termination clears the experimental collector before serve returns"
+    );
+}
+
+#[test]
+fn passive_idle_exit_keeps_an_unrelated_collector_source() {
+    let harness = TickerHarness::new();
+    let build_id = "serve-passive-test";
+    let socket_path = harness.temp.path().join("broker.sock");
+    let listener = bound_socket(&socket_path);
+    harness
+        .store
+        .set_experimental_collector_source(Some("left-by-another-owner".to_owned()));
+    serve(ServeConfig {
+        listener,
+        coordinator: harness.coordinator,
+        build_id: build_id.to_owned(),
+        cleanup: serve_cleanup(harness.temp.path(), build_id),
+        policy: ServePolicy {
+            idle_exit: Duration::ZERO,
+            lease_duration: Duration::from_secs(30),
+            lease_renewal: Duration::from_secs(3_600),
+        },
+        publisher: harness.publisher,
+        monitor_store: Arc::clone(&harness.store),
+        catalog_refresh: None,
+        has_authenticated_foreground_guard: false,
+    });
+    assert_eq!(
+        harness
+            .store
+            .experimental_collector_source_for_test()
+            .as_deref(),
+        Some("left-by-another-owner"),
+        "a passive idle exit does not clear a collector source it does not own"
+    );
 }

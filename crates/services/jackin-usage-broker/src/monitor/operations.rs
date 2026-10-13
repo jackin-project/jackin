@@ -289,6 +289,11 @@ impl MonitorStore {
             .unwrap_or_else(std::sync::PoisonError::into_inner) = source;
     }
 
+    #[cfg(test)]
+    pub(crate) fn experimental_collector_source_for_test(&self) -> Option<String> {
+        self.experimental_collector_source()
+    }
+
     fn experimental_collector_source(&self) -> Option<String> {
         self.inner
             .experimental_collector_source

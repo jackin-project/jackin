@@ -149,11 +149,13 @@ pub(crate) fn serve(config: ServeConfig) {
     });
     let workers = spawn_connection_workers(receiver, Arc::clone(&context));
     if workers.is_empty() {
+        release_foreground_collector(has_authenticated_foreground_guard, &monitor_store);
         drop(listener);
         drop(cleanup);
         return;
     }
     if listener.set_nonblocking(true).is_err() {
+        release_foreground_collector(has_authenticated_foreground_guard, &monitor_store);
         drop(connections);
         for worker in workers {
             drop(worker.join());
@@ -182,6 +184,7 @@ pub(crate) fn serve(config: ServeConfig) {
         let now = system_clock_sample(started);
         if interval_elapsed(now, last_renewal, policy.lease_renewal) {
             if !cleanup.renew() {
+                release_foreground_collector(has_authenticated_foreground_guard, &monitor_store);
                 fenced.store(true, Ordering::Release);
                 break;
             }
@@ -220,6 +223,9 @@ pub(crate) fn serve(config: ServeConfig) {
             Err(_) => break,
         }
     }
+    // Revoke the foreground collector before fencing so workers still draining
+    // the queue cannot admit another collection against this owner.
+    release_foreground_collector(has_authenticated_foreground_guard, &monitor_store);
     // Fence all remaining connections before disconnecting the queue. Workers
     // check this gate both before handling queued streams and before dispatch.
     fenced.store(true, Ordering::Release);
@@ -511,6 +517,15 @@ fn interval_elapsed(now: ClockSample, last: ClockSample, interval: Duration) -> 
     let wall_interval = i64::try_from(interval_seconds).unwrap_or(i64::MAX);
     now.wall_epoch.saturating_sub(last.wall_epoch) >= wall_interval
         || now.monotonic_elapsed.saturating_sub(last.monotonic_elapsed) >= interval
+}
+
+fn release_foreground_collector(
+    has_authenticated_foreground_guard: bool,
+    monitor_store: &MonitorStore,
+) {
+    if has_authenticated_foreground_guard {
+        monitor_store.set_experimental_collector_source(None);
+    }
 }
 
 fn should_exit_idle(
