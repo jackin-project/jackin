@@ -81,9 +81,9 @@ required pipeline target should finish within one minute. A warm job must not
 update the crates.io index, download an upstream crate, or compile an unchanged
 registry/git dependency. The lane-scoped registry warmup is the sole owner of a
 true cold fetch and builds `jackin-xtask` once for artifact reuse by downstream
-gates. The same artifact carries the pinned Cargo CI tools so fan-out jobs do
-not independently install `nextest`, `deny`, `shear`, `audit`, `fuzz`, `hack`,
-or `sccache`. GitHub and Velnor use the same workflow, commands, cache keys, and
+gates. The same artifact carries pinned Cargo CI tools so fan-out jobs do
+not independently install `nextest`, `deny`, `shear`, `audit`, `fuzz`, or `hack`.
+MBX is the only compiler cache. GitHub and Velnor use the same workflow, commands, cache keys, and
 failure policy; Velnor may be faster only because its runner-local state
 persists. The prepared xtask also has a seven-day artifact keyed by its actual
 transitive source inputs, Cargo graph/configuration, toolchain, operating
