@@ -82,6 +82,74 @@ fn broker_lease_uses_expiry_and_build_identity_not_pid_reuse() {
 }
 
 #[test]
+fn pid_only_lease_reclaims_a_dead_pid_and_keeps_a_live_or_malformed_body() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("lease");
+    let live = format!("{}\n", std::process::id());
+    fs::write(&path, live.as_bytes()).unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+    assert!(
+        claim_leader(&path, "build", Duration::from_secs(30))
+            .unwrap()
+            .is_none(),
+        "a live pid-only lease is not credential authority"
+    );
+    assert_eq!(fs::read(&path).unwrap(), live.as_bytes());
+
+    let malformed = b"not-a-pid\n";
+    fs::write(&path, malformed).unwrap();
+    assert!(
+        claim_leader(&path, "build", Duration::from_secs(30))
+            .unwrap()
+            .is_none(),
+        "a non-numeric lease fails closed"
+    );
+    assert_eq!(fs::read(&path).unwrap(), malformed);
+
+    let dead = demonstrably_dead_pid();
+    let dead_body = dead.to_string();
+    fs::write(&path, dead_body.as_bytes()).unwrap();
+    let owner = claim_leader(&path, "build", Duration::from_secs(30))
+        .unwrap()
+        .expect("a dead pid-only lease is reclaimable");
+    assert!(owner.stale_lease_reclaimed);
+    assert_eq!(owner.lease.process_id, std::process::id());
+    assert_eq!(owner.lease.build_id, "build");
+    let persisted = fs::read(&path).unwrap();
+    let parsed: BrokerLease = serde_json::from_slice(&persisted).expect("reclaim writes a lease");
+    assert_eq!(parsed.instance_id, owner.lease.instance_id);
+    assert_ne!(persisted, dead_body.as_bytes());
+}
+
+#[test]
+fn expired_foreign_protocol_lease_is_not_reclaimed() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("lease");
+    let mut foreign = BrokerLease::new("build");
+    foreign.protocol_version = "not-the-selected-protocol".to_owned();
+    foreign.renewed_at_epoch = 0;
+    let original = serde_json::to_vec(&foreign).unwrap();
+    fs::write(&path, &original).unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+
+    assert!(
+        claim_leader(&path, "build", Duration::from_secs(30))
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(fs::read(&path).unwrap(), original);
+}
+
+fn demonstrably_dead_pid() -> i32 {
+    for pid in (2..100_000).rev() {
+        if nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), None).is_err() {
+            return pid;
+        }
+    }
+    panic!("expected a pid that the kernel reports as absent");
+}
+
+#[test]
 fn claim_leader_rejects_oversized_lease() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("lease");
