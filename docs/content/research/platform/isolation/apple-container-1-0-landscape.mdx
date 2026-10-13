@@ -31,7 +31,7 @@ Which current Apple Container capabilities and constraints determine whether it 
 
 ### Runtime and policy surface
 
-Verified against `docs/command-reference.md` at the `1.0.0` tag. The current jackin❯ `AppleContainerSpec` carries only `image`, `env`, read-write `mounts`, and `caps_add` (`crates/jackin-runtime/src/apple_container_client.rs:40-50`), emitted as `run --name <n> -d -e… -v… --cap-add… <image> jackin-capsule` (`apple_container_client.rs:119-148`).
+Verified against `docs/command-reference.md` at the `1.0.0` tag. The current jackin❯ `AppleContainerSpec` carries only `image`, `env`, read-write `mounts`, and `caps_add` (`crates/services/jackin-runtime/src/apple_container_client.rs:40-50`), emitted as `run --name <n> -d -e… -v… --cap-add… <image> jackin-capsule` (`apple_container_client.rs:119-148`).
 
 | 1.0 capability | Flag | Current adapter exposure | jackin❯ relevance |
 |---|---|---|---|
@@ -213,4 +213,4 @@ Current macOS-first comparison at the verification cutoff: **Docker Desktop 4.77
 - docs.docker.com/desktop/release-notes, docs.docker.com/ai/sandboxes/ (+ get-started/agents/CLI ref), docker.com Sandboxes launch blog
 - github.com/smol-machines/smolvm (+ releases v1.0.0/v1.0.1), smolmachines.com
 - github.com/socktainer/socktainer
-- Backend foundation sources: <RepoFile path="crates/jackin-runtime/src/runtime/apple_container.rs" />, <RepoFile path="crates/jackin-runtime/src/apple_container_client.rs" />, <RepoFile path="crates/jackin-runtime/src/exec_host.rs" />, `crates/jackin-capsule/src/{exec,mcp_server}.rs`, and <RepoFile path="scripts/phase0-apple-container.sh" />.
+- Backend foundation sources: <RepoFile path="crates/services/jackin-runtime/src/runtime/apple_container.rs" />, <RepoFile path="crates/services/jackin-runtime/src/apple_container_client.rs" />, <RepoFile path="crates/services/jackin-runtime/src/exec_host.rs" />, `crates/apps/jackin-capsule/src/{exec,mcp_server}.rs`, and <RepoFile path="scripts/phase0-apple-container.sh" />.

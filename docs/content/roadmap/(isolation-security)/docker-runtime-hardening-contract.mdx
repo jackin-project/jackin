@@ -31,10 +31,10 @@ Plan 043 was written before WP-SUDO and WP4 landed. The keystone audit result is
 | Audit question | Current answer | Evidence |
 |---|---|---|
 | Is `NOPASSWD:ALL` baked into the construct image? | No. The construct installs the `sudo` package, but no sudoers entry is baked into the image. | <RepoFile path="docker/construct/Dockerfile" /> |
-| Does jackin❯ runtime code call `sudo` for its own privileged setup? | No. Runtime setup that needs root uses Docker `exec --user root`, including sudo provisioning. | <RepoFile path="crates/jackin-runtime/src/runtime/docker_profile.rs" />, <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_runtime.rs" /> |
-| What does the sudo grant do? | The root setup helper writes `/etc/sudoers.d/agent` when `JACKIN_SUDO=1` and removes a stray entry if invoked without that grant. Normal launch schedules this helper only for a granted sudo setting. The PTY wrapper still drops to the admitted nonzero UID/GID, sets per-session no-new-privileges, and applies Landlock before executing the agent or shell. | <RepoFile path="crates/jackin-capsule/src/sudo_provision.rs" />, <RepoFile path="crates/jackin-capsule/src/process_isolation.rs" />, <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_runtime.rs" /> |
-| Does the Docker-level no-new-privileges flag control agent sudo? | No. That flag is derived from the container grant, but the session wrapper sets no-new-privileges on each child before Landlock. The provisioned sudoers file does not enable interactive elevation. | <RepoFile path="crates/jackin-runtime/src/runtime/docker_profile.rs" />, <RepoFile path="crates/jackin-capsule/src/process_isolation.rs" /> |
-| Does built-in runtime behavior require in-session sudo? | No. Trusted setup that needs root uses Docker `exec --user root`. System package installation from an agent session is unsupported under the current wrapper; bake system tools into the role image. | <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_runtime.rs" /> |
+| Does jackin❯ runtime code call `sudo` for its own privileged setup? | No. Runtime setup that needs root uses Docker `exec --user root`, including sudo provisioning. | <RepoFile path="crates/services/jackin-runtime/src/runtime/docker_profile.rs" />, <RepoFile path="crates/services/jackin-runtime/src/runtime/launch/launch_runtime.rs" /> |
+| What does the sudo grant do? | The root setup helper writes `/etc/sudoers.d/agent` when `JACKIN_SUDO=1` and removes a stray entry if invoked without that grant. Normal launch schedules this helper only for a granted sudo setting. The PTY wrapper still drops to the admitted nonzero UID/GID, sets per-session no-new-privileges, and applies Landlock before executing the agent or shell. | <RepoFile path="crates/apps/jackin-capsule/src/sudo_provision.rs" />, <RepoFile path="crates/apps/jackin-capsule/src/process_isolation.rs" />, <RepoFile path="crates/services/jackin-runtime/src/runtime/launch/launch_runtime.rs" /> |
+| Does the Docker-level no-new-privileges flag control agent sudo? | No. That flag is derived from the container grant, but the session wrapper sets no-new-privileges on each child before Landlock. The provisioned sudoers file does not enable interactive elevation. | <RepoFile path="crates/services/jackin-runtime/src/runtime/docker_profile.rs" />, <RepoFile path="crates/apps/jackin-capsule/src/process_isolation.rs" /> |
+| Does built-in runtime behavior require in-session sudo? | No. Trusted setup that needs root uses Docker `exec --user root`. System package installation from an agent session is unsupported under the current wrapper; bake system tools into the role image. | <RepoFile path="crates/services/jackin-runtime/src/runtime/launch/launch_runtime.rs" /> |
 
 The grant schema still accepts `user`, `sudo`, and `system_writes`; these fields
 must not be read as promises that a PTY session runs as root or can write
@@ -65,11 +65,11 @@ Rootless DinD default research is closed for this track: keep `standard` default
 
 ## Related files
 
-- <RepoFile path="crates/jackin-runtime/src/runtime/docker_profile.rs" /> — profile/grant model, flag emission, session contract.
-- <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_runtime.rs" /> — role container, DinD, network, launch orchestration.
-- <RepoFile path="crates/jackin-capsule/src/sudo_provision.rs" /> — runtime sudoers provisioning and revocation helper.
-- <RepoFile path="crates/jackin-capsule/src/firewall.rs" /> — in-container firewall apply primitive.
-- <RepoFile path="crates/jackin-docker/src/docker_client.rs" /> — typed Docker API boundary.
+- <RepoFile path="crates/services/jackin-runtime/src/runtime/docker_profile.rs" /> — profile/grant model, flag emission, session contract.
+- <RepoFile path="crates/services/jackin-runtime/src/runtime/launch/launch_runtime.rs" /> — role container, DinD, network, launch orchestration.
+- <RepoFile path="crates/apps/jackin-capsule/src/sudo_provision.rs" /> — runtime sudoers provisioning and revocation helper.
+- <RepoFile path="crates/apps/jackin-capsule/src/firewall.rs" /> — in-container firewall apply primitive.
+- <RepoFile path="crates/adapters/jackin-docker/src/docker_client.rs" /> — typed Docker API boundary.
 - <RepoFile path="docker/runtime/entrypoint.sh" /> — runtime startup and agent bypass flags.
 - <RepoFile path="docker/construct/Dockerfile" /> — base runtime image and sudo package posture.
 

@@ -14,7 +14,7 @@ The original CLI hygiene proposal has mostly landed. Durable operator docs live 
 - [jackin❯ status](/commands/status/) and `jackin❯ ps` provide fleet overview, workspace instance lists, and instance detail where data is available.
 - `--format json` exists on `status`, `doctor`, `workspace list`, and `workspace show`; `jackin load --dry-run --format json` makes launch plans scriptable.
 - [jackin❯ load](/commands/load/) supports `--dry-run`, resolving the plan without spawning containers.
-- <RepoFile path="crates/jackin/src/error.rs" /> defines structured `JackinError` variants (E001–E016) with remediation hints; top-level rendering downcasts known errors and falls back to full debug detail for unknown failures.
+- <RepoFile path="crates/apps/jackin/src/error.rs" /> defines structured `JackinError` variants (E001–E016) with remediation hints; top-level rendering downcasts known errors and falls back to full debug detail for unknown failures.
 
 ## Remaining work
 
@@ -38,11 +38,11 @@ Before implementation, design must answer:
 
 ## Related files
 
-- <RepoFile path="crates/jackin/src/main.rs" /> — top-level error rendering.
-- <RepoFile path="crates/jackin/src/error.rs" /> — `JackinError` catalogue.
-- <RepoFile path="crates/jackin/src/cli.rs" /> — CLI command definitions.
-- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> — launch pipeline and dry-run.
-- <RepoFile path="crates/jackin-runtime/src/runtime/discovery.rs" /> — instance discovery for `status`.
+- <RepoFile path="crates/apps/jackin/src/main.rs" /> — top-level error rendering.
+- <RepoFile path="crates/apps/jackin/src/error.rs" /> — `JackinError` catalogue.
+- <RepoFile path="crates/apps/jackin/src/cli.rs" /> — CLI command definitions.
+- <RepoFile path="crates/services/jackin-runtime/src/runtime/launch.rs" /> — launch pipeline and dry-run.
+- <RepoFile path="crates/services/jackin-runtime/src/runtime/discovery.rs" /> — instance discovery for `status`.
 
 ## Cross-references
 

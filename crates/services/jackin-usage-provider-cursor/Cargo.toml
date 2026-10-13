@@ -1,0 +1,33 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "jackin-usage-provider-cursor"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
+description = "Cursor usage snapshot collection: personal allowance and Enterprise reporting."
+license.workspace = true
+readme = "README.md"
+publish = false
+
+repository.workspace = true
+
+[lib]
+name = "jackin_usage_provider_cursor"
+path = "src/lib.rs"
+
+[dependencies]
+jackin-protocol = { workspace = true }
+jackin-usage-provider-core = { workspace = true }
+
+base64 = { workspace = true }
+reqwest = { workspace = true, features = ["blocking", "json", "rustls"] }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

@@ -11,8 +11,8 @@ jackin usage service start --format json
 jackin usage service status --format json
 jackin usage service stop --format json
 jackin usage doctor --provider claude --unattended --format json
-jackin usage binding confirm --provider claude --account LOCAL_ID [--provider-account CANONICAL_LOCAL_ID] --operator-label LABEL --confirm --format json
-jackin usage binding confirm --provider claude --account LOCAL_ID --provider-account CANONICAL_LOCAL_ID --operator-label LABEL --confirm --approve-experimental-collector --format json
+jackin usage binding confirm --provider claude --account LOCAL_ID [--source-capability-id SOURCE_CAPABILITY_ID] --operator-label LABEL --confirm --format json
+jackin usage binding confirm --provider claude --account LOCAL_ID --source-capability-id SOURCE_CAPABILITY_ID --operator-label LABEL --confirm --approve-experimental-collector --format json
 jackin usage policy approve --binding ID --binding-revision 1 --goal GOAL --policy strict-sgd --budget-sgd 50 --operator-label LABEL --confirm --format json
 jackin usage policy approve --binding ID --binding-revision 1 --goal GOAL --policy quota-only --operator-label LABEL --confirm --acknowledge-no-sgd-cap --format json
 jackin usage monitor observe --provider claude --session SESSION --idempotency-key KEY --format json
@@ -37,6 +37,13 @@ account-bound monitor commands may take `--session SESSION`. A policy approval
 may use `--expected-revision N` for optimistic concurrency. `--format json`
 and `--data-dir PATH` are global options; watch uses JSON Lines. Statusline
 ingress reads its bounded JSON input from stdin.
+
+The revision `1` values in these command examples assume a newly created
+binding and policy. Use the current revision returned by the broker for
+existing state; each accepted binding or policy change creates a newer
+revision, and later commands must name the revision they are using. The strict
+SGD and quota-only approvals above are alternatives; quota-only cannot replace
+an already recorded strict policy.
 
 ## Implementation status
 
@@ -78,8 +85,9 @@ Invalid and unsupported future schemas fail closed before stored state is
 replaced.
 
 The current source versions are independent: broker wire protocol v8, durable
-monitor-store schema 4, normalized statusline input schema v2, and durable
-projection-envelope schema 3. The broker migrates a v2 projection envelope by
+monitor-store schema 4, normalized statusline input schema v2, durable account-
+state envelope schema 3, and durable projection-envelope schema 3. The broker
+migrates a v2 projection envelope by
 canonicalizing its serialized provider IDs and persisting v3 before exposing
 the projection; ordinary projection reads accept only v3. This migration is
 separate from the monitor-store schema migration.
@@ -108,12 +116,12 @@ directory, run attended `auth prepare` before starting the passive service or
 ordinary observer. Do not stop or replace an existing or unknown service to
 make room; resolve the `broker_conflict` through the responsible operator.
 
-`usage service status --format json` reports `experimental_collector_source` as
-an opaque canonical local source ID when the foreground collector service is
-running, and `null` for a passive service. This field reports service mode
-only. It does not prove that credentials are still valid, quota evidence is
-fresh, or the endpoint is available; it is not an authenticated provider
-account ID.
+`jackin usage --data-dir PATH service status --format json` reports
+`experimental_collector_source` as an opaque canonical local source ID when
+the foreground collector service is running, and `null` for a passive
+service. This field reports service mode only. It does not prove that
+credentials are still valid, quota evidence is fresh, or the endpoint is
+available; it is not an authenticated provider account ID.
 
 V1 migration preserves each goal's strict policy semantics and history with
 origin `migrated_v1`; this is not explicit operator approval. Before any
@@ -158,12 +166,18 @@ Provider authorization may expire sooner and require another attended
 preparation. No permanent credential availability or no-dialog guarantee is
 implied.
 
-The readiness record includes `source.account_id` and
+The readiness record includes a derived `source.account_id` with
 `source.scope: "claude_keychain_service"`; it omits the service string and
-credential. This canonical local source ID identifies the selected Jackin
-credential source, not an authenticated Anthropic account. If the service is
-already active or ownership is unknown, preserve the conflict and resolve it
-with the operator. Do not call `service stop` to make bootstrap succeed.
+credential. The account ID is descriptive broker identity metadata classified as
+a local source handle. It is neither an authenticated Anthropic account nor the
+source capability ID used by the collector binding. While the foreground service
+runs, read `experimental_collector_source` from
+`jackin usage --data-dir PATH service status --format json` and pass that exact
+opaque local ID as `--source-capability-id`. A non-null value identifies the
+selected local source and service mode; it does not prove credential validity,
+quota freshness, or provider readiness. If the service is already active or
+ownership is unknown, preserve the conflict and resolve it with the operator.
+Do not call `service stop` to make bootstrap succeed.
 
 ## Observation, bindings, and policy
 
@@ -189,7 +203,7 @@ Before changing the selected source or ingesting evidence from another Claude
 account, review or confirm the corresponding local binding. Binding confirmation
 and dispatch policy approval are separate commands. To allow collection, include
 `--approve-experimental-collector` on the attended binding confirmation and
-provide `--provider-account CANONICAL_LOCAL_ID`. This records explicit collector
+provide `--source-capability-id SOURCE_CAPABILITY_ID`. This records explicit collector
 approval on that audited binding revision; approval defaults to false.
 `monitor observe --experimental-collector` can use only an already-approved
 mapping and cannot grant approval or enable provider requests by itself. The
@@ -259,8 +273,13 @@ Claude Keychain service, retains that credential in zeroizing memory, then
 establishes the process-wide no-UI guard. It emits a secret-free
 `service_ready` result and remains in the foreground as the broker owner. Use a
 second terminal for subsequent binding and monitor commands. The ready result
-reports `source.account_id` and `source.scope: "claude_keychain_service"`; that
-ID identifies a local source, not an authenticated Anthropic identity.
+reports the derived broker `source.account_id` and
+`source.scope: "claude_keychain_service"`; this account ID is descriptive
+LocalSourceHandle metadata, not the binding source capability ID or an
+authenticated Anthropic identity. While the foreground service runs,
+`service status --format json` reports `experimental_collector_source`; use the
+same global `--data-dir PATH` and pass that exact opaque value as
+`--source-capability-id`. It does not establish credential or quota freshness.
 
 If a service already owns the lease, or ownership cannot be established,
 bootstrap returns `broker_conflict` before Keychain access. It does not attach,
@@ -291,12 +310,16 @@ ingestion remains optional and is the primary supported quota source. Without
 both collector gates, observers do not poll Claude; passive commands remain
 credential- and network-free.
 
-Use the `source.account_id` from the foreground bootstrap's `service_ready`
-record as `CANONICAL_LOCAL_ID` in the attended binding command. Keep that
-foreground `auth prepare` process running while the collector observes. The
-experimental observe command attaches only to an already-running foreground
-service. The broker schedules provider requests only when that foreground source
-matches the approved binding's canonical local source ID.
+Read `experimental_collector_source` from
+`jackin usage --data-dir PATH service status --format json` and use that exact
+opaque local ID as `SOURCE_CAPABILITY_ID` in the attended binding command. Do
+not substitute `source.account_id` from the foreground bootstrap's
+`service_ready` record; that is a derived broker identity for descriptive
+projection metadata. Keep the foreground `auth prepare` process running while
+the collector observes. The experimental observe command attaches only to an
+already-running foreground service. The broker schedules provider requests
+only when that foreground source matches the approved binding's canonical
+local source ID.
 
 If no broker is running, or service status reports
 `experimental_collector_source: null` for a passive broker, the command returns
@@ -309,7 +332,7 @@ stop or replace that service.
 Then start the collector against that binding revision:
 
 ```bash
-jackin usage binding confirm --provider claude --account LOCAL_ID --provider-account CANONICAL_LOCAL_ID --operator-label LABEL --confirm --approve-experimental-collector --format json
+jackin usage binding confirm --provider claude --account LOCAL_ID --source-capability-id SOURCE_CAPABILITY_ID --operator-label LABEL --confirm --approve-experimental-collector --format json
 jackin usage monitor observe --provider claude --binding BINDING_ID --binding-revision 1 --idempotency-key KEY --experimental-collector --format json
 ```
 

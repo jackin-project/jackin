@@ -32,8 +32,8 @@ Phase 1 should be minimal: Docker Hub pull-through and local push for workspace 
 
 ## Related files
 
-- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> — DinD launch path.
-- <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs" /> — reconnect path must stay in sync with launch.
-- <RepoFile path="crates/jackin-runtime/src/runtime/cleanup.rs" /> — stop registry when the last workspace instance exits.
-- <RepoFile path="crates/jackin-runtime/src/runtime/naming.rs" /> — names for registry container, volume, and shared network.
+- <RepoFile path="crates/services/jackin-runtime/src/runtime/launch.rs" /> — DinD launch path.
+- <RepoFile path="crates/services/jackin-runtime/src/runtime/attach.rs" /> — reconnect path must stay in sync with launch.
+- <RepoFile path="crates/services/jackin-runtime/src/runtime/cleanup.rs" /> — stop registry when the last workspace instance exits.
+- <RepoFile path="crates/services/jackin-runtime/src/runtime/naming.rs" /> — names for registry container, volume, and shared network.
 - [Architecture](/reference/getting-oriented/architecture/) — DinD isolation model.

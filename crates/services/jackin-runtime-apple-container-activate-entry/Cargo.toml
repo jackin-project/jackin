@@ -1,0 +1,26 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "jackin-runtime-apple-container-activate-entry"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
+description = "Started-entry activation for the jackin apple-container launch path."
+license.workspace = true
+readme = "README.md"
+publish = false
+
+repository.workspace = true
+
+[lib]
+name = "jackin_runtime_apple_container_activate_entry"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+jackin-runtime-universe-claims = { workspace = true }
+
+[lints]
+workspace = true

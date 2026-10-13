@@ -8,7 +8,7 @@ title: "Custom Operator Tools (`[[tool]]` extension points)"
 
 ## Shipped baseline
 
-jackin❯ has in-container `jackin-exec` (<RepoFile path="crates/jackin-capsule/src/exec.rs" />, <RepoFile path="crates/jackin-runtime/src/exec_host.rs" />), a credential picker (<RepoFile path="crates/jackin-env/src/picker.rs" />), and MCP execution plumbing (<RepoFile path="crates/jackin-capsule/src/mcp_server.rs" />). These are the primitives a `[[tool]]` surface would reuse, but none of them expose an operator-configurable hotkey-to-command mechanism today. There is no `[[tool]]` array in config parsing, no reserved-key validation for custom tools, and no substitution/firing code in the console or capsule TUI.
+jackin❯ has in-container `jackin-exec` (<RepoFile path="crates/apps/jackin-capsule/src/exec.rs" />, <RepoFile path="crates/services/jackin-runtime/src/exec_host.rs" />), a credential picker (<RepoFile path="crates/core/jackin-env/src/picker.rs" />), and MCP execution plumbing (<RepoFile path="crates/apps/jackin-capsule/src/mcp_server.rs" />). These are the primitives a `[[tool]]` surface would reuse, but none of them expose an operator-configurable hotkey-to-command mechanism today. There is no `[[tool]]` array in config parsing, no reserved-key validation for custom tools, and no substitution/firing code in the console or capsule TUI.
 
 ## Remaining work
 

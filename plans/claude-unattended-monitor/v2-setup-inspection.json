@@ -12,13 +12,13 @@
     }
   ],
   "codex_broker_override": null,
-  "installed_monitor_help_commands": [
-    "start",
-    "stop"
-  ],
+  "installed_monitor_help_commands": ["start", "stop"],
   "user_settings": {
-    "metadata": "omitted",
-    "reason": "Private local settings path and presence details are not retained in shared evidence."
+    "path": "/Users/donbeave/.claude/settings.json",
+    "exists": true,
+    "has_statusline": false,
+    "effective_project_overrides_inspected": false,
+    "settings_changed": false
   },
   "original_checkout": {
     "path": "/Users/donbeave/Projects/tailrocks/jackin-project/jackin",

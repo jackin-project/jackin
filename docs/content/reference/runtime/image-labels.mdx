@@ -3,7 +3,7 @@ title: Image Labels & Recipe Hash
 description: The Docker image labels jackin❯ stamps on derived role images, what each means, and how the recipe hash that drives warm reuse is calculated
 ---
 
-This page documents the label schema jackin❯ stamps on **local derived role images** and how the **recipe hash** that decides warm reuse is computed. It is the source of truth for contributors; keep it in sync with <RepoFile path="crates/jackin-runtime/src/runtime/image.rs" /> and <RepoFile path="crates/jackin-runtime/src/runtime/naming.rs" />.
+This page documents the label schema jackin❯ stamps on **local derived role images** and how the **recipe hash** that decides warm reuse is computed. It is the source of truth for contributors; keep it in sync with <RepoFile path="crates/services/jackin-runtime/src/runtime/image.rs" /> and <RepoFile path="crates/services/jackin-runtime/src/runtime/naming.rs" />.
 
 The derived image is always a thin jackin❯ overlay (capsule, agents, normalization) built `FROM` a **local role base** image `jk_<role>__base:<sha>`. The overlay never depends on the published image's mutable `:latest` tag — jackin❯ always materializes an immutable local base first, from one of two sources:
 

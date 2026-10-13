@@ -1,12 +1,6 @@
-# Historical predecessor Claude Code goal
+# Claude Code goal
 
-This archived v2 instruction is retained as provenance only. It must not replace
-Claude Code’s existing goal or be used as the current setup guide. Use
-[the current handoff](claude-code-handoff.md) for the verified interface and
-its remaining operator prerequisites.
-
-
-**Historical predecessor fixture passed.** The CLI/broker pair built from source `4492d3cb91d9e45fafec2aa8acb8158268618cd9` passed the synthetic installed smoke; hashes and exact sibling selection are recorded in the handoff artifacts. This does not validate the current main-port source, which has not been rebuilt or fixture-smoked as an installed pair. Three independent-review fixes remain pending. No real account callback, operator setup, or dispatch policy is verified/approved here.
+**Installed fixture verified.** CLI/broker source: `4492d3cb91d9e45fafec2aa8acb8158268618cd9`; installed hashes and exact sibling selection are recorded in the handoff artifacts. No real account callback or dispatch policy is verified/approved here.
 
 Use only this pair and isolated state; do not fall back to v1 or a repo build:
 

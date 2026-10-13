@@ -79,12 +79,12 @@ any context-clearing automation — those need Week 1's instrumentation first.
  (reads at 0.05x effective; 07/12).
 4. **The jackin❯ token-pack — discipline becomes infrastructure** (14 §jackin❯; Explore-mapped
  insertion points, this repo):
- - env defaults into the container env assembly at `crates/jackin-runtime/src/runtime/launch.rs:590-717`
+ - env defaults into the container env assembly at `crates/services/jackin-runtime/src/runtime/launch.rs:590-717`
  (effort tier, telemetry on, attribution header policy);
- - `[token_policy]` block in `jackin.role.toml` (RoleManifest, <RepoFile path="crates/jackin-core/src/manifest.rs">crates/jackin-core/src/manifest.rs</RepoFile>)
+ - `[token_policy]` block in `jackin.role.toml` (RoleManifest, <RepoFile path="crates/core/jackin-core/src/manifest.rs">crates/core/jackin-core/src/manifest.rs</RepoFile>)
  → per-role model/effort/register defaults, hooks installed via the existing
  `runtime_setup.rs` symlink pattern;
- - `CapsuleConfig` (`crates/jackin-protocol/src/lib.rs:25-45`) → `/jackin/run/agent.toml` →
+ - `CapsuleConfig` (`crates/core/jackin-protocol/src/lib.rs:25-45`) → `/jackin/run/agent.toml` →
  `build_agent_command` so every spawned agent gets model/effort flags without operator
  action;
  - OTLP plumbing already propagates (`launch.rs:694-723`) — extend the existing traces with
