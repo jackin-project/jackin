@@ -121,7 +121,11 @@ fn build_rollup(evidence: &EvidenceFile) -> RollupFile {
         && evidence.denominator.source == DenominatorSource::PushHeadLedger
         && evidence.denominator.fetch_succeeded
         && evidence.unclassified_runs.is_empty()
-        && qualification_bound;
+        && qualification_bound
+        && matches!(
+            evidence.denominator.boundary,
+            DenominatorBoundary::PushHead { .. }
+        );
     RollupFile {
         schema: SCHEMA,
         repository: evidence.repository.clone(),
@@ -135,6 +139,16 @@ fn build_rollup(evidence: &EvidenceFile) -> RollupFile {
         denominator: evidence.denominator.clone(),
         green_claim_qualified,
         six_nines_claimed: false,
+    }
+}
+
+fn denominator_boundary_label(boundary: &DenominatorBoundary) -> &'static str {
+    match boundary {
+        DenominatorBoundary::PushHead { .. } => "verified push-head predecessor",
+        DenominatorBoundary::Bootstrap { .. } => {
+            "bootstrap first ledger (no predecessor; unqualified)"
+        }
+        DenominatorBoundary::Fixture => "fixture",
     }
 }
 
@@ -162,7 +176,9 @@ fn require_qualified(rollup: &RollupFile) -> Result<()> {
     if rollup.total_first_attempt_failures != 0 {
         reasons.push("first-attempt failures or missing obligations are present");
     }
-    if !rollup.green_claim_qualified {
+    if let DenominatorBoundary::Bootstrap { .. } = rollup.denominator.boundary {
+        reasons.push(denominator_boundary_label(&rollup.denominator.boundary));
+    } else if !rollup.green_claim_qualified {
         reasons.push("green claim is not qualified (workflow/Git/artifact binding is absent)");
     }
     if reasons.is_empty() {
@@ -205,11 +221,12 @@ fn render_markdown(rollup: &RollupFile, evidence: &EvidenceFile) -> String {
         ));
     }
     text.push_str(&format!(
-        "\nDenominator: {:?}, branch `{}`, commits {}, fetch proof {}\nUnclassified workflow runs: {}\nQualified green claim: {}\n",
+        "\nDenominator: {:?}, branch `{}`, commits {}, fetch proof {}\nBoundary: {}\nUnclassified workflow runs: {}\nQualified green claim: {}\n",
         rollup.denominator.source,
         rollup.denominator.branch,
         rollup.denominator.commit_count,
         rollup.denominator.fetch_succeeded,
+        denominator_boundary_label(&rollup.denominator.boundary),
         rollup.unclassified_runs,
         rollup.green_claim_qualified
     ));

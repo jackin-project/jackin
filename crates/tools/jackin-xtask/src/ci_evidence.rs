@@ -207,12 +207,17 @@ pub(crate) struct PushHeadArtifactProof {
 }
 
 /// Proof that the first in-window push is attached to the immediately prior
-/// durable ledger entry. A missing predecessor is a missing denominator proof.
+/// durable ledger entry. `PushHead` carries that predecessor. `Bootstrap` is the
+/// explicit first ledger used only when no predecessor has ever existed, and a
+/// rollup with that boundary cannot be a qualified green claim. A cancelled or
+/// nonterminal predecessor fails in `validate_push_head_run` and is not rewritten
+/// as `Bootstrap`.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub(crate) enum DenominatorBoundary {
     PushHead {
         predecessor: Box<PushHeadObservation>,
     },
+    /// First recorded push. Visible in the denominator, and never qualified.
     Bootstrap {
         first_run_id: u64,
         before_sha: String,

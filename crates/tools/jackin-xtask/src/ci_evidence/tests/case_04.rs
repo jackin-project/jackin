@@ -132,6 +132,57 @@ fn remote_identity_parser_rejects_unbound_hosts() {
 }
 
 #[test]
+fn bootstrap_ledger_is_visible_and_cannot_qualify_green() {
+    let first = push_head_observation("bootstrap-claim", "bootstrap-claim-before", 51);
+    let expected = Cohort::ALL
+        .into_iter()
+        .map(|cohort| {
+            obligation_from_source(&first.head_sha, cohort, DenominatorSource::PushHeadLedger)
+        })
+        .collect::<Vec<_>>();
+    let attempts = Cohort::ALL
+        .into_iter()
+        .enumerate()
+        .map(|(index, cohort)| {
+            let mut row = attempt(
+                index as u64 + 1,
+                1,
+                cohort,
+                &first.head_sha,
+                OutcomeClass::Success,
+                "2026-09-22T00:02:00Z",
+            );
+            row.denominator_source = DenominatorSource::PushHeadLedger;
+            row
+        })
+        .collect();
+    let mut evidence = evidence(expected, attempts);
+    evidence.denominator.source = DenominatorSource::PushHeadLedger;
+    evidence.denominator.fetch_succeeded = true;
+    evidence.denominator.source_workflow = Some(DEFAULT_PUSH_HEAD_LEDGER_WORKFLOW.to_owned());
+    evidence.denominator.source_run_count = 1;
+    evidence.denominator.boundary = DenominatorBoundary::Bootstrap {
+        first_run_id: first.run_id,
+        before_sha: first.before_sha,
+    };
+
+    let rollup = build_rollup(&evidence);
+    assert!(matches!(
+        rollup.denominator.boundary,
+        DenominatorBoundary::Bootstrap { .. }
+    ));
+    assert!(!rollup.green_claim_qualified);
+    let error = require_qualified(&rollup).unwrap_err();
+    assert!(
+        error.to_string().contains("bootstrap first ledger"),
+        "error: {error:#}"
+    );
+    let markdown = render_markdown(&rollup, &evidence);
+    assert!(markdown.contains("bootstrap first ledger (no predecessor; unqualified)"));
+    assert!(markdown.contains("Qualified green claim: false"));
+}
+
+#[test]
 fn fixture_denominator_cannot_qualify_green() {
     let expected = Cohort::ALL
         .into_iter()
