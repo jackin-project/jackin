@@ -132,7 +132,7 @@ fn remote_identity_parser_rejects_unbound_hosts() {
 }
 
 #[test]
-fn fixture_denominator_remains_advisory() {
+fn fixture_denominator_cannot_qualify_green() {
     let expected = Cohort::ALL
         .into_iter()
         .map(|cohort| obligation_from_source("fixture", cohort, DenominatorSource::Fixture))
@@ -141,15 +141,16 @@ fn fixture_denominator_remains_advisory() {
     evidence.denominator.source = DenominatorSource::Fixture;
     evidence.denominator.fetch_succeeded = false;
     let rollup = build_rollup(&evidence);
-    assert_eq!(rollup.status, "advisory");
+    assert!(!rollup.green_claim_qualified);
+    assert!(require_qualified(&rollup).is_err());
 }
 
 #[test]
-fn local_collection_remains_advisory() {
+fn local_collection_cannot_qualify_green() {
     let expected = Cohort::ALL
         .into_iter()
         .map(|cohort| {
-            obligation_from_source("local-observer", cohort, DenominatorSource::PushHeadLedger)
+            obligation_from_source("local-green", cohort, DenominatorSource::PushHeadLedger)
         })
         .collect::<Vec<_>>();
     let mut evidence = evidence(expected, Vec::new());
@@ -158,11 +159,12 @@ fn local_collection_remains_advisory() {
     evidence.denominator.source_workflow = Some(DEFAULT_PUSH_HEAD_LEDGER_WORKFLOW.to_owned());
     evidence.denominator.source_run_count = 1;
     let rollup = build_rollup(&evidence);
-    assert_eq!(rollup.status, "advisory");
+    assert!(!rollup.green_claim_qualified);
+    assert!(require_qualified(&rollup).is_err());
 }
 
 #[test]
-fn scheduled_provenance_is_reported_without_a_semantic_claim() {
+fn scheduled_provenance_without_current_workflow_contract_cannot_qualify_green() {
     let expected = Cohort::ALL
         .into_iter()
         .map(|cohort| {
@@ -199,7 +201,8 @@ fn scheduled_provenance_is_reported_without_a_semantic_claim() {
     evidence.denominator.source_run_count = 1;
 
     let rollup = build_rollup(&evidence);
-    assert_eq!(rollup.status, "advisory");
+    assert!(!rollup.green_claim_qualified);
+    assert!(require_qualified(&rollup).is_err());
 }
 
 #[test]

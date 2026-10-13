@@ -1309,3 +1309,134 @@ fn validate_api_run_contract(
     }
     Ok(())
 }
+
+fn validate_live_api_binding(repository: &str, evidence: &EvidenceFile) -> Result<()> {
+    if env::var("GITHUB_ACTIONS").ok().as_deref() != Some("true") {
+        bail!("live GitHub API binding is unavailable outside GitHub Actions");
+    }
+    let collector_run_id = evidence
+        .provenance
+        .run_id
+        .context("scheduled evidence has no collector run identity")?;
+    let collector_run = api_run(repository, collector_run_id)
+        .context("re-fetching the scheduled evidence collector run")?;
+    validate_api_run_contract(
+        &collector_run,
+        collector_run_id,
+        "main",
+        "schedule",
+        DEFAULT_CI_EVIDENCE_WORKFLOW,
+        None,
+        evidence.provenance.workflow_sha.as_deref(),
+    )?;
+    for attempt in &evidence.attempts {
+        let expected_workflow = match attempt.cohort {
+            Cohort::CiMain => DEFAULT_CI_WORKFLOW,
+            Cohort::Desktop => DEFAULT_DESKTOP_WORKFLOW,
+        };
+        let workflow_id = attempt
+            .workflow_id
+            .context("attempt has no workflow identity for live API binding")?;
+        let run = api_run(repository, attempt.run_id)
+            .with_context(|| format!("re-fetching attempt run {}", attempt.run_id))?;
+        validate_api_run_contract(
+            &run,
+            attempt.run_id,
+            evidence.denominator.branch.as_str(),
+            "push",
+            expected_workflow,
+            Some(workflow_id),
+            Some(attempt.head_sha.as_str()),
+        )?;
+        if let Some(name) = &attempt.workflow_name {
+            if run.name.as_deref() != Some(name.as_str()) {
+                bail!(
+                    "attempt {} workflow name changed after collection",
+                    attempt.run_id
+                );
+            }
+        }
+        let api_attempt = api_attempt(repository, attempt.run_id, attempt.attempt)?;
+        if api_attempt.run_attempt != attempt.attempt
+            || api_timestamp(&api_attempt.created_at) != api_timestamp(&attempt.created_at)
+        {
+            bail!(
+                "attempt {} API attempt identity changed after collection",
+                attempt.run_id
+            );
+        }
+    }
+    let mut live_push_heads = evidence.push_heads.iter().collect::<Vec<_>>();
+    if let DenominatorBoundary::PushHead { predecessor } = &evidence.denominator.boundary {
+        live_push_heads.push(predecessor);
+    }
+    for observation in live_push_heads {
+        let run = api_run(repository, observation.run_id)
+            .with_context(|| format!("re-fetching push-head ledger run {}", observation.run_id))?;
+        validate_api_run_contract(
+            &run,
+            observation.run_id,
+            observation.branch.as_str(),
+            "push",
+            DEFAULT_PUSH_HEAD_LEDGER_WORKFLOW,
+            Some(observation.workflow_id),
+            Some(observation.head_sha.as_str()),
+        )?;
+        if api_timestamp(&run.created_at) != api_timestamp(&observation.created_at) {
+            bail!(
+                "push-head ledger run {} creation time changed after collection",
+                observation.run_id
+            );
+        }
+        let artifacts = api_artifacts(repository, observation.run_id).with_context(|| {
+            format!(
+                "re-fetching push-head artifact metadata for run {}",
+                observation.run_id
+            )
+        })?;
+        let matches = artifacts
+            .iter()
+            .filter(|artifact| artifact.name == DEFAULT_PUSH_HEAD_LEDGER_ARTIFACT)
+            .collect::<Vec<_>>();
+        if matches.len() != 1
+            || matches[0].expired
+            || matches[0].size_in_bytes == 0
+            || matches[0]
+                .workflow_run
+                .as_ref()
+                .is_none_or(|workflow_run| workflow_run.id != observation.run_id)
+        {
+            bail!(
+                "push-head ledger run {} has no uniquely bound live artifact",
+                observation.run_id
+            );
+        }
+    }
+    Ok(())
+}
+
+fn validate_qualification_binding(root: &Path, evidence: &EvidenceFile) -> Result<()> {
+    if evidence.provenance.repository != evidence.repository
+        || evidence.provenance.event != "schedule"
+        || evidence.provenance.branch != "main"
+        || evidence.provenance.workflow_path != DEFAULT_CI_EVIDENCE_WORKFLOW
+        || evidence.provenance.run_id.is_none()
+    {
+        bail!("collection provenance is not the actual scheduled evidence workflow");
+    }
+    validate_workflow_contract(root)?;
+    let runtime = runtime_identity(root, evidence.runtime.clone())?;
+    if runtime != evidence.runtime {
+        bail!("evidence runtime identity is not bound to the workflow contract");
+    }
+    validate_git_state(root, evidence)?;
+    for observation in &evidence.push_heads {
+        validate_push_head_observation(
+            &evidence.repository,
+            &evidence.denominator.branch,
+            observation,
+        )?;
+    }
+    validate_live_api_binding(&evidence.repository, evidence)?;
+    Ok(())
+}

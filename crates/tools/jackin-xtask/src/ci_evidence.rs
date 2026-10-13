@@ -6,9 +6,9 @@
 //! disappearing from the denominator.
 //!
 //! The collector validates a durable push-head artifact produced by CI; it does
-//! not create that producer workflow. The resulting rollup is an advisory
-//! observer of run identity, provenance, timing, and classification. It makes
-//! no semantic CI or merge-readiness claim.
+//! not create that producer workflow. The rollup command fails closed unless
+//! the green claim is qualified by the live workflow, Git, and artifact binding.
+//! Six-nines is not claimed.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -374,7 +374,7 @@ pub(crate) struct RollupFile {
     pub(crate) total_first_attempt_failures: usize,
     pub(crate) unclassified_runs: usize,
     pub(crate) denominator: DenominatorProof,
-    pub(crate) status: String,
+    pub(crate) green_claim_qualified: bool,
     pub(crate) six_nines_claimed: bool,
 }
 
@@ -631,6 +631,7 @@ fn write_rollup_files(args: RollupArgs) -> Result<RollupFile> {
     write_json(&json, &summary)?;
     write_markdown(&markdown, &summary, &evidence)?;
     print_rollup_summary(&summary)?;
+    require_qualified(&summary)?;
     Ok(summary)
 }
 

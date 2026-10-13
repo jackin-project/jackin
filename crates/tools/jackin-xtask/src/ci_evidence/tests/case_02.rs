@@ -245,7 +245,7 @@ fn zero_run_attempt_is_rejected() {
 }
 
 #[test]
-fn skipped_cohort_is_reported_by_the_advisory_observer() {
+fn required_skipped_cohort_is_non_green() {
     let expected = expected_for_sha("skipped");
     let row = attempt(
         7,
@@ -258,7 +258,8 @@ fn skipped_cohort_is_reported_by_the_advisory_observer() {
     let rollup = build_rollup(&evidence(expected, vec![row]));
     assert_eq!(rollup.cohorts[0].inapplicable, 1);
     assert_eq!(rollup.total_first_attempt_failures, 2);
-    assert_eq!(rollup.status, "advisory");
+    assert!(!rollup.green_claim_qualified);
+    assert!(require_qualified(&rollup).is_err());
 }
 
 #[test]
