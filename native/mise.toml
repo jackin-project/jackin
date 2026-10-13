@@ -26,6 +26,7 @@ run = '''
 set -euo pipefail
 cd ..
 mbx +1.99.0 xtask desktop bindings-check
+mbx +1.99.0 xtask desktop xcframework
 xcodegen generate --spec native/project.yml
 find native/Sources native/Tests native/UITests native/Tools native/Scripts -name '*.swift' ! -path '*/JackinUsageBindings/*' -print0 | xargs -0 xcrun swift-format lint --configuration native/.swift-format --strict --parallel
 swiftlint lint --strict --config native/.swiftlint.yml
