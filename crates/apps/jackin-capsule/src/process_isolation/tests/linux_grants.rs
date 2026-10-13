@@ -2,9 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::super::linux::{
-    FULL, READ_FILE_ONLY, Rule, add_execute_only_ancestors, drop_privileges, install_landlock,
+    ACCESS_RESOLVE_UNIX, FULL, FULL_WITH_UNIX, READ_ONLY, READ_ONLY_WITH_UNIX, access_for_abi,
     retained_capability_mask, rules_for, rules_for_test, support,
 };
+use jackin_protocol::CapsuleConfig;
+use std::collections::BTreeMap;
+use std::fs;
+use std::path::Path;
 
 #[test]
 fn valid_workspace_cwd_retains_full_access_for_workspace_only() {

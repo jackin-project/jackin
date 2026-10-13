@@ -2,9 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::super::linux::{
-    FULL, READ_FILE_ONLY, Rule, add_execute_only_ancestors, drop_privileges, install_landlock,
-    retained_capability_mask, rules_for, rules_for_test, support,
+    FULL, NULL_DEVICE, READ_FILE_ONLY, READ_ONLY, Rule, add_execute_only_ancestors,
+    drop_privileges, install_landlock, rules_for, rules_for_test, support,
 };
+use anyhow::Context;
+use jackin_protocol::CapsuleConfig;
+use std::fs;
+use std::os::unix::fs::PermissionsExt;
+use std::path::Path;
 
 #[test]
 fn null_stdio_has_only_an_exact_null_device_write_grant() {

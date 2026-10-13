@@ -182,14 +182,13 @@ pub(crate) fn drop_privileges(identity: SessionIdentity) -> Result<()> {
     if unsafe { libc::syscall(libc::SYS_capset, &header, data.as_mut_ptr()) } != 0 {
         return Err(std::io::Error::last_os_error()).context("retain session DAC capabilities");
     }
-    for capability in [CAP_DAC_OVERRIDE] {
-        #[expect(unsafe_code, reason = "audited privilege-drop boundary syscall")]
-        // SAFETY: this raises the one capability just installed in the
-        // calling process's ambient set.
-        if unsafe { libc::prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_RAISE, capability, 0, 0) } != 0 {
-            return Err(std::io::Error::last_os_error())
-                .context("make session DAC boundary capabilities survive exec");
-        }
+    let capability = CAP_DAC_OVERRIDE;
+    #[expect(unsafe_code, reason = "audited privilege-drop boundary syscall")]
+    // SAFETY: this raises the one capability just installed in the
+    // calling process's ambient set.
+    if unsafe { libc::prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_RAISE, capability, 0, 0) } != 0 {
+        return Err(std::io::Error::last_os_error())
+            .context("make session DAC boundary capabilities survive exec");
     }
     #[expect(unsafe_code, reason = "audited privilege-drop boundary syscall")]
     // SAFETY: `geteuid` has no pointer arguments and reports this process.

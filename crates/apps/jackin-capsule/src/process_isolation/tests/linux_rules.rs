@@ -1,10 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use super::super::linux::{
-    FULL, READ_FILE_ONLY, Rule, add_execute_only_ancestors, drop_privileges, install_landlock,
-    retained_capability_mask, rules_for, rules_for_test, support,
-};
+use super::super::linux::{FULL_WITH_UNIX, READ_FILE_ONLY, READ_ONLY, rules_for, rules_for_test};
+use jackin_protocol::CapsuleConfig;
+use std::collections::BTreeMap;
+use std::path::Path;
 
 #[test]
 fn landlock_rules_are_exact_for_selected_slot_and_exclude_secret_roots() {
