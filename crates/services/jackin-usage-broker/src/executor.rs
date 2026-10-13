@@ -84,15 +84,22 @@ fn probe_foreground_claude(
     let lease = lease.clone();
     let monitor_store = Arc::clone(monitor_store);
     let capability = capability.clone();
-    match probe::run_probe_with_budget(executor.probe_budget, move || {
+    match probe::run_probe_with_liveness(executor.probe_budget, move |probe_liveness| {
         let consent_is_current =
             || foreground_source_is_authorized(&lease, &monitor_store, &capability);
+        let admission = probe_liveness.clone();
+        let admit_operation = move || admission.admit_operation();
+        let commit_if_current = move |operation: &mut dyn FnMut() -> bool| {
+            probe_liveness.commit_if_current(operation)
+        };
         match experimental_claude_usage_snapshot_for_lease(
             "claude",
             Some("Claude"),
             chrono::Utc::now().timestamp(),
             &lease,
             consent_is_current,
+            admit_operation,
+            commit_if_current,
         ) {
             Ok(Some((view, rate_limit, failure_metadata))) => {
                 crate::rediscover::provider_probe_outcome_with_metadata(

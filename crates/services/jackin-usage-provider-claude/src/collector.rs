@@ -29,12 +29,18 @@ pub enum ClaudeCollectionError {
 
 /// Collect from the exact source captured by an active foreground lease.
 /// Every network and Keychain boundary rechecks current monitor consent.
-pub fn experimental_claude_usage_snapshot_for_lease<C>(
+/// Admission is checked before the first fetch and before a 401 Keychain
+/// reread; an admitted operation is not cancelled. The refreshed payload is
+/// replaced only inside `commit_if_current` (`None` skips the write). Fence
+/// rejection returns [`ClaudeCollectionError::ConsentRevoked`].
+pub fn experimental_claude_usage_snapshot_for_lease<C, A, M>(
     agent: &str,
     provider: Option<&str>,
     now: i64,
     lease: &ClaudeCredentialLease,
     consent_is_current: C,
+    admit_operation: A,
+    commit_if_current: M,
 ) -> Result<
     Option<(
         FocusedUsageView,
@@ -45,6 +51,8 @@ pub fn experimental_claude_usage_snapshot_for_lease<C>(
 >
 where
     C: FnMut() -> bool,
+    A: FnMut() -> bool,
+    M: FnMut(&mut dyn FnMut() -> bool) -> Option<bool>,
 {
     experimental_claude_usage_snapshot_for_lease_with(
         agent,
@@ -54,10 +62,16 @@ where
         fetch_claude_oauth_usage,
         read_claude_keychain_item_uncached,
         consent_is_current,
+        admit_operation,
+        commit_if_current,
     )
 }
 
-fn experimental_claude_usage_snapshot_for_lease_with<F, R, C>(
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Consent, admission, and commit are separate per-operation callbacks."
+)]
+fn experimental_claude_usage_snapshot_for_lease_with<F, R, C, A, M>(
     agent: &str,
     provider: Option<&str>,
     now: i64,
@@ -65,6 +79,8 @@ fn experimental_claude_usage_snapshot_for_lease_with<F, R, C>(
     fetch: F,
     reread: R,
     mut consent_is_current: C,
+    admit_operation: A,
+    commit_if_current: M,
 ) -> Result<
     Option<(
         FocusedUsageView,
@@ -77,6 +93,8 @@ where
     F: FnMut(&str) -> Result<ClaudeOAuthUsageResponse, ProviderHttpError>,
     R: FnOnce(&str) -> ClaudeKeychainRead,
     C: FnMut() -> bool,
+    A: FnMut() -> bool,
+    M: FnMut(&mut dyn FnMut() -> bool) -> Option<bool>,
 {
     if !consent_is_current() {
         return Err(ClaudeCollectionError::ConsentRevoked {
@@ -109,6 +127,8 @@ where
         fetch,
         reread,
         &mut consent_is_current,
+        admit_operation,
+        commit_if_current,
     );
     let result = match result {
         Ok(response) => Ok(response),
@@ -140,20 +160,33 @@ enum ClaudeFetchError {
     ConsentRevoked { provider_http_status: Option<u16> },
 }
 
-fn fetch_claude_with_one_401_reread<F, R, C>(
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Consent, admission, and commit are separate per-operation callbacks."
+)]
+fn fetch_claude_with_one_401_reread<F, R, C, A, M>(
     lease: &ClaudeCredentialLease,
     resolved: &mut ClaudeResolved,
     original_payload: Zeroizing<String>,
     mut fetch: F,
     reread: R,
     consent_is_current: &mut C,
+    mut admit_operation: A,
+    mut commit_if_current: M,
 ) -> Result<ClaudeOAuthUsageResponse, ClaudeFetchError>
 where
     F: FnMut(&str) -> Result<ClaudeOAuthUsageResponse, ProviderHttpError>,
     R: FnOnce(&str) -> ClaudeKeychainRead,
     C: FnMut() -> bool,
+    A: FnMut() -> bool,
+    M: FnMut(&mut dyn FnMut() -> bool) -> Option<bool>,
 {
     if !consent_is_current() {
+        return Err(ClaudeFetchError::ConsentRevoked {
+            provider_http_status: None,
+        });
+    }
+    if !admit_operation() {
         return Err(ClaudeFetchError::ConsentRevoked {
             provider_http_status: None,
         });
@@ -178,6 +211,11 @@ where
             provider_http_status: Some(401),
         });
     }
+    if !admit_operation() {
+        return Err(ClaudeFetchError::ConsentRevoked {
+            provider_http_status: Some(401),
+        });
+    }
     if !begin_unauthorized_reread(lease) {
         return first_401_if_consent_current(first, consent_is_current);
     }
@@ -193,7 +231,7 @@ where
     };
     #[cfg(not(any(target_os = "macos", test)))]
     {
-        let _ = keychain_read;
+        let _ = (keychain_read, &mut commit_if_current);
         return first_401_if_consent_current(first, consent_is_current);
     }
     #[cfg(any(target_os = "macos", test))]
@@ -229,7 +267,17 @@ where
                 provider_http_status: provider_http_status(&retried),
             });
         }
-        let cache_updated = replace_if_exact(lease, json);
+        let mut payload = Some(json);
+        let mut replace_payload = || {
+            payload
+                .take()
+                .is_some_and(|payload| replace_if_exact(lease, payload))
+        };
+        let Some(cache_updated) = commit_if_current(&mut replace_payload) else {
+            return Err(ClaudeFetchError::ConsentRevoked {
+                provider_http_status: provider_http_status(&retried),
+            });
+        };
         if !consent_is_current() {
             if cache_updated {
                 let _restored = replace_if_exact(lease, original_payload);
@@ -328,6 +376,14 @@ mod tests {
         }
     }
 
+    fn admit_current() -> bool {
+        true
+    }
+
+    fn commit_current(operation: &mut dyn FnMut() -> bool) -> Option<bool> {
+        Some(operation())
+    }
+
     #[test]
     fn changed_exact_source_is_reread_and_retried_once_after_401() {
         let _serial = serialized_credential_cache_test();
@@ -358,6 +414,8 @@ mod tests {
                 }
             },
             || true,
+            admit_current,
+            commit_current,
         )
         .expect("consent remains active");
 
@@ -405,6 +463,8 @@ mod tests {
                 consent_checks.set(consent_checks.get() + 1);
                 consent_checks.get() < 4
             },
+            admit_current,
+            commit_current,
         );
 
         assert_eq!(requests.get(), 1);
@@ -438,6 +498,8 @@ mod tests {
             },
             |_| panic!("a non-401 response must not reread Keychain"),
             || consent.get(),
+            admit_current,
+            commit_current,
         );
 
         assert_eq!(requests.get(), 1);
@@ -472,6 +534,8 @@ mod tests {
                 ClaudeKeychainRead::Missing
             },
             || consent.get(),
+            admit_current,
+            commit_current,
         );
 
         assert_eq!(requests.get(), 1);
@@ -516,6 +580,8 @@ mod tests {
                 }
             },
             || consent.get(),
+            admit_current,
+            commit_current,
         );
 
         assert_eq!(requests.get(), 2);
@@ -548,6 +614,8 @@ mod tests {
                 },
                 |_| panic!("only a typed HTTP 401 may reread Keychain"),
                 || true,
+                admit_current,
+                commit_current,
             )
             .expect("consent remains active");
 
