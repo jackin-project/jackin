@@ -1891,3 +1891,345 @@ fn catalog_purge_prevents_restart_resurrection() {
         UsageCoordinationErrorKind::CatalogRevoked
     );
 }
+
+fn coordinator_on_manual_clock(
+    executor: Arc<dyn UsageProviderExecutor>,
+    store: Arc<dyn AccountStateStore>,
+    epoch_seconds: u64,
+) -> (UsageCoordinator, Arc<ManualClock>) {
+    let clock = Arc::new(ManualClock::at(epoch_seconds));
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "share the controllable clock with the coordinator"
+    )]
+    let clock_port: Arc<dyn MonotonicClock> = clock.clone();
+    let coordinator = UsageCoordinator::start_with_clock(
+        executor,
+        store,
+        UsageCoordinatorConfig::default(),
+        None,
+        None,
+        clock_port,
+    );
+    (coordinator, clock)
+}
+
+#[test]
+fn claude_rate_limit_circuit_uses_consecutive_failures_and_survives_restart() {
+    let account = capability("repeated-rate-limit");
+    let temp = tempfile::tempdir().unwrap();
+    let store = Arc::new(FileAccountStateStore::at(temp.path().join("accounts")));
+    let executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::Failure {
+        kind: UsageCoordinationErrorKind::Unauthorized,
+        message: "first generation had an authorization failure".into(),
+        retry_at_epoch: None,
+    }));
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce concrete executor to the coordinator port"
+    )]
+    let provider_executor: Arc<dyn UsageProviderExecutor> = executor.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce concrete store to the coordinator state port"
+    )]
+    let state_store: Arc<dyn AccountStateStore> = store.clone();
+    let (coordinator, clock) = coordinator_on_manual_clock(provider_executor, state_store, 1_000);
+
+    let first = coordinator
+        .request_refresh(&account, 0, true, 1_000)
+        .unwrap();
+    let first_terminal = join_ok(&coordinator, &account, first.generation, 1_000);
+    assert_eq!(first_terminal.phase, UsageRefreshPhase::Failed);
+    assert_eq!(first_terminal.retry_at_epoch, Some(1_300));
+    assert_eq!(
+        store
+            .load(&account, 1_000)
+            .unwrap()
+            .unwrap()
+            .consecutive_failures,
+        1
+    );
+
+    clock.advance(Duration::from_mins(5));
+    executor.set_outcome(ProviderProbeOutcome::Failure {
+        kind: UsageCoordinationErrorKind::RateLimited,
+        message: "second generation was rate limited".into(),
+        retry_at_epoch: Some(1_700),
+    });
+    let second = coordinator
+        .request_refresh(&account, 1, true, 1_300)
+        .unwrap();
+    let second_terminal = join_ok(&coordinator, &account, second.generation, 1_300);
+    assert_eq!(second_terminal.phase, UsageRefreshPhase::Failed);
+    assert_eq!(second_terminal.retry_at_epoch, Some(1_700));
+    let second_durable = store.load(&account, 1_300).unwrap().unwrap();
+    assert_eq!(second_durable.consecutive_failures, 2);
+    assert_eq!(second_durable.rate_limit_deadline_epoch, Some(1_700));
+    assert_eq!(second_durable.retry_deadline_epoch, Some(1_700));
+
+    clock.advance(Duration::from_secs(400));
+    executor.set_outcome(ProviderProbeOutcome::Failure {
+        kind: UsageCoordinationErrorKind::RateLimited,
+        message: "third generation was rate limited".into(),
+        retry_at_epoch: Some(1_750),
+    });
+    let third = coordinator
+        .request_refresh(&account, 2, true, 1_700)
+        .unwrap();
+    let third_terminal = join_ok(&coordinator, &account, third.generation, 1_700);
+    assert_eq!(third_terminal.phase, UsageRefreshPhase::Failed);
+    assert_eq!(third_terminal.retry_at_epoch, Some(5_300));
+    let durable = store.load(&account, 1_700).unwrap().unwrap();
+    assert_eq!(durable.consecutive_failures, 3);
+    assert_eq!(durable.provider_invoked_at_epoch, Some(1_700));
+    assert_eq!(durable.completed_at_epoch, Some(1_700));
+    assert_eq!(durable.retry_deadline_epoch, Some(5_300));
+    assert_eq!(durable.rate_limit_deadline_epoch, Some(5_300));
+    drop(coordinator);
+
+    let restart_executor = Arc::new(GateExecutor::new(ProviderProbeOutcome::success(
+        quota_view(5_300, 70),
+    )));
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce concrete executor to the coordinator port"
+    )]
+    let restart_provider: Arc<dyn UsageProviderExecutor> = restart_executor.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce concrete store to the coordinator state port"
+    )]
+    let restart_store: Arc<dyn AccountStateStore> = store.clone();
+    let (restarted, restart_clock) =
+        coordinator_on_manual_clock(restart_provider, restart_store, 5_000);
+    let restored = restarted.current(&account, 5_000).unwrap();
+    assert_eq!(restored.generation, 3);
+    assert_eq!(restored.retry_at_epoch, Some(5_300));
+    assert!(restarted.poll_due(5_000).is_empty());
+    let forced_early = restarted.request_refresh(&account, 3, true, 5_000).unwrap();
+    assert_eq!(forced_early.generation, 3);
+    assert_eq!(restart_executor.calls.load(Ordering::SeqCst), 0);
+
+    restart_clock.advance(Duration::from_secs(299));
+    assert!(restarted.poll_due(5_299).is_empty());
+    let still_early = restarted.request_refresh(&account, 3, true, 5_299).unwrap();
+    assert_eq!(still_early.generation, 3);
+    assert_eq!(restart_executor.calls.load(Ordering::SeqCst), 0);
+    restart_clock.advance(Duration::from_secs(1));
+    let half_open = restarted.poll_due(5_300);
+    assert_eq!(half_open.len(), 1);
+    assert_eq!(half_open[0].generation, 4);
+    restart_executor.wait_started(1);
+    let joined = restarted.request_refresh(&account, 3, true, 5_300).unwrap();
+    assert_eq!(joined.generation, 4);
+    assert_eq!(restart_executor.calls.load(Ordering::SeqCst), 1);
+    restart_executor.release(1);
+    let completed = join_ok(&restarted, &account, 4, 5_301);
+    assert_eq!(completed.phase, UsageRefreshPhase::Completed);
+    assert_eq!(restart_executor.calls.load(Ordering::SeqCst), 1);
+    let recovered = store.load(&account, 5_301).unwrap().unwrap();
+    assert_eq!(recovered.consecutive_failures, 0);
+    assert_eq!(recovered.retry_deadline_epoch, None);
+    assert_eq!(recovered.rate_limit_deadline_epoch, None);
+}
+
+#[test]
+fn claude_rate_limit_circuit_ignores_non_rate_limited_latest_kind() {
+    let account = capability("timeout-not-rate-limited");
+    let store = Arc::new(MemoryStore::default());
+    let executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::Failure {
+        kind: UsageCoordinationErrorKind::ProviderTimeout,
+        message: "provider timed out".into(),
+        retry_at_epoch: Some(1_400),
+    }));
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce concrete executor to the coordinator port"
+    )]
+    let provider_executor: Arc<dyn UsageProviderExecutor> = executor.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce concrete store to the coordinator state port"
+    )]
+    let state_store: Arc<dyn AccountStateStore> = store.clone();
+    let (coordinator, clock) = coordinator_on_manual_clock(provider_executor, state_store, 1_000);
+
+    let first = coordinator
+        .request_refresh(&account, 0, true, 1_000)
+        .unwrap();
+    assert_eq!(
+        join_ok(&coordinator, &account, first.generation, 1_000).retry_at_epoch,
+        Some(1_400)
+    );
+
+    clock.advance(Duration::from_secs(400));
+    executor.set_outcome(ProviderProbeOutcome::Failure {
+        kind: UsageCoordinationErrorKind::ProviderTimeout,
+        message: "provider timed out again".into(),
+        retry_at_epoch: Some(1_800),
+    });
+    let second = coordinator
+        .request_refresh(&account, 1, true, 1_400)
+        .unwrap();
+    assert_eq!(
+        join_ok(&coordinator, &account, second.generation, 1_400).retry_at_epoch,
+        Some(1_800)
+    );
+
+    clock.advance(Duration::from_secs(400));
+    executor.set_outcome(ProviderProbeOutcome::Failure {
+        kind: UsageCoordinationErrorKind::ProviderTimeout,
+        message: "third timeout is not a rate limit".into(),
+        retry_at_epoch: Some(2_100),
+    });
+    let third = coordinator
+        .request_refresh(&account, 2, true, 1_800)
+        .unwrap();
+    let third_terminal = join_ok(&coordinator, &account, third.generation, 1_800);
+    assert_eq!(third_terminal.phase, UsageRefreshPhase::Failed);
+    assert_eq!(third_terminal.retry_at_epoch, Some(2_100));
+    let durable = store.states.lock().unwrap().get(&account).unwrap().clone();
+    assert_eq!(durable.consecutive_failures, 3);
+    assert_eq!(durable.completed_at_epoch, Some(1_800));
+    assert_eq!(
+        durable.retry_deadline_epoch, Some(2_100),
+        "a non-rate-limited latest kind must keep the normal deadline"
+    );
+    assert_eq!(durable.rate_limit_deadline_epoch, None);
+    assert_ne!(durable.retry_deadline_epoch, Some(1_800 + 3_600));
+}
+
+#[test]
+fn claude_rate_limit_circuit_ignores_non_claude_surface() {
+    let account = UsageAccountCapability {
+        account_id: "openai-rate-limit".into(),
+        surface_id: "openai".into(),
+    };
+    let store = Arc::new(MemoryStore::default());
+    let executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::Failure {
+        kind: UsageCoordinationErrorKind::RateLimited,
+        message: "provider rate limited".into(),
+        retry_at_epoch: Some(1_200),
+    }));
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce concrete executor to the coordinator port"
+    )]
+    let provider_executor: Arc<dyn UsageProviderExecutor> = executor.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce concrete store to the coordinator state port"
+    )]
+    let state_store: Arc<dyn AccountStateStore> = store.clone();
+    let (coordinator, clock) = coordinator_on_manual_clock(provider_executor, state_store, 1_000);
+
+    let first = coordinator
+        .request_refresh(&account, 0, true, 1_000)
+        .unwrap();
+    assert_eq!(
+        join_ok(&coordinator, &account, first.generation, 1_000).retry_at_epoch,
+        Some(1_200)
+    );
+
+    clock.advance(Duration::from_secs(200));
+    executor.set_outcome(ProviderProbeOutcome::Failure {
+        kind: UsageCoordinationErrorKind::RateLimited,
+        message: "provider rate limited again".into(),
+        retry_at_epoch: Some(1_400),
+    });
+    let second = coordinator
+        .request_refresh(&account, 1, true, 1_200)
+        .unwrap();
+    assert_eq!(
+        join_ok(&coordinator, &account, second.generation, 1_200).retry_at_epoch,
+        Some(1_400)
+    );
+
+    clock.advance(Duration::from_secs(200));
+    executor.set_outcome(ProviderProbeOutcome::Failure {
+        kind: UsageCoordinationErrorKind::RateLimited,
+        message: "third rate limit on a non-Claude surface".into(),
+        retry_at_epoch: Some(1_600),
+    });
+    let third = coordinator
+        .request_refresh(&account, 2, true, 1_400)
+        .unwrap();
+    let third_terminal = join_ok(&coordinator, &account, third.generation, 1_400);
+    assert_eq!(third_terminal.phase, UsageRefreshPhase::Failed);
+    assert_eq!(third_terminal.retry_at_epoch, Some(1_600));
+    let durable = store.states.lock().unwrap().get(&account).unwrap().clone();
+    assert_eq!(durable.consecutive_failures, 3);
+    assert_eq!(durable.completed_at_epoch, Some(1_400));
+    assert_eq!(
+        durable.retry_deadline_epoch, Some(1_600),
+        "a non-Claude surface must keep the provider deadline"
+    );
+    assert_eq!(durable.rate_limit_deadline_epoch, Some(1_600));
+    assert_ne!(durable.retry_deadline_epoch, Some(1_400 + 3_600));
+}
+
+#[test]
+fn claude_rate_limit_circuit_keeps_longer_provider_deadline() {
+    let account = capability("longer-provider-deadline");
+    let store = Arc::new(MemoryStore::default());
+    let executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::Failure {
+        kind: UsageCoordinationErrorKind::Unauthorized,
+        message: "first generation had an authorization failure".into(),
+        retry_at_epoch: None,
+    }));
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce concrete executor to the coordinator port"
+    )]
+    let provider_executor: Arc<dyn UsageProviderExecutor> = executor.clone();
+    #[expect(
+        clippy::clone_on_ref_ptr,
+        reason = "coerce concrete store to the coordinator state port"
+    )]
+    let state_store: Arc<dyn AccountStateStore> = store.clone();
+    let (coordinator, clock) = coordinator_on_manual_clock(provider_executor, state_store, 1_000);
+
+    let first = coordinator
+        .request_refresh(&account, 0, true, 1_000)
+        .unwrap();
+    assert_eq!(
+        join_ok(&coordinator, &account, first.generation, 1_000).retry_at_epoch,
+        Some(1_300)
+    );
+
+    clock.advance(Duration::from_mins(5));
+    executor.set_outcome(ProviderProbeOutcome::Failure {
+        kind: UsageCoordinationErrorKind::RateLimited,
+        message: "second generation was rate limited".into(),
+        retry_at_epoch: Some(1_700),
+    });
+    let second = coordinator
+        .request_refresh(&account, 1, true, 1_300)
+        .unwrap();
+    assert_eq!(
+        join_ok(&coordinator, &account, second.generation, 1_300).retry_at_epoch,
+        Some(1_700)
+    );
+
+    clock.advance(Duration::from_secs(400));
+    executor.set_outcome(ProviderProbeOutcome::Failure {
+        kind: UsageCoordinationErrorKind::RateLimited,
+        message: "third generation carried a longer provider deadline".into(),
+        retry_at_epoch: Some(9_000),
+    });
+    let third = coordinator
+        .request_refresh(&account, 2, true, 1_700)
+        .unwrap();
+    let third_terminal = join_ok(&coordinator, &account, third.generation, 1_700);
+    assert_eq!(third_terminal.phase, UsageRefreshPhase::Failed);
+    assert_eq!(third_terminal.retry_at_epoch, Some(9_000));
+    let durable = store.states.lock().unwrap().get(&account).unwrap().clone();
+    assert_eq!(durable.consecutive_failures, 3);
+    assert_eq!(durable.completed_at_epoch, Some(1_700));
+    assert_eq!(
+        durable.retry_deadline_epoch, Some(9_000),
+        "a longer provider deadline stays authoritative over the one-hour floor"
+    );
+    assert_eq!(durable.rate_limit_deadline_epoch, Some(9_000));
+}

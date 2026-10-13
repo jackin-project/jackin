@@ -63,3 +63,75 @@ fn claude_minimum_attempt_deadline_uses_persisted_invocation() {
     };
     assert_eq!(minimum_attempt_deadline(&other, Some(1_000)), None);
 }
+
+#[test]
+fn claude_rate_limit_circuit_requires_failure_threshold_and_latest_rate_limit() {
+    let claude = UsageAccountCapability {
+        account_id: "account".to_owned(),
+        surface_id: "claude".to_owned(),
+    };
+    assert_eq!(
+        claude_rate_limit_circuit_deadline(
+            &claude,
+            UsageCoordinationErrorKind::RateLimited,
+            2,
+            1_000,
+        ),
+        None
+    );
+    assert_eq!(
+        claude_rate_limit_circuit_deadline(
+            &claude,
+            UsageCoordinationErrorKind::RateLimited,
+            3,
+            1_000,
+        ),
+        Some(4_600)
+    );
+    assert_eq!(
+        claude_rate_limit_circuit_deadline(
+            &claude,
+            UsageCoordinationErrorKind::ProviderTimeout,
+            3,
+            1_000,
+        ),
+        None
+    );
+
+    let other_provider = UsageAccountCapability {
+        surface_id: "openai".to_owned(),
+        ..claude.clone()
+    };
+    assert_eq!(
+        claude_rate_limit_circuit_deadline(
+            &other_provider,
+            UsageCoordinationErrorKind::RateLimited,
+            3,
+            1_000,
+        ),
+        None
+    );
+
+    assert_eq!(
+        claude_rate_limit_retry_deadline(
+            &claude,
+            UsageCoordinationErrorKind::RateLimited,
+            3,
+            Some(7_000),
+            1_000,
+        ),
+        Some(7_000),
+        "a longer provider deadline must remain authoritative"
+    );
+    assert_eq!(
+        claude_rate_limit_retry_deadline(
+            &claude,
+            UsageCoordinationErrorKind::RateLimited,
+            3,
+            Some(4_000),
+            1_000,
+        ),
+        Some(4_600),
+        "the local circuit must extend a shorter provider/backoff deadline"
+    );
+}
