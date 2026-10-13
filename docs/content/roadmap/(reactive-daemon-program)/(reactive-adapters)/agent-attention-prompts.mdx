@@ -8,9 +8,9 @@ title: "Agent Attention Prompts"
 
 ## Shipped baseline
 
-The [Agent Runtime Status Authority](/roadmap/agent-runtime-status/) is implemented and already produces the effective `blocked` / derived `done` / `idle` / `working` / `unknown` transitions this feature needs; this item does not have to invent its own waiting-detection heuristic. MCP registration also already has a working pattern to extend: <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" /> auto-registers the `tirith` / `shellfirm` MCP servers into each agent's config at container launch, and a future `jackin-attention` server would register through the same code path.
+The [Agent Runtime Status Authority](/roadmap/agent-runtime-status/) is implemented and already produces the effective `blocked` / derived `done` / `idle` / `working` / `unknown` transitions this feature needs; this item does not have to invent its own waiting-detection heuristic. MCP registration also already has a working pattern to extend: <RepoFile path="crates/apps/jackin-capsule/src/runtime_setup.rs" /> auto-registers the `tirith` / `shellfirm` MCP servers into each agent's config at container launch, and a future `jackin-attention` server would register through the same code path.
 
-The production implementation in <RepoFile path="crates/jackin-runtime/src/host_daemon.rs" /> accepts an `attention_snapshot` control request carrying pane states and emits notifications on `blocked` / `done` transitions only. Notifications are muted unless `JACKIN_ATTENTION=1` is set on the daemon process; muted mode still records the transition state so repeated snapshots do not spam later.
+The production implementation in <RepoFile path="crates/services/jackin-runtime/src/host_daemon.rs" /> accepts an `attention_snapshot` control request carrying pane states and emits notifications on `blocked` / `done` transitions only. Notifications are muted unless `JACKIN_ATTENTION=1` is set on the daemon process; muted mode still records the transition state so repeated snapshots do not spam later.
 
 Everything else — per-container event subscription, click-to-focus, and the console Notifications tab — is unbuilt.
 
@@ -37,4 +37,4 @@ Everything else — per-container event subscription, click-to-focus, and the co
 - [jackin❯ desktop Agent Hub](/research/product/desktop/agent-hub/) — owns the first Ghostty click-to-focus UX.
 - [Agent runtime status authority](/roadmap/agent-runtime-status/) — canonical state source this item consumes.
 - Research: [Agent attention prompts: design exploration](/research/agents/orchestration/agent-attention-prompts-design/) — full UX narrative, MCP contract alternatives, and open design questions behind this item.
-- <RepoFile path="crates/jackin-runtime/src/reactive_daemon.rs">crates/jackin-runtime/src/reactive_daemon.rs</RepoFile> — feature-gated spike adapter.
+- <RepoFile path="crates/services/jackin-runtime/src/reactive_daemon.rs">crates/services/jackin-runtime/src/reactive_daemon.rs</RepoFile> — feature-gated spike adapter.

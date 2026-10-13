@@ -1,0 +1,33 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "jackin-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
+description = "Universal vocabulary types shared across all jackin crates: Agent, MountIsolation, AuthForwardMode, selectors, and constants."
+license.workspace = true
+readme = "README.md"
+publish = false
+
+repository.workspace = true
+[lib]
+name = "jackin_core"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+directories = { workspace = true }
+hex = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

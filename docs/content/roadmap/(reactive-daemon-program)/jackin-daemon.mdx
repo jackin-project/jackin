@@ -18,11 +18,11 @@ generations, atomic last-good state, and shared retry deadlines independently of
 general daemon lifecycle; a future daemon integration may host its lifecycle without
 moving its domain authority out of `jackin-usage`.
 
-The clearest concrete stand-in for a daemon-owned watcher remains the keep-awake reconciler in <RepoFile path="crates/jackin-host/src/caffeinate.rs">crates/jackin-host/src/caffeinate.rs</RepoFile>: it still runs at every CLI command boundary, acquiring a lock file and starting/stopping `caffeinate -imsu` based on whether any keep-awake-labelled container is running. Moving that watcher into the daemon remains future work.
+The clearest concrete stand-in for a daemon-owned watcher remains the keep-awake reconciler in <RepoFile path="crates/services/jackin-host/src/caffeinate.rs">crates/services/jackin-host/src/caffeinate.rs</RepoFile>: it still runs at every CLI command boundary, acquiring a lock file and starting/stopping `caffeinate -imsu` based on whether any keep-awake-labelled container is running. Moving that watcher into the daemon remains future work.
 
 Research: [jackin❯ daemon — design proposal](/research/platform/infrastructure/jackin-daemon-design/) has the full design rationale and the Plan 042 spike resolution: selected lifecycle, install, protocol, security posture, redaction rules, host-vs-Capsule relationship, and implementation phasing.
 
-The Plan 047/048 production daemon lives in <RepoFile path="crates/jackin-runtime/src/host_daemon.rs" /> and is wired through <RepoFile path="crates/jackin/src/cli/daemon.rs" /> plus <RepoFile path="crates/jackin/src/app/daemon_cmd.rs" />. The older spike prototype remains feature-gated and not user-wired: <RepoFile path="crates/jackin-runtime/src/reactive_daemon.rs" /> defines the original proof.
+The Plan 047/048 production daemon lives in <RepoFile path="crates/services/jackin-runtime/src/host_daemon.rs" /> and is wired through <RepoFile path="crates/apps/jackin/src/cli/daemon.rs" /> plus <RepoFile path="crates/apps/jackin/src/app/daemon_cmd.rs" />. The older spike prototype remains feature-gated and not user-wired: <RepoFile path="crates/services/jackin-runtime/src/reactive_daemon.rs" /> defines the original proof.
 
 ## Remaining work
 
@@ -39,7 +39,7 @@ The Plan 047/048 production daemon lives in <RepoFile path="crates/jackin-runtim
 - [Host bridge — secrets and approved host actions](/roadmap/host-bridge/) — operator-mediated channel for agents to request secrets or invoke host commands. Plugs into this daemon and uses the same approval surface (TouchID / polkit / password) the daemon hosts.
 - [jackin❯ Capsule](/roadmap/jackin-capsule/) — the in-container per-container control plane; its Phase 4 (host daemon integration) is designed together with this item.
 - [jackin❯ desktop Agent Hub](/research/product/desktop/agent-hub/) — native macOS status bar and desktop companion that consumes daemon state for workspaces, sessions, GitHub PRs, account status, notifications, and approved host actions.
-- <RepoFile path="crates/jackin-host/src/caffeinate.rs">crates/jackin-host/src/caffeinate.rs</RepoFile> — today's per-command keep-awake reconciler; first migration target once the daemon exists.
-- <RepoFile path="crates/jackin-runtime/src/reactive_daemon.rs">crates/jackin-runtime/src/reactive_daemon.rs</RepoFile> — feature-gated Plan 042 prototype proving the control socket shape and one-way attention adapter.
+- <RepoFile path="crates/services/jackin-host/src/caffeinate.rs">crates/services/jackin-host/src/caffeinate.rs</RepoFile> — today's per-command keep-awake reconciler; first migration target once the daemon exists.
+- <RepoFile path="crates/services/jackin-runtime/src/reactive_daemon.rs">crates/services/jackin-runtime/src/reactive_daemon.rs</RepoFile> — feature-gated Plan 042 prototype proving the control socket shape and one-way attention adapter.
 - [Reliable Claude authentication strategy](/research/agents/authentication/claude-auth-strategy/) — concurrent-session token-drift concerns the live-auth-sync feature ultimately answers, so the daemon hosts the answer.
 - [Credential source pattern](/roadmap/credential-source-pattern/) — future unified credential resolver; the daemon's per-axis adapter trait should be expressible inside that pattern.

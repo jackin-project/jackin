@@ -224,7 +224,7 @@ Required rule:
 
 ### Console formatting is reused for backend logs
 
-<RepoFile path="crates/jackin-diagnostics/src/logging.rs" />:
+<RepoFile path="crates/services/jackin-diagnostics/src/logging.rs" />:
 
 - `format_debug_line(category, message)` returns `[jackin debug {category}] {message}`.
 - `emit_debug_line(category, message)` passes that formatted line to `active_debug(category, &line)`.
@@ -247,7 +247,7 @@ Structural fix:
 
 ### JSONL diagnostics become OTel log records with weak semantics
 
-<RepoFile path="crates/jackin-diagnostics/src/observability.rs" /> bridges marked JSONL events (`jackin_jsonl=true`) into run diagnostics. `emit_jsonl_event` / `emit_jsonl_error` attach a few fields, but most semantic meaning stays in `kind`, `stage`, `detail`, and free-text `message`.
+<RepoFile path="crates/services/jackin-diagnostics/src/observability.rs" /> bridges marked JSONL events (`jackin_jsonl=true`) into run diagnostics. `emit_jsonl_event` / `emit_jsonl_error` attach a few fields, but most semantic meaning stays in `kind`, `stage`, `detail`, and free-text `message`.
 
 Structural fix:
 
@@ -265,7 +265,7 @@ Structural fix:
 
 ### Launch-stage spans reuse one name
 
-<RepoFile path="crates/jackin-diagnostics/src/run.rs" /> creates spans with:
+<RepoFile path="crates/services/jackin-diagnostics/src/run.rs" /> creates spans with:
 
 ```rust
 tracing::info_span!("launch_stage", stage = stage)

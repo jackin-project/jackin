@@ -1,0 +1,33 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "jackin-runtime-attach-capsule-ready"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
+description = "Capsule daemon readiness waits and DinD warmup waits."
+license.workspace = true
+readme = "README.md"
+publish = false
+
+repository.workspace = true
+
+[lib]
+name = "jackin_runtime_attach_capsule_ready"
+path = "src/lib.rs"
+
+[dependencies]
+jackin-core = { workspace = true }
+jackin-diagnostics = { workspace = true }
+jackin-docker = { workspace = true }
+jackin-protocol = { workspace = true }
+jackin-runtime-snapshot = { workspace = true }
+jackin-runtime-spin-wait = { workspace = true }
+jackin-telemetry = { workspace = true }
+anyhow = { workspace = true }
+tokio = { workspace = true, features = ["time"] }
+
+[lints]
+workspace = true

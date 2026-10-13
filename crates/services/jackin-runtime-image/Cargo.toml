@@ -1,0 +1,47 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "jackin-runtime-image"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
+description = "Role image pipeline: build, prewarm, refresh, and staleness for agent images."
+license.workspace = true
+readme = "README.md"
+publish = false
+
+repository.workspace = true
+
+[lib]
+name = "jackin_runtime_image"
+path = "src/lib.rs"
+
+[features]
+test-support = []
+
+[dependencies]
+jackin-core = { workspace = true }
+jackin-diagnostics = { workspace = true }
+jackin-docker = { workspace = true }
+jackin-image = { workspace = true }
+jackin-launch = { workspace = true }
+jackin-manifest = { workspace = true }
+jackin-telemetry = { workspace = true }
+jackin-runtime-identity = { workspace = true }
+jackin-runtime-launch-plan = { workspace = true }
+jackin-runtime-naming = { workspace = true }
+jackin-runtime-progress = { workspace = true }
+jackin-runtime-repo-cache = { workspace = true }
+anyhow = { workspace = true }
+futures-util = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt"] }
+
+[dev-dependencies]
+jackin-test-support = { workspace = true }
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

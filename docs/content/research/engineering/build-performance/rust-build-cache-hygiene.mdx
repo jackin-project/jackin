@@ -204,7 +204,7 @@ sccache is already pinned in <RepoFile path="mise.toml" /> as `cargo:sccache = "
 
 #### Container environment
 
-Set in the Dockerfile or the runtime env injection (<RepoFile path="crates/jackin-capsule/src/session.rs" /> / <RepoFile path="crates/jackin-runtime/src/runtime/docker_profile.rs" />):
+Set in the Dockerfile or the runtime env injection (<RepoFile path="crates/apps/jackin-capsule/src/session.rs" /> / <RepoFile path="crates/services/jackin-runtime/src/runtime/docker_profile.rs" />):
 
 ```sh
 # Disable incremental compilation — prevents unbounded session-dir growth.
@@ -353,7 +353,7 @@ CARGO_TARGET_DIR="$JACKIN_CACHE/projects/<project-key>/target"
 2. Add a contributor reference table for cache classes: path owner, creation path, safe deletion condition, prune command, default budget, and visibility surface.
 3. Decide the Rust build-cache architecture: kache vs sccache (or both), where the cache store lives, what default cache size/budget should be, and whether `CARGO_TARGET_DIR` should be redirected for jackin❯-managed Rust builds.
 4. Add the compiler cache tool to the construct image (<RepoFile path="docker/construct/Dockerfile" />) via APT or mise.
-5. Add `CARGO_INCREMENTAL=0`, `RUSTC_WRAPPER=kache` (or sccache), and `KACHE_CACHE_DIR` (or `SCCACHE_DIR`) to the container runtime environment (<RepoFile path="crates/jackin-capsule/src/session.rs" />, <RepoFile path="crates/jackin-runtime/src/runtime/docker_profile.rs" />).
+5. Add `CARGO_INCREMENTAL=0`, `RUSTC_WRAPPER=kache` (or sccache), and `KACHE_CACHE_DIR` (or `SCCACHE_DIR`) to the container runtime environment (<RepoFile path="crates/apps/jackin-capsule/src/session.rs" />, <RepoFile path="crates/services/jackin-runtime/src/runtime/docker_profile.rs" />).
 6. Add a shared compiler-cache bind mount (`~/.cache/jackin/global/kache` or `~/.cache/jackin/global/sccache`) to the container spawn logic, parallel to the existing Cargo registry mount.
 7. Add an `[env]` section to <RepoFile path="mise.toml" /> with `CARGO_INCREMENTAL = "0"` and `RUSTC_WRAPPER` for local development builds.
 8. Extend `jackin prune` to report and clean Rust build artifacts and compiler caches. Delegate to `kache clean` / `kache gc` when kache is the active tool.
@@ -364,13 +364,13 @@ CARGO_TARGET_DIR="$JACKIN_CACHE/projects/<project-key>/target"
 
 ## Related work
 
-- <RepoFile path="crates/jackin-runtime/src/runtime/cleanup.rs" /> — existing prune/delete machinery.
-- <RepoFile path="crates/jackin-runtime/src/runtime/prune_output.rs" /> — current prune output surface.
-- <RepoFile path="crates/jackin-runtime/src/runtime/prewarm_trigger.rs" /> — prewarm flows that trade disk for speed.
-- <RepoFile path="crates/jackin-runtime/src/runtime/docker_profile.rs" /> — container spawn argv + env injection + mount assembly.
-- <RepoFile path="crates/jackin-capsule/src/session.rs" /> — in-container runtime env setup.
-- <RepoFile path="crates/jackin-core/src/agent/runtime.rs" /> — generated role/agent build cache mounts.
-- <RepoFile path="crates/jackin-core/src/agent/adapters/claude.rs" /> — agent prefetch cache mount precedent.
+- <RepoFile path="crates/services/jackin-runtime/src/runtime/cleanup.rs" /> — existing prune/delete machinery.
+- <RepoFile path="crates/services/jackin-runtime/src/runtime/prune_output.rs" /> — current prune output surface.
+- <RepoFile path="crates/services/jackin-runtime/src/runtime/prewarm_trigger.rs" /> — prewarm flows that trade disk for speed.
+- <RepoFile path="crates/services/jackin-runtime/src/runtime/docker_profile.rs" /> — container spawn argv + env injection + mount assembly.
+- <RepoFile path="crates/apps/jackin-capsule/src/session.rs" /> — in-container runtime env setup.
+- <RepoFile path="crates/core/jackin-core/src/agent/runtime.rs" /> — generated role/agent build cache mounts.
+- <RepoFile path="crates/core/jackin-core/src/agent/adapters/claude.rs" /> — agent prefetch cache mount precedent.
 - <RepoFile path="docker/construct/Dockerfile" /> — construct image definition (where cache tool would be installed).
 - <RepoFile path="mise.toml" /> — tool pinning + env config (where `[env]` section + cache tool version would be added).
 - <RepoFile path=".cargo/config.toml" /> — Cargo config (where `build.rustc-wrapper` could be set as a fallback).

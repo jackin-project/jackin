@@ -8,14 +8,14 @@ title: "Workspace Description Field"
 
 ## Current state
 
-`WorkspaceConfig` and `WorkspaceEdit` (<RepoFile path="crates/jackin-config/src/schema.rs" />) have no `description` field. Other `description` hits in the codebase are Cargo/package descriptions, TUI help text, MCP tool descriptions, and diagnostics labels — none are workspace metadata. Operators managing more than a couple of saved workspaces have no place to attach a note like "preview branch for issue #412"; the workspace name and last-used agent aren't enough to remember what each one is for.
+`WorkspaceConfig` and `WorkspaceEdit` (<RepoFile path="crates/core/jackin-config/src/schema.rs" />) have no `description` field. Other `description` hits in the codebase are Cargo/package descriptions, TUI help text, MCP tool descriptions, and diagnostics labels — none are workspace metadata. Operators managing more than a couple of saved workspaces have no place to attach a note like "preview branch for issue #412"; the workspace name and last-used agent aren't enough to remember what each one is for.
 
 ## Remaining work
 
 1. Add an optional `description: Option<String>` field to `WorkspaceConfig`; absent means no description (not empty string). Roundtrip cleanly through TOML (preserve operator whitespace; render only the first line in lists for multi-line values).
-2. `workspace create --description` and `workspace edit --description` / `--clear-description` on `WorkspaceEdit`, mirroring the existing `--clear-default-role` flag shape in <RepoFile path="crates/jackin/src/cli/workspace.rs" />.
+2. `workspace create --description` and `workspace edit --description` / `--clear-description` on `WorkspaceEdit`, mirroring the existing `--clear-default-role` flag shape in <RepoFile path="crates/apps/jackin/src/cli/workspace.rs" />.
 3. `workspace show` renders the description as a top-level field; `workspace list` adds a truncated Description column.
-4. Console workspace picker (<RepoFile path="crates/jackin/src/console/adapter.rs" />) shows the description as a one-line subtitle under the workspace name.
+4. Console workspace picker (<RepoFile path="crates/apps/jackin/src/console/adapter.rs" />) shows the description as a one-line subtitle under the workspace name.
 
 ## Out of scope
 

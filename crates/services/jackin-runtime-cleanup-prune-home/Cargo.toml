@@ -1,0 +1,30 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "jackin-runtime-cleanup-prune-home"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
+description = "Prune of the jackin runtime home directory for cleanup."
+license.workspace = true
+readme = "README.md"
+publish = false
+
+repository.workspace = true
+
+[lib]
+name = "jackin_runtime_cleanup_prune_home"
+path = "src/lib.rs"
+
+[dependencies]
+jackin-core = { workspace = true }
+jackin-runtime-cleanup-timing = { workspace = true }
+jackin-runtime-coordination = { workspace = true }
+jackin-runtime-isolation = { workspace = true }
+jackin-runtime-prune-output = { workspace = true }
+anyhow = { workspace = true }
+
+[lints]
+workspace = true
