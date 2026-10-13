@@ -3,6 +3,13 @@
 
 use super::{MonitorStore, SpendState, spend_snapshot_preserves_history};
 use jackin_protocol::control::Money;
+use jackin_protocol::usage_broker::{
+    UsageAccountV1, UsageCalendarPeriodV1, UsageFreshnessPhaseV1, UsageFreshnessV1,
+    UsageIdentityKindV1, UsageLifecycleV1, UsageLimitWindowV1, UsageMembershipStateV1,
+    UsageMetricGroupKindV1, UsageMetricGroupV1, UsageMetricPeriodV1, UsageMetricScopeV1,
+    UsageMetricValueV1, UsagePercent, UsageProjectionRefreshStateV1, UsageProjectionSchemaV1,
+    UsageProjectionV1, UsageProviderV1, UsageQuotaStateV1, UsageWindowCategoryV1,
+};
 use jackin_protocol::usage_monitor::{
     MonitorAccountBinding, MonitorAccountBindingInput, MonitorAction, MonitorConfig,
     MonitorDispatchReadiness, MonitorEvidenceFreshness, MonitorIssueCode, MonitorLifecycle,
@@ -2064,4 +2071,498 @@ fn used_only_zero_from_remaining_keeps_stored_reset() {
     );
     assert!(stored_long_range.paired.is_none());
     assert_eq!(stored.latest_reset_epochs[1], Some(prior_reset));
+}
+
+#[derive(Clone, Copy)]
+enum PrincipalScopeAxis {
+    Service,
+    Model,
+    Pool,
+    KeyId,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct WeeklyWindowEvidence {
+    used_basis_points: Option<i32>,
+    used_at: Option<i64>,
+    used_received_at: Option<i64>,
+    reset_at: Option<i64>,
+    reset_evidence_at: Option<i64>,
+    reset_received_at: Option<i64>,
+}
+
+fn projected_weekly_evidence_at(
+    projection: &UsageProjectionV1,
+    received_at: i64,
+) -> (Option<i64>, Option<i64>) {
+    let windows = super::projection_windows(&projection.providers[0].accounts[0], received_at, 1);
+    let window = windows[1].as_ref();
+    (
+        window
+            .and_then(|window| window.used.as_ref())
+            .and_then(|used| used.evidence_at_epoch),
+        window
+            .and_then(|window| window.reset.as_ref())
+            .and_then(|reset| reset.evidence_at_epoch),
+    )
+}
+
+fn weekly_window_evidence(store: &MonitorStore, account_id: &str) -> WeeklyWindowEvidence {
+    let state = store.lock();
+    let window = &state.accounts[account_id].broker_windows[1];
+    WeeklyWindowEvidence {
+        used_basis_points: window.used.as_ref().map(|used| used.value),
+        used_at: window.used.as_ref().and_then(|used| used.evidence_at_epoch),
+        used_received_at: window.used.as_ref().map(|used| used.received_at_epoch),
+        reset_at: window.reset.as_ref().map(|reset| reset.value),
+        reset_evidence_at: window
+            .reset
+            .as_ref()
+            .and_then(|reset| reset.evidence_at_epoch),
+        reset_received_at: window.reset.as_ref().map(|reset| reset.received_at_epoch),
+    }
+}
+
+fn assert_weekly_status_evidence(
+    status: &MonitorStatus,
+    evidence: &WeeklyWindowEvidence,
+    received_at: i64,
+) {
+    assert_eq!(
+        status.seven_day.used_percentage_basis_points,
+        evidence.used_basis_points
+    );
+    assert_eq!(status.seven_day.reset_at_epoch, evidence.reset_at);
+    let used = status
+        .seven_day
+        .used_evidence
+        .as_ref()
+        .expect("weekly used evidence");
+    assert_eq!(used.evidence_at_epoch, evidence.used_at);
+    assert_eq!(used.evidence_received_at_epoch, received_at);
+    let reset = status
+        .seven_day
+        .reset_evidence
+        .as_ref()
+        .expect("weekly reset evidence");
+    assert_eq!(reset.evidence_at_epoch, evidence.reset_evidence_at);
+    assert_eq!(reset.evidence_received_at_epoch, received_at);
+}
+
+fn scoped_metric_scope(axis: PrincipalScopeAxis) -> UsageMetricScopeV1 {
+    let mut scope = UsageMetricScopeV1::default();
+    match axis {
+        PrincipalScopeAxis::Service => scope.service = Some("anthropic".to_owned()),
+        PrincipalScopeAxis::Model => scope.model = Some("fable".to_owned()),
+        PrincipalScopeAxis::Pool => scope.pool = Some("fable-pool".to_owned()),
+        PrincipalScopeAxis::KeyId => scope.key_id = Some("fable-key".to_owned()),
+    }
+    scope
+}
+
+fn principal_window_group(
+    group_id: &str,
+    rank: u32,
+    label: &str,
+    used_raw_percent: i32,
+    reset_at_epoch: Option<i64>,
+    observed_at_epoch: Option<i64>,
+    last_success_at_epoch: Option<i64>,
+    scope: UsageMetricScopeV1,
+    current: bool,
+) -> UsageMetricGroupV1 {
+    let fetched_at_epoch = observed_at_epoch.or(last_success_at_epoch).unwrap_or(NOW);
+    UsageMetricGroupV1 {
+        group_id: group_id.to_owned(),
+        rank,
+        kind: UsageMetricGroupKindV1::Window,
+        label: label.to_owned(),
+        scope,
+        observed_at_epoch,
+        fetched_at_epoch,
+        last_success_at_epoch,
+        phase: if current {
+            UsageFreshnessPhaseV1::Current
+        } else {
+            UsageFreshnessPhaseV1::Failed
+        },
+        is_stale: !current,
+        quota_state: UsageQuotaStateV1::Available,
+        value: UsageMetricValueV1::Window {
+            remaining_percent: None,
+            remaining_raw_percent: None,
+            used_percent: Some(UsagePercent::clamp_raw(used_raw_percent)),
+            used_raw_percent: Some(used_raw_percent),
+            period: UsageMetricPeriodV1::Calendar {
+                granularity: UsageCalendarPeriodV1::Weekly,
+            },
+            unit: None,
+        },
+        reset_at_epoch,
+        renews_at_epoch: None,
+        issues: Vec::new(),
+    }
+}
+
+fn long_range_projection(
+    account_id: &str,
+    generation: u64,
+    window_label: &str,
+    used_raw_percent: i32,
+    reset_at_epoch: Option<i64>,
+    last_good_at_epoch: i64,
+    mut groups: Vec<UsageMetricGroupV1>,
+) -> UsageProjectionV1 {
+    for (rank, group) in groups.iter_mut().enumerate() {
+        group.rank = u32::try_from(rank).expect("group rank");
+    }
+    let freshness = UsageFreshnessV1 {
+        generation,
+        phase: UsageFreshnessPhaseV1::Current,
+        last_good_at_epoch: Some(last_good_at_epoch),
+        retry_at_epoch: None,
+        is_stale: false,
+    };
+    UsageProjectionV1 {
+        schema_version: UsageProjectionSchemaV1,
+        projection_id: format!("principal-window-{generation}"),
+        generated_at_epoch: last_good_at_epoch,
+        discovery_revision: "fixture-discovery".to_owned(),
+        broker_instance_id: "fixture-broker".to_owned(),
+        broker_generation: generation,
+        refresh_state: UsageProjectionRefreshStateV1::Idle,
+        providers: vec![UsageProviderV1 {
+            provider_id: "claude".to_owned(),
+            display_name: "Claude".to_owned(),
+            rank: 0,
+            membership_state: UsageMembershipStateV1::Current,
+            freshness: freshness.clone(),
+            accounts: vec![UsageAccountV1 {
+                canonical_account_id: account_id.to_owned(),
+                identity_kind: UsageIdentityKindV1::ProviderAccountId,
+                rank: 0,
+                display_label: "principal account".to_owned(),
+                plan_label: None,
+                status_label: Some("available".to_owned()),
+                lifecycle: UsageLifecycleV1::Available,
+                freshness,
+                provenance_count: 1,
+                windows: vec![UsageLimitWindowV1 {
+                    window_id: "weekly".to_owned(),
+                    rank: 0,
+                    category: UsageWindowCategoryV1::LongRange,
+                    label: window_label.to_owned(),
+                    value_label: format!("{used_raw_percent}% used"),
+                    reset_label: "reset time".to_owned(),
+                    remaining_percent: None,
+                    remaining_raw_percent: None,
+                    used_percent: Some(UsagePercent::clamp_raw(used_raw_percent)),
+                    used_raw_percent: Some(used_raw_percent),
+                    reset_at_epoch,
+                    quota_state: UsageQuotaStateV1::Available,
+                    pace_label: None,
+                    runs_out_label: None,
+                }],
+                metric_groups: groups,
+                credential_expires_at_epoch: None,
+                issues: Vec::new(),
+            }],
+            issues: Vec::new(),
+        }],
+        unresolved: Vec::new(),
+        issues: Vec::new(),
+    }
+}
+
+#[test]
+fn unique_unscoped_metric_group_supplies_window_evidence_time() {
+    let (_directory, store) = open_store();
+    let account_id = "acct-principal-window";
+    let window_label = "All models";
+    let reset_at = NOW + 86_400;
+    let started = start(
+        &store,
+        config(account_id, "goal-principal-window", None, None),
+        NOW,
+    );
+    let baseline_source = NOW;
+    let baseline = long_range_projection(
+        account_id,
+        1,
+        window_label,
+        72,
+        Some(reset_at),
+        baseline_source - 30,
+        vec![principal_window_group(
+            "all-models-weekly",
+            0,
+            window_label,
+            72,
+            Some(reset_at),
+            Some(baseline_source),
+            Some(baseline_source),
+            UsageMetricScopeV1::default(),
+            true,
+        )],
+    );
+    let (baseline_used_at, baseline_reset_at) = projected_weekly_evidence_at(&baseline, NOW);
+    store
+        .observe_projection(&baseline, NOW)
+        .expect("observe the unique principal window");
+    let before = weekly_window_evidence(&store, account_id);
+    assert_eq!(before.used_basis_points, Some(7_200));
+    assert_eq!(before.reset_at, Some(reset_at));
+    assert_eq!(before.used_at, baseline_used_at);
+    assert_eq!(before.reset_evidence_at, baseline_reset_at);
+    assert_eq!(baseline_used_at, Some(baseline_source));
+    assert_ne!(before.used_at, Some(baseline_source - 30));
+    assert_weekly_status_evidence(&status(&store, &started.monitor_id, NOW), &before, NOW);
+
+    let mut received = NOW;
+    let mut generation = 1_u64;
+    let reject = |name: &str,
+                  store: &MonitorStore,
+                  account_id: &str,
+                  monitor_id: &str,
+                  projection: UsageProjectionV1,
+                  received_at: i64,
+                  before: &WeeklyWindowEvidence| {
+        let (projected_used_at, projected_reset_at) =
+            projected_weekly_evidence_at(&projection, received_at);
+        assert_eq!(
+            projected_used_at, None,
+            "{name} must not supply a used timestamp"
+        );
+        assert_eq!(
+            projected_reset_at, None,
+            "{name} must not supply a reset timestamp"
+        );
+        store
+            .observe_projection(&projection, received_at)
+            .unwrap_or_else(|error| panic!("observe {name} projection: {error:?}"));
+        let actual = weekly_window_evidence(store, account_id);
+        assert_eq!(&actual, before, "{name} must not move window evidence time");
+        assert_weekly_status_evidence(
+            &status(store, monitor_id, received_at),
+            before,
+            before.used_received_at.expect("baseline receipt"),
+        );
+    };
+
+    received += 8;
+    generation += 1;
+    let duplicate_source = received;
+    let duplicate = long_range_projection(
+        account_id,
+        generation,
+        window_label,
+        90,
+        Some(reset_at),
+        duplicate_source,
+        vec![
+            principal_window_group(
+                "all-models-weekly-a",
+                0,
+                window_label,
+                90,
+                Some(reset_at),
+                Some(duplicate_source),
+                Some(duplicate_source),
+                UsageMetricScopeV1::default(),
+                true,
+            ),
+            principal_window_group(
+                "all-models-weekly-b",
+                1,
+                window_label,
+                90,
+                Some(reset_at),
+                Some(duplicate_source + 20),
+                Some(duplicate_source + 20),
+                UsageMetricScopeV1::default(),
+                true,
+            ),
+        ],
+    );
+    reject(
+        "duplicate-label",
+        &store,
+        account_id,
+        &started.monitor_id,
+        duplicate,
+        received + 1,
+        &before,
+    );
+
+    for (name, axis) in [
+        ("scoped-service", PrincipalScopeAxis::Service),
+        ("scoped-model", PrincipalScopeAxis::Model),
+        ("scoped-pool", PrincipalScopeAxis::Pool),
+        ("scoped-key", PrincipalScopeAxis::KeyId),
+    ] {
+        received += 8;
+        generation += 1;
+        let source_at = received;
+        let scoped = long_range_projection(
+            account_id,
+            generation,
+            window_label,
+            90,
+            Some(reset_at),
+            source_at,
+            vec![principal_window_group(
+                &format!("{name}-weekly"),
+                0,
+                window_label,
+                90,
+                Some(reset_at),
+                Some(source_at),
+                Some(source_at),
+                scoped_metric_scope(axis),
+                true,
+            )],
+        );
+        reject(
+            name,
+            &store,
+            account_id,
+            &started.monitor_id,
+            scoped,
+            received + 1,
+            &before,
+        );
+    }
+
+    received += 8;
+    generation += 1;
+    let missing_reset_source = received;
+    let missing_reset = long_range_projection(
+        account_id,
+        generation,
+        window_label,
+        90,
+        Some(reset_at),
+        missing_reset_source,
+        vec![principal_window_group(
+            "all-models-missing-reset",
+            0,
+            window_label,
+            90,
+            None,
+            Some(missing_reset_source),
+            Some(missing_reset_source),
+            UsageMetricScopeV1::default(),
+            true,
+        )],
+    );
+    reject(
+        "missing-group-reset",
+        &store,
+        account_id,
+        &started.monitor_id,
+        missing_reset,
+        received + 1,
+        &before,
+    );
+
+    received += 8;
+    generation += 1;
+    let stale_source = received;
+    let stale = long_range_projection(
+        account_id,
+        generation,
+        window_label,
+        90,
+        Some(reset_at),
+        stale_source,
+        vec![principal_window_group(
+            "all-models-stale",
+            0,
+            window_label,
+            90,
+            Some(reset_at),
+            None,
+            Some(stale_source),
+            UsageMetricScopeV1::default(),
+            false,
+        )],
+    );
+    reject(
+        "stale-last-success",
+        &store,
+        account_id,
+        &started.monitor_id,
+        stale,
+        received + 1,
+        &before,
+    );
+
+    received += 8;
+    generation += 1;
+    let accepted_source = received;
+    let sibling_source = accepted_source + 20;
+    let accepted = long_range_projection(
+        account_id,
+        generation,
+        window_label,
+        82,
+        Some(reset_at),
+        accepted_source - 15,
+        vec![
+            principal_window_group(
+                "all-models-weekly-current",
+                0,
+                window_label,
+                82,
+                Some(reset_at),
+                Some(accepted_source),
+                Some(accepted_source),
+                UsageMetricScopeV1::default(),
+                true,
+            ),
+            principal_window_group(
+                "all-models-weekly-scoped",
+                1,
+                window_label,
+                82,
+                Some(reset_at),
+                Some(sibling_source),
+                Some(sibling_source),
+                scoped_metric_scope(PrincipalScopeAxis::Service),
+                true,
+            ),
+            principal_window_group(
+                "fable-weekly-newer",
+                2,
+                "Fable",
+                82,
+                Some(reset_at),
+                Some(sibling_source),
+                Some(sibling_source),
+                scoped_metric_scope(PrincipalScopeAxis::Model),
+                true,
+            ),
+        ],
+    );
+    let accepted_received = received + 1;
+    let (accepted_used_at, accepted_reset_at) =
+        projected_weekly_evidence_at(&accepted, accepted_received);
+    store
+        .observe_projection(&accepted, accepted_received)
+        .expect("observe the unique unscoped principal window");
+    let after = weekly_window_evidence(&store, account_id);
+    assert_eq!(after.used_basis_points, Some(8_200));
+    assert_eq!(after.reset_at, Some(reset_at));
+    assert_eq!(after.used_at, accepted_used_at);
+    assert_eq!(after.reset_evidence_at, accepted_reset_at);
+    assert_eq!(accepted_used_at, Some(accepted_source));
+    assert_ne!(after.used_at, Some(sibling_source));
+    assert_ne!(after.used_at, Some(accepted_source - 15));
+    assert_eq!(after.used_received_at, Some(accepted_received));
+    assert_eq!(after.reset_received_at, Some(accepted_received));
+    assert_weekly_status_evidence(
+        &status(&store, &started.monitor_id, accepted_received),
+        &after,
+        accepted_received,
+    );
 }

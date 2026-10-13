@@ -1466,6 +1466,7 @@ fn projection_windows(
                     metric_group_time(
                         account,
                         index,
+                        &window.label,
                         Some(value),
                         window.reset_at_epoch,
                         received_at_epoch,
@@ -1473,8 +1474,15 @@ fn projection_windows(
                     .unwrap_or(fallback_evidence_at)
                 });
                 let reset_at = window.reset_at_epoch.and_then(|reset| {
-                    metric_group_time(account, index, raw_used, Some(reset), received_at_epoch)
-                        .unwrap_or(fallback_evidence_at)
+                    metric_group_time(
+                        account,
+                        index,
+                        &window.label,
+                        raw_used,
+                        Some(reset),
+                        received_at_epoch,
+                    )
+                    .unwrap_or(fallback_evidence_at)
                 });
                 (used.is_some() || window.reset_at_epoch.is_some())
                     .then_some((window, used, used_at, reset_at))
@@ -1550,10 +1558,12 @@ fn projection_windows(
     windows
 }
 
-/// `Some(None)` means a typed group identifies this field but is stale.
+/// `Some(None)` means typed window groups do not identify exactly one fresh
+/// unscoped group for this window label, period, and reset.
 fn metric_group_time(
     account: &UsageAccountV1,
     window_index: usize,
+    window_label: &str,
     used_raw_percent: Option<i32>,
     reset_at_epoch: Option<i64>,
     now_epoch: i64,
@@ -1582,10 +1592,6 @@ fn metric_group_time(
         .metric_groups
         .iter()
         .filter(|group| group.kind == UsageMetricGroupKindV1::Window)
-        .filter(|group| match &group.value {
-            UsageMetricValueV1::Window { period, .. } => period_matches(*period),
-            _ => false,
-        })
         .collect::<Vec<_>>();
     if window_groups.is_empty() {
         return None;
@@ -1593,49 +1599,53 @@ fn metric_group_time(
     let groups = window_groups
         .into_iter()
         .filter(|group| {
+            if group.label != window_label
+                || group.scope.service.is_some()
+                || group.scope.model.is_some()
+                || group.scope.pool.is_some()
+                || group.scope.key_id.is_some()
+            {
+                return false;
+            }
             let UsageMetricValueV1::Window {
                 used_raw_percent: group_used,
                 remaining_raw_percent: group_remaining,
+                period,
                 ..
             } = &group.value
             else {
                 return false;
             };
+            if !period_matches(*period) {
+                return false;
+            }
             let group_used = (*group_used)
                 .or_else(|| group_remaining.map(|remaining| 100i32.saturating_sub(remaining)));
+            // A missing used sample still matches any group used. A missing
+            // group reset does not: the reset must equal the sample.
             (used_raw_percent.is_none() || group_used == used_raw_percent)
-                && (reset_at_epoch.is_none() || group.reset_at_epoch == reset_at_epoch)
+                && group.reset_at_epoch == reset_at_epoch
         })
         .collect::<Vec<_>>();
-    if groups.is_empty() {
-        // Typed provider evidence for this quota category is authoritative.
-        // A different metric group cannot lend it a fresh timestamp.
+    if groups.len() != 1 {
+        // Typed provider evidence is authoritative for each window label.
+        // A same-valued sibling or ambiguous duplicate must not lend it a
+        // fresh timestamp.
         return Some(None);
     }
-    let current = groups
-        .iter()
-        .filter(|group| !group.is_stale && group.phase == UsageFreshnessPhaseV1::Current)
-        .filter(|group| {
-            group
-                .observed_at_epoch
-                .or(group.last_success_at_epoch)
-                .unwrap_or(group.fetched_at_epoch)
-                <= now_epoch.saturating_add(MAX_FUTURE_SKEW_SECS)
-        })
-        .max_by_key(|group| {
-            group
-                .observed_at_epoch
-                .or(group.last_success_at_epoch)
-                .unwrap_or(group.fetched_at_epoch)
-        });
-    current.map_or(Some(None), |group| {
-        Some(Some(
-            group
-                .observed_at_epoch
-                .or(group.last_success_at_epoch)
-                .unwrap_or(group.fetched_at_epoch),
-        ))
-    })
+    let group = groups[0];
+    if group.is_stale || group.phase != UsageFreshnessPhaseV1::Current {
+        return Some(None);
+    }
+    let time = group
+        .observed_at_epoch
+        .or(group.last_success_at_epoch)
+        .unwrap_or(group.fetched_at_epoch);
+    if time <= now_epoch.saturating_add(MAX_FUTURE_SKEW_SECS) {
+        Some(Some(time))
+    } else {
+        Some(None)
+    }
 }
 
 fn update_broker_windows(
