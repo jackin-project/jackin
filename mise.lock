@@ -477,6 +477,51 @@ checksum = "sha256:fabbed3a44e72c601759fa81d56f3c9403ca466853bdf77e87cc69d986cb1
 url = "https://github.com/jdx/hk/releases/download/v2.5.0/hk-aarch64-apple-darwin.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/hk/.github/workflows/release.yml"
 
+[[tools.hyperfine]]
+version = "1.20.0"
+backend = "aqua:sharkdp/hyperfine"
+specifiers = ["1.20.0"]
+
+[tools.hyperfine."platforms.linux-arm64"]
+checksum = "sha256:90875cb1db7a1d797c311174d061728361e58fc70e3b62262a00635ac3b1997c"
+url = "https://github.com/sharkdp/hyperfine/releases/download/v1.20.0/hyperfine-v1.20.0-aarch64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/sharkdp/hyperfine/releases/assets/317832112"
+
+[tools.hyperfine."platforms.linux-x64"]
+checksum = "sha256:63ad53934062118f5b0be11785e0bb1603d4b91667d1921f2fd8df9a8712040a"
+url = "https://github.com/sharkdp/hyperfine/releases/download/v1.20.0/hyperfine-v1.20.0-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/sharkdp/hyperfine/releases/assets/317831911"
+
+[tools.hyperfine."platforms.linux-x64-baseline"]
+checksum = "sha256:63ad53934062118f5b0be11785e0bb1603d4b91667d1921f2fd8df9a8712040a"
+url = "https://github.com/sharkdp/hyperfine/releases/download/v1.20.0/hyperfine-v1.20.0-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/sharkdp/hyperfine/releases/assets/317831911"
+
+[tools.hyperfine."platforms.linux-x64-musl"]
+checksum = "sha256:3285ec7959285288137043dd81dce0dde056227018a8277532d9a364b4f03c2b"
+url = "https://github.com/sharkdp/hyperfine/releases/download/v1.20.0/hyperfine-v1.20.0-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/sharkdp/hyperfine/releases/assets/317832008"
+
+[tools.hyperfine."platforms.linux-x64-musl-baseline"]
+checksum = "sha256:3285ec7959285288137043dd81dce0dde056227018a8277532d9a364b4f03c2b"
+url = "https://github.com/sharkdp/hyperfine/releases/download/v1.20.0/hyperfine-v1.20.0-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/sharkdp/hyperfine/releases/assets/317832008"
+
+[tools.hyperfine."platforms.macos-arm64"]
+checksum = "sha256:8ee7067016620447c9d2d6234ec9a4680f958b7ad983549b56334668f63075b5"
+url = "https://github.com/sharkdp/hyperfine/releases/download/v1.20.0/hyperfine-v1.20.0-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/sharkdp/hyperfine/releases/assets/317831785"
+
+[tools.hyperfine."platforms.macos-x64"]
+checksum = "sha256:f58d0b90993fadfa122a351428c469ce24afef3865f027f0e6e86f0830d088f1"
+url = "https://github.com/sharkdp/hyperfine/releases/download/v1.20.0/hyperfine-v1.20.0-x86_64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/sharkdp/hyperfine/releases/assets/317832526"
+
+[tools.hyperfine."platforms.macos-x64-baseline"]
+checksum = "sha256:f58d0b90993fadfa122a351428c469ce24afef3865f027f0e6e86f0830d088f1"
+url = "https://github.com/sharkdp/hyperfine/releases/download/v1.20.0/hyperfine-v1.20.0-x86_64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/sharkdp/hyperfine/releases/assets/317832526"
+
 [[tools.mr-boxington]]
 version = "1.23.0"
 backend = "packslip:github.com/jdx/mr-boxington"
@@ -945,6 +990,7 @@ url = "https://ziglang.org/download/0.17.0/zig-aarch64-linux-0.17.0.tar.xz"
 [tools.zig."platforms.linux-x64"]
 checksum = "sha256:1cbe9df9f27e6b78d14ccbca43b6703a404ef79ef1c463de901d7f088d4e2026"
 url = "https://ziglang.org/download/0.17.0/zig-x86_64-linux-0.17.0.tar.xz"
+provenance = "minisign"
 
 [tools.zig."platforms.linux-x64-baseline"]
 checksum = "sha256:1cbe9df9f27e6b78d14ccbca43b6703a404ef79ef1c463de901d7f088d4e2026"
@@ -961,6 +1007,7 @@ url = "https://ziglang.org/download/0.17.0/zig-x86_64-linux-0.17.0.tar.xz"
 [tools.zig."platforms.macos-arm64"]
 checksum = "sha256:b607e9b9234790a008116ae5bdb71c6243b84b9fb42a53a9e70fde41c06c536a"
 url = "https://ziglang.org/download/0.17.0/zig-aarch64-macos-0.17.0.tar.xz"
+provenance = "minisign"
 
 [tools.zig."platforms.macos-x64"]
 checksum = "sha256:4f9a1c5269aa17ebda5e6d3c2b89d6cbf36f7d2b22a0306e9ab98f25f95529c6"
