@@ -22,6 +22,22 @@ fn open_store() -> (tempfile::TempDir, MonitorStore) {
     (directory, store)
 }
 
+fn persisted_state_path(directory: &tempfile::TempDir) -> std::path::PathBuf {
+    directory
+        .path()
+        .join(crate::BROKER_DIR)
+        .join("monitor")
+        .join("state.json")
+}
+
+fn overwrite_persisted_state(directory: &tempfile::TempDir, snapshot: &serde_json::Value) {
+    std::fs::write(
+        persisted_state_path(directory),
+        serde_json::to_vec(snapshot).expect("serialize migration fixture"),
+    )
+    .expect("write migration fixture");
+}
+
 fn assert_invalid_state(state: &StoreState) {
     drop(validate_store_state(state).expect_err("corrupted monitor store must be rejected"));
 }
@@ -1646,4 +1662,137 @@ fn migrated_zero_budget_requires_explicit_repair_and_does_not_create_a_baseline(
         .unwrap()
         .budget = operator_zero_budget;
     assert_invalid_state(&zero_operator_policy);
+}
+
+#[test]
+fn v2_store_migrates_explicitly_to_current_schema() {
+    let (directory, store) = open_store();
+    start_result(
+        &store,
+        observe_config("session-v2-migration"),
+        "v2-migration-event",
+        NOW,
+    )
+    .expect("start monitor with a persisted event");
+    let mut snapshot = serde_json::to_value(store.lock().clone()).expect("serialize V2 fixture");
+    snapshot["schema_version"] = serde_json::json!(2);
+    for monitor in snapshot["monitors"]
+        .as_object_mut()
+        .expect("persisted monitors")
+        .values_mut()
+    {
+        for event in monitor["events"].as_array_mut().expect("monitor events") {
+            event["status"]["schema_version"] = serde_json::json!(2);
+        }
+    }
+    drop(store);
+    overwrite_persisted_state(&directory, &snapshot);
+
+    let migrated = MonitorStore::open(directory.path()).expect("migrate V2 store");
+    assert_eq!(migrated.lock().schema_version, USAGE_MONITOR_SCHEMA_VERSION);
+    let persisted: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(persisted_state_path(&directory)).expect("read migrated state"),
+    )
+    .expect("parse migrated state");
+    assert_eq!(
+        persisted["schema_version"],
+        serde_json::json!(USAGE_MONITOR_SCHEMA_VERSION)
+    );
+    assert!(
+        persisted["monitors"]
+            .as_object()
+            .expect("persisted monitors")
+            .values()
+            .flat_map(|monitor| monitor["events"].as_array().expect("monitor events"))
+            .all(|event| event["status"]["schema_version"]
+                == serde_json::json!(USAGE_MONITOR_SCHEMA_VERSION))
+    );
+}
+
+#[test]
+fn v2_store_rejects_wrong_nested_event_schema_without_rewriting_source() {
+    let (directory, store) = open_store();
+    start_result(
+        &store,
+        observe_config("session-v2-wrong-event-schema"),
+        "v2-wrong-event-schema",
+        NOW,
+    )
+    .expect("start monitor with a persisted event");
+    let mut snapshot = serde_json::to_value(store.lock().clone()).expect("serialize V2 fixture");
+    snapshot["schema_version"] = serde_json::json!(2);
+    let monitor = snapshot["monitors"]
+        .as_object_mut()
+        .expect("persisted monitors")
+        .values_mut()
+        .next()
+        .expect("persisted monitor");
+    monitor["events"][0]["status"]["schema_version"] =
+        serde_json::json!(USAGE_MONITOR_SCHEMA_VERSION);
+    let source_bytes = serde_json::to_vec(&snapshot).expect("serialize wrong-schema source");
+    drop(store);
+    std::fs::write(persisted_state_path(&directory), &source_bytes)
+        .expect("write wrong-schema source");
+
+    let error = MonitorStore::open(directory.path())
+        .expect_err("wrong nested event schema must be rejected");
+    assert_eq!(error.code, MonitorIssueCode::MonitorStoreUnavailable);
+    assert_eq!(
+        std::fs::read(persisted_state_path(&directory)).expect("read rejected source"),
+        source_bytes,
+        "a rejected migration must not rewrite its source"
+    );
+}
+
+#[test]
+fn v3_migration_rejects_wrong_or_future_nested_event_schema_without_rewriting_source() {
+    for nested_version in [USAGE_MONITOR_SCHEMA_VERSION, u16::MAX] {
+        let (directory, store) = open_store();
+        start_result(
+            &store,
+            observe_config("session-v3-wrong-event-schema"),
+            "v3-wrong-event-schema",
+            NOW,
+        )
+        .expect("start monitor with a persisted event");
+        let mut snapshot =
+            serde_json::to_value(store.lock().clone()).expect("serialize V3 fixture");
+        snapshot["schema_version"] = serde_json::json!(3);
+        let monitor = snapshot["monitors"]
+            .as_object_mut()
+            .expect("persisted monitors")
+            .values_mut()
+            .next()
+            .expect("persisted monitor");
+        for event in monitor["events"].as_array_mut().expect("monitor events") {
+            event["status"]["schema_version"] = serde_json::json!(3);
+        }
+        monitor["events"][0]["status"]["schema_version"] = serde_json::json!(nested_version);
+        let source_bytes = serde_json::to_vec(&snapshot).expect("serialize wrong-schema source");
+        drop(store);
+        std::fs::write(persisted_state_path(&directory), &source_bytes)
+            .expect("write wrong-schema source");
+
+        let error = MonitorStore::open(directory.path())
+            .expect_err("wrong nested event schema must be rejected");
+        assert_eq!(error.code, MonitorIssueCode::MonitorStoreUnavailable);
+        assert_eq!(
+            std::fs::read(persisted_state_path(&directory)).expect("read rejected source"),
+            source_bytes,
+            "a rejected migration must not rewrite its source"
+        );
+    }
+}
+
+#[test]
+fn future_store_schema_is_rejected() {
+    let (directory, store) = open_store();
+    let mut future = store.lock().clone();
+    future.schema_version = USAGE_MONITOR_SCHEMA_VERSION + 1;
+    storage::save(&store.inner.directory, &future).expect("write future-version fixture");
+    drop(store);
+
+    let error =
+        MonitorStore::open(directory.path()).expect_err("future monitor schema must be rejected");
+    assert_eq!(error.code, MonitorIssueCode::MonitorStoreUnavailable);
 }

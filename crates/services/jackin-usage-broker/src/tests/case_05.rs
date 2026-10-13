@@ -506,3 +506,62 @@ fn stale_lease_does_not_reclaim_a_regular_file_at_the_socket_path() {
     assert_eq!(error.kind, UsageCoordinationErrorKind::BrokerConflict);
     assert_eq!(fs::read(&socket_path).unwrap(), b"foreign file");
 }
+
+#[test]
+fn live_lease_owner_blocks_expired_takeover_and_can_renew_after_waking() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("lease");
+    let duration = Duration::from_secs(30);
+    let mut owner = claim_leader(&path, "build", duration)
+        .unwrap()
+        .expect("first claimant owns the lifetime lock");
+    let expired_by = i64::try_from(duration.as_secs()).unwrap() + 1;
+    owner.lease.renewed_at_epoch -= expired_by;
+    write_lease(&mut owner.file, &owner.lease).unwrap();
+    let woke_at = owner.lease.renewed_at_epoch + expired_by;
+
+    assert!(
+        claim_leader(&path, "build", duration).unwrap().is_none(),
+        "expired wall time cannot replace a live owner's locked lease"
+    );
+    assert!(leader::renew_lease_at(&mut owner, woke_at));
+    let renewed = read_lease(&mut owner.file).unwrap();
+    assert_eq!(renewed.instance_id, owner.lease.instance_id);
+    assert_eq!(renewed.renewed_at_epoch, woke_at);
+
+    owner.lease.renewed_at_epoch -= expired_by;
+    write_lease(&mut owner.file, &owner.lease).unwrap();
+    assert!(
+        claim_leader(&path, "build", duration).unwrap().is_none(),
+        "the lifetime lock continues to protect an owner past the next expiry"
+    );
+}
+
+#[test]
+fn expired_lease_is_reclaimed_after_dead_owner_releases_lifetime_lock() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("lease");
+    let duration = Duration::from_secs(30);
+    let mut owner = claim_leader(&path, "build", duration)
+        .unwrap()
+        .expect("first claimant owns the lifetime lock");
+    let original_instance = owner.lease.instance_id.clone();
+    owner.lease.renewed_at_epoch -= i64::try_from(duration.as_secs()).unwrap() + 1;
+    write_lease(&mut owner.file, &owner.lease).unwrap();
+
+    assert!(
+        claim_leader(&path, "build", duration).unwrap().is_none(),
+        "a live owner's lock wins over its expired payload"
+    );
+    drop(owner);
+
+    assert!(
+        claim_leader(&path, "other-build", duration).unwrap().is_none(),
+        "an incompatible build cannot reclaim the expired payload"
+    );
+    let replacement = claim_leader(&path, "build", duration)
+        .unwrap()
+        .expect("dead owner's expired lease can be reclaimed");
+    assert_ne!(replacement.lease.instance_id, original_instance);
+    assert!(replacement.stale_lease_reclaimed);
+}

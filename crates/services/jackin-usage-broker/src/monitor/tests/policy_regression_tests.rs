@@ -8,8 +8,9 @@ use std::time::{Duration, Instant};
 use jackin_protocol::control::Money;
 use jackin_protocol::usage_monitor::{
     MonitorAccountBinding, MonitorAccountBindingInput, MonitorAction, MonitorConfig,
-    MonitorIssueCode, MonitorOperation, MonitorPolicy, MonitorPolicyApprovalInput,
-    MonitorPolicyOrigin, MonitorPolicyRecord, MonitorProvider, MonitorPurpose, MonitorReply,
+    MonitorEvidenceFreshness, MonitorIssueCode, MonitorLifecycle, MonitorModelGuardValidity,
+    MonitorOperation, MonitorPolicy, MonitorPolicyApprovalInput, MonitorPolicyOrigin,
+    MonitorPolicyRecord, MonitorProvider, MonitorPurpose, MonitorReply, MonitorResetValidity,
     MonitorScope, MonitorStatus, SpendRecordInput, SpendRecordSource, StatuslineObservation,
     StatuslineQuotaWindow, StatuslineRateLimits,
 };
@@ -1237,4 +1238,125 @@ fn persisted_policy_history_cannot_move_between_accounts() {
 
     let error = super::validate_store_state(&state).expect_err("account move must fail");
     assert_eq!(error.code, MonitorIssueCode::MonitorStoreUnavailable);
+}
+
+fn decision_actions(status: &MonitorStatus) -> &[MonitorAction] {
+    &status
+        .latest_decision
+        .as_ref()
+        .expect("monitor has a decision")
+        .actions
+}
+
+#[test]
+fn fresh_quota_callbacks_do_not_refresh_same_or_omitted_model_evidence() {
+    for model_on_refresh in [Some("claude-sonnet"), None] {
+        let directory = tempfile::tempdir().expect("temporary monitor directory");
+        let store = MonitorStore::open(directory.path()).expect("open monitor store");
+        let session_id = "session-model-field-ttl";
+        let first_reset = NOW + 100;
+        ingest(
+            &store,
+            ACCOUNT,
+            observation(session_id, Some(1_000), Some(first_reset), Some("claude-sonnet")),
+            NOW,
+        );
+        record_spend(&store, spend_input(ACCOUNT, NOW), NOW);
+        let started =
+            start_monitor_with_expected_model(&store, "goal-model-field-ttl", "claude-sonnet", NOW);
+        assert!(started.runnable);
+        assert_eq!(started.lifecycle, MonitorLifecycle::Waiting);
+        assert_eq!(
+            started.model_guard_validity,
+            MonitorModelGuardValidity::Match
+        );
+        assert!(
+            decision_actions(&started)
+                .iter()
+                .any(|action| matches!(action, MonitorAction::Wait { .. }))
+        );
+
+        let reset_deadline = first_reset + super::MONITOR_RESET_GRACE_SECS;
+        store
+            .tick(reset_deadline)
+            .expect("tick through reset grace with current model evidence");
+        let due = status(&store, &started.monitor_id, reset_deadline);
+        assert_eq!(due.five_hour.reset_validity, MonitorResetValidity::Due);
+        assert_eq!(due.model_guard_validity, MonitorModelGuardValidity::Match);
+        assert!(
+            due.issues
+                .iter()
+                .any(|issue| { issue.code == MonitorIssueCode::ResetDueUnverified })
+        );
+        assert!(!due.runnable);
+
+        let refresh_at = NOW + super::MONITOR_EVIDENCE_TTL_SECS + 1;
+        let advanced_reset = NOW + 7_200;
+        ingest(
+            &store,
+            ACCOUNT,
+            observation(session_id, Some(1_100), Some(advanced_reset), model_on_refresh),
+            refresh_at,
+        );
+        let refreshed = status(&store, &started.monitor_id, refresh_at);
+
+        for window in [&refreshed.five_hour, &refreshed.seven_day] {
+            assert_eq!(
+                window.used_evidence.as_ref().unwrap().freshness,
+                MonitorEvidenceFreshness::Current
+            );
+            assert_eq!(
+                window.reset_evidence.as_ref().unwrap().freshness,
+                MonitorEvidenceFreshness::Current
+            );
+            assert_eq!(window.reset_validity, MonitorResetValidity::Future);
+        }
+        let model_evidence = refreshed
+            .model_evidence
+            .as_ref()
+            .expect("old model evidence remains visible");
+        assert_eq!(model_evidence.evidence_received_at_epoch, NOW);
+        assert_eq!(
+            model_evidence.age_seconds,
+            u64::try_from(super::MONITOR_EVIDENCE_TTL_SECS).expect("ttl fits") + 1
+        );
+        assert_eq!(model_evidence.freshness, MonitorEvidenceFreshness::Stale);
+        assert_eq!(refreshed.model.as_deref(), Some("claude-sonnet"));
+        assert_eq!(
+            refreshed.model_guard_validity,
+            MonitorModelGuardValidity::Unknown
+        );
+        assert!(
+            refreshed
+                .issues
+                .iter()
+                .any(|issue| issue.code == MonitorIssueCode::ModelUnknown)
+        );
+        assert!(
+            !refreshed
+                .issues
+                .iter()
+                .any(|issue| issue.code == MonitorIssueCode::ModelMismatch)
+        );
+        assert_eq!(refreshed.lifecycle, MonitorLifecycle::Paused);
+        assert!(decision_actions(&refreshed).iter().any(|action| matches!(
+            action,
+            MonitorAction::Pause {
+                reason: MonitorIssueCode::ModelUnknown
+            }
+        )));
+        assert!(decision_actions(&refreshed).iter().any(|action| matches!(
+            action,
+            MonitorAction::Pause {
+                reason: MonitorIssueCode::ResetDueUnverified
+            }
+        )));
+        assert!(
+            !decision_actions(&refreshed)
+                .iter()
+                .any(|action| matches!(action, MonitorAction::Wait { .. })),
+            "the reset-grace barrier remains latched because usage did not fall"
+        );
+        assert!(!refreshed.runnable);
+    }
 }
