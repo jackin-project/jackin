@@ -331,8 +331,7 @@ impl<'a> NamespaceScanner<'a> {
             syn::Expr::Lit(literal) => match &literal.lit {
                 syn::Lit::Str(value) => AttrKeySource::Literal(value.value()),
                 syn::Lit::ByteStr(value) => String::from_utf8(value.value())
-                    .map(AttrKeySource::Literal)
-                    .unwrap_or(AttrKeySource::Unknown),
+                    .map_or(AttrKeySource::Unknown, AttrKeySource::Literal),
                 _ => AttrKeySource::Unknown,
             },
             syn::Expr::Path(path) => {
@@ -420,12 +419,12 @@ impl<'a> NamespaceScanner<'a> {
                         syn::LitStr,
                         syn::Token![,],
                     >::parse_terminated;
-                    return parser
-                        .parse2(invocation.mac.tokens.clone())
-                        .map(|parts| {
+                    return parser.parse2(invocation.mac.tokens.clone()).map_or(
+                        AttrKeySource::Unknown,
+                        |parts| {
                             AttrKeySource::Literal(parts.iter().map(syn::LitStr::value).collect())
-                        })
-                        .unwrap_or(AttrKeySource::Unknown);
+                        },
+                    );
                 }
                 if invocation.mac.path.is_ident("stringify") {
                     return AttrKeySource::Literal(

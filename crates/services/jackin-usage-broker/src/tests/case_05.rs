@@ -548,7 +548,7 @@ fn stale_lease_does_not_reclaim_a_live_foreign_socket() {
     let error = service::prepare_socket_for_startup(&config, &cleanup).unwrap_err();
     assert_eq!(error.kind, UsageCoordinationErrorKind::BrokerConflict);
     assert!(socket_path.exists());
-    assert!(UnixStream::connect(&socket_path).is_ok());
+    UnixStream::connect(&socket_path).unwrap();
     drop(listener);
 }
 

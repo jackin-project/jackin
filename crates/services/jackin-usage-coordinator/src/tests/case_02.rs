@@ -118,9 +118,10 @@ impl AccountStateStore for PanicAfterDurableStore {
         now_epoch: i64,
     ) -> Result<(), StateStoreError> {
         self.inner.store(envelope, now_epoch)?;
-        if self.panic_after_store.swap(0, Ordering::SeqCst) > 0 {
-            panic!("injected crash after durable catalog marker");
-        }
+        assert!(
+            self.panic_after_store.swap(0, Ordering::SeqCst) <= 0,
+            "injected crash after durable catalog marker"
+        );
         Ok(())
     }
 
@@ -2093,7 +2094,8 @@ fn claude_rate_limit_circuit_ignores_non_rate_limited_latest_kind() {
     assert_eq!(durable.consecutive_failures, 3);
     assert_eq!(durable.completed_at_epoch, Some(1_800));
     assert_eq!(
-        durable.retry_deadline_epoch, Some(2_100),
+        durable.retry_deadline_epoch,
+        Some(2_100),
         "a non-rate-limited latest kind must keep the normal deadline"
     );
     assert_eq!(durable.rate_limit_deadline_epoch, None);
@@ -2162,7 +2164,8 @@ fn claude_rate_limit_circuit_ignores_non_claude_surface() {
     assert_eq!(durable.consecutive_failures, 3);
     assert_eq!(durable.completed_at_epoch, Some(1_400));
     assert_eq!(
-        durable.retry_deadline_epoch, Some(1_600),
+        durable.retry_deadline_epoch,
+        Some(1_600),
         "a non-Claude surface must keep the provider deadline"
     );
     assert_eq!(durable.rate_limit_deadline_epoch, Some(1_600));
@@ -2228,7 +2231,8 @@ fn claude_rate_limit_circuit_keeps_longer_provider_deadline() {
     assert_eq!(durable.consecutive_failures, 3);
     assert_eq!(durable.completed_at_epoch, Some(1_700));
     assert_eq!(
-        durable.retry_deadline_epoch, Some(9_000),
+        durable.retry_deadline_epoch,
+        Some(9_000),
         "a longer provider deadline stays authoritative over the one-hour floor"
     );
     assert_eq!(durable.rate_limit_deadline_epoch, Some(9_000));

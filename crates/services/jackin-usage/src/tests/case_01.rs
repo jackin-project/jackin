@@ -129,7 +129,7 @@ fn contract_baseline_provider_calls_detect_injected_route() {
     fs::create_dir_all(&source_dir).expect("fixture source directory must exist");
     fs::write(
         source_dir.join("lib.rs"),
-        r#"use super::{unused_import_route};
+        r"use super::{unused_import_route};
 fn unused_definition() {}
 pub fn another_unused_definition() {}
 fn bypass() {
@@ -139,7 +139,7 @@ fn bypass() {
     not_unused_import_route();
     unused_import_route_suffix();
 }
-"#,
+",
     )
     .expect("fixture source must be writable");
     let symbols = [

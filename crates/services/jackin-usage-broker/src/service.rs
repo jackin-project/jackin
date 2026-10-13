@@ -337,7 +337,7 @@ pub(crate) fn prepare_socket_for_startup(
     {
         return Err(broker_conflict());
     }
-    crate::leader::unlink_owned_path(&socket_path).map_err(|_| broker_conflict())
+    crate::leader::unlink_owned_path(&socket_path).map_err(|()| broker_conflict())
 }
 
 pub(crate) fn run_usage_broker_service_with_executor_and_metadata(
@@ -363,6 +363,10 @@ pub(crate) fn run_usage_broker_service_with_executor_and_metadata(
     )
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "startup keeps the catalog, monitor store, cleanup, and readiness callback as separate inputs"
+)]
 fn run_usage_broker_service_with_cleanup(
     config: UsageBrokerConfig,
     executor: Arc<dyn UsageProviderExecutor>,
@@ -383,7 +387,7 @@ fn run_usage_broker_service_with_cleanup(
     validate_owned_mode(&socket_path, 0o600)?;
     cleanup
         .record_socket_identity()
-        .map_err(|_| unavailable())?;
+        .map_err(|()| unavailable())?;
     let store = Arc::new(FileAccountStateStore::under_data_dir(&config.data_dir));
     let LoadedProjection {
         projection,
@@ -475,7 +479,7 @@ pub fn ensure_usage_broker_with_executor(
     validate_owned_mode(&socket_path, 0o600)?;
     cleanup
         .record_socket_identity()
-        .map_err(|_| unavailable())?;
+        .map_err(|()| unavailable())?;
     let store = Arc::new(FileAccountStateStore::under_data_dir(&config.data_dir));
     let LoadedProjection {
         projection,

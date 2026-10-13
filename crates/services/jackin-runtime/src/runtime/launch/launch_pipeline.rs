@@ -772,6 +772,10 @@ fn breadcrumb_auth_mode(
               propagation idiom; bundling into a config struct is the deferred- \
               parallel-pass."
 )]
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "load_role_with stays one phase sequence until the deferred helper split"
+)]
 pub(crate) async fn load_role_with(
     paths: &JackinPaths,
     config: &mut AppConfig,
@@ -1764,7 +1768,7 @@ fn explicit_restore_has_non_model_override(opts: &super::LoadOptions) -> bool {
 }
 
 /// Same attach checks as [`validate_explicit_restore_options`], except model
-/// and effort are allowed. Called only after the named container is NotFound.
+/// and effort are allowed. Called only after the named container is `NotFound`.
 fn validate_absent_rebuild_restore_options(
     paths: &JackinPaths,
     opts: &super::LoadOptions,

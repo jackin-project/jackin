@@ -126,7 +126,7 @@ fn explicit_auth_holds_foreground_service_and_reports_only_safe_readiness() {
         move |ready| *ready_capture.lock().unwrap() = Some(service_ready_json(&ready)),
     );
 
-    assert!(result.is_ok());
+    result.unwrap();
     let json = ready.lock().unwrap().clone().unwrap();
     assert!(!json.contains("Claude custom"));
     assert!(!json.contains("secret"));

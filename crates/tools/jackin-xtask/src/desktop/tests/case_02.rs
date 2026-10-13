@@ -88,8 +88,8 @@ fn cadence_tasks_define_the_canonical_graph() {
         &[
             "mbx +1.99.0 xtask desktop bindings-check",
             "xcodegen generate",
-            "format-check",
-            "lint",
+            "xcrun swift-format lint",
+            "swiftlint lint --strict",
             "mbx +1.99.0 xtask desktop test",
             "mbx +1.99.0 xtask desktop build",
             "desktop test-swift",
@@ -113,6 +113,10 @@ fn cadence_tasks_define_the_canonical_graph() {
     );
 }
 
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the test captures mise shim stderr and is not a render or runtime thread"
+)]
 #[test]
 fn mise_native_rust_option_routes_cargo_through_mbx() {
     let mise = repo_text("mise.toml");
@@ -137,7 +141,15 @@ fn mise_native_rust_option_routes_cargo_through_mbx() {
         !mise.contains("[wrappers.cargo]"),
         "legacy Cargo wrapper removed"
     );
-    assert!(!mise.contains("[tasks."), "root task aliases removed");
+    assert!(
+        mise.contains("[tasks.renovate-upstream-sources]"),
+        "the upstream asset check stays a root mise task"
+    );
+    assert_eq!(
+        mise.matches("[tasks.").count(),
+        1,
+        "root task aliases removed"
+    );
 
     let native_mise = repo_text("native/mise.toml");
     let desktop_ci = task_block(&native_mise, "ci");

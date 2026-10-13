@@ -89,9 +89,8 @@ fn probe_foreground_claude(
             || foreground_source_is_authorized(&lease, &monitor_store, &capability);
         let admission = probe_liveness.clone();
         let admit_operation = move || admission.admit_operation();
-        let commit_if_current = move |operation: &mut dyn FnMut() -> bool| {
-            probe_liveness.commit_if_current(operation)
-        };
+        let commit_if_current =
+            move |operation: &mut dyn FnMut() -> bool| probe_liveness.commit_if_current(operation);
         match experimental_claude_usage_snapshot_for_lease(
             "claude",
             Some("Claude"),

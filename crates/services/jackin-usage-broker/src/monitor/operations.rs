@@ -1,7 +1,28 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
+use super::{
+    BTreeMap, BTreeSet, Condvar, DurableMonitor, MAX_ACCOUNTS, MAX_BINDINGS,
+    MAX_IDEMPOTENCY_KEY_LENGTH, MAX_MONITORS, MAX_OPERATOR_LABEL_LENGTH, MAX_POLICY_REVISIONS,
+    MAX_SESSIONS_PER_ACCOUNT, MAX_UNBOUND_SESSIONS, MIGRATED_IDEMPOTENCY_KEY_PREFIX,
+    MONITOR_WATCH_TIMEOUT_CAP_MS, MonitorAccountBinding, MonitorAccountBindingInput,
+    MonitorAuthState, MonitorConfig, MonitorDoctorReport, MonitorIssue, MonitorIssueCode,
+    MonitorOperation, MonitorPolicy, MonitorPolicyApprovalInput, MonitorPolicyOrigin,
+    MonitorPolicyRecord, MonitorPurpose, MonitorReply, MonitorScope, MonitorServiceStatus,
+    MonitorStore, MonitorStoreInner, Mutex, SpendRecordInput, StartAuthority,
+    StatuslineObservation, StoreState, UsageAccountV1, UsageIdentityKindV1, UsageProjectionV1,
+    active_monitor_count, append_event, apply_statusline, apply_unbound_statusline,
+    binding_mismatch, binding_required, budget_is_same_or_tighter, current_binding, current_policy,
+    effective_now, invalid_operator_label, invalidate_local_source_projection,
+    is_migrated_zero_sgd_budget_repair, issue, monitor_not_found, next_wake_for,
+    observe_projection_account, operator_confirmation_required, policy_conflict,
+    prepare_start_authority, prune_inactive_sessions, prune_inactive_unbound_sessions,
+    reconcile_all_monitors, record_account_spend, refresh_all_goal_spend, resolve_scope_binding,
+    spend, spend_input_matches_record, status_for, storage, store_unavailable, valid_bounded_text,
+    valid_source_capability_id, validate_collection_binding, validate_config, validate_goal_id,
+    validate_identifier, validate_observation, validate_policy_input, validate_store_state,
+    watch_snapshot,
+};
 use std::path::Path;
 use std::sync::MutexGuard;
 #[cfg(test)]
@@ -94,6 +115,10 @@ impl MonitorStore {
     }
 
     /// Apply one canonical provider projection without performing a refresh.
+    #[expect(
+        clippy::excessive_nesting,
+        reason = "projection observation walks provider, account, and destination before one commit"
+    )]
     pub(crate) fn observe_projection(
         &self,
         projection: &UsageProjectionV1,

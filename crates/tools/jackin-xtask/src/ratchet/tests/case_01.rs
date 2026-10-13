@@ -293,7 +293,7 @@ fn only_checks_selected_ratchet_family() {
 #[test]
 fn function_complexity_reports_per_crate_max_and_ignores_tests() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let src = dir.path().join("crates/example/src");
+    let src = dir.path().join("crates/group/example/src");
     fs::create_dir_all(&src).expect("mkdir");
     fs::write(
         src.join("lib.rs"),

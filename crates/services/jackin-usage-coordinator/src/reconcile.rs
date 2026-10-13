@@ -187,6 +187,10 @@ impl UsageCoordinator {
     /// revision. Broker processes use this stronger boundary so executor
     /// discovery can reject a caller/service catalog mismatch before state is
     /// changed.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "catalog rotation keeps validation, fencing, and state replacement in one transaction"
+    )]
     pub fn reconcile_catalog_transaction_with_revision(
         &self,
         catalog_revision: Option<&str>,

@@ -115,6 +115,10 @@ impl TelemetryImports {
             .insert(source.to_owned());
     }
 
+    #[expect(
+        clippy::excessive_nesting,
+        reason = "the use-statement scan walks token groups until the terminating semicolon"
+    )]
     fn collect_macro_imports(&mut self, tokens: TokenStream) {
         let trees = tokens.into_iter().collect::<Vec<_>>();
         for (index, token) in trees.iter().enumerate() {
@@ -329,8 +333,8 @@ pub(super) struct WorkspaceSpawnTypes {
 impl WorkspaceSpawnTypes {
     pub(super) fn resolver(&self, path: &str) -> SpawnTypeResolver {
         SpawnTypeResolver {
-            aliases: self.aliases.clone(),
-            crate_names: self.crate_names.clone(),
+            aliases: Arc::clone(&self.aliases),
+            crate_names: Arc::clone(&self.crate_names),
             module: source_module(path).unwrap_or_default(),
         }
     }

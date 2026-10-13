@@ -124,7 +124,7 @@ async fn prune_paths_preserve_three_process_name_lock_ownership() {
             "container" => {
                 crate::runtime::cleanup::purge_container_state(&paths, NAME, &docker, &mut runner)
                     .await
-                    .unwrap()
+                    .unwrap();
             }
             "instances" => {
                 crate::runtime::cleanup::prune_instances(&paths, &docker, &mut runner)

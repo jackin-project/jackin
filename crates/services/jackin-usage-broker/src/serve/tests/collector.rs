@@ -643,7 +643,7 @@ fn ticker_collector_preserves_minimum_attempt_floor_and_retry_after() {
         2,
         "Retry-After remains the maximum dispatch deadline"
     );
-    tick(NOW + 1_200, Duration::from_secs(1_200), &mut ticker_state);
+    tick(NOW + 1_200, Duration::from_mins(20), &mut ticker_state);
     assert_eq!(executor.calls.load(Ordering::SeqCst), 3);
 }
 

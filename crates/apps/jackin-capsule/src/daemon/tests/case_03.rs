@@ -3,6 +3,10 @@
 
 use super::*;
 
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the test polls a nonblocking listener and is not a render or runtime thread"
+)]
 fn accept_fake_broker_client(
     listener: &std::os::unix::net::UnixListener,
     deadline: Instant,
@@ -199,6 +203,10 @@ fn begin_exec_picker_supersedes_pending_reply_and_dialog() {
     }
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "the capsule broker client contract is one sequence of socket and generation checks"
+)]
 #[test]
 fn broker_client_capsule_deduplicates_each_account_and_adopts_terminal_generation() {
     use std::collections::{BTreeMap, BTreeSet};

@@ -76,27 +76,6 @@ pub(crate) fn identity_kind_label(kind: UsageIdentityKindV1) -> &'static str {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn local_source_identity_label_does_not_claim_provider_identity() {
-        assert_eq!(
-            identity_kind_label(UsageIdentityKindV1::LocalSourceHandle),
-            "local source handle"
-        );
-    }
-
-    #[test]
-    fn unverified_identity_label_does_not_claim_provider_or_local_identity() {
-        assert_eq!(
-            identity_kind_label(UsageIdentityKindV1::UnverifiedHandle),
-            "unverified handle"
-        );
-    }
-}
-
 /// Past-age bucket shared by account and group freshness labels.
 pub(crate) fn past_age_label(age_secs: i64) -> String {
     if age_secs < 60 {
@@ -178,5 +157,26 @@ pub fn group_freshness_label(now_epoch: i64, group: &UsageMetricGroup) -> String
         format!("stale · {updated}")
     } else {
         updated
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn local_source_identity_label_does_not_claim_provider_identity() {
+        assert_eq!(
+            identity_kind_label(UsageIdentityKindV1::LocalSourceHandle),
+            "local source handle"
+        );
+    }
+
+    #[test]
+    fn unverified_identity_label_does_not_claim_provider_or_local_identity() {
+        assert_eq!(
+            identity_kind_label(UsageIdentityKindV1::UnverifiedHandle),
+            "unverified handle"
+        );
     }
 }

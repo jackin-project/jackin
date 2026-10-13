@@ -670,6 +670,8 @@ fn construct_reason(file: &str) -> Option<&'static str> {
         Some("construct image source changed")
     } else if file == "docker-bake.hcl" {
         Some("construct image bake graph changed")
+    } else if file == "mise.toml" {
+        Some("workspace tool pins changed")
     } else if file.starts_with("crates/tools/jackin-xtask/src/construct") {
         Some("construct build orchestration changed")
     } else {

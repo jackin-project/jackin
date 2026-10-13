@@ -53,30 +53,27 @@ pub(crate) fn load_projection(
             | jackin_usage_coordinator::StateStoreError::SchemaMigrationRequired { .. },
         ) => return Err(unavailable()),
     };
-    let (envelope, catalog, catalog_revision) = match loaded {
-        Some(mut envelope) => {
-            if envelope.schema_version == ProjectionStateEnvelope::MIGRATABLE_SCHEMA_VERSION {
-                migrate_legacy_projection(&mut envelope.projection).map_err(|_| unavailable())?;
-                envelope.schema_version = ProjectionStateEnvelope::SCHEMA_VERSION;
-            }
-            let catalog = Some(envelope.catalog.clone());
-            let revision = Some(envelope.catalog_revision.clone());
-            (envelope, catalog, revision)
+    let (envelope, catalog, catalog_revision) = if let Some(mut envelope) = loaded {
+        if envelope.schema_version == ProjectionStateEnvelope::MIGRATABLE_SCHEMA_VERSION {
+            migrate_legacy_projection(&mut envelope.projection).map_err(|_| unavailable())?;
+            envelope.schema_version = ProjectionStateEnvelope::SCHEMA_VERSION;
         }
-        None => {
-            let projection = empty_projection(&config.build_id);
-            let envelope = ProjectionStateEnvelope {
-                schema_version: ProjectionStateEnvelope::SCHEMA_VERSION,
-                catalog_revision: projection.discovery_revision.clone(),
-                catalog: Vec::new(),
-                broker_instance_id: projection.broker_instance_id.clone(),
-                projection,
-                aliases: Vec::new(),
-                retry_deadline_epoch: None,
-                success_deadline_epoch: None,
-            };
-            (envelope, None, None)
-        }
+        let catalog = Some(envelope.catalog.clone());
+        let revision = Some(envelope.catalog_revision.clone());
+        (envelope, catalog, revision)
+    } else {
+        let projection = empty_projection(&config.build_id);
+        let envelope = ProjectionStateEnvelope {
+            schema_version: ProjectionStateEnvelope::SCHEMA_VERSION,
+            catalog_revision: projection.discovery_revision.clone(),
+            catalog: Vec::new(),
+            broker_instance_id: projection.broker_instance_id.clone(),
+            projection,
+            aliases: Vec::new(),
+            retry_deadline_epoch: None,
+            success_deadline_epoch: None,
+        };
+        (envelope, None, None)
     };
     store.store(&envelope).map_err(|_| unavailable())?;
     let projection = envelope.projection.clone();

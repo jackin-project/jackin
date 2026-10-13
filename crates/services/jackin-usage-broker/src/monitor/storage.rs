@@ -539,7 +539,7 @@ mod tests {
             serde_json::json!(-1);
         let malformed = serde_json::to_vec(&malformed).expect("serialize malformed fixture");
         let (bad_directory, bad_path) = write_snapshot(&bad_data_dir, &malformed);
-        assert!(load(&bad_directory).is_err());
+        load(&bad_directory).unwrap_err();
         assert_eq!(
             std::fs::read(&bad_path).expect("invalid source remains inspectable"),
             malformed,
@@ -553,7 +553,7 @@ mod tests {
         future["schema_version"] = serde_json::json!(5);
         let future = serde_json::to_vec(&future).expect("serialize future fixture");
         let (future_directory, future_path) = write_snapshot(&future_data_dir, &future);
-        assert!(load(&future_directory).is_err());
+        load(&future_directory).unwrap_err();
         assert_eq!(
             std::fs::read(&future_path).expect("future source remains untouched"),
             future
@@ -566,7 +566,7 @@ mod tests {
         schema6["schema_version"] = serde_json::json!(6);
         let schema6 = serde_json::to_vec(&schema6).expect("serialize schema 6 fixture");
         let (schema6_directory, schema6_path) = write_snapshot(&schema6_data_dir, &schema6);
-        assert!(load(&schema6_directory).is_err());
+        load(&schema6_directory).unwrap_err();
         assert_eq!(
             std::fs::read(&schema6_path).expect("schema 6 source remains untouched"),
             schema6

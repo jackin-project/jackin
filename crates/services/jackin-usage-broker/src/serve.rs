@@ -402,24 +402,22 @@ fn publisher_tick_step(
 
     if let Ok(projection) = publisher.current_projection()
         && state.last_observed_projection_id.as_deref() != Some(projection.projection_id.as_str())
-    {
-        if state
+        && state
             .observation_retry_after
             .is_none_or(|retry_after| sample.monotonic_elapsed >= retry_after)
+    {
+        if monitor_store
+            .observe_projection(&projection, sample.wall_epoch)
+            .is_ok()
         {
-            if monitor_store
-                .observe_projection(&projection, sample.wall_epoch)
-                .is_ok()
-            {
-                state.last_observed_projection_id = Some(projection.projection_id);
-                state.observation_retry_after = None;
-            } else {
-                state.observation_retry_after = Some(
-                    sample
-                        .monotonic_elapsed
-                        .saturating_add(MONITOR_TICK_RETRY_DELAY),
-                );
-            }
+            state.last_observed_projection_id = Some(projection.projection_id);
+            state.observation_retry_after = None;
+        } else {
+            state.observation_retry_after = Some(
+                sample
+                    .monotonic_elapsed
+                    .saturating_add(MONITOR_TICK_RETRY_DELAY),
+            );
         }
     }
 

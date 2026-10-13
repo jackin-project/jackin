@@ -33,6 +33,10 @@ pub enum ClaudeCollectionError {
 /// reread; an admitted operation is not cancelled. The refreshed payload is
 /// replaced only inside `commit_if_current` (`None` skips the write). Fence
 /// rejection returns [`ClaudeCollectionError::ConsentRevoked`].
+#[expect(
+    clippy::type_complexity,
+    reason = "the lease snapshot keeps the focused view beside optional rate-limit and failure metadata"
+)]
 pub fn experimental_claude_usage_snapshot_for_lease<C, A, M>(
     agent: &str,
     provider: Option<&str>,
@@ -70,6 +74,10 @@ where
 #[expect(
     clippy::too_many_arguments,
     reason = "Consent, admission, and commit are separate per-operation callbacks."
+)]
+#[expect(
+    clippy::type_complexity,
+    reason = "the lease snapshot keeps the focused view beside optional rate-limit and failure metadata"
 )]
 fn experimental_claude_usage_snapshot_for_lease_with<F, R, C, A, M>(
     agent: &str,
@@ -289,7 +297,7 @@ where
         if !cache_updated {
             return retried;
         }
-        Ok(retried?)
+        retried
     }
 }
 
@@ -300,9 +308,9 @@ fn provider_http_status(
         Err(ClaudeFetchError::Provider(ProviderHttpError::HttpStatus { status, .. })) => {
             Some(*status)
         }
-        Ok(_)
-        | Err(ClaudeFetchError::Provider(_))
-        | Err(ClaudeFetchError::ConsentRevoked { .. }) => None,
+        Ok(_) | Err(ClaudeFetchError::Provider(_) | ClaudeFetchError::ConsentRevoked { .. }) => {
+            None
+        }
     }
 }
 

@@ -20,6 +20,10 @@ use crate::{
     unavailable,
 };
 
+#[expect(
+    clippy::excessive_nesting,
+    reason = "lease creation holds the descriptor lock across the exclusive create, write, and path recheck"
+)]
 pub(crate) fn claim_leader(
     path: &Path,
     build_id: &str,
@@ -55,15 +59,15 @@ pub(crate) fn claim_leader(
                     // lifetime. Expiry cannot transfer a live process's
                     // authority while it is suspended or waking.
                     Ok(Some(stale_lease_reclaimed)) => {
-                        if path_matches_file(path, &file) != Ok(true) {
-                            let _ignored = file.unlock();
-                            Err(unavailable())
-                        } else {
+                        if path_matches_file(path, &file) == Ok(true) {
                             Ok(Some(BrokerLeaseOwner {
                                 lease,
                                 file,
                                 stale_lease_reclaimed,
                             }))
+                        } else {
+                            let _ignored = file.unlock();
+                            Err(unavailable())
                         }
                     }
                     Ok(None) => {

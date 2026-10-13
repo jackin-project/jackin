@@ -62,10 +62,6 @@ pub(super) fn read_child_reports(
 }
 
 impl Contender {
-    #[expect(
-        clippy::unwrap_used,
-        reason = "child fixture setup must fail the parent test on process or pipe errors"
-    )]
     pub(super) fn spawn(root: &std::path::Path) -> Self {
         let mut child = Command::new(std::env::current_exe().unwrap())
             .args(["--exact", CHILD_TEST, "--ignored", "--nocapture"])
@@ -81,12 +77,6 @@ impl Contender {
         Self { child, reports }
     }
 
-    #[expect(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        reason = "child protocol errors and missed deadlines must fail the parent test"
-    )]
     pub(super) fn attempt(&mut self) -> Observation {
         let stdin = self.child.stdin.as_mut().unwrap();
         writeln!(stdin, "attempt").unwrap();
@@ -115,8 +105,8 @@ impl Contender {
     }
 
     #[expect(
-        clippy::unwrap_used,
-        reason = "child wait errors must fail the parent test"
+        clippy::disallowed_methods,
+        reason = "the name-lock helper polls a child process and is not a render or runtime thread"
     )]
     pub(super) fn exit(&mut self) {
         drop(self.child.stdin.take());

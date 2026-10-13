@@ -170,7 +170,7 @@ fn check_tests_dir(dir: &Path, root: &Path, out: &mut BTreeMap<String, String>) 
             }
             continue;
         }
-        if !path.extension().is_some_and(|ext| ext == "rs") {
+        if path.extension().is_none_or(|ext| ext != "rs") {
             continue;
         }
         let stem = path

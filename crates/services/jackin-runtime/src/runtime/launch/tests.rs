@@ -6,10 +6,6 @@
     unused_qualifications,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
-#![expect(
-    clippy::disallowed_methods,
-    reason = "isolated filesystem and child-process fixtures run only on test threads"
-)]
 
 use super::super::universe;
 use super::mounts::AppleContainerMountError;

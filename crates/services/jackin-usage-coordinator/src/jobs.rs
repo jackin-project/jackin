@@ -32,7 +32,7 @@ pub(crate) struct ProbeJob {
 /// instant.
 #[cfg_attr(
     not(feature = "test-support"),
-    allow(
+    expect(
         unreachable_pub,
         reason = "this type is re-exported only by the test-support feature"
     )
@@ -47,7 +47,7 @@ pub struct ClockSample {
 
 #[cfg_attr(
     not(feature = "test-support"),
-    allow(
+    expect(
         unreachable_pub,
         reason = "this constructor is reachable only by the test-support feature"
     )
@@ -71,11 +71,7 @@ impl ClockSample {
     /// Round upward so a persisted deadline never starts before this sample.
     pub(crate) fn ceil_epoch(self) -> i64 {
         self.floor_epoch()
-            .saturating_add(if self.wall_epoch.subsec_nanos() != 0 {
-                1
-            } else {
-                0
-            })
+            .saturating_add(i64::from(self.wall_epoch.subsec_nanos() != 0))
     }
 }
 
@@ -87,7 +83,7 @@ impl ClockSample {
 /// the lifetime of that coordinator.
 #[cfg_attr(
     not(feature = "test-support"),
-    allow(
+    expect(
         unreachable_pub,
         reason = "this trait is re-exported only by the test-support feature"
     )

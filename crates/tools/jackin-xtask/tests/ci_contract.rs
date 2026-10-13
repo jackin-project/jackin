@@ -18,7 +18,7 @@ fn repository_root() -> PathBuf {
 }
 
 fn yaml_field<'a>(value: &'a YamlValue, name: &str) -> Option<&'a YamlValue> {
-    value.as_mapping()?.get(&YamlValue::String(name.to_owned()))
+    value.as_mapping()?.get(YamlValue::String(name.to_owned()))
 }
 
 fn workspace_rust_job_ids(root: &Path) -> Result<BTreeSet<String>> {
@@ -79,11 +79,72 @@ fn workflow_jobs(root: &Path) -> Result<(YamlValue, BTreeSet<String>)> {
     Ok((workflow, ids))
 }
 
-fn configured_workflow_tasks(root: &Path) -> Result<Vec<TomlValue>> {
+fn discovery_excludes(member: &str, pattern: &str) -> bool {
+    if let Some(prefix) = pattern.strip_suffix("/**") {
+        if let Some(name) = prefix.strip_prefix("**/") {
+            return member.split('/').any(|component| component == name);
+        }
+        return member == prefix || member.starts_with(&format!("{prefix}/"));
+    }
+    member == pattern || member.starts_with(&format!("{pattern}/"))
+}
+
+fn discovery_excluded_job_ids(root: &Path) -> Result<BTreeSet<String>> {
     let config: TomlValue = toml::from_str(
         &fs::read_to_string(root.join(".velnor/config.toml")).context("Velnor config exists")?,
     )
     .context("Velnor config is valid TOML")?;
+    let patterns = config
+        .get("discovery")
+        .and_then(|discovery| discovery.get("exclude"))
+        .and_then(TomlValue::as_array)
+        .context("discovery excludes are explicit")?
+        .iter()
+        .map(|pattern| {
+            pattern
+                .as_str()
+                .context("discovery exclude patterns are strings")
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let manifest: TomlValue = toml::from_str(
+        &fs::read_to_string(root.join("Cargo.toml")).context("workspace manifest exists")?,
+    )
+    .context("workspace manifest is valid TOML")?;
+    let members = manifest
+        .get("workspace")
+        .and_then(|workspace| workspace.get("members"))
+        .and_then(TomlValue::as_array)
+        .context("workspace members are explicit")?;
+    let mut jobs = BTreeSet::new();
+    for member in members {
+        let member = member
+            .as_str()
+            .context("workspace member paths are strings")?;
+        if !patterns
+            .iter()
+            .any(|pattern| discovery_excludes(member, pattern))
+        {
+            continue;
+        }
+        let package_manifest = root.join(member).join("Cargo.toml");
+        let package: TomlValue = toml::from_str(&fs::read_to_string(&package_manifest)?)
+            .with_context(|| format!("workspace package manifest is valid TOML: {member}"))?;
+        let name = package
+            .get("package")
+            .and_then(|package| package.get("name"))
+            .and_then(TomlValue::as_str)
+            .with_context(|| format!("workspace member declares package name: {member}"))?;
+        jobs.insert(format!("rust-{name}"));
+    }
+    Ok(jobs)
+}
+
+fn configured_workflow_tasks(root: &Path) -> Result<Vec<TomlValue>> {
+    let config: TomlValue = toml::from_str(
+        &fs::read_to_string(root.join("docs/integration/unpublished-workflow-tasks.toml"))
+            .context("unpublished workflow tasks exist")?,
+    )
+    .context("unpublished workflow tasks are valid TOML")?;
     let tasks = config
         .get("workflow")
         .and_then(|workflow| workflow.get("tasks"))
@@ -123,7 +184,7 @@ fn configured_task_source(task: &TomlValue) -> Result<(&str, &str)> {
 }
 
 fn job_needs(job: &YamlValue) -> Result<BTreeSet<String>> {
-    Ok(yaml_field(job, "needs")
+    yaml_field(job, "needs")
         .and_then(YamlValue::as_sequence)
         .into_iter()
         .flatten()
@@ -132,7 +193,7 @@ fn job_needs(job: &YamlValue) -> Result<BTreeSet<String>> {
                 .map(ToOwned::to_owned)
                 .context("job needs entries are strings")
         })
-        .collect::<Result<BTreeSet<_>>>()?)
+        .collect::<Result<BTreeSet<_>>>()
 }
 
 fn task_job_ids(workflow_job_ids: &BTreeSet<String>, task_id: &str) -> Vec<String> {
@@ -149,25 +210,6 @@ fn task_job_ids(workflow_job_ids: &BTreeSet<String>, task_id: &str) -> Vec<Strin
         .collect()
 }
 
-fn yaml_strings(value: &YamlValue) -> Vec<&str> {
-    match value {
-        YamlValue::String(value) => vec![value],
-        YamlValue::Sequence(values) => values.iter().flat_map(yaml_strings).collect(),
-        YamlValue::Mapping(values) => values.values().flat_map(yaml_strings).collect(),
-        _ => Vec::new(),
-    }
-}
-
-fn job_run_scripts<'a>(job: &'a YamlValue) -> Vec<&'a str> {
-    yaml_field(job, "steps")
-        .and_then(YamlValue::as_sequence)
-        .into_iter()
-        .flatten()
-        .filter_map(|step| yaml_field(step, "run"))
-        .flat_map(yaml_strings)
-        .collect()
-}
-
 fn core_string_constant<'a>(contents: &'a str, name: &str) -> Result<&'a str> {
     let marker = format!("pub const {name}: &str = \"");
     contents
@@ -180,38 +222,58 @@ fn core_string_constant<'a>(contents: &'a str, name: &str) -> Result<&'a str> {
 fn required_fan_in_covers_every_workspace_crate_and_configured_task() -> Result<()> {
     let root = repository_root();
     let workspace_jobs = workspace_rust_job_ids(&root)?;
-    let task_configs = configured_workflow_tasks(&root)?;
+    let excluded = discovery_excluded_job_ids(&root)?;
+    let active =
+        fs::read_to_string(root.join(".velnor/config.toml")).context("Velnor config exists")?;
+    ensure!(
+        !active.contains("[[workflow.tasks]]"),
+        "active Velnor config does not publish workflow tasks the generator rejects"
+    );
+    let preserved =
+        fs::read_to_string(root.join("docs/integration/unpublished-workflow-tasks.toml"))
+            .context("unpublished workflow tasks exist")?;
+    for id in [
+        "construct-upstream-assets",
+        "native-desktop-ci",
+        "native-swift-format",
+        "native-swiftlint",
+    ] {
+        ensure!(
+            preserved.contains(&format!("id = \"{id}\"")),
+            "unpublished workflow task remains recorded: {id}"
+        );
+    }
     let (workflow, job_ids) = workflow_jobs(&root)?;
     let jobs = yaml_field(&workflow, "jobs")
         .and_then(YamlValue::as_mapping)
         .context("generated CI workflow declares jobs")?;
+    ensure!(
+        !job_ids.iter().any(|id| id.starts_with("task-")),
+        "unpublished workflow tasks are not emitted as partial jobs"
+    );
 
     for job_id in &workspace_jobs {
+        if excluded.contains(job_id) {
+            ensure!(
+                !job_ids.contains(job_id),
+                "discovery-excluded member is not a generated Rust job: {job_id}"
+            );
+            continue;
+        }
         ensure!(
             job_ids.contains(job_id),
             "workspace member has a generated Rust job: {job_id}"
         );
     }
 
-    let mut task_jobs = BTreeSet::new();
-    for task in &task_configs {
-        let id = task
-            .get("id")
-            .and_then(TomlValue::as_str)
-            .context("workflow task has an ID")?;
-        let emitted = task_job_ids(&job_ids, id);
-        ensure!(
-            !emitted.is_empty(),
-            "configured task has a generated job: {id}"
-        );
-        task_jobs.extend(emitted);
-    }
-
     let required = jobs
-        .get(&YamlValue::String("required".to_owned()))
+        .get(YamlValue::String("required".to_owned()))
         .context("generated workflow has the Required gate")?;
     let required_needs = job_needs(required)?;
-    for job_id in workspace_jobs.iter().chain(task_jobs.iter()) {
+    for job_id in workspace_jobs
+        .iter()
+        .filter(|job_id| !excluded.contains(*job_id))
+    {
         ensure!(
             required_needs.contains(job_id),
             "Required waits for covered job {job_id}"
@@ -224,10 +286,7 @@ fn required_fan_in_covers_every_workspace_crate_and_configured_task() -> Result<
 fn configured_verification_jobs_are_isolated_and_run_only_the_declared_mise_task() -> Result<()> {
     let root = repository_root();
     let tasks = configured_workflow_tasks(&root)?;
-    let (workflow, job_ids) = workflow_jobs(&root)?;
-    let jobs = yaml_field(&workflow, "jobs")
-        .and_then(YamlValue::as_mapping)
-        .context("generated CI workflow declares jobs")?;
+    let (_workflow, job_ids) = workflow_jobs(&root)?;
     let expected_native = BTreeSet::from([
         "construct-upstream-assets",
         "native-swift-format",
@@ -278,87 +337,24 @@ fn configured_verification_jobs_are_isolated_and_run_only_the_declared_mise_task
             "macos-26-arm64" => "macos-26",
             other => anyhow::bail!("unsupported configured verification runner: {other}"),
         };
-        let emitted = task_job_ids(&job_ids, id);
-        ensure!(!emitted.is_empty(), "verification task job exists: {id}");
-        for job_id in emitted {
-            let job = jobs
-                .get(&YamlValue::String(job_id.clone()))
-                .with_context(|| format!("verification job exists: {job_id}"))?;
-            ensure!(
-                yaml_field(job, "runs-on").and_then(YamlValue::as_str) == Some(expected_runner),
-                "verification runner is bound to its declaration: {job_id}"
-            );
-            ensure!(
-                job_needs(job)?.is_empty(),
-                "verification job is independent and unconditional: {job_id}"
-            );
-            ensure!(
-                yaml_field(job, "if").is_none(),
-                "verification job is unconditional"
-            );
-
-            let permissions = yaml_field(job, "permissions")
-                .and_then(YamlValue::as_mapping)
-                .context("verification permissions are explicit")?;
-            ensure!(
-                permissions.get(&YamlValue::String("contents".to_owned()))
-                    == Some(&YamlValue::String("read".to_owned())),
-                "verification checkout has read-only contents permission"
-            );
-            ensure!(
-                permissions.values().all(|permission| {
-                    permission == &YamlValue::String("read".to_owned())
-                        || permission == &YamlValue::String("none".to_owned())
-                }),
-                "verification job grants no write permission"
-            );
-
-            let steps = yaml_field(job, "steps")
-                .and_then(YamlValue::as_sequence)
-                .context("verification job has explicit steps")?;
-            let checkout = steps.iter().find(|step| {
-                yaml_field(step, "uses")
-                    .and_then(YamlValue::as_str)
-                    .is_some_and(|uses| uses.starts_with("actions/checkout@"))
-            });
-            let checkout = checkout.context("verification checks out its source")?;
-            ensure!(
-                yaml_field(checkout, "with")
-                    .and_then(|with| yaml_field(with, "persist-credentials"))
-                    .is_some_and(|value| value == &YamlValue::String("false".to_owned())),
-                "verification checkout does not persist credentials"
-            );
-            ensure!(
-                !steps.iter().any(|step| {
-                    yaml_field(step, "uses")
-                        .and_then(YamlValue::as_str)
-                        .is_some_and(|uses| uses.contains("actions/cache"))
-                }),
-                "verification job has no shared tool cache"
-            );
-            let scripts = job_run_scripts(job);
-            let invocation = format!("run --skip-tools {mise_task}");
-            ensure!(
-                scripts.iter().any(|script| script.contains(&invocation)),
-                "verification runs only its declared Mise task: {job_id}"
-            );
-            ensure!(
-                scripts.iter().any(|script| {
-                    script.contains("ACTIONS_ID_TOKEN_REQUEST_TOKEN")
-                        && script.contains("GITHUB_TOKEN")
-                }),
-                "verification task execution scrubs inherited credentials"
-            );
-            if id == "native-swiftlint" {
-                ensure!(
-                    scripts.iter().any(|script| {
-                        script.contains("mise --no-env --locked --no-hooks install --jobs 2")
-                            && script.contains("swiftlint")
-                    }),
-                    "SwiftLint is installed from its locked prebuilt tool identity"
-                );
-            }
-        }
+        let expected_mise_task = match id {
+            "construct-upstream-assets" => "renovate-upstream-sources",
+            "native-swift-format" => "format-check",
+            "native-swiftlint" => "lint",
+            other => anyhow::bail!("unexpected configured verification task: {other}"),
+        };
+        ensure!(
+            mise_task == expected_mise_task,
+            "verification task keeps its declared Mise task: {id}"
+        );
+        ensure!(
+            !expected_runner.is_empty(),
+            "verification runner {runner} maps to a hosted label for {id}"
+        );
+        ensure!(
+            task_job_ids(&job_ids, id).is_empty(),
+            "unpublished verification task is not emitted: {id}"
+        );
     }
     Ok(())
 }
@@ -460,104 +456,14 @@ fn configured_native_build_is_mac26_bounded_locked_and_mbx_routed() -> Result<()
         "native Rust commands route through the pinned MBX entry point"
     );
 
-    let (workflow, job_ids) = workflow_jobs(&root)?;
-    let emitted = task_job_ids(&job_ids, "native-desktop-ci");
+    let (_workflow, job_ids) = workflow_jobs(&root)?;
     ensure!(
-        emitted == ["task-native-desktop-ci"],
-        "native build has one hosted job"
-    );
-    let jobs = yaml_field(&workflow, "jobs")
-        .and_then(YamlValue::as_mapping)
-        .context("generated CI workflow declares jobs")?;
-    let job = jobs
-        .get(&YamlValue::String(emitted[0].clone()))
-        .context("native build job exists")?;
-    ensure!(
-        yaml_field(job, "runs-on").and_then(YamlValue::as_str) == Some("macos-26"),
-        "native build job uses the configured ARM64 macOS 26 host"
+        task_job_ids(&job_ids, "native-desktop-ci").is_empty(),
+        "native desktop CI stays unpublished until source-qualified tasks can be generated"
     );
     ensure!(
-        yaml_field(job, "timeout-minutes").and_then(YamlValue::as_i64) == Some(120),
+        task.get("timeout_minutes").and_then(TomlValue::as_integer) == Some(120),
         "native build retains its bounded timeout"
-    );
-    ensure!(
-        yaml_field(job, "if").is_none(),
-        "native build remains unconditional"
-    );
-    ensure!(
-        job_needs(job)?.is_empty(),
-        "native task has no unrelated dependencies"
-    );
-    let steps = yaml_field(job, "steps")
-        .and_then(YamlValue::as_sequence)
-        .context("native build job has explicit steps")?;
-    let checkout = steps.iter().find(|step| {
-        yaml_field(step, "uses")
-            .and_then(YamlValue::as_str)
-            .is_some_and(|uses| uses.starts_with("actions/checkout@"))
-    });
-    ensure!(
-        checkout
-            .and_then(|step| yaml_field(step, "with"))
-            .and_then(|with| yaml_field(with, "persist-credentials"))
-            .is_some_and(|value| value == &YamlValue::String("false".to_owned())),
-        "native build checkout does not persist credentials"
-    );
-    let bootstrap = steps
-        .iter()
-        .find(|step| {
-            yaml_field(step, "name").and_then(YamlValue::as_str)
-                == Some("Install selected locked prebuilt tools")
-        })
-        .context("native job installs its selected locked tool closure")?;
-    let bootstrap_scripts = yaml_field(bootstrap, "run")
-        .map(yaml_strings)
-        .unwrap_or_default();
-    ensure!(
-        bootstrap_scripts.iter().any(|script| {
-            script.contains("mise --no-env --locked --no-hooks install --jobs 2")
-        }),
-        "native tool installation is lock-backed and bounded"
-    );
-    let source_guard = steps
-        .iter()
-        .find(|step| {
-            yaml_field(step, "name").and_then(YamlValue::as_str)
-                == Some("Verify locked MBX Rust route")
-        })
-        .context("native job verifies its pinned toolchain and source inputs")?;
-    let guard_scripts = yaml_field(source_guard, "run")
-        .map(yaml_strings)
-        .unwrap_or_default();
-    let guard_script = guard_scripts
-        .iter()
-        .find(|script| script.contains("shasum -a 256"))
-        .context("native source guard checks input digests")?;
-    for path in [
-        "mise.toml",
-        "mise.lock",
-        "rust-toolchain.toml",
-        "native/mise.toml",
-        "native/mise.lock",
-    ] {
-        let digest = hex::encode(Sha256::digest(
-            fs::read(root.join(path))
-                .with_context(|| format!("native build source input exists: {path}"))?,
-        ));
-        ensure!(
-            guard_script.contains(&format!(
-                "/usr/bin/shasum -a 256 \"$workspace_root/{path}\" > \"$task_root/sha256.txt\"; read actual rest < \"$task_root/sha256.txt\"; test \"$actual\" = '{digest}'"
-            )),
-            "native source guard binds the exact current file digest: {path}"
-        );
-    }
-    let scripts = job_run_scripts(job);
-    ensure!(
-        scripts
-            .iter()
-            .any(|script| script.contains("run --skip-tools ci"))
-            && scripts.iter().any(|script| script.contains("MBX")),
-        "native job verifies the MBX wrapper before running its declared task"
     );
     Ok(())
 }

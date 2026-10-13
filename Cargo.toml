@@ -470,6 +470,10 @@ unwrap_used = "deny"
 expect_used = "deny"
 panic = "deny"
 manual_assert = "deny"
+# Clippy 1.99 warns on `assert!(value.is_empty())`. Its `assert_eq!` suggestion
+# needs a per-type empty value and does not change the check. rustc 1.98.1
+# cannot compile rust-version 1.99, so CI runs 1.99.0.
+assert_is_empty = "allow"
 manual_let_else = "warn"
 match_bool = "warn"
 # allow census: docs/content/reference/developer-reference/lint-policy.mdx

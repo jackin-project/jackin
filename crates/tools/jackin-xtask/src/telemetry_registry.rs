@@ -138,7 +138,7 @@ fn validate_source_policy(root: &Path) -> Result<()> {
     for (path, source) in &sources {
         let syntax = syn::parse_file(source)
             .with_context(|| format!("parsing {path} for telemetry source policy"))?;
-        let mut scanner = SourcePolicyScanner::new(&path, &syntax, &workspace_spawn_types);
+        let mut scanner = SourcePolicyScanner::new(path, &syntax, &workspace_spawn_types);
         scanner.visit_file(&syntax);
         violations.extend(
             scanner
