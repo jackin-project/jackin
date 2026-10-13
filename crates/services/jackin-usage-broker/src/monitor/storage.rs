@@ -550,18 +550,20 @@ mod tests {
             "invalid source is not replaced by a migrated snapshot"
         );
 
-        let future_temp = tempfile::tempdir().expect("future fixture root");
-        let future_data_dir = future_temp.path().join("data");
-        let mut future: serde_json::Value =
-            serde_json::from_slice(&legacy_snapshot(3)).expect("parse legacy fixture");
-        future["schema_version"] = serde_json::json!(5);
-        let future = serde_json::to_vec(&future).expect("serialize future fixture");
-        let (future_directory, future_path) = write_snapshot(&future_data_dir, &future);
-        assert!(load(&future_directory).is_err());
-        assert_eq!(
-            std::fs::read(&future_path).expect("future source remains untouched"),
-            future
-        );
+        for version in [5_u64, 6] {
+            let future_temp = tempfile::tempdir().expect("future fixture root");
+            let future_data_dir = future_temp.path().join("data");
+            let mut future: serde_json::Value =
+                serde_json::from_slice(&legacy_snapshot(3)).expect("parse legacy fixture");
+            future["schema_version"] = serde_json::json!(version);
+            let future = serde_json::to_vec(&future).expect("serialize future fixture");
+            let (future_directory, future_path) = write_snapshot(&future_data_dir, &future);
+            assert!(load(&future_directory).is_err());
+            assert_eq!(
+                std::fs::read(&future_path).expect("future source remains untouched"),
+                future
+            );
+        }
     }
 
     #[test]

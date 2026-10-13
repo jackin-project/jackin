@@ -110,6 +110,11 @@ mod protocol_version_tests {
             &request.build_id,
             "test-build"
         ));
+        assert!(!request_header_matches_current_protocol(
+            "v9",
+            "test-build",
+            "test-build"
+        ));
         assert!(request_header_matches_current_protocol(
             USAGE_BROKER_PROTOCOL_VERSION,
             "test-build",
