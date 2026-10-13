@@ -113,6 +113,7 @@ ignore = true
 multiple-versions = "deny"
 wildcards = "deny"
 deny = [
+    { crate = "arrayref@0.3.10", reason = "Malicious crates.io publish. Stay on the locked registry crate arrayref 0.3.9." },
     { crate = "openssl", reason = "Prefer rustls/aws-lc-rs-backed TLS in this workspace." },
     { crate = "yaml-rust", reason = "Use serde_yaml_ng for YAML parsing." },
     { crate = "uniffi", reason = "Native FFI bindings are boltffi-only (jackin-usage-ffi); UniFFI was removed and must not return." },

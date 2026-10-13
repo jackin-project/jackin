@@ -1,6 +1,7 @@
 //! Run Clippy over the crates affected by worktree changes.
 //!
-//! Pre-commit hook entry point (`cargo xtask clippy-affected`):
+//! Closure-scoped Clippy (`cargo xtask clippy-affected`). The git hook uses
+//! hk's `cargo clippy` builtin; this command remains for a narrower local run:
 //!
 //! ```sh
 //! cargo xtask clippy-affected                  # lint affected members + nested packages
@@ -23,11 +24,10 @@
 //!
 //! Three gaps the shared graph cannot see are closed here:
 //!
-//! * Detached (non-member) packages — `fuzz/*`, `vendor/arrayref`
-//!   — are linted via `cargo clippy --manifest-path`. A member change
-//!   pulls in nested packages with `path` dependencies into it; a nested
-//!   change pulls in members whose resolve closure names it (covers the
-//!   `[patch]`-replaced `arrayref`).
+//! * Detached (non-member) packages — `fuzz/*` — are linted via
+//!   `cargo clippy --manifest-path`. A member change pulls in nested
+//!   packages with `path` dependencies into it; a nested change pulls in
+//!   members whose resolve closure names that package.
 //! * `crates/tools/jackin-lints` is excluded: it needs the nightly dylint
 //!   toolchain (its own `rust-toolchain` pin) and stable Clippy cannot
 //!   compile it. No member depends on it.

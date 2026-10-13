@@ -102,10 +102,10 @@ enum Command {
     CiRoute(ci_route::CiRouteArgs),
     /// Run Clippy over the crates affected by worktree changes.
     ///
-    /// Pre-commit hook entry point (`cargo xtask clippy-affected`): selects
+    /// Closure-scoped Clippy (`cargo xtask clippy-affected`): selects
     /// workspace members via the shared affected-crates closure plus
-    /// detached packages (`fuzz/*`, `vendor/arrayref`) and runs
-    /// Clippy with the exact CI flags.
+    /// detached packages (`fuzz/*`) and runs Clippy with the CI flags.
+    /// The git hook uses hk's `cargo clippy` builtin.
     #[command(name = "clippy-affected")]
     ClippyAffected(clippy_affected::ClippyAffectedArgs),
     /// Stage the prepared CI binary set as one atomic artifact operation.
