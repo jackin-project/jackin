@@ -229,10 +229,12 @@ pub fn push_codex_window(
     let used = window.used_percent_clamped();
     let remaining = used.map(|value| 100u8.saturating_sub(value));
     // The label carries the raw figure (`142% used` over cap); only the
-    // remaining bar clamps. Negative garbage floors at 0, never "-3% used".
+    // remaining bar clamps. A negative percent is not an observation, so used
+    // and remaining stay unset.
     let used_label = window
         .used_percent_raw()
-        .map(|raw| codex_used_label(raw.max(0.0)));
+        .filter(|raw| *raw >= 0.0)
+        .map(codex_used_label);
     let window_seconds = window.window_seconds();
     let reset_at = window.resets_at(now);
     let pace = quota_pace_label(remaining, reset_at, window_seconds, now)

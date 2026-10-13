@@ -91,12 +91,18 @@ impl CodexWindowSnapshot {
         used.is_finite().then_some(used)
     }
 
-    /// Used percent rounded and clamped to `0..=100`; `None` when the server
-    /// sent no usable number (missing, float drift handled, strings parsed).
+    /// Used percent rounded and clamped to `0..=100`. `None` when the server
+    /// sent no usable number or a negative percent.
     pub fn used_percent_clamped(&self) -> Option<u8> {
         let used = self.used_percent_raw()?;
-        #[expect(clippy::cast_sign_loss, reason = "clamped to 0.0..=100.0")]
-        Some(used.clamp(0.0, 100.0) as u8)
+        if used < 0.0 {
+            return None;
+        }
+        #[expect(
+            clippy::cast_sign_loss,
+            reason = "non-negative values clamped into 0.0..=100.0"
+        )]
+        Some(used.min(100.0) as u8)
     }
 
     /// Effective reset epoch: absolute `reset_at` wins, otherwise `now` plus
