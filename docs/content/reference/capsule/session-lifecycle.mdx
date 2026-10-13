@@ -108,7 +108,7 @@ The debug capsule uses `[profile.capsule-debug]` in <RepoFile path="Cargo.toml">
 RUST_BACKTRACE=full cargo run --bin jackin -- load the-architect . --debug
 ```
 
-Set `RUST_BACKTRACE=full` so the panic hook's `Backtrace::force_capture()` in <RepoFile path="crates/services/jackin-usage/src/logging.rs">crates/services/jackin-usage/src/logging.rs</RepoFile> emits the full stack to the container's standard error. Read it with an explicit `docker logs <container>` operator command. jackin❯ does not mirror the backtrace into a local telemetry file.
+Set `RUST_BACKTRACE=full` so the panic hook in <RepoFile path="crates/services/jackin-usage-capsule-telemetry/src/logging.rs">crates/services/jackin-usage-capsule-telemetry/src/logging.rs</RepoFile> forwards to Rust's default panic printer, which emits the stack to the container's standard error. Read it with an explicit `docker logs <container>` operator command. jackin❯ does not mirror the backtrace into a local telemetry file.
 
 For a controlled symbolication smoke, set `JACKIN_CAPSULE_FORCE_PANIC=1` on the host launch. The host passes it through to the container only for that run; the capsule initializes operator output first, then intentionally panics with a stable message so `docker logs` can be checked for resolved `crates/apps/jackin-capsule/...` frames.
 
@@ -124,7 +124,7 @@ JACKIN_CAPSULE_FORCE_PANIC=1 RUST_BACKTRACE=full \
 2. Identify the stopped role container with `docker ps -a`.
 3. Read `docker logs <container>`. The panic site now resolves to `function_name at file.rs:line`.
 
-The panic hook and `Backtrace::force_capture()` are always present — only the debug binary adds the symbol table that makes them useful.
+The panic hook is always installed — only the debug binary adds the symbol table that makes the stack useful.
 
 ## Interaction Diagram
 

@@ -22,19 +22,19 @@ This chapter records competitor and API evidence. It does not recommend a projec
 
 ### Q1 — What jackin-usage already computes
 
-- `quota_pace_label(remaining_percent: Option<u8>, reset_at: Option<i64>, window_seconds: Option<i64>, now: i64) -> Option<String>` is the sole pace producer — `crates/services/jackin-usage/src/usage/format.rs:164-191` (confidence: HIGH)
+- `quota_pace_label(remaining_percent: Option<u8>, reset_at: Option<i64>, window_seconds: Option<i64>, now: i64) -> Option<String>` is the sole pace producer — `crates/services/jackin-usage-provider-core/src/format/labels.rs:164-191` (confidence: HIGH)
 - Exact math: `reset_in = max(reset_at − now, 0)` (format.rs:171); `window_seconds = max(window_seconds, 1)` (format.rs:172); if `reset_in > window_seconds` → `None`, pace suppressed entirely (format.rs:173-175); `time_left_percent = reset_in / window_seconds × 100` (format.rs:176); `delta = remaining_percent − time_left_percent` (format.rs:183) (confidence: HIGH)
 - Label mapping: `|delta| ≤ 2.0` → `"On pace"`; `delta > 0` → `"{round(delta)}% in reserve"`; `delta < 0` → `"{round(−delta)}% in deficit"` — so **deficit N = round(time_left_percent − remaining_percent) when positive**, reserve is the mirror — format.rs:184-190 (confidence: HIGH)
 - In-code comment attributes this to the "CodexBar pace model": more quota than time = reserve, burning faster than the clock = deficit — format.rs:177-182 (confidence: HIGH that the comment says so; attribution itself unverified, see Q3)
 - Unit tests pin the formula: 60% left with 90% of window remaining → `"30% in deficit"`; 90% left with 60% remaining → `"30% in reserve"`; 50/50 → `"On pace"` — `crates/services/jackin-usage/src/usage/tests.rs:2821-2835` (test `quota_pace_label_uses_codexbar_reserve_deficit_onpace`) (confidence: HIGH)
-- Integration coverage: Codex Session bucket `"15% in reserve"` (tests.rs:2255); Codex Weekly bucket falls back to the window label `"1 week window"` when pace is `None` (tests.rs:2259; fallback at `crates/services/jackin-usage/src/usage/codex.rs:696-698`); Kimi Rate Limit `"30% in reserve"`, Kimi Weekly pace `None` (tests.rs:3318, 3324) (confidence: HIGH)
+- Integration coverage: Codex Session bucket `"15% in reserve"` (tests.rs:2255); Codex Weekly bucket falls back to the window label `"1 week window"` when pace is `None` (tests.rs:2259; fallback at `crates/services/jackin-usage-provider-codex/src/lib.rs:696-698`); Kimi Rate Limit `"30% in reserve"`, Kimi Weekly pace `None` (tests.rs:3318, 3324) (confidence: HIGH)
 - `reset_label(reset_at, now)`: `"Resets now"` when `reset_at ≤ now`; default Countdown style `"Resets in {compact_duration} ({local clock})"`; ExactClock alternative `"Resets {local clock}"` — format.rs:111-128. Duration formatting `"{d}d {h}h"` / `"{h}h {m}m"` / `"{m}m"` via `compact_duration_label` — format.rs:193-208 (confidence: HIGH). So `"Resets in <duration>"` **is already shipped**.
 - `remaining_from_fraction`: `remaining = 100 − min(used, 100)` as `u8`, where used resolves a fraction-vs-percent ambiguity (`value ≤ 1.0` → ×100) and non-finite/negative inputs (provider "unknown" sentinels) yield `None` — format.rs:39-47, 62-74 (confidence: HIGH). Remaining is quantized to whole percent (`u8`).
-- `window_seconds` is supplied per provider at probe time, not by the protocol: Claude constants `CLAUDE_SESSION_WINDOW_SECONDS = 5h`, `CLAUDE_WEEKLY_WINDOW_SECONDS = 7d` (`crates/services/jackin-usage/src/usage/claude.rs:447, 450`), mapped by limit `kind` (claude.rs:555-576), pace computed in `into_bucket` (claude.rs:505-506); Codex uses API `limit_window_seconds` or `window_duration_mins × 60` (`crates/services/jackin-usage/src/usage/codex.rs:389-392`); Kimi supplies window seconds only for the `"Rate Limit"` bucket (`crates/services/jackin-usage/src/usage/kimi.rs:252-256`) (confidence: HIGH)
+- `window_seconds` is supplied per provider at probe time, not by the protocol: Claude constants `CLAUDE_SESSION_WINDOW_SECONDS = 5h`, `CLAUDE_WEEKLY_WINDOW_SECONDS = 7d` (`crates/services/jackin-usage-provider-claude/src/lib.rs:447, 450`), mapped by limit `kind` (claude.rs:555-576), pace computed in `into_bucket` (claude.rs:505-506); Codex uses API `limit_window_seconds` or `window_duration_mins × 60` (`crates/services/jackin-usage-provider-codex/src/lib.rs:389-392`); Kimi supplies window seconds only for the `"Rate Limit"` bucket (`crates/services/jackin-usage/src/usage/kimi.rs:252-256`) (confidence: HIGH)
 - The capsule TUI **already renders "Lasts until reset" today**, derived from the pace token, not from a burn-rate projection: in `usage_stacked_bucket_detail_rows`, a detail equal to `"On pace"` or ending `" in reserve"` sets a flag (`crates/apps/jackin-capsule/src/tui/components/dialog_widgets/usage.rs:754-755`); if the flag is set, a `"Resets…"` detail exists, and no `"Runs out…"` detail is present, `"Lasts until reset"` is pushed into the right column (usage.rs:760-764) (confidence: HIGH). Note: `"On pace"` covers delta down to −2, so a bucket slightly *behind* pace still shows "Lasts until reset".
 - `"Runs out in <duration>"` is **consumed but never produced**: the dialog routes any detail starting `"Runs out"` to the right column (dialog_widgets/usage.rs:751) and suppresses the synthesized "Lasts until reset" when one is present (usage.rs:762), but no code in the repo generates the string. It appears only in test fixtures as an injected composite `pace_label` `"31% in deficit · Runs out in 21h 45m"` — `crates/apps/jackin-capsule/src/tui/components/dialog/tests.rs:1587, 1643`, asserted rendered at tests.rs:1624-1625 — showing `pace_label` with `" · "` separators is the intended carrier (splitter `usage_quota_bucket_detail_parts`, dialog_widgets/usage.rs:846) (confidence: HIGH)
 - `"Projected empty"` appears nowhere in the repository (repo-wide grep, zero hits) (confidence: HIGH)
-- `pace_label` is persisted as an opaque string column in the snapshot store — `crates/services/jackin-usage/src/usage_snapshot_store.rs:213` (schema), :450 (bucket→row) (confidence: HIGH)
+- `pace_label` is persisted as an opaque string column in the snapshot store — `crates/services/jackin-usage-snapshot-store/src/lib.rs:213` (schema), :450 (bucket→row) (confidence: HIGH)
 
 ### Q2 — Projection formulas found in the evidence (analysis only)
 
@@ -88,8 +88,8 @@ jackin❯ should not produce or display client-derived run-out projections. Usag
 
 ## Sources
 
-- <RepoFile path="crates/services/jackin-usage/src/usage/format.rs" /> — current pace and reset formulas.
-- <RepoFile path="crates/services/jackin-usage/src/usage_snapshot_store.rs" /> — snapshot retention contract.
+- <RepoFile path="crates/services/jackin-usage-provider-core/src/format/labels.rs" /> — current pace and reset formulas.
+- <RepoFile path="crates/services/jackin-usage-snapshot-store/src/lib.rs" /> — snapshot retention contract.
 
 ## Related work
 

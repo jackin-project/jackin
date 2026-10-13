@@ -9,36 +9,36 @@ This document describes jackin❯ security implementation from a contributor per
 | Threat | Defended? | Where in code | Residual risk |
 |---|---|---|---|
 | Agent reads/writes files on host | Yes | Mount scoping in <RepoFile path="crates/core/jackin-config/src/mounts.rs">crates/core/jackin-config/src/mounts.rs</RepoFile> | Explicitly mounted rw paths |
-| Credential theft via symlink | Yes | `reject_symlink` in <RepoFile path="crates/services/jackin-instance/src/auth.rs">crates/services/jackin-instance/src/auth.rs</RepoFile> | TOCTOU window between symlink check and file use |
+| Credential theft via symlink | Yes | `reject_symlink` in <RepoFile path="crates/services/jackin-instance-credentials/src/paths.rs">crates/services/jackin-instance-credentials/src/paths.rs</RepoFile> | TOCTOU window between symlink check and file use |
 | Container escape | Out of scope | Docker hardening tracked in [Docker runtime hardening contract](/roadmap/docker-runtime-hardening-contract/) and [smolvm backend research](/research/platform/isolation/smolvm-backend/) | Shared kernel; future microVM work addresses this |
 | Agent exfiltration over network | Needs policy | Tracked in [Network egress policy](/roadmap/network-egress-policy/) | Open egress by default today |
 | Supply chain (capsule binary) | SHA256 + signed manifest | <RepoFile path="crates/adapters/jackin-image/src/capsule_binary.rs">crates/adapters/jackin-image/src/capsule_binary.rs</RepoFile> | See [signed releases](/roadmap/security-threat-model-and-signed-releases/) |
 
 ## Security functions
 
-All six functions live in <RepoFile path="crates/services/jackin-instance/src/auth.rs">crates/services/jackin-instance/src/auth.rs</RepoFile> and are called during credential provisioning at every `jackin load` / `jackin console` launch.
+`reject_symlink`, `write_private_file`, `write_private_bytes`, and `create_private_file_if_absent` live in <RepoFile path="crates/services/jackin-instance-credentials/src/paths.rs">crates/services/jackin-instance-credentials/src/paths.rs</RepoFile>. `repair_permissions` lives in <RepoFile path="crates/services/jackin-instance-credentials/src/permissions.rs">crates/services/jackin-instance-credentials/src/permissions.rs</RepoFile>. `host_home_is_real` and `parse_gh_hosts_yml` live in <RepoFile path="crates/services/jackin-instance-agents/src/github.rs">crates/services/jackin-instance-agents/src/github.rs</RepoFile>. Provisioning calls them at every `jackin load` / `jackin console` launch.
 
-### `reject_symlink` (line 925)
+### `reject_symlink` (line 18)
 
 Uses `symlink_metadata` (lstat, not stat — the call does not follow the symlink) to detect symlinks at `path` before any write or chmod. An agent-controlled role-state directory is mounted read-write into the container; a compromised role can plant a symlink between launches to redirect credential writes to arbitrary host paths. `reject_symlink` is called unconditionally before every write path and at the top of every `provision_*` function. No-ops on `ENOENT`. Returns an operator-readable error naming the path and suggesting the operator remove the symlink and retry.
 
-### `repair_permissions` (line 1012)
+### `repair_permissions` (line 60)
 
-Tightens existing credential files to `0o600` on Unix via `set_permissions`. Uses `symlink_metadata` (lstat) before calling `set_permissions` so it never chmods through a symlink. Errors (permission denied, stat failure) are logged via `eprintln!` rather than returned — callers are mid-Sync and must not abort the launch, but a silent chmod failure on a credential file is a security regression that must surface.
+Tightens an existing credential file to `0o600` on Unix. It opens the file with `O_NOFOLLOW` and returns any failure while inspecting or tightening that file, so launch provisioning fails closed instead of continuing with an exposed credential. A missing file is allowed.
 
-### `write_private_bytes` / `write_private_file` (lines 951, 947)
+### `write_private_bytes` / `write_private_file` (lines 90, 85)
 
 Atomically writes bytes with `0o600` permissions. Calls `reject_symlink` at entry. Uses `tempfile::NamedTempFile` (opens with `O_EXCL` internally, so a pre-planted symlink at the temp path is impossible because `O_EXCL` fails on any existing path) with a random suffix, sets permissions on the temp file before rename. Closes the TOCTOU window completely: no intermediate state where a world-readable file exists at the destination path.
 
-### `create_private_file_if_absent` (line 986)
+### `create_private_file_if_absent` (line 111)
 
 Race-free skeleton seeding via `O_CREAT|O_EXCL`. Used to seed `{}` into `account_json` before the Claude CLI runs so the downstream consumer never sees a missing file. Returns `Ok(())` on `EEXIST` without touching existing content. The `O_EXCL` flag prevents any race between a missing-file check and the create.
 
-### `host_home_is_real` (line 231)
+### `host_home_is_real` (line 152)
 
 Gates host-binary shellouts (`gh auth token`, macOS `security` keychain) on whether `host_home` matches the value returned by `directories::BaseDirs::new().home_dir()`. Keeps integration tests hermetic (they pass temp dirs as `host_home`) while allowing the real `gh` and `security` binaries in production runs. Without this gate, tests would shell out to the operator's installed `gh` and contaminate results.
 
-### `parse_gh_hosts_yml` (line 346)
+### `parse_gh_hosts_yml` (line 261)
 
 Uses `serde_yaml_ng` to parse `~/.config/gh/hosts.yml`. Returns `None` on any malformed input, including a document that has a `github.com` block but no `oauth_token` field, or one where `oauth_token` is empty/whitespace. Partial results are never returned: silently accepting half-parsed scalars would land bogus credentials in the container's `hosts.yml` and surface as unrelated authentication failures mid-session.
 

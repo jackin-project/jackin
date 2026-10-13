@@ -117,7 +117,7 @@ Docs rot silently. Every PR must include a one-pass verification structure-sensi
 - [ ] Did you add, rename, or remove a CLI flag, subcommand, or change default behavior? If yes, matching `docs/content/(public)/commands/<cmd>.mdx` needs updating in same PR.
 - [ ] Did you change `jackin.role.toml` schema or validation rules? If yes, update [`docs/content/(public)/(role-authoring)/developing/role-manifest.mdx`](<docs/content/(public)/(role-authoring)/developing/role-manifest.mdx>).
 - [ ] Did you change `config.toml` shape? If yes, update [`docs/content/reference/runtime/configuration.mdx`](docs/content/reference/runtime/configuration.mdx).
-- [ ] Did you change auth-forward, Keychain, symlink, or file-permission behavior in [`crates/jackin-instance/src/auth.rs`](crates/jackin-instance/src/auth.rs)? If yes, update [`docs/content/(public)/guides/authentication/index.mdx`](<docs/content/(public)/guides/authentication/index.mdx>) and [`docs/content/(public)/guides/security-model.mdx`](<docs/content/(public)/guides/security-model.mdx>).
+- [ ] Did you change auth-forward in [`crates/services/jackin-instance-agents/src/lib.rs`](crates/services/jackin-instance-agents/src/lib.rs), Keychain derivation in [`crates/core/jackin-core/src/claude_keychain.rs`](crates/core/jackin-core/src/claude_keychain.rs), or symlink and file-permission behavior in [`crates/services/jackin-instance-credentials/src/paths.rs`](crates/services/jackin-instance-credentials/src/paths.rs)? If yes, update [`docs/content/(public)/guides/authentication/index.mdx`](<docs/content/(public)/guides/authentication/index.mdx>) and [`docs/content/(public)/guides/security-model.mdx`](<docs/content/(public)/guides/security-model.mdx>).
 
 ### When your PR touches a roadmap item
 

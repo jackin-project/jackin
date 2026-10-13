@@ -198,7 +198,7 @@ The container lifecycle lives in <RepoFile path="crates/services/jackin-runtime/
 Instance-local state helpers live in <RepoFile path="crates/services/jackin-instance/src/lib.rs">crates/services/jackin-instance/src/lib.rs</RepoFile>:
 
 - <RepoFile path="crates/services/jackin-instance/src/lib.rs">crates/services/jackin-instance/src/lib.rs</RepoFile> — role state preparation and auth materialization re-exports.
-- <RepoFile path="crates/services/jackin-instance/src/auth.rs">crates/services/jackin-instance/src/auth.rs</RepoFile> — Claude, Codex, Amp, Kimi, OpenCode, and GitHub auth file provisioning.
+- <RepoFile path="crates/services/jackin-instance-agents/src/lib.rs">crates/services/jackin-instance-agents/src/lib.rs</RepoFile> — Claude, Codex, Amp, Kimi, OpenCode, and GitHub auth file provisioning.
 - <RepoFile path="crates/services/jackin-instance/src/naming.rs">crates/services/jackin-instance/src/naming.rs</RepoFile> — DNS-safe container name generation (`jk-{id}-{workspace?}-{role}`), instance-ID extraction, and role-family matching. Image tag derivation (`jk_…`) lives in <RepoFile path="crates/services/jackin-runtime/src/runtime/naming.rs">crates/services/jackin-runtime/src/runtime/naming.rs</RepoFile>.
 - <RepoFile path="crates/services/jackin-instance/src/manifest.rs">crates/services/jackin-instance/src/manifest.rs</RepoFile> — per-instance `instance.json` identity records, lifecycle status, and the rebuildable `instances.json` lookup index.
 
@@ -352,7 +352,8 @@ page must change in the same PR. The full table lives at the bottom of
 | <RepoFile path="crates/services/jackin-instance/src/lib.rs">crates/services/jackin-instance/src/lib.rs</RepoFile> | [Runtime Instance Model](/reference/runtime/runtime-instance-model/) |
 | <RepoFile path="crates/services/jackin-isolation/src/lib.rs">crates/services/jackin-isolation/src/lib.rs</RepoFile> | Workspaces (per-mount isolation), Architecture (materialization + finalizer), [Configuration File](/reference/runtime/configuration/) |
 | <RepoFile path="crates/core/jackin-manifest/src/lib.rs">crates/core/jackin-manifest/src/lib.rs</RepoFile> | [Role Manifest](/developing/role-manifest/) |
-| <RepoFile path="crates/services/jackin-instance/src/auth.rs">crates/services/jackin-instance/src/auth.rs</RepoFile> | [Authentication](/guides/authentication/), [Security Model](/guides/security-model/) |
+| <RepoFile path="crates/services/jackin-instance-agents/src/lib.rs">crates/services/jackin-instance-agents/src/lib.rs</RepoFile> | [Authentication](/guides/authentication/) |
+| <RepoFile path="crates/services/jackin-instance-credentials/src/paths.rs">crates/services/jackin-instance-credentials/src/paths.rs</RepoFile> | [Security Model](/guides/security-model/) |
 | <RepoFile path="crates/adapters/jackin-image/src/image_recipe.rs">crates/adapters/jackin-image/src/image_recipe.rs</RepoFile> | [Construct Image](/developing/construct-image/) |
 | <RepoFile path="docker/construct/Dockerfile">docker/construct/Dockerfile</RepoFile> | [Construct Image](/developing/construct-image/) |
 

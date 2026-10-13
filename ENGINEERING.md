@@ -18,7 +18,7 @@ Must use crate, not hand-rolled:
 - Date/time, base64, semver, URL parsing, hex, regex — pick maintained ecosystem crate.
 - Cryptographic primitives — never roll own; use `ring`, `rustls`, `argon2`, etc.
 - SQLite / embedded-DB access → **`turso` by default** (the workspace's single general-purpose DB
-  stack; see [usage_snapshot_store.rs](crates/jackin-usage/src/usage_snapshot_store.rs)). The sole
+  stack; see [usage_snapshot_store.rs](crates/services/jackin-usage-snapshot-store/src/lib.rs)). The sole
   narrow exception is `jackin-omp-store`, which may use the pinned bundled `rusqlite` API only on
   bounded private copies of OMP's `agent.db` and WAL to recover and back up a coherent credential
   snapshot. It must never open the live OMP database with SQLite, must reject rollback-journal
