@@ -2,7 +2,7 @@
 
 Quick nav for AI agents and human contributors. **Canonical detailed module map lives in docs** ([`reference/getting-oriented/codebase-map`](https://jackin.tailrocks.com/reference/getting-oriented/codebase-map/), served from [docs/content/reference/getting-oriented/codebase-map.mdx](docs/content/reference/getting-oriented/codebase-map.mdx)). This file is the short pointer agents land on first; covers **multi-repo ecosystem** and per-PR **code ↔ docs contract**, sends you to docs for rest.
 
-**For what a specific crate is for, its tier/allowed dependencies, its `src/` structure, and its public API, read that crate's README directly** — it is the authoritative per-crate record. Shared repository rules live in the root [AGENTS.md](AGENTS.md); `cargo xtask lint agents` checks the root agent-file pair. The Codebase Map is the ecosystem/tier overview; the per-crate detail lives in the crate that owns it.
+**For what a specific crate is for, its tier/allowed dependencies, its `src/` structure, and its public API, read that crate's README directly** — it is the authoritative per-crate record. Shared repository rules live in the root [AGENTS.md](AGENTS.md); `mise exec -- mbx +1.99.0 xtask lint agents` checks the root agent-file pair. The Codebase Map is the ecosystem/tier overview; the per-crate detail lives in the crate that owns it.
 
 ## What this file is for
 
@@ -75,19 +75,7 @@ For runtime behavior, see [The Construct Image](https://jackin.tailrocks.com/dev
 
 | Workflow | Triggers |
 |---|---|
-| `ci-pr.yml` | Generated pull-request validation: policy plus affected Bun, Docker, Rust, and Swift units |
-| `ci-main.yml` | Generated `main`-push validation: policy plus affected/full Bun, Docker, Rust, and Swift units |
-| `ci-policy.yml` | Pull-request-target workflow-policy and actionlint validation |
-| `ci-unit-bun.yml` | Reusable Bun unit, including the `docs/` build and test surface |
-| `ci-unit-docker.yml` | Reusable Docker image unit |
-| `ci-unit-rust.yml` | Reusable Rust unit |
-| `ci-unit-swift.yml` | Reusable Swift/Xcode unit |
-| `desktop-merge.yml` | Desktop merge cadence on pushes to `main` and manual dispatch |
-| `desktop-scheduled.yml` | Weekly desktop cadence plus manual dispatch, including the dead-code scan |
-| `maintenance.yml` | Closed-PR cache cleanup and scheduled/manual maintenance |
-| `nightly.yml` | Scheduled nightly validation and manual dispatch |
-| `release.yml` | `v[0-9]*` tag signing and publication; manual dispatch runs release validation only |
-| `renovate-upstream-sources.yml` | Push, pull-request, and manual validation of Renovate upstream sources |
+| `ci.yml` | Checked-in GitHub Actions validation workflow |
 
 ## Code ↔ docs cross-reference
 

@@ -1,0 +1,29 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "jackin-usage-host-credentials"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
+description = "Host credential domain types: opaque handles, env resolution, governed names."
+license.workspace = true
+readme = "README.md"
+publish = false
+
+repository.workspace = true
+
+[lib]
+name = "jackin_usage_host_credentials"
+path = "src/lib.rs"
+
+[dependencies]
+jackin-config = { workspace = true }
+jackin-core = { workspace = true }
+jackin-protocol = { workspace = true }
+jackin-usage-host-presentation = { workspace = true }
+jackin-usage-provider-core = { workspace = true }
+
+[lints]
+workspace = true

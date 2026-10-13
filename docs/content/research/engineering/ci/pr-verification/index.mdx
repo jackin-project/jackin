@@ -13,7 +13,7 @@ jackin❯ pull requests carry a hand-written **Verify-locally** block: clone or 
 
 Three things make the console the right home for the richer flow, anchored to the instance the operator is already working in:
 
-- **An instance already knows its pull request.** When the operator is working on a PR inside an instance, jackin-capsule — the in-container daemon — already tracks the working directory's branch and resolves it to the matching open pull request, with title and check status (see <RepoFile path="crates/jackin-capsule/src/pull_request.rs" /> and <RepoFile path="crates/jackin-capsule/src/pr_context.rs" />). The console can show those details the moment the instance is selected, so "verify this" is a natural next step from where the operator already is.
+- **An instance already knows its pull request.** When the operator is working on a PR inside an instance, jackin-capsule — the in-container daemon — already tracks the working directory's branch and resolves it to the matching open pull request, with title and check status (see <RepoFile path="crates/apps/jackin-capsule/src/pull_request.rs" /> and <RepoFile path="crates/apps/jackin-capsule/src/pr_context.rs" />). The console can show those details the moment the instance is selected, so "verify this" is a natural next step from where the operator already is.
 - **A PR sometimes needs a companion role branch.** A change in the jackin❯ repo can require a matching change in a role repo. Verifying that PR means running it with a specific role pinned to a specific branch — something jackin❯ already knows how to do.
 - **Testing jackin❯ itself needs clean state.** Verifying a jackin❯ PR by running the freshly built binary must not read or mutate the operator's real configuration and state, and must not disturb the live instance they are working in. jackin❯ can already redirect its configuration and state to alternate locations, so an isolated verification environment is a matter of wiring, not new machinery.
 
@@ -145,7 +145,7 @@ For each PR it verifies, jackin❯ keeps a self-contained, throwaway bundle, iso
 
 Refreshing re-fetches the PR head and resets the checkout — the right response to a force-pushed branch. Reclaiming drops a PR's bundle and reports the disk freed. A single PR cannot be verified twice at once. The exact on-disk location is intentionally left to the implementation, since how jackin❯ stores console state is being reworked; the guarantee to preserve is that the bundle is isolated, reclaimable, and never mixed with the operator's real config, state, repos, or running instances.
 
-`jackin-dev pr status <PR_NUMBER>` reports local and remote head SHAs by querying git and GitHub at call time (see <RepoFile path="crates/jackin-dev/src/main.rs" />). Persisted metadata and reclaimed-disk reporting are separate delivery questions owned by the [roadmap item](/roadmap/pr-verification/); the durable requirement here is isolation and reclaimability.
+`jackin-dev pr status <PR_NUMBER>` reports local and remote head SHAs by querying git and GitHub at call time (see <RepoFile path="crates/tools/jackin-dev/src/main.rs" />). Persisted metadata and reclaimed-disk reporting are separate delivery questions owned by the [roadmap item](/roadmap/pr-verification/); the durable requirement here is isolation and reclaimability.
 
 ## Host-side guarantees
 

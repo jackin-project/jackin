@@ -1,0 +1,34 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "jackin-runtime-coordination"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
+description = "Lock files and state directories for runtime coordination."
+license.workspace = true
+readme = "README.md"
+publish = false
+
+repository.workspace = true
+
+[lib]
+name = "jackin_runtime_coordination"
+path = "src/lib.rs"
+
+[dependencies]
+jackin-core = { workspace = true }
+jackin-telemetry = { workspace = true }
+hex = { workspace = true }
+sha2 = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[target.'cfg(unix)'.dependencies]
+nix = { workspace = true, features = ["fs", "user"] }
+
+[lints]
+workspace = true

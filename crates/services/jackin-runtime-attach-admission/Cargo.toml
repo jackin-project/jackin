@@ -1,0 +1,29 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "jackin-runtime-attach-admission"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
+description = "Reconnect admission checks against current host account policy."
+license.workspace = true
+readme = "README.md"
+publish = false
+
+repository.workspace = true
+
+[lib]
+name = "jackin_runtime_attach_admission"
+path = "src/lib.rs"
+
+[dependencies]
+jackin-config = { workspace = true }
+jackin-core = { workspace = true }
+jackin-instance = { workspace = true }
+jackin-runtime-launch-account-identity = { workspace = true }
+anyhow = { workspace = true }
+
+[lints]
+workspace = true

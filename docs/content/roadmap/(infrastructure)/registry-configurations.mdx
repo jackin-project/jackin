@@ -8,7 +8,7 @@ title: "Registry configurations"
 
 ## Problem
 
-Running `jackin❯` against a role whose `published_image` lives in a private registry fails silently and expensively: the pull path in <RepoFile path="crates/jackin-docker/src/docker_client.rs">crates/jackin-docker/src/docker_client.rs</RepoFile> hard-codes `None` for bollard's registry-auth argument, and the freshness check in <RepoFile path="crates/jackin-runtime/src/runtime/image.rs">crates/jackin-runtime/src/runtime/image.rs</RepoFile> treats any pull failure as "image is stale" — so an auth failure triggers a multi-minute rebuild from the Dockerfile instead of an actionable error. The structural gap is that jackin❯ has no place for an operator to declare credentials for an external endpoint at all; every existing secret (agent API keys, GitHub token, 1Password refs) was solved as a one-off instead of through a shared credential-source layer.
+Running `jackin❯` against a role whose `published_image` lives in a private registry fails silently and expensively: the pull path in <RepoFile path="crates/adapters/jackin-docker/src/docker_client.rs">crates/adapters/jackin-docker/src/docker_client.rs</RepoFile> hard-codes `None` for bollard's registry-auth argument, and the freshness check in <RepoFile path="crates/services/jackin-runtime/src/runtime/image.rs">crates/services/jackin-runtime/src/runtime/image.rs</RepoFile> treats any pull failure as "image is stale" — so an auth failure triggers a multi-minute rebuild from the Dockerfile instead of an actionable error. The structural gap is that jackin❯ has no place for an operator to declare credentials for an external endpoint at all; every existing secret (agent API keys, GitHub token, 1Password refs) was solved as a one-off instead of through a shared credential-source layer.
 
 ## Remaining work
 
@@ -35,6 +35,6 @@ Design details — provider mechanics, config surface, ADRs on each decision abo
 - [Container Credential Exposure — Beyond Env Injection](/research/platform/security/credential-exposure/container-credential-exposure/) — resolved credentials must not leak into layers, `docker inspect`, or logs.
 - [Workspace registry cache](/roadmap/workspace-registry-cache/) — a pull-through cache still needs upstream registry credentials.
 - [1Password integration](/roadmap/onepassword-integration/) — one credential source among several.
-- <RepoFile path="crates/jackin-docker/src/docker_client.rs">crates/jackin-docker/src/docker_client.rs</RepoFile> — `pull_image`; bollard `create_image` with `RegistryAuth` currently `None`.
-- <RepoFile path="crates/jackin-runtime/src/runtime/image.rs">crates/jackin-runtime/src/runtime/image.rs</RepoFile> — published-image freshness check that conflates auth failure with staleness.
-- <RepoFile path="crates/jackin-config/src/schema.rs">crates/jackin-config/src/schema.rs</RepoFile> — `AppConfig` / `WorkspaceConfig`; where a configurations block would live.
+- <RepoFile path="crates/adapters/jackin-docker/src/docker_client.rs">crates/adapters/jackin-docker/src/docker_client.rs</RepoFile> — `pull_image`; bollard `create_image` with `RegistryAuth` currently `None`.
+- <RepoFile path="crates/services/jackin-runtime/src/runtime/image.rs">crates/services/jackin-runtime/src/runtime/image.rs</RepoFile> — published-image freshness check that conflates auth failure with staleness.
+- <RepoFile path="crates/core/jackin-config/src/schema.rs">crates/core/jackin-config/src/schema.rs</RepoFile> — `AppConfig` / `WorkspaceConfig`; where a configurations block would live.

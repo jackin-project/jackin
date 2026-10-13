@@ -12,7 +12,7 @@ SPDX-PackageOriginator = "Person: Alexey Zhokhov"
 # covered by this annotation.
 #
 # jackin carve-out (intentional, NOT a gap): the files under docker/construct/**,
-# docker-bake.hcl, crates/jackin-xtask/**, and .github/workflows/construct.yml
+# docker-bake.hcl, crates/tools/jackin-xtask/**, and .github/workflows/construct.yml
 # carry NO inline SPDX header. Adding one trips the construct CI pipeline's
 # path filter, which forces a construct-image rebuild and a version-unpublished
 # check (docker/construct/VERSION). Those files remain Apache-2.0 via this

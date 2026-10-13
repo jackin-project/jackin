@@ -21,7 +21,7 @@ The selected daemon foundation is:
 - **Host daemon vs Capsule daemon:** the host daemon is per-operator-user and cross-container. The existing `jackin-capsule` daemon remains the in-container per-instance control plane that owns PTYs, panes, and runtime status. The host daemon consumes Capsule snapshots/events through existing socket/fallback channels; it does not replace Capsule or move PTY authority to the host.
 
 The spike prototype lives behind the `jackin-runtime` `daemon-spike` feature in
-<RepoFile path="crates/jackin-runtime/src/reactive_daemon.rs" />. It proves the
+<RepoFile path="crates/services/jackin-runtime/src/reactive_daemon.rs" />. It proves the
 control message shape with a one-connection Unix listener and a narrow
 adapter: `attention.snapshot` consumes pane states from the existing runtime
 status authority and emits notifications on `blocked` / `done` transitions only.
@@ -84,6 +84,6 @@ The daemon core owns lifecycle, installation, a versioned control socket, log re
 - [Agent attention prompts](/roadmap/agent-attention-prompts/) — host-side OS notifications when an agent waits on operator input. Plugs into this daemon.
 - [Host bridge — secrets and approved host actions](/roadmap/host-bridge/) — operator-mediated channel for agents to request secrets or invoke host commands. Plugs into this daemon and uses the same approval surface (TouchID / polkit / password) the daemon hosts.
 - [jackin❯ desktop Agent Hub](/research/product/desktop/agent-hub/) — native macOS status bar and desktop companion that consumes daemon state for workspaces, sessions, GitHub PRs, account status, notifications, and approved host actions.
-- <RepoFile path="crates/jackin-host/src/caffeinate.rs">crates/jackin-host/src/caffeinate.rs</RepoFile> — current per-command keep-awake reconciler and daemon-adapter candidate.
+- <RepoFile path="crates/services/jackin-host/src/caffeinate.rs">crates/services/jackin-host/src/caffeinate.rs</RepoFile> — current per-command keep-awake reconciler and daemon-adapter candidate.
 - [Reliable Claude authentication strategy](/research/agents/authentication/claude-auth-strategy/) — concurrent-session token-drift concerns the live-auth-sync feature ultimately answers, so the daemon hosts the answer.
 - [Credential source pattern](/roadmap/credential-source-pattern/) — unified credential resolver whose per-axis adapter shape must accommodate the daemon.

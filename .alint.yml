@@ -1,0 +1,11 @@
+version: 1
+respect_gitignore: false
+extends:
+  - ./.cache/rust-policy/profiles/rust-strict-v1.yml
+rules:
+  - id: policy-gaps
+    kind: command_idempotent
+    command: ["rust-repository-policy", "check-gaps", "--root", "."]
+    files_from: stdout
+    files_pattern: "^\\S+ (\\S+?):\\d+:"
+    level: error

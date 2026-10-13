@@ -65,7 +65,7 @@ Method: the free `count_tokens` API via the [checked-in token counter](/research
 
 **Wenyan / classical Chinese**: the original classical-Chinese rendering of "if all tests pass then commit" measured **9 tokens** versus **8 tokens** for the English phrase (net negative; original non-English text omitted). A longer rule measured 32 tokens in wenyan, 30 in plain English, and 25 in telegraphic English. Classical CJK ran **0.89–0.91 chars/token** here (at least one token per character). Characters are not tokens, and wenyan's measured savings are registral (extreme word-dropping), not tokenizer efficiency.
 
-**Identifier aliasing**: `crates/jackin-capsule/src/tui/render_conformance_fixtures.rs` = 29 tok vs alias "RCF" = 3 tok (**−89.7% per mention**); a 16-word descriptive phrase 18 tok → "RCF harness" 5 tok (−72.2%). Legend line "RCF = crates/.../render_conformance_fixtures.rs" = **32 tok one-time** → break-even on the **2nd mention** (32 < 2×26).
+**Identifier aliasing**: `crates/apps/jackin-capsule/src/tui/render_conformance_fixtures.rs` = 29 tok vs alias "RCF" = 3 tok (**−89.7% per mention**); a 16-word descriptive phrase 18 tok → "RCF harness" 5 tok (−72.2%). Legend line "RCF = crates/.../render_conformance_fixtures.rs" = **32 tok one-time** → break-even on the **2nd mention** (32 < 2×26).
 
 **Cross-tokenizer transfer** (same texts on `claude-sonnet-4-6`): polite-full 72 tok Fable vs 59 Sonnet (**Fable +22.0%**); telegraphic 29 vs 21 (**+38.1%**) — corroborates baseline's +15–38%. The relative ladder cut transfers: −59.7% (Fable) vs −64.4% (Sonnet 4.6). Any published per-token claim measured on another tokenizer does not transfer in absolute terms.
 

@@ -1,0 +1,98 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "jackin-capsule"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
+description = "In-container PID 1 control plane for Capsule-managed role containers."
+homepage = "https://jackin.tailrocks.com/"
+repository.workspace = true
+license.workspace = true
+readme = "README.md"
+publish = false
+
+[features]
+default = []
+# Enables the DHAT allocator in allocation regression tests and opt-in live
+# capsule allocation telemetry for the focused-pane render handoff.
+dhat-heap = ["dep:dhat"]
+# Plan 009 spike: enables the flagged Codex app-server status authority mapping
+# in the pure detection crate without changing the default Codex hook path.
+codex-app-server-authority = ["jackin-agent-status/codex-app-server-authority"]
+
+[lib]
+name = "jackin_capsule"
+path = "src/lib.rs"
+
+[[bin]]
+name = "jackin-capsule"
+path = "src/main.rs"
+
+[dependencies]
+jackin-brand = { workspace = true }
+anyhow = { workspace = true }
+jackin-agent-status = { workspace = true }
+jackin-core = { workspace = true }
+jackin-tui = { workspace = true }
+# OTLP export for the in-container session, runtime-gated on the endpoint the
+# host injects. Pulls the opentelemetry stack into the capsule image.
+jackin-diagnostics = { workspace = true }
+jackin-process = { workspace = true }
+jackin-protocol = { workspace = true }
+jackin-telemetry = { workspace = true }
+jackin-usage = { workspace = true }
+jackin-usage-provider-core = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+toml = { workspace = true }
+tokio = { workspace = true, features = ["rt", "io-util", "io-std", "sync", "macros", "time", "net", "signal", "process"] }
+crossterm = { workspace = true }
+portable-pty = { workspace = true }
+nix = { workspace = true, features = ["term", "signal", "process", "inotify"] }
+libc = "0.2"
+# termpane: the owned terminal model (extracted from crates/jackin-term).
+# `DamageGrid` is the sole VT parser / screen / scrollback / passthrough model.
+termpane = { workspace = true }
+url = { workspace = true }
+unicode-width = { workspace = true }
+chrono = { workspace = true, features = ["clock"] }
+sha2 = { workspace = true }
+ratatui = { workspace = true }
+termrock = { workspace = true }
+hex = { workspace = true }
+dhat = { workspace = true, optional = true }
+# tui-term was evaluated for pane-body rendering (see ADR-004) but did not fit
+# the capsule's owned-grid model. The custom cell widget approach is used instead.
+# Atomic first-seed of agent home dirs (D6): copy to sibling temp then rename.
+tempfile = { workspace = true }
+uuid = { workspace = true }
+[build-dependencies]
+jackin-build-meta = { workspace = true }
+
+[[bench]]
+name = "pane_body"
+harness = false
+
+[[bench]]
+name = "scrollback_snapshot"
+harness = false
+
+[dev-dependencies]
+criterion = { workspace = true, features = ["html_reports"] }
+jackin-diagnostics = { workspace = true, features = ["test-support"] }
+jackin-otlp-testbed = { workspace = true }
+tempfile = { workspace = true }
+insta = { workspace = true, features = ["filters"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "test-util"] }
+tracing = { workspace = true }
+tracing-opentelemetry = { workspace = true }
+tracing-subscriber = { workspace = true }
+opentelemetry = { workspace = true }
+opentelemetry_sdk = { workspace = true, features = ["testing", "trace"] }
+opentelemetry-proto = { workspace = true }
+
+[lints]
+workspace = true

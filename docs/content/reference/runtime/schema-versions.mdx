@@ -30,14 +30,14 @@ The split-workspace layout described in [Configuration File](/reference/runtime/
 
 ## Timeline
 
-Each entry is one upgrade path the current binary applies. <RepoFile path="crates/jackin/tests/migration_fixtures.rs">crates/jackin/tests/migration_fixtures.rs</RepoFile> walks every fixture on every CI run, so a regression breaks here before it breaks on a delayed operator's machine. Newest first; append, never edit.
+Each entry is one upgrade path the current binary applies. <RepoFile path="crates/apps/jackin/tests/migration_fixtures.rs">crates/apps/jackin/tests/migration_fixtures.rs</RepoFile> walks every fixture on every CI run, so a regression breaks here before it breaks on a delayed operator's machine. Newest first; append, never edit.
 
 ### Config `v1alpha13` and workspace `v1alpha11` — 2026-10-05
 
 | File kind | Predecessor | Migration mode | Fixture |
 |---|---|---|---|
-| Config (`config.toml`) | `v1alpha12` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/config/from-v1alpha12/meta.toml">crates/jackin/tests/fixtures/migrations/config/from-v1alpha12/meta.toml</RepoFile> |
-| Workspace (`workspaces/<name>.toml`) | `v1alpha10` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/workspace/from-v1alpha10/meta.toml">crates/jackin/tests/fixtures/migrations/workspace/from-v1alpha10/meta.toml</RepoFile> |
+| Config (`config.toml`) | `v1alpha12` | Automatic on startup | <RepoFile path="crates/apps/jackin/tests/fixtures/migrations/config/from-v1alpha12/meta.toml">crates/apps/jackin/tests/fixtures/migrations/config/from-v1alpha12/meta.toml</RepoFile> |
+| Workspace (`workspaces/<name>.toml`) | `v1alpha10` | Automatic on startup | <RepoFile path="crates/apps/jackin/tests/fixtures/migrations/workspace/from-v1alpha10/meta.toml">crates/apps/jackin/tests/fixtures/migrations/workspace/from-v1alpha10/meta.toml</RepoFile> |
 
 **Summary**: replaces the ambiguous OpRef `path` string with a versioned
 `breadcrumb` object. The migration treats old percent sequences as literal
@@ -67,7 +67,7 @@ workspace file migrate before strict `EnvValue` parsing.
 
 | File kind | Predecessor | Migration mode | Fixture |
 |---|---|---|---|
-| Config (`config.toml`) | `v1alpha11` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/config/from-v1alpha11/meta.toml">crates/jackin/tests/fixtures/migrations/config/from-v1alpha11/meta.toml</RepoFile> |
+| Config (`config.toml`) | `v1alpha11` | Automatic on startup | <RepoFile path="crates/apps/jackin/tests/fixtures/migrations/config/from-v1alpha11/meta.toml">crates/apps/jackin/tests/fixtures/migrations/config/from-v1alpha11/meta.toml</RepoFile> |
 
 **Summary**: deliberate account removal records a secret-free credential-source
 fingerprint in `account_scan_exclusions`. Explicit account scans skip that
@@ -81,8 +81,8 @@ canonical slugs; aliases are not part of the wire contract.
 
 | File kind | Predecessor | Migration mode | Fixture |
 |---|---|---|---|
-| Config (`config.toml`) | `v1alpha10` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/config/from-v1alpha10/meta.toml">crates/jackin/tests/fixtures/migrations/config/from-v1alpha10/meta.toml</RepoFile> |
-| Workspace (`workspaces/<name>.toml`) | `v1alpha9` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/workspace/from-v1alpha9/meta.toml">crates/jackin/tests/fixtures/migrations/workspace/from-v1alpha9/meta.toml</RepoFile> |
+| Config (`config.toml`) | `v1alpha10` | Automatic on startup | <RepoFile path="crates/apps/jackin/tests/fixtures/migrations/config/from-v1alpha10/meta.toml">crates/apps/jackin/tests/fixtures/migrations/config/from-v1alpha10/meta.toml</RepoFile> |
+| Workspace (`workspaces/<name>.toml`) | `v1alpha9` | Automatic on startup | <RepoFile path="crates/apps/jackin/tests/fixtures/migrations/workspace/from-v1alpha9/meta.toml">crates/apps/jackin/tests/fixtures/migrations/workspace/from-v1alpha9/meta.toml</RepoFile> |
 
 **Summary**: upgrades already initialized installations without rescanning. Named agent configurations (`[agent_configurations.<id>]`) and `default_launch` lists (global, workspace, role) arrive through serde defaults; profile credentials gain optional Amp `xdg_roots`. The migration stamps an already-initialized `[bootstrap]` sentinel and preserves an installer `fresh_install = true` marker so its first scan still runs exactly once. Workspace files restamp with no transformation.
 
@@ -122,8 +122,8 @@ fresh_install = false
 
 | File kind | Predecessor | Migration mode | Fixture |
 |---|---|---|---|
-| Config (`config.toml`) | `v1alpha9` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/config/from-v1alpha9/meta.toml">crates/jackin/tests/fixtures/migrations/config/from-v1alpha9/meta.toml</RepoFile> |
-| Workspace (`workspaces/<name>.toml`) | `v1alpha8` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/workspace/from-v1alpha8/meta.toml">crates/jackin/tests/fixtures/migrations/workspace/from-v1alpha8/meta.toml</RepoFile> |
+| Config (`config.toml`) | `v1alpha9` | Automatic on startup | <RepoFile path="crates/apps/jackin/tests/fixtures/migrations/config/from-v1alpha9/meta.toml">crates/apps/jackin/tests/fixtures/migrations/config/from-v1alpha9/meta.toml</RepoFile> |
+| Workspace (`workspaces/<name>.toml`) | `v1alpha8` | Automatic on startup | <RepoFile path="crates/apps/jackin/tests/fixtures/migrations/workspace/from-v1alpha8/meta.toml">crates/apps/jackin/tests/fixtures/migrations/workspace/from-v1alpha8/meta.toml</RepoFile> |
 
 **Summary**: named accounts replace per-agent authentication-policy tables. Global configuration owns account credentials (`[accounts.<id>]`) and global account bindings (`[account_bindings]`); workspaces own allowed account IDs (`accounts = [...]`) and workspace/role agent selections (`[account_bindings]` and `[roles.<role>.account_bindings]`). Startup migration strips legacy agent authentication tables (`[claude]`, `[codex]`, `[amp]`, `[kimi]`, `[opencode]`) from top-level and role definitions.
 
@@ -189,7 +189,7 @@ claude = "personal"
 
 | File kind | Predecessor | Migration mode | Fixture |
 |---|---|---|---|
-| Config (`config.toml`) | `v1alpha8` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/config/from-v1alpha8/meta.toml">crates/jackin/tests/fixtures/migrations/config/from-v1alpha8/meta.toml</RepoFile> |
+| Config (`config.toml`) | `v1alpha8` | Automatic on startup | <RepoFile path="crates/apps/jackin/tests/fixtures/migrations/config/from-v1alpha8/meta.toml">crates/apps/jackin/tests/fixtures/migrations/config/from-v1alpha8/meta.toml</RepoFile> |
 
 **Summary**: adds optional `[telemetry].level` and `[telemetry].categories` to the global config so telemetry export verbosity and category filtering can be persisted outside one process environment. Environment variables still take precedence for one process. The migration is a no-op restamp because both fields are optional and default to unset.
 
@@ -209,8 +209,8 @@ version = "v1alpha9"
 
 | File kind | Predecessor | Migration mode | Fixture |
 |---|---|---|---|
-| Config (`config.toml`) | `v1alpha7` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/config/from-v1alpha7/meta.toml">crates/jackin/tests/fixtures/migrations/config/from-v1alpha7/meta.toml</RepoFile> |
-| Workspace (`workspaces/<name>.toml`) | `v1alpha7` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/workspace/from-v1alpha7/meta.toml">crates/jackin/tests/fixtures/migrations/workspace/from-v1alpha7/meta.toml</RepoFile> |
+| Config (`config.toml`) | `v1alpha7` | Automatic on startup | <RepoFile path="crates/apps/jackin/tests/fixtures/migrations/config/from-v1alpha7/meta.toml">crates/apps/jackin/tests/fixtures/migrations/config/from-v1alpha7/meta.toml</RepoFile> |
+| Workspace (`workspaces/<name>.toml`) | `v1alpha7` | Automatic on startup | <RepoFile path="crates/apps/jackin/tests/fixtures/migrations/workspace/from-v1alpha7/meta.toml">crates/apps/jackin/tests/fixtures/migrations/workspace/from-v1alpha7/meta.toml</RepoFile> |
 
 **Summary**: adds optional `dirty_exit_policy` to the global config and workspace config. The workspace value overrides the global value; absence at both layers resolves to the built-in `ask` behavior. This is additive with a `serde` default of `None`, so existing files round-trip cleanly and the migration is a no-op restamp.
 
@@ -232,8 +232,8 @@ version = "v1alpha8"
 
 | File kind | Predecessor | Migration mode | Fixture |
 |---|---|---|---|
-| Config (`config.toml`) | `v1alpha6` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/config/from-v1alpha6/meta.toml">crates/jackin/tests/fixtures/migrations/config/from-v1alpha6/meta.toml</RepoFile> |
-| Workspace (`workspaces/<name>.toml`) | `v1alpha6` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/workspace/from-v1alpha6/meta.toml">crates/jackin/tests/fixtures/migrations/workspace/from-v1alpha6/meta.toml</RepoFile> |
+| Config (`config.toml`) | `v1alpha6` | Automatic on startup | <RepoFile path="crates/apps/jackin/tests/fixtures/migrations/config/from-v1alpha6/meta.toml">crates/apps/jackin/tests/fixtures/migrations/config/from-v1alpha6/meta.toml</RepoFile> |
+| Workspace (`workspaces/<name>.toml`) | `v1alpha6` | Automatic on startup | <RepoFile path="crates/apps/jackin/tests/fixtures/migrations/workspace/from-v1alpha6/meta.toml">crates/apps/jackin/tests/fixtures/migrations/workspace/from-v1alpha6/meta.toml</RepoFile> |
 
 **Summary**: introduces selectable container backends and on-demand credential metadata, and adds optional global and per-workspace Docker security profile and grants config. Config gains an optional `[runtime].default_backend` field selecting the host-wide backend (`docker` default, or `apple-container`). Workspace files gain an optional `[runtime].backend` per-workspace override plus optional `on_demand` env metadata that marks a credential for exec-time injection rather than launch-time injection. Config and workspace also gain optional `[docker].profile` and `[docker.grants]` for Docker security policy. All fields are additive with `serde` defaults, so existing files round-trip cleanly through a no-op restamp.
 
@@ -284,7 +284,7 @@ Historical behavior below: provider override tables were removed by the named-ac
 
 | File kind | Predecessor | Migration mode | Fixture |
 |---|---|---|---|
-| Role manifest (`jackin.role.toml`) | `v1alpha4` | Desktop: `jackin role migrate <role-repo-path>`; CI/automation: `jackin-role migrate <role-repo-path>` | <RepoFile path="crates/jackin/tests/fixtures/migrations/manifest/from-v1alpha4/meta.toml">crates/jackin/tests/fixtures/migrations/manifest/from-v1alpha4/meta.toml</RepoFile> |
+| Role manifest (`jackin.role.toml`) | `v1alpha4` | Desktop: `jackin role migrate <role-repo-path>`; CI/automation: `jackin-role migrate <role-repo-path>` | <RepoFile path="crates/apps/jackin/tests/fixtures/migrations/manifest/from-v1alpha4/meta.toml">crates/apps/jackin/tests/fixtures/migrations/manifest/from-v1alpha4/meta.toml</RepoFile> |
 
 **Summary**: adds optional `[<agent>.providers.<id>]` tables to the `[claude]`, `[codex]`, and `[opencode]` agent configs for per-provider model overrides. The `providers` map is an additive field with a `serde` default of empty, so existing manifests round-trip cleanly and the migration is a no-op restamp. A manifest stamped older than `v1alpha5` that uses a `providers` table is rejected with a `jackin role migrate` hint, the same way the OpenCode (`v1alpha3`) and Kimi (`v1alpha4`) agent fields are gated.
 
@@ -322,8 +322,8 @@ model = "minimax/MiniMax-M3"
 
 | File kind | Predecessor | Migration mode | Fixture |
 |---|---|---|---|
-| Config (`config.toml`) | `v1alpha5` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/config/from-v1alpha5/meta.toml">crates/jackin/tests/fixtures/migrations/config/from-v1alpha5/meta.toml</RepoFile> |
-| Workspace (`workspaces/<name>.toml`) | `v1alpha5` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/workspace/from-v1alpha5/meta.toml">crates/jackin/tests/fixtures/migrations/workspace/from-v1alpha5/meta.toml</RepoFile> |
+| Config (`config.toml`) | `v1alpha5` | Automatic on startup | <RepoFile path="crates/apps/jackin/tests/fixtures/migrations/config/from-v1alpha5/meta.toml">crates/apps/jackin/tests/fixtures/migrations/config/from-v1alpha5/meta.toml</RepoFile> |
+| Workspace (`workspaces/<name>.toml`) | `v1alpha5` | Automatic on startup | <RepoFile path="crates/apps/jackin/tests/fixtures/migrations/workspace/from-v1alpha5/meta.toml">crates/apps/jackin/tests/fixtures/migrations/workspace/from-v1alpha5/meta.toml</RepoFile> |
 
 **Summary**: adds the optional `sync_source_dir` field to `AgentAuthConfig` for per-scope auth-sync source folders. This is an additive, `Option`-typed field with a `serde` default of `None`, so all existing config and workspace files round-trip cleanly through the migration without any transformation. The migration is a no-op restamp.
 
@@ -361,7 +361,7 @@ sync_source_dir = "/Users/alice/company/.claude"
 
 | File kind | Predecessor | Migration mode | Fixture |
 |---|---|---|---|
-| Role manifest (`jackin.role.toml`) | `v1alpha6` | Desktop: `jackin role migrate <role-repo-path>`; CI/automation: `jackin-role migrate <role-repo-path>` | <RepoFile path="crates/jackin/tests/fixtures/migrations/manifest/from-v1alpha6/meta.toml">crates/jackin/tests/fixtures/migrations/manifest/from-v1alpha6/meta.toml</RepoFile> |
+| Role manifest (`jackin.role.toml`) | `v1alpha6` | Desktop: `jackin role migrate <role-repo-path>`; CI/automation: `jackin-role migrate <role-repo-path>` | <RepoFile path="crates/apps/jackin/tests/fixtures/migrations/manifest/from-v1alpha6/meta.toml">crates/apps/jackin/tests/fixtures/migrations/manifest/from-v1alpha6/meta.toml</RepoFile> |
 
 Role provider-model tables (`[claude.providers]`, `[codex.providers]`, and `[opencode.providers]`) are removed. Provider models belong to named API accounts, assigned to workspace agents. Run `jackin role migrate <role-repo-path>` to upgrade. A manifest containing removed tables is left unchanged and migration stops with instructions to move those models into accounts. Manifests without those tables are restamped.
 
@@ -369,7 +369,7 @@ Role provider-model tables (`[claude.providers]`, `[codex.providers]`, and `[ope
 
 | File kind | Predecessor | Migration mode | Fixture |
 |---|---|---|---|
-| Role manifest (`jackin.role.toml`) | `v1alpha5` | Desktop: `jackin role migrate <role-repo-path>`; CI/automation: `jackin-role migrate <role-repo-path>` | <RepoFile path="crates/jackin/tests/fixtures/migrations/manifest/from-v1alpha5/meta.toml" /> |
+| Role manifest (`jackin.role.toml`) | `v1alpha5` | Desktop: `jackin role migrate <role-repo-path>`; CI/automation: `jackin-role migrate <role-repo-path>` | <RepoFile path="crates/apps/jackin/tests/fixtures/migrations/manifest/from-v1alpha5/meta.toml" /> |
 
 **Summary**: introduces the optional role `[docker]` security block — `[docker].min_profile` (optional string), `[docker].dind` (optional string), `[docker].allowed_hosts` (optional array of strings), and `[docker].capabilities_add` (optional array of strings). All additive with serde defaults, so existing manifests round-trip cleanly and the migration is a no-op restamp. A manifest stamped older than `v1alpha6` that uses a `[docker]` table is rejected with a `jackin role migrate` hint, the same way the OpenCode (`v1alpha3`) and Kimi (`v1alpha4`) fields are gated.
 
@@ -394,7 +394,7 @@ min_profile = "hardened"
 
 | File kind | Predecessor | Migration mode | Fixture |
 |---|---|---|---|
-| Workspace (`workspaces/<name>.toml`) | `v1alpha4` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/workspace/from-v1alpha4/meta.toml">crates/jackin/tests/fixtures/migrations/workspace/from-v1alpha4/meta.toml</RepoFile> |
+| Workspace (`workspaces/<name>.toml`) | `v1alpha4` | Automatic on startup | <RepoFile path="crates/apps/jackin/tests/fixtures/migrations/workspace/from-v1alpha4/meta.toml">crates/apps/jackin/tests/fixtures/migrations/workspace/from-v1alpha4/meta.toml</RepoFile> |
 
 **Summary**: moves the workspace-level `op_account` onto each `op://` env reference as a per-ref `account` key, then removes the top-level `op_account`. A workspace can hold references from different 1Password accounts; a single workspace-level account cannot serve them, so a reference whose vault lives in a non-default account previously failed to resolve. Each reference now records the account it was created under, and reads pin to it. The migration walks `[env]`, every `[roles.<role>.env]`, `[github.env]`, and every `[roles.<role>.github.env]` table, stamping `account` onto each op reference; plain string values are untouched. A workspace with no `op_account` is a no-op restamp.
 
@@ -425,7 +425,7 @@ PLAIN_ENV = "literal-value"
 
 | File kind | Predecessor | Migration mode | Fixture |
 |---|---|---|---|
-| Config (`config.toml`) | `v1alpha4` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/config/from-v1alpha4/meta.toml">crates/jackin/tests/fixtures/migrations/config/from-v1alpha4/meta.toml</RepoFile> |
+| Config (`config.toml`) | `v1alpha4` | Automatic on startup | <RepoFile path="crates/apps/jackin/tests/fixtures/migrations/config/from-v1alpha4/meta.toml">crates/apps/jackin/tests/fixtures/migrations/config/from-v1alpha4/meta.toml</RepoFile> |
 
 **Summary**: Introduces the `[git]` table with two independent boolean fields (both default `false`): `coauthor_trailer` enables `Co-authored-by` agent trailer injection, and `dco` enables `Signed-off-by` DCO injection. When either flag is enabled, jackin❯ installs a `prepare-commit-msg` hook inside containers via `core.hooksPath`; each trailer is injected only when its corresponding flag is set, and both are deduplicated. The migration is a no-op restamp.
 
@@ -453,9 +453,9 @@ trusted = true
 
 | File kind | Predecessor | Migration mode | Fixture |
 |---|---|---|---|
-| Config (`config.toml`) | `v1alpha3` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/config/from-v1alpha3/meta.toml">crates/jackin/tests/fixtures/migrations/config/from-v1alpha3/meta.toml</RepoFile> |
-| Workspace (`workspaces/<name>.toml`) | `v1alpha3` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/workspace/from-v1alpha3/meta.toml">crates/jackin/tests/fixtures/migrations/workspace/from-v1alpha3/meta.toml</RepoFile> |
-| Manifest (`jackin.role.toml`) | `v1alpha3` | Desktop: `jackin role migrate <role-repo-path>`; CI/automation: `jackin-role migrate <role-repo-path>` | <RepoFile path="crates/jackin/tests/fixtures/migrations/manifest/from-v1alpha3/meta.toml">crates/jackin/tests/fixtures/migrations/manifest/from-v1alpha3/meta.toml</RepoFile> |
+| Config (`config.toml`) | `v1alpha3` | Automatic on startup | <RepoFile path="crates/apps/jackin/tests/fixtures/migrations/config/from-v1alpha3/meta.toml">crates/apps/jackin/tests/fixtures/migrations/config/from-v1alpha3/meta.toml</RepoFile> |
+| Workspace (`workspaces/<name>.toml`) | `v1alpha3` | Automatic on startup | <RepoFile path="crates/apps/jackin/tests/fixtures/migrations/workspace/from-v1alpha3/meta.toml">crates/apps/jackin/tests/fixtures/migrations/workspace/from-v1alpha3/meta.toml</RepoFile> |
+| Manifest (`jackin.role.toml`) | `v1alpha3` | Desktop: `jackin role migrate <role-repo-path>`; CI/automation: `jackin-role migrate <role-repo-path>` | <RepoFile path="crates/apps/jackin/tests/fixtures/migrations/manifest/from-v1alpha3/meta.toml">crates/apps/jackin/tests/fixtures/migrations/manifest/from-v1alpha3/meta.toml</RepoFile> |
 
 **Summary**: formalizes Kimi agent support after `v1alpha3` shipped with OpenCode. The `kimi` enum variant in `agents`, the `[kimi]` manifest table, and the `[kimi]` auth config tables require `v1alpha4`; older-stamped files still load as long as they do not use Kimi-specific fields. The migration is a no-op restamp: no field renames, no data moved.
 
@@ -497,9 +497,9 @@ model = "zai-coding-plan/glm-5.1"
 
 | File kind | Predecessor | Migration mode | Fixture |
 |---|---|---|---|
-| Config (`config.toml`) | `v1alpha2` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/config/from-v1alpha2/meta.toml">crates/jackin/tests/fixtures/migrations/config/from-v1alpha2/meta.toml</RepoFile> |
-| Workspace (`workspaces/<name>.toml`) | `v1alpha2` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/workspace/from-v1alpha2/meta.toml">crates/jackin/tests/fixtures/migrations/workspace/from-v1alpha2/meta.toml</RepoFile> |
-| Manifest (`jackin.role.toml`) | `v1alpha2` | Desktop: `jackin role migrate <role-repo-path>`; CI/automation: `jackin-role migrate <role-repo-path>` | <RepoFile path="crates/jackin/tests/fixtures/migrations/manifest/from-v1alpha2/meta.toml">crates/jackin/tests/fixtures/migrations/manifest/from-v1alpha2/meta.toml</RepoFile> |
+| Config (`config.toml`) | `v1alpha2` | Automatic on startup | <RepoFile path="crates/apps/jackin/tests/fixtures/migrations/config/from-v1alpha2/meta.toml">crates/apps/jackin/tests/fixtures/migrations/config/from-v1alpha2/meta.toml</RepoFile> |
+| Workspace (`workspaces/<name>.toml`) | `v1alpha2` | Automatic on startup | <RepoFile path="crates/apps/jackin/tests/fixtures/migrations/workspace/from-v1alpha2/meta.toml">crates/apps/jackin/tests/fixtures/migrations/workspace/from-v1alpha2/meta.toml</RepoFile> |
+| Manifest (`jackin.role.toml`) | `v1alpha2` | Desktop: `jackin role migrate <role-repo-path>`; CI/automation: `jackin-role migrate <role-repo-path>` | <RepoFile path="crates/apps/jackin/tests/fixtures/migrations/manifest/from-v1alpha2/meta.toml">crates/apps/jackin/tests/fixtures/migrations/manifest/from-v1alpha2/meta.toml</RepoFile> |
 
 **Summary**: formalizes OpenCode agent support. The `opencode` enum variant in `agents`, the `[opencode]` manifest table, and the `[opencode]` auth config tables require `v1alpha3`; older-stamped files still load as long as they do not use OpenCode-specific fields. The migration is a no-op restamp: no field renames, no data moved.
 
@@ -535,9 +535,9 @@ model = "zai-coding-plan/glm-5.1"
 
 | File kind | Predecessor | Migration mode | Fixture |
 |---|---|---|---|
-| Config (`config.toml`) | `v1alpha1` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/config/from-v1alpha1/meta.toml">crates/jackin/tests/fixtures/migrations/config/from-v1alpha1/meta.toml</RepoFile> |
-| Workspace (`workspaces/<name>.toml`) | `v1alpha1` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/workspace/from-v1alpha1/meta.toml">crates/jackin/tests/fixtures/migrations/workspace/from-v1alpha1/meta.toml</RepoFile> |
-| Manifest (`jackin.role.toml`) | `v1alpha1` | Desktop: `jackin role migrate <role-repo-path>`; CI/automation: `jackin-role migrate <role-repo-path>` | <RepoFile path="crates/jackin/tests/fixtures/migrations/manifest/from-v1alpha1/meta.toml">crates/jackin/tests/fixtures/migrations/manifest/from-v1alpha1/meta.toml</RepoFile> |
+| Config (`config.toml`) | `v1alpha1` | Automatic on startup | <RepoFile path="crates/apps/jackin/tests/fixtures/migrations/config/from-v1alpha1/meta.toml">crates/apps/jackin/tests/fixtures/migrations/config/from-v1alpha1/meta.toml</RepoFile> |
+| Workspace (`workspaces/<name>.toml`) | `v1alpha1` | Automatic on startup | <RepoFile path="crates/apps/jackin/tests/fixtures/migrations/workspace/from-v1alpha1/meta.toml">crates/apps/jackin/tests/fixtures/migrations/workspace/from-v1alpha1/meta.toml</RepoFile> |
+| Manifest (`jackin.role.toml`) | `v1alpha1` | Desktop: `jackin role migrate <role-repo-path>`; CI/automation: `jackin-role migrate <role-repo-path>` | <RepoFile path="crates/apps/jackin/tests/fixtures/migrations/manifest/from-v1alpha1/meta.toml">crates/apps/jackin/tests/fixtures/migrations/manifest/from-v1alpha1/meta.toml</RepoFile> |
 
 **Summary**: restamps existing `v1alpha1` files as `v1alpha2` and moves `version = "v1alpha2"` to the first line. This is intentionally a sequential migration rather than a silent rewrite of `v1alpha1`: operators already have `v1alpha1` files where the version key may sit below other top-level keys.
 
@@ -563,9 +563,9 @@ last_role = "the-architect"
 
 | File kind | Predecessor | Migration mode | Fixture |
 |---|---|---|---|
-| Config (`config.toml`) | `legacy` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/config/from-legacy/meta.toml">crates/jackin/tests/fixtures/migrations/config/from-legacy/meta.toml</RepoFile> |
-| Workspace (`workspaces/<name>.toml`) | `legacy` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/workspace/from-legacy/meta.toml">crates/jackin/tests/fixtures/migrations/workspace/from-legacy/meta.toml</RepoFile> |
-| Manifest (`jackin.role.toml`) | `legacy` | Desktop: `jackin role migrate <role-repo-path>`; CI/automation: `jackin-role migrate <role-repo-path>` | <RepoFile path="crates/jackin/tests/fixtures/migrations/manifest/from-legacy/meta.toml">crates/jackin/tests/fixtures/migrations/manifest/from-legacy/meta.toml</RepoFile> |
+| Config (`config.toml`) | `legacy` | Automatic on startup | <RepoFile path="crates/apps/jackin/tests/fixtures/migrations/config/from-legacy/meta.toml">crates/apps/jackin/tests/fixtures/migrations/config/from-legacy/meta.toml</RepoFile> |
+| Workspace (`workspaces/<name>.toml`) | `legacy` | Automatic on startup | <RepoFile path="crates/apps/jackin/tests/fixtures/migrations/workspace/from-legacy/meta.toml">crates/apps/jackin/tests/fixtures/migrations/workspace/from-legacy/meta.toml</RepoFile> |
+| Manifest (`jackin.role.toml`) | `legacy` | Desktop: `jackin role migrate <role-repo-path>`; CI/automation: `jackin-role migrate <role-repo-path>` | <RepoFile path="crates/apps/jackin/tests/fixtures/migrations/manifest/from-legacy/meta.toml">crates/apps/jackin/tests/fixtures/migrations/manifest/from-legacy/meta.toml</RepoFile> |
 
 **Summary**: introduces the top-level `version` field. The migration adds `version = "v1alpha1"` to every file kind and leaves all existing keys, comments, and section ordering untouched. Splitting legacy `[workspaces.<name>]` tables out of `config.toml` runs as a separate startup step (see [Configuration File](/reference/runtime/configuration/#one-file-per-workspace-by-design)); the version migration above is independent of that split.
 
@@ -814,6 +814,6 @@ Migration entry points:
 
 | File kind | Code entry point |
 |---|---|
-| Config | <RepoFile path="crates/jackin-config/src/migrations.rs">crates/jackin-config/src/migrations.rs</RepoFile> |
-| Workspace | <RepoFile path="crates/jackin-config/src/migrations.rs">crates/jackin-config/src/migrations.rs</RepoFile> |
-| Role manifest | <RepoFile path="crates/jackin-manifest/src/migrations.rs">crates/jackin-manifest/src/migrations.rs</RepoFile> |
+| Config | <RepoFile path="crates/core/jackin-config/src/migrations.rs">crates/core/jackin-config/src/migrations.rs</RepoFile> |
+| Workspace | <RepoFile path="crates/core/jackin-config/src/migrations.rs">crates/core/jackin-config/src/migrations.rs</RepoFile> |
+| Role manifest | <RepoFile path="crates/core/jackin-manifest/src/migrations.rs">crates/core/jackin-manifest/src/migrations.rs</RepoFile> |

@@ -3,116 +3,352 @@
 
 [workspace]
 members = [
-    "crates/jackin",
-    "crates/jackin-agent-status",
-    "crates/jackin-build-meta",
-    "crates/jackin-brand",
-    "crates/jackin-capsule",
-    "crates/jackin-config",
-    "crates/jackin-console",
-    "crates/jackin-oppicker",
-    "crates/jackin-core",
-    "crates/jackin-dev",
-    "crates/jackin-diagnostics",
-    "crates/jackin-docker",
-    "crates/jackin-env",
-    "crates/jackin-host",
-    "crates/jackin-image",
-    "crates/jackin-manifest",
-    "crates/jackin-omp-store",
-    "crates/jackin-process",
-    "crates/jackin-process-directory",
-    "crates/jackin-protocol",
-    "crates/jackin-launch",
-    "crates/jackin-runtime",
-    "crates/jackin-telemetry",
-    "crates/jackin-tui",
-    "crates/jackin-xtask",
-    "crates/jackin-pr-trailers",
-    "crates/jackin-usage",
-    "crates/jackin-usage-ffi",
-    "crates/jackin-isolation",
-    "crates/jackin-instance",
-    "crates/jackin-test-support",
-    "crates/jackin-otlp-testbed",
+    "crates/adapters/jackin-docker",
+    "crates/adapters/jackin-image",
+    "crates/adapters/jackin-omp-store",
+    "crates/adapters/jackin-oppicker",
+    "crates/adapters/jackin-usage-ffi",
+    "crates/apps/jackin",
+    "crates/apps/jackin-capsule",
+    "crates/core/jackin-brand",
+    "crates/core/jackin-build-meta",
+    "crates/core/jackin-config",
+    "crates/core/jackin-core",
+    "crates/core/jackin-env",
+    "crates/core/jackin-manifest",
+    "crates/core/jackin-process",
+    "crates/core/jackin-process-directory",
+    "crates/core/jackin-protocol",
+    "crates/services/jackin-agent-status",
+    "crates/services/jackin-diagnostics",
+    "crates/services/jackin-host",
+    "crates/services/jackin-instance",
+    "crates/services/jackin-instance-agents",
+    "crates/services/jackin-instance-credentials",
+    "crates/services/jackin-instance-roles",
+    "crates/services/jackin-isolation",
+    "crates/services/jackin-runtime",
+    "crates/services/jackin-runtime-apple-container-activate-entry",
+    "crates/services/jackin-runtime-apple-container-attach",
+    "crates/services/jackin-runtime-apple-container-attach-outcome",
+    "crates/services/jackin-runtime-apple-container-check-dns",
+    "crates/services/jackin-runtime-apple-container-client",
+    "crates/services/jackin-runtime-apple-container-probe-version",
+    "crates/services/jackin-runtime-apple-container-running",
+    "crates/services/jackin-runtime-apple-container-session-contract",
+    "crates/services/jackin-runtime-apple-container-stop",
+    "crates/services/jackin-runtime-apple-container-supervisor-env",
+    "crates/services/jackin-runtime-apple-container-wait",
+    "crates/services/jackin-runtime-attach-admission",
+    "crates/services/jackin-runtime-attach-capsule-ready",
+    "crates/services/jackin-runtime-attach-exec-args",
+    "crates/services/jackin-runtime-attach-inspect",
+    "crates/services/jackin-runtime-attach-running-gate",
+    "crates/services/jackin-runtime-attach-sessions",
+    "crates/services/jackin-runtime-attach-transport",
+    "crates/services/jackin-runtime-backend-selection",
+    "crates/services/jackin-runtime-cleanup-absent-guards",
+    "crates/services/jackin-runtime-cleanup-dind-gc",
+    "crates/services/jackin-runtime-cleanup-eject-resources",
+    "crates/services/jackin-runtime-cleanup-prune-cache",
+    "crates/services/jackin-runtime-cleanup-prune-dir",
+    "crates/services/jackin-runtime-cleanup-prune-home",
+    "crates/services/jackin-runtime-cleanup-prune-images",
+    "crates/services/jackin-runtime-cleanup-prune-roles",
+    "crates/services/jackin-runtime-cleanup-resolve",
+    "crates/services/jackin-runtime-cleanup-socket-dir",
+    "crates/services/jackin-runtime-cleanup-timing",
+    "crates/services/jackin-runtime-coordination",
+    "crates/services/jackin-runtime-discovery",
+    "crates/services/jackin-runtime-docker-profile",
+    "crates/services/jackin-runtime-drift",
+    "crates/services/jackin-runtime-exec-host",
+    "crates/services/jackin-runtime-exit-summary",
+    "crates/services/jackin-runtime-host-attach",
+    "crates/services/jackin-runtime-host-daemon",
+    "crates/services/jackin-runtime-identity",
+    "crates/services/jackin-runtime-image",
+    "crates/services/jackin-runtime-isolation",
+    "crates/services/jackin-runtime-launch-account-config",
+    "crates/services/jackin-runtime-launch-account-identity",
+    "crates/services/jackin-runtime-launch-attach-outcome",
+    "crates/services/jackin-runtime-launch-auth-error",
+    "crates/services/jackin-runtime-launch-capsule-setup",
+    "crates/services/jackin-runtime-launch-debug-envs",
+    "crates/services/jackin-runtime-launch-dind",
+    "crates/services/jackin-runtime-launch-dry-run",
+    "crates/services/jackin-runtime-launch-exit-diagnosis",
+    "crates/services/jackin-runtime-launch-exit-outro",
+    "crates/services/jackin-runtime-launch-failure",
+    "crates/services/jackin-runtime-launch-git-pull",
+    "crates/services/jackin-runtime-launch-image-plan",
+    "crates/services/jackin-runtime-launch-load-cleanup",
+    "crates/services/jackin-runtime-launch-load-options",
+    "crates/services/jackin-runtime-launch-mounts",
+    "crates/services/jackin-runtime-launch-plan",
+    "crates/services/jackin-runtime-launch-post-run-failure",
+    "crates/services/jackin-runtime-launch-programmatic-selection",
+    "crates/services/jackin-runtime-launch-progress-helpers",
+    "crates/services/jackin-runtime-launch-restore",
+    "crates/services/jackin-runtime-launch-run-envs",
+    "crates/services/jackin-runtime-launch-sibling-auth-prewarm",
+    "crates/services/jackin-runtime-launch-slot",
+    "crates/services/jackin-runtime-launch-supported-agents",
+    "crates/services/jackin-runtime-launch-trust",
+    "crates/services/jackin-runtime-naming",
+    "crates/services/jackin-runtime-prewarm-trigger",
+    "crates/services/jackin-runtime-process-telemetry",
+    "crates/services/jackin-runtime-progress",
+    "crates/services/jackin-runtime-prune-output",
+    "crates/services/jackin-runtime-reactive-daemon",
+    "crates/services/jackin-runtime-repo-cache",
+    "crates/services/jackin-runtime-session-control",
+    "crates/services/jackin-runtime-shared-runner",
+    "crates/services/jackin-runtime-snapshot",
+    "crates/services/jackin-runtime-spin-wait",
+    "crates/services/jackin-runtime-universe",
+    "crates/services/jackin-runtime-universe-claims",
+    "crates/services/jackin-runtime-usage-relay",
+    "crates/services/jackin-telemetry",
+    "crates/services/jackin-usage",
+    "crates/services/jackin-usage-provider-core",
+    "crates/services/jackin-usage-provider-zai",
+    "crates/services/jackin-usage-provider-kimi",
+    "crates/services/jackin-usage-provider-amp",
+    "crates/services/jackin-usage-provider-minimax",
+    "crates/services/jackin-usage-provider-openrouter",
+    "crates/services/jackin-usage-provider-grok",
+    "crates/services/jackin-usage-provider-antigravity",
+    "crates/services/jackin-usage-provider-cursor",
+    "crates/services/jackin-usage-provider-codex",
+    "crates/services/jackin-usage-provider-hermes",
+    "crates/services/jackin-usage-provider-gemini",
+    "crates/services/jackin-usage-provider-muse",
+    "crates/services/jackin-usage-provider-opencode",
+    "crates/services/jackin-usage-provider-claude",
+    "crates/services/jackin-usage-output",
+    "crates/services/jackin-usage-credential-snapshots",
+    "crates/services/jackin-usage-coordinator",
+    "crates/services/jackin-usage-store-backend",
+    "crates/services/jackin-usage-snapshot-store",
+    "crates/services/jackin-usage-token-monitor",
+    "crates/services/jackin-usage-host-presentation",
+    "crates/services/jackin-usage-host-credentials",
+    "crates/services/jackin-usage-host-accounts",
+    "crates/services/jackin-usage-capsule-telemetry",
+    "crates/services/jackin-usage-broker-publish",
+    "crates/services/jackin-usage-broker-wire",
+    "crates/services/jackin-usage-destination",
+    "crates/services/jackin-usage-discovery",
+    "crates/services/jackin-usage-broker",
+    "crates/services/jackin-usage-projection",
+    "crates/services/jackin-usage-host-glance",
+    "crates/services/jackin-usage-credential-resolver",
+    "crates/services/jackin-usage-host-runtime",
+    "crates/testing/jackin-otlp-testbed",
+    "crates/testing/jackin-test-support",
+    "crates/tools/jackin-dev",
+    "crates/tools/jackin-pr-trailers",
+    "crates/tools/jackin-xtask",
+    "crates/ui/jackin-console",
+    "crates/ui/jackin-launch",
+    "crates/ui/jackin-tui",
 ]
-exclude = ["crates/jackin-lints"]
+exclude = ["crates/tools/jackin-lints"]
 resolver = "3"
 
 [workspace.package]
 version = "0.6.4"
 edition = "2024"
-rust-version = "1.97"
+rust-version = "1.99"
 license = "Apache-2.0"
 repository = "https://github.com/jackin-project/jackin"
 
 [workspace.dependencies]
 anyhow = "1.0"
 assert_cmd = "=2.2.2"
-base64 = "0.22"
+base64 = "0.23.1"
 chrono = { version = "0.4", default-features = false }
 clap = "4.5"
-clap_mangen = "0.3"
+clap_mangen = "0.3.3"
 criterion = "=0.8.2"
 crossterm = "0.29"
 dhat = "=0.3.3"
 dialoguer = "0.12"
 directories = "6.0"
 dockerfile-parser-rs = "3.3.0"
-fast-down = "5.0"
+fast-down = "6.0.1"
 filetime = "=0.2.29"
-flate2 = "1.1"
+flate2 = "1.1.10"
 fs4 = "1.1.0"
-futures-util = "0.3"
-hyper-util = { version = "0.1", features = ["tokio"] }
+futures-util = "0.3.34"
+hyper-util = { version = "0.1.21", features = ["tokio"] }
 hex = "0.4"
 httpdate = "1"
-icu_collator = "2.2"
-icu_locale = "2.2"
-insta = "=1.48.0"
-jackin-build-meta = { version = "0.6.4", path = "crates/jackin-build-meta" }
-jackin-brand = { version = "0.6.4", path = "crates/jackin-brand" }
-jackin-agent-status = { version = "0.6.4", path = "crates/jackin-agent-status" }
-jackin-config = { version = "0.6.4", path = "crates/jackin-config" }
-jackin-console = { version = "0.6.4", path = "crates/jackin-console" }
-jackin-oppicker = { version = "0.6.4", path = "crates/jackin-oppicker" }
-jackin-core = { version = "0.6.4", path = "crates/jackin-core" }
-jackin-diagnostics = { version = "0.6.4", path = "crates/jackin-diagnostics" }
-jackin-docker = { version = "0.6.4", path = "crates/jackin-docker" }
-jackin-env = { version = "0.6.4", path = "crates/jackin-env" }
-jackin-host = { version = "0.6.4", path = "crates/jackin-host" }
-jackin-image = { version = "0.6.4", path = "crates/jackin-image" }
-jackin-instance = { version = "0.6.4", path = "crates/jackin-instance" }
-jackin-isolation = { version = "0.6.4", path = "crates/jackin-isolation" }
-jackin-launch = { version = "0.6.4", path = "crates/jackin-launch" }
-jackin-manifest = { version = "0.6.4", path = "crates/jackin-manifest" }
-jackin-omp-store = { version = "0.6.4", path = "crates/jackin-omp-store" }
-jackin-otlp-testbed = { version = "0.6.4", path = "crates/jackin-otlp-testbed" }
-jackin-process = { version = "0.6.4", path = "crates/jackin-process" }
-jackin-process-directory = { version = "0.6.4", path = "crates/jackin-process-directory" }
-jackin-protocol = { version = "0.6.4", path = "crates/jackin-protocol" }
-jackin-runtime = { version = "0.6.4", path = "crates/jackin-runtime" }
-jackin-telemetry = { version = "0.6.4", path = "crates/jackin-telemetry" }
-jackin-tui = { version = "0.6.4", path = "crates/jackin-tui" }
-jackin-test-support = { version = "0.6.4", path = "crates/jackin-test-support" }
-jackin-usage = { version = "0.6.4", path = "crates/jackin-usage" }
+icu_collator = "2.3.1"
+icu_locale = "2.3.1"
+insta = "=1.49.0"
+jackin-build-meta = { version = "0.6.4", path = "crates/core/jackin-build-meta" }
+jackin-brand = { version = "0.6.4", path = "crates/core/jackin-brand" }
+jackin-agent-status = { version = "0.6.4", path = "crates/services/jackin-agent-status" }
+jackin-config = { version = "0.6.4", path = "crates/core/jackin-config" }
+jackin-console = { version = "0.6.4", path = "crates/ui/jackin-console" }
+jackin-oppicker = { version = "0.6.4", path = "crates/adapters/jackin-oppicker" }
+jackin-core = { version = "0.6.4", path = "crates/core/jackin-core" }
+jackin-diagnostics = { version = "0.6.4", path = "crates/services/jackin-diagnostics" }
+jackin-docker = { version = "0.6.4", path = "crates/adapters/jackin-docker" }
+jackin-env = { version = "0.6.4", path = "crates/core/jackin-env" }
+jackin-host = { version = "0.6.4", path = "crates/services/jackin-host" }
+jackin-image = { version = "0.6.4", path = "crates/adapters/jackin-image" }
+jackin-instance = { version = "0.6.4", path = "crates/services/jackin-instance" }
+jackin-instance-agents = { version = "0.6.4", path = "crates/services/jackin-instance-agents" }
+jackin-instance-credentials = { version = "0.6.4", path = "crates/services/jackin-instance-credentials" }
+jackin-instance-roles = { version = "0.6.4", path = "crates/services/jackin-instance-roles" }
+jackin-isolation = { version = "0.6.4", path = "crates/services/jackin-isolation" }
+jackin-launch = { version = "0.6.4", path = "crates/ui/jackin-launch" }
+jackin-manifest = { version = "0.6.4", path = "crates/core/jackin-manifest" }
+jackin-omp-store = { version = "0.6.4", path = "crates/adapters/jackin-omp-store" }
+jackin-otlp-testbed = { version = "0.6.4", path = "crates/testing/jackin-otlp-testbed" }
+jackin-process = { version = "0.6.4", path = "crates/core/jackin-process" }
+jackin-process-directory = { version = "0.6.4", path = "crates/core/jackin-process-directory" }
+jackin-protocol = { version = "0.6.4", path = "crates/core/jackin-protocol" }
+jackin-runtime = { version = "0.6.4", path = "crates/services/jackin-runtime" }
+jackin-runtime-apple-container-activate-entry = { version = "0.6.4", path = "crates/services/jackin-runtime-apple-container-activate-entry" }
+jackin-runtime-apple-container-attach = { version = "0.6.4", path = "crates/services/jackin-runtime-apple-container-attach" }
+jackin-runtime-apple-container-attach-outcome = { version = "0.6.4", path = "crates/services/jackin-runtime-apple-container-attach-outcome" }
+jackin-runtime-apple-container-check-dns = { version = "0.6.4", path = "crates/services/jackin-runtime-apple-container-check-dns" }
+jackin-runtime-apple-container-client = { version = "0.6.4", path = "crates/services/jackin-runtime-apple-container-client" }
+jackin-runtime-apple-container-probe-version = { version = "0.6.4", path = "crates/services/jackin-runtime-apple-container-probe-version" }
+jackin-runtime-apple-container-running = { version = "0.6.4", path = "crates/services/jackin-runtime-apple-container-running" }
+jackin-runtime-apple-container-session-contract = { version = "0.6.4", path = "crates/services/jackin-runtime-apple-container-session-contract" }
+jackin-runtime-apple-container-stop = { version = "0.6.4", path = "crates/services/jackin-runtime-apple-container-stop" }
+jackin-runtime-apple-container-supervisor-env = { version = "0.6.4", path = "crates/services/jackin-runtime-apple-container-supervisor-env" }
+jackin-runtime-apple-container-wait = { version = "0.6.4", path = "crates/services/jackin-runtime-apple-container-wait" }
+jackin-runtime-attach-admission = { version = "0.6.4", path = "crates/services/jackin-runtime-attach-admission" }
+jackin-runtime-attach-capsule-ready = { version = "0.6.4", path = "crates/services/jackin-runtime-attach-capsule-ready" }
+jackin-runtime-attach-exec-args = { version = "0.6.4", path = "crates/services/jackin-runtime-attach-exec-args" }
+jackin-runtime-attach-inspect = { version = "0.6.4", path = "crates/services/jackin-runtime-attach-inspect" }
+jackin-runtime-attach-running-gate = { version = "0.6.4", path = "crates/services/jackin-runtime-attach-running-gate" }
+jackin-runtime-attach-sessions = { version = "0.6.4", path = "crates/services/jackin-runtime-attach-sessions" }
+jackin-runtime-attach-transport = { version = "0.6.4", path = "crates/services/jackin-runtime-attach-transport" }
+jackin-runtime-backend-selection = { version = "0.6.4", path = "crates/services/jackin-runtime-backend-selection" }
+jackin-runtime-cleanup-absent-guards = { version = "0.6.4", path = "crates/services/jackin-runtime-cleanup-absent-guards" }
+jackin-runtime-cleanup-dind-gc = { version = "0.6.4", path = "crates/services/jackin-runtime-cleanup-dind-gc" }
+jackin-runtime-cleanup-eject-resources = { version = "0.6.4", path = "crates/services/jackin-runtime-cleanup-eject-resources" }
+jackin-runtime-cleanup-prune-cache = { version = "0.6.4", path = "crates/services/jackin-runtime-cleanup-prune-cache" }
+jackin-runtime-cleanup-prune-dir = { version = "0.6.4", path = "crates/services/jackin-runtime-cleanup-prune-dir" }
+jackin-runtime-cleanup-prune-home = { version = "0.6.4", path = "crates/services/jackin-runtime-cleanup-prune-home" }
+jackin-runtime-cleanup-prune-images = { version = "0.6.4", path = "crates/services/jackin-runtime-cleanup-prune-images" }
+jackin-runtime-cleanup-prune-roles = { version = "0.6.4", path = "crates/services/jackin-runtime-cleanup-prune-roles" }
+jackin-runtime-cleanup-resolve = { version = "0.6.4", path = "crates/services/jackin-runtime-cleanup-resolve" }
+jackin-runtime-cleanup-socket-dir = { version = "0.6.4", path = "crates/services/jackin-runtime-cleanup-socket-dir" }
+jackin-runtime-cleanup-timing = { version = "0.6.4", path = "crates/services/jackin-runtime-cleanup-timing" }
+jackin-runtime-coordination = { version = "0.6.4", path = "crates/services/jackin-runtime-coordination" }
+jackin-runtime-discovery = { version = "0.6.4", path = "crates/services/jackin-runtime-discovery" }
+jackin-runtime-docker-profile = { version = "0.6.4", path = "crates/services/jackin-runtime-docker-profile" }
+jackin-runtime-drift = { version = "0.6.4", path = "crates/services/jackin-runtime-drift" }
+jackin-runtime-exec-host = { version = "0.6.4", path = "crates/services/jackin-runtime-exec-host" }
+jackin-runtime-exit-summary = { version = "0.6.4", path = "crates/services/jackin-runtime-exit-summary" }
+jackin-runtime-host-attach = { version = "0.6.4", path = "crates/services/jackin-runtime-host-attach" }
+jackin-runtime-host-daemon = { version = "0.6.4", path = "crates/services/jackin-runtime-host-daemon" }
+jackin-runtime-identity = { version = "0.6.4", path = "crates/services/jackin-runtime-identity" }
+jackin-runtime-image = { version = "0.6.4", path = "crates/services/jackin-runtime-image" }
+jackin-runtime-isolation = { version = "0.6.4", path = "crates/services/jackin-runtime-isolation" }
+jackin-runtime-launch-account-config = { version = "0.6.4", path = "crates/services/jackin-runtime-launch-account-config" }
+jackin-runtime-launch-account-identity = { version = "0.6.4", path = "crates/services/jackin-runtime-launch-account-identity" }
+jackin-runtime-launch-attach-outcome = { version = "0.6.4", path = "crates/services/jackin-runtime-launch-attach-outcome" }
+jackin-runtime-launch-auth-error = { version = "0.6.4", path = "crates/services/jackin-runtime-launch-auth-error" }
+jackin-runtime-launch-capsule-setup = { version = "0.6.4", path = "crates/services/jackin-runtime-launch-capsule-setup" }
+jackin-runtime-launch-debug-envs = { version = "0.6.4", path = "crates/services/jackin-runtime-launch-debug-envs" }
+jackin-runtime-launch-dind = { version = "0.6.4", path = "crates/services/jackin-runtime-launch-dind" }
+jackin-runtime-launch-dry-run = { version = "0.6.4", path = "crates/services/jackin-runtime-launch-dry-run" }
+jackin-runtime-launch-exit-diagnosis = { version = "0.6.4", path = "crates/services/jackin-runtime-launch-exit-diagnosis" }
+jackin-runtime-launch-exit-outro = { version = "0.6.4", path = "crates/services/jackin-runtime-launch-exit-outro" }
+jackin-runtime-launch-failure = { version = "0.6.4", path = "crates/services/jackin-runtime-launch-failure" }
+jackin-runtime-launch-git-pull = { version = "0.6.4", path = "crates/services/jackin-runtime-launch-git-pull" }
+jackin-runtime-launch-image-plan = { version = "0.6.4", path = "crates/services/jackin-runtime-launch-image-plan" }
+jackin-runtime-launch-load-cleanup = { version = "0.6.4", path = "crates/services/jackin-runtime-launch-load-cleanup" }
+jackin-runtime-launch-load-options = { version = "0.6.4", path = "crates/services/jackin-runtime-launch-load-options" }
+jackin-runtime-launch-mounts = { version = "0.6.4", path = "crates/services/jackin-runtime-launch-mounts" }
+jackin-runtime-launch-plan = { version = "0.6.4", path = "crates/services/jackin-runtime-launch-plan" }
+jackin-runtime-launch-post-run-failure = { version = "0.6.4", path = "crates/services/jackin-runtime-launch-post-run-failure" }
+jackin-runtime-launch-programmatic-selection = { version = "0.6.4", path = "crates/services/jackin-runtime-launch-programmatic-selection" }
+jackin-runtime-launch-progress-helpers = { version = "0.6.4", path = "crates/services/jackin-runtime-launch-progress-helpers" }
+jackin-runtime-launch-restore = { version = "0.6.4", path = "crates/services/jackin-runtime-launch-restore" }
+jackin-runtime-launch-run-envs = { version = "0.6.4", path = "crates/services/jackin-runtime-launch-run-envs" }
+jackin-runtime-launch-sibling-auth-prewarm = { version = "0.6.4", path = "crates/services/jackin-runtime-launch-sibling-auth-prewarm" }
+jackin-runtime-launch-slot = { version = "0.6.4", path = "crates/services/jackin-runtime-launch-slot" }
+jackin-runtime-launch-supported-agents = { version = "0.6.4", path = "crates/services/jackin-runtime-launch-supported-agents" }
+jackin-runtime-launch-trust = { version = "0.6.4", path = "crates/services/jackin-runtime-launch-trust" }
+jackin-runtime-naming = { version = "0.6.4", path = "crates/services/jackin-runtime-naming" }
+jackin-runtime-prewarm-trigger = { version = "0.6.4", path = "crates/services/jackin-runtime-prewarm-trigger" }
+jackin-runtime-process-telemetry = { version = "0.6.4", path = "crates/services/jackin-runtime-process-telemetry" }
+jackin-runtime-progress = { version = "0.6.4", path = "crates/services/jackin-runtime-progress" }
+jackin-runtime-prune-output = { version = "0.6.4", path = "crates/services/jackin-runtime-prune-output" }
+jackin-runtime-reactive-daemon = { version = "0.6.4", path = "crates/services/jackin-runtime-reactive-daemon" }
+jackin-runtime-repo-cache = { version = "0.6.4", path = "crates/services/jackin-runtime-repo-cache" }
+jackin-runtime-session-control = { version = "0.6.4", path = "crates/services/jackin-runtime-session-control" }
+jackin-runtime-shared-runner = { version = "0.6.4", path = "crates/services/jackin-runtime-shared-runner" }
+jackin-runtime-snapshot = { version = "0.6.4", path = "crates/services/jackin-runtime-snapshot" }
+jackin-runtime-spin-wait = { version = "0.6.4", path = "crates/services/jackin-runtime-spin-wait" }
+jackin-runtime-universe = { version = "0.6.4", path = "crates/services/jackin-runtime-universe" }
+jackin-runtime-universe-claims = { version = "0.6.4", path = "crates/services/jackin-runtime-universe-claims" }
+jackin-runtime-usage-relay = { version = "0.6.4", path = "crates/services/jackin-runtime-usage-relay" }
+jackin-telemetry = { version = "0.6.4", path = "crates/services/jackin-telemetry" }
+jackin-tui = { version = "0.6.4", path = "crates/ui/jackin-tui" }
+jackin-test-support = { version = "0.6.4", path = "crates/testing/jackin-test-support" }
+jackin-usage = { version = "0.6.4", path = "crates/services/jackin-usage" }
+jackin-usage-provider-core = { version = "0.6.4", path = "crates/services/jackin-usage-provider-core" }
+jackin-usage-provider-zai = { version = "0.6.4", path = "crates/services/jackin-usage-provider-zai" }
+jackin-usage-provider-kimi = { version = "0.6.4", path = "crates/services/jackin-usage-provider-kimi" }
+jackin-usage-provider-amp = { version = "0.6.4", path = "crates/services/jackin-usage-provider-amp" }
+jackin-usage-provider-minimax = { version = "0.6.4", path = "crates/services/jackin-usage-provider-minimax" }
+jackin-usage-provider-openrouter = { version = "0.6.4", path = "crates/services/jackin-usage-provider-openrouter" }
+jackin-usage-provider-grok = { version = "0.6.4", path = "crates/services/jackin-usage-provider-grok" }
+jackin-usage-provider-antigravity = { version = "0.6.4", path = "crates/services/jackin-usage-provider-antigravity" }
+jackin-usage-provider-cursor = { version = "0.6.4", path = "crates/services/jackin-usage-provider-cursor" }
+jackin-usage-provider-codex = { version = "0.6.4", path = "crates/services/jackin-usage-provider-codex" }
+jackin-usage-provider-hermes = { version = "0.6.4", path = "crates/services/jackin-usage-provider-hermes" }
+jackin-usage-provider-gemini = { version = "0.6.4", path = "crates/services/jackin-usage-provider-gemini" }
+jackin-usage-provider-muse = { version = "0.6.4", path = "crates/services/jackin-usage-provider-muse" }
+jackin-usage-provider-opencode = { version = "0.6.4", path = "crates/services/jackin-usage-provider-opencode" }
+jackin-usage-provider-claude = { version = "0.6.4", path = "crates/services/jackin-usage-provider-claude" }
+jackin-usage-output = { version = "0.6.4", path = "crates/services/jackin-usage-output" }
+jackin-usage-credential-snapshots = { version = "0.6.4", path = "crates/services/jackin-usage-credential-snapshots" }
+jackin-usage-coordinator = { version = "0.6.4", path = "crates/services/jackin-usage-coordinator" }
+jackin-usage-store-backend = { version = "0.6.4", path = "crates/services/jackin-usage-store-backend" }
+jackin-usage-snapshot-store = { version = "0.6.4", path = "crates/services/jackin-usage-snapshot-store" }
+jackin-usage-token-monitor = { version = "0.6.4", path = "crates/services/jackin-usage-token-monitor" }
+jackin-usage-host-presentation = { version = "0.6.4", path = "crates/services/jackin-usage-host-presentation" }
+jackin-usage-host-credentials = { version = "0.6.4", path = "crates/services/jackin-usage-host-credentials" }
+jackin-usage-host-accounts = { version = "0.6.4", path = "crates/services/jackin-usage-host-accounts" }
+jackin-usage-capsule-telemetry = { version = "0.6.4", path = "crates/services/jackin-usage-capsule-telemetry" }
+jackin-usage-broker-publish = { version = "0.6.4", path = "crates/services/jackin-usage-broker-publish" }
+jackin-usage-broker-wire = { version = "0.6.4", path = "crates/services/jackin-usage-broker-wire" }
+jackin-usage-destination = { version = "0.6.4", path = "crates/services/jackin-usage-destination" }
+jackin-usage-discovery = { version = "0.6.4", path = "crates/services/jackin-usage-discovery" }
+jackin-usage-broker = { version = "0.6.4", path = "crates/services/jackin-usage-broker" }
+jackin-usage-projection = { version = "0.6.4", path = "crates/services/jackin-usage-projection" }
+jackin-usage-host-glance = { version = "0.6.4", path = "crates/services/jackin-usage-host-glance" }
+jackin-usage-credential-resolver = { version = "0.6.4", path = "crates/services/jackin-usage-credential-resolver" }
+jackin-usage-host-runtime = { version = "0.6.4", path = "crates/services/jackin-usage-host-runtime" }
 nix = "0.31"
-rustix = { version = "=1.1.4", features = ["fs"] }
-opentelemetry_sdk = "0.32"
-opentelemetry-semantic-conventions = { version = "=0.32.1", default-features = false }
-opentelemetry = "0.32"
-opentelemetry-appender-tracing = "0.32"
-opentelemetry-otlp = { version = "0.32", default-features = false, features = ["trace", "logs", "metrics", "grpc-tonic", "gzip-tonic", "tls-ring", "tls-roots", "experimental-grpc-retry"] }
-opentelemetry-proto = { version = "0.32", default-features = false, features = ["gen-tonic", "trace", "logs", "metrics"] }
+rustix = { version = "=1.1.5", features = ["fs"] }
+opentelemetry_sdk = "0.33"
+opentelemetry-semantic-conventions = { version = "=0.33.0", default-features = false }
+opentelemetry = "0.33"
+opentelemetry-appender-tracing = "0.33"
+opentelemetry-otlp = { version = "0.33", default-features = false, features = ["trace", "logs", "metrics", "grpc-tonic", "gzip-tonic", "tls-ring", "tls-roots"] }
+opentelemetry-proto = { version = "0.33", default-features = false, features = ["gen-tonic", "trace", "logs", "metrics"] }
 owo-colors = "4"
 portable-pty = "0.9"
 predicates = "=3.1.4"
 proptest = "1.9"
 proc-macro2 = { version = "1", features = ["span-locations"] }
 procfs = "0.18"
-quick-xml = "0.41.0"
+quick-xml = "0.42.0"
 rand = "0.10"
-rcgen = "0.14.8"
+rcgen = "0.14.10"
 ratatui = "0.30"
 # The owned terminal model (vte → DamageGrid → snapshots/damage). Extracted
 # from crates/jackin-term; pinned to the termpane v0.1.0 tag.
@@ -136,33 +372,33 @@ serde = "1.0"
 serde_json = "=1.0.151"
 serde_yaml_ng = "0.10.0"
 sha2 = "0.11"
-syn = { version = "2", features = ["full", "visit"] }
-tabled = "0.21.0"
+syn = { version = "3.0.6", features = ["full", "visit"] }
+tabled = "0.22.0"
 tar = "0.4"
 tempfile = "=3.27.0"
 thiserror = "2.0"
 # Renovate exact pin (#394 → workspace #713); keep it at the newest stable
 # release and validate every runtime target before advancing the pin.
-tokio = { version = "=1.53.1", default-features = false }
+tokio = { version = "=1.53.2", default-features = false }
 tokio-util = "0.7"
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
 # Exact pin from workspace virtualization (#713); no recovered bug citation.
 # Candidate for caret "1" in a dedicated lockfile-refresh PR.
-toml = "=1.1.4"
+toml = "=1.1.6"
 toml_edit = "0.25"
 tracing = "0.1"
-tracing-opentelemetry = "0.33"
+tracing-opentelemetry = "0.34"
 tower = "0.5.3"
 tracing-subscriber = "0.3"
 tonic = { version = "0.14.1", default-features = false, features = ["transport", "router", "codegen", "gzip"] }
 # Pre-release API churn; revisit at first stable 0.7 (or next pre.N after
 # re-running the usage-store suite against the boundary module only).
-turso = { version = "=0.7.2", default-features = false }
+turso = { version = "=0.8.2", default-features = false }
 unicode-width = "0.2"
 url = "2"
 uuid = { version = "1", features = ["v4"] }
 zeroize = { version = "=1.9.0", default-features = false, features = ["alloc"] }
-zip = { version = "6.0.0", default-features = false, features = ["deflate"] }
+zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
 x509-cert = { version = "0.3", default-features = false }
 
 [workspace.lints.rust]
@@ -180,7 +416,8 @@ unsafe_op_in_unsafe_fn = "deny"
 unsafe_attr_outside_unsafe = "deny"
 missing_unsafe_on_extern = "deny"
 never_type_fallback_flowing_into_unsafe = "deny"
-unsafe_code = "forbid"
+# S5 prescribes deny (not forbid): forbid makes per-site #[expect] unrepresentable (E0453).
+unsafe_code = "deny"
 unused_qualifications = "deny"
 unused_lifetimes = "deny"
 redundant_lifetimes = "deny"
@@ -321,7 +558,7 @@ debug = "line-tables-only"
 
 [workspace.metadata.dylint]
 libraries = [
-    { path = "crates/jackin-lints" },
+    { path = "crates/tools/jackin-lints" },
 ]
 
 # arrayref 0.3.10 on crates.io is a malicious publish (pulls the proc-macro1

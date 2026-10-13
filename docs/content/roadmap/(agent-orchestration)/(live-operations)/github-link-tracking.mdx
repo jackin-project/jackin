@@ -8,7 +8,7 @@ title: "GitHub Link Tracking & Live Status"
 
 ## Shipped facts
 
-Capsule already ships PR context for the focused container: <RepoFile path="crates/jackin-capsule/src/pr_context.rs" /> runs `gh pr list`, derives the PR title and best check URL (preferring failed, then pending, then success), renders it in the bottom-bar dialog, updates the terminal title, and invalidates stale context when `HEAD` changes. This is scoped to the one focused Capsule instance and depends only on the `gh` CLI already being authenticated in-container.
+Capsule already ships PR context for the focused container: <RepoFile path="crates/apps/jackin-capsule/src/pr_context.rs" /> runs `gh pr list`, derives the PR title and best check URL (preferring failed, then pending, then success), renders it in the bottom-bar dialog, updates the terminal title, and invalidates stale context when `HEAD` changes. This is scoped to the one focused Capsule instance and depends only on the `gh` CLI already being authenticated in-container.
 
 There is no GitHub status awareness beyond that: no Octocrab dependency in the workspace, no SQLite/cache layer (`rusqlite`/`sqlite` are absent from the tree), no fetcher loop, and no console-wide "Links" cell across instances. The operator still has to switch to a browser tab to check issue/PR/CI state for anything other than the focused container's current PR.
 

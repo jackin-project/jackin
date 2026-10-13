@@ -1,5 +1,4 @@
 {
-  "evidence_scope": "Historical installed-pair proof for predecessor source only; the current main-port source has not been rebuilt or fixture-smoked.",
   "source_commit": "4492d3cb91d9e45fafec2aa8acb8158268618cd9",
   "source_tree": "7412c4177b266e46485d5275fe1be6b336c0672c",
   "branch": "claude-unattended-monitor",

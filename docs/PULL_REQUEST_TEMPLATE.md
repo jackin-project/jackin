@@ -202,13 +202,13 @@ workspace state, in-container commands, and expected output that disambiguate a
 pass/fail. Add narrower repeat checks after the console flow when helpful, e.g.
 `jackin load <role> <target> --debug`. Replace the console
 command only when the changed behavior has no meaningful console route. For PRs
-touching `crates/jackin-capsule/`, keep the Checkout block's `jackin-dev pr sync`
+touching `crates/apps/jackin-capsule/`, keep the Checkout block's `jackin-dev pr sync`
 before this smoke command — otherwise the console launches with a stale binary.>
 
 ### jackin-capsule smoke
 
-<Drop this whole subsection when the PR does NOT touch `crates/jackin-capsule/`.
-Include it whenever any file under `crates/jackin-capsule/src/` is changed.
+<Drop this whole subsection when the PR does NOT touch `crates/apps/jackin-capsule/`.
+Include it whenever any file under `crates/apps/jackin-capsule/src/` is changed.
 This block assumes the Checkout block used `jackin-dev pr sync <PR_NUMBER>` and
 sourced the generated env file — do not repeat the capsule build here.>
 
