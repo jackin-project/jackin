@@ -34,7 +34,7 @@ Prefer the finer capability packages from the newer usage packet over the older 
 
 - `jackin-core` owns generic `Agent`, `JackinPaths`, account identity hashing, and low-level environment vocabulary (`crates/jackin-core/src/agent.rs:23`, `account_key.rs:14`, `paths.rs:36`).
 - `jackin-config` owns persisted `AppConfig`, workspace configuration, account declarations, and credential declarations (`crates/jackin-config/src/app_config.rs:31`, `schema.rs:219`, `accounts.rs:291`). Providers should not own persisted config or depend upward on host config.
-- `jackin-protocol` owns cross-process `AccountUsageSnapshotView`, `FocusedUsageView`, broker capabilities, requests, responses, and projection records (`crates/jackin-protocol/src/control.rs:532,565`; `usage_broker.rs:105,1095,1246,1274`). Keep wire DTOs here.
+- `jackin-protocol` owns cross-process `AccountUsageSnapshotView`, `FocusedUsageView`, broker capabilities, requests, responses, and projection records (`crates/core/jackin-protocol/src/control.rs:532,565`; `usage_broker.rs:105,1095,1246,1274`). Keep wire DTOs here.
 - `jackin-process` is generic subprocess capture/timeout/retry/status (`crates/jackin-process/Cargo.toml:10`, `src/lib.rs:21-52`); usage-specific broker leases, socket lifecycle, and credential authorization remain in the broker domain.
 - `jackin-launch` owns launch-progress TUI (`crates/jackin-launch/src/lib.rs:1-13`), not Capsule build or usage service.
 
@@ -55,7 +55,7 @@ Session must not depend on broker. Provider code must not depend on session, bro
 
 At source HEAD the monolithic `jackin-usage` manifest joins `reqwest`/`tower` provider code, `turso`, ICU projection, and Unix `nix` broker code (`crates/jackin-usage/Cargo.toml:22-47`). Its modules include coordinator, host, token monitor, usage providers, and snapshot store (`crates/jackin-usage/src/lib.rs:7-18`).
 
-- Capsule depends on the monolith (`crates/jackin-capsule/Cargo.toml:46`), uses `UsageCache`/`UsageRefreshTarget` (`crates/jackin-usage/src/usage.rs:272,286`), `TokenMonitor` (`crates/services/jackin-usage-token-monitor/src/monitor.rs`), the relay client (`host/broker.rs:1030`), and formatting. It can shed provider HTTP and host ICU/nix edges; it retains Turso until OpenCode row reading is moved behind the store API (`token_monitor/opencode.rs`). Do not claim Capsule is Turso-free after a session-only move.
+- Capsule depends on `jackin-usage` (`crates/apps/jackin-capsule/Cargo.toml:46`), uses `UsageCache`/`UsageRefreshTarget` (`crates/services/jackin-usage-provider-core/src/cache.rs:21`, `crates/services/jackin-usage-provider-core/src/cache.rs:35`), `TokenMonitor` (`crates/services/jackin-usage-token-monitor/src/monitor.rs`), the relay client (`host/broker.rs:1030`), and formatting. It can shed provider HTTP and host ICU/nix edges; it retains Turso until OpenCode row reading is moved behind the store API (`token_monitor/opencode.rs`). Do not claim Capsule is Turso-free after a session-only move.
 - Host discovery calls provider parsers and credential models from `usage.rs` (`host/discovery.rs`, including `ClaudeResolved`/`CodexOAuthCredentials`), so provider adapters cannot be moved into a session-only package.
 - `jackin-runtime/src/usage_relay.rs` consumes coordinator and host service APIs; it migrates to broker.
 - `jackin-usage-ffi` consumes host APIs and shared presenters, so its post-split dependencies must explicitly cover broker and presenter ownership.

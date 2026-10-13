@@ -81,8 +81,8 @@ The workspace manifest identifies four binary targets in the `jackin` package: `
 - Strict manifest types: `crates/jackin-core/src/manifest.rs`.
 - Migration code and tests: `crates/jackin-manifest/src/migrations.rs` and `crates/jackin-manifest/src/manifest/tests.rs`.
 - Account configuration discovery: `crates/jackin-config/src/accounts/discovery.rs`.
-- Host usage discovery and Codex usage: `crates/jackin-usage/src/host/discovery.rs` and `crates/services/jackin-usage-provider-codex/src/lib.rs`.
-- Authentication and launch configuration: `crates/services/jackin-instance-agents/src/lib.rs` and `crates/jackin-runtime/src/runtime/launch/account_config.rs`.
+- Host usage discovery and Codex usage: `crates/services/jackin-usage-discovery/src/lib.rs` and `crates/services/jackin-usage-provider-codex/src/lib.rs`.
+- Authentication and launch configuration: `crates/services/jackin-instance-agents/src/lib.rs` and `crates/services/jackin-runtime-launch-account-config/src/account_config.rs`.
 
 Manifest and account route findings remain static. See [Debian results](debian-results.md).
 

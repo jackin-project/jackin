@@ -291,7 +291,7 @@ private/reference-grade until vendor-documented or Mac-live-verified
 |---|---|---|---|
 | `anthropic` | `planned GET {base}/api/oauth/usage` + `profile`; OAuth scope-gated (same contract as native Claude lane) | `planned` attribution to [claude.rs](../../crates/services/jackin-usage-provider-claude/src/lib.rs) ([U11](#9-u-register-exact-missing-proofs)) | **R** (ref-contracts-A; omp `usage/claude.ts`) |
 | `openai-codex`, `openai-codex-device` | `planned` wham/usage + reset-credit inventory; prefer app-server `account/*` (same contract as native Codex lane) | `planned` attribution to [codex.rs](../../crates/services/jackin-usage-provider-codex/src/lib.rs) ([U11](#9-u-register-exact-missing-proofs)) | **R** |
-| `kimi-code` | `GET https://api.kimi.com/coding/v1/usages` (OAuth + key paths) | `implemented` [kimi.rs](../../crates/jackin-usage/src/usage/kimi.rs); attribution wiring `planned` | **D** (kimi-cli `usage.py` + omp `usage/kimi.ts` at pinned SHAs) |
+| `kimi-code` | `GET https://api.kimi.com/coding/v1/usages` (OAuth + key paths) | `implemented` [kimi.rs](../../crates/services/jackin-usage-provider-kimi/src/lib.rs); attribution wiring `planned` | **D** (kimi-cli `usage.py` + omp `usage/kimi.ts` at pinned SHAs) |
 | `zai`, `zai-coding-plan` | `planned api.z.ai /api/monitor/usage/quota/limit` + model-usage; CREDIT vs TOKENS_LIMIT pools; plan-scoped | `implemented` [zai.rs](../../crates/services/jackin-usage-provider-zai/src/lib.rs); attribution wiring `planned` | **R** |
 | `minimax-code` | `GET {base}/v1/token_plan/remains` (Global `api.minimax.io` / China `api.minimaxi.com`) | `implemented` [minimax.rs](../../crates/jackin-usage/src/usage/minimax.rs); attribution wiring `planned` | **S** |
 | `minimax-code-cn` | same remains API on CN host | `planned` — verify CN-host behavior ([U3](#9-u-register-exact-missing-proofs)) | **U** |
@@ -398,7 +398,7 @@ subscription-plans table (cells marked not-documented stay open questions).
 | `xai-oauth` | `planned` Grok CLI billing endpoint; weekly/monthly split | `planned` — see native [grok.rs](../../crates/services/jackin-usage-provider-grok/src/lib.rs) ([U11](#9-u-register-exact-missing-proofs)) | **S**+**R** |
 | `copilot` | `planned api.github.com copilot quota` | `planned` ([U11](#9-u-register-exact-missing-proofs)) | **S**+**R** |
 | `zai` | `planned api.z.ai quota/limit` + model-usage; plan/CN/team pools | `implemented` [zai.rs](../../crates/services/jackin-usage-provider-zai/src/lib.rs); attribution wiring `planned` | **S**+**D** |
-| `kimi-coding` | `planned api.kimi.com/coding/v1/usages` | `implemented` [kimi.rs](../../crates/jackin-usage/src/usage/kimi.rs); attribution wiring `planned` | **S**+**R** |
+| `kimi-coding` | `planned api.kimi.com/coding/v1/usages` | `implemented` [kimi.rs](../../crates/services/jackin-usage-provider-kimi/src/lib.rs); attribution wiring `planned` | **S**+**R** |
 | `kimi-coding-cn` | same usages API on CN host | `planned` — verify CN host ([U6](#9-u-register-exact-missing-proofs)) | **S**+**U** |
 | `anthropic` | OAuth grants: `planned {base}/api/oauth/usage`; API keys need org reporting (`none:` no key-scoped balance) | `planned` attribution to [claude.rs](../../crates/services/jackin-usage-provider-claude/src/lib.rs) ([U11](#9-u-register-exact-missing-proofs)) | **S**+**D** (ref-contracts-A) |
 | `alibaba-token-plan` | `planned` bailian token-plan API (same family as omp collector) | `planned` ([U11](#9-u-register-exact-missing-proofs)) | **S**+**R** |
