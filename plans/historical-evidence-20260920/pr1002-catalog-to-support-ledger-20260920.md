@@ -289,10 +289,10 @@ private/reference-grade until vendor-documented or Mac-live-verified
 
 | Provider | Usage source | Status | Ev |
 |---|---|---|---|
-| `anthropic` | `planned GET {base}/api/oauth/usage` + `profile`; OAuth scope-gated (same contract as native Claude lane) | `planned` attribution to [claude.rs](../../crates/jackin-usage/src/usage/claude.rs) ([U11](#9-u-register-exact-missing-proofs)) | **R** (ref-contracts-A; omp `usage/claude.ts`) |
-| `openai-codex`, `openai-codex-device` | `planned` wham/usage + reset-credit inventory; prefer app-server `account/*` (same contract as native Codex lane) | `planned` attribution to [codex.rs](../../crates/jackin-usage/src/usage/codex.rs) ([U11](#9-u-register-exact-missing-proofs)) | **R** |
+| `anthropic` | `planned GET {base}/api/oauth/usage` + `profile`; OAuth scope-gated (same contract as native Claude lane) | `planned` attribution to [claude.rs](../../crates/services/jackin-usage-provider-claude/src/lib.rs) ([U11](#9-u-register-exact-missing-proofs)) | **R** (ref-contracts-A; omp `usage/claude.ts`) |
+| `openai-codex`, `openai-codex-device` | `planned` wham/usage + reset-credit inventory; prefer app-server `account/*` (same contract as native Codex lane) | `planned` attribution to [codex.rs](../../crates/services/jackin-usage-provider-codex/src/lib.rs) ([U11](#9-u-register-exact-missing-proofs)) | **R** |
 | `kimi-code` | `GET https://api.kimi.com/coding/v1/usages` (OAuth + key paths) | `implemented` [kimi.rs](../../crates/jackin-usage/src/usage/kimi.rs); attribution wiring `planned` | **D** (kimi-cli `usage.py` + omp `usage/kimi.ts` at pinned SHAs) |
-| `zai`, `zai-coding-plan` | `planned api.z.ai /api/monitor/usage/quota/limit` + model-usage; CREDIT vs TOKENS_LIMIT pools; plan-scoped | `implemented` [zai.rs](../../crates/jackin-usage/src/usage/zai.rs); attribution wiring `planned` | **R** |
+| `zai`, `zai-coding-plan` | `planned api.z.ai /api/monitor/usage/quota/limit` + model-usage; CREDIT vs TOKENS_LIMIT pools; plan-scoped | `implemented` [zai.rs](../../crates/services/jackin-usage-provider-zai/src/lib.rs); attribution wiring `planned` | **R** |
 | `minimax-code` | `GET {base}/v1/token_plan/remains` (Global `api.minimax.io` / China `api.minimaxi.com`) | `implemented` [minimax.rs](../../crates/jackin-usage/src/usage/minimax.rs); attribution wiring `planned` | **S** |
 | `minimax-code-cn` | same remains API on CN host | `planned` — verify CN-host behavior ([U3](#9-u-register-exact-missing-proofs)) | **U** |
 | `opencode-go` | `GET https://opencode.ai/zen/go/v1/usage` | `implemented` [opencode.rs](../../crates/jackin-usage/src/usage/opencode.rs); attribution wiring `planned` | **R** |
@@ -301,7 +301,7 @@ private/reference-grade until vendor-documented or Mac-live-verified
 | `google-antigravity` | `planned daily-cloudcode-pa :retrieveUserQuotaSummary`; bind identity; GUI/keyring live proof is `not_run` | `planned` — see also native [antigravity.rs](../../crates/jackin-usage/src/usage/antigravity.rs) (`agy -p /usage --output-format json`) ([U11](#9-u-register-exact-missing-proofs)) | **R** |
 | `google-gemini-cli` | `planned` cloudcode-pa Code Assist quota; OAuth only | `planned` ([U11](#9-u-register-exact-missing-proofs)) | **R** |
 | `muse-code` | cached MSP observation; key-exchange is a separate op, never auto-poll | `planned` — see native [muse.rs](../../crates/jackin-usage/src/usage/muse.rs) ([U11](#9-u-register-exact-missing-proofs)) | **R** |
-| `xai-oauth` | `planned` Grok CLI billing endpoint; weekly/monthly split | `planned` — see native [grok.rs](../../crates/jackin-usage/src/usage/grok.rs) ([U11](#9-u-register-exact-missing-proofs)) | **R** |
+| `xai-oauth` | `planned` Grok CLI billing endpoint; weekly/monthly split | `planned` — see native [grok.rs](../../crates/services/jackin-usage-provider-grok/src/lib.rs) ([U11](#9-u-register-exact-missing-proofs)) | **R** |
 | `cursor` | `planned cursor.com/api/usage-summary` + `/api/auth/me`; personal scope | `planned` — see native [cursor.rs](../../crates/jackin-usage/src/usage/cursor.rs) ([U11](#9-u-register-exact-missing-proofs)) | **R** |
 | `devin` | `planned SeatManagementService/GetUserStatus`; no REST usage endpoint | `planned` ([U11](#9-u-register-exact-missing-proofs)) | **R** |
 | `cline-pass` | `planned /users/me` + `/users/me/plan/usage-limits` | `planned` ([U11](#9-u-register-exact-missing-proofs)) | **R** |
@@ -394,13 +394,13 @@ subscription-plans table (cells marked not-documented stay open questions).
 | Provider | Usage source | Status | Ev |
 |---|---|---|---|
 | `nous` | `planned` Portal billing/balance APIs; verify scope ([U5](#9-u-register-exact-missing-proofs)) | `planned` — see [hermes.rs](../../crates/jackin-usage/src/usage/hermes.rs) (Portal-billed attribution) | **S** |
-| `openai-codex` | `planned` Codex wham/usage + banked reset credits; prefer app-server | `planned` attribution to [codex.rs](../../crates/jackin-usage/src/usage/codex.rs) ([U11](#9-u-register-exact-missing-proofs)) | **S**+**R** |
-| `xai-oauth` | `planned` Grok CLI billing endpoint; weekly/monthly split | `planned` — see native [grok.rs](../../crates/jackin-usage/src/usage/grok.rs) ([U11](#9-u-register-exact-missing-proofs)) | **S**+**R** |
+| `openai-codex` | `planned` Codex wham/usage + banked reset credits; prefer app-server | `planned` attribution to [codex.rs](../../crates/services/jackin-usage-provider-codex/src/lib.rs) ([U11](#9-u-register-exact-missing-proofs)) | **S**+**R** |
+| `xai-oauth` | `planned` Grok CLI billing endpoint; weekly/monthly split | `planned` — see native [grok.rs](../../crates/services/jackin-usage-provider-grok/src/lib.rs) ([U11](#9-u-register-exact-missing-proofs)) | **S**+**R** |
 | `copilot` | `planned api.github.com copilot quota` | `planned` ([U11](#9-u-register-exact-missing-proofs)) | **S**+**R** |
-| `zai` | `planned api.z.ai quota/limit` + model-usage; plan/CN/team pools | `implemented` [zai.rs](../../crates/jackin-usage/src/usage/zai.rs); attribution wiring `planned` | **S**+**D** |
+| `zai` | `planned api.z.ai quota/limit` + model-usage; plan/CN/team pools | `implemented` [zai.rs](../../crates/services/jackin-usage-provider-zai/src/lib.rs); attribution wiring `planned` | **S**+**D** |
 | `kimi-coding` | `planned api.kimi.com/coding/v1/usages` | `implemented` [kimi.rs](../../crates/jackin-usage/src/usage/kimi.rs); attribution wiring `planned` | **S**+**R** |
 | `kimi-coding-cn` | same usages API on CN host | `planned` — verify CN host ([U6](#9-u-register-exact-missing-proofs)) | **S**+**U** |
-| `anthropic` | OAuth grants: `planned {base}/api/oauth/usage`; API keys need org reporting (`none:` no key-scoped balance) | `planned` attribution to [claude.rs](../../crates/jackin-usage/src/usage/claude.rs) ([U11](#9-u-register-exact-missing-proofs)) | **S**+**D** (ref-contracts-A) |
+| `anthropic` | OAuth grants: `planned {base}/api/oauth/usage`; API keys need org reporting (`none:` no key-scoped balance) | `planned` attribution to [claude.rs](../../crates/services/jackin-usage-provider-claude/src/lib.rs) ([U11](#9-u-register-exact-missing-proofs)) | **S**+**D** (ref-contracts-A) |
 | `alibaba-token-plan` | `planned` bailian token-plan API (same family as omp collector) | `planned` ([U11](#9-u-register-exact-missing-proofs)) | **S**+**R** |
 | `alibaba-token-plan-cn` | same on CN host | `planned` — verify CN host ([U7](#9-u-register-exact-missing-proofs)) | **S**+**U** |
 | `minimax`, `minimax-oauth` | Token Plan remains + PAYG balance endpoints; scope-split; OAuth grant path to verify | `implemented` [minimax.rs](../../crates/jackin-usage/src/usage/minimax.rs) for key path; OAuth path `planned` ([U8](#9-u-register-exact-missing-proofs)); attribution wiring `planned` | **S**+**D** |
@@ -439,7 +439,7 @@ and it is the default when omitted."** Chat-completions wire deprecated
 |---|---|
 | Auth | `env_key` (Bearer from env), `experimental_bearer_token` (discouraged), `auth.command` (command-backed Bearer [REDACTED]), or `requires_openai_auth` (ChatGPT OAuth). Ev **D**. |
 | Launch | `planned` `CX`: every Codex custom-provider launch stages a Responses-speaking `base_url` (+`env_key`) for the selected account only. Chat/Anthropic-native backends need a protocol relay, never a `wire_api` flag. Related implemented code: [adapter](../../crates/jackin-core/src/agent/adapters/codex.rs). Proof `not_run`. |
-| Usage | `none:` Codex exposes no per-provider quota API — except the `openai` (ChatGPT subscription) route: `planned` wham/usage + reset-credit inventory via [codex.rs](../../crates/jackin-usage/src/usage/codex.rs) ([U11](#9-u-register-exact-missing-proofs)). Ev **S**+**R**. Proof `not_run` (`implemented` for the collector itself). |
+| Usage | `none:` Codex exposes no per-provider quota API — except the `openai` (ChatGPT subscription) route: `planned` wham/usage + reset-credit inventory via [codex.rs](../../crates/services/jackin-usage-provider-codex/src/lib.rs) ([U11](#9-u-register-exact-missing-proofs)). Ev **S**+**R**. Proof `not_run` (`implemented` for the collector itself). |
 
 ## 7. Claude
 
@@ -474,7 +474,7 @@ Routing contract (**D**, code.claude.com docs fetched 2026-09-17):
 |---|---|
 | Auth | Bearer key (`ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN`), `apiKeyHelper`, Claude Max/Pro OAuth (`CLAUDE_CODE_OAUTH_TOKEN`), or cloud SDK flags. Ev **D**. |
 | Launch | `planned` `CC`: per-instance env (`ANTHROPIC_BASE_URL` + credential + `ANTHROPIC_MODEL`/alias pins) + isolated `CLAUDE_CONFIG_DIR`; never a plugin; `/status` verifies (base-URL + auth-token lines). Related implemented code (native route): [adapter](../../crates/jackin-core/src/agent/adapters/claude.rs). Proof `not_run`. |
-| Usage | First-party OAuth route: `GET {base}/api/oauth/usage` + `profile` — `implemented` [claude.rs](../../crates/jackin-usage/src/usage/claude.rs), ev **D** (ref-contracts-A). Gateway-rewritten routes: `none:` gateway-side metering only; no common quota API. Proof `implemented` (collector) / `not_run` (lane). |
+| Usage | First-party OAuth route: `GET {base}/api/oauth/usage` + `profile` — `implemented` [claude.rs](../../crates/services/jackin-usage-provider-claude/src/lib.rs), ev **D** (ref-contracts-A). Gateway-rewritten routes: `none:` gateway-side metering only; no common quota API. Proof `implemented` (collector) / `not_run` (lane). |
 
 ## 8. Cross-client rules
 
