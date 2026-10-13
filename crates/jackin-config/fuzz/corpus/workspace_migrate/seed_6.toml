@@ -1,0 +1,9 @@
+version = "v1alpha6"
+workdir = "/workspace/prod"
+
+[claude]
+auth_forward = "sync"
+
+[[mounts]]
+src = "/home/operator/projects/prod"
+dst = "/workspace/prod"

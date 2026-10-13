@@ -1,0 +1,6 @@
+version = "v1alpha9"
+data_dir = "/tmp/jackin"
+
+[roles.agent-smith]
+git = "https://github.com/jackin-project/jackin-agent-smith.git"
+trusted = true

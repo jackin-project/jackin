@@ -1,0 +1,13 @@
+❯ Do a deep research for a random topic in the internet
+  ⎿  Async hook UserPromptSubmit completed
+  ⎿  Async hook Stop completed
+
+* Flowing… (1s)
+  ⎿  Tip: Say "fan out subagents" and Claude sends a team. Each one digs deep so nothing gets missed.
+
+                                                                                                                                    36337 tokens
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  [CAVEMAN:ULTRA]
+  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents

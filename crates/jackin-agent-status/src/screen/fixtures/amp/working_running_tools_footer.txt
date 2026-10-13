@@ -1,0 +1,18 @@
+┃ Do a deep research for a random topic in the internet. Anything, any random topic.
+
+I’ll pick one interesting topic and research it from current web sources.
+
+✓ Web Search Find authoritative and recent sources about a surprising science/technology topic suitable for a concise deep-research summary. T…
+
+⡃ Read https://www.iea.org/reports/technology-roadmap-low-carbon-transition-in-the-cement-industry
+
+⠎ Read https://www.nature.com/articles/s44458-025-00027-1
+
+⣤ Read https://www.sciencedirect.com/science/article/pii/S2666549225000088
+╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ You can spawn multiple sub-agents for that.                                                                                   Enter to steer │
+╭┴──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── $0.08 ─ rush ┴╮
+│                                                                                                                                                │
+│                                                                                                                                                │
+│                                                                                                                                                │
+╰ ∼ Running Tools ──────────────────────────────────────── Users/donbeave/…/holla-project/holla (jackin/scratch/jk-n65xf0bw-holla-thearchitect) ─╯

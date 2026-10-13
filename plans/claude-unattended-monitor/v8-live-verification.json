@@ -1,0 +1,195 @@
+{
+  "artifact_version": 1,
+  "purpose": "Sanitized record of v8 live collector and monitor CLI evidence.",
+  "scope": {
+    "cli": "/Users/donbeave/.local/share/jackin-claude-monitor-v8/bin/jackin",
+    "data_dir": "/Users/donbeave/.local/share/jackin-claude-monitor-v7/state",
+    "provider": "claude",
+    "account_label": "my-claude-subscription",
+    "source_scope": "claude_keychain_service",
+    "source_match": true,
+    "source_account_id": "<redacted local source handle>",
+    "identity_claim": "The binding account_id is a local operator label; its provider_account_id maps to the selected local source handle. Claude account identity was not independently verified.",
+    "binding_id": "binding-00000001",
+    "binding_revision": 1,
+    "monitor_id": "monitor-00000001",
+    "purpose_mode": "observe_only",
+    "raw_credentials_or_tokens_recorded": false
+  },
+  "timestamp_notes": {
+    "timezone": "Asia/Ho_Chi_Minh",
+    "clock_reads": [
+      {
+        "utc": "2026-10-11T01:44:00Z",
+        "local": "2026-10-11T08:44:00+07:00",
+        "meaning": "Clock read after the initial v8 status and watch pass; exact per-command timestamps were not captured."
+      },
+      {
+        "utc": "2026-10-11T01:48:15Z",
+        "local": "2026-10-11T08:48:15+07:00",
+        "meaning": "Clock read before the persisted rate-limit retry deadline."
+      },
+      {
+        "utc": "2026-10-11T01:55:28Z",
+        "local": "2026-10-11T08:55:28+07:00",
+        "meaning": "Root clock update said the persisted retry deadline was 38 seconds away."
+      }
+    ],
+    "exact_cli_call_timestamps_recorded": false,
+    "retry_deadline_epoch": 1791683766,
+    "retry_deadline_local": "2026-10-11T08:56:06+07:00"
+  },
+  "operator_bootstrap": {
+    "installed_version": "v8",
+    "result": "service_ready",
+    "source_scope": "claude_keychain_service",
+    "source_match": true,
+    "source_account_id": "<redacted local source handle>",
+    "bootstrap_timestamp": "not captured"
+  },
+  "cli_observations": [
+    {
+      "command": "jackin usage service status --format json --data-dir /Users/donbeave/.local/share/jackin-claude-monitor-v7/state",
+      "cli_prefix": "/Users/donbeave/.local/share/jackin-claude-monitor-v8/bin/jackin",
+      "exit_code_captured": false,
+      "safe_output": {
+        "result": "service_status",
+        "status": {
+          "running": true,
+          "experimental_collector_source": "<redacted; matched service_ready source>",
+          "active_monitors": 1,
+          "next_wake_epoch": null
+        }
+      }
+    },
+    {
+      "command": "jackin usage status --monitor monitor-00000001 --format json --data-dir /Users/donbeave/.local/share/jackin-claude-monitor-v7/state",
+      "cli_prefix": "/Users/donbeave/.local/share/jackin-claude-monitor-v8/bin/jackin",
+      "status_event_sequence": 1,
+      "monitor_status_exit_code": 2,
+      "exit_code_source": "independent runtime report to root",
+      "safe_output": {
+        "schema_version": 4,
+        "monitor_id": "monitor-00000001",
+        "purpose": "observe_only",
+        "binding_id": "binding-00000001",
+        "binding_revision": 1,
+        "account_id": "my-claude-subscription",
+        "goal_id": null,
+        "lifecycle": "needs_evidence",
+        "readiness": {
+          "tracking": "waiting",
+          "quota": "unknown",
+          "budget": "unknown",
+          "dispatch": "not_authorized"
+        },
+        "runnable": false,
+        "five_hour": {
+          "used_percentage_basis_points": null,
+          "used_evidence": null,
+          "reset_at_epoch": null,
+          "reset_validity": "unknown",
+          "reset_evidence": null
+        },
+        "seven_day": {
+          "used_percentage_basis_points": null,
+          "used_evidence": null,
+          "reset_at_epoch": null,
+          "reset_validity": "unknown",
+          "reset_evidence": null
+        },
+        "evidence": [],
+        "latest_decision": {
+          "sequence": 1,
+          "evidence_sequences": [],
+          "actions": []
+        },
+        "updated_at_epoch": 1791659322,
+        "issues": ["quota_unknown", "missing_reset"]
+      }
+    },
+    {
+      "command": "jackin usage watch --monitor monitor-00000001 --timeout-secs 300 --format jsonl --data-dir /Users/donbeave/.local/share/jackin-claude-monitor-v7/state",
+      "cli_prefix": "/Users/donbeave/.local/share/jackin-claude-monitor-v8/bin/jackin",
+      "wrapper": null,
+      "exec_command_yield_time_ms": 30000,
+      "child_wall_time_seconds": 30.1,
+      "child_exit_code": 0,
+      "session_id": null,
+      "emitted_sequence_numbers": [1],
+      "observation": "Requested a 300-second watch; the child exited successfully after about 30 seconds and emitted only the existing sequence-1 status. No new monitor evidence was emitted."
+    },
+    {
+      "command": "jackin usage watch --monitor monitor-00000001 --timeout-secs 30 --format jsonl --data-dir /Users/donbeave/.local/share/jackin-claude-monitor-v7/state",
+      "cli_prefix": "/Users/donbeave/.local/share/jackin-claude-monitor-v8/bin/jackin",
+      "timing": "Immediately after the persisted retry deadline, following 30-second and 8-second clock sleeps from the root's 08:55:28 ICT update.",
+      "wrapper": null,
+      "exec_command_yield_time_ms": 30000,
+      "child_wall_time_seconds": 30.1,
+      "child_exit_code": 0,
+      "session_id": null,
+      "emitted_sequence_numbers": [1],
+      "observation": "No new monitor event or quota evidence appeared."
+    },
+    {
+      "command": "jackin usage status --monitor monitor-00000001 --format json --data-dir /Users/donbeave/.local/share/jackin-claude-monitor-v7/state",
+      "cli_prefix": "/Users/donbeave/.local/share/jackin-claude-monitor-v8/bin/jackin",
+      "timing": "Immediately after the post-deadline bounded watch; exact per-command timestamp was not captured.",
+      "exit_code_captured": false,
+      "safe_output_summary": "Unchanged sequence 1, updated_at_epoch 1791659322, no 5-hour or 7-day usage/reset/evidence, issues quota_unknown and missing_reset, runnable false, dispatch not_authorized."
+    }
+  ],
+  "source_side_collector_evidence": {
+    "provenance": "Independent runtime metadata relayed by root; not present in the public monitor CLI output above.",
+    "generation_22": {
+      "outcome": "failed",
+      "typed_error": "rate_limited",
+      "terminal_error": true,
+      "consecutive_failures": 4,
+      "retry_deadline_epoch": 1791683766,
+      "failure_epoch": 1791680167,
+      "last_good_evidence_epoch": 1791676313,
+      "last_good_evidence_age_seconds_at_failure": 3854,
+      "last_good_used_percentage_at_failure": {
+        "five_hour": 39,
+        "seven_day": 50
+      }
+    },
+    "generation_23": {
+      "outcome": "success",
+      "invocation_epoch": 1791683767,
+      "completion_epoch": 1791683768,
+      "consecutive_failures": 0,
+      "retry_deadline_cleared": true
+    },
+    "account_projection": {
+      "broker_generation": 39,
+      "source_generation": 23,
+      "current_last_good_epoch": 1791683767,
+      "sampled_at_epoch": 1791683871,
+      "sampled_at_local": "2026-10-11T08:57:51+07:00",
+      "sample_age_seconds": 104,
+      "five_hour": {
+        "used_percentage": 62,
+        "remaining_percentage": 38,
+        "reset_at_epoch": 1791687000
+      },
+      "seven_day": {
+        "used_percentage": 56,
+        "remaining_percentage": 44,
+        "reset_at_epoch": 1792134000
+      },
+      "observation": "Independent safe projection shows source-side five-hour usage at 62% and seven-day usage at 56%, sampled 104 seconds after the successful collector result. The monitor CLI still returned empty evidence."
+    },
+    "provider_http_request_count": "unmeasured; coordinator invocation epochs do not establish the number of HTTP requests"
+  },
+  "result": {
+    "source_collector": "A successful normal collector result is visible in the independent normalized account envelope after the natural retry deadline.",
+    "monitor_cli_acceptance": "failed: monitor-00000001 remains at its initial sequence-1 snapshot with null 5-hour and 7-day quota fields despite current source-side evidence.",
+    "mapping_cause": "not established by this artifact; source-to-monitor delivery remains the diagnosed boundary.",
+    "dispatch": "not authorized",
+    "policy_or_spend_mutations": false,
+    "auth_or_keychain_actions_by_this_verification": false,
+    "forced_refresh_or_cooldown_bypass": false
+  }
+}

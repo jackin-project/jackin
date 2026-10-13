@@ -1,0 +1,331 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
+//! Line builders for the shared 1Password picker modal.
+
+use std::collections::HashSet;
+
+use ratatui::{
+    style::Style,
+    text::{Line, Span},
+};
+
+use super::{
+    FieldDisplayRow, OpPickerAccountRef, OpPickerFatalState, OpPickerFieldDisplayRef,
+    OpPickerItemRef, OpPickerStage, OpPickerVaultRef, OpSection, section_display_label,
+};
+
+/// `+ New X` creation row, styled like picker list rows.
+pub fn sentinel_line(text: &str, _is_selected: bool) -> Line<'static> {
+    Line::from(Span::styled(
+        text.to_owned(),
+        termrock::style::DesignSystem::default().style(termrock::style::Role::TextMuted),
+    ))
+}
+
+pub fn account_lines<'a>(
+    accounts: impl IntoIterator<Item = OpPickerAccountRef<'a>> + 'a,
+    _selected: Option<usize>,
+) -> Vec<Line<'static>> {
+    accounts
+        .into_iter()
+        .map(|account| {
+            Line::from(vec![
+                Span::styled(
+                    account.email.to_owned(),
+                    Style::default().fg(termrock::style::DesignSystem::default()
+                        .style(termrock::style::Role::Text)
+                        .fg
+                        .unwrap_or_default()),
+                ),
+                Span::raw("  "),
+                Span::styled(
+                    format!("({})", account.url),
+                    termrock::style::DesignSystem::default()
+                        .style(termrock::style::Role::TextMuted),
+                ),
+            ])
+        })
+        .collect()
+}
+
+pub fn vault_lines<'a>(
+    vaults: impl IntoIterator<Item = OpPickerVaultRef<'a>> + 'a,
+    _selected: Option<usize>,
+) -> Vec<Line<'static>> {
+    vaults
+        .into_iter()
+        .map(|vault| {
+            Line::from(Span::styled(
+                vault.name.to_owned(),
+                Style::default().fg(termrock::style::DesignSystem::default()
+                    .style(termrock::style::Role::Text)
+                    .fg
+                    .unwrap_or_default()),
+            ))
+        })
+        .collect()
+}
+
+pub fn item_choice_lines<'a>(
+    item_choices: impl IntoIterator<Item = Option<OpPickerItemRef<'a>>> + 'a,
+    _selected: Option<usize>,
+) -> Vec<Line<'static>> {
+    item_choices
+        .into_iter()
+        .map(|choice| {
+            choice.map_or_else(
+                || sentinel_line("+ New item", false),
+                |item| {
+                    let mut spans = vec![Span::styled(
+                        item.name.to_owned(),
+                        Style::default().fg(termrock::style::DesignSystem::default()
+                            .style(termrock::style::Role::Text)
+                            .fg
+                            .unwrap_or_default()),
+                    )];
+                    if !item.subtitle.is_empty() {
+                        let dim = termrock::style::DesignSystem::default()
+                            .style(termrock::style::Role::TextMuted);
+                        spans.push(Span::styled(" (", dim));
+                        spans.push(Span::styled(item.subtitle.to_owned(), dim));
+                        spans.push(Span::styled(")", dim));
+                    }
+                    Line::from(spans)
+                },
+            )
+        })
+        .collect()
+}
+
+/// Render section-stage rows: `(root)`, named sections, then a creation
+/// sentinel.
+pub fn section_lines(
+    choices: impl IntoIterator<Item = Option<OpSection>>,
+    _selected: Option<usize>,
+) -> Vec<Line<'static>> {
+    let choices: Vec<Option<OpSection>> = choices.into_iter().collect();
+    let sections = choices.iter().filter_map(Clone::clone).collect::<Vec<_>>();
+    let mut lines: Vec<Line<'static>> = choices
+        .into_iter()
+        .map(|choice| {
+            let label = choice.map_or_else(
+                || "(root)".to_owned(),
+                |section| section_display_label(&section, &sections),
+            );
+            Line::from(Span::styled(
+                label,
+                Style::default().fg(termrock::style::DesignSystem::default()
+                    .style(termrock::style::Role::Text)
+                    .fg
+                    .unwrap_or_default()),
+            ))
+        })
+        .collect();
+    lines.push(sentinel_line("+ New section", false));
+    lines
+}
+
+pub fn field_lines<'a>(
+    rows: impl IntoIterator<Item = FieldDisplayRow>,
+    fields: impl IntoIterator<Item = OpPickerFieldDisplayRef<'a>>,
+    collapsed_sections: &HashSet<String>,
+    _selected: Option<usize>,
+) -> Vec<Line<'static>> {
+    let fields: Vec<OpPickerFieldDisplayRef<'a>> = fields.into_iter().collect();
+    let label_w = fields
+        .iter()
+        .map(|field| field_display_label(*field).chars().count())
+        .max()
+        .unwrap_or(0)
+        .max(8);
+
+    rows.into_iter()
+        .map(|row| match row {
+            FieldDisplayRow::SectionHeader {
+                section_id,
+                name,
+                field_count,
+            } => section_header_line(&section_id, &name, field_count, collapsed_sections),
+            FieldDisplayRow::Field { field_idx } => {
+                let Some(field) = fields.get(field_idx).copied() else {
+                    return Line::default();
+                };
+                field_line(field, label_w)
+            }
+            FieldDisplayRow::NewFieldSentinel => sentinel_line("+ New field", false),
+            FieldDisplayRow::NewSectionSentinel => sentinel_line("+ New section", false),
+        })
+        .collect()
+}
+
+fn section_header_line(
+    section_id: &str,
+    name: &str,
+    field_count: usize,
+    collapsed_sections: &HashSet<String>,
+) -> Line<'static> {
+    let arrow = if collapsed_sections.contains(section_id) {
+        "\u{25b6}"
+    } else {
+        "\u{25bc}"
+    };
+    let style = termrock::style::DesignSystem::default().style(termrock::style::Role::TextMuted);
+    let count_label = format!(
+        "({} {})",
+        field_count,
+        if field_count == 1 { "field" } else { "fields" }
+    );
+    Line::from(vec![
+        Span::styled(arrow, style),
+        Span::styled(format!(" {name}  "), style),
+        Span::styled(
+            count_label,
+            termrock::style::DesignSystem::default().style(termrock::style::Role::TextMuted),
+        ),
+    ])
+}
+
+fn field_line(field: OpPickerFieldDisplayRef<'_>, label_w: usize) -> Line<'static> {
+    let label = field_display_label(field);
+    let pad = label_w.saturating_sub(label.chars().count());
+    let label_style = Style::default().fg(termrock::style::DesignSystem::default()
+        .style(termrock::style::Role::Text)
+        .fg
+        .unwrap_or_default());
+    let annotation = if field.concealed {
+        "(concealed)".to_owned()
+    } else {
+        format!("({})", field.field_type.to_lowercase())
+    };
+    Line::from(vec![
+        Span::styled(label, label_style),
+        Span::raw(format!("{}  ", " ".repeat(pad))),
+        Span::styled(
+            annotation,
+            termrock::style::DesignSystem::default().style(termrock::style::Role::TextMuted),
+        ),
+    ])
+}
+
+fn field_display_label(field: OpPickerFieldDisplayRef<'_>) -> String {
+    if field.label.is_empty() {
+        field.id.to_owned()
+    } else {
+        field.label.to_owned()
+    }
+}
+
+pub fn loading_title_stage(stage: OpPickerStage) -> OpPickerStage {
+    if matches!(stage, OpPickerStage::Field) {
+        OpPickerStage::Item
+    } else {
+        stage
+    }
+}
+
+pub fn loading_descriptor(
+    stage: OpPickerStage,
+    multi_account: bool,
+    account_email: &str,
+    vault_name: &str,
+    item_name: &str,
+    item_subtitle: &str,
+) -> String {
+    match stage {
+        OpPickerStage::Account => "loading accounts\u{2026}".to_owned(),
+        OpPickerStage::Vault => {
+            if multi_account && !account_email.is_empty() {
+                format!("loading vaults from {account_email}\u{2026}")
+            } else {
+                "loading vaults\u{2026}".to_owned()
+            }
+        }
+        OpPickerStage::Item => {
+            format!("loading items from {vault_name}\u{2026}")
+        }
+        OpPickerStage::Field => {
+            if item_subtitle.is_empty() {
+                format!("loading {item_name}\u{2026}")
+            } else {
+                format!("loading {item_name} ({item_subtitle})\u{2026}")
+            }
+        }
+        OpPickerStage::Section
+        | OpPickerStage::NewItemName
+        | OpPickerStage::FieldLabel
+        | OpPickerStage::NewSectionName => "loading\u{2026}".to_owned(),
+    }
+}
+
+pub fn fatal_body_lines(fatal: &OpPickerFatalState) -> Vec<Line<'static>> {
+    match fatal {
+        OpPickerFatalState::NotInstalled => vec![
+            Line::from(Span::styled(
+                "1Password CLI not found.",
+                termrock::style::DesignSystem::default().style(termrock::style::Role::TextStrong),
+            )),
+            Line::from(""),
+            Line::from(Span::styled(
+                "Install: brew install 1password-cli (macOS)",
+                termrock::style::DesignSystem::default().style(termrock::style::Role::Accent),
+            )),
+            Line::from(Span::styled(
+                "or visit 1password.com/downloads/command-line/",
+                termrock::style::DesignSystem::default().style(termrock::style::Role::Accent),
+            )),
+            Line::from(""),
+            Line::from(Span::styled(
+                "After install, run `op signin`, then press P to retry.",
+                termrock::style::DesignSystem::default().style(termrock::style::Role::TextMuted),
+            )),
+        ],
+        OpPickerFatalState::NotSignedIn => vec![
+            Line::from(Span::styled(
+                "1Password CLI is not signed in.",
+                termrock::style::DesignSystem::default().style(termrock::style::Role::TextStrong),
+            )),
+            Line::from(""),
+            Line::from(Span::styled(
+                "Run `op signin` in your shell, then retry.",
+                termrock::style::DesignSystem::default().style(termrock::style::Role::Accent),
+            )),
+            Line::from(""),
+            Line::from(Span::styled(
+                "jackin❯ uses your existing op session — there is no separate jackin❯ auth.",
+                termrock::style::DesignSystem::default().style(termrock::style::Role::TextMuted),
+            )),
+        ],
+        OpPickerFatalState::NoVaults => vec![
+            Line::from(Span::styled(
+                "No vaults available.",
+                termrock::style::DesignSystem::default().style(termrock::style::Role::TextStrong),
+            )),
+            Line::from(""),
+            Line::from(Span::styled(
+                "Check 1Password's app integration settings:",
+                termrock::style::DesignSystem::default().style(termrock::style::Role::Accent),
+            )),
+            Line::from(Span::styled(
+                "Settings \u{2192} Developer \u{2192} CLI integration.",
+                termrock::style::DesignSystem::default().style(termrock::style::Role::Accent),
+            )),
+        ],
+        OpPickerFatalState::GenericFatal { message } => {
+            let truncated: String = message.chars().take(120).collect();
+            vec![
+                Line::from(Span::styled(
+                    "1Password CLI error.",
+                    termrock::style::DesignSystem::default()
+                        .style(termrock::style::Role::TextStrong),
+                )),
+                Line::from(""),
+                Line::from(Span::styled(
+                    truncated,
+                    termrock::style::DesignSystem::default()
+                        .style(termrock::style::Role::TextMuted),
+                )),
+            ]
+        }
+    }
+}

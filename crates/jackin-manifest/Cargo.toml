@@ -1,0 +1,39 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "jackin-manifest"
+version = "0.6.4"
+edition.workspace = true
+rust-version.workspace = true
+authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
+description = "Role manifest loading, validation, and migration for jackin."
+license.workspace = true
+readme = "README.md"
+publish = false
+
+repository.workspace = true
+[lib]
+name = "jackin_manifest"
+path = "src/lib.rs"
+
+[dependencies]
+jackin-core = { workspace = true }
+jackin-config = { workspace = true }
+anyhow = { workspace = true }
+toml = { workspace = true }
+toml_edit = { workspace = true }
+dockerfile-parser-rs = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true, features = ["html_reports"] }
+proptest = { workspace = true }
+tempfile = { workspace = true }
+
+[lints]
+workspace = true
+
+[[bench]]
+name = "manifest_validate"
+harness = false

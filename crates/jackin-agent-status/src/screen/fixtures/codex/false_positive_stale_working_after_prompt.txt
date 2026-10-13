@@ -1,0 +1,12 @@
+# not: working
+
+› Research some random topic in the internet. Please do a kind of deep research.
+
+• Searching the web
+
+• Working (18s • esc to interrupt)
+
+
+› Improve documentation in @filename
+
+  gpt-5.3-codex-spark low · /Users/donbeave/Projects/tailrocks/holla-project/holla

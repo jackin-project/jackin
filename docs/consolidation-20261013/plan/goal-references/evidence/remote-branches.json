@@ -1,0 +1,719 @@
+{
+  "repository": "jackin-project/jackin",
+  "source": "GitHub branches API pages, 20/page (page 4: 19; page 5: empty), cross-checked search_branches",
+  "snapshot_date_singapore": "2026-10-13",
+  "scope": "server-side refs/heads only; not the operator local checkout",
+  "branches": [
+    {
+      "ref": "refs/heads/archive/cleanup-20261006/jackin-origin/docs/build-split-c72-record/tip-3cb98f2a634c1e660e501489d7383329569db7a3",
+      "name": "archive/cleanup-20261006/jackin-origin/docs/build-split-c72-record/tip-3cb98f2a634c1e660e501489d7383329569db7a3",
+      "tip": "3cb98f2a634c1e660e501489d7383329569db7a3",
+      "group": "archive-docs",
+      "protected": false,
+      "id": "B001",
+      "dossier": "branches/b001-archive-docs-437a9e81ba65.md"
+    },
+    {
+      "ref": "refs/heads/archive/cleanup-20261006/jackin-origin/docs/build-split-evidence-41265/tip-b1e08b880223594cceccf3ea44322d44e3cdf984",
+      "name": "archive/cleanup-20261006/jackin-origin/docs/build-split-evidence-41265/tip-b1e08b880223594cceccf3ea44322d44e3cdf984",
+      "tip": "b1e08b880223594cceccf3ea44322d44e3cdf984",
+      "group": "archive-docs",
+      "protected": false,
+      "id": "B002",
+      "dossier": "branches/b002-archive-docs-33af45993b41.md"
+    },
+    {
+      "ref": "refs/heads/archive/cleanup-20261006/jackin-origin/recovery/cleanup-20261006/jackin-unreferenced-tree-abc5b11ca1b2/tip-fea3ade6830912017f2ad80c0c5a9d1acfbde0b7",
+      "name": "archive/cleanup-20261006/jackin-origin/recovery/cleanup-20261006/jackin-unreferenced-tree-abc5b11ca1b2/tip-fea3ade6830912017f2ad80c0c5a9d1acfbde0b7",
+      "tip": "fea3ade6830912017f2ad80c0c5a9d1acfbde0b7",
+      "group": "archive-recovery",
+      "protected": false,
+      "id": "B003",
+      "dossier": "branches/b003-archive-recovery-583438c051c5.md"
+    },
+    {
+      "ref": "refs/heads/archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/keeper/root-0a898cd246fbbf62f3b463f0097ffd6a368b1e07/tip-0a898cd246fbbf62f3b463f0097ffd6a368b1e07",
+      "name": "archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/keeper/root-0a898cd246fbbf62f3b463f0097ffd6a368b1e07/tip-0a898cd246fbbf62f3b463f0097ffd6a368b1e07",
+      "tip": "0a898cd246fbbf62f3b463f0097ffd6a368b1e07",
+      "group": "archive-keeper",
+      "protected": false,
+      "id": "B004",
+      "dossier": "branches/b004-archive-keeper-5aacaad28a02.md"
+    },
+    {
+      "ref": "refs/heads/archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/keeper/root-1c42a33b2fe22aae4b40cd6ec6fd391cfd367c7d/tip-1c42a33b2fe22aae4b40cd6ec6fd391cfd367c7d",
+      "name": "archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/keeper/root-1c42a33b2fe22aae4b40cd6ec6fd391cfd367c7d/tip-1c42a33b2fe22aae4b40cd6ec6fd391cfd367c7d",
+      "tip": "1c42a33b2fe22aae4b40cd6ec6fd391cfd367c7d",
+      "group": "archive-keeper",
+      "protected": false,
+      "id": "B005",
+      "dossier": "branches/b005-archive-keeper-efa220a4ecda.md"
+    },
+    {
+      "ref": "refs/heads/archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/keeper/root-1d97cf23f96e5a234d2a6a51d53f3e46c8d7825d/tip-1d97cf23f96e5a234d2a6a51d53f3e46c8d7825d",
+      "name": "archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/keeper/root-1d97cf23f96e5a234d2a6a51d53f3e46c8d7825d/tip-1d97cf23f96e5a234d2a6a51d53f3e46c8d7825d",
+      "tip": "1d97cf23f96e5a234d2a6a51d53f3e46c8d7825d",
+      "group": "archive-keeper",
+      "protected": false,
+      "id": "B006",
+      "dossier": "branches/b006-archive-keeper-856b4d85181f.md"
+    },
+    {
+      "ref": "refs/heads/archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/keeper/root-5a7d4f19ed2c1061c4e5be518274ffa8779aeb5e/tip-5a7d4f19ed2c1061c4e5be518274ffa8779aeb5e",
+      "name": "archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/keeper/root-5a7d4f19ed2c1061c4e5be518274ffa8779aeb5e/tip-5a7d4f19ed2c1061c4e5be518274ffa8779aeb5e",
+      "tip": "5a7d4f19ed2c1061c4e5be518274ffa8779aeb5e",
+      "group": "archive-keeper",
+      "protected": false,
+      "id": "B007",
+      "dossier": "branches/b007-archive-keeper-74cf60fb6d52.md"
+    },
+    {
+      "ref": "refs/heads/archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/keeper/root-5a8264746286a981debb099646a6354d9b10e0cb/tip-5a8264746286a981debb099646a6354d9b10e0cb",
+      "name": "archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/keeper/root-5a8264746286a981debb099646a6354d9b10e0cb/tip-5a8264746286a981debb099646a6354d9b10e0cb",
+      "tip": "5a8264746286a981debb099646a6354d9b10e0cb",
+      "group": "archive-keeper",
+      "protected": false,
+      "id": "B008",
+      "dossier": "branches/b008-archive-keeper-77baf007acb6.md"
+    },
+    {
+      "ref": "refs/heads/archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/keeper/root-5c4aa5eba5aaea2f2bfa2339f91066567a8e9979/tip-5c4aa5eba5aaea2f2bfa2339f91066567a8e9979",
+      "name": "archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/keeper/root-5c4aa5eba5aaea2f2bfa2339f91066567a8e9979/tip-5c4aa5eba5aaea2f2bfa2339f91066567a8e9979",
+      "tip": "5c4aa5eba5aaea2f2bfa2339f91066567a8e9979",
+      "group": "archive-keeper",
+      "protected": false,
+      "id": "B009",
+      "dossier": "branches/b009-archive-keeper-dd596b9a057a.md"
+    },
+    {
+      "ref": "refs/heads/archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/keeper/root-6d65e649855f98f133f58f605727b098b5d4eabb/tip-6d65e649855f98f133f58f605727b098b5d4eabb",
+      "name": "archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/keeper/root-6d65e649855f98f133f58f605727b098b5d4eabb/tip-6d65e649855f98f133f58f605727b098b5d4eabb",
+      "tip": "6d65e649855f98f133f58f605727b098b5d4eabb",
+      "group": "archive-keeper",
+      "protected": false,
+      "id": "B010",
+      "dossier": "branches/b010-archive-keeper-8fd347cb734e.md"
+    },
+    {
+      "ref": "refs/heads/archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/keeper/root-07beb1c705ee8f813d2c8f5a438291cc031c9d1a/tip-07beb1c705ee8f813d2c8f5a438291cc031c9d1a",
+      "name": "archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/keeper/root-07beb1c705ee8f813d2c8f5a438291cc031c9d1a/tip-07beb1c705ee8f813d2c8f5a438291cc031c9d1a",
+      "tip": "07beb1c705ee8f813d2c8f5a438291cc031c9d1a",
+      "group": "archive-keeper",
+      "protected": false,
+      "id": "B011",
+      "dossier": "branches/b011-archive-keeper-64de0538eaa5.md"
+    },
+    {
+      "ref": "refs/heads/archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/keeper/root-14bd1471616056e07c81c59d59eafc0963b16865/tip-14bd1471616056e07c81c59d59eafc0963b16865",
+      "name": "archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/keeper/root-14bd1471616056e07c81c59d59eafc0963b16865/tip-14bd1471616056e07c81c59d59eafc0963b16865",
+      "tip": "14bd1471616056e07c81c59d59eafc0963b16865",
+      "group": "archive-keeper",
+      "protected": false,
+      "id": "B012",
+      "dossier": "branches/b012-archive-keeper-27c1d7ad2d95.md"
+    },
+    {
+      "ref": "refs/heads/archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/keeper/root-256b88d1a7e85b4855d1e64399e2af4482026e17/tip-256b88d1a7e85b4855d1e64399e2af4482026e17",
+      "name": "archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/keeper/root-256b88d1a7e85b4855d1e64399e2af4482026e17/tip-256b88d1a7e85b4855d1e64399e2af4482026e17",
+      "tip": "256b88d1a7e85b4855d1e64399e2af4482026e17",
+      "group": "archive-keeper",
+      "protected": false,
+      "id": "B013",
+      "dossier": "branches/b013-archive-keeper-e118ca686ade.md"
+    },
+    {
+      "ref": "refs/heads/archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/keeper/root-631d734b99ee9b413230ddb210698a5c80f41d70/tip-631d734b99ee9b413230ddb210698a5c80f41d70",
+      "name": "archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/keeper/root-631d734b99ee9b413230ddb210698a5c80f41d70/tip-631d734b99ee9b413230ddb210698a5c80f41d70",
+      "tip": "631d734b99ee9b413230ddb210698a5c80f41d70",
+      "group": "archive-keeper",
+      "protected": false,
+      "id": "B014",
+      "dossier": "branches/b014-archive-keeper-4d364008016b.md"
+    },
+    {
+      "ref": "refs/heads/archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/keeper/root-7646c61bd4261a5908693bdaf0a6ecd9e9643448/tip-7646c61bd4261a5908693bdaf0a6ecd9e9643448",
+      "name": "archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/keeper/root-7646c61bd4261a5908693bdaf0a6ecd9e9643448/tip-7646c61bd4261a5908693bdaf0a6ecd9e9643448",
+      "tip": "7646c61bd4261a5908693bdaf0a6ecd9e9643448",
+      "group": "archive-keeper",
+      "protected": false,
+      "id": "B015",
+      "dossier": "branches/b015-archive-keeper-dc5b26803593.md"
+    },
+    {
+      "ref": "refs/heads/archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/keeper/root-66227a0033a6f8b917e684de1776753e33978590/tip-66227a0033a6f8b917e684de1776753e33978590",
+      "name": "archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/keeper/root-66227a0033a6f8b917e684de1776753e33978590/tip-66227a0033a6f8b917e684de1776753e33978590",
+      "tip": "66227a0033a6f8b917e684de1776753e33978590",
+      "group": "archive-keeper",
+      "protected": false,
+      "id": "B016",
+      "dossier": "branches/b016-archive-keeper-f164586efdc9.md"
+    },
+    {
+      "ref": "refs/heads/archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/keeper/root-77508d454bfe9a903043586db2c8c5faa1f9e960/tip-77508d454bfe9a903043586db2c8c5faa1f9e960",
+      "name": "archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/keeper/root-77508d454bfe9a903043586db2c8c5faa1f9e960/tip-77508d454bfe9a903043586db2c8c5faa1f9e960",
+      "tip": "77508d454bfe9a903043586db2c8c5faa1f9e960",
+      "group": "archive-keeper",
+      "protected": false,
+      "id": "B017",
+      "dossier": "branches/b017-archive-keeper-b3531a0bac69.md"
+    },
+    {
+      "ref": "refs/heads/archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/keeper/root-a28ab0a27eccc892decf8a4df55244b70096f631/tip-a28ab0a27eccc892decf8a4df55244b70096f631",
+      "name": "archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/keeper/root-a28ab0a27eccc892decf8a4df55244b70096f631/tip-a28ab0a27eccc892decf8a4df55244b70096f631",
+      "tip": "a28ab0a27eccc892decf8a4df55244b70096f631",
+      "group": "archive-keeper",
+      "protected": false,
+      "id": "B018",
+      "dossier": "branches/b018-archive-keeper-6176f4f904dc.md"
+    },
+    {
+      "ref": "refs/heads/archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/keeper/root-b930e3658c671ca21ab7c25ea1a40349bb69284a/tip-b930e3658c671ca21ab7c25ea1a40349bb69284a",
+      "name": "archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/keeper/root-b930e3658c671ca21ab7c25ea1a40349bb69284a/tip-b930e3658c671ca21ab7c25ea1a40349bb69284a",
+      "tip": "b930e3658c671ca21ab7c25ea1a40349bb69284a",
+      "group": "archive-keeper",
+      "protected": false,
+      "id": "B019",
+      "dossier": "branches/b019-archive-keeper-7cddcc8364f3.md"
+    },
+    {
+      "ref": "refs/heads/archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/keeper/root-c7b8a95856cce6f5e8442f0e6fafcf025a089132/tip-c7b8a95856cce6f5e8442f0e6fafcf025a089132",
+      "name": "archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/keeper/root-c7b8a95856cce6f5e8442f0e6fafcf025a089132/tip-c7b8a95856cce6f5e8442f0e6fafcf025a089132",
+      "tip": "c7b8a95856cce6f5e8442f0e6fafcf025a089132",
+      "group": "archive-keeper",
+      "protected": false,
+      "id": "B020",
+      "dossier": "branches/b020-archive-keeper-83afb29df592.md"
+    },
+    {
+      "ref": "refs/heads/archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/keeper/root-d0bdbc021350dbd7b9f5f011b8e96d2fa3858f78/tip-d0bdbc021350dbd7b9f5f011b8e96d2fa3858f78",
+      "name": "archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/keeper/root-d0bdbc021350dbd7b9f5f011b8e96d2fa3858f78/tip-d0bdbc021350dbd7b9f5f011b8e96d2fa3858f78",
+      "tip": "d0bdbc021350dbd7b9f5f011b8e96d2fa3858f78",
+      "group": "archive-keeper",
+      "protected": false,
+      "id": "B021",
+      "dossier": "branches/b021-archive-keeper-45846051b2ee.md"
+    },
+    {
+      "ref": "refs/heads/archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/keeper/root-df80aa7360da0eb6702e8cbe3eafd80c69d4b3bb/tip-df80aa7360da0eb6702e8cbe3eafd80c69d4b3bb",
+      "name": "archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/keeper/root-df80aa7360da0eb6702e8cbe3eafd80c69d4b3bb/tip-df80aa7360da0eb6702e8cbe3eafd80c69d4b3bb",
+      "tip": "df80aa7360da0eb6702e8cbe3eafd80c69d4b3bb",
+      "group": "archive-keeper",
+      "protected": false,
+      "id": "B022",
+      "dossier": "branches/b022-archive-keeper-0058bbcc86ff.md"
+    },
+    {
+      "ref": "refs/heads/archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/keeper/root-e978dda9643079998f342380ccd123562139858a/tip-e978dda9643079998f342380ccd123562139858a",
+      "name": "archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/keeper/root-e978dda9643079998f342380ccd123562139858a/tip-e978dda9643079998f342380ccd123562139858a",
+      "tip": "e978dda9643079998f342380ccd123562139858a",
+      "group": "archive-keeper",
+      "protected": false,
+      "id": "B023",
+      "dossier": "branches/b023-archive-keeper-a760f85ce5ae.md"
+    },
+    {
+      "ref": "refs/heads/archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/keeper/root-ffe6d6767bf2be30f54df7d245574b5980c05eac/tip-ffe6d6767bf2be30f54df7d245574b5980c05eac",
+      "name": "archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/keeper/root-ffe6d6767bf2be30f54df7d245574b5980c05eac/tip-ffe6d6767bf2be30f54df7d245574b5980c05eac",
+      "tip": "ffe6d6767bf2be30f54df7d245574b5980c05eac",
+      "group": "archive-keeper",
+      "protected": false,
+      "id": "B024",
+      "dossier": "branches/b024-archive-keeper-d898a35778ef.md"
+    },
+    {
+      "ref": "refs/heads/archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/keeper/staged-index-jackin-1044-current-0437497d7f22/tip-0437497d7f22fbdb7c8aad986be932704d707fe9",
+      "name": "archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/keeper/staged-index-jackin-1044-current-0437497d7f22/tip-0437497d7f22fbdb7c8aad986be932704d707fe9",
+      "tip": "0437497d7f22fbdb7c8aad986be932704d707fe9",
+      "group": "archive-staged",
+      "protected": false,
+      "id": "B025",
+      "dossier": "branches/b025-archive-staged-67aa054ffa3d.md"
+    },
+    {
+      "ref": "refs/heads/archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/source3-sanitized/8e14f13a810898b2a54aebccb336d95fc6686ca5/tip-2d97bba390864fbdc79aa6566e3394df938408af",
+      "name": "archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/source3-sanitized/8e14f13a810898b2a54aebccb336d95fc6686ca5/tip-2d97bba390864fbdc79aa6566e3394df938408af",
+      "tip": "2d97bba390864fbdc79aa6566e3394df938408af",
+      "group": "archive-sanitized",
+      "protected": false,
+      "id": "B026",
+      "dossier": "branches/b026-archive-sanitized-0ced81950334.md"
+    },
+    {
+      "ref": "refs/heads/archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/source3-sanitized/8f2d72ac88d4f15b1435aae1f508fcb2d7ca5eab/tip-502e0627d3940e2cd68ae0078910f21452d9ccc1",
+      "name": "archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/source3-sanitized/8f2d72ac88d4f15b1435aae1f508fcb2d7ca5eab/tip-502e0627d3940e2cd68ae0078910f21452d9ccc1",
+      "tip": "502e0627d3940e2cd68ae0078910f21452d9ccc1",
+      "group": "archive-sanitized",
+      "protected": false,
+      "id": "B027",
+      "dossier": "branches/b027-archive-sanitized-0739580d021c.md"
+    },
+    {
+      "ref": "refs/heads/archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/src3-8fe2b0e6dc1c/branch-6ce20ce13cb8/tip-6ce20ce13cb87c5ab89b44d72698fa0d68aacf39",
+      "name": "archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/src3-8fe2b0e6dc1c/branch-6ce20ce13cb8/tip-6ce20ce13cb87c5ab89b44d72698fa0d68aacf39",
+      "tip": "6ce20ce13cb87c5ab89b44d72698fa0d68aacf39",
+      "group": "archive-src3",
+      "protected": false,
+      "id": "B028",
+      "dossier": "branches/b028-archive-src3-95287c049e3e.md"
+    },
+    {
+      "ref": "refs/heads/archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/src3-8fe2b0e6dc1c/branch-8fb49688a640/tip-8fb49688a6408627e22118f92d24f47785564979",
+      "name": "archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/src3-8fe2b0e6dc1c/branch-8fb49688a640/tip-8fb49688a6408627e22118f92d24f47785564979",
+      "tip": "8fb49688a6408627e22118f92d24f47785564979",
+      "group": "archive-src3",
+      "protected": false,
+      "id": "B029",
+      "dossier": "branches/b029-archive-src3-21f83e144de4.md"
+    },
+    {
+      "ref": "refs/heads/archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/src3-8fe2b0e6dc1c/branch-12dea6c5fd0f/tip-12dea6c5fd0f9d2c594d5ad3159e6493d03352f4",
+      "name": "archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/src3-8fe2b0e6dc1c/branch-12dea6c5fd0f/tip-12dea6c5fd0f9d2c594d5ad3159e6493d03352f4",
+      "tip": "12dea6c5fd0f9d2c594d5ad3159e6493d03352f4",
+      "group": "archive-src3",
+      "protected": false,
+      "id": "B030",
+      "dossier": "branches/b030-archive-src3-841f56f9a292.md"
+    },
+    {
+      "ref": "refs/heads/archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/src3-8fe2b0e6dc1c/branch-432e0108ce90/tip-432e0108ce90b64b428c69c27d4a2ac23e559379",
+      "name": "archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/src3-8fe2b0e6dc1c/branch-432e0108ce90/tip-432e0108ce90b64b428c69c27d4a2ac23e559379",
+      "tip": "432e0108ce90b64b428c69c27d4a2ac23e559379",
+      "group": "archive-src3",
+      "protected": false,
+      "id": "B031",
+      "dossier": "branches/b031-archive-src3-75be4f6a7848.md"
+    },
+    {
+      "ref": "refs/heads/archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/src3-8fe2b0e6dc1c/branch-b1dc105acffb/tip-b1dc105acffb68ba71fff86f9c18dc5ff77de924",
+      "name": "archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/src3-8fe2b0e6dc1c/branch-b1dc105acffb/tip-b1dc105acffb68ba71fff86f9c18dc5ff77de924",
+      "tip": "b1dc105acffb68ba71fff86f9c18dc5ff77de924",
+      "group": "archive-src3",
+      "protected": false,
+      "id": "B032",
+      "dossier": "branches/b032-archive-src3-70770d79115b.md"
+    },
+    {
+      "ref": "refs/heads/archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/src3-8fe2b0e6dc1c/branch-d16cd795d4a5/tip-d16cd795d4a539b84ba5f44290663b2363d49350",
+      "name": "archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/src3-8fe2b0e6dc1c/branch-d16cd795d4a5/tip-d16cd795d4a539b84ba5f44290663b2363d49350",
+      "tip": "d16cd795d4a539b84ba5f44290663b2363d49350",
+      "group": "archive-src3",
+      "protected": false,
+      "id": "B033",
+      "dossier": "branches/b033-archive-src3-9264ed8676fb.md"
+    },
+    {
+      "ref": "refs/heads/archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/src3-8fe2b0e6dc1c/unreachable-33d88b1cf764/tip-33d88b1cf764f614d3935c11c48decd53386083e",
+      "name": "archive/cleanup-20261006/jackin-origin/recovery/jackin-20261004T211752Z-e002bd55/src3-8fe2b0e6dc1c/unreachable-33d88b1cf764/tip-33d88b1cf764f614d3935c11c48decd53386083e",
+      "tip": "33d88b1cf764f614d3935c11c48decd53386083e",
+      "group": "archive-src3",
+      "protected": false,
+      "id": "B034",
+      "dossier": "branches/b034-archive-src3-ac5215e0b69e.md"
+    },
+    {
+      "ref": "refs/heads/chore/rust-mise-mbx-modernize",
+      "name": "chore/rust-mise-mbx-modernize",
+      "tip": "9ef617d014df15c6d967501bcbbdcb3689ed453c",
+      "group": "modernize",
+      "protected": false,
+      "id": "B035",
+      "dossier": "branches/b035-modernize-9949620d3954.md"
+    },
+    {
+      "ref": "refs/heads/ci-tooling/pr1121-ledger-454-20261010",
+      "name": "ci-tooling/pr1121-ledger-454-20261010",
+      "tip": "fba69d60c2373156dc0dcecee8e085c83776966f",
+      "group": "policy",
+      "protected": false,
+      "id": "B036",
+      "dossier": "branches/b036-policy-0b27f2016591.md"
+    },
+    {
+      "ref": "refs/heads/fix/claude-usage-live-repair",
+      "name": "fix/claude-usage-live-repair",
+      "tip": "2e4a62da4bc4406764162a267163389a5fb513a7",
+      "group": "usage",
+      "protected": false,
+      "id": "B037",
+      "dossier": "branches/b037-usage-1c388dc4de71.md"
+    },
+    {
+      "ref": "refs/heads/main",
+      "name": "main",
+      "tip": "1c3dd1be4a3b1ed518133ec3899c084c792370ff",
+      "group": "baseline",
+      "protected": true,
+      "id": "B038",
+      "dossier": "branches/b038-baseline-f921bd05e68b.md"
+    },
+    {
+      "ref": "refs/heads/recovery/cleanup-20261006/misrouted-jackin/src-2e29a881/dangling-sccache-successor-41dd148e514d",
+      "name": "recovery/cleanup-20261006/misrouted-jackin/src-2e29a881/dangling-sccache-successor-41dd148e514d",
+      "tip": "41dd148e514d1bf3f84401f0ecbf8e87b58bb261",
+      "group": "misrouted",
+      "protected": false,
+      "id": "B039",
+      "dossier": "branches/b039-misrouted-e096ae35b5a8.md"
+    },
+    {
+      "ref": "refs/heads/rescue/local/937c9c5f-a870-43c7-aa58-36a3f5c1b9cf/ed5b0cf1d7a4fdfe4e62eed7/usage-r37-followup",
+      "name": "rescue/local/937c9c5f-a870-43c7-aa58-36a3f5c1b9cf/ed5b0cf1d7a4fdfe4e62eed7/usage-r37-followup",
+      "tip": "2abed4ad67d8438ab9eb124b564be6ad5b545847",
+      "group": "usage-followup",
+      "protected": false,
+      "id": "B040",
+      "dossier": "branches/b040-usage-followup-bf245b09ab75.md"
+    },
+    {
+      "ref": "refs/heads/rescue/local/20261011-110605-42b7822b/bdb98a128593444a2c9f2482/rust-policy-rollout-ef238a7e",
+      "name": "rescue/local/20261011-110605-42b7822b/bdb98a128593444a2c9f2482/rust-policy-rollout-ef238a7e",
+      "tip": "ef238a7e4720fe1be8e8e295e1c502f2ba529e0b",
+      "group": "policy-rescue",
+      "protected": false,
+      "id": "B041",
+      "dossier": "branches/b041-policy-rescue-bb88995b68e3.md"
+    },
+    {
+      "ref": "refs/heads/rescue/local/20261011-110605-42b7822b/c4ea76082d0e4a93c792f46d/rust-policy-rollout-bff77099",
+      "name": "rescue/local/20261011-110605-42b7822b/c4ea76082d0e4a93c792f46d/rust-policy-rollout-bff77099",
+      "tip": "bff77099f8273a4d480a0e430cba66afc4197543",
+      "group": "policy-rescue",
+      "protected": false,
+      "id": "B042",
+      "dossier": "branches/b042-policy-rescue-4dc1add6a9f0.md"
+    },
+    {
+      "ref": "refs/heads/rescue/local/20261011-110605-42b7822b/d5c53271a9c5551fb1b8813b/rust-policy-rollout-3ddbc056",
+      "name": "rescue/local/20261011-110605-42b7822b/d5c53271a9c5551fb1b8813b/rust-policy-rollout-3ddbc056",
+      "tip": "3ddbc0563ed95225b0004c393b3928fb599ee066",
+      "group": "policy-rescue",
+      "protected": false,
+      "id": "B043",
+      "dossier": "branches/b043-policy-rescue-cf95d97cce7c.md"
+    },
+    {
+      "ref": "refs/heads/rescue/local/20261011-110605-42b7822b/dirty/jackin-s7-usage-d5c53271a9",
+      "name": "rescue/local/20261011-110605-42b7822b/dirty/jackin-s7-usage-d5c53271a9",
+      "tip": "40823a76a3e20b901d5bc410979cee0931fd5c48",
+      "group": "dirty",
+      "protected": false,
+      "id": "B044",
+      "dossier": "branches/b044-dirty-3eaee4abbc92.md"
+    },
+    {
+      "ref": "refs/heads/rescue/local/20261011-110605-42b7822b/dirty/jackin-s61-c4ea76082d",
+      "name": "rescue/local/20261011-110605-42b7822b/dirty/jackin-s61-c4ea76082d",
+      "tip": "45e834683c8d5ca0fea1c7d3676cb136efa4acb1",
+      "group": "dirty",
+      "protected": false,
+      "id": "B045",
+      "dossier": "branches/b045-dirty-868886b2213b.md"
+    },
+    {
+      "ref": "refs/heads/rescue/local/20261011-110605-42b7822b/dirty/jackin-v011-validate-a8e16751f8",
+      "name": "rescue/local/20261011-110605-42b7822b/dirty/jackin-v011-validate-a8e16751f8",
+      "tip": "b72046bbc9314e93cddf4d8252570dc375935f56",
+      "group": "dirty",
+      "protected": false,
+      "id": "B046",
+      "dossier": "branches/b046-dirty-fc03ff5ffa1d.md"
+    },
+    {
+      "ref": "refs/heads/rescue/local/20261011-110605-42b7822b/stash/jackin-project/jackin/796109848951-80ab98038e",
+      "name": "rescue/local/20261011-110605-42b7822b/stash/jackin-project/jackin/796109848951-80ab98038e",
+      "tip": "80ab98038e945ec48c82dad241ebf33aa0efa82d",
+      "group": "stash-alias",
+      "protected": false,
+      "id": "B047",
+      "dossier": "branches/b047-stash-alias-53dd4c6affcc.md"
+    },
+    {
+      "ref": "refs/heads/rescue/local/20261011-110605-42b7822b/stash/jackin-project/jackin/b60d2272bc89-80ab98038e",
+      "name": "rescue/local/20261011-110605-42b7822b/stash/jackin-project/jackin/b60d2272bc89-80ab98038e",
+      "tip": "80ab98038e945ec48c82dad241ebf33aa0efa82d",
+      "group": "stash-alias",
+      "protected": false,
+      "id": "B048",
+      "dossier": "branches/b048-stash-alias-b7b19a9f3034.md"
+    },
+    {
+      "ref": "refs/heads/rescue/local/20261011-110605-42b7822b/stash/jackin-project/jackin/bbb65f5a2a52-b1b9078173",
+      "name": "rescue/local/20261011-110605-42b7822b/stash/jackin-project/jackin/bbb65f5a2a52-b1b9078173",
+      "tip": "b1b90781739333ba7c8829c092a845f6ea82b11c",
+      "group": "stash-alias",
+      "protected": false,
+      "id": "B049",
+      "dossier": "branches/b049-stash-alias-371a2456f4ff.md"
+    },
+    {
+      "ref": "refs/heads/rescue/local/20261011-110605-42b7822b/stash/jackin-project/jackin/c0ab9196b766-80ab98038e",
+      "name": "rescue/local/20261011-110605-42b7822b/stash/jackin-project/jackin/c0ab9196b766-80ab98038e",
+      "tip": "80ab98038e945ec48c82dad241ebf33aa0efa82d",
+      "group": "stash-alias",
+      "protected": false,
+      "id": "B050",
+      "dossier": "branches/b050-stash-alias-bfd7103e838f.md"
+    },
+    {
+      "ref": "refs/heads/rescue/local/20261011-110605-42b7822b/stash/jackin-project/jackin/c3cf9a0eb43a-b1b9078173",
+      "name": "rescue/local/20261011-110605-42b7822b/stash/jackin-project/jackin/c3cf9a0eb43a-b1b9078173",
+      "tip": "b1b90781739333ba7c8829c092a845f6ea82b11c",
+      "group": "stash-alias",
+      "protected": false,
+      "id": "B051",
+      "dossier": "branches/b051-stash-alias-7512abdb59f0.md"
+    },
+    {
+      "ref": "refs/heads/rescue/local/20261011-110605-42b7822b/stash/jackin-project/jackin/c46962aa8530-80ab98038e",
+      "name": "rescue/local/20261011-110605-42b7822b/stash/jackin-project/jackin/c46962aa8530-80ab98038e",
+      "tip": "80ab98038e945ec48c82dad241ebf33aa0efa82d",
+      "group": "stash-alias",
+      "protected": false,
+      "id": "B052",
+      "dossier": "branches/b052-stash-alias-01522f00a01b.md"
+    },
+    {
+      "ref": "refs/heads/rescue/local/20261011-110605-42b7822b/stash/jackin-project/jackin/c39770351b8f-b1b9078173",
+      "name": "rescue/local/20261011-110605-42b7822b/stash/jackin-project/jackin/c39770351b8f-b1b9078173",
+      "tip": "b1b90781739333ba7c8829c092a845f6ea82b11c",
+      "group": "stash-alias",
+      "protected": false,
+      "id": "B053",
+      "dossier": "branches/b053-stash-alias-4c4fe5556b72.md"
+    },
+    {
+      "ref": "refs/heads/rescue/local/20261011-110605-42b7822b/stash/jackin-project/jackin/d2404462eaed-80ab98038e",
+      "name": "rescue/local/20261011-110605-42b7822b/stash/jackin-project/jackin/d2404462eaed-80ab98038e",
+      "tip": "80ab98038e945ec48c82dad241ebf33aa0efa82d",
+      "group": "stash-alias",
+      "protected": false,
+      "id": "B054",
+      "dossier": "branches/b054-stash-alias-68ff05fe0f69.md"
+    },
+    {
+      "ref": "refs/heads/rescue/local/20261011-110605-42b7822b/stash/jackin-project/jackin/e03ad68a1423-b1b9078173",
+      "name": "rescue/local/20261011-110605-42b7822b/stash/jackin-project/jackin/e03ad68a1423-b1b9078173",
+      "tip": "b1b90781739333ba7c8829c092a845f6ea82b11c",
+      "group": "stash-alias",
+      "protected": false,
+      "id": "B055",
+      "dossier": "branches/b055-stash-alias-f8acf47b8695.md"
+    },
+    {
+      "ref": "refs/heads/rescue/local/20261011-110605-42b7822b/stash/jackin-project/jackin/e721fc3aea40-80ab98038e",
+      "name": "rescue/local/20261011-110605-42b7822b/stash/jackin-project/jackin/e721fc3aea40-80ab98038e",
+      "tip": "80ab98038e945ec48c82dad241ebf33aa0efa82d",
+      "group": "stash-alias",
+      "protected": false,
+      "id": "B056",
+      "dossier": "branches/b056-stash-alias-cbbb9b2a9c6e.md"
+    },
+    {
+      "ref": "refs/heads/rescue/local/20261011-110605-42b7822b/stash/jackin-project/jackin/e348490bce40-80ab98038e",
+      "name": "rescue/local/20261011-110605-42b7822b/stash/jackin-project/jackin/e348490bce40-80ab98038e",
+      "tip": "80ab98038e945ec48c82dad241ebf33aa0efa82d",
+      "group": "stash-alias",
+      "protected": false,
+      "id": "B057",
+      "dossier": "branches/b057-stash-alias-09031c14e05c.md"
+    },
+    {
+      "ref": "refs/heads/rescue/local/20261011-110605-42b7822b/stash/jackin-project/jackin/f349f6398aa7-b1b9078173",
+      "name": "rescue/local/20261011-110605-42b7822b/stash/jackin-project/jackin/f349f6398aa7-b1b9078173",
+      "tip": "b1b90781739333ba7c8829c092a845f6ea82b11c",
+      "group": "stash-alias",
+      "protected": false,
+      "id": "B058",
+      "dossier": "branches/b058-stash-alias-373bb2fc05d3.md"
+    },
+    {
+      "ref": "refs/heads/rescue/local/20261011-110605-42b7822b/stash/jackin-project/jackin/3db8bf2ee028-80ab98038e",
+      "name": "rescue/local/20261011-110605-42b7822b/stash/jackin-project/jackin/3db8bf2ee028-80ab98038e",
+      "tip": "80ab98038e945ec48c82dad241ebf33aa0efa82d",
+      "group": "stash-alias",
+      "protected": false,
+      "id": "B059",
+      "dossier": "branches/b059-stash-alias-ebc2e2faed24.md"
+    },
+    {
+      "ref": "refs/heads/rescue/local/20261011-110605-42b7822b/stash/jackin-project/jackin/4ac430a548ca-80ab98038e",
+      "name": "rescue/local/20261011-110605-42b7822b/stash/jackin-project/jackin/4ac430a548ca-80ab98038e",
+      "tip": "80ab98038e945ec48c82dad241ebf33aa0efa82d",
+      "group": "stash-alias",
+      "protected": false,
+      "id": "B060",
+      "dossier": "branches/b060-stash-alias-15ca898cb2c6.md"
+    },
+    {
+      "ref": "refs/heads/rescue/local/20261011-110605-42b7822b/stash/jackin-project/jackin/4e8bc3e16a54-b1b9078173",
+      "name": "rescue/local/20261011-110605-42b7822b/stash/jackin-project/jackin/4e8bc3e16a54-b1b9078173",
+      "tip": "b1b90781739333ba7c8829c092a845f6ea82b11c",
+      "group": "stash-alias",
+      "protected": false,
+      "id": "B061",
+      "dossier": "branches/b061-stash-alias-cf15510f83af.md"
+    },
+    {
+      "ref": "refs/heads/rescue/local/20261011-110605-42b7822b/stash/jackin-project/jackin/07ad558976dc-80ab98038e",
+      "name": "rescue/local/20261011-110605-42b7822b/stash/jackin-project/jackin/07ad558976dc-80ab98038e",
+      "tip": "80ab98038e945ec48c82dad241ebf33aa0efa82d",
+      "group": "stash-alias",
+      "protected": false,
+      "id": "B062",
+      "dossier": "branches/b062-stash-alias-dca0343dfb05.md"
+    },
+    {
+      "ref": "refs/heads/rescue/local/20261011-110605-42b7822b/stash/jackin-project/jackin/7b2538888f01-b1b9078173",
+      "name": "rescue/local/20261011-110605-42b7822b/stash/jackin-project/jackin/7b2538888f01-b1b9078173",
+      "tip": "b1b90781739333ba7c8829c092a845f6ea82b11c",
+      "group": "stash-alias",
+      "protected": false,
+      "id": "B063",
+      "dossier": "branches/b063-stash-alias-54f51006e189.md"
+    },
+    {
+      "ref": "refs/heads/rescue/local/20261011-110605-42b7822b/stash/jackin-project/jackin/8e79df941bcc-b1b9078173",
+      "name": "rescue/local/20261011-110605-42b7822b/stash/jackin-project/jackin/8e79df941bcc-b1b9078173",
+      "tip": "b1b90781739333ba7c8829c092a845f6ea82b11c",
+      "group": "stash-alias",
+      "protected": false,
+      "id": "B064",
+      "dossier": "branches/b064-stash-alias-abb1dffe6447.md"
+    },
+    {
+      "ref": "refs/heads/rescue/local/20261011-110605-42b7822b/stash/jackin-project/jackin/18a078e0fd97-b1b9078173",
+      "name": "rescue/local/20261011-110605-42b7822b/stash/jackin-project/jackin/18a078e0fd97-b1b9078173",
+      "tip": "b1b90781739333ba7c8829c092a845f6ea82b11c",
+      "group": "stash-alias",
+      "protected": false,
+      "id": "B065",
+      "dossier": "branches/b065-stash-alias-0e6388966c3a.md"
+    },
+    {
+      "ref": "refs/heads/rescue/local/20261011-110605-42b7822b/stash/jackin-project/jackin/31ad21a631b3-b1b9078173",
+      "name": "rescue/local/20261011-110605-42b7822b/stash/jackin-project/jackin/31ad21a631b3-b1b9078173",
+      "tip": "b1b90781739333ba7c8829c092a845f6ea82b11c",
+      "group": "stash-alias",
+      "protected": false,
+      "id": "B066",
+      "dossier": "branches/b066-stash-alias-b1eced4af625.md"
+    },
+    {
+      "ref": "refs/heads/rescue/local/20261011-110605-42b7822b/stash/jackin-project/jackin/41aec636bd17-b1b9078173",
+      "name": "rescue/local/20261011-110605-42b7822b/stash/jackin-project/jackin/41aec636bd17-b1b9078173",
+      "tip": "b1b90781739333ba7c8829c092a845f6ea82b11c",
+      "group": "stash-alias",
+      "protected": false,
+      "id": "B067",
+      "dossier": "branches/b067-stash-alias-31cbf60dff61.md"
+    },
+    {
+      "ref": "refs/heads/rescue/local/20261011-110605-42b7822b/stash/jackin-project/jackin/51e08660dd2e-80ab98038e",
+      "name": "rescue/local/20261011-110605-42b7822b/stash/jackin-project/jackin/51e08660dd2e-80ab98038e",
+      "tip": "80ab98038e945ec48c82dad241ebf33aa0efa82d",
+      "group": "stash-alias",
+      "protected": false,
+      "id": "B068",
+      "dossier": "branches/b068-stash-alias-929b5577bb5f.md"
+    },
+    {
+      "ref": "refs/heads/rescue/local/20261011-110605-42b7822b/stash/jackin-project/jackin/596d8e54fd97-80ab98038e",
+      "name": "rescue/local/20261011-110605-42b7822b/stash/jackin-project/jackin/596d8e54fd97-80ab98038e",
+      "tip": "80ab98038e945ec48c82dad241ebf33aa0efa82d",
+      "group": "stash-alias",
+      "protected": false,
+      "id": "B069",
+      "dossier": "branches/b069-stash-alias-8836a20a65fb.md"
+    },
+    {
+      "ref": "refs/heads/rescue/local/20261011-110605-42b7822b/stash/jackin-project/jackin/4456e9b83763-80ab98038e",
+      "name": "rescue/local/20261011-110605-42b7822b/stash/jackin-project/jackin/4456e9b83763-80ab98038e",
+      "tip": "80ab98038e945ec48c82dad241ebf33aa0efa82d",
+      "group": "stash-alias",
+      "protected": false,
+      "id": "B070",
+      "dossier": "branches/b070-stash-alias-f574e4820623.md"
+    },
+    {
+      "ref": "refs/heads/rescue/local/20261011-110605-42b7822b/stash/jackin-project/jackin/24255e91bdc8-b1b9078173",
+      "name": "rescue/local/20261011-110605-42b7822b/stash/jackin-project/jackin/24255e91bdc8-b1b9078173",
+      "tip": "b1b90781739333ba7c8829c092a845f6ea82b11c",
+      "group": "stash-alias",
+      "protected": false,
+      "id": "B071",
+      "dossier": "branches/b071-stash-alias-42c120365146.md"
+    },
+    {
+      "ref": "refs/heads/rescue/local/20261011-110605-42b7822b/stash/jackin-project/jackin/187535a508ae-80ab98038e",
+      "name": "rescue/local/20261011-110605-42b7822b/stash/jackin-project/jackin/187535a508ae-80ab98038e",
+      "tip": "80ab98038e945ec48c82dad241ebf33aa0efa82d",
+      "group": "stash-alias",
+      "protected": false,
+      "id": "B072",
+      "dossier": "branches/b072-stash-alias-64003e4d826d.md"
+    },
+    {
+      "ref": "refs/heads/rescue/local/20261011-110605-42b7822b/stash/jackin-project/jackin/650748ab814e-b1b9078173",
+      "name": "rescue/local/20261011-110605-42b7822b/stash/jackin-project/jackin/650748ab814e-b1b9078173",
+      "tip": "b1b90781739333ba7c8829c092a845f6ea82b11c",
+      "group": "stash-alias",
+      "protected": false,
+      "id": "B073",
+      "dossier": "branches/b073-stash-alias-2cc727bc102c.md"
+    },
+    {
+      "ref": "refs/heads/rescue/local/20261011-110605-42b7822b/stash/jackin-project/jackin/75703094d1b6-b1b9078173",
+      "name": "rescue/local/20261011-110605-42b7822b/stash/jackin-project/jackin/75703094d1b6-b1b9078173",
+      "tip": "b1b90781739333ba7c8829c092a845f6ea82b11c",
+      "group": "stash-alias",
+      "protected": false,
+      "id": "B074",
+      "dossier": "branches/b074-stash-alias-bc491d591458.md"
+    },
+    {
+      "ref": "refs/heads/rescue/local/20261011-110605-42b7822b/90e8831cbed7f0348cb01ab4/rust-policy-rollout-stash-80ab980",
+      "name": "rescue/local/20261011-110605-42b7822b/90e8831cbed7f0348cb01ab4/rust-policy-rollout-stash-80ab980",
+      "tip": "80ab98038e945ec48c82dad241ebf33aa0efa82d",
+      "group": "stash-alias",
+      "protected": false,
+      "id": "B075",
+      "dossier": "branches/b075-stash-alias-770a8c6e1ecf.md"
+    },
+    {
+      "ref": "refs/heads/rescue/local/20261011-110605-42b7822b/90e8831cbed7f0348cb01ab4/rust-policy-rollout-stash-b1b9078",
+      "name": "rescue/local/20261011-110605-42b7822b/90e8831cbed7f0348cb01ab4/rust-policy-rollout-stash-b1b9078",
+      "tip": "b1b90781739333ba7c8829c092a845f6ea82b11c",
+      "group": "stash-alias",
+      "protected": false,
+      "id": "B076",
+      "dossier": "branches/b076-stash-alias-8e34450f0fb7.md"
+    },
+    {
+      "ref": "refs/heads/rust-policy-rollout",
+      "name": "rust-policy-rollout",
+      "tip": "fba69d60c2373156dc0dcecee8e085c83776966f",
+      "group": "policy",
+      "protected": false,
+      "id": "B077",
+      "dossier": "branches/b077-policy-517d17ddf7fc.md"
+    },
+    {
+      "ref": "refs/heads/wip/mise-lock-snapshot-20261007-ef40fea11a54",
+      "name": "wip/mise-lock-snapshot-20261007-ef40fea11a54",
+      "tip": "ef40fea11a54ade7911de7622e6e011707241dd4",
+      "group": "wip",
+      "protected": false,
+      "id": "B078",
+      "dossier": "branches/b078-wip-6b8347c05938.md"
+    },
+    {
+      "ref": "refs/heads/wip/reflog-snapshot-20261007-d04467f05f11",
+      "name": "wip/reflog-snapshot-20261007-d04467f05f11",
+      "tip": "d04467f05f1183008322047b1828c201e551e947",
+      "group": "wip",
+      "protected": false,
+      "id": "B079",
+      "dossier": "branches/b079-wip-ebf572949c76.md"
+    }
+  ]
+}

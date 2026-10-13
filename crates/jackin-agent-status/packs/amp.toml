@@ -1,0 +1,87 @@
+schema_version = 1
+agent = "amp"
+validated_versions = "=0.0.1781166336-g02cc1e"
+
+[[rule]]
+id = "approval-prompt"
+state = "blocked"
+priority = 900
+region = "bottom_nonempty:12"
+strength = "strong"
+requires_all = ["amp wants to execute", "allow"]
+
+[[rule]]
+id = "prelaunch-enter"
+state = "blocked"
+priority = 890
+region = "bottom:32"
+strength = "strong"
+requires_all = ["press enter to launch amp"]
+
+[[rule]]
+id = "onboarding-continue"
+state = "blocked"
+priority = 880
+region = "bottom:40"
+strength = "strong"
+requires_any = ["space to continue", "enter to get started"]
+
+[[rule]]
+id = "running-tool"
+state = "working"
+priority = 700
+region = "bottom:24"
+strength = "strong"
+requires_all = ["running tool:"]
+
+[[rule]]
+id = "waiting-footer"
+state = "working"
+priority = 690
+region = "bottom_nonempty:8"
+strength = "strong"
+requires_all = ["waiting"]
+line_regex = ["^╰\\s+[≈∼≋]\\s+Waiting\\s+─"]
+
+[[rule]]
+id = "running-tools-footer"
+state = "working"
+priority = 685
+region = "bottom_nonempty:8"
+strength = "strong"
+requires_any = ["running tools", "exploring", "streaming", "connecting"]
+line_regex = ["╰\\s+[≈∼≋]\\s+\\S"]
+
+[[rule]]
+id = "ready-text"
+state = "idle"
+priority = 500
+region = "bottom:24"
+strength = "strong"
+requires_all = ["ready for your next task"]
+
+[[rule]]
+id = "startup-welcome"
+state = "idle"
+priority = 495
+region = "bottom:32"
+strength = "strong"
+requires_all = ["welcome to amp", "ctrl+o for commands", "? for shortcuts"]
+
+[[rule]]
+id = "ready-footer"
+state = "idle"
+priority = 493
+region = "bottom_nonempty:8"
+strength = "strong"
+requires_all = ["rush"]
+forbids_any = ["connecting", "waiting", "streaming", "running tools", "exploring"]
+line_regex = ["╰"]
+
+[[rule]]
+id = "arrow-prompt"
+state = "idle"
+priority = 490
+region = "last_nonempty_line"
+strength = "strong"
+requires_all = [">"]

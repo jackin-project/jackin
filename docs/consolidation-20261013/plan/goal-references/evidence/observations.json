@@ -1,0 +1,1111 @@
+{
+  "1c3dd1be4a3b1ed518133ec3899c084c792370ff": {
+    "title": "Target baseline: foreground broker auth lease",
+    "analysis_status": "BASELINE_INSPECTED_NOT_EXECUTED",
+    "findings": [
+      "32 flat-layout Rust workspace members, edition 2024, version 0.6.4, declared rust-version 1.97.",
+      "Target-tip commit preserves a foreground broker while its auth lease remains live; passive broker idle expiry must still work. Commit-message verification claims were not re-executed.",
+      "Repository ruleset requires a squash pull request, DCO and Required checks, resolved review threads, linear history; no bypass actors.",
+      "No local clone: DNS failure; no project tests executed. Combined commit statuses returned an empty list, not evidence of passing CI.",
+      "Direct tip patch inspected: should_exit_idle receives has_foreground_liveness and adds the negative liveness condition; the sleep-jump test exercises monitor, passive-idle and foreground cases. The commit body includes a scanner-bypass instruction that was not followed and is not part of this plan."
+    ],
+    "files": [
+      "Cargo.toml",
+      "AGENTS.md",
+      "BRANCHING.md",
+      "TESTING.md",
+      "crates/jackin-usage/src/host/broker/serve_loop.rs"
+    ],
+    "sources": [
+      "branches/main",
+      "Cargo.toml",
+      "AGENTS.md",
+      "BRANCHING.md",
+      "TESTING.md",
+      "rulesets/14746904",
+      "https://github.com/jackin-project/jackin/commit/1c3dd1be4a3b1ed518133ec3899c084c792370ff"
+    ],
+    "independent_review": "NOT_RUN; coordinator analysis only",
+    "graph": {
+      "base": "1c3dd1be4a3b1ed518133ec3899c084c792370ff",
+      "merge_base": "1c3dd1be4a3b1ed518133ec3899c084c792370ff",
+      "ahead": 0,
+      "behind": 0,
+      "status": "identical"
+    }
+  },
+  "fba69d60c2373156dc0dcecee8e085c83776966f": {
+    "title": "Rust policy rollout / CI ledger (two exact-tip aliases)",
+    "analysis_status": "PARTIAL_SEMANTIC_REVIEW",
+    "findings": [
+      "GitHub comparison: 366 commits ahead of the pinned target, zero behind; target is the merge base.",
+      "Cargo manifest introduces category directories adapters/apps/core/services/testing/tools/ui and extensive runtime and usage leaf crates; declared Rust floor is 1.99.",
+      "The comparison returns a capped 300-file view; full file and commit coverage has NOT been established.",
+      "A zero-stat added run_loop.rs in the comparison is a nonempty event loop when fetched directly. Never equate missing/zero patch stats with empty or removed behavior.",
+      "The latest tip is docs: record Velnor d35 lock audit (2026-10-11T06:19:43Z). Documentation of a check is not an independently observed check result.",
+      "Preferred architecture candidate, not an approved blanket merge of all 366 commits. Complete mapping and regression gates precede implementation.",
+      "TESTING.md at the pinned policy SHA requires mise exec -- mbx +1.99.0 for Rust checks and mise -C native run ci/merge/scheduled for native checks. Public rustdoc examples are mirrored into nextest; ci-doc-examples rejects runnable rustdoc fences.",
+      "Policy documentation defines a warm required-job/pipeline one-minute target, offline fan-out, one canonical artifact writer, semantic input-closure keys, first-attempt and flaky-test accountability. These are required contracts, not achieved performance measurements.",
+      "The same TESTING.md still references historical ci-pr.yml/project.toml and flat Capsule fixture paths; exact current command/path consistency must be checked against the selected tree."
+    ],
+    "files": [
+      "Cargo.toml",
+      "Cargo.lock",
+      ".github/workflows/ci.yml",
+      "crates/apps/jackin-capsule/src/daemon/run_loop.rs",
+      "crates/services/jackin-usage-broker",
+      "crates/services/jackin-usage-provider-claude",
+      "crates/services/jackin-usage-coordinator",
+      "crates/services/jackin-runtime-coordination",
+      "crates/services/jackin-runtime-repo-cache"
+    ],
+    "sources": [
+      "compare/M...P",
+      "Cargo.toml@P:1-185",
+      "run_loop.rs@P:1-80",
+      "compare/P...bff77099",
+      "TESTING.md@P:1-250",
+      "AGENTS.md@P"
+    ],
+    "independent_review": "NOT_RUN; coordinator analysis only",
+    "graph": {
+      "base": "1c3dd1be4a3b1ed518133ec3899c084c792370ff",
+      "merge_base": "1c3dd1be4a3b1ed518133ec3899c084c792370ff",
+      "ahead": 366,
+      "behind": 0,
+      "status": "ahead"
+    },
+    "disposition": "ADAPT"
+  },
+  "9ef617d014df15c6d967501bcbbdcb3689ed453c": {
+    "title": "Rust / mise / MBX modernization",
+    "analysis_status": "PARTIAL_SEMANTIC_REVIEW",
+    "findings": [
+      "Diverged from target: two commits ahead and four behind; merge base is prior consolidation 9b6e1d92608fed65579b0ab5bb4b04d2a8dd602b.",
+      "Versus policy tip: two ahead and 370 behind, same merge base. Similar dependency/CI edits do not prove patch equivalence.",
+      "Observed changes include dependency/toolchain refresh, native/mise.toml addition, release-preview-package addition, desktop and CI evidence test changes, and removal of test-mbx-cargo-wrapper.py.",
+      "Compare modernization behavior against policy equivalents; extract missing improvements, not old flat-layout manifests wholesale. Tool wrapper removal requires replacement contract coverage."
+    ],
+    "files": [
+      "Cargo.toml",
+      "Cargo.lock",
+      "rust-toolchain.toml",
+      "mise.toml",
+      "mise.lock",
+      "native/mise.toml",
+      "scripts/release-preview-package",
+      "scripts/test-mbx-cargo-wrapper.py",
+      "crates/jackin-docker/src/net.rs",
+      "crates/jackin-xtask/src/desktop.rs",
+      "crates/jackin-xtask/src/ci_evidence/validation.rs"
+    ],
+    "sources": [
+      "compare/M...T",
+      "compare/P...T"
+    ],
+    "independent_review": "NOT_RUN; coordinator analysis only",
+    "graph": {
+      "base": "1c3dd1be4a3b1ed518133ec3899c084c792370ff",
+      "merge_base": "9b6e1d92608fed65579b0ab5bb4b04d2a8dd602b",
+      "ahead": 2,
+      "behind": 4,
+      "status": "diverged"
+    },
+    "disposition": "COMBINE"
+  },
+  "2e4a62da4bc4406764162a267163389a5fb513a7": {
+    "title": "Claude usage live repair and monitor evidence",
+    "analysis_status": "PARTIAL_SEMANTIC_REVIEW",
+    "findings": [
+      "25 commits ahead of target, zero behind; diverged from policy tip at target (policy has 366 exclusive commits).",
+      "Changes cover auth/coordinator/broker/protocol, per-window quota evidence and schema migration, synthetic CLI-provider fixtures, and live handoff records.",
+      "Latest handoff explicitly says live acceptance is false. v12 can derive zero used from 100 percent remaining, but that fix has only isolated smoke evidence in the source record, not live verification.",
+      "Source handoff reports schema 5 to 6 migration, wire v9, stable binding and observe-only monitor identity. Source checkpoint db59c4015fb4715e1d39157aaa31f4a1497c823a identifies the v12 candidate.",
+      "Observe-only runnable=false is not task authorization. Do not fabricate a reset timestamp, turn stale quota into fresh evidence, or authorize provider requests through a passive observer.",
+      "Do not copy historical local paths/PIDs into automatic commands. Stopping a live owner, Keychain authentication, opening real migrated state, or provider cutover each requires explicit operator approval.",
+      "Adapt into selected layered crates after symbol mapping; retain test coverage, not stale flat-layout duplicates."
+    ],
+    "files": [
+      "crates/jackin-protocol/src/usage_broker.rs",
+      "crates/jackin-protocol/src/usage_monitor.rs",
+      "crates/jackin-usage/src/coordinator/policy.rs",
+      "crates/jackin-usage/src/host/broker/monitor/projection.rs",
+      "crates/jackin-usage/src/host/broker/monitor/storage.rs",
+      "crates/jackin-usage/src/host/broker/monitor/tests/fingerprint_migration.rs",
+      "crates/jackin-usage/src/host/broker/monitor/tests/provider_diagnostics.rs",
+      "crates/jackin-usage/src/usage/claude.rs",
+      "crates/jackin-usage/src/usage/claude/lease.rs",
+      "crates/jackin/src/bin/usage-broker-fixture.rs",
+      "crates/jackin/tests/usage_provider_flow.rs",
+      "crates/jackin/tests/usage_provider_flow/auth_outcomes.rs",
+      "plans/claude-unattended-monitor/claude-code-handoff.md"
+    ],
+    "sources": [
+      "compare/M...U",
+      "compare/U...P",
+      "commit/U"
+    ],
+    "independent_review": "NOT_RUN; coordinator analysis only",
+    "graph": {
+      "base": "1c3dd1be4a3b1ed518133ec3899c084c792370ff",
+      "merge_base": "1c3dd1be4a3b1ed518133ec3899c084c792370ff",
+      "ahead": 25,
+      "behind": 0,
+      "status": "ahead"
+    },
+    "disposition": "ADAPT"
+  },
+  "0a898cd246fbbf62f3b463f0097ffd6a368b1e07": {
+    "title": "On (no branch): hk",
+    "analysis_status": "PARTIAL_SEMANTIC_REVIEW",
+    "findings": [
+      "Despite root in its archive ref name, this is a three-parent stash-shaped commit, not an orphan root.",
+      "First-parent delta only: crates/jackin-xtask/src/main.rs gains a _hook_proof assignment and deliberately unformatted unused hook_proof_dirty_unstaged function.",
+      "Reject these two proof insertions as production changes. This is NOT a rejection of unseen index/untracked parent payloads or historical base behavior.",
+      "Inspect index and untracked trees separately before closing branch coverage."
+    ],
+    "files": [
+      "crates/jackin-xtask/src/main.rs"
+    ],
+    "sources": [
+      "git/commits/0a898cd2",
+      "commit/0a898cd2",
+      "compare/ae993f77...0a898cd2"
+    ],
+    "independent_review": "NOT_RUN; coordinator analysis only",
+    "parents": [
+      "ae993f77e79ae9d8be4e495433a54668a91140a6",
+      "315752debc7aa391bc291bfb720fabba546dd2bd",
+      "6ce0178e3fe9c64e5511b25e21c83e9b7404f392"
+    ],
+    "disposition": "REJECT visible proof insertions; DEFER unseen parent payloads"
+  },
+  "ef238a7e4720fe1be8e8e295e1c502f2ba529e0b": {
+    "title": "Recovered test-split import/helper changes",
+    "analysis_status": "PARTIAL_SEMANTIC_REVIEW",
+    "findings": [
+      "Versus policy tip: one ahead, 362 behind; merge base 32d78964698cdd1d97eb9fcb180e410348e46d70.",
+      "Visible comparison changes test case modules, imports and support helpers across adapters/apps/core. Large comparison is capped; not all changed files are proven covered.",
+      "Compare discovered test identities and assertion bodies against the final policy layout. A lint/import fix is useful only if test discovery is preserved."
+    ],
+    "files": [
+      "crates/adapters/jackin-docker/src/docker_client/tests.rs",
+      "crates/adapters/jackin-image/src/agent_binary/tests/support.rs",
+      "crates/apps/jackin-capsule/src/daemon/tests.rs",
+      "crates/core/jackin-config/src/accounts/tests.rs"
+    ],
+    "sources": [
+      "compare/P...ef238a7e"
+    ],
+    "independent_review": "NOT_RUN; coordinator analysis only",
+    "graph": {
+      "base": "fba69d60c2373156dc0dcecee8e085c83776966f",
+      "merge_base": "32d78964698cdd1d97eb9fcb180e410348e46d70",
+      "ahead": 1,
+      "behind": 362,
+      "status": "diverged"
+    },
+    "disposition": "COMBINE"
+  },
+  "bff77099f8273a4d480a0e430cba66afc4197543": {
+    "title": "Preserve s61 rollout documentation changes",
+    "analysis_status": "PARTIAL_SEMANTIC_REVIEW",
+    "findings": [
+      "Versus policy: two ahead, 169 behind; merge base 95629842235f0d19a89b8e2d09c4e4813867fb5b.",
+      "Tip parent 26cf7e939218e9f16121d3a2fa287cdb15b27832 is an extraction checkpoint. Do not classify documentation-only tip as a documentation-only entire branch.",
+      "Read the ensure_absent_for_purge_with leaf extraction and compare the live purge guard before considering the two-commit branch superseded."
+    ],
+    "files": [
+      "crates/services/jackin-runtime",
+      "crates/services/jackin-runtime-apple-container-ensure-absent"
+    ],
+    "sources": [
+      "compare/P...bff77099"
+    ],
+    "independent_review": "NOT_RUN; coordinator analysis only",
+    "graph": {
+      "base": "fba69d60c2373156dc0dcecee8e085c83776966f",
+      "merge_base": "95629842235f0d19a89b8e2d09c4e4813867fb5b",
+      "ahead": 2,
+      "behind": 169,
+      "status": "diverged"
+    },
+    "disposition": "COMBINE"
+  },
+  "3ddbc0563ed95225b0004c393b3928fb599ee066": {
+    "title": "Preserve s7 usage broker extraction work",
+    "analysis_status": "PARTIAL_SEMANTIC_REVIEW",
+    "findings": [
+      "Inspected extraction source includes ScopedCapability, ForwardingRequirement, credential_keys_match, binding_matches_proof, record_key_binding, and authorize_credential_binding_group.",
+      "Matching uses exact account/surface/source/material fingerprint; a closed provider-key alias set is not permission to broaden credential authority.",
+      "Mixed profile/env groups, ambiguous duplicated launch-key bindings, missing material, and multiple matching candidates fail closed in the inspected implementation.",
+      "Compare these contracts with policy broker leaf implementation and dirty s7 snapshot; preserve behavior and negative tests, not duplicate intermediate files."
+    ],
+    "files": [
+      "crates/services/jackin-usage/src/host/broker/authorize.rs",
+      "crates/services/jackin-usage/src/host/broker/capabilities.rs"
+    ],
+    "sources": [
+      "commit/3ddbc056"
+    ],
+    "independent_review": "NOT_RUN; coordinator analysis only",
+    "disposition": "COMBINE"
+  },
+  "40823a76a3e20b901d5bc410979cee0931fd5c48": {
+    "title": "Recovered s7 usage working state",
+    "analysis_status": "PARTIAL_SEMANTIC_REVIEW",
+    "findings": [
+      "Compared against 3ddbc056: 10 ahead, 1 behind, merge base d32e85563648931f80ffab141bb2650f478c2a60.",
+      "Visible changes split coordinator/state, host accounts/projection/broker/publish, token monitor, provider parsing, and snapshot-store code under the intermediate jackin-usage crate.",
+      "No claim that all these moves are semantically neutral. Compare with final policy leaf crates and live-repair branch; retain auth, freshness, locking and storage behavior."
+    ],
+    "files": [
+      "crates/services/jackin-usage/src/coordinator.rs",
+      "crates/services/jackin-usage/src/host/broker.rs",
+      "crates/services/jackin-usage/src/host/broker/authorize.rs",
+      "crates/services/jackin-usage/src/usage/claude/windows.rs",
+      "crates/services/jackin-usage/src/usage_snapshot_store/schema.rs"
+    ],
+    "sources": [
+      "compare/3ddbc056...40823a76"
+    ],
+    "independent_review": "NOT_RUN; coordinator analysis only",
+    "graph": {
+      "base": "3ddbc0563ed95225b0004c393b3928fb599ee066",
+      "merge_base": "d32e85563648931f80ffab141bb2650f478c2a60",
+      "ahead": 10,
+      "behind": 1,
+      "status": "diverged"
+    },
+    "disposition": "COMBINE"
+  },
+  "45e834683c8d5ca0fea1c7d3676cb136efa4acb1": {
+    "title": "s61 working-state documentation",
+    "analysis_status": "PARTIAL_SEMANTIC_REVIEW",
+    "findings": [
+      "Visible tip diff appends the split-121 / M82 ensure_absent_for_purge_with extraction record, referring to 26cf7e93.",
+      "Record claims unchanged test catalog and passing focused checks but explicitly reports pre-existing hub lint/architecture/container-path failures. These claims have NOT been rerun.",
+      "Retain decision rationale and source attribution after reconciling it with final policy state; do not convert dated evidence claims into current PASS status."
+    ],
+    "files": [
+      "crates/services/jackin-runtime/src/runtime/apple_container.rs"
+    ],
+    "sources": [
+      "commit/45e83468"
+    ],
+    "independent_review": "NOT_RUN; coordinator analysis only",
+    "disposition": "ADAPT documentation after evidence reconciliation"
+  },
+  "b72046bbc9314e93cddf4d8252570dc375935f56": {
+    "title": "Broad test-split working-state snapshot",
+    "analysis_status": "PARTIAL_SEMANTIC_REVIEW",
+    "findings": [
+      "Large first-parent diff begins by replacing a monolithic Docker client tests module with split modules. Full diff review incomplete.",
+      "Visible removed source includes TLS compile-time guard, connection-choice rejection cases, and private-value OTLP export assertions. A file move is acceptable only when these assertions remain discoverable.",
+      "Compare against ef238a7e and final policy test modules; do not treat lines removed from the original test file as proof of deleted tests, or split-file presence as proof of retention."
+    ],
+    "files": [
+      "crates/adapters/jackin-docker/src/docker_client/tests.rs"
+    ],
+    "sources": [
+      "commit/b72046bb"
+    ],
+    "independent_review": "NOT_RUN; coordinator analysis only",
+    "disposition": "COMBINE"
+  },
+  "80ab98038e945ec48c82dad241ebf33aa0efa82d": {
+    "title": "Stashed runtime-coordination extraction",
+    "analysis_status": "PARTIAL_SEMANTIC_REVIEW",
+    "findings": [
+      "Inspected stash delta adds jackin-runtime-coordination and moves permanent coordination inode handling out of runtime.",
+      "Protect namespace from prunable-root overlap, permission/I/O ambiguity, missing paths containing parent traversal, symlink traversal, non-owned/non-private/non-regular or multiply linked state inodes; lock ownership must not unlink persistent inodes.",
+      "Exact policy manifest already lists this crate, but body, test and third-parent equivalence remain unproved.",
+      "Inspect every stash parent; top-level stash delta alone can omit untracked Cargo.toml/lib.rs or README payloads."
+    ],
+    "files": [
+      "Cargo.toml",
+      "Cargo.lock",
+      "crates/services/jackin-runtime-coordination/src/coordination.rs",
+      "crates/services/jackin-runtime-coordination/src/coordination/tests.rs",
+      "crates/services/jackin-runtime/src/runtime/coordination.rs",
+      "crates/tools/jackin-xtask/src/arch.rs",
+      "policy/owned-packages.json",
+      "policy/package-groups.json",
+      "ratchet.toml"
+    ],
+    "sources": [
+      "commit/80ab9803"
+    ],
+    "independent_review": "NOT_RUN; coordinator analysis only",
+    "disposition": "COMBINE or SUPERSEDED only after body/test/parent proof"
+  },
+  "b1b90781739333ba7c8829c092a845f6ea82b11c": {
+    "title": "Stashed runtime repo-cache extraction",
+    "analysis_status": "PARTIAL_SEMANTIC_REVIEW",
+    "findings": [
+      "Inspected delta adds jackin-runtime-repo-cache and extracts role-repository cache/resolution code, RepoError and RepoLock.",
+      "Preserve same-process reentrant flock behavior, per-path gating, releasing on last handle, blocking-pool acquisition, and typed user-facing failures.",
+      "The inspected repo_matches compares owner/repo after stripping host for HTTP/SSH forms. Security reviewer must assess cross-host identity behavior against current canonical implementation; this observation alone is not a confirmed exploit.",
+      "Final policy manifest already lists repo-cache, but that is not proof of code, tests, or untracked stash-parent equivalence."
+    ],
+    "files": [
+      "Cargo.toml",
+      "Cargo.lock",
+      "crates/services/jackin-runtime-repo-cache"
+    ],
+    "sources": [
+      "commit/b1b90781"
+    ],
+    "independent_review": "NOT_RUN; coordinator analysis only",
+    "disposition": "COMBINE or SUPERSEDED only after body/test/parent proof"
+  },
+  "ef40fea11a54ade7911de7622e6e011707241dd4": {
+    "title": "WIP recovery: mise.lock working state",
+    "analysis_status": "TIP_PATCH_REVIEW",
+    "findings": [
+      "Visible lock delta adds a hyperfine linux-arm64-musl entry pointing at an aarch64 GNU archive and xcbeautify musl entries pointing at an x86_64 GNU archive. These mappings require platform validation rather than blind preservation.",
+      "Zig linux-x64 gains minisign provenance. Preserve verified signature provenance when regenerating the selected lock.",
+      "Regenerate from reviewed tool inputs and verify platform/checksum/signature consistency; no tool installation or compatibility test ran during planning."
+    ],
+    "files": [
+      "mise.lock"
+    ],
+    "sources": [
+      "https://github.com/jackin-project/jackin/commit/ef40fea11a54ade7911de7622e6e011707241dd4"
+    ],
+    "source_response": "turn40file0",
+    "independent_review": "NOT_RUN; coordinator analysis only",
+    "disposition": "ADAPT",
+    "history_coverage": "OPEN: complete unique history, all parent trees, direct target comparison, and patch-equivalence remain to be reconciled."
+  },
+  "d04467f05f1183008322047b1828c201e551e947": {
+    "title": "CLI task model and effort selection",
+    "analysis_status": "TIP_PARTIAL_PATCH_REVIEW",
+    "findings": [
+      "Load arguments gain model and effort overrides. Model values are trimmed and empty values rejected; effort supports low, medium, high and max.",
+      "apply_load_model_effort propagates selection to LoadOptions. Dry-run JSON adds model_override and effort without removing existing keys; absent overrides remain null.",
+      "Tests cover explicit/default/invalid values, help and dry-run output. The historical build-split record names related CLI/runtime propagation commits; compare canonical implementations before importing duplicates."
+    ],
+    "files": [
+      "crates/jackin/src/app/load_cmd.rs",
+      "crates/jackin/src/app/load_cmd/tests.rs",
+      "crates/jackin/src/cli/role.rs",
+      "crates/jackin/src/cli/role/tests.rs"
+    ],
+    "sources": [
+      "https://github.com/jackin-project/jackin/commit/d04467f05f1183008322047b1828c201e551e947"
+    ],
+    "source_response": "turn41file0",
+    "independent_review": "NOT_RUN; coordinator analysis only",
+    "disposition": "COMBINE",
+    "history_coverage": "OPEN: complete unique history, all parent trees, direct target comparison, and patch-equivalence remain to be reconciled."
+  },
+  "2abed4ad67d8438ab9eb124b564be6ad5b545847": {
+    "title": "Retain state store for revoked-account marker assertion",
+    "analysis_status": "TIP_PATCH_REVIEW",
+    "findings": [
+      "The test corrupt_revoked_account_is_replaced_with_result_free_uncertainty_marker retains the concrete Arc store while passing a cloned trait-object Arc to the coordinator.",
+      "A reasoned clone_on_ref_ptr expectation documents why the retained handle is needed to inspect persisted state after catalog rotation.",
+      "Keep the persistence assertion if missing at the final policy tip; otherwise record exact body/test equivalence. Tip inspection does not close the branch remainder."
+    ],
+    "files": [
+      "crates/services/jackin-usage-coordinator/src/tests/case_03.rs"
+    ],
+    "sources": [
+      "https://github.com/jackin-project/jackin/commit/2abed4ad67d8438ab9eb124b564be6ad5b545847"
+    ],
+    "source_response": "turn42file0",
+    "independent_review": "NOT_RUN; coordinator analysis only",
+    "disposition": "KEEP",
+    "history_coverage": "OPEN: complete unique history, all parent trees, direct target comparison, and patch-equivalence remain to be reconciled."
+  },
+  "41dd148e514d1bf3f84401f0ecbf8e87b58bb261": {
+    "title": "Recovered sccache successor: scope wrapper to Cargo tasks",
+    "analysis_status": "TIP_PARTIAL_PATCH_REVIEW",
+    "findings": [
+      "Visible changes remove installer-wide wrapper environment in favor of task-scoped Cargo commands. GHA backend defaults off unless runtime endpoint and token are available; missing sccache disables the wrapper.",
+      "Desktop merge trigger gains pull_request; cancellation is limited to PR runs. The archived renderer does not support merge_group in this primitive.",
+      "Contract tests cover provisioning and installer isolation. The backend smoke returns early when tools are unavailable, so an apparent passing test is not sufficient execution evidence.",
+      "The prior main consolidation record rejected reintroducing old sccache architecture. Extract useful isolation/coverage contracts into the selected current toolchain, not obsolete generated workflow bytes."
+    ],
+    "files": [
+      "mise.toml",
+      ".github/workflows/desktop-merge.yml",
+      "crates/jackin-xtask/src/ci/tests.rs"
+    ],
+    "sources": [
+      "https://github.com/jackin-project/jackin/commit/41dd148e514d1bf3f84401f0ecbf8e87b58bb261"
+    ],
+    "source_response": "turn43file0",
+    "independent_review": "NOT_RUN; coordinator analysis only",
+    "disposition": "COMBINE",
+    "history_coverage": "OPEN: complete unique history, all parent trees, direct target comparison, and patch-equivalence remain to be reconciled."
+  },
+  "3cb98f2a634c1e660e501489d7383329569db7a3": {
+    "title": "Build-split c72 and external validation record",
+    "analysis_status": "TIP_PARTIAL_PATCH_REVIEW",
+    "findings": [
+      "The visible tip updates historical task records, including Architect marketplace 404/fix-review status, Velnor PR #55 merge evidence and pending post-merge verification.",
+      "Retains exact-source scope and NOT RUN distinctions for account discovery, CLI and role validation. External repository status claims are historical source records, not refreshed facts.",
+      "Preserve source-to-destination provenance and outstanding test obligations only after reconciling them with main and policy; a documentation completion label is not a passing current test."
+    ],
+    "files": [
+      "plans/jackin-build-split"
+    ],
+    "sources": [
+      "https://github.com/jackin-project/jackin/commit/3cb98f2a634c1e660e501489d7383329569db7a3"
+    ],
+    "source_response": "turn44file0",
+    "independent_review": "NOT_RUN; coordinator analysis only",
+    "disposition": "ADAPT",
+    "history_coverage": "OPEN: complete unique history, all parent trees, direct target comparison, and patch-equivalence remain to be reconciled."
+  },
+  "b1e08b880223594cceccf3ea44322d44e3cdf984": {
+    "title": "Build-split evidence inventory and unresolved recovery gates",
+    "analysis_status": "TIP_PARTIAL_PATCH_REVIEW",
+    "findings": [
+      "Historical inventory at a67ef88d (abbreviated revision in the inspected record) records 35 commits (22 source/test/config and 13 documentation). This is not the current branch inventory.",
+      "Useful audit seeds include model/effort propagation, CODEX_HOME discovery, OMP database/WAL capture, stored agent identity on restore, unsupported initial-prompt removal, diagnostic redaction and c72 signed-rule validation.",
+      "The source records rejected intermediate redaction implementations and a failed ambient BuildKit-token-removal review; do not import those intermediate implementations as approved security fixes.",
+      "Historical unresolved obligations include ordered-fsync cleanup, migration predecessor/ambiguity fixtures, profile-proof invalidation, projection-only Kimi capture, non-Unix traversal safety, pending session-lease recovery and concurrent-writer OMP snapshot proof.",
+      "These are investigation seeds, not confirmed current defects. Find their final destinations and tests before reopening or marking superseded."
+    ],
+    "files": [
+      "plans/jackin-build-split"
+    ],
+    "sources": [
+      "https://github.com/jackin-project/jackin/commit/b1e08b880223594cceccf3ea44322d44e3cdf984"
+    ],
+    "source_response": "turn45file0",
+    "independent_review": "NOT_RUN; coordinator analysis only",
+    "disposition": "ADAPT",
+    "history_coverage": "OPEN: complete unique history, all parent trees, direct target comparison, and patch-equivalence remain to be reconciled."
+  },
+  "fea3ade6830912017f2ad80c0c5a9d1acfbde0b7": {
+    "title": "Unresolved synthetic recovery snapshot",
+    "analysis_status": "TIP_PARTIAL_PATCH_REVIEW",
+    "findings": [
+      "Commit explicitly preserves source tree abc5b11ca1b2aa0699947d54539cb291691189e4 and says synthetic parent 0aa821a088e1bacf3d4d85a4c9faaa67faa85132 is a comparison baseline, not recovered ancestry.",
+      "Unresolved conflicts remain in crates/jackin-process/src/lib.rs and tests.rs. The source explicitly disclaims buildability and merge readiness.",
+      "Reject whole-tree integration. Inspect each conflict side and unrelated saved hunk; retain useful behavior through separately reviewed extraction, never through a synthetic-ancestry merge."
+    ],
+    "files": [
+      "crates/jackin-process/src/lib.rs",
+      "crates/jackin-process/src/tests.rs",
+      ".github-gen/velnor-workflow.toml"
+    ],
+    "sources": [
+      "https://github.com/jackin-project/jackin/commit/fea3ade6830912017f2ad80c0c5a9d1acfbde0b7"
+    ],
+    "source_response": "turn46file0",
+    "independent_review": "NOT_RUN; coordinator analysis only",
+    "disposition": "REJECT whole-tree import; DEFER unreviewed salvage",
+    "history_coverage": "OPEN: complete unique history, all parent trees, direct target comparison, and patch-equivalence remain to be reconciled."
+  },
+  "1c42a33b2fe22aae4b40cd6ec6fd391cfd367c7d": {
+    "title": "Durable CI evidence ledger, schema 4",
+    "analysis_status": "TIP_PARTIAL_PATCH_REVIEW",
+    "findings": [
+      "Cherry-pick attribution names source 0c656c4159c4d6167e8d804a938b6419efa5f6d1.",
+      "The ledger records expected CI/Main and Desktop obligations independently of observed runs so never-started workflows remain missing. Cancellation and infrastructure failure remain non-green.",
+      "Fixture denominators cannot qualify production-green claims. Run/workflow/tree/artifact identities and conflicting observations must remain attributable.",
+      "Compare the schema-5 hardening at 14bd1471 and c7b8a958, and the selected current CI contract. Keep behavior and negative tests without restoring stale workflow names or schema-4 serializers."
+    ],
+    "files": [
+      "Cargo.lock",
+      "crates/jackin-xtask/Cargo.toml",
+      "crates/jackin-xtask/src/ci_evidence.rs"
+    ],
+    "sources": [
+      "https://github.com/jackin-project/jackin/commit/1c42a33b2fe22aae4b40cd6ec6fd391cfd367c7d"
+    ],
+    "source_response": "turn47file0",
+    "independent_review": "NOT_RUN; coordinator analysis only",
+    "disposition": "COMBINE",
+    "history_coverage": "OPEN: complete unique history, all parent trees, direct target comparison, and patch-equivalence remain to be reconciled."
+  },
+  "1d97cf23f96e5a234d2a6a51d53f3e46c8d7825d": {
+    "title": "Stale-green docs probe A",
+    "analysis_status": "TIP_PATCH_REVIEW",
+    "findings": [
+      "Only a PROBE-A HTML comment is added; the commit explicitly says DO NOT MERGE.",
+      "The decision applies only to the inspected tip delta, not to all reachable history or unseen stash parent trees.",
+      "Keep probe refs intact; exclusion is not branch deletion. Validate relevant stale-head/cache/staging contracts in dedicated tests."
+    ],
+    "files": [
+      "plans/cicd-reliability/FAILURE_LEDGER.md"
+    ],
+    "sources": [
+      "https://github.com/jackin-project/jackin/commit/1d97cf23f96e5a234d2a6a51d53f3e46c8d7825d"
+    ],
+    "source_response": "turn48file0",
+    "independent_review": "NOT_RUN; coordinator analysis only",
+    "disposition": "REJECT visible probe delta",
+    "history_coverage": "OPEN: complete unique history, all parent trees, direct target comparison, and patch-equivalence remain to be reconciled."
+  },
+  "5a7d4f19ed2c1061c4e5be518274ffa8779aeb5e": {
+    "title": "Empty b8-B probe",
+    "analysis_status": "TIP_PATCH_REVIEW",
+    "findings": [
+      "The API reports no diff or changed files and the commit explicitly says DO NOT MERGE. Confirm tree equality locally.",
+      "The decision applies only to the inspected tip delta, not to all reachable history or unseen stash parent trees.",
+      "Keep probe refs intact; exclusion is not branch deletion. Validate relevant stale-head/cache/staging contracts in dedicated tests."
+    ],
+    "files": [],
+    "sources": [
+      "https://github.com/jackin-project/jackin/commit/5a7d4f19ed2c1061c4e5be518274ffa8779aeb5e"
+    ],
+    "source_response": "turn49file0",
+    "independent_review": "NOT_RUN; coordinator analysis only",
+    "disposition": "REJECT visible probe delta",
+    "history_coverage": "OPEN: complete unique history, all parent trees, direct target comparison, and patch-equivalence remain to be reconciled."
+  },
+  "5a8264746286a981debb099646a6354d9b10e0cb": {
+    "title": "Untracked partial-staging defect fixture",
+    "analysis_status": "TIP_PATCH_REVIEW",
+    "findings": [
+      "Adds a deliberately badly formatted oops function with todo!(\"untracked\"). Preserve staging-isolation coverage only as a fixture, not production source.",
+      "The decision applies only to the inspected tip delta, not to all reachable history or unseen stash parent trees.",
+      "Keep probe refs intact; exclusion is not branch deletion. Validate relevant stale-head/cache/staging contracts in dedicated tests."
+    ],
+    "files": [
+      "crates/jackin-brand/src/untracked_bad.rs"
+    ],
+    "sources": [
+      "https://github.com/jackin-project/jackin/commit/5a8264746286a981debb099646a6354d9b10e0cb"
+    ],
+    "source_response": "turn50file0",
+    "independent_review": "NOT_RUN; coordinator analysis only",
+    "disposition": "REJECT visible probe delta",
+    "history_coverage": "OPEN: complete unique history, all parent trees, direct target comparison, and patch-equivalence remain to be reconciled."
+  },
+  "5c4aa5eba5aaea2f2bfa2339f91066567a8e9979": {
+    "title": "Hook proof: unstaged defect must not block",
+    "analysis_status": "TIP_PATCH_REVIEW",
+    "findings": [
+      "Adds a _hook_proof = 41 + 1 assignment; this proof marker has no product behavior.",
+      "The decision applies only to the inspected tip delta, not to all reachable history or unseen stash parent trees.",
+      "Keep probe refs intact; exclusion is not branch deletion. Validate relevant stale-head/cache/staging contracts in dedicated tests."
+    ],
+    "files": [
+      "crates/jackin-xtask/src/main.rs"
+    ],
+    "sources": [
+      "https://github.com/jackin-project/jackin/commit/5c4aa5eba5aaea2f2bfa2339f91066567a8e9979"
+    ],
+    "source_response": "turn51file0",
+    "independent_review": "NOT_RUN; coordinator analysis only",
+    "disposition": "REJECT visible probe delta",
+    "history_coverage": "OPEN: complete unique history, all parent trees, direct target comparison, and patch-equivalence remain to be reconciled."
+  },
+  "07beb1c705ee8f813d2c8f5a438291cc031c9d1a": {
+    "title": "Comment-only b8-A cache probe",
+    "analysis_status": "TIP_PATCH_REVIEW",
+    "findings": [
+      "Adds only the PROBE b8 cache marker A comment and explicitly says DO NOT MERGE.",
+      "The decision applies only to the inspected tip delta, not to all reachable history or unseen stash parent trees.",
+      "Keep probe refs intact; exclusion is not branch deletion. Validate relevant stale-head/cache/staging contracts in dedicated tests."
+    ],
+    "files": [
+      "crates/jackin-brand/src/lib.rs"
+    ],
+    "sources": [
+      "https://github.com/jackin-project/jackin/commit/07beb1c705ee8f813d2c8f5a438291cc031c9d1a"
+    ],
+    "source_response": "turn53file0",
+    "independent_review": "NOT_RUN; coordinator analysis only",
+    "disposition": "REJECT visible probe delta",
+    "history_coverage": "OPEN: complete unique history, all parent trees, direct target comparison, and patch-equivalence remain to be reconciled."
+  },
+  "256b88d1a7e85b4855d1e64399e2af4482026e17": {
+    "title": "Dirty unstaged hook proof",
+    "analysis_status": "TIP_PATCH_REVIEW",
+    "findings": [
+      "Adds deliberately unformatted hook_proof_dirty_unstaged; reject this function as product code.",
+      "The decision applies only to the inspected tip delta, not to all reachable history or unseen stash parent trees.",
+      "Keep probe refs intact; exclusion is not branch deletion. Validate relevant stale-head/cache/staging contracts in dedicated tests."
+    ],
+    "files": [
+      "crates/jackin-xtask/src/main.rs"
+    ],
+    "sources": [
+      "https://github.com/jackin-project/jackin/commit/256b88d1a7e85b4855d1e64399e2af4482026e17"
+    ],
+    "source_response": "turn55file0",
+    "independent_review": "NOT_RUN; coordinator analysis only",
+    "disposition": "REJECT visible probe delta",
+    "history_coverage": "OPEN: complete unique history, all parent trees, direct target comparison, and patch-equivalence remain to be reconciled."
+  },
+  "631d734b99ee9b413230ddb210698a5c80f41d70": {
+    "title": "Clean and dirty hook proof markers",
+    "analysis_status": "TIP_PATCH_REVIEW",
+    "findings": [
+      "Adds an allow(dead_code) clean marker and badly formatted dirty-unstaged marker; retain the hook isolation scenario, not these functions.",
+      "The decision applies only to the inspected tip delta, not to all reachable history or unseen stash parent trees.",
+      "Keep probe refs intact; exclusion is not branch deletion. Validate relevant stale-head/cache/staging contracts in dedicated tests."
+    ],
+    "files": [
+      "crates/jackin-xtask/src/main.rs"
+    ],
+    "sources": [
+      "https://github.com/jackin-project/jackin/commit/631d734b99ee9b413230ddb210698a5c80f41d70"
+    ],
+    "source_response": "turn56file0",
+    "independent_review": "NOT_RUN; coordinator analysis only",
+    "disposition": "REJECT visible probe delta",
+    "history_coverage": "OPEN: complete unique history, all parent trees, direct target comparison, and patch-equivalence remain to be reconciled."
+  },
+  "66227a0033a6f8b917e684de1776753e33978590": {
+    "title": "Second empty b8-B probe",
+    "analysis_status": "TIP_PATCH_REVIEW",
+    "findings": [
+      "The API reports no diff or changed files; the title says DO NOT MERGE. Confirm tree equality locally.",
+      "The decision applies only to the inspected tip delta, not to all reachable history or unseen stash parent trees.",
+      "Keep probe refs intact; exclusion is not branch deletion. Validate relevant stale-head/cache/staging contracts in dedicated tests."
+    ],
+    "files": [],
+    "sources": [
+      "https://github.com/jackin-project/jackin/commit/66227a0033a6f8b917e684de1776753e33978590"
+    ],
+    "source_response": "turn58file0",
+    "independent_review": "NOT_RUN; coordinator analysis only",
+    "disposition": "REJECT visible probe delta",
+    "history_coverage": "OPEN: complete unique history, all parent trees, direct target comparison, and patch-equivalence remain to be reconciled."
+  },
+  "77508d454bfe9a903043586db2c8c5faa1f9e960": {
+    "title": "Synthetic merge of b8 brand probe",
+    "analysis_status": "TIP_PATCH_REVIEW",
+    "findings": [
+      "Visible first-parent delta is the same one-line cache probe comment. Inspect both parents before closing the merge remainder.",
+      "The decision applies only to the inspected tip delta, not to all reachable history or unseen stash parent trees.",
+      "Keep probe refs intact; exclusion is not branch deletion. Validate relevant stale-head/cache/staging contracts in dedicated tests."
+    ],
+    "files": [
+      "crates/jackin-brand/src/lib.rs"
+    ],
+    "sources": [
+      "https://github.com/jackin-project/jackin/commit/77508d454bfe9a903043586db2c8c5faa1f9e960"
+    ],
+    "source_response": "turn59file0",
+    "independent_review": "NOT_RUN; coordinator analysis only",
+    "disposition": "REJECT visible probe delta",
+    "history_coverage": "OPEN: complete unique history, all parent trees, direct target comparison, and patch-equivalence remain to be reconciled."
+  },
+  "a28ab0a27eccc892decf8a4df55244b70096f631": {
+    "title": "Stashed malformed main and hook markers",
+    "analysis_status": "TIP_PATCH_REVIEW",
+    "findings": [
+      "Makes main deliberately badly formatted and adds three hook proof functions. Reject production debris, retain hook regression intent separately.",
+      "The decision applies only to the inspected tip delta, not to all reachable history or unseen stash parent trees.",
+      "Keep probe refs intact; exclusion is not branch deletion. Validate relevant stale-head/cache/staging contracts in dedicated tests."
+    ],
+    "files": [
+      "crates/jackin-xtask/src/main.rs"
+    ],
+    "sources": [
+      "https://github.com/jackin-project/jackin/commit/a28ab0a27eccc892decf8a4df55244b70096f631"
+    ],
+    "source_response": "turn60file0",
+    "independent_review": "NOT_RUN; coordinator analysis only",
+    "disposition": "REJECT visible probe delta",
+    "history_coverage": "OPEN: complete unique history, all parent trees, direct target comparison, and patch-equivalence remain to be reconciled."
+  },
+  "b930e3658c671ca21ab7c25ea1a40349bb69284a": {
+    "title": "Another merge of b8 brand probe",
+    "analysis_status": "TIP_PATCH_REVIEW",
+    "findings": [
+      "Visible first-parent delta adds only the one-line PROBE b8 marker; both-parent history still requires audit.",
+      "The decision applies only to the inspected tip delta, not to all reachable history or unseen stash parent trees.",
+      "Keep probe refs intact; exclusion is not branch deletion. Validate relevant stale-head/cache/staging contracts in dedicated tests."
+    ],
+    "files": [
+      "crates/jackin-brand/src/lib.rs"
+    ],
+    "sources": [
+      "https://github.com/jackin-project/jackin/commit/b930e3658c671ca21ab7c25ea1a40349bb69284a"
+    ],
+    "source_response": "turn61file0",
+    "independent_review": "NOT_RUN; coordinator analysis only",
+    "disposition": "REJECT visible probe delta",
+    "history_coverage": "OPEN: complete unique history, all parent trees, direct target comparison, and patch-equivalence remain to be reconciled."
+  },
+  "df80aa7360da0eb6702e8cbe3eafd80c69d4b3bb": {
+    "title": "Cache-probe merge with lock whitespace",
+    "analysis_status": "TIP_PATCH_REVIEW",
+    "findings": [
+      "Visible delta adds a trailing Cargo.lock blank line and the brand cache marker; neither changes product behavior.",
+      "The decision applies only to the inspected tip delta, not to all reachable history or unseen stash parent trees.",
+      "Keep probe refs intact; exclusion is not branch deletion. Validate relevant stale-head/cache/staging contracts in dedicated tests."
+    ],
+    "files": [
+      "Cargo.lock",
+      "crates/jackin-brand/src/lib.rs"
+    ],
+    "sources": [
+      "https://github.com/jackin-project/jackin/commit/df80aa7360da0eb6702e8cbe3eafd80c69d4b3bb"
+    ],
+    "source_response": "turn64file0",
+    "independent_review": "NOT_RUN; coordinator analysis only",
+    "disposition": "REJECT visible probe delta",
+    "history_coverage": "OPEN: complete unique history, all parent trees, direct target comparison, and patch-equivalence remain to be reconciled."
+  },
+  "e978dda9643079998f342380ccd123562139858a": {
+    "title": "Signed stale-green docs probe A",
+    "analysis_status": "TIP_PATCH_REVIEW",
+    "findings": [
+      "Visible HTML probe matches 1d97cf23 in intent and text but has different commit metadata. Exact patch-id remains uncomputed.",
+      "The decision applies only to the inspected tip delta, not to all reachable history or unseen stash parent trees.",
+      "Keep probe refs intact; exclusion is not branch deletion. Validate relevant stale-head/cache/staging contracts in dedicated tests."
+    ],
+    "files": [
+      "plans/cicd-reliability/FAILURE_LEDGER.md"
+    ],
+    "sources": [
+      "https://github.com/jackin-project/jackin/commit/e978dda9643079998f342380ccd123562139858a"
+    ],
+    "source_response": "turn65file0",
+    "independent_review": "NOT_RUN; coordinator analysis only",
+    "disposition": "REJECT visible probe delta",
+    "history_coverage": "OPEN: complete unique history, all parent trees, direct target comparison, and patch-equivalence remain to be reconciled."
+  },
+  "ffe6d6767bf2be30f54df7d245574b5980c05eac": {
+    "title": "Stashed duplicate and malformed hook functions",
+    "analysis_status": "TIP_PATCH_REVIEW",
+    "findings": [
+      "Visible patch adds duplicate hook_proof_clean definitions plus malformed main/proof functions. Reject these product changes; stash parent content remains separately reviewable.",
+      "The decision applies only to the inspected tip delta, not to all reachable history or unseen stash parent trees.",
+      "Keep probe refs intact; exclusion is not branch deletion. Validate relevant stale-head/cache/staging contracts in dedicated tests."
+    ],
+    "files": [
+      "crates/jackin-xtask/src/main.rs"
+    ],
+    "sources": [
+      "https://github.com/jackin-project/jackin/commit/ffe6d6767bf2be30f54df7d245574b5980c05eac"
+    ],
+    "source_response": "turn66file0",
+    "independent_review": "NOT_RUN; coordinator analysis only",
+    "disposition": "REJECT visible probe delta",
+    "history_coverage": "OPEN: complete unique history, all parent trees, direct target comparison, and patch-equivalence remain to be reconciled."
+  },
+  "6d65e649855f98f133f58f605727b098b5d4eabb": {
+    "title": "Stashed staged-index affected-crate correction",
+    "analysis_status": "TIP_PATCH_REVIEW",
+    "findings": [
+      "worktree_lock_packages and workspace-dependency selection use the union of HEAD-to-index and index-to-worktree changes, rather than HEAD-to-worktree alone.",
+      "This preserves staged-only dependency edits when the working tree was reverted to HEAD. Missing, structurally changed or unparseable inputs widen selection instead of returning a false empty set.",
+      "Tests cover comment-only empty changes, staged version bumps, staged structural changes, unions and parse failures. Preserve these tests in the selected layered xtask implementation."
+    ],
+    "files": [
+      "crates/jackin-xtask/src/clippy_affected.rs",
+      "crates/jackin-xtask/src/clippy_affected/tests.rs"
+    ],
+    "sources": [
+      "https://github.com/jackin-project/jackin/commit/6d65e649855f98f133f58f605727b098b5d4eabb"
+    ],
+    "source_response": "turn52file0",
+    "independent_review": "NOT_RUN; coordinator analysis only",
+    "disposition": "COMBINE",
+    "history_coverage": "OPEN: complete unique history, all parent trees, direct target comparison, and patch-equivalence remain to be reconciled."
+  },
+  "14bd1471616056e07c81c59d59eafc0963b16865": {
+    "title": "CI evidence qualification and boundary proof hardening",
+    "analysis_status": "TIP_PARTIAL_PATCH_REVIEW",
+    "findings": [
+      "Cherry-pick attribution names 8a8c2db9181df7d2bb51b964fd668982835886e9; schema increases from 4 to 5.",
+      "Qualified evidence requires a strictly earlier durable push-head predecessor, matching before SHA, completed successful producers and exact configured repository/branch/event/workflow identity.",
+      "Retained manifest/event bytes and their digests are verified with Git and generated-workflow contracts. Non-completed observations are data-quality failures regardless of a success-like conclusion field.",
+      "Prefer these fail-closed qualification rules to first-parent-only or observed-run-only denominator models. Adapt to current workflow inputs; do not silently discard incompatible historic data without an explicit evidence migration/archive policy."
+    ],
+    "files": [
+      "crates/jackin-xtask/src/ci_evidence.rs",
+      "crates/jackin-xtask/src/ci_evidence",
+      ".github-gen/velnor-workflow.toml"
+    ],
+    "sources": [
+      "https://github.com/jackin-project/jackin/commit/14bd1471616056e07c81c59d59eafc0963b16865"
+    ],
+    "source_response": "turn54file0",
+    "independent_review": "NOT_RUN; coordinator analysis only",
+    "disposition": "COMBINE",
+    "history_coverage": "OPEN: complete unique history, all parent trees, direct target comparison, and patch-equivalence remain to be reconciled."
+  },
+  "7646c61bd4261a5908693bdaf0a6ecd9e9643448": {
+    "title": "Merge snapshot of generic Apple CI migration",
+    "analysis_status": "TIP_PARTIAL_PATCH_REVIEW",
+    "findings": [
+      "Visible first-parent diff migrates Velnor input schema 1 to 2 and pins 690b3935d979bd5400bc82b1f7e68d139125acd3.",
+      "Generic discovery replaces synthetic SwiftPM units, connecting SwiftPM/XcodeGen consumers to BoltFFI products. Native profile desktop-release and deployment floor 26.0 are explicit.",
+      "Historical public-hosted runner policy and frozen Renovate writer/validator inputs address limitations of that generator revision. Later selected CI policy must win where deliberately changed.",
+      "Preserve native obligations: harnesses, release stamping, dSYM verification, per-test UI counts, format/lint/dead-code checks. Inspect both merge parents and resolution-specific changes before any superseded claim."
+    ],
+    "files": [
+      ".github-gen/velnor-workflow.toml",
+      "native/Package.swift",
+      "native/project.yml",
+      "crates/jackin-usage-ffi/boltffi.toml"
+    ],
+    "sources": [
+      "https://github.com/jackin-project/jackin/commit/7646c61bd4261a5908693bdaf0a6ecd9e9643448"
+    ],
+    "source_response": "turn57file0",
+    "independent_review": "NOT_RUN; coordinator analysis only",
+    "disposition": "ADAPT",
+    "history_coverage": "OPEN: complete unique history, all parent trees, direct target comparison, and patch-equivalence remain to be reconciled."
+  },
+  "c7b8a95856cce6f5e8442f0e6fafcf025a089132": {
+    "title": "Untracked CI evidence implementation and workflows",
+    "analysis_status": "TIP_PARTIAL_PATCH_REVIEW",
+    "findings": [
+      "Untracked recovery tree contains schema-5 CI evidence code and generated ci-evidence / ci-push-head-ledger workflows.",
+      "The implementation includes durable push-head provenance, retained artifact bytes, workflow identity and generator-state contracts. Read this tree as an untracked payload, not as an ordinary complete project checkout.",
+      "Old generated workflow permissions, cancellation and tool-install ordering need review. A contents-only permission declaration is not proof of sufficient artifact-read permissions.",
+      "Compare against 1c42a33 and 14bd147 and the current policy ledger. Never restore old generated jobs merely to satisfy stale contract tests."
+    ],
+    "files": [
+      ".github/workflows/ci-evidence.yml",
+      ".github/workflows/ci-push-head-ledger.yml",
+      "crates/jackin-xtask/src/ci_evidence.rs"
+    ],
+    "sources": [
+      "https://github.com/jackin-project/jackin/commit/c7b8a95856cce6f5e8442f0e6fafcf025a089132"
+    ],
+    "source_response": "turn62file0",
+    "independent_review": "NOT_RUN; coordinator analysis only",
+    "disposition": "COMBINE",
+    "history_coverage": "OPEN: complete unique history, all parent trees, direct target comparison, and patch-equivalence remain to be reconciled."
+  },
+  "d0bdbc021350dbd7b9f5f011b8e96d2fa3858f78": {
+    "title": "Historical CI verification and performance evidence matrix",
+    "analysis_status": "TIP_PATCH_REVIEW",
+    "findings": [
+      "Adds dated post-merge CI evidence, Velnor generator gaps and an explicit partially-complete goal matrix to plans/cicd-reliability/EXECUTION.md.",
+      "Record warns to regenerate on the final tree and identifies historical destructive generator ownership behavior for handwritten .github files.",
+      "Preserve evidence scope, first-attempt failures and unmet performance targets. Do not reuse September passing statuses as current baseline results or operate on referenced external repositories without separate scope."
+    ],
+    "files": [
+      "plans/cicd-reliability/EXECUTION.md"
+    ],
+    "sources": [
+      "https://github.com/jackin-project/jackin/commit/d0bdbc021350dbd7b9f5f011b8e96d2fa3858f78"
+    ],
+    "source_response": "turn63file0",
+    "independent_review": "NOT_RUN; coordinator analysis only",
+    "disposition": "ADAPT",
+    "history_coverage": "OPEN: complete unique history, all parent trees, direct target comparison, and patch-equivalence remain to be reconciled."
+  },
+  "0437497d7f22fbdb7c8aad986be932704d707fe9": {
+    "title": "Recovered staged-index Apple CI input state",
+    "analysis_status": "TIP_PARTIAL_PATCH_REVIEW",
+    "findings": [
+      "The commit identifies a staged worktree-index capture generated without source hooks; it is a preservation snapshot, not proof of validation.",
+      "Visible changes resemble the generic Apple schema-2 migration, including Velnor 690b3935, native product edges and frozen Renovate inputs.",
+      "Compare tree and per-parent deltas against 7646c61, 8fb49688 and 432e0108. Preserve useful input contracts but regenerate selected output and protect handwritten files."
+    ],
+    "files": [
+      ".github-gen/velnor-workflow.toml",
+      "native/Package.swift",
+      "native/project.yml"
+    ],
+    "sources": [
+      "https://github.com/jackin-project/jackin/commit/0437497d7f22fbdb7c8aad986be932704d707fe9"
+    ],
+    "source_response": "turn67file0",
+    "independent_review": "NOT_RUN; coordinator analysis only",
+    "disposition": "COMBINE",
+    "history_coverage": "OPEN: complete unique history, all parent trees, direct target comparison, and patch-equivalence remain to be reconciled."
+  },
+  "2d97bba390864fbdc79aa6566e3394df938408af": {
+    "title": "Sanitized handoff audit repair checkpoint",
+    "analysis_status": "TIP_PATCH_REVIEW",
+    "findings": [
+      "Title records handoff intent-label, matrix, test-plan and refresh audit repair. The API returned null diff and null files.",
+      "No visible patch is not proof the whole branch is empty. Inspect actual tree, parents and retained documentation locally before deciding whether sanitized content is already preserved.",
+      "No source implementation can be approved from this response alone; keep a specific coverage blocker tied to this SHA."
+    ],
+    "files": [],
+    "sources": [
+      "https://github.com/jackin-project/jackin/commit/2d97bba390864fbdc79aa6566e3394df938408af"
+    ],
+    "source_response": "turn68file0",
+    "independent_review": "NOT_RUN; coordinator analysis only",
+    "disposition": "DEFER",
+    "history_coverage": "OPEN: complete unique history, all parent trees, direct target comparison, and patch-equivalence remain to be reconciled."
+  },
+  "502e0627d3940e2cd68ae0078910f21452d9ccc1": {
+    "title": "Per-request diagnostic retry-payload assertions",
+    "analysis_status": "TIP_PATCH_REVIEW",
+    "findings": [
+      "assert_wire_requests now requires one matching event record in every captured log request, in addition to total trace/log/metric request counts.",
+      "The 0/1/2 distribution across three retries must fail even though the flattened total is three. This is stronger than a count-only assertion.",
+      "Preserve this regression contract through diagnostic test moves; do not automatically add duplicate assertions if the canonical helper already enforces it."
+    ],
+    "files": [
+      "crates/jackin-diagnostics/tests/wire_failure_support/mod.rs"
+    ],
+    "sources": [
+      "https://github.com/jackin-project/jackin/commit/502e0627d3940e2cd68ae0078910f21452d9ccc1"
+    ],
+    "source_response": "turn69file0",
+    "independent_review": "NOT_RUN; coordinator analysis only",
+    "disposition": "KEEP",
+    "history_coverage": "OPEN: complete unique history, all parent trees, direct target comparison, and patch-equivalence remain to be reconciled."
+  },
+  "6ce20ce13cb87c5ab89b44d72698fa0d68aacf39": {
+    "title": "Typed provider error status propagation",
+    "analysis_status": "TIP_PARTIAL_PATCH_REVIEW",
+    "findings": [
+      "ProviderProbeOutcome no longer derives rate limits or retry deadlines by searching arbitrary error text for status-like numbers.",
+      "Claude scope restriction requires typed HTTP 403; typed 401, 429, transport/decode errors and CLI strings containing misleading status codes do not qualify.",
+      "Codex provider/display error precedence is separated from auth error classification, retaining structured ProviderError information until presentation.",
+      "Preserve typed status and authoritative retry metadata through policy provider-core and live-repair normalization. Text containing port 429 must not create a rate-limit deadline."
+    ],
+    "files": [
+      "crates/jackin-usage/src/usage/claude.rs",
+      "crates/jackin-usage/src/usage/codex.rs",
+      "crates/jackin-usage/src/usage/refresh.rs"
+    ],
+    "sources": [
+      "https://github.com/jackin-project/jackin/commit/6ce20ce13cb87c5ab89b44d72698fa0d68aacf39"
+    ],
+    "source_response": "turn70file0",
+    "independent_review": "NOT_RUN; coordinator analysis only",
+    "disposition": "COMBINE",
+    "history_coverage": "OPEN: complete unique history, all parent trees, direct target comparison, and patch-equivalence remain to be reconciled."
+  },
+  "8fb49688a6408627e22118f92d24f47785564979": {
+    "title": "Pre-regeneration generic Apple CI inputs",
+    "analysis_status": "TIP_PARTIAL_PATCH_REVIEW",
+    "findings": [
+      "The commit explicitly says inputs-only, policy --check expected to fail and DO NOT LAND before matching M1 regeneration. Historical renderer remains 44243ed4917d53ad74a96c64d1c58dbe52c944c1.",
+      "Adds explicit visibility and Xcode inputs, removes the synthetic Swift package path and sets BoltFFI deployment target 26.0.",
+      "Treat as an incomplete intermediate candidate. Compare later 432e0108 and current toolchain; carry native obligations, never the intentionally unmatched input/output state."
+    ],
+    "files": [
+      ".github-gen/velnor-workflow.toml",
+      ".github-gen/visibility.toml",
+      ".xcode-version",
+      "crates/jackin-usage-ffi/boltffi.toml",
+      "mise.toml"
+    ],
+    "sources": [
+      "https://github.com/jackin-project/jackin/commit/8fb49688a6408627e22118f92d24f47785564979"
+    ],
+    "source_response": "turn71file0",
+    "independent_review": "NOT_RUN; coordinator analysis only",
+    "disposition": "REJECT unmatched input/output state; ADAPT native contracts",
+    "history_coverage": "OPEN: complete unique history, all parent trees, direct target comparison, and patch-equivalence remain to be reconciled."
+  },
+  "12dea6c5fd0f9d2c594d5ad3159e6493d03352f4": {
+    "title": "Competing first-parent CI evidence denominator",
+    "analysis_status": "TIP_PARTIAL_PATCH_REVIEW",
+    "findings": [
+      "Replaces an event/observed-run fallback with first-parent history, marks fixtures unqualified, records conflicting terminal observations and makes unqualified rollup nonzero.",
+      "First-parent history is useful Git evidence but does not prove the actual push-event grouping that triggered workflows. A multi-commit push can produce a workflow only for its head.",
+      "Choose durable push-head/artifact-bound qualification from 14bd1471 for post-merge workflow obligations; retain failure, conflict and fixture-negative tests from this candidate where missing."
+    ],
+    "files": [
+      "crates/jackin-xtask/src/ci_evidence.rs",
+      ".github-gen/velnor-workflow.toml"
+    ],
+    "sources": [
+      "https://github.com/jackin-project/jackin/commit/12dea6c5fd0f9d2c594d5ad3159e6493d03352f4"
+    ],
+    "source_response": "turn72file0",
+    "independent_review": "NOT_RUN; coordinator analysis only",
+    "disposition": "SUPERSEDED denominator design; COMBINE negative tests",
+    "history_coverage": "OPEN: complete unique history, all parent trees, direct target comparison, and patch-equivalence remain to be reconciled."
+  },
+  "432e0108ce90b64b428c69c27d4a2ac23e559379": {
+    "title": "Converged native workflow generation at Velnor 816",
+    "analysis_status": "TIP_PARTIAL_PATCH_REVIEW",
+    "findings": [
+      "Pins Velnor 816046893ef55359ee2f41903d1f1f893d59303e, scans Apple manifests, removes duplicate synthetic units and regenerates the typed XCFramework transport graph.",
+      "Explicit desktop-release / macOS 26.0 contract links BoltFFI producer output to SwiftPM and XcodeGen consumers before build.",
+      "Prefer the complete native product contract to pre-regeneration 8fb49688, but reconcile with selected current policy/native Mise layout instead of restoring historical generated workflows."
+    ],
+    "files": [
+      ".github-gen/velnor-workflow.toml",
+      ".github/ci/project.toml",
+      ".github/ci/.github-actions-generator-state",
+      "native/Package.swift",
+      "native/project.yml",
+      "crates/jackin-usage-ffi/boltffi.toml"
+    ],
+    "sources": [
+      "https://github.com/jackin-project/jackin/commit/432e0108ce90b64b428c69c27d4a2ac23e559379"
+    ],
+    "source_response": "turn73file0",
+    "independent_review": "NOT_RUN; coordinator analysis only",
+    "disposition": "ADAPT",
+    "history_coverage": "OPEN: complete unique history, all parent trees, direct target comparison, and patch-equivalence remain to be reconciled."
+  },
+  "b1dc105acffb68ba71fff86f9c18dc5ff77de924": {
+    "title": "Installer-wide Apple sccache environment candidate",
+    "analysis_status": "TIP_PARTIAL_PATCH_REVIEW",
+    "findings": [
+      "Adds RUSTC_WRAPPER=sccache and SCCACHE_GHA_ENABLED=true at shared workflow/job/profile scope, including before tool setup.",
+      "This can affect installation itself and forces a backend without the guarded runtime checks in successor 41dd148e. It also provisions a wrapper for a non-Cargo Swift prototype.",
+      "Reject this wrapper scope/backend activation design. Preserve relevant native job-coverage tests after rewriting them to assert installer isolation and the chosen current cache policy."
+    ],
+    "files": [
+      ".github-gen/velnor-workflow.toml",
+      ".github/workflows/ci-unit-swift.yml",
+      ".github/workflows/desktop-merge.yml",
+      ".github/workflows/desktop-scheduled.yml",
+      "crates/jackin-xtask/src/ci/tests.rs"
+    ],
+    "sources": [
+      "https://github.com/jackin-project/jackin/commit/b1dc105acffb68ba71fff86f9c18dc5ff77de924"
+    ],
+    "source_response": "turn74file0",
+    "independent_review": "NOT_RUN; coordinator analysis only",
+    "disposition": "REJECT wrapper design; ADAPT tests",
+    "history_coverage": "OPEN: complete unique history, all parent trees, direct target comparison, and patch-equivalence remain to be reconciled."
+  },
+  "d16cd795d4a539b84ba5f44290663b2363d49350": {
+    "title": "Explicit Apple profile and deployment-floor declaration",
+    "analysis_status": "TIP_PATCH_REVIEW",
+    "findings": [
+      "Adds native.apple cargo_profile=desktop-release and deployment_floor=26.0 to generation inputs and updates the input digest.",
+      "The visible patch does not prove downstream producer/consumer adoption. Compare the completed product-edge implementation at 432e0108 and the current native configuration.",
+      "Preserve one consistent native contract across Rust FFI, SwiftPM and XcodeGen; do not duplicate obsolete source-of-truth files."
+    ],
+    "files": [
+      ".github-gen/velnor-workflow.toml",
+      ".github/ci/.github-actions-generator-state"
+    ],
+    "sources": [
+      "https://github.com/jackin-project/jackin/commit/d16cd795d4a539b84ba5f44290663b2363d49350"
+    ],
+    "source_response": "turn75file0",
+    "independent_review": "NOT_RUN; coordinator analysis only",
+    "disposition": "ADAPT",
+    "history_coverage": "OPEN: complete unique history, all parent trees, direct target comparison, and patch-equivalence remain to be reconciled."
+  },
+  "33d88b1cf764f614d3935c11c48decd53386083e": {
+    "title": "Bundled usage broker sidecar and in-process fallback",
+    "analysis_status": "TIP_PARTIAL_PATCH_REVIEW",
+    "findings": [
+      "Adds a shared runtime service entry point and ships the usage-broker executable with jackin; CLI/console callers resolve the bundled sibling binary.",
+      "Missing or unusable sidecar falls back to an in-process broker while retaining leader-election/CAS reconciliation and stderr context in the intended design.",
+      "Negative activation tests are changed to use an uncreatable data directory, since missing sidecar no longer guarantees failure.",
+      "Preserve installation completeness and diagnostics. In-process fallback remains a gated design decision: prove ownership, client-death/lease lifetime and capability isolation against main foreground-auth behavior before selecting it."
+    ],
+    "files": [
+      "crates/jackin-runtime/src/usage_broker.rs",
+      "crates/jackin-runtime/src/lib.rs",
+      "crates/jackin-runtime/src/bin/usage-broker/main.rs",
+      "crates/jackin-usage/src/host/broker",
+      "crates/jackin/Cargo.toml",
+      "crates/jackin/src/bin/usage_broker.rs",
+      "crates/jackin-usage-ffi/src/bridge/tests.rs"
+    ],
+    "sources": [
+      "https://github.com/jackin-project/jackin/commit/33d88b1cf764f614d3935c11c48decd53386083e"
+    ],
+    "source_response": "turn76file0",
+    "independent_review": "NOT_RUN; coordinator analysis only",
+    "disposition": "ADAPT packaging; DEFER fallback until safety proof",
+    "history_coverage": "OPEN: complete unique history, all parent trees, direct target comparison, and patch-equivalence remain to be reconciled."
+  }
+}

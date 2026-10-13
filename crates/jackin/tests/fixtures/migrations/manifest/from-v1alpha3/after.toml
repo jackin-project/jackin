@@ -1,0 +1,15 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+version = "v1alpha7"
+dockerfile = "Dockerfile"
+agents = ["claude", "kimi", "opencode"]
+
+[claude]
+plugins = []
+
+[kimi]
+model = "kimi-k2"
+
+[opencode]
+model = "zai-coding-plan/glm-5.1"

@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 The jackin❯ Authors
+# SPDX-License-Identifier: Apache-2.0
+
+set -euo pipefail
+
+version="${CARGO_ZIGBUILD_ZIG_VERSION:?}"
+if [[ "${1:-}" == "version" ]]; then
+  printf '%s\n' "$version"
+  exit 0
+fi
+
+exec "${MISE_DATA_DIR:?}/installs/zig/$version/bin/zig" "$@"
