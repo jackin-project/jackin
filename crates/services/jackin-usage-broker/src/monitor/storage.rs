@@ -55,8 +55,11 @@ pub(super) fn open_store_dir(data_dir: &Path) -> Result<File, MonitorIssue> {
     )
     .map_err(|_| unavailable())?;
     let store_dir = File::from(store_fd);
-    fchmod(&store_dir, Mode::from_bits_truncate((STORE_DIR_MODE as u16).into()))
-        .map_err(|_| unavailable())?;
+    fchmod(
+        &store_dir,
+        Mode::from_bits_truncate((STORE_DIR_MODE as u16).into()),
+    )
+    .map_err(|_| unavailable())?;
     validate_owned_dir(&store_dir, STORE_DIR_MODE)?;
     Ok(store_dir)
 }
@@ -295,7 +298,8 @@ pub(super) fn save(dir: &File, state: &StoreState) -> Result<(), MonitorIssue> {
     .map_err(|_| unavailable())?;
     let mut file = File::from(fd);
     let result = (|| {
-        fchmod(&file, Mode::from_bits_truncate((STORE_MODE as u16).into())).map_err(|_| unavailable())?;
+        fchmod(&file, Mode::from_bits_truncate((STORE_MODE as u16).into()))
+            .map_err(|_| unavailable())?;
         validate_owned_file(&file)?;
         file.write_all(&bytes).map_err(|_| unavailable())?;
         file.sync_all().map_err(|_| unavailable())?;
