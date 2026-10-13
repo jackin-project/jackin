@@ -881,9 +881,9 @@ pub fn encode_server(frame: ServerFrame) -> Vec<u8> {
 fn encode_file_export_start(start: FileExportStart) -> Vec<u8> {
     let source = start.source_path.as_bytes();
     let name = start.file_name.as_bytes();
-    assert_ne!(source, []);
+    assert_ne!(source, "".as_bytes());
     assert!(source.len() <= MAX_FILE_EXPORT_PATH_BYTES);
-    assert_ne!(name, []);
+    assert_ne!(name, "".as_bytes());
     assert!(name.len() <= MAX_FILE_EXPORT_NAME_BYTES);
     let source_len = source.len() as u16;
     let name_len = name.len() as u16;
@@ -900,7 +900,7 @@ fn encode_file_export_start(start: FileExportStart) -> Vec<u8> {
 }
 
 fn encode_file_export_chunk(chunk: FileExportChunk) -> Vec<u8> {
-    assert_ne!(chunk.bytes, [] as [u8; 0]);
+    assert_ne!(chunk.bytes.as_slice(), "".as_bytes());
     assert!(chunk.bytes.len() <= MAX_FILE_EXPORT_CHUNK_BYTES);
     let mut payload = Vec::with_capacity(16 + chunk.bytes.len());
     payload.extend_from_slice(&chunk.transfer_id.to_be_bytes());
@@ -1088,7 +1088,7 @@ fn encode_clipboard_image_start(start: ClipboardImageStart) -> Vec<u8> {
 }
 
 fn encode_clipboard_image_chunk(chunk: ClipboardImageChunk) -> Vec<u8> {
-    assert_ne!(chunk.bytes, [] as [u8; 0]);
+    assert_ne!(chunk.bytes.as_slice(), "".as_bytes());
     assert!(chunk.bytes.len() <= MAX_CLIPBOARD_IMAGE_CHUNK_BYTES);
     let mut payload = Vec::with_capacity(16 + chunk.bytes.len());
     payload.extend_from_slice(&chunk.transfer_id.to_be_bytes());
